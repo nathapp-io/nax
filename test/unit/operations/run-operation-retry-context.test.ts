@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AgentRunRequest } from "../../../src/agents";
 import type { RetryContext } from "../../../src/agents/retry/types";
 import { pickSelector } from "../../../src/config";
 import type { DEFAULT_CONFIG } from "../../../src/config";
@@ -39,17 +40,15 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
     };
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "agent output text",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.001,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "agent output text",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -98,17 +97,15 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
     };
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "unparseable output",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.001,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "unparseable output",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -155,17 +152,15 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
     };
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "output",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.001,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "output",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -202,17 +197,15 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
 
   test("synthetic hopBody uses _callOpDeps.sleep with runtime signal for delays", async () => {
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "after delay",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.001,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "after delay",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();

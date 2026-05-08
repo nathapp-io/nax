@@ -163,7 +163,7 @@ describe("semanticReviewOp.hopBody", () => {
     expect(typeof semanticReviewOp.hopBody).toBe("function");
   });
 
-  test("retry field does NOT exist (retry handled inside hopBody via makeReviewRetryHopBody)", () => {
-    expect(semanticReviewOp).not.toHaveProperty("retry");
+  test("retry field exists (parse-retry SSOT)", () => {
+    expect(semanticReviewOp).toHaveProperty("retry");
   });
 });

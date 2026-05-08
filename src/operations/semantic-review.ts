@@ -1,3 +1,4 @@
+import { makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
@@ -7,8 +8,7 @@ import { checkFindingEvidence, downgradeUnsubstantiatedFinding } from "../review
 import { type LLMFinding, isBlockingSeverity, validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { makeReviewRetryHopBody } from "./_review-retry";
-import type { RunOperation } from "./types";
+import type { HopBodyContext, RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
 
@@ -45,16 +45,11 @@ const SEMANTIC_REQUOTE_RECOVERED_EVENT = "review.semantic.finding.requote_recove
 const SEMANTIC_REQUOTE_FAILED_EVENT = "review.semantic.finding.requote_failed";
 const DEFAULT_MAX_REQUOTES = 5;
 
-const retrySemanticReviewHopBody = makeReviewRetryHopBody<SemanticReviewInput>(
-  (parsed) => validateLLMShape(parsed) !== null,
-  "semantic",
-);
-
 const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig>["hopBody"] = async (
   initialPrompt,
   ctx,
 ) => {
-  const turn = await retrySemanticReviewHopBody(initialPrompt, ctx);
+  const turn = await ctx.sendWithParseRetry(initialPrompt);
   const parsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
   if (!parsed) return turn;
   const requoted = await requoteBlockingFindings(parsed.findings, ctx);
@@ -77,6 +72,17 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   // silently ignore the user's review.semantic.model setting.
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
+  retry: (input) =>
+    makeParseRetryStrategy({
+      validate: (parsed) => validateLLMShape(parsed) !== null,
+      reviewerKind: "semantic",
+      maxAttempts: 2,
+      prompts: {
+        invalid: () => ReviewPromptBuilder.jsonRetry(),
+        truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
+      },
+      logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
+    }),
   hopBody: semanticReviewHopBody,
   build(input, _ctx) {
     const base = new ReviewPromptBuilder().buildSemanticReviewPrompt(input.story, input.semanticConfig, {
@@ -104,7 +110,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
 
 async function requoteBlockingFindings(
   findings: LLMFinding[],
-  ctx: { send: (prompt: string) => Promise<{ output: string; estimatedCostUsd?: number }>; input: SemanticReviewInput },
+  ctx: HopBodyContext<SemanticReviewInput>,
 ): Promise<{ findings: LLMFinding[]; changed: boolean; extraCostUsd: number }> {
   const threshold = ctx.input.blockingThreshold ?? "error";
   const maxRequotes = ctx.input.semanticConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;

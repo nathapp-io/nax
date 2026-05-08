@@ -6,7 +6,6 @@ import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../..
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { CompleteResult, TurnResult } from "../../../src/agents/types";
 import type { RetryPreset } from "../../../src/agents/retry";
-import { NaxError } from "../../../src/errors";
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -443,11 +442,11 @@ describe("callOp — op.model resolver (issue #725)", () => {
   });
 });
 
-describe("callOp — op.hopBody + op.retry guard (US-004 ban)", () => {
-  test("throws OP_HOPBODY_RETRY_BOTH_SET when RunOperation has both hopBody and retry", async () => {
+describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
+  test("RunOperation with both hopBody and retry succeeds — no error thrown, one dispatch", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
-        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        result: { success: true, exitCode: 0, output: "composed result", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
         fallbacks: [],
       }),
     });
@@ -456,7 +455,7 @@ describe("callOp — op.hopBody + op.retry guard (US-004 ban)", () => {
 
     const opWithBoth: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       kind: "run",
-      name: "bad-op",
+      name: "compose-op",
       stage: "run",
       config: testSel,
       session: { role: "implementer", lifetime: "fresh" },
@@ -465,32 +464,27 @@ describe("callOp — op.hopBody + op.retry guard (US-004 ban)", () => {
         task: { id: "task", content: input.text, overridable: false },
       }),
       parse: (output) => output.trim(),
-      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }),
+      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => (
+        { output: "from hopBody", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }
+      ),
       retry: { preset: "transient-network" as const, maxAttempts: 3, baseDelayMs: 500 } as RetryPreset,
     };
 
-    let thrown: Error | null = null;
-    try {
-      await callOp(
-        {
-          runtime,
-          packageView: runtime.packages.repo(),
-          packageDir: "/tmp",
-          agentName: "claude",
-          storyId: "US-001",
-        },
-        opWithBoth,
-        { text: "hello" },
-      );
-    } catch (err) {
-      thrown = err as Error;
-    }
+    // op.hopBody and op.retry now compose — should not throw
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithBoth,
+      { text: "hello" },
+    );
 
-    expect(thrown).not.toBeNull();
-    if (thrown instanceof NaxError) {
-      expect(thrown.code).toBe("OP_HOPBODY_RETRY_BOTH_SET");
-    }
-    expect(thrown?.message).toContain("bad-op");
+    expect(result).toBe("composed result");
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
   });
 
   test("allows RunOperation with only hopBody (no retry)", async () => {

@@ -15,11 +15,12 @@
 
 import { describe, expect, spyOn, test } from "bun:test";
 import * as loggerModule from "../../../src/logger";
+import type { AgentRunRequest } from "../../../src/agents";
 import { ParseValidationError } from "../../../src/agents/retry/types";
 import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import { makeMockAgentManager, makeMockRuntime, makeTestRuntime } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -218,24 +219,22 @@ describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
   test("callOp accumulates estimatedCostUsd from both initial and retry turns", async () => {
     let turnCount = 0;
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async () => {
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => {
         turnCount++;
         return {
-          result: {
-            success: true,
-            exitCode: 0,
-            output: "not valid json output",
-            rateLimited: false,
-            durationMs: 10,
-            estimatedCostUsd: turnCount === 1 ? 0.001 : 0.002,
-            agentFallbacks: [],
-          },
-          fallbacks: [],
+          output: "not valid json output",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: turnCount === 1 ? 0.001 : 0.002,
+          internalRoundTrips: 0,
         };
       },
     });
 
-    const runtime = makeMockRuntime({ agentManager });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
 
     const originalParse = adversarialReviewOp.parse;
     (adversarialReviewOp as any).parse = () => {

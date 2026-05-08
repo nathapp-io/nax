@@ -16,6 +16,19 @@ export interface RetryContext {
 }
 
 export interface RetryStrategy {
+  /**
+   * Called by `callOp` after each LLM turn to decide whether to retry.
+   *
+   * **Probe semantics (run-kind ops with `sendWithParseRetry`):**
+   * The strategy always receives a synthetic `ParseValidationError` probe — it never
+   * receives an error from `op.parse()`. Strategies MUST re-parse `ctx.lastOutput`
+   * internally (e.g. via `tryParseLLMJson`) to determine whether the output is valid.
+   * Returning `{ retry: true }` without checking `ctx.lastOutput` causes over-retry on
+   * valid outputs.
+   *
+   * **Complete-kind ops:** Receives the real thrown error (parse error, transport error,
+   * or AdapterFailure). No re-parse needed — the error is authoritative.
+   */
   shouldRetry(
     failure: AdapterFailure | Error,
     /** Zero-based count of retries already attempted. 0 = deciding on first retry. */

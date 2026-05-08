@@ -11,7 +11,7 @@ import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adve
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
-import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import type { AgentAdapter } from "../../../src/agents/types";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
 
@@ -45,38 +45,18 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
   return makeMockAgentManager({
     getDefaultAgent: "claude",
-    runFn: async (_agentName: string, _opts: unknown) => ({
-      success: true as const,
-      exitCode: 0,
-      output: llmResponse,
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCostUsd: cost,
-      agentFallbacks: [] as unknown[],
-    }),
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
-    runWithFallbackFn: async (request) => {
-      const result = {
-        success: true,
-        exitCode: 0,
-        output: llmResponse,
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCostUsd: cost,
-        agentFallbacks: [] as unknown[],
-      };
-      return { result, fallbacks: [], bundle: request.bundle };
+    runWithFallbackFn: async (req) => {
+      const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+      return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
-    runAsFn: async () => ({
-      success: true,
-      exitCode: 0,
+    runAsSessionFn: async () => ({
       output: llmResponse,
-      rateLimited: false,
-      durationMs: 100,
+      tokenUsage: { inputTokens: 10, outputTokens: 20 },
       estimatedCostUsd: cost,
-      agentFallbacks: [] as unknown[],
+      internalRoundTrips: 0,
     }),
+    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
     completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     getAgentFn: () => makeAgentAdapter(),
   });

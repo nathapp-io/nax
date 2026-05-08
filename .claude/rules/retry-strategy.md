@@ -51,7 +51,7 @@ retry: {
 },
 ```
 
-`callOp` is bounded by `MAX_COMPLETE_RETRY_ATTEMPTS = 20` regardless of the strategy. If that ceiling is hit, it throws `CALL_OP_MAX_RETRIES`.
+`callOp` is bounded by `MAX_COMPLETE_RETRY_ATTEMPTS = 20` regardless of the strategy. For complete-kind ops, hitting the ceiling always throws `CALL_OP_MAX_RETRIES`. For run-kind ops with `op.retry`, the ceiling triggers `CALL_OP_MAX_RETRIES` only if the final `op.parse` also fails — graceful-degradation parsers (returning `FAIL_OPEN`-style values) absorb the exhaustion silently. Strategies that may keep retrying indefinitely should self-terminate via `attempt >= maxAttempts`.
 
 ## `RetryPreset` semantics
 
@@ -97,10 +97,15 @@ retry: {
 
 **Manager-tier concerns:** `fail-rate-limit` and `fail-stale` are universal infrastructure concerns handled by `defaultRetryStrategy` at the manager tier. Op-tier strategies MUST NOT handle these — doing so causes double-retry (op retries, then manager retries again) and confuses failure attribution. If an op-tier strategy needs to handle rate-limits, it is a sign that the concern should move to `defaultRetryStrategy` or be routed through it.
 
-## `HopBody` vs. `op.retry` distinction
+## `HopBody` and `op.retry` — composition semantics
 
-- **`HopBody`** — Multi-turn session continuations. Used when the operation genuinely needs multiple agent turns that are NOT failure reactions. Example: an interactive discovery flow where each turn refines understanding (not a retry). These are NOT retries and should not use `RetryStrategy`.
-- **`op.retry`** — Single-turn, retry-on-failure. Used when a call can fail and needs another attempt with a (possibly different) prompt. This is where `RetryStrategy` and `composeRetry` apply.
+`op.retry` and `op.hopBody` compose; setting both is allowed and encouraged.
+
+- **`op.retry` only** — `callOp` synthesizes a hop body that runs the parse-retry loop inside one session. No user-supplied body needed.
+- **`op.hopBody` only** — Multi-turn session continuations. `ctx.sendWithParseRetry` equals `ctx.send` (no retry loop). Used when the operation needs multiple agent turns that are NOT failure reactions.
+- **Both set** — The user-supplied body receives `ctx.sendWithParseRetry`, a variant of `send` with the parse-retry loop baked in. Use this when an op needs both retry-on-parse-failure (declarative, via `op.retry`) and post-turn enrichment (imperative, via `op.hopBody`). `semanticReviewOp` is the canonical example: `op.retry` handles JSON parse retries; `op.hopBody` handles requote enrichment using the validated turn output.
+
+Never write a hand-rolled retry loop inside `op.hopBody`. Use `ctx.sendWithParseRetry` instead — the loop is already there.
 
 ## Parse-retry-internal-parser convention
 
@@ -146,6 +151,8 @@ type RetryDecision =
 `makeParseRetryStrategy` surfaces this when its budget is exhausted: if `exhaustedFallback` is provided, its return value is set on `decision.fallback`. `callOp` then returns that value merged with the accumulated cost instead of the raw `TurnResult`.
 
 When `exhaustedFallback` is absent, `callOp` returns the last `TurnResult` as-is (typed as `O`). **Ops that cannot tolerate a raw `TurnResult` as their output MUST provide `exhaustedFallback`.**
+
+**Strict-parser interaction:** when an op's `parse()` throws on unparseable input (e.g. `adversarialReviewOp`), the strategy MUST provide `exhaustedFallback` — otherwise retry exhaustion throws `ParseValidationError` to the caller. Graceful parsers (returning `FAIL_OPEN`-style values, e.g. `semanticReviewOp`) make `exhaustedFallback` optional.
 
 ```typescript
 // ✅ Always provide exhaustedFallback for ops with structured output types
@@ -200,3 +207,6 @@ await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
 | Hardcoded `await Bun.sleep(2000)` between attempts | `_callOpDeps.sleep(decision.delayMs, signal)` (testable, cancellable) |
 | New readers of `config.routing.llm?.retries` outside `classify-route.ts` | Op-level `retry` resolver reading from config slice |
 | `MAX_RATE_LIMIT_RETRIES` constant (deleted) | `defaultRetryStrategy` / `RetryPreset.maxAttempts` |
+| Hand-rolled parse-retry loops inside an `op.hopBody` | `ctx.sendWithParseRetry` — declare `op.retry` and call `sendWithParseRetry` in the body |
+| Strategy `validate` and `op.parse` having different acceptance criteria | Define a shared validator helper (e.g. `validateLLMShape`) and call it from both |
+| Run-kind op with strict (throwing) `parse()` and `op.retry` but no `exhaustedFallback` | Either provide `exhaustedFallback` on the strategy OR return a graceful degradation value from `parse()` for unparseable inputs |

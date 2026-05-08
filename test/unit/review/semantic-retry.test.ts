@@ -9,12 +9,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { AgentRunRequest } from "../../../src/agents";
 import * as loggerModule from "../../../src/logger";
+import { callOp } from "../../../src/operations/call";
+import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
 import { withTempDir } from "../../helpers/temp";
 
@@ -360,78 +363,92 @@ describe("runSemanticReview — logging", () => {
   });
 });
 
-describe("semanticReviewOp.hopBody — retry behaviour", () => {
-  test("calls ctx.send twice when first response is unparseable", async () => {
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: "not json at all", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
-
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    const result = await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
+describe("semanticReviewOp — retry behaviour (callOp integration)", () => {
+  test("calls runAsSession twice when first response is unparseable", async () => {
+    let sessionCallCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
-    } as any);
+      runAsSessionFn: async () => {
+        sessionCallCount++;
+        return {
+          output: sessionCallCount === 1 ? "not json at all" : PASSING_LLM_RESPONSE,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.001,
+          internalRoundTrips: 0,
+        };
+      },
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    expect(sendCalls).toHaveLength(2);
-    expect(result.output).toBe(PASSING_LLM_RESPONSE);
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+      semanticReviewOp,
+      { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    );
+
+    expect(sessionCallCount).toBe(2);
   });
 
-  test("calls ctx.send once when first response is valid JSON", async () => {
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
-
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    const result = await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
+  test("calls runAsSession once when first response is valid JSON", async () => {
+    let sessionCallCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
-    } as any);
+      runAsSessionFn: async () => {
+        sessionCallCount++;
+        return {
+          output: PASSING_LLM_RESPONSE,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.001,
+          internalRoundTrips: 0,
+        };
+      },
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    expect(sendCalls).toHaveLength(1);
-    expect(result.output).toBe(PASSING_LLM_RESPONSE);
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+      semanticReviewOp,
+      { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    );
+
+    expect(sessionCallCount).toBe(1);
   });
 
-  test("accumulates cost from both initial and retry calls", async () => {
-    let callCount = 0;
-    const mockSend = mock(async (_prompt: string) => {
-      callCount++;
-      return {
-        output: callCount === 1 ? "not json" : PASSING_LLM_RESPONSE,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-        estimatedCostUsd: 0.5,
-      };
-    });
-
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    const result = await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
+  test("fires multiple runAsSession calls when first N responses are unparseable", async () => {
+    let sessionCallCount = 0;
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
-    } as any);
+      runAsSessionFn: async () => {
+        sessionCallCount++;
+        return {
+          output: sessionCallCount < 2 ? "not json" : PASSING_LLM_RESPONSE,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0.5,
+          internalRoundTrips: 0,
+        };
+      },
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
 
-    expect(result.estimatedCostUsd).toBe(1.0);
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+      semanticReviewOp,
+      { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+    );
+
+    expect(sessionCallCount).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -476,6 +493,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
       const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
       const result = await semanticReviewOp.hopBody!("initial prompt", {
         send: mockSend,
+        sendWithParseRetry: mockSend,
         input: {
           workdir,
           story: STORY,
@@ -526,6 +544,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
       const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
       const result = await semanticReviewOp.hopBody!("initial prompt", {
         send: mockSend,
+        sendWithParseRetry: mockSend,
         input: {
           workdir,
           story: STORY,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AgentRunRequest } from "../../../src/agents";
 import { pickSelector } from "../../../src/config";
 import type { DEFAULT_CONFIG } from "../../../src/config";
 import { callOp } from "../../../src/operations/call";
@@ -26,19 +27,15 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
     const agentCost = 0.005;
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: agentOutput,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: agentCost,
-          tokenUsage: { inputTokens: 5, outputTokens: 10 },
-          internalRoundTrips: 0,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: agentOutput,
+        tokenUsage: { inputTokens: 5, outputTokens: 10 },
+        estimatedCostUsd: agentCost,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -75,17 +72,15 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
 
   test("synthetic hopBody sends nextPrompt when retry decision includes it", async () => {
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "final output after retry with nextPrompt",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.002,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "final output after retry with nextPrompt",
+        tokenUsage: { inputTokens: 5, outputTokens: 10 },
+        estimatedCostUsd: 0.002,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -147,17 +142,15 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
     };
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: "output after resending original",
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: 0.001,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "output after resending original",
+        tokenUsage: { inputTokens: 5, outputTokens: 10 },
+        estimatedCostUsd: 0.001,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
@@ -191,24 +184,24 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
     expect(shouldRetryCallCount).toBeGreaterThanOrEqual(1);
   });
 
+  // AC6 (US-004): estimatedCostUsd is summed across all retry attempts in sendWithParseRetry.
+  // When parse fails and no fallback is provided, lastRetryTurn carries the accumulated cost.
   test("synthetic hopBody accumulates TurnResult estimatedCostUsd across attempts", async () => {
     const costPerCall = 0.001;
     let callCount = 0;
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => {
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => {
         callCount++;
         return {
-          result: {
-            success: true,
-            exitCode: 0,
-            output: `attempt ${callCount}`,
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCostUsd: costPerCall,
-            agentFallbacks: [],
-          },
-          fallbacks: [],
+          output: `attempt ${callCount}`,
+          tokenUsage: { inputTokens: 5, outputTokens: 10 },
+          estimatedCostUsd: costPerCall,
+          internalRoundTrips: 0,
         };
       },
     });
@@ -226,6 +219,8 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       },
     };
 
+    // O = TurnResult: parse always throws, so callOp returns lastRetryTurn via the
+    // parse-failure path when the strategy has no fallback.
     const opWithCostTracking = {
       ...runEchoOp,
       name: "cost-accumulation-op",
@@ -233,25 +228,27 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
         throw new Error("Trigger retry");
       },
       retry: costAccumulationStrategy,
-    } as unknown as RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">>;
+    } as unknown as RunOperation<
+      { text: string },
+      import("../../../src/agents/types").TurnResult,
+      Pick<typeof DEFAULT_CONFIG, "routing">
+    >;
 
-    try {
-      await callOp(
-        {
-          runtime,
-          packageView: runtime.packages.repo(),
-          packageDir: "/tmp",
-          agentName: "claude",
-          storyId: "US-001",
-        },
-        opWithCostTracking,
-        { text: "hello" },
-      );
-    } catch {
-      // Expected
-    }
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithCostTracking,
+      { text: "hello" },
+    );
 
-    expect(callCount).toBeGreaterThanOrEqual(1);
+    // Two session turns fired (attempt 0 + 1 retry), cost accumulates to 2 × costPerCall.
+    expect(callCount).toBe(2);
+    expect(result.estimatedCostUsd).toBeCloseTo(costPerCall * 2);
   });
 
   // AC-2 (US-004): when { retry: false }, callOp returns the latest TurnResult (does not throw).
@@ -261,19 +258,15 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
     const agentCost = 0.0042;
 
     const agentManager = makeMockAgentManager({
-      runWithFallbackFn: async (_req) => ({
-        result: {
-          success: true,
-          exitCode: 0,
-          output: agentOutput,
-          rateLimited: false,
-          durationMs: 1,
-          estimatedCostUsd: agentCost,
-          tokenUsage: { inputTokens: 10, outputTokens: 20 },
-          internalRoundTrips: 0,
-          agentFallbacks: [],
-        },
-        fallbacks: [],
+      runWithFallbackFn: async (req: AgentRunRequest) => {
+        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: agentOutput,
+        tokenUsage: { inputTokens: 10, outputTokens: 20 },
+        estimatedCostUsd: agentCost,
+        internalRoundTrips: 0,
       }),
     });
     const sessionManager = makeSessionManager();
