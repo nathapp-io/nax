@@ -151,6 +151,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.semantic.resetRefOnRerun":
     "When true, clears storyGitRef on failed stories during re-run initialization so the ref is re-captured at the next story start. Prevents cross-story diff pollution when multiple stories exhaust all tiers and are re-run. Default: false.",
   "review.semantic.rules": "Custom semantic review rules to enforce",
+  "review.semantic.substantiation":
+    "Semantic evidence substantiation settings. Controls same-session recovery when a blocking finding's verified quote does not match the file on disk.",
+  "review.semantic.substantiation.requote":
+    "When true, semantic review asks the same reviewer session for one verbatim 1-3 line quote before downgrading an unmatched blocking finding.",
+  "review.semantic.substantiation.maxRequotes":
+    "Maximum number of same-session requote turns allowed per semantic review. Keeps worst-case cost bounded when multiple findings need evidence recovery.",
 
   // Plan
   plan: "Planning phase configuration",

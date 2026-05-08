@@ -224,6 +224,10 @@ export const NaxConfigSchema = z
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
+        substantiation: {
+          requote: true,
+          maxRequotes: 5,
+        },
         excludePatterns: [
           ":!test/",
           ":!tests/",

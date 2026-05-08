@@ -248,7 +248,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // Debate path: when debate is enabled for review stage, use DebateRunner instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
-  if (reviewDebateEnabled) {
+  const requoteEnabled = semanticConfig.substantiation?.requote ?? true;
+  const skipDebateForRequote = reviewDebateEnabled && diffMode === "ref" && requoteEnabled;
+  if (skipDebateForRequote) {
+    logger?.warn(
+      "review",
+      "Semantic debate skipped: ref-mode requote recovery requires the normal sessioned review path",
+      {
+        storyId: story.id,
+        diffMode,
+      },
+    );
+  }
+  if (reviewDebateEnabled && !skipDebateForRequote) {
     if (!runtime) {
       throw new NaxError("runtime required for debate path — legacy standalone path removed", "DISPATCH_NO_RUNTIME", {
         stage: "review-semantic-debate",
@@ -314,6 +326,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   let opResult: import("../operations/semantic-review").SemanticReviewOutput;
   try {
     opResult = await _semanticDeps.callOp(callCtx, semanticReviewOp, {
+      workdir,
       story,
       semanticConfig,
       mode: diffMode,
@@ -404,10 +417,11 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   const parsed: LLMResponse = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
 
   const sanitizedFindings = await substantiateSemanticEvidence(
-    sanitizeRefModeFindings(parsed.findings, diffMode),
+    sanitizeRefModeFindings(parsed.findings, diffMode, blockingThreshold ?? "error"),
     diffMode,
     workdir,
     story.id,
+    blockingThreshold ?? "error",
   );
 
   // Issue #930 Part 1: drop error findings not grounded in AC text

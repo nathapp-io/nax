@@ -54,6 +54,7 @@ describe("SemanticReviewConfig", () => {
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
+      substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [],
     };
     expect(config.model).toBe("balanced");
@@ -67,6 +68,7 @@ describe("SemanticReviewConfig", () => {
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
+      substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [],
     };
     expect(config.model).toEqual({ agent: "codex", model: "gpt-5.4" });
@@ -79,6 +81,7 @@ describe("SemanticReviewConfig", () => {
       resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
+      substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [],
     };
     expect(Array.isArray(config.rules)).toBe(true);
@@ -95,6 +98,7 @@ describe("SemanticReviewConfig", () => {
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
+        substantiation: { requote: true, maxRequotes: 5 },
         excludePatterns: [],
       };
       expect(config.model).toBe(tier);
@@ -123,6 +127,7 @@ describe("ReviewConfig semantic field", () => {
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
+        substantiation: { requote: true, maxRequotes: 5 },
         // excludePatterns is now optional (ADR-009): undefined means resolver will derive at runtime
       });
     }
@@ -268,6 +273,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
+      substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
     });
   });

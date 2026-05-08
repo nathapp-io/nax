@@ -19,7 +19,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { _evidenceDeps, substantiateSemanticEvidence } from "../../../src/review/semantic-evidence";
+import {
+  _evidenceDeps,
+  checkFindingEvidence,
+  substantiateSemanticEvidence,
+} from "../../../src/review/semantic-evidence";
 import type { LLMFinding } from "../../../src/review/semantic-helpers";
 import { makeLogger, type MockLogger } from "../../helpers/mock-logger";
 import { withTempDir } from "../../helpers/temp";
@@ -238,6 +242,26 @@ describe("substantiateSemanticEvidence — ref mode", () => {
       expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeUndefined();
     });
   });
+
+  test("downgrades warning finding when blockingThreshold is warning", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+
+      const finding = makeFinding({
+        severity: "warning",
+        verifiedBy: {
+          command: "Read src/foo.ts",
+          file: "src/foo.ts",
+          line: 1,
+          observed: "this prose does not appear in the file",
+        },
+      });
+
+      const result = await substantiateSemanticEvidence([finding], "ref", workdir, STORY_ID, "warning");
+      expect(result[0].severity).toBe("unverifiable");
+    });
+  });
 });
 
 describe("substantiateSemanticEvidence — embedded mode", () => {
@@ -255,6 +279,26 @@ describe("substantiateSemanticEvidence — embedded mode", () => {
 
       expect(result[0].severity).toBe("error");
       expect(logger.calls).toHaveLength(0);
+    });
+  });
+});
+
+describe("checkFindingEvidence()", () => {
+  test("returns unreadable when referenced file cannot be read", async () => {
+    await withTempDir(async (workdir) => {
+      const result = await checkFindingEvidence({
+        finding: makeFinding({
+          verifiedBy: {
+            command: "cat /missing/file.ts",
+            file: "/missing/file.ts",
+            line: 1,
+            observed: "missing snippet",
+          },
+        }),
+        workdir,
+      });
+
+      expect(result.status).toBe("unreadable");
     });
   });
 });

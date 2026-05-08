@@ -28,6 +28,15 @@ const SemanticReviewConfigSchema = z.object({
   resetRefOnRerun: z.boolean().default(false),
   rules: z.array(z.string()).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
+  substantiation: z
+    .object({
+      requote: z.boolean().default(true),
+      maxRequotes: z.number().int().min(0).max(50).default(5),
+    })
+    .default({
+      requote: true,
+      maxRequotes: 5,
+    }),
   /**
    * Optional — undefined means "derive from testFilePatterns + well-known noise dirs".
    * Any user-set value (including []) is returned as-is. (ADR-009 §4.4)

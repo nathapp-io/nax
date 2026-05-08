@@ -39,6 +39,7 @@ const SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 30000,
+  substantiation: { requote: true, maxRequotes: 5 },
   excludePatterns: [":!test/", ":!*.test.ts"],
 };
 
@@ -183,6 +184,7 @@ const origSpawn = _diffUtilsDeps.spawn;
 const origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
 const origGetMergeBase = _diffUtilsDeps.getMergeBase;
 const origCreateDebateSession = _semanticDeps.createDebateRunner;
+const origCallOp = _semanticDeps.callOp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -255,6 +257,7 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
     _diffUtilsDeps.getMergeBase = origGetMergeBase;
     _semanticDeps.createDebateRunner = origCreateDebateSession;
+    _semanticDeps.callOp = origCallOp;
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -294,7 +297,12 @@ describe("runSemanticReview — debate integration (US-004)", () => {
       workdir: WORKDIR,
       storyGitRef: STORY_GIT_REF,
       story: STORY,
-      semanticConfig: { ...SEMANTIC_CONFIG, diffMode: "ref", excludePatterns: undefined },
+      semanticConfig: {
+        ...SEMANTIC_CONFIG,
+        diffMode: "ref",
+        excludePatterns: undefined,
+        substantiation: { requote: false, maxRequotes: 5 },
+      },
       agentManager,
       naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
       runtime,
@@ -358,6 +366,30 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     });
 
     expect(agentManager.complete as ReturnType<typeof mock>).not.toHaveBeenCalled();
+  });
+
+  test("ref mode + requote enabled skips debate and uses the normal sessioned semantic path", async () => {
+    const createDebateMock = mock(() => ({
+      run: mock(async () => DEBATE_MAJORITY_PASS_RESULT),
+    }));
+    _semanticDeps.createDebateRunner = createDebateMock as unknown as typeof _semanticDeps.createDebateRunner;
+    _semanticDeps.callOp = mock(async () => ({ passed: true, findings: [] }));
+
+    const agentManager = makeAgentManager(PROPOSAL_PASS);
+    const runtime = makeMockRuntime({ agentManager });
+
+    await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: { ...SEMANTIC_CONFIG, diffMode: "ref" },
+      agentManager,
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime,
+    });
+
+    expect(createDebateMock).not.toHaveBeenCalled();
+    expect(_semanticDeps.callOp).toHaveBeenCalledTimes(1);
   });
 
   test("AC3: agent.run() called once when debate is disabled — QUARANTINED: DISPATCH_NO_RUNTIME at line 332 despite runtime being defined", async () => {
