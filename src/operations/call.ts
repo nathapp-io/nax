@@ -179,6 +179,17 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // AgentManager.runAsSession so middleware fires (Finding 5), and lets
   // op.noFallback short-circuit the swap branch (Finding 6).
   const runOp = op as RunOperation<I, O, C>;
+
+  // Guard: op.hopBody and op.retry are mutually exclusive. Reject ops that set both.
+  // See forbidden-patterns.md. This guard fires before any agent call.
+  if (runOp.hopBody && runOp.retry !== undefined) {
+    throw new NaxError(
+      `callOp[${runOp.name}]: op.hopBody and op.retry are mutually exclusive — set exactly one, not both`,
+      "OP_HOPBODY_RETRY_BOTH_SET",
+      { stage: runOp.stage, storyId: ctx.storyId },
+    );
+  }
+
   const story = ctx.story ?? synthesizeStory(ctx.storyId);
   const sessionRole = ctx.sessionOverride?.role ?? runOp.session.role;
 

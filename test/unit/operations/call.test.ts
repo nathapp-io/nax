@@ -4,7 +4,9 @@ import type { CompleteOperation, RunOperation } from "../../../src/operations/ty
 import { pickSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import type { CompleteResult } from "../../../src/agents/types";
+import type { CompleteResult, TurnResult } from "../../../src/agents/types";
+import type { RetryPreset } from "../../../src/agents/retry";
+import { NaxError } from "../../../src/errors";
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -438,5 +440,163 @@ describe("callOp — op.model resolver (issue #725)", () => {
       | { runOptions?: { modelTier?: string } }
       | undefined;
     expect(reqArg?.runOptions?.modelTier).toBe("fast");
+  });
+});
+
+describe("callOp — op.hopBody + op.retry guard (US-004 ban)", () => {
+  test("throws OP_HOPBODY_RETRY_BOTH_SET when RunOperation has both hopBody and retry", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const opWithBoth: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "bad-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "Echo text.", overridable: false },
+        task: { id: "task", content: input.text, overridable: false },
+      }),
+      parse: (output) => output.trim(),
+      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }),
+      retry: { preset: "transient-network" as const, maxAttempts: 3, baseDelayMs: 500 } as RetryPreset,
+    };
+
+    let thrown: Error | null = null;
+    try {
+      await callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        opWithBoth,
+        { text: "hello" },
+      );
+    } catch (err) {
+      thrown = err as Error;
+    }
+
+    expect(thrown).not.toBeNull();
+    if (thrown instanceof NaxError) {
+      expect(thrown.code).toBe("OP_HOPBODY_RETRY_BOTH_SET");
+    }
+    expect(thrown?.message).toContain("bad-op");
+  });
+
+  test("allows RunOperation with only hopBody (no retry)", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "hopbody works", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const opWithHopBody: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "hopbody-only-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "Echo text.", overridable: false },
+        task: { id: "task", content: input.text, overridable: false },
+      }),
+      parse: (output) => output.trim(),
+      hopBody: async (_initialPrompt, _ctx): Promise<TurnResult> => ({ output: "from hopBody", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0, internalRoundTrips: 0 }),
+    };
+
+    // Should not throw — hopBody without retry is allowed
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithHopBody,
+      { text: "hello" },
+    );
+
+    expect(result).toBe("hopbody works");
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
+  });
+
+  test("allows RunOperation with only retry (no hopBody)", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const opWithRetry: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "retry-only-op",
+      stage: "run",
+      config: testSel,
+      session: { role: "implementer", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "Echo text.", overridable: false },
+        task: { id: "task", content: input.text, overridable: false },
+      }),
+      parse: (output) => output.trim(),
+      retry: { preset: "transient-network" as const, maxAttempts: 3, baseDelayMs: 500 } as RetryPreset,
+    };
+
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      opWithRetry,
+      { text: "hello" },
+    );
+
+    expect(result).toBe("ran");
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
+  });
+
+  test("allows RunOperation with neither hopBody nor retry", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const result = await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+
+    expect(result).toBe("ran");
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,7 @@ import type { RunOperation } from "../../../src/operations/types";
 import { pickSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime, makeLogger } from "../../helpers";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { NaxError } from "../../../src/errors";
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -152,7 +153,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     expect(resolverInvocations[0]).toEqual({ text: "hello world" });
   });
 
-  test("when both op.hopBody and op.retry are set, callOp prefers hopBody and ignores retry", async () => {
+  test("when both op.hopBody and op.retry are set, callOp throws OP_HOPBODY_RETRY_BOTH_SET", async () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (_req) => ({
         result: {
@@ -193,22 +194,30 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     };
 
-    const result = await callOp(
-      {
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp",
-        agentName: "claude",
-        storyId: "US-001",
-      },
-      opWithBothFields,
-      { text: "hello" },
-    );
+    let thrown: Error | null = null;
+    try {
+      await callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        opWithBothFields,
+        { text: "hello" },
+      );
+    } catch (err) {
+      thrown = err as Error;
+    }
 
-    expect(result).toBe("hopbody result");
-    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
-    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0];
-    expect(reqArg?.executeHop).toBeTypeOf("function");
+    expect(thrown).not.toBeNull();
+    if (thrown instanceof NaxError) {
+      expect(thrown.code).toBe("OP_HOPBODY_RETRY_BOTH_SET");
+    }
+    expect(thrown?.message).toContain("mutually exclusive");
+    // Guard fires before any agent call
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(0);
   });
 
   test("when op.retry is set and op.hopBody is absent, synthetic hopBody sends initial prompt", async () => {
