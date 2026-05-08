@@ -6,3 +6,4 @@
 [2026-05-07T13:44:32.641Z] US-005a — PASSED — Add op.retry alongside op.hopBody on review ops (no behavior change) — Cost: $0.4994
 [2026-05-07T17:22:59.228Z] US-005b — PASSED — Flip semanticReviewOp from hopBody to op.retry — Cost: $1.1227
 [2026-05-08T02:08:30.753Z] US-005c — PASSED — Flip adversarialReviewOp from hopBody to op.retry — Cost: $1.7493
+[2026-05-08T02:13:16.972Z] US-005d — PASSED — Delete _review-retry.ts after both review ops migrate — Cost: $0.1917
