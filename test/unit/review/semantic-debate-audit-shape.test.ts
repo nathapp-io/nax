@@ -3,11 +3,11 @@
  * ReviewFinding[] to .nax/review-audit/*.json, never raw LLMFinding[].
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DebateResult, DebateRunner } from "../../../src/debate";
 import { reviewConfigSelector } from "../../../src/config/selectors";
 import type { Finding } from "../../../src/findings";
-import type { ReviewAuditDecision } from "../../../src/runtime";
+import type { NaxRuntime, ReviewAuditDecision } from "../../../src/runtime";
 import { runSemanticDebate } from "../../../src/review/semantic-debate";
 // ReviewerSession / DialogueMessage are imported as types only — erased at
 // compile time, so leaf-path import does not fragment the module registry.
@@ -15,6 +15,12 @@ import type { DialogueMessage, ReviewerSession } from "../../../src/review/dialo
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import { makeNaxConfig, makeMockAgentManager, makeMockRuntime, captureAuditDecisions } from "../../helpers";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 const STORY: SemanticStory = {
   id: "US-001",
@@ -125,6 +131,7 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     const { auditor, decisions: captured } = captureAuditDecisions();
     decisions = captured;
     const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    createdRuntimes.push(runtime);
     const naxConfig = reviewConfigSelector.select(makeNaxConfig());
 
     await runSemanticDebate({
@@ -174,6 +181,7 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     const { auditor, decisions: captured } = captureAuditDecisions();
     decisions = captured;
     const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    createdRuntimes.push(runtime);
     const naxConfig = reviewConfigSelector.select(makeNaxConfig());
 
     await runSemanticDebate({
@@ -210,6 +218,7 @@ describe("semantic-debate reviewer audit shape (#942 AC-1 / AC-2)", () => {
     const { auditor, decisions: captured } = captureAuditDecisions();
     decisions = captured;
     const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+    createdRuntimes.push(runtime);
     const naxConfig = reviewConfigSelector.select(makeNaxConfig());
     const resolverSession = makeResolverSession(DIALOGUE_FINDINGS);
 

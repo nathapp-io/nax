@@ -1,7 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Iteration } from "../../../src/findings";
 import { makeTestRuntime } from "../../helpers";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 
 const SAMPLE_STORY = {
@@ -31,6 +38,7 @@ const SAMPLE_INPUT: SemanticReviewInput = {
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(semanticReviewOp.config) };
 }

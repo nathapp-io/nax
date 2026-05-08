@@ -1,6 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeTestRuntime } from "../../helpers";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 
 const SAMPLE_STORY = {
@@ -29,6 +36,7 @@ const SAMPLE_INPUT: AdversarialReviewInput = {
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(adversarialReviewOp.config) };
 }

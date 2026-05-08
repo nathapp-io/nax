@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { afterEach, describe, test, expect } from "bun:test";
 import { join } from "node:path";
 import { createRuntime } from "../../../src/runtime";
 import { _promptAuditorDeps } from "../../../src/runtime/prompt-auditor";
@@ -6,6 +6,13 @@ import { _costAggDeps } from "../../../src/runtime/cost-aggregator";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { makeNaxConfig, makeMockAgentManager, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 const auditEnabledConfig = makeNaxConfig({ agent: { promptAudit: { enabled: true } } });
 
@@ -99,6 +106,7 @@ describe("Wave 2 exit criteria", () => {
   test("EC-5: makeTestRuntime() creates runtime with overrideable agentManager", () => {
     const mockMgr = makeMockAgentManager();
     const rt = makeTestRuntime({ agentManager: mockMgr });
+    createdRuntimes.push(rt);
     expect(rt.agentManager).toBe(mockMgr);
     expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
   });

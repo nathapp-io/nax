@@ -1,6 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
@@ -15,6 +22,7 @@ const SAMPLE_INPUT: AcceptanceRefineInput = {
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceRefineOp.config) };
 }
@@ -39,6 +47,7 @@ describe("acceptanceRefineOp shape", () => {
       },
     });
     const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceRefineOp.config) };
 

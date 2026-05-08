@@ -12,12 +12,19 @@
  *   3. Agent returns conversational stdout, no file written → verify returns null
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { acceptanceGenerateOp, callOp } from "../../../src/operations";
 import type { AcceptanceGenerateInput, CallContext } from "../../../src/operations";
 import { makeMockAgentManager, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 const REAL_TEST_CODE = `import { describe, test, expect } from "bun:test";
 describe("test-feature - Acceptance Tests", () => {
@@ -50,6 +57,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
+      createdRuntimes.push(runtime);
       const ctx: CallContext = {
         runtime,
         packageView: runtime.packages.repo(),
@@ -84,6 +92,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
         },
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
+      createdRuntimes.push(runtime);
       const ctx: CallContext = {
         runtime,
         packageView: runtime.packages.repo(),
@@ -113,6 +122,7 @@ describe("acceptanceGenerateOp.verify — agent-file recovery (bug #774)", () =>
         runWithFallbackFn: async (_req) => ({ result: { success: true, exitCode: 0, output: CONVERSATIONAL_OUTPUT, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
       });
       const runtime = makeTestRuntime({ agentManager, workdir: dir });
+      createdRuntimes.push(runtime);
       const ctx: CallContext = {
         runtime,
         packageView: runtime.packages.repo(),

@@ -6,13 +6,20 @@
  * and truncation detection through the RetryContext.lastOutput path.
  */
 
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import * as loggerModule from "../../../src/logger";
 import { ParseValidationError } from "../../../src/agents/retry/types";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewConfig } from "../../../src/review/types";
 import type { SemanticStory } from "../../../src/review/types";
 import { makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -60,6 +67,7 @@ function makeLogger() {
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
 }

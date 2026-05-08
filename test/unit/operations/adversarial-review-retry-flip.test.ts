@@ -13,7 +13,7 @@
 
 /* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
 
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as loggerModule from "../../../src/logger";
 import type { AgentRunRequest } from "../../../src/agents";
 import { ParseValidationError } from "../../../src/agents/retry/types";
@@ -21,6 +21,13 @@ import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -52,6 +59,7 @@ const VALID_JSON_OUTPUT = JSON.stringify({ passed: true, findings: [] });
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
 }
@@ -235,6 +243,7 @@ describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
     });
 
     const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
 
     const originalParse = adversarialReviewOp.parse;
     (adversarialReviewOp as any).parse = () => {

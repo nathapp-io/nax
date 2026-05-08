@@ -1,9 +1,10 @@
-import { describe, test, expect } from "bun:test";
+import { afterEach, describe, test, expect } from "bun:test";
 import path from "node:path";
 import { createRuntime } from "../../../src/runtime";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
 import { globalConfigDir } from "../../../src/config/paths";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
 
 describe("createRuntime", () => {
   test("runtime has required fields", () => {
@@ -246,8 +247,15 @@ describe("createRuntime outputDir", () => {
 });
 
 describe("makeTestRuntime", () => {
+  const blockRuntimes: NaxRuntime[] = [];
+  afterEach(async () => {
+    await Promise.allSettled(blockRuntimes.map((r) => r.close()));
+    blockRuntimes.length = 0;
+  });
+
   test("produces a valid NaxRuntime with defaults", () => {
     const rt = makeTestRuntime();
+    blockRuntimes.push(rt);
     expect(rt.configLoader).toBeDefined();
     expect(rt.agentManager).toBeDefined();
     expect(rt.packages.repo().packageDir).toBe("");
@@ -255,11 +263,13 @@ describe("makeTestRuntime", () => {
 
   test("accepts config override", () => {
     const rt = makeTestRuntime({ workdir: "/tmp/custom" });
+    blockRuntimes.push(rt);
     expect(rt.workdir).toBe("/tmp/custom");
   });
 
   test("makeTestRuntime produces runtime with runId", () => {
     const rt = makeTestRuntime();
+    blockRuntimes.push(rt);
     expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

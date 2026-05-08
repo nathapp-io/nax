@@ -1,10 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { AgentRunRequest } from "../../../src/agents";
 import { pickSelector } from "../../../src/config";
 import type { DEFAULT_CONFIG } from "../../../src/config";
 import { callOp } from "../../../src/operations/call";
 import type { HopBodyContext, RunOperation } from "../../../src/operations/types";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+let runtime: NaxRuntime | undefined;
+afterEach(async () => { await runtime?.close(); });
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -38,7 +42,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const result = await callOp(
       {
@@ -72,7 +76,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithUndefinedRetryResolver: RunOperation<
       { text: string },
@@ -118,7 +122,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithResolverTracking: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -166,7 +170,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithBothFields: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -219,7 +223,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithHopBodyOnly: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -257,7 +261,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithRetry: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -294,7 +298,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithTransportFailure: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -341,7 +345,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const infiniteRetryStrategy = {
       shouldRetry: () => ({ retry: true, delayMs: 0 }) as const,
@@ -399,7 +403,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithParseRetry: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -446,7 +450,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithCostAccumulation: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -489,7 +493,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const fallbackValue = { passed: true, findings: [], failOpen: true };
 
@@ -549,7 +553,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager, parentSignal: abortController.signal });
+    runtime = makeTestRuntime({ agentManager, sessionManager, parentSignal: abortController.signal });
 
     let retryCount = 0;
     const alwaysRetry = {
@@ -607,7 +611,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const retryStrategy = makeParseRetryStrategy({
       validate: (parsed) => parsed !== null && typeof parsed === "object" && "status" in (parsed as object),

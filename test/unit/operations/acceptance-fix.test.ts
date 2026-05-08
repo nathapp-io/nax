@@ -1,6 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceFixSourceInput, AcceptanceFixTestInput } from "../../../src/operations/acceptance-fix";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "../../../src/operations/acceptance-fix";
 
 const SOURCE_INPUT: AcceptanceFixSourceInput = {
@@ -18,12 +25,14 @@ const TEST_INPUT: AcceptanceFixTestInput = {
 
 function makeSourceCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceFixSourceOp.config) };
 }
 
 function makeTestCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceFixTestOp.config) };
 }
@@ -58,6 +67,7 @@ describe("acceptanceFixSourceOp shape", () => {
       },
     });
     const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceFixSourceOp.config) };
 
@@ -129,6 +139,7 @@ describe("acceptanceFixTestOp shape", () => {
       },
     });
     const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceFixTestOp.config) };
 

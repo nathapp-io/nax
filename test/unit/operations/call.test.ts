@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test";
+import { afterEach, describe, test, expect, mock } from "bun:test";
 import { callOp } from "../../../src/operations/call";
 import type { CompleteOperation, RunOperation } from "../../../src/operations/types";
 import { pickSelector } from "../../../src/config";
@@ -6,6 +6,10 @@ import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../..
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { CompleteResult, TurnResult } from "../../../src/agents/types";
 import type { RetryPreset } from "../../../src/agents/retry";
+import type { NaxRuntime } from "../../../src/runtime";
+
+let runtime: NaxRuntime | undefined;
+afterEach(async () => { await runtime?.close(); });
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -62,7 +66,7 @@ describe("callOp — kind:complete", () => {
   test("calls agentManager.completeAs with composed prompt", async () => {
     const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
-    const runtime = makeTestRuntime({ agentManager });
+    runtime = makeTestRuntime({ agentManager });
 
     const ctx = {
       runtime,
@@ -80,7 +84,7 @@ describe("callOp — kind:complete", () => {
   test("passes op timeoutMs to completeAs", async () => {
     const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
-    const runtime = makeTestRuntime({ agentManager });
+    runtime = makeTestRuntime({ agentManager });
 
     await callOp(
       {
@@ -102,7 +106,7 @@ describe("callOp — kind:complete", () => {
   test("throws CALL_OP_INVALID_TIMEOUT on non-positive timeoutMs", async () => {
     const completeResult: CompleteResult = { output: "echoed", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
-    const runtime = makeTestRuntime({ agentManager });
+    runtime = makeTestRuntime({ agentManager });
 
     await expect(
       callOp(
@@ -128,7 +132,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const result = await callOp(
       {
@@ -163,7 +167,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const noFallbackOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -196,7 +200,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     let thrown: Error | null = null;
     try {
@@ -235,7 +239,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     await callOp(
       {
@@ -271,7 +275,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     await expect(
       callOp(
@@ -299,7 +303,7 @@ describe("callOp — op.model resolver (issue #725)", () => {
   test("CompleteOperation: literal model is forwarded to completeAs.model", async () => {
     const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
-    const runtime = makeTestRuntime({ agentManager });
+    runtime = makeTestRuntime({ agentManager });
 
     const opWithLiteralModel: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...echoOp,
@@ -326,7 +330,7 @@ describe("callOp — op.model resolver (issue #725)", () => {
   test("CompleteOperation: resolver function is invoked with input and resolves to ConfiguredModel", async () => {
     const completeResult: CompleteResult = { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
     const agentManager = makeMockAgentManager({ completeAsFn: async () => completeResult });
-    const runtime = makeTestRuntime({ agentManager });
+    runtime = makeTestRuntime({ agentManager });
 
     const resolverCalls: Array<{ text: string }> = [];
     const opWithResolver: CompleteOperation<
@@ -373,7 +377,7 @@ describe("callOp — op.model resolver (issue #725)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithUndefinedResolver: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -415,7 +419,7 @@ describe("callOp — op.model resolver (issue #725)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithFastResolver: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       ...runEchoOp,
@@ -451,7 +455,7 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithBoth: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       kind: "run",
@@ -495,7 +499,7 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithHopBody: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       kind: "run",
@@ -536,7 +540,7 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opWithRetry: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
       kind: "run",
@@ -576,7 +580,7 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const result = await callOp(
       {
