@@ -1,4 +1,5 @@
 import type { AdapterFailure } from "../../context/engine";
+import { getSafeLogger } from "../../logger";
 import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
 
 /**
@@ -12,6 +13,12 @@ import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
  * - Stops consulting after the first match (no delay-merging, no decision-merging).
  */
 export function composeRetry(strategies: readonly RetryStrategy[]): RetryStrategy {
+  if (strategies.length === 0) {
+    getSafeLogger()?.debug(
+      "retry",
+      "composeRetry called with empty strategies array — will always return { retry: false }",
+    );
+  }
   return {
     shouldRetry(failure: AdapterFailure | Error, attempt: number, ctx: RetryContext): RetryDecision {
       for (const strategy of strategies) {

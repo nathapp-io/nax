@@ -157,6 +157,8 @@ exhaustedFallback: (lastOutput) =>
 
 Custom `RetryStrategy` implementations can also set `fallback` on their `{ retry: false }` decision — `callOp` reads it regardless of which strategy produced it.
 
+**Success-path cost:** When parse succeeds after one or more retries, `accumulatedRunCostUsd` is **not** merged into `O`. Cost across all attempts flows through the middleware layer (AgentManager audit), not via op output. The `{ retry: false }` path sets cost on `lastTurnResult.estimatedCostUsd`; the `fallback` path merges it explicitly. The success path does not — this is intentional.
+
 ## `ParseValidationError` discrimination
 
 Strategies that handle validation-style failures (JSON parse, schema mismatch) discriminate via `instanceof ParseValidationError`. Strategies that handle transport failures (network timeout, connection reset) ignore this check.

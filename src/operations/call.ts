@@ -210,6 +210,23 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     storyId: ctx.storyId,
   };
 
+  // Shared hop-callback context — everything except the per-attempt runOptions and hopBody.
+  const hopCtx = {
+    sessionManager: ctx.runtime.sessionManager,
+    agentManager: ctx.runtime.agentManager,
+    story,
+    config,
+    projectDir: ctx.runtime.projectDir,
+    featureName: ctx.featureName ?? "",
+    workdir: ctx.packageDir,
+    effectiveTier,
+    defaultAgent,
+    pipelineStage: op.stage,
+  };
+
+  // makeRunHop builds a retry hop (no hopBody — mutually exclusive with op.retry).
+  const makeRunHop = (opts: typeof runOptions) => buildHopCallback(hopCtx, undefined, opts);
+
   // Always dispatch through the real AgentManager so middleware (audit, cost,
   // cancellation, logging) fires uniformly. `noFallback: true` short-circuits
   // the swap branch in runWithFallback (manager.ts) — single-agent semantics
@@ -223,16 +240,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // the body's `ctx.input` — the cast only re-types the parameter.
   const executeHop = buildHopCallback(
     {
-      sessionManager: ctx.runtime.sessionManager,
-      agentManager: ctx.runtime.agentManager,
-      story,
-      config,
-      projectDir: ctx.runtime.projectDir,
-      featureName: ctx.featureName ?? "",
-      workdir: ctx.packageDir,
-      effectiveTier,
-      defaultAgent,
-      pipelineStage: op.stage,
+      ...hopCtx,
       ...(runOp.hopBody && {
         hopBody: ((initialPrompt: string, bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown }) =>
           runOp.hopBody?.(initialPrompt, { send: bodyCtx.send, input: bodyCtx.input as I })) as NonNullable<
@@ -254,27 +262,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   let accumulatedRunCostUsd = 0;
   while (runAttempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
     const currentRunOptions = runAttempt === 0 ? runOptions : { ...runOptions, prompt: currentRunPrompt };
-    // hopBody and retry are mutually exclusive (guard above threw if both set), so the
-    // retry-loop hop needs no hopBody wiring — just a fresh callback with the updated prompt.
-    const currentExecuteHop =
-      runAttempt === 0
-        ? executeHop
-        : buildHopCallback(
-            {
-              sessionManager: ctx.runtime.sessionManager,
-              agentManager: ctx.runtime.agentManager,
-              story,
-              config,
-              projectDir: ctx.runtime.projectDir,
-              featureName: ctx.featureName ?? "",
-              workdir: ctx.packageDir,
-              effectiveTier,
-              defaultAgent,
-              pipelineStage: op.stage,
-            },
-            undefined,
-            currentRunOptions,
-          );
+    const currentExecuteHop = runAttempt === 0 ? executeHop : makeRunHop(currentRunOptions);
 
     // Transport failures from runWithFallback propagate — op.retry does not handle them.
     const outcome = await ctx.runtime.agentManager.runWithFallback(
@@ -316,7 +304,10 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         estimatedCostUsd: accumulatedRunCostUsd,
         internalRoundTrips: outcome.result.internalRoundTrips ?? 0,
       };
-      const parseValidationError = new ParseValidationError(`[${op.name}] parse failed: ${errorMessage(parseErr)}`);
+      const parseValidationError =
+        parseErr instanceof ParseValidationError
+          ? parseErr
+          : new ParseValidationError(`[${op.name}] parse failed: ${errorMessage(parseErr)}`);
       const retryCtx = {
         site: "run" as const,
         agentName: dispatchAgent,
@@ -353,6 +344,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       runAttempt++;
       continue;
     }
+    // accumulatedRunCostUsd is not merged into O on the success path — cost flows
+    // through the middleware layer (AgentManager audit), not via op output.
     return await runPostParse(op, parsedRun, input, buildCtx);
   }
 
