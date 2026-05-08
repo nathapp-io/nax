@@ -29,6 +29,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | `join(homedir(), ".nax", ...)` / `path.join(os.homedir(), ".nax", ...)` outside `src/config/paths.ts` | `globalConfigDir()`, `getRunsDir()`, `getEventsRootDir()`, runtime path helpers | Hardcoding the real home-scoped `.nax` path bypasses test isolation and caused pollution under `~/.nax/nax-*-test-*`. Enforced by `scripts/check-no-real-global-nax.ts`. |
 | Manual disk-recovery ladder in pipeline stages after `callOp` (reading disk to recover null/empty parse output — Tier-1/2/3 patterns) | Declare `verify`/`recover` on the op | Recovery logic belongs with the op (one place to maintain), not duplicated in every stage that calls it. ADR-020 §D4. |
 | Passing `undefined` (or omitting) `onPidSpawned` when constructing an ACP client / opening a session / building `AgentRunOptions` / `CompleteOptions` | Forward the runtime's callback: `onPidSpawned: ctx.runtime.onPidSpawned` (ops via `callOp`) or `(pid) => pidRegistry.register(pid)` (pipeline stages with direct registry access) | Untracked acpx subprocesses orphan past run teardown — Ctrl+C leaves zombie acpx + agent server processes. Issue #792, commit `e65e78b9`. |
+| New `HopBody` parse-retry implementations (handling parse failures via multi-turn session callbacks) | `op.retry` with `makeParseRetryStrategy` | HopBody is for genuine multi-turn interactions, not failure recovery. Parse retries belong in `op.retry` which uses `RetryStrategy` — consolidated framework (issue #856). |
 
 ## Prompt Builder Convention
 

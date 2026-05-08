@@ -67,9 +67,85 @@ retry: {
 
 Lives in `src/agents/retry/default-strategy.ts`. Fires **only** on `fail-rate-limit` outcome; all other failures pass through immediately. Backoff: `2^(attempt+1) * 1000` ms — 2s, 4s, 8s across 3 retries. Injected into `AgentManager` via the constructor; tests override via `_agentManagerDeps.sleep` + a custom strategy.
 
-## What NOT to convert to RetryStrategy
+## `composeRetry` vs. single-strategy escalation
 
-`HopBody` callbacks on `RunOperation` are multi-turn session continuations, not single-call retries. Do not express them as `RetryStrategy`. They stay as `hopBody` on `RunOperation` (site outside callOp's retry path).
+Use `composeRetry([...])` when different failure types each have independent logic:
+
+```typescript
+// ✅ Different failure types, each with own logic
+retry: composeRetry([
+  parseRetry,           // Handles parse errors with internal JSON extraction
+  transientNetworkRetry // Handles connection timeouts with exponential backoff
+])
+```
+
+Use a single strategy with `attempt`-based branching when the same failure type needs escalation:
+
+```typescript
+// ✅ Same failure type, escalating attempts
+retry: {
+  shouldRetry(failure, attempt, ctx) {
+    if (attempt >= 3) return { retry: false };
+    // All retries use same logic; escalation is implicit in attempt count
+    if (failure instanceof Error && failure.message.includes("timeout")) {
+      return { retry: true, delayMs: 1000 * Math.pow(2, attempt) };
+    }
+    return { retry: false };
+  },
+}
+```
+
+**Manager-tier concerns:** `fail-rate-limit` and `fail-stale` are universal infrastructure concerns handled by `defaultRetryStrategy` at the manager tier. Op-tier strategies MUST NOT handle these — doing so causes double-retry (op retries, then manager retries again) and confuses failure attribution. If an op-tier strategy needs to handle rate-limits, it is a sign that the concern should move to `defaultRetryStrategy` or be routed through it.
+
+## `HopBody` vs. `op.retry` distinction
+
+- **`HopBody`** — Multi-turn session continuations. Used when the operation genuinely needs multiple agent turns that are NOT failure reactions. Example: an interactive discovery flow where each turn refines understanding (not a retry). These are NOT retries and should not use `RetryStrategy`.
+- **`op.retry`** — Single-turn, retry-on-failure. Used when a call can fail and needs another attempt with a (possibly different) prompt. This is where `RetryStrategy` and `composeRetry` apply.
+
+## Parse-retry-internal-parser convention
+
+`makeParseRetryStrategy` strategies parse output internally (default: `tryParseLLMJson`). Strategies do NOT receive `lastParsed` from `callOp` because parsing is operation- and strategy-specific. `callOp` passes only `lastOutput`, and the strategy decides whether to re-parse, re-format, or change the prompt.
+
+Example usage on a `RunOperation`:
+
+```typescript
+import { makeParseRetryStrategy } from "../agents/retry";
+
+export const exampleRunOp = new RunOperation({
+  name: "example-run",
+  build: (input, ctx) => ({
+    prompt: "...",
+    retry: makeParseRetryStrategy({
+      maxAttempts: 3,
+      parser: (output) => {
+        // Custom parser — if this throws, strategy retries with nextPrompt
+        return JSON.parse(output);
+      },
+      nextPrompt: (lastOutput, lastError) => 
+        `Previous output: ${lastOutput}\nError: ${lastError.message}\n\nPlease fix and re-format as valid JSON.`,
+    }),
+  }),
+  // ...
+});
+```
+
+## `ParseValidationError` discrimination
+
+Strategies that handle validation-style failures (JSON parse, schema mismatch) discriminate via `instanceof ParseValidationError`. Strategies that handle transport failures (network timeout, connection reset) ignore this check.
+
+```typescript
+// ✅ Distinguishing validation vs. transport failures
+shouldRetry(failure, attempt, ctx) {
+  if (failure instanceof ParseValidationError) {
+    // JSON parse failed — potentially fixable with prompt adjustment
+    if (attempt < 3) return { retry: true, delayMs: 500 };
+  } else if (failure instanceof Error && failure.message.includes("ECONNRESET")) {
+    // Network failure — use longer backoff
+    if (attempt < 5) return { retry: true, delayMs: 2000 * Math.pow(2, attempt) };
+  }
+  return { retry: false };
+}
+```
 
 ## `routing.llm.retries` / `retryDelayMs` — deprecation bridge
 
