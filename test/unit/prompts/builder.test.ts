@@ -338,6 +338,35 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(constitutionIdx).toBeLessThan(storyIdx);
     expect(storyIdx).toBeLessThan(conventionsIdx);
   });
+
+  test("single-story prompt repeats acceptance criteria in the final reminder", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["UNIQUE_TOP_AND_BOTTOM_AC_ONE", "UNIQUE_TOP_AND_BOTTOM_AC_TWO"],
+    });
+    const prompt = await PromptBuilder.for("tdd-simple").story(story).build();
+
+    for (const criterion of story.acceptanceCriteria) {
+      expect(prompt.indexOf(criterion)).toBeGreaterThanOrEqual(0);
+      expect(prompt.lastIndexOf(criterion)).toBeGreaterThan(prompt.indexOf(criterion));
+    }
+  });
+
+  test("story reminder remains the final prompt section", async () => {
+    const criterion = "UNIQUE_FINAL_REMINDER_AC";
+    const prompt = await PromptBuilder.for("tdd-simple")
+      .story(makeStory({ acceptanceCriteria: [criterion] }))
+      .constitution("REMINDER_ORDER_CONSTITUTION")
+      .context("REMINDER_ORDER_CONTEXT")
+      .hermeticConfig({ hermetic: true })
+      .build();
+
+    const conventionsIdx = prompt.lastIndexOf("conventions");
+    const finalCriterionIdx = prompt.lastIndexOf(criterion);
+
+    expect(conventionsIdx).toBeGreaterThanOrEqual(0);
+    expect(finalCriterionIdx).toBeGreaterThan(conventionsIdx);
+    expect(prompt.trim().endsWith("<!-- END USER-SUPPLIED DATA -->")).toBe(true);
+  });
 });
 
 describe("src/prompts/types exports — tdd-simple", () => {
@@ -433,6 +462,13 @@ describe("PromptBuilder — batch role: build()", () => {
   test("includes test framework hint from testCommand in role-task section", async () => {
     const prompt = await PromptBuilder.for("batch").stories(batchStories).testCommand("pytest").build();
     expect(prompt).toContain("pytest");
+  });
+
+  test("does not add a single-story reminder", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+
+    expect(prompt).not.toContain("Your task is to implement the story below");
+    expect(prompt).not.toContain("mirrored acceptance criterion");
   });
 });
 
