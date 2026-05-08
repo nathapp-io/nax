@@ -15,6 +15,7 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
+import { reviewOrchestrator } from "../review/orchestrator";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
@@ -127,6 +128,7 @@ export async function runIteration(
       });
     } catch (error) {
       markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
+      reviewOrchestrator.clearStory(story.id);
       await savePRD(prd, ctx.prdPath);
       try {
         await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, story.id);

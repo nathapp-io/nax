@@ -110,8 +110,9 @@ describe("semanticReviewOp.build() — priorSemanticIterations", () => {
     };
     const result = semanticReviewOp.build(inputWithIterations, ctx);
     expect(result.task.content).toContain("## Prior Iterations — verdict required before new analysis");
-    expect(result.task.content).toContain("| 1 |");
-    expect(result.task.content).toContain("partial");
+    expect(result.task.content).toContain("### Round 1 — outcome: partial");
+    // Finding text rendered verbatim
+    expect(result.task.content).toContain("handler not wired");
   });
 
   test("omits prior iterations block when priorSemanticIterations is undefined", () => {

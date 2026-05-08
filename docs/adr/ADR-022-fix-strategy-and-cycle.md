@@ -8,6 +8,8 @@
 **Related:** ADR-006 (Acceptance Retry Loop Restructure — superseded in part by phase 4 of this ADR)
 
 > **Implementation status (2026-05-04):** All 8 phases shipped. `acceptance.fix.cycleV2` and `quality.autofix.cycleV2` flags skipped — both cycles cut over directly. `runAgentRectification` re-exports `runAgentRectificationV2` from `src/pipeline/stages/autofix-cycle.ts`. Acceptance enters `runFixCycle` from `runAcceptanceLoop` after the stub-regen prelude. Carry-forward via `buildPriorIterationsBlock` is wired into review-builder, adversarial-review-builder, and acceptance-loop.
+>
+> **Amendment (2026-05-08, issue #736 Patches A + B):** The `buildPriorIterationsBlock` output was extended from a count-summary table to verdict-bound finding text (message, file:line, suggestion, acQuote) with a mandatory `addressed / still-blocking / never-an-issue` verdict template and a 6000-char token guard. Concurrently, the prior-iterations lifetime was moved from `PipelineContext` (attempt-scoped) to per-story maps on the `ReviewOrchestrator` singleton (run-scoped), so carry-forward survives "agent gave up" + fresh context recreation within a run. See [docs/findings/2026-05-08-issue-736-3.1-followup-plan.md](../findings/2026-05-08-issue-736-3.1-followup-plan.md).
 
 ---
 
@@ -269,15 +271,23 @@ Mirrors `quality.autofix.{maxAttempts, maxTotalAttempts}` ([autofix-agent.ts:96-
 
 ### 8. Shared `buildPriorIterationsBlock` prompt helper
 
-Verdict-first table consumed by all rectifier-class prompts:
+Verdict-first block consumed by all rectifier-class prompts. **Amended 2026-05-08** (issue #736 Patch A): the original count-summary table was replaced with rich finding text so reviewers can judge whether prior findings were addressed. A 6000-char token guard collapses rounds older than the last two to one-liners when the block would overflow.
 
 ```
 ## Prior Iterations — verdict required before new analysis
 
-| # | Strategies run                                | Files touched                  | Outcome    | Findings before → after   |
-|---|-----------------------------------------------|--------------------------------|------------|---------------------------|
-| 1 | acceptance-test-fix                           | .nax-acceptance.test.ts        | unchanged  | 1 [stdout-capture] → 1 [stdout-capture] |
-| 2 | acceptance-test-fix                           | .nax-acceptance.test.ts        | unchanged  | 1 [stdout-capture] → 1 [stdout-capture] |
+### Round 1 — outcome: unchanged (0 → 1)
+Findings flagged previously:
+1. [error / test-gap] src/handler.ts:42
+   Message: AC8 mock never invoked in test
+   Suggestion: Add a spy on the mock and assert it was called
+   acQuote: "AC8: mock adapter must be invoked for every call"
+
+**Required:** before adding any new finding, classify each of the 1 prior finding(s) above as one of:
+- `addressed` — the current diff resolves it (cite the diff line that fixes it in your `message` field)
+- `still-blocking` — the implementer did not fix it; re-flag it with the IDENTICAL `file`, `line`, `category`, and substantively the same `message` wording
+- `never-an-issue` — your prior judgment was wrong; explain why in `message` and emit severity `"info"`
+Then surface any genuinely new findings.
 
 When outcome is "unchanged", the prior hypothesis is FALSIFIED — the change did
 not affect what was tested. Choose a different category before producing a new
@@ -352,7 +362,7 @@ Bail events emit `"cycle exited"` with the same shape plus `reason` and (when ap
 
 ## Audit logging
 
-Cycle iteration history stays **ephemeral by default** — `Iteration<F>[]` lives in memory in the cycle's owning context, used for prompt carry-forward via `buildPriorIterationsBlock` and discarded at end of run.
+Cycle iteration history stays **ephemeral by default** — `Iteration<F>[]` lives in memory and is discarded at end of run. **Amended 2026-05-08 (Patch B):** for the review subsystem, history is held in per-story maps on the `ReviewOrchestrator` singleton (`priorAdversarialByStory`, `priorSemanticByStory`) rather than on `PipelineContext`, so it survives "agent gave up" + fresh context recreation within the same run. Maps are cleared per-story on pass/terminal-fail via `clearStory(storyId)`, and fully reset at run end via `reset()`.
 
 Forensic post-mortem persistence (writing iteration history to `.nax/cycle-history/<cycleId>.jsonl` for after-the-fact debugging) is deferred to the broader audit redesign tracked in [docs/findings/2026-04-30-context-curator-design.md](../findings/2026-04-30-context-curator-design.md). The shape is already well-defined here; the persistence policy and storage location belong with the broader audit work.
 

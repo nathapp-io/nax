@@ -114,8 +114,9 @@ describe("adversarialReviewOp.build()", () => {
     };
     const result = adversarialReviewOp.build(inputWithPrior, ctx);
     expect(result.task.content).toContain("## Prior Iterations — verdict required before new analysis");
-    expect(result.task.content).toContain("source-fix");
-    expect(result.task.content).toContain("partial");
+    expect(result.task.content).toContain("### Round 1 — outcome: partial");
+    // Finding text rendered verbatim
+    expect(result.task.content).toContain("Silent catch block");
   });
 
   test("task content has no prior iterations block when priorAdversarialIterations is absent", () => {

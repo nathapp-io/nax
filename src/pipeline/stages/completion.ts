@@ -20,6 +20,7 @@ import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
 import { countStories, markStoryPassed, savePRD } from "../../prd";
+import { reviewOrchestrator } from "../../review/orchestrator";
 import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -68,6 +69,7 @@ export const completionStage: PipelineStage = {
     // Mark all stories in batch as passed
     for (const completedStory of ctx.stories) {
       markStoryPassed(ctx.prd, completedStory.id);
+      reviewOrchestrator.clearStory(completedStory.id);
 
       const costPerStory = sessionCost / ctx.stories.length;
       logger.info("completion", "Story passed", {
