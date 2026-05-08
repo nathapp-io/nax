@@ -8,3 +8,4 @@
 [2026-05-08T02:08:30.753Z] US-005c — PASSED — Flip adversarialReviewOp from hopBody to op.retry — Cost: $1.7493
 [2026-05-08T02:13:16.972Z] US-005d — PASSED — Delete _review-retry.ts after both review ops migrate — Cost: $0.1917
 [2026-05-08T02:24:33.966Z] US-006 — PASSED — Update retry-strategy and forbidden-patterns rules for consolidated framework — Cost: $0.1288
+[2026-05-08T02:49:10.120Z] US-007 — PASSED — Ban op.hopBody + op.retry coexistence on RunOperation — Cost: $0.5943

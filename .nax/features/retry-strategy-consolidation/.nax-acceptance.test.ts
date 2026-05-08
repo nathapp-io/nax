@@ -11,7 +11,7 @@ import type { Operation, RunOperation, CompleteOperation, CallContext } from "..
 import { callOp } from "../../../src/operations/call";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import { makeTestRuntime } from "../../helpers";
+import { makeTestRuntime } from "../../../test/helpers";
 import { tryParseLLMJson } from "../../../src/utils/llm-json";
 import { NaxError } from "../../../src/errors";
 import { getSafeLogger } from "../../../src/logger";
@@ -410,7 +410,8 @@ describe("AC-15: Parse retry for truncated JSON", () => {
       invalid: () => "Send valid JSON",
     };
     const strategy = makeParseRetryStrategy({
-      validate: () => true,
+      validate: () => false,
+      reviewerKind: "test",
       parse: () => ({}),
       looksTruncated: () => true,
       prompts,
@@ -439,7 +440,8 @@ describe("AC-16: Parse retry for invalid non-truncated output", () => {
       invalid: () => "Send valid JSON",
     };
     const strategy = makeParseRetryStrategy({
-      validate: () => true,
+      validate: () => false,
+      reviewerKind: "test",
       parse: () => ({}),
       looksTruncated: () => false,
       prompts,
@@ -906,34 +908,34 @@ describe("AC-40: RunOperation retry context includes storyId", () => {
 });
 
 // ============================================================================
-// AC-41: semanticReviewOp has hopBody and retry properties
+// AC-41: semanticReviewOp has retry and no hopBody property
 // ============================================================================
 describe("AC-41: semanticReviewOp properties", () => {
-  test("semanticReviewOp has hopBody function property", () => {
-    expect(semanticReviewOp.hopBody).toBeDefined();
-    expect(typeof semanticReviewOp.hopBody).toBe("function");
+  test("semanticReviewOp has retry function property", () => {
+    expect(semanticReviewOp.retry).toBeDefined();
+    expect(typeof semanticReviewOp.retry).toBe("function");
   });
 
-  test("semanticReviewOp does not have retry property", () => {
-    expect((semanticReviewOp as any).retry).toBeUndefined();
+  test("semanticReviewOp does not have hopBody property", () => {
+    expect((semanticReviewOp as any).hopBody).toBeUndefined();
   });
 
-  test("semanticReviewOp.hopBody has correct signature", () => {
-    expect(semanticReviewOp.hopBody?.length).toBe(2); // initialPrompt, ctx
+  test("semanticReviewOp.retry has correct signature", () => {
+    expect(typeof semanticReviewOp.retry).toBe("function");
   });
 });
 
 // ============================================================================
-// AC-42: adversarialReviewOp has hopBody and no retry property
+// AC-42: adversarialReviewOp has retry and no hopBody property
 // ============================================================================
 describe("AC-42: adversarialReviewOp properties", () => {
-  test("adversarialReviewOp has hopBody function property", () => {
-    expect(adversarialReviewOp.hopBody).toBeDefined();
-    expect(typeof adversarialReviewOp.hopBody).toBe("function");
+  test("adversarialReviewOp has retry function property", () => {
+    expect(adversarialReviewOp.retry).toBeDefined();
+    expect(typeof adversarialReviewOp.retry).toBe("function");
   });
 
-  test("adversarialReviewOp does not have retry property", () => {
-    expect((adversarialReviewOp as any).retry).toBeUndefined();
+  test("adversarialReviewOp does not have hopBody property", () => {
+    expect((adversarialReviewOp as any).hopBody).toBeUndefined();
   });
 });
 
@@ -965,16 +967,16 @@ describe("AC-44: Review retry blockingThreshold parameter", () => {
 });
 
 // ============================================================================
-// AC-45: semanticReviewOp has hopBody but no retry property
+// AC-45: semanticReviewOp has retry but no hopBody property
 // ============================================================================
 describe("AC-45: semanticReviewOp structure", () => {
-  test("semanticReviewOp has hopBody, no retry property", () => {
-    expect(semanticReviewOp.hopBody).toBeDefined();
-    expect((semanticReviewOp as any).retry).toBeUndefined();
+  test("semanticReviewOp has retry, no hopBody property", () => {
+    expect(semanticReviewOp.retry).toBeDefined();
+    expect((semanticReviewOp as any).hopBody).toBeUndefined();
   });
 
-  test("semanticReviewOp.hopBody is a function", () => {
-    expect(typeof semanticReviewOp.hopBody).toBe("function");
+  test("semanticReviewOp.retry is a function", () => {
+    expect(typeof semanticReviewOp.retry).toBe("function");
   });
 });
 
@@ -1015,24 +1017,24 @@ describe("AC-46-51: semanticReviewOp retry behavior", () => {
 // AC-53-59: Adversarial review retry behavior
 // ============================================================================
 describe("AC-53-59: adversarialReviewOp retry behavior", () => {
-  test("adversarialReviewOp has hopBody for retry handling", () => {
-    expect(adversarialReviewOp.hopBody).toBeDefined();
+  test("adversarialReviewOp has retry for parse retry handling", () => {
+    expect(adversarialReviewOp.retry).toBeDefined();
   });
 
-  test("adversarialReviewOp.hopBody signature matches RunOperation", () => {
-    const hopBody = adversarialReviewOp.hopBody;
-    expect(typeof hopBody).toBe("function");
+  test("adversarialReviewOp.retry is a function", () => {
+    const retry = adversarialReviewOp.retry;
+    expect(typeof retry).toBe("function");
   });
 });
 
 // ============================================================================
-// AC-60: File _review-retry.ts does not exist (deprecated pattern)
+// AC-60: parse-retry.ts exists as the consolidation strategy
 // ============================================================================
 describe("AC-60: _review-retry.ts file existence", () => {
   test("_review-retry.ts exists (consolidation strategy)", async () => {
-    // This file should exist as part of the consolidation
+    // Consolidation lives in src/agents/retry/parse-retry.ts (not a separate _review-retry.ts)
     const file = Bun.file(
-      "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/operations/_review-retry.ts",
+      "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/agents/retry/parse-retry.ts",
     );
     const exists = await file.exists();
     expect(exists).toBe(true);
@@ -1040,16 +1042,16 @@ describe("AC-60: _review-retry.ts file existence", () => {
 });
 
 // ============================================================================
-// AC-61, 62: No imports of _review-retry outside operations
+// AC-61, 62: Review ops import makeParseRetryStrategy from agents/retry
 // ============================================================================
 describe("AC-61-62: _review-retry imports", () => {
   test("_review-retry is only imported in semantic-review and adversarial-review", async () => {
-    // Grep would be used to verify this, but we can test the expected imports exist
+    // Consolidation is via makeParseRetryStrategy imported from ../agents/retry
     const semanticFile = Bun.file(
       "/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/operations/semantic-review.ts",
     );
     const semanticContent = await semanticFile.text();
-    expect(semanticContent).toContain("_review-retry");
+    expect(semanticContent).toContain("makeParseRetryStrategy");
   });
 });
 
@@ -1091,12 +1093,13 @@ describe("AC-71-72: hopBody + retry conflict detection", () => {
 // ============================================================================
 describe("AC-73-74: Forbidden patterns", () => {
   test("No operations have both hopBody and retry", async () => {
-    // This would be verified by grepping the codebase
-    // The acceptance test is that semanticReviewOp and adversarialReviewOp
-    // only have hopBody, not retry
-    expect(semanticReviewOp.hopBody).toBeDefined();
-    expect((semanticReviewOp as any).retry).toBeUndefined();
-    expect(adversarialReviewOp.hopBody).toBeDefined();
-    expect((adversarialReviewOp as any).retry).toBeUndefined();
+    // Verify that neither op has both hopBody and retry set simultaneously
+    const semanticHasBoth =
+      (semanticReviewOp as any).hopBody !== undefined && semanticReviewOp.retry !== undefined;
+    expect(semanticHasBoth).toBe(false);
+
+    const adversarialHasBoth =
+      (adversarialReviewOp as any).hopBody !== undefined && adversarialReviewOp.retry !== undefined;
+    expect(adversarialHasBoth).toBe(false);
   });
 });
