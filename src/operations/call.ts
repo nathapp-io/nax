@@ -142,7 +142,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           storyId: ctx.storyId,
         });
         if (!decision.retry) throw err;
-        if (ctx.runtime.signal?.aborted) throw err;
+        if (ctx.runtime.signal?.aborted) {
+          throw new NaxError(`callOp[${op.name}]: aborted before retry`, "CALL_OP_ABORTED", {
+            stage: op.stage,
+            storyId: ctx.storyId,
+          });
+        }
         getSafeLogger()?.warn("callop", "Op retrying", {
           storyId: ctx.storyId,
           opName: op.name,
@@ -156,7 +161,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           failureMessage: errorMessage(failure),
         });
         await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
-        if (ctx.runtime.signal?.aborted) throw err;
+        if (ctx.runtime.signal?.aborted) {
+          throw new NaxError(`callOp[${op.name}]: aborted during retry sleep`, "CALL_OP_ABORTED", {
+            stage: op.stage,
+            storyId: ctx.storyId,
+          });
+        }
         attempt++;
       }
     }

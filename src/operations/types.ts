@@ -114,6 +114,11 @@ export interface HopBodyContext<I> {
    *
    * Each call to `sendWithParseRetry` has its own attempt counter and cost
    * accumulator — a body that calls it twice gets two independent retry budgets.
+   * Note that fallback and exhaustion state (`retryFallback`, `maxRetriesExceeded`,
+   * `lastRetryTurn` inside `callOp`) are tracked from the most recent call only;
+   * earlier calls' fallback values do not survive a subsequent invocation. Bodies
+   * that call `sendWithParseRetry` multiple times will see only the last call's
+   * fallback state at the outer parse layer.
    *
    * **Probe semantics:** the strategy receives a `ParseValidationError` probe on
    * every turn unconditionally — it re-parses `ctx.lastOutput` internally to
