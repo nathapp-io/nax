@@ -3,7 +3,7 @@
   "feature": "retry-strategy-consolidation",
   "branchName": "feat/retry-strategy-consolidation",
   "createdAt": "2026-05-07T00:00:00.000Z",
-  "updatedAt": "2026-05-08T01:52:41.320Z",
+  "updatedAt": "2026-05-08T02:08:32.879Z",
   "userStories": [
     {
       "id": "US-001",
@@ -312,8 +312,8 @@
       "dependencies": [
         "US-005b"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 2,
       "escalations": [],
       "routing": {
@@ -358,7 +358,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure deletion verified by build/typecheck."
+        "reasoning": "Pure deletion verified by build/typecheck.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/operations/_review-retry.ts",
@@ -367,7 +369,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0ae62c6788e2f5ac99dcb2bb19aaf70ec5f71d6d"
     },
     {
       "id": "US-006",
