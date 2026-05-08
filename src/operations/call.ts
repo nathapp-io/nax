@@ -194,7 +194,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const sessionRole = ctx.sessionOverride?.role ?? runOp.session.role;
 
   // Resolve run-kind retry strategy once before the first send.
-  // When both hopBody and retry are set, hopBody takes precedence (migration window).
+  // hopBody and retry are mutually exclusive — the guard above already threw if both are set.
   const runRetryStrategy = runOp.hopBody ? null : resolveOpRetry(runOp, input, buildCtx);
 
   const runOptions = {

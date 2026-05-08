@@ -141,14 +141,15 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   /**
    * Optional intra-hop multi-prompt body. See HopBody / HopBodyContext.
    * Used by review ops to perform a same-session JSON-parse retry.
-   * When both `hopBody` and `retry` are set, `hopBody` takes precedence.
+   * Setting both `hopBody` and `retry` is forbidden — `callOp` throws
+   * `OP_HOPBODY_RETRY_BOTH_SET` before any agent call is made.
    */
   readonly hopBody?: HopBody<I>;
   /**
    * Optional retry policy for parse-validation failures on this op.
    * Same shape as `CompleteOperation.retry` — accepts a `RetryPreset`,
-   * a `RetryStrategy`, or a resolver function. When `hopBody` is also set,
-   * `hopBody` takes precedence and `retry` is ignored.
+   * a `RetryStrategy`, or a resolver function. Setting both `hopBody` and
+   * `retry` is forbidden — `callOp` throws `OP_HOPBODY_RETRY_BOTH_SET`.
    */
   readonly retry?:
     | RetryPreset
