@@ -6,12 +6,20 @@
  * know — fallback state diverged. NaxRuntime fixes this by owning a single AgentManager
  * shared by both phases.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 describe("#523 — shared AgentManager across routing and execution via NaxRuntime", () => {
   test("markUnavailable on runtime.agentManager is visible to all consumers of the same runtime", () => {
     const rt = makeTestRuntime();
+    createdRuntimes.push(rt);
     const manager = rt.agentManager;
 
     // Simulate routing phase marking the primary agent unavailable (e.g. 401)
@@ -28,7 +36,9 @@ describe("#523 — shared AgentManager across routing and execution via NaxRunti
 
   test("two separate runtimes have independent AgentManager state", () => {
     const rt1 = makeTestRuntime();
+    createdRuntimes.push(rt1);
     const rt2 = makeTestRuntime();
+    createdRuntimes.push(rt2);
 
     rt1.agentManager.markUnavailable("claude", {
       category: "availability",
@@ -44,6 +54,7 @@ describe("#523 — shared AgentManager across routing and execution via NaxRunti
 
   test("runtime.agentManager reference is stable across the runtime lifetime", () => {
     const rt = makeTestRuntime();
+    createdRuntimes.push(rt);
     const ref1 = rt.agentManager;
     const ref2 = rt.agentManager;
     expect(ref1).toBe(ref2);

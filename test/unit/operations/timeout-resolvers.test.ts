@@ -1,13 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
+import type { NaxRuntime } from "../../../src/runtime";
+
+let runtime: NaxRuntime | undefined;
+afterEach(async () => { await runtime?.close(); });
 import { decomposeOp } from "../../../src/operations/decompose";
 import { planOp } from "../../../src/operations/plan";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 
 describe("operation timeout resolvers", () => {
   test("planOp timeoutMs resolves from plan.timeoutSeconds", () => {
-    const runtime = makeTestRuntime();
+    runtime = makeTestRuntime();
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(planOp.config) };
     const timeoutMs = planOp.timeoutMs?.(
@@ -28,7 +32,7 @@ describe("operation timeout resolvers", () => {
         model: { agent: "opencode", model: "opencode-go/kimi-k2.6" },
       },
     });
-    const runtime = makeTestRuntime({ config });
+    runtime = makeTestRuntime({ config });
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(planOp.config) };
 
@@ -46,7 +50,7 @@ describe("operation timeout resolvers", () => {
   });
 
   test("decomposeOp timeoutMs prefers plan.decomposeTimeoutSeconds", () => {
-    const runtime = makeTestRuntime();
+    runtime = makeTestRuntime();
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(decomposeOp.config) };
     const timeoutMs = decomposeOp.timeoutMs?.(
@@ -65,7 +69,7 @@ describe("operation timeout resolvers", () => {
         model: { agent: "opencode", model: "opencode-go/deepseek-v4-pro" },
       },
     });
-    const runtime = makeTestRuntime({ config });
+    runtime = makeTestRuntime({ config });
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(decomposeOp.config) };
 
@@ -81,7 +85,7 @@ describe("operation timeout resolvers", () => {
   });
 
   test("semanticReviewOp timeoutMs resolves from semanticConfig.timeoutMs input", () => {
-    const runtime = makeTestRuntime();
+    runtime = makeTestRuntime();
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(semanticReviewOp.config) };
     const timeoutMs = semanticReviewOp.timeoutMs?.(
@@ -107,7 +111,7 @@ describe("operation timeout resolvers", () => {
   });
 
   test("adversarialReviewOp timeoutMs resolves from adversarialConfig.timeoutMs input", () => {
-    const runtime = makeTestRuntime();
+    runtime = makeTestRuntime();
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(adversarialReviewOp.config) };
     const timeoutMs = adversarialReviewOp.timeoutMs?.(

@@ -1,8 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { UserStory } from "../../../src/prd/types";
 import { tryLlmBatchRoute } from "../../../src/routing/router";
 import { makeNaxConfig, makeStory } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 describe("tryLlmBatchRoute", () => {
   test("uses _deps.runtime when provided and stories need routing", async () => {
@@ -15,6 +22,7 @@ describe("tryLlmBatchRoute", () => {
     });
     const story = makeStory();
     const runtime = makeMockRuntime({ config });
+    createdRuntimes.push(runtime);
 
     const deps = {
       agentManager: undefined,
@@ -63,9 +71,11 @@ describe("tryLlmBatchRoute", () => {
     };
 
     // Even with runtime set, should return early since no routing needed
+    const inlineRuntime = makeMockRuntime({ config });
+    createdRuntimes.push(inlineRuntime);
     const deps = {
       agentManager: undefined,
-      runtime: makeMockRuntime({ config }),
+      runtime: inlineRuntime,
     };
 
     await expect(tryLlmBatchRoute(config, [story], "routing", deps)).resolves.toBeUndefined();

@@ -4,6 +4,7 @@ import type { CompleteOperation } from "../../../src/operations";
 import type { RetryPreset } from "../../../src/agents/retry";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { makeMockAgentManager, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
 import { pickSelector } from "../../../src/config";
 import type { CompleteResult } from "../../../src/agents/types";
 
@@ -24,11 +25,14 @@ const successOp: CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "
 
 // Save/restore _callOpDeps.sleep around each test
 let origSleep: typeof _callOpDeps.sleep;
+const createdRuntimes: NaxRuntime[] = [];
 beforeEach(() => {
   origSleep = _callOpDeps.sleep;
 });
-afterEach(() => {
+afterEach(async () => {
   _callOpDeps.sleep = origSleep;
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
 });
 
 describe("callOp retry loop (kind:complete)", () => {
@@ -41,6 +45,7 @@ describe("callOp retry loop (kind:complete)", () => {
       },
     });
     const runtime = makeTestRuntime({ agentManager });
+    createdRuntimes.push(runtime);
     const ctx = {
       runtime,
       packageView: runtime.packages.repo(),
@@ -67,6 +72,7 @@ describe("callOp retry loop (kind:complete)", () => {
       },
     });
     const runtime = makeTestRuntime({ agentManager });
+    createdRuntimes.push(runtime);
     const ctx = {
       runtime,
       packageView: runtime.packages.repo(),
@@ -97,6 +103,7 @@ describe("callOp retry loop (kind:complete)", () => {
       },
     });
     const runtime = makeTestRuntime({ agentManager });
+    createdRuntimes.push(runtime);
     const ctx = {
       runtime,
       packageView: runtime.packages.repo(),
@@ -127,6 +134,7 @@ describe("callOp retry loop (kind:complete)", () => {
       },
     });
     const runtime = makeTestRuntime({ agentManager });
+    createdRuntimes.push(runtime);
     const ctx = {
       runtime,
       packageView: runtime.packages.repo(),

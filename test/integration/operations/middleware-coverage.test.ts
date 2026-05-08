@@ -14,7 +14,7 @@
  * test/unit/runtime/middleware/{audit,cost,logging}.test.ts.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager } from "../../../src/agents/manager";
 import type { SessionHandle, TurnResult } from "../../../src/agents/types";
 import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
@@ -22,6 +22,13 @@ import { callOp } from "../../../src/operations/call";
 import type { RunOperation } from "../../../src/operations/types";
 import type { SessionTurnDispatchEvent } from "../../../src/runtime/dispatch-events";
 import { makeNaxConfig, makeSessionManager, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 const sel = pickSelector("mw-coverage", "routing");
 
@@ -60,6 +67,7 @@ describe("callOp dispatch coverage (ADR-018 Wave 2 + ADR-019 §5, migrated by AD
     });
 
     const runtime = makeTestRuntime({ agentManager: realManager, sessionManager });
+    createdRuntimes.push(runtime);
 
     const received: SessionTurnDispatchEvent[] = [];
     runtime.dispatchEvents.onDispatch((e) => {
@@ -102,6 +110,7 @@ describe("callOp dispatch coverage (ADR-018 Wave 2 + ADR-019 §5, migrated by AD
     });
 
     const runtime = makeTestRuntime({ agentManager: realManager, sessionManager });
+    createdRuntimes.push(runtime);
 
     const received: SessionTurnDispatchEvent[] = [];
     runtime.dispatchEvents.onDispatch((e) => {

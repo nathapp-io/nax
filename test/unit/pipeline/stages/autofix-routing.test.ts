@@ -7,13 +7,20 @@
  * - STRAT-001 no-test short-circuit behavior
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { _autofixDeps, autofixStage } from "../../../../src/pipeline/stages/autofix";
 import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { ReviewCheckResult } from "../../../../src/review/types";
 import { makeMockAgentManager as _makeMockAgentManager, makeMockRuntime } from "../../../helpers";
+import type { NaxRuntime } from "../../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 function makeReviewResult(success: boolean) {
   return { success, checks: [], summary: "" } as any;
@@ -40,6 +47,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   // the same mock the test set up. Override `runtime` explicitly when a test
   // needs a different shape.
   const agentManager = overrides.agentManager ?? makeMockAgentManager();
+  const runtime = overrides.runtime ?? makeMockRuntime({ agentManager });
+  createdRuntimes.push(runtime);
   return {
     config: {
       ...DEFAULT_CONFIG,
@@ -62,7 +71,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     projectDir: "/tmp",
     hooks: { hooks: {} } as any,
     agentManager,
-    runtime: overrides.runtime ?? makeMockRuntime({ agentManager }),
+    runtime,
     ...overrides,
   };
 }

@@ -1,10 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { acceptanceGenerateOp } from "../../../src/operations/acceptance-generate";
 import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
 import type { VerifyContext } from "../../../src/operations/types";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
+import type { NaxRuntime } from "../../../src/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 const SAMPLE_INPUT: AcceptanceGenerateInput = {
   featureName: "my-feature",
@@ -15,6 +22,7 @@ const SAMPLE_INPUT: AcceptanceGenerateInput = {
 
 function makeBuildCtx() {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return { packageView: view, config: view.select(acceptanceGenerateOp.config) };
 }
@@ -24,6 +32,7 @@ function makeVerifyCtx(overrides: {
   fileExists?: (path: string) => Promise<boolean>;
 } = {}): VerifyContext<ReturnType<typeof acceptanceGenerateOp.config.select>> {
   const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return {
     packageView: view,
@@ -53,6 +62,7 @@ describe("acceptanceGenerateOp shape", () => {
       },
     });
     const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
     const ctx = { packageView: view, config: view.select(acceptanceGenerateOp.config) };
 
