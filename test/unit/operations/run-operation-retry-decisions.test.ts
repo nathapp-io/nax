@@ -1,10 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { AgentRunRequest } from "../../../src/agents";
 import { pickSelector } from "../../../src/config";
 import type { DEFAULT_CONFIG } from "../../../src/config";
 import { callOp } from "../../../src/operations/call";
 import type { RunOperation } from "../../../src/operations/types";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
+import type { NaxRuntime } from "../../../src/runtime";
+
+let runtime: NaxRuntime | undefined;
+afterEach(async () => { await runtime?.close(); });
 
 const testSel = pickSelector("routing-op-test", "routing");
 
@@ -39,7 +43,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opNoRetry = {
       ...runEchoOp,
@@ -84,7 +88,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     let shouldRetryCallCount = 0;
     const retryWithNextPromptStrategy = {
@@ -154,7 +158,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const opResendOriginal = {
       ...runEchoOp,
@@ -206,7 +210,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       },
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     let retryCount = 0;
     const costAccumulationStrategy = {
@@ -270,7 +274,7 @@ describe("callOp — RunOperation.retry decision outcomes (US-004)", () => {
       }),
     });
     const sessionManager = makeSessionManager();
-    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    runtime = makeTestRuntime({ agentManager, sessionManager });
 
     const noRetryStrategy = {
       shouldRetry: () => ({ retry: false as const }),
