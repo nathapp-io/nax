@@ -54,6 +54,7 @@ const adversarialParseRetry = (input: AdversarialReviewInput) =>
     },
     exhaustedFallback: (lastOutput) =>
       /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
+    logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
 
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {

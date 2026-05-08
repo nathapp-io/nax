@@ -50,6 +50,7 @@ const semanticParseRetry = (input: SemanticReviewInput) =>
     },
     exhaustedFallback: (lastOutput) =>
       /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
+    logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
 
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {

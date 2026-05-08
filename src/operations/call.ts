@@ -3,6 +3,7 @@ import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
 import { pickSelector, resolveConfiguredModel } from "../config";
 import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
+import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -151,8 +152,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
           attempt,
           delayMs: decision.delayMs,
           promptTransformed: decision.nextPrompt !== undefined,
-          failureKind:
-            failure instanceof Error ? "error" : (failure as import("../context/engine").AdapterFailure).outcome,
+          failureKind: failure instanceof Error ? "error" : (failure as AdapterFailure).outcome,
           failureMessage: errorMessage(failure),
         });
         await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
@@ -254,6 +254,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   let accumulatedRunCostUsd = 0;
   while (runAttempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
     const currentRunOptions = runAttempt === 0 ? runOptions : { ...runOptions, prompt: currentRunPrompt };
+    // hopBody and retry are mutually exclusive (guard above threw if both set), so the
+    // retry-loop hop needs no hopBody wiring — just a fresh callback with the updated prompt.
     const currentExecuteHop =
       runAttempt === 0
         ? executeHop
@@ -269,15 +271,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
               effectiveTier,
               defaultAgent,
               pipelineStage: op.stage,
-              ...(runOp.hopBody && {
-                hopBody: ((
-                  initialPrompt: string,
-                  bodyCtx: { send: (p: string) => Promise<TurnResult>; input: unknown },
-                ) => runOp.hopBody?.(initialPrompt, { send: bodyCtx.send, input: bodyCtx.input as I })) as NonNullable<
-                  import("./build-hop-callback").BuildHopCallbackContext["hopBody"]
-                >,
-                hopBodyInput: input,
-              }),
             },
             undefined,
             currentRunOptions,
@@ -310,10 +303,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       return runPostParse(op, parsedRun, input, buildCtx);
     }
 
-    // With retry strategy: attempt parse; on failure consult the strategy.
+    // With retry strategy: attempt parse; on parse failure consult the strategy.
+    // runPostParse sits outside the try-catch so verify/recover errors propagate normally
+    // rather than being misidentified as parse failures and triggering a retry.
+    let parsedRun!: O;
     try {
-      const parsedRun = op.parse(rawOutput, input, buildCtx);
-      return await runPostParse(op, parsedRun, input, buildCtx);
+      parsedRun = op.parse(rawOutput, input, buildCtx);
     } catch (parseErr) {
       const lastTurnResult: TurnResult = {
         output: rawOutput,
@@ -356,7 +351,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       if (ctx.runtime.signal?.aborted) throw parseErr;
       currentRunPrompt = decision.nextPrompt ?? prompt;
       runAttempt++;
+      continue;
     }
+    return await runPostParse(op, parsedRun, input, buildCtx);
   }
 
   getSafeLogger()?.error("callop", "Op retry budget exhausted", {

@@ -17,6 +17,11 @@ export interface ParseRetryOpts {
   readonly looksTruncated?: (output: string) => boolean;
   /** Called when all retry attempts are exhausted — its return value is surfaced as RetryDecision.fallback. */
   readonly exhaustedFallback?: (lastOutput: string) => unknown;
+  /**
+   * Extra fields merged into every warn log call (e.g. `{ blockingThreshold: "error" }`).
+   * `storyId` and `originalByteSize` are always present; fields here are appended after them.
+   */
+  readonly logContext?: Record<string, unknown>;
   /** Injectable logger for testing. */
   readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
 }
@@ -33,6 +38,13 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
       }
 
       if (!ctx.lastOutput) {
+        if (ctx.site === "complete") {
+          getSafeLogger()?.warn(
+            opts.reviewerKind,
+            "makeParseRetryStrategy: lastOutput is not populated on complete-kind ops — retry will never fire",
+            { storyId: ctx.storyId },
+          );
+        }
         return { retry: false };
       }
 
@@ -60,11 +72,13 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
         logger?.warn(opts.reviewerKind, "JSON parse retry — likely truncated", {
           storyId: ctx.storyId,
           originalByteSize: ctx.lastOutput.length,
+          ...opts.logContext,
         });
       } else {
         logger?.warn(opts.reviewerKind, "JSON parse retry — invalid shape", {
           storyId: ctx.storyId,
           originalByteSize: ctx.lastOutput.length,
+          ...opts.logContext,
         });
       }
 

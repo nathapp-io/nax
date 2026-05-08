@@ -18,7 +18,7 @@ All retry logic in nax is expressed through the `RetryStrategy` interface — no
 | Tier | Site | Default | Override |
 |:---|:---|:---|:---|
 | **Manager** | `AgentManager.runWithFallback` (site #1) | `defaultRetryStrategy` — rate-limit only, 3 retries, 2s/4s/8s exponential | Pass `retryStrategy` to `AgentManager` constructor via `_agentManagerDeps` injection |
-| **Op** | `callOp` complete-kind (site #2) | none — throws on first failure | Declare `retry` on `CompleteOperation` |
+| **Op** | `callOp` run-kind and complete-kind (site #2) | none — throws on first parse failure; complete-kind throws on first call failure | Declare `retry` on `RunOperation` or `CompleteOperation` |
 
 ## Declaring retry on a `CompleteOperation`
 
@@ -132,6 +132,30 @@ export const exampleRunOp: RunOperation<ExampleInput, ExampleOutput, ExampleConf
   },
 };
 ```
+
+## `RetryDecision.fallback` and `exhaustedFallback`
+
+The `{ retry: false }` variant of `RetryDecision` carries an optional `fallback?: unknown` field:
+
+```typescript
+type RetryDecision =
+  | { retry: false; fallback?: unknown }
+  | { retry: true; delayMs: number; nextPrompt?: string };
+```
+
+`makeParseRetryStrategy` surfaces this when its budget is exhausted: if `exhaustedFallback` is provided, its return value is set on `decision.fallback`. `callOp` then returns that value merged with the accumulated cost instead of the raw `TurnResult`.
+
+When `exhaustedFallback` is absent, `callOp` returns the last `TurnResult` as-is (typed as `O`). **Ops that cannot tolerate a raw `TurnResult` as their output MUST provide `exhaustedFallback`.**
+
+```typescript
+// ✅ Always provide exhaustedFallback for ops with structured output types
+exhaustedFallback: (lastOutput) =>
+  /"passed"\s*:\s*false/.test(lastOutput)
+    ? { passed: false, findings: [], looksLikeFail: true }
+    : FAIL_OPEN,
+```
+
+Custom `RetryStrategy` implementations can also set `fallback` on their `{ retry: false }` decision — `callOp` reads it regardless of which strategy produced it.
 
 ## `ParseValidationError` discrimination
 

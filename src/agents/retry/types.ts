@@ -31,7 +31,9 @@ export interface RetryStrategy {
  * about validation failures can `instanceof` discriminate and ignore.
  */
 export class ParseValidationError extends Error {
-  readonly kind = "parse-validation" as const;
+  // `declare` emits no class field initializer — Object.defineProperty below is the
+  // single runtime assignment, making `kind` truly non-writable at runtime.
+  declare readonly kind: "parse-validation";
 
   constructor(message: string) {
     super(message);
