@@ -133,13 +133,17 @@ describe("semanticReviewOp.parse()", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].severity).toBe("error");
   });
-  test("throws ParseValidationError on unparseable output (callOp retries then fails open)", () => {
+  test("returns fail-open for unparseable output (retry handled in hopBody, not callOp parse)", () => {
     const ctx = makeBuildCtx();
-    expect(() => semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx)).toThrow();
+    const result = semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx);
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
   });
-  test("throws ParseValidationError on missing passed field (callOp retries then fails open)", () => {
+  test("returns fail-open for missing passed field (retry handled in hopBody, not callOp parse)", () => {
     const ctx = makeBuildCtx();
-    expect(() => semanticReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx)).toThrow();
+    const result = semanticReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx);
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
   });
   test("parses fence-wrapped JSON response", () => {
     const ctx = makeBuildCtx();
@@ -150,38 +154,16 @@ describe("semanticReviewOp.parse()", () => {
   });
 });
 
-describe("semanticReviewOp.retry", () => {
-  test("retry field exists", () => {
-    expect(semanticReviewOp).toHaveProperty("retry");
+describe("semanticReviewOp.hopBody", () => {
+  test("hopBody field exists (semantic uses multi-turn for requote recovery)", () => {
+    expect(semanticReviewOp).toHaveProperty("hopBody");
   });
 
-  test("retry is a function (resolver form)", () => {
-    expect(typeof semanticReviewOp.retry).toBe("function");
+  test("hopBody is an async function", () => {
+    expect(typeof semanticReviewOp.hopBody).toBe("function");
   });
 
-  test("retry resolver returns a RetryStrategy", () => {
-    const ctx = makeBuildCtx();
-    const result = (semanticReviewOp.retry as any)(SAMPLE_INPUT, ctx);
-    expect(result).toHaveProperty("shouldRetry");
-    expect(typeof result.shouldRetry).toBe("function");
-  });
-
-  test("retry resolver forwards blockingThreshold to jsonRetryCondensed", () => {
-    const ctx = makeBuildCtx();
-    const inputWithThreshold: SemanticReviewInput = {
-      ...SAMPLE_INPUT,
-      blockingThreshold: "warning",
-    };
-
-    const strategy = (semanticReviewOp.retry as any)(inputWithThreshold, ctx);
-    expect(strategy).toHaveProperty("shouldRetry");
-
-    // Verify the retry strategy is constructed correctly by testing shouldRetry
-    // calls it with test inputs to verify the strategy responds appropriately
-    expect(typeof strategy.shouldRetry).toBe("function");
-  });
-
-  test("hopBody field does NOT exist (removed in US-005b)", () => {
-    expect(semanticReviewOp).not.toHaveProperty("hopBody");
+  test("retry field does NOT exist (retry handled inside hopBody via makeReviewRetryHopBody)", () => {
+    expect(semanticReviewOp).not.toHaveProperty("retry");
   });
 });
