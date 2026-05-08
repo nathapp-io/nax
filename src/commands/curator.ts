@@ -16,7 +16,7 @@ import { renderProposals } from "../plugins/builtin/curator/render";
 import type { Observation } from "../plugins/builtin/curator/types";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "../runtime/paths";
 import type { ResolveProjectOptions, ResolvedProject } from "./common";
-import { resolveProject } from "./common";
+import { resolveProjectAsync } from "./common";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ export interface CuratorGcOptions {
 // ─── Injectable deps ──────────────────────────────────────────────────────────
 
 export const _curatorCmdDeps = {
-  resolveProject: (opts?: ResolveProjectOptions): ResolvedProject => resolveProject(opts),
+  resolveProject: (opts?: ResolveProjectOptions): Promise<ResolvedProject> => resolveProjectAsync(opts),
   loadConfig: (dir?: string): Promise<NaxConfig> => loadConfig(dir),
   projectOutputDir: (key: string, override?: string): string => projectOutputDir(key, override),
   globalOutputDir: (): string => globalOutputDir(),
@@ -183,7 +183,7 @@ function parseCheckedProposals(markdown: string): ParsedProposal[] {
 // ─── curatorStatus ────────────────────────────────────────────────────────────
 
 export async function curatorStatus(options: CuratorStatusOptions): Promise<void> {
-  const resolved = _curatorCmdDeps.resolveProject({ dir: options.project });
+  const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
   const projectKey = getProjectKey(config, resolved.projectDir);
   const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
@@ -237,7 +237,7 @@ export async function curatorStatus(options: CuratorStatusOptions): Promise<void
 // ─── curatorCommit ────────────────────────────────────────────────────────────
 
 export async function curatorCommit(options: CuratorCommitOptions): Promise<void> {
-  const resolved = _curatorCmdDeps.resolveProject({ dir: options.project });
+  const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
   const projectKey = getProjectKey(config, resolved.projectDir);
   const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
@@ -364,7 +364,7 @@ function buildAddContent(proposal: ParsedProposal): string {
 // ─── curatorDryrun ────────────────────────────────────────────────────────────
 
 export async function curatorDryrun(options: CuratorDryrunOptions): Promise<void> {
-  const resolved = _curatorCmdDeps.resolveProject({ dir: options.project });
+  const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
   const projectKey = getProjectKey(config, resolved.projectDir);
   const outputDir = _curatorCmdDeps.projectOutputDir(projectKey, config.outputDir as string | undefined);
@@ -398,13 +398,14 @@ export async function curatorDryrun(options: CuratorDryrunOptions): Promise<void
 const DEFAULT_KEEP = 50;
 
 export async function curatorGc(options: CuratorGcOptions): Promise<void> {
-  const resolved = _curatorCmdDeps.resolveProject({ dir: options.project });
+  const resolved = await _curatorCmdDeps.resolveProject({ dir: options.project });
   const config = await _curatorCmdDeps.loadConfig(resolved.projectDir);
   const gDir = _curatorCmdDeps.globalOutputDir();
   const rollupPath = _curatorCmdDeps.curatorRollupPath(gDir, config.curator?.rollupPath as string | undefined);
 
   const rollupText = await _curatorCmdDeps.readFile(rollupPath).catch(() => null);
   if (rollupText === null) {
+    console.log(`[gc] No rollup file found at ${rollupPath}. Nothing to prune.`);
     return;
   }
 
@@ -426,6 +427,7 @@ export async function curatorGc(options: CuratorGcOptions): Promise<void> {
     .map(([runId]) => runId);
 
   if (uniqueRunIds.length <= keep) {
+    console.log(`[gc] ${uniqueRunIds.length} unique run(s) in rollup — at or below keep=${keep}. Nothing to prune.`);
     return;
   }
 

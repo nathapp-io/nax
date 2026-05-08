@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveProject } from "../../../src/commands/common";
+import { resolveProject, resolveProjectAsync } from "../../../src/commands/common";
 import { NaxError } from "../../../src/errors";
 import { makeTempDir } from "../../helpers/temp";
 
@@ -317,5 +317,113 @@ describe("resolveProject", () => {
         expect(naxError.context?.availableFeatures).toEqual(["existing-feature"]);
       }
     });
+  });
+});
+
+describe("resolveProjectAsync", () => {
+  let testDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    const rawTestDir = makeTempDir("nax-test-async-");
+    testDir = realpathSync(rawTestDir);
+    originalCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    if (testDir) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves by filesystem path when path exists", async () => {
+    const naxDir = join(testDir, ".nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    const result = await resolveProjectAsync({ dir: testDir });
+    expect(result.projectDir).toBe(testDir);
+  });
+
+  test("resolves by project name via identity registry", async () => {
+    // Set up real project directory with .nax/config.json
+    const projectDir = join(testDir, "my-project");
+    const naxDir = join(projectDir, ".nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    // Set up identity registry entry pointing to it
+    // globalConfigDir() is redirected to a temp dir in tests via preload.ts
+    const { globalConfigDir } = await import("../../../src/config/paths");
+    const registryDir = join(globalConfigDir(), "my-project");
+    mkdirSync(registryDir, { recursive: true });
+    writeFileSync(join(registryDir, ".identity"), JSON.stringify({ workdir: projectDir, name: "my-project", createdAt: "", lastSeen: "", remoteUrl: null }));
+
+    const result = await resolveProjectAsync({ dir: "my-project" });
+    expect(result.projectDir).toBe(projectDir);
+  });
+
+  test("path wins over name lookup when path exists", async () => {
+    // Create a directory that would match by path
+    const naxDir = join(testDir, ".nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    // Change to parent so testDir is a relative path component
+    process.chdir(join(testDir, ".."));
+    const result = await resolveProjectAsync({ dir: testDir });
+    expect(result.projectDir).toBe(testDir);
+  });
+
+  test("throws PROJECT_NOT_FOUND with informative message when name not in registry", async () => {
+    process.chdir(testDir);
+    try {
+      await resolveProjectAsync({ dir: "nonexistent-project" });
+      expect.unreachable("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NaxError);
+      const naxErr = err as NaxError;
+      expect(naxErr.code).toBe("PROJECT_NOT_FOUND");
+      expect(naxErr.message).toContain("nonexistent-project");
+      expect(naxErr.message).toContain("identity registry");
+    }
+  });
+
+  test("falls through to resolveProject error for paths with separators that don't exist", async () => {
+    try {
+      await resolveProjectAsync({ dir: "some/nonexistent/path" });
+      expect.unreachable("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NaxError);
+      // Should be the NAX_DIR_NOT_FOUND error from resolveProject, not PROJECT_NOT_FOUND
+      const naxErr = err as NaxError;
+      expect(["NAX_DIR_NOT_FOUND", "PROJECT_NOT_FOUND"]).toContain(naxErr.code);
+    }
+  });
+
+  test("falls back to CWD walk-up when no dir provided", async () => {
+    const naxDir = join(testDir, ".nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+    process.chdir(testDir);
+
+    const result = await resolveProjectAsync();
+    expect(result.projectDir).toBe(testDir);
+  });
+
+  test("corrupt identity file falls through to informative error", async () => {
+    const { globalConfigDir } = await import("../../../src/config/paths");
+    const registryDir = join(globalConfigDir(), "corrupt-project");
+    mkdirSync(registryDir, { recursive: true });
+    writeFileSync(join(registryDir, ".identity"), "not valid json{{{");
+
+    try {
+      await resolveProjectAsync({ dir: "corrupt-project" });
+      expect.unreachable("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NaxError);
+      expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
+    }
   });
 });
