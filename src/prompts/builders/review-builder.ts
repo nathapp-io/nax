@@ -10,6 +10,7 @@
  */
 
 import type { Iteration } from "../../findings";
+import type { LLMFinding } from "../../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../../review/types";
 import { wrapJsonPrompt } from "../../utils/llm-json";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
@@ -191,6 +192,26 @@ Respond with a condensed summary:
 - Keep \`verifiedBy\` for every finding. If \`verifiedBy.observed\` is long, abbreviate it to one line — never drop the field.
 Output ONLY a complete, valid JSON object. It must start with { and end with }.
 Schema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
+  }
+
+  static requoteVerbatim(opts: { finding: LLMFinding; previousObserved: string }): string {
+    const file = opts.finding.verifiedBy?.file ?? opts.finding.file;
+    const line = opts.finding.verifiedBy?.line ?? opts.finding.line;
+    return `Your previous verifiedBy.observed value did not match the referenced file on disk.
+
+Return ONLY this JSON object:
+{"file":"${file}","line":${line},"observed":"exact 1-3 line quote"}
+
+Finding issue: ${opts.finding.issue}
+Referenced file: ${file}
+Referenced line: ${line}
+Previous observed: ${opts.previousObserved}
+
+Rules:
+- Copy observed verbatim from the file. Do not paraphrase.
+- observed must be a 1-3 line excerpt that proves the claim.
+- If you cannot quote proof exactly, set observed to "".
+- Do not return a full review. Do not include markdown fences or explanation.`;
   }
 }
 

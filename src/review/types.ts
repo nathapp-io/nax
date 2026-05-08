@@ -60,6 +60,13 @@ export interface SemanticReviewConfig {
   rules: string[];
   /** Timeout in milliseconds for the LLM call (default: 600_000) */
   timeoutMs: number;
+  /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
+  substantiation?: {
+    /** When true, ask the same reviewer session for one verbatim requote before downgrade. */
+    requote: boolean;
+    /** Maximum number of requote turns per semantic review. */
+    maxRequotes: number;
+  };
   /**
    * Git pathspec patterns to exclude from the semantic diff.
    * Optional — undefined means "derive from testFilePatterns + well-known noise dirs". (ADR-009 §4.4)

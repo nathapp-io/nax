@@ -29,6 +29,7 @@ const CONFIG_NO_RULES: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
+  substantiation: { requote: true, maxRequotes: 5 },
   excludePatterns: [],
 };
 
@@ -213,5 +214,31 @@ describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
     const result = ReviewPromptBuilder.jsonRetryCondensed();
     expect(result).toContain('"verifiedBy"');
     expect(result).toContain('"observed"');
+  });
+});
+
+describe("ReviewPromptBuilder.requoteVerbatim()", () => {
+  test("asks for JSON-only verbatim requote with original finding context", () => {
+    const result = ReviewPromptBuilder.requoteVerbatim({
+      finding: {
+        severity: "error",
+        file: "src/foo.ts",
+        line: 42,
+        issue: "Missing guard",
+        suggestion: "Add guard",
+        verifiedBy: {
+          file: "src/foo.ts",
+          line: 42,
+          observed: "described the issue instead of quoting it",
+        },
+      },
+      previousObserved: "described the issue instead of quoting it",
+    });
+    expect(result).toContain("did not match the referenced file on disk");
+    expect(result).toContain('"file":"src/foo.ts"');
+    expect(result).toContain('"line":42');
+    expect(result).toContain("observed\":\"exact 1-3 line quote");
+    expect(result).toContain('set observed to ""');
+    expect(result).toContain("Do not return a full review");
   });
 });

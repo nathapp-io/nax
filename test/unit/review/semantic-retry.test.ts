@@ -7,6 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import * as loggerModule from "../../../src/logger";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
@@ -14,6 +16,7 @@ import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
 import { makeMockAgentManager } from "../../helpers";
 import { makeMockRuntime } from "../../helpers/runtime";
+import { withTempDir } from "../../helpers/temp";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -32,6 +35,7 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
+  substantiation: { requote: true, maxRequotes: 5 },
   excludePatterns: [":!test/", ":!*.test.ts"],
 };
 
@@ -371,6 +375,7 @@ describe("semanticReviewOp.hopBody — retry behaviour", () => {
     const result = await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -392,6 +397,7 @@ describe("semanticReviewOp.hopBody — retry behaviour", () => {
     const result = await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -418,6 +424,7 @@ describe("semanticReviewOp.hopBody — retry behaviour", () => {
     const result = await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -425,5 +432,111 @@ describe("semanticReviewOp.hopBody — retry behaviour", () => {
     } as any);
 
     expect(result.estimatedCostUsd).toBe(1.0);
+  });
+});
+
+describe("semanticReviewOp.hopBody — same-session requote", () => {
+  test("recovers a blocking finding when requote returns a verbatim matching excerpt", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {\n  return 42;\n}\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Missing proof",
+            suggestion: "Quote the file",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "this description does not match disk",
+            },
+          },
+        ],
+      });
+      const requote = JSON.stringify({
+        file: "src/foo.ts",
+        line: 1,
+        observed: "export function foo() {\n  return 42;\n}",
+      });
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : requote,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+      const result = await semanticReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(callCount).toBe(2);
+      expect(parsed.findings[0].severity).toBe("error");
+      expect(parsed.findings[0].verifiedBy.observed).toContain("return 42");
+    });
+  });
+
+  test("downgrades when requote response is invalid JSON", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Missing proof",
+            suggestion: "Quote the file",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "this description does not match disk",
+            },
+          },
+        ],
+      });
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : "not json",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+      const result = await semanticReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(callCount).toBe(2);
+      expect(parsed.findings[0].severity).toBe("unverifiable");
+    });
   });
 });

@@ -88,15 +88,19 @@ export const UNVERIFIED_FINDING_PATTERNS = [
 export function sanitizeRefModeFindings(
   findings: LLMFinding[],
   diffMode: SemanticReviewConfig["diffMode"],
+  blockingThreshold: "error" | "warning" | "info" = "error",
 ): LLMFinding[] {
   if (diffMode !== "ref") return findings;
   return findings.map((finding) =>
-    needsDowngradeForMissingEvidence(finding) ? downgradeToUnverifiable(finding) : finding,
+    needsDowngradeForMissingEvidence(finding, blockingThreshold) ? downgradeToUnverifiable(finding) : finding,
   );
 }
 
-function needsDowngradeForMissingEvidence(finding: LLMFinding): boolean {
-  if ((SEVERITY_RANK[finding.severity] ?? 0) < SEVERITY_RANK.error) return false;
+function needsDowngradeForMissingEvidence(
+  finding: LLMFinding,
+  blockingThreshold: "error" | "warning" | "info",
+): boolean {
+  if (!isBlockingSeverity(finding.severity, blockingThreshold)) return false;
   return mentionsUnverifiedSource(finding) || !hasVerifiedEvidence(finding);
 }
 

@@ -30,6 +30,7 @@ const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   resetRefOnRerun: false,
   rules: [],
   timeoutMs: 60_000,
+  substantiation: { requote: true, maxRequotes: 5 },
   excludePatterns: [":!test/", ":!*.test.ts"],
 };
 
@@ -149,6 +150,7 @@ describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () 
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -174,6 +176,7 @@ describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () 
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -198,6 +201,7 @@ describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () 
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -225,6 +229,7 @@ describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () 
     const result = await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -248,6 +253,7 @@ describe("semanticReviewOp.hopBody — truncation logging", () => {
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -273,6 +279,7 @@ describe("semanticReviewOp.hopBody — truncation logging", () => {
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
       input: {
+        workdir: "/tmp/wd",
         story: STORY,
         semanticConfig: DEFAULT_SEMANTIC_CONFIG,
         mode: "embedded",
@@ -311,7 +318,7 @@ describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is
     const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
     const result = await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
-      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
     } as any);
 
     // Parser accepted the response — no retry should fire.
@@ -332,7 +339,7 @@ describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is
     const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
-      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
     } as any);
 
     expect(sendCalls).toHaveLength(2);
@@ -354,7 +361,7 @@ describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is
     const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
     await semanticReviewOp.hopBody!("initial prompt", {
       send: mockSend,
-      input: { story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
     } as any);
 
     expect(sendCalls).toHaveLength(2);
