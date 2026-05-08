@@ -110,23 +110,29 @@ Example usage on a `RunOperation`:
 
 ```typescript
 import { makeParseRetryStrategy } from "../agents/retry";
+import type { RunOperation } from "./types";
 
-export const exampleRunOp = new RunOperation({
-  name: "example-run",
-  build: (input, ctx) => ({
-    prompt: "...",
-    retry: makeParseRetryStrategy({
-      maxAttempts: 3,
-      parser: (output) => {
-        // Custom parser — if this throws, strategy retries with nextPrompt
-        return JSON.parse(output);
-      },
-      nextPrompt: (lastOutput, lastError) => 
-        `Previous output: ${lastOutput}\nError: ${lastError.message}\n\nPlease fix and re-format as valid JSON.`,
-    }),
-  }),
-  // ...
+const exampleParseRetry = makeParseRetryStrategy({
+  validate: (parsed) => parsed !== null && typeof parsed === "object",
+  reviewerKind: "example",
+  maxAttempts: 3,
+  prompts: {
+    invalid: () => "The response was not valid JSON. Please re-format as valid JSON.",
+    truncated: () => "The response appears truncated. Please provide the complete JSON.",
+  },
+  parse: (output) => JSON.parse(output),
 });
+
+export const exampleRunOp: RunOperation<ExampleInput, ExampleOutput, ExampleConfig> = {
+  kind: "run",
+  name: "example-run",
+  stage: "review",
+  config: exampleConfigSelector,
+  retry: exampleParseRetry,
+  build(input, _ctx) {
+    return { prompt: "..." };
+  },
+};
 ```
 
 ## `ParseValidationError` discrimination
