@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-08T01-52-41-260Z",
+    "feature": "retry-strategy-consolidation",
+    "startedAt": "2026-05-08T01:52:41.260Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 22039
+  },
+  "progress": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 2.6639970400000004,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-05-08T03:06:15.881Z",
+  "durationMs": 4414621,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-05-08T03:05:39.662Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-08T03:06:15.855Z"
+    }
+  }
+}

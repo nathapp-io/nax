@@ -1,12 +1,12 @@
+import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
-import { AdversarialReviewPromptBuilder } from "../prompts";
+import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
 import { validateAdversarialShape } from "../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import { makeReviewRetryHopBody } from "./_review-retry";
 import type { RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
@@ -43,10 +43,19 @@ export interface AdversarialReviewOutput {
 
 const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], failOpen: true };
 
-const adversarialReviewHopBody = makeReviewRetryHopBody<AdversarialReviewInput>(
-  (parsed) => validateAdversarialShape(parsed) !== null,
-  "adversarial",
-);
+const adversarialParseRetry = (input: AdversarialReviewInput) =>
+  makeParseRetryStrategy({
+    validate: (parsed) => validateAdversarialShape(parsed) !== null,
+    reviewerKind: "adversarial",
+    maxAttempts: 2,
+    prompts: {
+      invalid: () => ReviewPromptBuilder.jsonRetry(),
+      truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
+    },
+    exhaustedFallback: (lastOutput) =>
+      /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
+    logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
+  });
 
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
   kind: "run",
@@ -57,7 +66,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   // Issue #725 — per-call tier from user-configured AdversarialReviewConfig.model.
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
-  hopBody: adversarialReviewHopBody,
+  retry: (input) => adversarialParseRetry(input),
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
       input.story,
@@ -84,7 +93,9 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     if (parsed) return { passed: parsed.passed, findings: parsed.findings };
-    if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
-    return FAIL_OPEN;
+    if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
+      return { passed: false, findings: [], looksLikeFail: true };
+    }
+    throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
   },
 };

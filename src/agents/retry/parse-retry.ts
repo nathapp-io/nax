@@ -1,0 +1,88 @@
+import type { AdapterFailure } from "../../context/engine";
+import { getSafeLogger } from "../../logger";
+import { looksLikeTruncatedJson } from "../../review/truncation";
+import { tryParseLLMJson } from "../../utils/llm-json";
+import { ParseValidationError } from "./types";
+import type { RetryContext, RetryDecision, RetryStrategy } from "./types";
+
+export interface ParseRetryOpts {
+  readonly validate: (parsed: unknown) => boolean;
+  readonly reviewerKind: string;
+  readonly maxAttempts?: number;
+  readonly prompts: {
+    readonly invalid: () => string;
+    readonly truncated: () => string;
+  };
+  readonly parse?: (output: string) => unknown;
+  readonly looksTruncated?: (output: string) => boolean;
+  /** Called when all retry attempts are exhausted — its return value is surfaced as RetryDecision.fallback. */
+  readonly exhaustedFallback?: (lastOutput: string) => unknown;
+  /**
+   * Extra fields merged into every warn log call (e.g. `{ blockingThreshold: "error" }`).
+   * `storyId` and `originalByteSize` are always present; fields here are appended after them.
+   */
+  readonly logContext?: Record<string, unknown>;
+  /** Injectable logger for testing. */
+  readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
+}
+
+export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
+  const parse = opts.parse ?? tryParseLLMJson;
+  const checkTruncated = opts.looksTruncated ?? looksLikeTruncatedJson;
+  const maxAttempts = opts.maxAttempts ?? 2;
+
+  return {
+    shouldRetry(failure: AdapterFailure | Error, attempt: number, ctx: RetryContext): RetryDecision {
+      if (!(failure instanceof ParseValidationError)) {
+        return { retry: false };
+      }
+
+      if (!ctx.lastOutput) {
+        if (ctx.site === "complete") {
+          getSafeLogger()?.warn(
+            opts.reviewerKind,
+            "makeParseRetryStrategy: lastOutput is not populated on complete-kind ops — retry will never fire",
+            { storyId: ctx.storyId },
+          );
+        }
+        return { retry: false };
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = parse(ctx.lastOutput);
+      } catch {
+        parsed = null;
+      }
+
+      if (parsed != null && opts.validate(parsed)) {
+        return { retry: false };
+      }
+
+      if (attempt >= maxAttempts - 1) {
+        const fallback = opts.exhaustedFallback ? opts.exhaustedFallback(ctx.lastOutput) : undefined;
+        return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
+      }
+
+      const isTruncated = checkTruncated(ctx.lastOutput);
+      const nextPrompt = isTruncated ? opts.prompts.truncated() : opts.prompts.invalid();
+
+      const logger = opts._logger ?? getSafeLogger();
+      if (isTruncated) {
+        logger?.warn(opts.reviewerKind, "JSON parse retry — likely truncated", {
+          storyId: ctx.storyId,
+          originalByteSize: ctx.lastOutput.length,
+          ...opts.logContext,
+        });
+      } else {
+        logger?.warn(opts.reviewerKind, "JSON parse retry — invalid shape", {
+          storyId: ctx.storyId,
+          originalByteSize: ctx.lastOutput.length,
+          ...opts.logContext,
+        });
+      }
+
+      return { retry: true, delayMs: 0, nextPrompt };
+    },
+  };
+}

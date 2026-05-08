@@ -102,6 +102,31 @@ export interface VerifyContext<C> extends BuildContext<C> {
  */
 export interface HopBodyContext<I> {
   readonly send: (prompt: string) => Promise<TurnResult>;
+  /**
+   * `send` plus the parse-retry loop declared by `op.retry`. Equal to `send`
+   * when `op.retry` is unset — always safe to call.
+   *
+   * On retry exhaustion the last raw turn is returned (no throw). If the
+   * strategy supplied `decision.fallback`, `callOp` captures it and uses it as
+   * the final `O` when the outer `op.parse(rawOutput)` also fails. If the
+   * outer parse succeeds (e.g. semantic's FAIL_OPEN heuristic), the fallback
+   * is discarded — the outer parse wins.
+   *
+   * Each call to `sendWithParseRetry` has its own attempt counter and cost
+   * accumulator — a body that calls it twice gets two independent retry budgets.
+   * Note that fallback and exhaustion state (`retryFallback`, `maxRetriesExceeded`,
+   * `lastRetryTurn` inside `callOp`) are tracked from the most recent call only;
+   * earlier calls' fallback values do not survive a subsequent invocation. Bodies
+   * that call `sendWithParseRetry` multiple times will see only the last call's
+   * fallback state at the outer parse layer.
+   *
+   * **Probe semantics:** the strategy receives a `ParseValidationError` probe on
+   * every turn unconditionally — it re-parses `ctx.lastOutput` internally to
+   * decide whether the output is valid. Custom `RetryStrategy` implementations
+   * used with `sendWithParseRetry` must implement this re-parse check; returning
+   * `{ retry: true }` without checking `ctx.lastOutput` will cause over-retry.
+   */
+  readonly sendWithParseRetry: (prompt: string) => Promise<TurnResult>;
   readonly input: I;
 }
 
@@ -140,9 +165,24 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly noFallback?: boolean;
   /**
    * Optional intra-hop multi-prompt body. See HopBody / HopBodyContext.
-   * Used by review ops to perform a same-session JSON-parse retry.
+   * Used by review ops for multi-turn orchestration (e.g. requoting findings).
+   * When `op.retry` is also set, the body receives `ctx.sendWithParseRetry` —
+   * a `send` variant with parse-retry baked in. Use `hopBody` for genuinely
+   * multi-turn flows; use `retry` alone for simple parse-retry policies.
    */
   readonly hopBody?: HopBody<I>;
+  /**
+   * Optional retry policy for parse-validation failures on this op.
+   * Accepts a `RetryPreset`, a `RetryStrategy`, or a resolver function.
+   * When set without `hopBody`, `callOp` synthesises a hopBody that runs the
+   * parse-retry loop inside one session. When set alongside `hopBody`, the
+   * body receives `ctx.sendWithParseRetry` — a `send` variant that applies
+   * this policy per call. The two fields compose; setting both is allowed.
+   */
+  readonly retry?:
+    | RetryPreset
+    | RetryStrategy
+    | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
 }
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
@@ -163,7 +203,10 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
    * - function: resolver reading per-call input and build context; return `undefined`
    *   to disable retry for this invocation.
    */
-  readonly retry?: RetryPreset | RetryStrategy | ((input: I, ctx: BuildContext<C>) => RetryPreset | undefined);
+  readonly retry?:
+    | RetryPreset
+    | RetryStrategy
+    | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
 }
 
 /**

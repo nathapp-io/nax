@@ -1,19 +1,19 @@
 /**
- * Unit tests for truncation-aware condensed retry in src/review/semantic.ts
+ * Unit tests for truncation-aware condensed retry in semanticReviewOp.
  *
- * ADR-019: Retry moved inside semanticReviewOp.hopBody. runSemanticReview
- * calls callOp once; retry is invisible at this level. Tests verify
- * hopBody prompt selection and truncation detection.
+ * These tests exercise the parse-retry strategy's truncation detection via
+ * callOp integration — the truncation prompt selection now lives in
+ * makeParseRetryStrategy (parse-retry.ts), not in the hopBody directly.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { AgentRunRequest } from "../../../src/agents";
 import * as loggerModule from "../../../src/logger";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
+import { callOp } from "../../../src/operations/call";
+import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -73,142 +73,81 @@ function makeLogger(): MockLogger {
   };
 }
 
-// ─── Saved deps ──────────────────────────────────────────────────────────────
+// ─── callOp helpers ───────────────────────────────────────────────────────────
 
-let origSpawn: typeof _diffUtilsDeps.spawn;
-let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
-let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
-let origWriteReviewAudit: typeof _semanticDeps.writeReviewAudit;
-let origCallOp: typeof _semanticDeps.callOp;
+function makeCallOpRuntime(
+  responses: Array<{ output: string; cost?: number }>,
+): { runtime: ReturnType<typeof makeTestRuntime>; capturedPrompts: string[] } {
+  const capturedPrompts: string[] = [];
+  let callIdx = 0;
 
-function saveAllDeps() {
-  origSpawn = _diffUtilsDeps.spawn;
-  origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
-  origGetMergeBase = _diffUtilsDeps.getMergeBase;
-  origWriteReviewAudit = _semanticDeps.writeReviewAudit;
-  origCallOp = _semanticDeps.callOp;
-}
-
-function restoreAllDeps() {
-  _diffUtilsDeps.spawn = origSpawn;
-  _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
-  _diffUtilsDeps.getMergeBase = origGetMergeBase;
-  _semanticDeps.writeReviewAudit = origWriteReviewAudit;
-  _semanticDeps.callOp = origCallOp;
-}
-
-function setupHappyPathDeps() {
-  _diffUtilsDeps.isGitRefValid = mock(async () => true);
-  _diffUtilsDeps.getMergeBase = mock(async () => undefined);
-  _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
-    exited: Promise.resolve(0),
-    stdout: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)"));
-        controller.close();
-      },
-    }),
-    stderr: new ReadableStream({ start(controller) { controller.close(); } }),
-    kill: () => {},
-  })) as unknown as typeof _diffUtilsDeps.spawn;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeAgentManager(llmResponse: string): ReturnType<typeof makeMockAgentManager> {
-  return makeMockAgentManager({
-    getDefaultAgent: "claude",
-    runWithFallbackFn: async () => ({
-      result: {
-        success: true,
-        exitCode: 0,
-        output: llmResponse,
-        rateLimited: false,
-        durationMs: 100,
-        estimatedCostUsd: 0,
-        agentFallbacks: [],
-      },
-      fallbacks: [],
-    }),
+  const agentManager = makeMockAgentManager({
+    runWithFallbackFn: async (req: AgentRunRequest) => {
+      const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+      return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+    },
+    runAsSessionFn: async (_agentName, _handle, prompt) => {
+      capturedPrompts.push(prompt);
+      const resp = responses[callIdx] ?? responses[responses.length - 1];
+      callIdx++;
+      return {
+        output: resp.output,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: resp.cost ?? 0.001,
+        internalRoundTrips: 0,
+      };
+    },
   });
+  const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+  return { runtime, capturedPrompts };
+}
+
+async function runSemanticOp(
+  runtime: ReturnType<typeof makeTestRuntime>,
+): Promise<ReturnType<typeof callOp>> {
+  return callOp(
+    { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+    semanticReviewOp,
+    { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
+  );
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () => {
+describe("truncation-detected condensed retry", () => {
   test("uses condensed retry prompt when response length is at the ACP output cap", async () => {
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([
+      { output: AT_CAP_UNPARSEABLE },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    await runSemanticOp(runtime);
 
-    expect(sendCalls).toHaveLength(2);
-    expect(sendCalls[1]).toContain("truncated");
+    expect(capturedPrompts).toHaveLength(2);
+    expect(capturedPrompts[1]).toContain("truncated");
   });
 
   test("uses standard retry prompt when response is short unparseable text (not at cap)", async () => {
-    const nonJson = "here is my analysis: the code looks fine overall";
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: nonJson, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([
+      { output: "here is my analysis: the code looks fine overall" },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    await runSemanticOp(runtime);
 
-    expect(sendCalls).toHaveLength(2);
-    expect(sendCalls[1]).not.toContain("truncated");
+    expect(capturedPrompts).toHaveLength(2);
+    expect(capturedPrompts[1]).not.toContain("truncated");
   });
 
   test("fires retry when response is at cap even before attempting parse", async () => {
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([
+      { output: AT_CAP_UNPARSEABLE },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    await runSemanticOp(runtime);
 
-    expect(sendCalls).toHaveLength(2);
+    expect(capturedPrompts).toHaveLength(2);
   });
 
   test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {
@@ -216,86 +155,58 @@ describe("semanticReviewOp.hopBody — truncation-detected condensed retry", () 
       passed: false,
       findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "missing impl", suggestion: "add it" }],
     });
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: condensedResponse, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime } = makeCallOpRuntime([
+      { output: AT_CAP_UNPARSEABLE },
+      { output: condensedResponse },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    const result = await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    const result = await runSemanticOp(runtime);
 
-    expect(result.output).toBe(condensedResponse);
+    expect((result as { passed: boolean }).passed).toBe(false);
   });
 });
 
-describe("semanticReviewOp.hopBody — truncation logging", () => {
-  test("logs warn 'JSON parse retry — original response truncated' when response is at cap", async () => {
+describe("truncation logging", () => {
+  let loggerSpy: ReturnType<typeof spyOn>;
+
+  afterEach(() => {
+    loggerSpy?.mockRestore();
+  });
+
+  test("logs warn 'truncated' when response is at cap", async () => {
     const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const mockSend = mock(async (_prompt: string) => {
-      return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime } = makeCallOpRuntime([
+      { output: AT_CAP_UNPARSEABLE },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    await runSemanticOp(runtime);
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
     expect(truncatedLog).toBeDefined();
     expect(truncatedLog?.stage).toBe("semantic");
-
-    loggerSpy.mockRestore();
   });
 
   test("does not log truncation warning when response is short unparseable text (not at cap)", async () => {
     const logger = makeLogger();
-    const loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as never);
 
-    const mockSend = mock(async (_prompt: string) => {
-      return { output: "not json text", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime } = makeCallOpRuntime([
+      { output: "not json text" },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: {
-        workdir: "/tmp/wd",
-        story: STORY,
-        semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-        mode: "embedded",
-      },
-    } as any);
+    await runSemanticOp(runtime);
 
     const truncatedLog = logger.warnCalls.find((c) => c.message.includes("truncated"));
     expect(truncatedLog).toBeUndefined();
-
-    loggerSpy.mockRestore();
   });
 });
 
-describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is a hint not a veto", () => {
+describe("Bug 4 regression: parser-first, length is a hint not a veto", () => {
   test("parseable near-cap response is NOT retried (Bug 4 regression)", async () => {
-    // Build a valid, parseable response that is near the output cap.
     const validNearCap = JSON.stringify({
       passed: false,
       findings: Array.from({ length: 7 }, (_, i) => ({
@@ -309,63 +220,35 @@ describe("semanticReviewOp.hopBody — Bug 4 regression: parser-first, length is
     });
     expect(validNearCap.length).toBeGreaterThanOrEqual(4900);
 
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      return { output: validNearCap, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([{ output: validNearCap }]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    const result = await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-    } as any);
+    await runSemanticOp(runtime);
 
-    // Parser accepted the response — no retry should fire.
-    expect(sendCalls).toHaveLength(1);
-    expect(result.output).toBe(validNearCap);
+    expect(capturedPrompts).toHaveLength(1);
   });
 
   test("unparseable near-cap response still triggers condensed retry", async () => {
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: AT_CAP_UNPARSEABLE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([
+      { output: AT_CAP_UNPARSEABLE },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-    } as any);
+    await runSemanticOp(runtime);
 
-    expect(sendCalls).toHaveLength(2);
-    expect(sendCalls[1]).toContain("truncated");
+    expect(capturedPrompts).toHaveLength(2);
+    expect(capturedPrompts[1]).toContain("truncated");
   });
 
   test("parseable response with invalid shape triggers standard (non-condensed) retry", async () => {
-    // Parseable JSON but missing required `findings` array — invalid shape.
     const wrongShape = JSON.stringify({ passed: true });
-    const sendCalls: string[] = [];
-    const mockSend = mock(async (prompt: string) => {
-      sendCalls.push(prompt);
-      if (sendCalls.length === 1) {
-        return { output: wrongShape, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      }
-      return { output: PASSING_LLM_RESPONSE, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-    });
+    const { runtime, capturedPrompts } = makeCallOpRuntime([
+      { output: wrongShape },
+      { output: PASSING_LLM_RESPONSE },
+    ]);
 
-    const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
-    await semanticReviewOp.hopBody!("initial prompt", {
-      send: mockSend,
-      input: { workdir: "/tmp/wd", story: STORY, semanticConfig: DEFAULT_SEMANTIC_CONFIG, mode: "embedded" },
-    } as any);
+    await runSemanticOp(runtime);
 
-    expect(sendCalls).toHaveLength(2);
-    // Standard retry — no "truncated" wording.
-    expect(sendCalls[1]).not.toContain("truncated");
+    expect(capturedPrompts).toHaveLength(2);
+    expect(capturedPrompts[1]).not.toContain("truncated");
   });
 });

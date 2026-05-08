@@ -1,9 +1,17 @@
 # Retry Strategy Consolidation
 
-**Status:** Draft
+**Status:** Resolved
 **Date:** 2026-05-07
 **Owners:** TBD
-**Related:** Issue #856 (RetryStrategy framework introduction), [.claude/rules/retry-strategy.md](../../.claude/rules/retry-strategy.md), [src/agents/retry/](../../src/agents/retry/), [src/operations/_review-retry.ts](../../src/operations/_review-retry.ts), [src/runtime/middleware/idle-watchdog.ts](../../src/runtime/middleware/idle-watchdog.ts)
+**Related:** Issue #856 (RetryStrategy framework introduction), [.claude/rules/retry-strategy.md](../../.claude/rules/retry-strategy.md), [src/agents/retry/](../../src/agents/retry/), [src/runtime/middleware/idle-watchdog.ts](../../src/runtime/middleware/idle-watchdog.ts)
+
+## Resolution: retry-as-hop (2026-05-08)
+
+`op.retry` and `op.hopBody` now compose. When only `op.retry` is set, `callOp` synthesizes a hop body that runs the parse-retry loop inside one session. When both are set, the user-supplied body receives `ctx.sendWithParseRetry` — a `send` variant with the parse-retry loop baked in. `semanticReviewOp` is the canonical example: `op.retry` handles JSON parse retries (two attempts, `jsonRetry` / `jsonRetryCondensed`); `op.hopBody` handles requote enrichment using the validated turn output.
+
+`src/operations/_review-retry.ts` (`makeReviewRetryHopBody`) has been deleted. The mutual-exclusion guard (`OP_HOPBODY_RETRY_BOTH_SET`) has been removed. The forbidden-patterns table now bans hand-rolled parse-retry loops inside `op.hopBody` rather than banning coexistence.
+
+See [docs/specs/2026-05-08-retry-as-hop-implementation-plan.md](./2026-05-08-retry-as-hop-implementation-plan.md) for the full design and implementation notes.
 
 ## Summary
 

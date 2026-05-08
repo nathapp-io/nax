@@ -3,7 +3,7 @@
   "feature": "retry-strategy-consolidation",
   "branchName": "feat/retry-strategy-consolidation",
   "createdAt": "2026-05-07T00:00:00.000Z",
-  "updatedAt": "2026-05-07T13:00:00.000Z",
+  "updatedAt": "2026-05-08T02:49:10.121Z",
   "userStories": [
     {
       "id": "US-001",
@@ -22,14 +22,16 @@
         "feature"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/agents/retry/types.ts",
@@ -39,7 +41,11 @@
       ],
       "suggestedCriteria": [
         "`RetryContext` import of `TurnResult` comes from `../../agents/types` (same source used elsewhere in `src/agents/retry/`)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0b80fa338ffee14c06a2e574eee61e157cf412b7"
     },
     {
       "id": "US-002",
@@ -57,14 +63,16 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/agents/retry/types.ts",
@@ -75,7 +83,11 @@
       "suggestedCriteria": [
         "When all strategies return `{ retry: false }`, `composeRetry` returns `{ retry: false }` without calling strategies beyond the point of exhaustion",
         "`composeRetry` forwards the full `RetryContext` (including new optional fields) to each strategy unchanged"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5261b9f9011eeddd7710986d2b77727a3ba6bdcc"
     },
     {
       "id": "US-003",
@@ -100,14 +112,16 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/retry/types.ts",
@@ -117,7 +131,10 @@
         "src/prompts/builders/review-builder.ts",
         "src/utils/llm-json.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7d2cde6efe81b2935707018b31853fd9bbaf18a9"
     },
     {
       "id": "US-004",
@@ -149,14 +166,16 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/operations/types.ts",
@@ -168,7 +187,11 @@
       ],
       "suggestedCriteria": [
         "The `resolver` form of `op.retry` on `RunOperation` — returning a `RetryStrategy` (not just `RetryPreset`) — is correctly resolved via the same `resolveOpRetry`-like helper used for complete-kind"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "16152ec0b7fc9cfa142be8587906741f07c3100d"
     },
     {
       "id": "US-005a",
@@ -187,14 +210,16 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure additive change. Existing tests verify hopBody path; no new behavior to test until US-005b/c."
+        "reasoning": "Pure additive change. Existing tests verify hopBody path; no new behavior to test until US-005b/c.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/operations/semantic-review.ts",
@@ -203,7 +228,10 @@
         "src/agents/retry/index.ts",
         "src/review/semantic-helpers.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "641df072e0908b48c822240b2414e79884cb1ec4"
     },
     {
       "id": "US-005b",
@@ -225,14 +253,23 @@
       "dependencies": [
         "US-005a"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC8 test in `test/unit/operations/semantic-review-retry-flip.test.ts` calls `mock(fn)` without assigning or injecting the result — the assertions inside the callback are dead code and never execute. Fixing it requires modifying the test to use `spyOn(loggerModule, \"getSafeLogger\")` (the pattern `semantic-review-retry-behavior.test.ts` uses correctly). This edit does not fit any of the three test-file exceptions: it is not lint-only, it does not contradict a literal PRD interface signature, and the file is within this story's scope (not a sibling story). The source implementation of AC8 is correct — `storyId` is the first key in both warn calls in `src/agents/retry/parse-retry.ts`.",
+          "timestamp": "2026-05-07T17:13:16.616Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Active behavior flip with parity tests across multiple paths."
+        "reasoning": "Active behavior flip with parity tests across multiple paths.",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/operations/semantic-review.ts",
@@ -240,7 +277,21 @@
         "test/unit/review/semantic-retry.test.ts",
         "test/unit/review/semantic-retry-truncation.test.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: AC8 test in `test/unit/operations/semantic-review-retry-flip.test.ts` calls `mock(fn)` without assigning or injecting the result — the assertions inside the callback are dead code and never execute. Fixing it requires modifying the test to use `spyOn(loggerModule, \"getSafeLogger\")` (the pattern `semantic-review-retry-behavior.test.ts` uses correctly). This edit does not fit any of the three test-file exceptions: it is not lint-only, it does not contradict a literal PRD interface signature, and the file is within this story's scope (not a sibling story). The source implementation of AC8 is correct — `storyId` is the first key in both warn calls in `src/agents/retry/parse-retry.ts`."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 4.94534035,
+          "timestamp": "2026-05-07T17:13:16.616Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "9275e669301f60c1c43f6c8fad8c13b3997940f1"
     },
     {
       "id": "US-005c",
@@ -261,14 +312,16 @@
       "dependencies": [
         "US-005b"
       ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
+      "status": "passed",
+      "passes": true,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Active behavior flip with parity tests; mirrors US-005b for adversarial."
+        "reasoning": "Active behavior flip with parity tests; mirrors US-005b for adversarial.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/adversarial-review.ts",
@@ -276,7 +329,10 @@
         "test/unit/review/adversarial-retry.test.ts",
         "test/unit/review/adversarial-retry-truncation.test.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "84abb90f1b4974391336c70e2167c59d95000b35"
     },
     {
       "id": "US-005d",
@@ -295,21 +351,26 @@
         "US-005b",
         "US-005c"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure deletion verified by build/typecheck."
+        "reasoning": "Pure deletion verified by build/typecheck.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/operations/_review-retry.ts",
         "src/operations/semantic-review.ts",
         "src/operations/adversarial-review.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0ae62c6788e2f5ac99dcb2bb19aaf70ec5f71d6d"
     },
     {
       "id": "US-006",
@@ -330,20 +391,26 @@
       "dependencies": [
         "US-005d"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "no-test",
         "reasoning": "validated from LLM output",
-        "noTestJustification": "Pure documentation changes to rule files — no runtime behavior, no source code, no logic. The correctness of these files is verified by human review, not automated tests."
+        "noTestJustification": "Pure documentation changes to rule files — no runtime behavior, no source code, no logic. The correctness of these files is verified by human review, not automated tests.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         ".claude/rules/retry-strategy.md",
         ".claude/rules/forbidden-patterns.md"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5c86c1b71c4cfb38be6fd1a1aca53c517a37010c"
     },
     {
       "id": "US-007",
@@ -362,14 +429,16 @@
         "US-005d",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Single guard with one error path; tested via unit test that constructs an invalid op definition."
+        "reasoning": "Single guard with one error path; tested via unit test that constructs an invalid op definition.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/operations/call.ts",
@@ -377,7 +446,10 @@
         ".claude/rules/forbidden-patterns.md",
         "src/errors/index.ts"
       ],
-      "suggestedCriteria": []
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e629ecc1925fa0af6cf70b3064a9f76309b108d9"
     }
   ],
   "analysis": "The codebase currently has three retry surfaces that share the same shape but live in different abstractions:\n\n1. **Manager-tier retry** (`src/agents/retry/default-strategy.ts`): `defaultRetryStrategy` handles `fail-rate-limit` and `fail-stale` outcomes universally via `AgentManager.runWithFallback`. Already conforms to `RetryStrategy` interface.\n\n2. **Op-tier complete retry** (`src/operations/call.ts` complete-kind path): `CompleteOperation.retry` wires a retry loop bounded by `MAX_COMPLETE_RETRY_ATTEMPTS = 20`. Supports `RetryPreset | RetryStrategy | resolver`.\n\n3. **Intra-session parse retry** (`src/operations/_review-retry.ts`): `makeReviewRetryHopBody` is a `HopBody` that sends the initial prompt, tries `tryParseLLMJson` + `validate`, and if invalid sends `ReviewPromptBuilder.jsonRetry()` or `.jsonRetryCondensed()` (based on `looksLikeTruncatedJson`) in the same session. Used by `semanticReviewOp` and `adversarialReviewOp` via their `hopBody` fields.\n\n**Story map (8 stories, dogfood-safe):**\n- US-001 — types + `ParseValidationError` sentinel\n- US-002 — `composeRetry` combinator\n- US-003 — `makeParseRetryStrategy` factory (parses internally)\n- US-004 — `RunOperation.retry` slot + `callOp` wiring + uniform structured logging\n- US-005a — review ops: add `retry` alongside `hopBody` (no behavior change; `hopBody` wins)\n- US-005b — flip `semanticReviewOp` to `op.retry`\n- US-005c — flip `adversarialReviewOp` to `op.retry`\n- US-005d — delete `_review-retry.ts`\n- US-006 — update `.claude/rules/retry-strategy.md` and `forbidden-patterns.md`\n- US-007 — ban `op.hopBody` + `op.retry` coexistence on `RunOperation` (post-migration tightening)\n\n**Key files modified by this feature:**\n- `src/agents/retry/types.ts` — extend `RetryDecision` (add `nextPrompt?`), extend `RetryContext` (add `lastOutput?`, `lastTurnResult?` — NOT `lastParsed`), introduce `ParseValidationError` sentinel class\n- `src/agents/retry/compose.ts` — new file, `composeRetry` combinator\n- `src/agents/retry/parse-retry.ts` — new file, `makeParseRetryStrategy` factory (parser is internal; default `tryParseLLMJson`)\n- `src/agents/retry/index.ts` — export new symbols including `ParseValidationError`\n- `src/operations/types.ts` — add `retry?` slot to `RunOperation` (same shape as `CompleteOperation.retry`)\n- `src/operations/call.ts` — synthesize a hopBody from `op.retry` when present (retries stay inside the same session); construct `ParseValidationError` after each `send` to drive the strategy; add uniform structured logging to both run-kind and complete-kind retry paths\n- `src/operations/semantic-review.ts` — US-005a adds `retry` alongside `hopBody`; US-005b removes `hopBody`\n- `src/operations/adversarial-review.ts` — US-005a adds `retry` alongside `hopBody`; US-005c removes `hopBody`\n- `src/operations/_review-retry.ts` — deleted in US-005d\n- `.claude/rules/retry-strategy.md` — remove 'What NOT to convert' exclusion; document `composeRetry`, `ParseValidationError`, internal-parser convention\n- `.claude/rules/forbidden-patterns.md` — ban new `HopBody` parse-retry implementations (US-006); ban `hopBody`+`retry` coexistence (US-007)\n\n**Architectural decisions:**\n\n*Run-kind retry semantics — same session.* When `op.retry` is set on a `RunOperation`, `callOp` synthesizes a `hopBody` closure from the resolved `RetryStrategy`. The synthetic hop body: (1) sends the initial prompt, (2) calls `op.parse(turnResult.output, input, buildCtx)` to get the typed `O`, (3) constructs a `ParseValidationError` and a `RetryContext` carrying `lastOutput` (no `lastParsed`), (4) calls `op.retry.shouldRetry(parseValidationError, attempt, retryCtx)`, (5) if `{ retry: true, nextPrompt }` sends that via `send()` in the same session — accumulating cost — and loops, (6) repeats up to `MAX_COMPLETE_RETRY_ATTEMPTS`. Reuses `buildHopCallback`'s session management with no new wiring layer.\n\n*Failure discrimination — `ParseValidationError` sentinel.* `RetryStrategy.shouldRetry` accepts `AdapterFailure | Error`. Successful calls with invalid output don't fit either category, so we introduce `ParseValidationError extends Error` (with `kind: \"parse-validation\"` literal) as the signal that 'the call succeeded but output failed validation'. Strategies that handle validation discriminate via `instanceof ParseValidationError`; strategies that handle transport errors ignore it. This avoids widening the interface beyond what's necessary.\n\n*Strategy parses internally — no `lastParsed` on RetryContext.* Earlier drafts proposed threading the parsed JSON through `RetryContext.lastParsed`. Rejected because the parser shape is op- and strategy-specific (JSON, plain text, custom). `callOp` stays generic by passing only `lastOutput`. `makeParseRetryStrategy` accepts an optional `parse?: (output: string) => unknown` (default `tryParseLLMJson`) and runs it internally.\n\n*Transport errors inside the synthetic hop body bypass `op.retry`.* When `ctx.send(...)` throws, the synthetic hop body re-throws — it does NOT consult `op.retry`. Op-tier retry only fires on `ParseValidationError` (validation-style failures). Transport retries are exclusively the manager tier's concern. This composition rule prevents double-counting.\n\n*Coexistence accommodation is temporary.* When both `op.hopBody` and `op.retry` are set, US-004 specifies `callOp` prefers `op.hopBody`. This is a migration safety net used by US-005a (which adds `retry` alongside `hopBody` so the in-flight reviewer doesn't change shape mid-PR). US-007 removes the accommodation after US-005d completes.\n\n**Dogfooding safety:** `semanticReviewOp` and `adversarialReviewOp` are the same ops nax uses to review its own code during a run. The migration is split (US-005a adds alongside, US-005b/c flip one at a time, US-005d deletes the dead file) so every commit boundary is reviewer-stable: no commit simultaneously changes the semantic *and* adversarial reviewer paths, and US-005a is purely additive.\n\n**Impacted tests:** `test/unit/operations/call-op-retry.test.ts` (extend for new logging assertions and run-kind retry path), `test/unit/review/semantic-retry.test.ts`, `test/unit/review/semantic-retry-truncation.test.ts`, `test/unit/review/adversarial-retry.test.ts`, `test/unit/review/adversarial-retry-truncation.test.ts` (parity verification post-migration). New files: `test/unit/agents/retry/compose.test.ts`, `test/unit/agents/retry/parse-retry.test.ts`.\n\n**Risks:**\n- *Behavioral parity in review ops.* Verified in US-005b/c via parity tests covering all four parse-failure paths plus `looksLikeFail` and cost accumulation.\n- *`HopBody` / `op.retry` confusion.* `HopBody` for genuine multi-turn flows that are NOT reactions to failure; `op.retry` for 'the call failed, try again'. Documented in US-006; coexistence banned in US-007.\n- *Manager + op double-retry.* Op-tier strategies must not handle `fail-rate-limit` or `fail-stale` (manager-tier concerns). Rule documented in US-006."

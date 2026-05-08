@@ -133,16 +133,16 @@ describe("semanticReviewOp.parse()", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.findings[0].severity).toBe("error");
   });
-  test("fails open on unparseable output", () => {
+  test("returns fail-open for unparseable output (retry handled in hopBody, not callOp parse)", () => {
     const ctx = makeBuildCtx();
     const result = semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(true);
-    expect(result.findings).toEqual([]);
     expect(result.failOpen).toBe(true);
   });
-  test("fails open on missing passed field", () => {
+  test("returns fail-open for missing passed field (retry handled in hopBody, not callOp parse)", () => {
     const ctx = makeBuildCtx();
     const result = semanticReviewOp.parse(JSON.stringify({ findings: [] }), SAMPLE_INPUT, ctx);
+    expect(result.passed).toBe(true);
     expect(result.failOpen).toBe(true);
   });
   test("parses fence-wrapped JSON response", () => {
@@ -151,5 +151,19 @@ describe("semanticReviewOp.parse()", () => {
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();
+  });
+});
+
+describe("semanticReviewOp.hopBody", () => {
+  test("hopBody field exists (semantic uses multi-turn for requote recovery)", () => {
+    expect(semanticReviewOp).toHaveProperty("hopBody");
+  });
+
+  test("hopBody is an async function", () => {
+    expect(typeof semanticReviewOp.hopBody).toBe("function");
+  });
+
+  test("retry field exists (parse-retry SSOT)", () => {
+    expect(semanticReviewOp).toHaveProperty("retry");
   });
 });
