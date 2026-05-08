@@ -112,23 +112,21 @@ Example usage on a `RunOperation`:
 import { makeParseRetryStrategy } from "../agents/retry";
 import type { RunOperation } from "./types";
 
-const exampleParseRetry = makeParseRetryStrategy({
-  validate: (parsed) => parsed !== null && typeof parsed === "object",
-  reviewerKind: "example",
-  maxAttempts: 3,
-  prompts: {
-    invalid: () => "The response was not valid JSON. Please re-format as valid JSON.",
-    truncated: () => "The response appears truncated. Please provide the complete JSON.",
-  },
-  parse: (output) => JSON.parse(output),
-});
-
 export const exampleRunOp: RunOperation<ExampleInput, ExampleOutput, ExampleConfig> = {
   kind: "run",
   name: "example-run",
   stage: "review",
   config: exampleConfigSelector,
-  retry: exampleParseRetry,
+  retry: makeParseRetryStrategy({
+    validate: (parsed) => parsed !== null && typeof parsed === "object",
+    reviewerKind: "example",
+    maxAttempts: 3,
+    prompts: {
+      invalid: () => "The response was not valid JSON. Please re-format as valid JSON.",
+      truncated: () => "The response appears truncated. Please provide the complete JSON.",
+    },
+    parse: (output) => JSON.parse(output),
+  }),
   build(input, _ctx) {
     return { prompt: "..." };
   },
