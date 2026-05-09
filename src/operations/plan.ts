@@ -1,3 +1,4 @@
+import { makeParseRetryStrategy } from "../agents/retry";
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
@@ -5,17 +6,7 @@ import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
-import type { CompleteOperation, RunOperation } from "./types";
-
-export interface PlanOpInput {
-  specContent: string;
-  codebaseContext: string;
-  featureName: string;
-  branchName: string;
-  packages?: string[];
-  packageDetails?: PackageSummary[];
-  projectProfile?: ProjectProfile;
-}
+import type { RunOperation } from "./types";
 
 export interface PlanInteractiveInput {
   specContent: string;
@@ -28,33 +19,6 @@ export interface PlanInteractiveInput {
   projectProfile?: ProjectProfile;
 }
 
-export const planOp: CompleteOperation<PlanOpInput, PRD, PlanConfig> = {
-  kind: "complete",
-  name: "plan",
-  stage: "plan",
-  jsonMode: false,
-  config: planConfigSelector,
-  model: (_input, ctx) => ctx.config.plan.model,
-  timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
-  build(input, _ctx) {
-    const { taskContext, outputFormat } = new PlanPromptBuilder().build(
-      input.specContent,
-      input.codebaseContext,
-      undefined,
-      input.packages,
-      input.packageDetails,
-      input.projectProfile,
-    );
-    return {
-      role: { id: "role", content: "", overridable: false },
-      task: { id: "task", content: `${taskContext}\n\n${outputFormat}`, overridable: false },
-    };
-  },
-  parse(output, input, _ctx) {
-    return validatePlanOutput(output, input.featureName, input.branchName);
-  },
-};
-
 export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConfig> = {
   kind: "run",
   name: "plan-interactive",
@@ -63,8 +27,22 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
-  retry: undefined,
-  hopBody: undefined,
+  retry: makeParseRetryStrategy({
+    validate: (parsed) =>
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "userStories" in (parsed as Record<string, unknown>) &&
+      Array.isArray((parsed as Record<string, unknown>).userStories),
+    reviewerKind: "plan",
+    maxAttempts: 3,
+    prompts: {
+      invalid: () => PlanPromptBuilder.jsonRepair(0, "Invalid JSON — response was not parseable"),
+      truncated: () => PlanPromptBuilder.jsonRepair(0, "JSON appears truncated — please rewrite completely"),
+    },
+  }),
+  hopBody: async (initialPrompt, ctx) => {
+    return ctx.sendWithParseRetry(initialPrompt);
+  },
   build(input, _ctx) {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       input.specContent,
@@ -82,6 +60,17 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   parse(output, input, _ctx) {
     return validatePlanOutput(output, input.featureName, input.branchName);
   },
-  verify: undefined,
-  recover: undefined,
+  verify: async (parsed, _input, _ctx) => {
+    if (!parsed.userStories || parsed.userStories.length === 0) return null;
+    return parsed;
+  },
+  recover: async (input, ctx) => {
+    const content = await ctx.readFile(input.outputPath);
+    if (!content) return null;
+    try {
+      return validatePlanOutput(content, input.featureName, input.branchName);
+    } catch {
+      return null;
+    }
+  },
 };

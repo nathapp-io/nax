@@ -15,7 +15,6 @@ import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
-import { callOp, planOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
@@ -187,25 +186,23 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
     let autoPrd: PRD;
     try {
-      autoPrd = await callOp(
-        {
-          runtime: rt,
-          packageView: rt.packages.resolve(),
-          packageDir: workdir,
-          agentName,
-          featureName: options.feature,
-        },
-        planOp,
-        {
-          specContent,
-          codebaseContext,
-          featureName: options.feature,
-          branchName,
-          packages: relativePackages,
-          packageDetails,
-          projectProfile: config?.project,
-        },
+      const { taskContext, outputFormat } = new PlanPromptBuilder().build(
+        specContent,
+        codebaseContext,
+        undefined,
+        relativePackages,
+        packageDetails,
+        config?.project,
       );
+      const planPrompt = `${taskContext}\n\n${outputFormat}`;
+      const planResult = await agentManager.completeAs(agentName, planPrompt, {
+        modelDef: resolvedPlanModel.modelDef,
+        workdir,
+        timeoutMs: timeoutSeconds * 1000,
+        pipelineStage: "plan",
+        featureName: options.feature,
+      });
+      autoPrd = validatePlanOutput(planResult.output, options.feature, branchName);
     } finally {
       await rt.close().catch(() => {});
     }

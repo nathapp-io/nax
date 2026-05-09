@@ -63,8 +63,14 @@ export class PlanPromptBuilder {
    * JSON repair prompt — instructs the agent to fix invalid JSON in the PRD.
    * Includes the parse error so the agent can understand what failed.
    */
-  static jsonRepair(attempt: number, parseError: string): string {
-    return "";
+  static jsonRepair(_attempt: number, parseError: string): string {
+    return `Your previous response was not valid JSON and could not be parsed.
+
+Parse error: ${parseError}
+
+Please re-write the complete PRD JSON from scratch. The JSON must be valid and complete — do not truncate it.
+
+Write the complete PRD JSON to the output file path specified in your instructions, then reply with a brief confirmation.`;
   }
 
   build(
