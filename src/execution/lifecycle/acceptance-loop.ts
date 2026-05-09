@@ -9,26 +9,27 @@
  * 5. Retries until max retries or all tests pass
  */
 
-import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
-import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
-import { findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions } from "../../acceptance/test-path";
-import type { DiagnosisResult } from "../../acceptance/types";
-import type { NaxConfig } from "../../config";
-import type { Finding } from "../../findings";
-import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "../../findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "../../findings";
-import { type LoadedHooksConfig, fireHook } from "../../hooks";
-import { getSafeLogger } from "../../logger";
-import type { StoryMetrics } from "../../metrics";
-import { acceptanceFixSourceOp, acceptanceFixTestOp } from "../../operations";
-import type { PipelineEventEmitter } from "../../pipeline/events";
-import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
-import type { PluginRegistry } from "../../plugins";
-import type { PRD } from "../../prd/types";
-import { buildPriorIterationsBlock } from "../../prompts";
-
-import type { DispatchContext } from "../../runtime/dispatch-context";
-import type { NaxIgnoreIndex } from "../../utils/path-filters";
+import {
+  type DiagnosisResult,
+  findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
+  loadAcceptanceTestContent as loadAcceptanceTestContentModule,
+  loadSemanticVerdicts,
+} from "@/acceptance";
+import type { NaxConfig } from "@/config";
+import type { Finding } from "@/findings";
+import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
+import { type LoadedHooksConfig, fireHook } from "@/hooks";
+import { getSafeLogger } from "@/logger";
+import type { StoryMetrics } from "@/metrics";
+import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
+import type { PipelineEventEmitter } from "@/pipeline/events";
+import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins";
+import type { PRD } from "@/prd/types";
+import { buildPriorIterationsBlock } from "@/prompts";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { resolveAcceptanceDiagnosis } from "./acceptance-fix";
@@ -68,7 +69,7 @@ export interface AcceptanceLoopContext extends DispatchContext {
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
-  acceptanceTestPaths?: Array<{ testPath: string; packageDir: string }>;
+  acceptanceTestPaths?: AcceptanceTestPathEntry[];
 }
 
 export interface AcceptanceLoopResult {
@@ -107,6 +108,34 @@ interface AcceptanceTestRunResult {
   passed: boolean;
   failedACs: string[];
   testOutput: string;
+  failedPackages?: AcceptanceTestPathEntry[];
+}
+
+type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
+
+export function resolveAcceptanceFixTarget(
+  acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
+  failedPackages: AcceptanceTestRunResult["failedPackages"],
+  config: NaxConfig,
+): {
+  acceptanceTestPath: string;
+  testCommand: string | undefined;
+} {
+  const failedPackage = failedPackages?.[0];
+  const matchedEntry = failedPackage
+    ? acceptanceTestPaths?.find(
+        (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
+      )
+    : undefined;
+  const selectedPathEntry = matchedEntry ?? acceptanceTestPaths?.[0];
+  return {
+    acceptanceTestPath: failedPackage?.testPath ?? selectedPathEntry?.testPath ?? "",
+    testCommand:
+      failedPackage?.commandOverride ??
+      matchedEntry?.commandOverride ??
+      config.acceptance.command ??
+      config.quality?.commands?.test,
+  };
 }
 
 function convertFailuresToFindings(failedACs: string[], testOutput: string): Finding[] {
@@ -190,7 +219,12 @@ async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Pro
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
   const failures = acceptanceContext.acceptanceFailures;
   if (!failures || failures.failedACs.length === 0) return { passed: true, failedACs: [], testOutput: "" };
-  return { passed: false, failedACs: failures.failedACs, testOutput: failures.testOutput };
+  return {
+    passed: false,
+    failedACs: failures.failedACs,
+    testOutput: failures.testOutput,
+    failedPackages: failures.failedPackages,
+  };
 }
 
 /**
@@ -420,12 +454,17 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     }
 
     // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
+    const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(
+      ctx.acceptanceTestPaths,
+      failures.failedPackages,
+      ctx.config,
+    );
     const testEntries = ctx.acceptanceTestPaths
       ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
-    const testFileContent = testEntries[0]?.content ?? "";
-    const acceptanceTestPath = testEntries[0]?.testPath ?? ctx.acceptanceTestPaths?.[0]?.testPath ?? "";
-    const testCommand = ctx.config.quality?.commands?.test;
+    const effectiveAcceptanceTestPath = acceptanceTestPath || testEntries[0]?.testPath || "";
+    const selectedTestEntry = testEntries.find((entry) => entry.testPath === effectiveAcceptanceTestPath);
+    const testFileContent = selectedTestEntry?.content ?? testEntries[0]?.content ?? "";
 
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
@@ -437,7 +476,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       diagnosisOpts: {
         testOutput: failures.testOutput,
         testFileContent,
-        acceptanceTestPath,
+        acceptanceTestPath: effectiveAcceptanceTestPath,
         workdir: ctx.workdir,
         storyId: firstStory?.id,
       },
@@ -451,7 +490,14 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     });
 
     // ── 5. Run acceptance fix cycle ────────────────────────────────────
-    const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, acceptanceTestPath, testCommand);
+    const cycleResult = await runAcceptanceFixCycle(
+      ctx,
+      prd,
+      failures,
+      diagnosis,
+      effectiveAcceptanceTestPath,
+      testCommand,
+    );
     // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
     // accumulation here is best-effort and may undercount. The authoritative total
     // is reconciled in handleRunCompletion via Math.max(local, aggregator).

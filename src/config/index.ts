@@ -42,7 +42,7 @@ export {
   AcceptanceConfigSchema,
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
-export { loadConfig, findProjectDir, globalConfigPath } from "./loader";
+export { loadConfig, loadConfigForWorkdir, findProjectDir, globalConfigPath } from "./loader";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
 export { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "./path-security";
 export { globalConfigDir, projectConfigDir } from "./paths";

@@ -174,6 +174,13 @@ export interface PipelineContext extends DispatchContext {
     /** Structured findings (ADR-021 phase 5). Parallel to failedACs; same order. */
     findings: Finding[];
     testOutput: string;
+    /** Package-scoped failures from acceptance stage for monorepo command/path routing. */
+    failedPackages?: Array<{
+      testPath: string;
+      packageDir: string;
+      testFramework?: string;
+      commandOverride?: string;
+    }>;
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;

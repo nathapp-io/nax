@@ -14,11 +14,13 @@ import {
   isStubTestFile,
   isTestLevelFailure,
   loadAcceptanceTestContent,
+  resolveAcceptanceFixTarget,
   regenerateAcceptanceTest,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
-import type { AgentGetFn, PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD } from "../../../../src/prd";
-import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
+import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd";
+import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -310,16 +312,100 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
 
 describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
   test("AcceptanceLoopContext accepts acceptanceTestPaths as optional field", () => {
-    const paths = [{ testPath: "/feature/a.test.ts", packageDir: "/feature" }];
+    const paths = [
+      {
+        testPath: "/feature/a.test.ts",
+        packageDir: "/feature",
+        commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
+        testFramework: "jest",
+      },
+    ];
     const ctx: Partial<AcceptanceLoopContext> = {
       acceptanceTestPaths: paths,
     };
     expect(ctx.acceptanceTestPaths).toEqual(paths);
+    expect(ctx.acceptanceTestPaths?.[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+    expect(ctx.acceptanceTestPaths?.[0]?.testFramework).toBe("jest");
   });
 
   test("AcceptanceLoopContext.acceptanceTestPaths defaults to undefined when not set", () => {
     const ctx: Partial<AcceptanceLoopContext> = {};
     expect(ctx.acceptanceTestPaths).toBeUndefined();
+  });
+});
+
+describe("resolveAcceptanceFixTarget", () => {
+  test("prefers failed package commandOverride and testPath", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "bun test {{FILE}} --timeout=60000" },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+          commandOverride: "npx jest {{FILE}}",
+          testFramework: "jest",
+        },
+      ],
+      [
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+          commandOverride: "pnpm vitest run {{FILE}}",
+          testFramework: "vitest",
+        },
+      ],
+      config,
+    );
+    expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("pnpm vitest run {{FILE}}");
+  });
+
+  test("falls back to configured acceptance command when no failed package metadata", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "npx jest --config jest.nax.config.js {{FILE}}" },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+        },
+      ],
+      undefined,
+      config,
+    );
+    expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+  });
+
+  test("uses failed package path and config command when failed package is not in acceptanceTestPaths", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "npx jest --config jest.nax.config.js {{FILE}}" },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+          commandOverride: "npx jest {{FILE}}",
+        },
+      ],
+      [
+        {
+          testPath: "/repo/apps/other/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/other",
+        },
+      ],
+      config,
+    );
+
+    expect(result.acceptanceTestPath).toBe("/repo/apps/other/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
   });
 });
 
