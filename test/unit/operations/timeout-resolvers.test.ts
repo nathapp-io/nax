@@ -6,27 +6,28 @@ import type { NaxRuntime } from "../../../src/runtime";
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
 import { decomposeOp } from "../../../src/operations/decompose";
-import { planOp } from "../../../src/operations/plan";
+import { planInteractiveOp } from "../../../src/operations/plan";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 
 describe("operation timeout resolvers", () => {
-  test("planOp timeoutMs resolves from plan.timeoutSeconds", () => {
+  test("planInteractiveOp timeoutMs resolves from plan.timeoutSeconds", () => {
     runtime = makeTestRuntime();
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planOp.config) };
-    const timeoutMs = planOp.timeoutMs?.(
+    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
+    const timeoutMs = planInteractiveOp.timeoutMs?.(
       {
         specContent: "spec",
         codebaseContext: "",
         featureName: "feature",
         branchName: "feature-branch",
+        outputPath: "/tmp/prd.json",
       },
       ctx,
     );
     expect(timeoutMs).toBe((ctx.config.plan.timeoutSeconds ?? 600) * 1000);
   });
 
-  test("planOp model resolves from plan.model config", () => {
+  test("planInteractiveOp model resolves from plan.model config", () => {
     const config = makeNaxConfig({
       plan: {
         model: { agent: "opencode", model: "opencode-go/kimi-k2.6" },
@@ -34,14 +35,15 @@ describe("operation timeout resolvers", () => {
     });
     runtime = makeTestRuntime({ config });
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(planOp.config) };
+    const ctx = { packageView: view, config: view.select(planInteractiveOp.config) };
 
-    const model = planOp.model?.(
+    const model = planInteractiveOp.model?.(
       {
         specContent: "spec",
         codebaseContext: "",
         featureName: "feature",
         branchName: "feature-branch",
+        outputPath: "/tmp/prd.json",
       },
       ctx,
     );
