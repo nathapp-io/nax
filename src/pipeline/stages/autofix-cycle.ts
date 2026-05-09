@@ -146,6 +146,28 @@ export function buildAutofixStrategies(
     maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
+      // Branch 1: synthetic implementer-handoff findings present (testEditDeclarations path).
+      // Files come from findings; handoffs are NOT cleared — they belong to the outer
+      // TDD orchestrator and must persist past this cycle.
+      const handoffFindings = findings.filter(
+        (f) => f.source === "implementer-handoff" && f.category === "test_mock_restructure",
+      );
+      if (handoffFindings.length > 0) {
+        const handoffFiles = [
+          ...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null)),
+        ];
+        const reason = (ctx.pendingMockStructureHandoffs ?? []).map((h) => h.reasonDetail).join("\n\n---\n\n");
+        return {
+          failedChecks: collectFailedChecks(ctx),
+          story: ctx.story,
+          mode: "mock-restructure",
+          handoffFiles,
+          handoffReason: reason,
+          blockingThreshold: ctx.config.review?.blockingThreshold,
+        };
+      }
+      // Branch 2: no synthetic findings, but direct mockStructureDeclaration handoffs exist.
+      // Consume and clear since extractApplied stashed them without creating synthetic findings.
       const handoffs = ctx.pendingMockStructureHandoffs;
       if (handoffs && handoffs.length > 0) {
         ctx.pendingMockStructureHandoffs = [];
