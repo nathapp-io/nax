@@ -3,7 +3,7 @@
   "feature": "plan-interactive-callop",
   "branchName": "feat/plan-interactive-callop",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T07:21:52.070Z",
+  "updatedAt": "2026-05-09T08:11:56.758Z",
   "userStories": [
     {
       "id": "US-001",
@@ -143,13 +143,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: Fixing AC-10 (\"import { planInteractiveOp } instead of planOp\") requires actually importing and calling `planInteractiveOp` via `callOp` in `src/cli/plan.ts`. Every viable call site conflicts with an existing test that cannot be modified:",
+          "timestamp": "2026-05-09T08:11:54.725Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/cli/plan.ts",
@@ -165,8 +172,19 @@
         "`resolvePlanModelSelection` is no longer called inside `planCommand()` after migration (model resolution moves into `planInteractiveOp.model`).",
         "`PlanCommandOptions` no longer has the `auto?: boolean` field after migration."
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: Fixing AC-10 (\"import { planInteractiveOp } instead of planOp\") requires actually importing and calling `planInteractiveOp` via `callOp` in `src/cli/plan.ts`. Every viable call site conflicts with an existing test that cannot be modified:"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 4.41332914,
+          "timestamp": "2026-05-09T08:11:54.725Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "f2ae264f432de80a49b069e7505f16ea0ae85139"
     }
