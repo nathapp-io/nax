@@ -2,7 +2,7 @@ import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
 import { buildHopCallback, _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
 import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
 import { makeNaxConfig, makeSessionManager, makeStory } from "../../helpers";
-import type { IAgentManager } from "../../../src/agents/manager-types";
+import type { IAgentManager, RunAsSessionOpts } from "../../../src/agents/manager-types";
 import { SessionFailureError } from "../../../src/agents/types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "../../../src/agents/types";
 import type { AdapterFailure, ContextBundle } from "../../../src/context/engine";
@@ -379,5 +379,41 @@ describe("buildHopCallback — openSession throws", () => {
 
     expect(agentManager.runAsSession).not.toHaveBeenCalled();
     expect(sessionManager.closeSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
+  test("passes non-null interactionHandler to runAsSession when ctx.interactionBridge is set", async () => {
+    const agentManager = makeAgentManagerStub();
+    const ctx = makeCtx({
+      agentManager,
+      interactionBridge: {
+        detectQuestion: async (_: string) => false,
+        onQuestionDetected: async (_: string) => "answer",
+      },
+    });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", undefined, undefined, baseOptions);
+
+    const opts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
+    expect(opts.interactionHandler).not.toBeUndefined();
+    expect(opts.interactionHandler).not.toBeNull();
+  });
+
+  test("passes maxTurns to runAsSession when ctx.maxInteractionTurns is set", async () => {
+    const agentManager = makeAgentManagerStub();
+    const ctx = makeCtx({
+      agentManager,
+      maxInteractionTurns: 5,
+    });
+    const baseOptions = makeBaseOptions("p", ctx.config);
+    const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
+
+    await cb("claude", undefined, undefined, baseOptions);
+
+    const opts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
+    expect(opts.maxTurns).toBe(5);
   });
 });

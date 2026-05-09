@@ -209,6 +209,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     sessionRole,
     featureName: ctx.featureName,
     storyId: ctx.storyId,
+    ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
+    ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
   };
 
   // Shared hop-callback context — everything except runOptions and hopBody.
@@ -223,6 +225,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     effectiveTier,
     defaultAgent,
     pipelineStage: op.stage,
+    ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
+    ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
   };
 
   // retryFallback: captured when strategy returns { retry: false, fallback }.
