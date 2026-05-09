@@ -50,12 +50,15 @@ export type {
   AgentCallStartedEvent,
   AgentMessageUpdateEvent,
   AgentThinkingUpdateEvent,
+  AgentToolCallUpdateEvent,
   AgentUsageUpdateEvent,
   AgentProcessUpdateEvent,
   AgentCallEndedEvent,
   AgentStreamListener,
 } from "./agent-stream-events";
 export { AgentStreamEventBus } from "./agent-stream-events";
+export { attachAgentIdleWatchdog, attachAgentStreamLogging } from "./middleware";
+export type { WatchdogState } from "./middleware";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";
