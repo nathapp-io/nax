@@ -632,6 +632,191 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
   });
 });
 
+// ---------------------------------------------------------------------------
+// CONTRADICTION_ESCAPE_HATCH — Exception 4 (mock-structure handoff)
+// ---------------------------------------------------------------------------
+
+import { CONTRADICTION_ESCAPE_HATCH } from "../../../../src/prompts/builders/rectifier-builder";
+
+describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
+  test("includes a section titled 'Exception 4 — Mock-structure handoff'", () => {
+    expect(CONTRADICTION_ESCAPE_HATCH).toContain("Exception 4 — Mock-structure handoff");
+  });
+
+  test("lists TEST_EDIT_REASON: mock_structure as a required field", () => {
+    expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
+  });
+
+  test("lists FILES: as a required field", () => {
+    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
+      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
+    );
+    expect(afterException4).toContain("FILES:");
+  });
+
+  test("lists REASON: as a required field", () => {
+    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
+      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
+    );
+    expect(afterException4).toContain("REASON:");
+  });
+
+  test("states the handoff rule: do not also emit UNRESOLVED in the same turn", () => {
+    expect(CONTRADICTION_ESCAPE_HATCH).toContain(
+      "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RectifierPromptBuilder.testWriterRectification — mock-restructure mode
+// ---------------------------------------------------------------------------
+
+describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mode", () => {
+  function makeStory() {
+    return {
+      id: "US-003",
+      title: "Restructure mocks",
+      workdir: undefined,
+      acceptanceCriteria: ["AC-1: Mocks align with dispatch shape", "AC-2: No source changes"],
+    } as any;
+  }
+
+  function makeCheck(check: string, output: string): ReviewCheckResult {
+    return {
+      check: check as ReviewCheckResult["check"],
+      success: false,
+      command: `${check}-cmd`,
+      exitCode: 1,
+      output,
+      durationMs: 100,
+    };
+  }
+
+  test("dispatches to mock-restructure renderer when mode is 'mock-restructure'", () => {
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "adversarial output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason: "The adapter now uses callOp instead of direct run()",
+        handoffFiles: ["test/unit/agents/adapter.test.ts"],
+      },
+    );
+
+    expect(prompt).toContain("You are restructuring test mocks");
+  });
+
+  test("returned prompt contains the verbatim handoffReason text", () => {
+    const handoffReason = "Mocks reference primitives the new code bypasses via callOp dispatch";
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason,
+        handoffFiles: ["test/unit/foo.test.ts"],
+      },
+    );
+
+    expect(prompt).toContain(handoffReason);
+  });
+
+  test("returned prompt lists every handoffFile under 'Files to rewrite (only these)' heading", () => {
+    const handoffFiles = ["test/unit/agents/adapter.test.ts", "test/unit/pipeline/stages/autofix.test.ts"];
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason: "reason",
+        handoffFiles,
+      },
+    );
+
+    expect(prompt).toContain("Files to rewrite (only these)");
+    for (const file of handoffFiles) {
+      expect(prompt).toContain(file);
+    }
+  });
+
+  test("returned prompt contains 'Do NOT modify any source file'", () => {
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason: "reason",
+        handoffFiles: ["test/unit/foo.test.ts"],
+      },
+    );
+
+    expect(prompt).toContain("Do NOT modify any source file");
+  });
+
+  test("returned prompt references assertion keywords to indicate assertion sites are forbidden", () => {
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason: "reason",
+        handoffFiles: ["test/unit/foo.test.ts"],
+      },
+    );
+
+    const hasAssertionKeyword =
+      prompt.includes("expect(") ||
+      prompt.includes("toBe") ||
+      prompt.includes("toEqual") ||
+      prompt.includes("toThrow");
+    expect(hasAssertionKeyword).toBe(true);
+  });
+
+  test("without mode argument, returns the existing fix-test-files prompt", () => {
+    const checks = [makeCheck("adversarial", "some adversarial output")];
+    const story = makeStory();
+
+    const withoutMode = RectifierPromptBuilder.testWriterRectification(checks, story);
+    const withExplicitDefault = RectifierPromptBuilder.testWriterRectification(checks, story, {
+      mode: "fix-test-files",
+    });
+
+    expect(withoutMode).toBe(withExplicitDefault);
+  });
+
+  test("mock-restructure prompt includes story id and title", () => {
+    const story = makeStory();
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      story,
+      {
+        mode: "mock-restructure",
+        handoffReason: "reason",
+        handoffFiles: ["test/unit/foo.test.ts"],
+      },
+    );
+
+    expect(prompt).toContain("US-003");
+    expect(prompt).toContain("Restructure mocks");
+  });
+
+  test("mock-restructure prompt includes acceptance criteria", () => {
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeCheck("adversarial", "output")],
+      makeStory(),
+      {
+        mode: "mock-restructure",
+        handoffReason: "reason",
+        handoffFiles: ["test/unit/foo.test.ts"],
+      },
+    );
+
+    expect(prompt).toContain("Acceptance Criteria");
+    expect(prompt).toContain("AC-1: Mocks align with dispatch shape");
+  });
+});
+
 describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
   function makeStory() {
     return {

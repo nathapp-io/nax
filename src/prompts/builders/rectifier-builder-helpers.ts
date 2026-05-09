@@ -71,7 +71,25 @@ TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
 FINDING: <error summary>
 \`\`\`
-and continue. Sibling-scope failures do not block your story.`;
+and continue. Sibling-scope failures do not block your story.
+
+### Exception 4 — Mock-structure handoff
+
+Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
+that does NOT fit Exception 2. Examples: mocks reference primitives the new code
+bypasses; assertion topology must change to match a new dispatch shape.
+
+Declare with:
+\`\`\`
+TEST_EDIT_REASON: mock_structure
+FILES: <comma-separated test file paths>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+\`\`\`
+
+Rules:
+- Do NOT make any edits yourself; the test-writer will fulfill.
+- Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
+- FILES must list real test files. Each path must exist and be a test file.`;
 
 export function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");
