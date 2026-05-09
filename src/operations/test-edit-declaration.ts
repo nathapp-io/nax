@@ -11,8 +11,8 @@ import type { UserStory } from "../prd";
  * `sibling_scope` declarations are parsed for telemetry but not routed.
  */
 export interface TestEditDeclaration {
-  reason: "prd_contract" | "lint_only" | "sibling_scope";
-  /** Test file path, relative to packageDir. Always present (Exception 1, 2, 3 all require FILE/SIBLING_FILE). */
+  reason: "prd_contract" | "lint_only" | "sibling_scope" | "mock_structure";
+  /** Test file path, relative to packageDir. Always present (Exception 1, 2, 3, 4 all require FILE/SIBLING_FILE/FILES). */
   file: string;
   /** Verbatim signature line from story description or acceptance criteria. Only set for prd_contract. */
   prdQuote?: string;
@@ -22,16 +22,20 @@ export interface TestEditDeclaration {
   testAfter?: string;
   /** Lint rule / error summary, only set for lint_only / sibling_scope. */
   finding?: string;
+  /** Full file list including file. Only set for mock_structure. */
+  files?: string[];
+  /** Verbatim REASON paragraph. Only set for mock_structure. */
+  reasonDetail?: string;
 }
 
-const REASON_RE = /^TEST_EDIT_REASON:\s*(prd_contract|lint_only|sibling_scope)\s*$/m;
+const REASON_RE = /^TEST_EDIT_REASON:\s*(prd_contract|lint_only|sibling_scope|mock_structure)\s*$/m;
 
 /**
  * Extract the value of a single key in the same block of TEST_EDIT_REASON lines.
  * Block boundary is a blank line. Returns the trimmed value or null if absent.
  */
 function readBlockField(block: string, key: string): string | null {
-  const re = new RegExp(`^${key}:\\s*(.+)$`, "m");
+  const re = new RegExp(`^${key}:[ \\t]*(.+)$`, "m");
   const m = block.match(re);
   if (!m?.[1]) return null;
   return m[1].trim();
@@ -86,6 +90,16 @@ export function parseTestEditDeclarations(output: string): TestEditDeclaration[]
       const finding = readBlockField(block, "FINDING");
       if (!file || !finding) continue;
       result.push({ reason, file, finding });
+    } else if (reason === "mock_structure") {
+      const filesRaw = readBlockField(block, "FILES");
+      const reasonDetail = readBlockField(block, "REASON");
+      if (!filesRaw || !reasonDetail) continue;
+      const files = filesRaw
+        .split(",")
+        .map((f) => f.trim())
+        .filter(Boolean);
+      if (files.length === 0) continue;
+      result.push({ reason, file: files[0], files, reasonDetail });
     }
   }
 
