@@ -11,7 +11,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { ParseValidationError } from "../../../src/agents/retry";
+import type { RetryStrategy } from "../../../src/agents/retry";
 import type { TurnResult } from "../../../src/agents/types";
+import { validatePlanOutput } from "../../../src/prd/schema";
 import { makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -481,5 +484,74 @@ describe("planOp removal", () => {
     if ("PlanOpInput" in mod) {
       expect.unreachable("PlanOpInput should be removed from exports");
     }
+  });
+});
+
+// ─── Adversarial: retry validate / parse consistency ─────────────────────────
+//
+// Bug found by adversarial review:
+//   planInteractiveOp.retry.validate returns true for { userStories: [] },
+//   but planInteractiveOp.parse (via validatePlanOutput) throws on that same
+//   output ("[schema] userStories is required and must be a non-empty array").
+//   As a result the retry strategy concludes "valid, stop retrying" for a
+//   response that parse() would reject, silencing the retry and propagating
+//   the parse error to the caller without a retry attempt.
+//
+// Spec-correct behaviour (AC-4): retry MUST fire for any output that parse
+// would reject, including empty-userStories JSON.
+
+describe("planInteractiveOp.retry — validate/parse consistency (adversarial AC-4)", () => {
+  test("retry.shouldRetry requests a retry when LLM returns empty userStories", async () => {
+    const { planInteractiveOp } = await import("../../../src/operations/plan");
+
+    const strategyOrFn = planInteractiveOp.retry;
+    const retryStrategy: RetryStrategy = (
+      typeof strategyOrFn === "function"
+        ? strategyOrFn(
+            {
+              specContent: "test",
+              codebaseContext: "test",
+              featureName: "test",
+              branchName: "feat/test",
+              outputPath: "/tmp/prd.json",
+            },
+            {} as Parameters<typeof strategyOrFn>[1],
+          )
+        : strategyOrFn
+    ) as RetryStrategy;
+
+    expect(retryStrategy).not.toBeNull();
+
+    const emptyStoriesOutput = JSON.stringify({
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "feat/test",
+      userStories: [],
+    });
+
+    // Confirm parse() would indeed throw on this output
+    expect(() =>
+      validatePlanOutput(emptyStoriesOutput, "test-feature", "feat/test"),
+    ).toThrow("[schema] userStories is required and must be a non-empty array");
+
+    // Spec-correct: the retry strategy must also reject empty userStories so
+    // the LLM gets another chance rather than throwing a phantom parse error.
+    const decision = retryStrategy.shouldRetry(
+      new ParseValidationError("LLM returned empty userStories"),
+      0,
+      {
+        site: "run",
+        agentName: "claude",
+        stage: "plan",
+        storyId: "US-001",
+        lastOutput: emptyStoriesOutput,
+      },
+    );
+
+    // This assertion FAILS with the current implementation because validate
+    // returns true for { userStories: [] }, causing shouldRetry to return
+    // { retry: false }.  Fix: add `&& parsed.userStories.length > 0` to
+    // the validate predicate in planInteractiveOp.retry.
+    expect(decision.retry).toBe(true);
   });
 });
