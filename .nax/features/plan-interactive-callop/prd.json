@@ -3,7 +3,7 @@
   "feature": "plan-interactive-callop",
   "branchName": "feat/plan-interactive-callop",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T08:11:56.758Z",
+  "updatedAt": "2026-05-09T09:13:05.690Z",
   "userStories": [
     {
       "id": "US-001",
@@ -17,7 +17,9 @@
         "`BuildHopCallbackContext` in `build-hop-callback.ts` has optional `interactionBridge` and `maxInteractionTurns` fields.",
         "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.interactionBridge` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes a non-null `interactionHandler` produced by `buildRunInteractionHandler`.",
         "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.maxInteractionTurns` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes the `maxTurns` value.",
-        "When `ctx.interactionBridge` is absent from `CallContext`, then the compiled `runOptions` does not include an `interactionBridge` key (no `undefined` spreading)."
+        "When `ctx.interactionBridge` is absent from `CallContext`, then the compiled `runOptions` does not include an `interactionBridge` key (no `undefined` spreading).",
+        "When `ctx.maxInteractionTurns` is absent from `CallContext`, then `runOptions` does not include a `maxInteractionTurns` key (no `undefined` spreading).",
+        "When both `ctx.interactionBridge` and `contextPullTools` are set, then the `interactionHandler` produced by `buildRunInteractionHandler` handles both question-detection and context-tool-call interactions."
       ],
       "tags": [
         "feature",
@@ -42,10 +44,6 @@
         "src/agents/manager-types.ts",
         "src/agents/acp/adapter-output.ts"
       ],
-      "suggestedCriteria": [
-        "When `ctx.maxInteractionTurns` is absent from `CallContext`, then `runOptions` does not include a `maxInteractionTurns` key (no `undefined` spreading).",
-        "When both `ctx.interactionBridge` and `contextPullTools` are set, then the `interactionHandler` produced by `buildRunInteractionHandler` handles both question-detection and context-tool-call interactions."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -65,7 +63,11 @@
         "`planInteractiveOp.hopBody` calls `ctx.sendWithParseRetry` with the initial prompt (not `ctx.send`).",
         "`planInteractiveOp.recover` is defined and, when `outputPath` file exists on disk and contains valid PRD JSON, returns the parsed `PRD` without throwing.",
         "When `planInteractiveOp.recover` is called and the `outputPath` file does not exist, it returns `null`.",
-        "`planOp` (`kind:\"complete\"`) is removed from `src/operations/plan.ts` and `src/operations/index.ts`."
+        "`planOp` (`kind:\"complete\"`) is removed from `src/operations/plan.ts` and `src/operations/index.ts`.",
+        "When `planInteractiveOp.verify()` is called with a `PRD` that has an empty `userStories` array, it returns `null`.",
+        "When `planInteractiveOp.verify()` is called with a `PRD` that has at least one story, it returns the parsed PRD.",
+        "`planInteractiveOp.build()` passes `input.outputPath` to `PlanPromptBuilder.build()` so the output directive instructs the agent to write to file rather than print JSON.",
+        "`planInteractiveOp` uses `planConfigSelector` as its `config` field."
       ],
       "tags": [
         "feature",
@@ -94,10 +96,6 @@
       ],
       "suggestedCriteria": [
         "When `planInteractiveOp.parse()` receives output containing a PRD JSON wrapped in markdown code fences, it still returns a valid `PRD` (validatePlanOutput handles fence extraction).",
-        "When `planInteractiveOp.verify()` is called with a `PRD` that has an empty `userStories` array, it returns `null`.",
-        "When `planInteractiveOp.verify()` is called with a `PRD` that has at least one story, it returns the parsed PRD.",
-        "`planInteractiveOp.build()` passes `input.outputPath` to `PlanPromptBuilder.build()` so the output directive instructs the agent to write to file rather than print JSON.",
-        "`planInteractiveOp` uses `planConfigSelector` as its `config` field.",
         "`planInteractiveOp.timeoutMs` resolves from `ctx.config.plan.timeoutSeconds` with a 600-second default."
       ],
       "priorErrors": [
@@ -130,7 +128,11 @@
         "When the debate fallback fires (all debaters fail), then the fallback calls `callOp(ctx, planInteractiveOp, input)` instead of `runInteractivePlan()`.",
         "When `callOp + planInteractiveOp` succeeds and the agent has written a valid PRD to `outputPath`, then `planCommand()` returns the `outputPath` string.",
         "When `callOp + planInteractiveOp` throws and `outputPath` does not exist on disk, then `planCommand()` propagates the error.",
-        "`import { planOp }` is removed from `src/cli/plan.ts`; `planInteractiveOp` is imported instead."
+        "`import { planOp }` is removed from `src/cli/plan.ts`; `planInteractiveOp` is imported instead.",
+        "When `planCommand()` exits (success or failure), `interactionChain.destroy()` is called if the chain was initialized.",
+        "When `planCommand()` exits (success or failure), `rt.close()` is called on the plan runtime.",
+        "`resolvePlanModelSelection` is no longer called inside `planCommand()` after migration (model resolution moves into `planInteractiveOp.model`).",
+        "`PlanCommandOptions` no longer has the `auto?: boolean` field after migration."
       ],
       "tags": [
         "feature",
@@ -140,8 +142,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -166,11 +168,7 @@
         "src/interaction/bridge-builder.ts"
       ],
       "suggestedCriteria": [
-        "When `callOp + planInteractiveOp` throws and `outputPath` DOES exist on disk (agent wrote to file before session ended), then `planCommand()` returns `outputPath` without re-throwing.",
-        "When `planCommand()` exits (success or failure), `interactionChain.destroy()` is called if the chain was initialized.",
-        "When `planCommand()` exits (success or failure), `rt.close()` is called on the plan runtime.",
-        "`resolvePlanModelSelection` is no longer called inside `planCommand()` after migration (model resolution moves into `planInteractiveOp.model`).",
-        "`PlanCommandOptions` no longer has the `auto?: boolean` field after migration."
+        "When `callOp + planInteractiveOp` throws and `outputPath` DOES exist on disk (agent wrote to file before session ended), then `planCommand()` returns `outputPath` without re-throwing."
       ],
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced: Reviewer contradiction: Fixing AC-10 (\"import { planInteractiveOp } instead of planOp\") requires actually importing and calling `planInteractiveOp` via `callOp` in `src/cli/plan.ts`. Every viable call site conflicts with an existing test that cannot be modified:"

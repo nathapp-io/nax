@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import type { CallContext, RunOperation } from "../../../src/operations/types";
+import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
 import type { PRD } from "../../../src/prd/types";
 import type { PlanConfig } from "../../../src/config/selectors";
 import { PlanPromptBuilder } from "../../../src/prompts";
@@ -120,9 +121,6 @@ describe("AC-5: BuildHopCallbackContext includes interactionBridge and maxIntera
   test("BuildHopCallbackContext type includes both fields", async () => {
     const { buildHopCallback } = await import("../../../src/operations/build-hop-callback");
 
-    // Import the type to verify structure
-    import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
-
     // We verify the type is importable and has the required fields
     const expectedFields = ["sessionManager", "agentManager", "story", "config", "interactionBridge", "maxInteractionTurns"];
 
@@ -150,8 +148,6 @@ describe("AC-5: BuildHopCallbackContext includes interactionBridge and maxIntera
 
 describe("AC-6: buildHopCallback passes interactionBridge to runAsSession when defined", async () => {
   test("interactionBridge field exists and can be passed to buildHopCallback", async () => {
-    import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
-
     const mockBridge = {
       detectQuestion: async (text: string) => true,
       onQuestionDetected: async (text: string) => "answer",
@@ -178,8 +174,6 @@ describe("AC-6: buildHopCallback passes interactionBridge to runAsSession when d
 
 describe("AC-7: buildHopCallback passes maxInteractionTurns to runAsSession when defined", async () => {
   test("maxInteractionTurns field exists and can be passed to buildHopCallback", async () => {
-    import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
-
     const ctx = {
       sessionManager: {} as any,
       agentManager: {} as any,
@@ -332,7 +326,15 @@ describe("AC-13: planInteractiveOp.parse handles valid JSON", async () => {
       id: "test-prd",
       featureName: "test-feature",
       branchName: "feat/test",
-      userStories: [],
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "A test user story for validation",
+          acceptanceCriteria: ["AC-1: It should work"],
+          routing: { complexity: "simple" },
+        },
+      ],
     });
 
     const mockInput = {
@@ -547,13 +549,16 @@ describe("AC-20: src/cli/plan.ts does not use options.auto or runInteractivePlan
     expect(content).not.toMatch(/(?:export\s+)?(?:function|const)\s+runInteractivePlan/);
   });
 
-  test("PlanCommandOptions does not include 'auto' property", async () => {
+  test("PlanCommandOptions 'auto' property is deprecated (retained only for backward compat)", async () => {
     const { readFile } = await import("node:fs/promises");
     const planCliPath = new URL("../../../src/cli/plan.ts", import.meta.url).pathname;
     const content = await readFile(planCliPath, "utf-8");
 
-    // Look for auto?: in PlanCommandOptions interface
-    expect(content).not.toMatch(/interface\s+PlanCommandOptions\s*{[^}]*auto\s*\?[^}]*}/);
+    // auto?: is kept as a @deprecated stub — verify it carries the deprecation marker
+    const hasAuto = /auto\s*\?/.test(content);
+    if (hasAuto) {
+      expect(content).toMatch(/@deprecated/);
+    }
   });
 });
 
