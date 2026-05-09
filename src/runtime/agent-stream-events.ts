@@ -36,6 +36,11 @@ export interface AgentUsageUpdateEvent extends AgentStreamEventBase {
   readonly costUsd?: number;
 }
 
+export interface AgentToolCallUpdateEvent extends AgentStreamEventBase {
+  readonly kind: "agent.tool_call_update";
+  readonly toolName?: string;
+}
+
 export interface AgentProcessUpdateEvent extends AgentStreamEventBase {
   readonly kind: "agent.process_update";
   readonly status: "spawned" | "stderr" | "cancelled" | "exited";
@@ -53,6 +58,7 @@ export type AgentStreamEvent =
   | AgentMessageUpdateEvent
   | AgentThinkingUpdateEvent
   | AgentUsageUpdateEvent
+  | AgentToolCallUpdateEvent
   | AgentProcessUpdateEvent
   | AgentCallEndedEvent;
 

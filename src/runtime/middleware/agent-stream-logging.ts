@@ -11,6 +11,7 @@ interface CallTrackingState {
   messageUpdates: number;
   thinkingUpdates: number;
   usageUpdates: number;
+  toolCallUpdates: number;
 }
 
 export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: string): () => void {
@@ -30,6 +31,7 @@ export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: strin
           messageUpdates: 0,
           thinkingUpdates: 0,
           usageUpdates: 0,
+          toolCallUpdates: 0,
         });
         getSafeLogger()?.info("agent-stream", "Agent call started", {
           storyId: event.storyId,
@@ -66,6 +68,14 @@ export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: strin
         }
         break;
       }
+      case "agent.tool_call_update": {
+        const state = activeCalls.get(event.callId);
+        if (state) {
+          state.toolCallUpdates++;
+          state.lastActivityAt = event.timestamp;
+        }
+        break;
+      }
       case "agent.process_update":
         // Intentionally ignored — process lifecycle events are not activity signals
         break;
@@ -82,6 +92,7 @@ export function attachAgentStreamLogging(bus: IAgentStreamEventBus, runId: strin
             messageUpdates: state.messageUpdates,
             thinkingUpdates: state.thinkingUpdates,
             usageUpdates: state.usageUpdates,
+            toolCallUpdates: state.toolCallUpdates,
             lastActivityAt: state.lastActivityAt,
             idleMs,
             status: event.status,

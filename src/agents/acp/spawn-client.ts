@@ -51,7 +51,8 @@ export const _spawnClientDeps = {
  * where piped streams may not close after SIGTERM.
  *
  * When onActivity is provided, it is called immediately for each line that
- * produces activity metadata (message_update, thinking_update, usage_update).
+ * produces activity metadata
+ * (message_update, thinking_update, usage_update, tool_call_update).
  */
 async function readAndParseLines(
   stream: ReadableStream<Uint8Array>,
@@ -284,7 +285,7 @@ export class SpawnAcpSession implements AcpSession {
       // the full NDJSON output. Only extracted fields (strings + numbers) are held in
       // memory — raw bytes are discarded immediately after each line is processed.
       // .catch(() => {}) guards against stream errors (e.g. acpx crash mid-run).
-      // AC7: Emit message_update/thinking_update/usage_update events during stdout reading.
+      // AC7: Emit activity events during stdout reading.
       const parseState = createParseState();
       const onActivity = emit
         ? (activity: import("./parser").AcpxLineActivity) => {
@@ -299,6 +300,13 @@ export class SpawnAcpSession implements AcpSession {
                 inputTokens: activity.inputTokens,
                 outputTokens: activity.outputTokens,
                 costUsd: activity.costUsd,
+                timestamp: now(),
+              });
+            } else if (activity.kind === "tool_call_update") {
+              emit({
+                ...baseEvent,
+                kind: "agent.tool_call_update",
+                toolName: activity.toolName,
                 timestamp: now(),
               });
             }

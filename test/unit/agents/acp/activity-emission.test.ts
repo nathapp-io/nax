@@ -397,6 +397,16 @@ describe("Stream callback in AcpClient/AcpSession types", () => {
       deltaBytes: 42,
     };
 
+    const toolCallUpdate = {
+      kind: "agent.tool_call_update" as const,
+      callId: callStarted.callId,
+      runId: callStarted.runId,
+      agentName: "claude",
+      sessionName: "test-session",
+      timestamp: Date.now(),
+      toolName: "bash",
+    };
+
     const callEnded = {
       kind: "agent.call_ended" as const,
       callId: callStarted.callId,
@@ -409,12 +419,14 @@ describe("Stream callback in AcpClient/AcpSession types", () => {
 
     onStreamActivity(callStarted);
     onStreamActivity(messageUpdate);
+    onStreamActivity(toolCallUpdate);
     onStreamActivity(callEnded);
 
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(4);
     expect(events[0]?.kind).toBe("agent.call_started");
     expect(events[1]?.kind).toBe("agent.message_update");
-    expect(events[2]?.kind).toBe("agent.call_ended");
+    expect(events[2]?.kind).toBe("agent.tool_call_update");
+    expect(events[3]?.kind).toBe("agent.call_ended");
   });
 });
 
@@ -615,5 +627,55 @@ describe("AC10 — correlation metadata flows from AcpClientOptions to session s
       expect(event.runId).toBe("run-abc");
       expect(event.storyId).toBe("story-123");
     }
+  });
+
+  test("tool_call stream updates are emitted through onStreamActivity", async () => {
+    let callCount = 0;
+    const events: AgentStreamEvent[] = [];
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) return makeSpawnResult(0);
+      const ndjson =
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId: "x",
+            update: {
+              sessionUpdate: "tool_call",
+              toolName: "bash",
+            },
+          },
+        }) +
+        "\n" +
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1, cachedReadTokens: 0, cachedWriteTokens: 0 },
+          },
+        }) +
+        "\n";
+      return makeSpawnResult(0, ndjson);
+    };
+
+    const client = new SpawnAcpClient(
+      "acpx --model claude-sonnet-4-5 claude",
+      "/tmp",
+      30,
+      undefined,
+      0,
+      undefined,
+      { onStreamActivity: (event) => events.push(event) },
+    );
+
+    const session = await client.loadSession("test-session", "claude", "approve-reads");
+    await session!.prompt("hello");
+
+    const toolCallEvent = events.find((event) => event.kind === "agent.tool_call_update");
+    expect(toolCallEvent).toBeDefined();
+    expect(toolCallEvent).toMatchObject({ kind: "agent.tool_call_update", toolName: "bash" });
   });
 });

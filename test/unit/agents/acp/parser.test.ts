@@ -157,4 +157,38 @@ describe("incremental API — createParseState / parseAcpxJsonLine / finalizePar
     expect(activity?.kind).toBe("thinking_update");
     expect(activity?.deltaBytes).toBe(8); // "thinking".length
   });
+
+  test("tool_call returns tool_call_update activity", () => {
+    const state = createParseState();
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "x",
+        update: {
+          sessionUpdate: "tool_call",
+          toolName: "bash",
+        },
+      },
+    });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity).toEqual({ kind: "tool_call_update", toolName: "bash" });
+  });
+
+  test("tool_call_update returns tool_call_update activity", () => {
+    const state = createParseState();
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "x",
+        update: {
+          sessionUpdate: "tool_call_update",
+          tool: { name: "read_file" },
+        },
+      },
+    });
+    const activity = parseAcpxJsonLine(line, state);
+    expect(activity).toEqual({ kind: "tool_call_update", toolName: "read_file" });
+  });
 });

@@ -48,8 +48,10 @@ export interface IdleWatchdogConfig {
   mode?: "off" | "observe" | "warn-then-cancel" | "cancel";
   /** Idle timeout in seconds before watchdog triggers (default: 900) */
   idleTimeoutSeconds?: number;
-  /** Activity kinds that reset the idle timer (default: all message, thinking, usage updates) */
-  activityKinds?: Array<"message_update" | "thinking_update" | "usage_update">;
+  /** Max seconds a call may emit only tool-call activity before watchdog triggers (default: 1800, 0 disables this cap) */
+  toolCallOnlyIdleTimeoutSeconds?: number;
+  /** Activity kinds that reset the idle timer (default: all message, thinking, usage, and tool-call updates) */
+  activityKinds?: Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">;
   /** Grace period in seconds before cancel actually happens (used in warn-then-cancel mode, default: 10) */
   cancelGraceSeconds?: number;
   /** Maximum retry attempts before emitting terminal failure (default: 3) */

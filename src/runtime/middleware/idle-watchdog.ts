@@ -12,16 +12,21 @@ export interface WatchdogState {
   readonly pid?: number;
   startedAt: number;
   lastActivityAt: number;
+  lastNonToolCallActivityAt: number;
   messageUpdates: number;
   thinkingUpdates: number;
   usageUpdates: number;
+  toolCallUpdates: number;
 }
+
+type IdleTimeoutReason = "idle_timeout_exceeded" | "tool_call_only_idle_timeout_exceeded";
 
 interface WatchdogStateInternal extends WatchdogState {
   cancelAttempts: number;
   graceTimer?: ReturnType<typeof setTimeout>;
   inGracePeriod: boolean;
   warnedForCurrentIdlePeriod: boolean;
+  graceReason?: IdleTimeoutReason;
 }
 
 // setTimeout is permitted here for the recurring tick and grace period cancellation via clearTimeout
@@ -34,20 +39,32 @@ function scheduleTickIfNeeded(
   tickRef.handle = setTimeout(tick, intervalMs);
 }
 
-function handleObserveTimeout(state: WatchdogStateInternal, idleDurationMs: number): void {
+function handleObserveTimeout(
+  state: WatchdogStateInternal,
+  reason: IdleTimeoutReason,
+  idleDurationMs: number,
+  nonToolCallIdleMs: number,
+): void {
   if (state.warnedForCurrentIdlePeriod) return;
   state.warnedForCurrentIdlePeriod = true;
-  getSafeLogger()?.warn("idle-watchdog", "Idle timeout exceeded", {
-    storyId: state.storyId,
-    key: "idle_timeout_exceeded",
-    callId: state.callId,
-    mode: "observe",
-    idleDurationMs,
-  });
+  getSafeLogger()?.warn(
+    "idle-watchdog",
+    reason === "tool_call_only_idle_timeout_exceeded" ? "Tool-call-only idle timeout exceeded" : "Idle timeout exceeded",
+    {
+      storyId: state.storyId,
+      key: reason,
+      callId: state.callId,
+      mode: "observe",
+      idleDurationMs,
+      nonToolCallIdleMs,
+      toolCallUpdates: state.toolCallUpdates,
+    },
+  );
 }
 
 async function handleCancelTimeout(
   state: WatchdogStateInternal,
+  reason: IdleTimeoutReason,
   controllerRegistry: Map<string, () => Promise<void>>,
   maxRetryAttempts: number,
   activeStates: Map<string, WatchdogStateInternal>,
@@ -65,22 +82,29 @@ async function handleCancelTimeout(
   state.cancelAttempts++;
   // Reset synchronously to prevent double-trigger in next tick
   state.lastActivityAt = Date.now();
-  getSafeLogger()?.warn("idle-watchdog", "Canceling idle call", {
-    storyId: state.storyId,
-    key: "idle_timeout_exceeded",
-    callId: state.callId,
-    mode: "cancel",
-    action: "cancel",
-  });
+  getSafeLogger()?.warn(
+    "idle-watchdog",
+    reason === "tool_call_only_idle_timeout_exceeded" ? "Canceling tool-call-only idle call" : "Canceling idle call",
+    {
+      storyId: state.storyId,
+      key: reason,
+      callId: state.callId,
+      mode: "cancel",
+      action: "cancel",
+      toolCallUpdates: state.toolCallUpdates,
+    },
+  );
   const cancel = controllerRegistry.get(state.callId);
   if (cancel) await cancel().catch(() => {});
 }
 
 function handleWarnThenCancelTimeout(
   state: WatchdogStateInternal,
+  reason: IdleTimeoutReason,
   controllerRegistry: Map<string, () => Promise<void>>,
   maxRetryAttempts: number,
   idleTimeoutMs: number,
+  toolCallOnlyTimeoutMs: number,
   graceMs: number,
   activeStates: Map<string, WatchdogStateInternal>,
 ): void {
@@ -94,20 +118,30 @@ function handleWarnThenCancelTimeout(
     activeStates.delete(state.callId);
     return;
   }
-  getSafeLogger()?.warn("idle-watchdog", "Idle timeout exceeded, entering grace period", {
-    storyId: state.storyId,
-    key: "idle_timeout_exceeded",
-    callId: state.callId,
-    mode: "warn-then-cancel",
-    gracePeriodMs: graceMs,
-  });
+  getSafeLogger()?.warn(
+    "idle-watchdog",
+    reason === "tool_call_only_idle_timeout_exceeded"
+      ? "Tool-call-only idle timeout exceeded, entering grace period"
+      : "Idle timeout exceeded, entering grace period",
+    {
+      storyId: state.storyId,
+      key: reason,
+      callId: state.callId,
+      mode: "warn-then-cancel",
+      gracePeriodMs: graceMs,
+      toolCallUpdates: state.toolCallUpdates,
+    },
+  );
   state.inGracePeriod = true;
+  state.graceReason = reason;
   // setTimeout permitted here for grace period cancellation via clearTimeout
   state.graceTimer = setTimeout(async () => {
     if (!activeStates.has(state.callId)) return;
     state.inGracePeriod = false;
     state.graceTimer = undefined;
-    if (Date.now() - state.lastActivityAt < idleTimeoutMs) return;
+    state.graceReason = undefined;
+    const currentReason = getTimeoutReason(state, Date.now(), idleTimeoutMs, toolCallOnlyTimeoutMs);
+    if (currentReason !== reason) return;
     state.cancelAttempts++;
     state.lastActivityAt = Date.now();
     const cancel = controllerRegistry.get(state.callId);
@@ -115,14 +149,36 @@ function handleWarnThenCancelTimeout(
   }, graceMs);
 }
 
-function resetActivity(state: WatchdogStateInternal, newTimestamp: number): void {
-  state.lastActivityAt = newTimestamp;
-  state.warnedForCurrentIdlePeriod = false;
+function clearGrace(state: WatchdogStateInternal): void {
   if (state.inGracePeriod && state.graceTimer !== undefined) {
     clearTimeout(state.graceTimer);
     state.graceTimer = undefined;
     state.inGracePeriod = false;
+    state.graceReason = undefined;
   }
+}
+
+function resetActivity(
+  state: WatchdogStateInternal,
+  newTimestamp: number,
+  options: { clearGrace: boolean },
+): void {
+  state.lastActivityAt = newTimestamp;
+  state.warnedForCurrentIdlePeriod = false;
+  if (options.clearGrace) clearGrace(state);
+}
+
+function getTimeoutReason(
+  state: WatchdogStateInternal,
+  now: number,
+  idleTimeoutMs: number,
+  toolCallOnlyTimeoutMs: number,
+): IdleTimeoutReason | undefined {
+  if (now - state.lastActivityAt >= idleTimeoutMs) return "idle_timeout_exceeded";
+  if (toolCallOnlyTimeoutMs > idleTimeoutMs && now - state.lastNonToolCallActivityAt >= toolCallOnlyTimeoutMs) {
+    return "tool_call_only_idle_timeout_exceeded";
+  }
+  return undefined;
 }
 
 export function attachAgentIdleWatchdog(
@@ -137,10 +193,11 @@ export function attachAgentIdleWatchdog(
 
   const mode = watchdogConfig.mode;
   const idleTimeoutMs = (watchdogConfig.idleTimeoutSeconds ?? 30) * 1000;
+  const toolCallOnlyTimeoutMs = (watchdogConfig.toolCallOnlyIdleTimeoutSeconds ?? 0) * 1000;
   const graceMs = (watchdogConfig.cancelGraceSeconds ?? 5) * 1000;
   const maxRetryAttempts = watchdogConfig.maxRetryAttempts ?? 3;
   const activityKinds = new Set<string>(
-    watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update"],
+    watchdogConfig.activityKinds ?? ["message_update", "thinking_update", "usage_update", "tool_call_update"],
   );
   // Poll at 1/4 of the idle timeout so detection latency is at most idleTimeout * 5/4
   // rather than up to 2× idleTimeout when the tick interval equals idleTimeoutMs.
@@ -155,11 +212,24 @@ export function attachAgentIdleWatchdog(
     for (const [, state] of activeStates) {
       if (state.inGracePeriod) continue;
       const idleDurationMs = now - state.lastActivityAt;
-      if (idleDurationMs < idleTimeoutMs) continue;
-      if (mode === "observe") handleObserveTimeout(state, idleDurationMs);
-      else if (mode === "cancel") void handleCancelTimeout(state, controllerRegistry, maxRetryAttempts, activeStates);
+      const nonToolCallIdleMs = now - state.lastNonToolCallActivityAt;
+      const reason = getTimeoutReason(state, now, idleTimeoutMs, toolCallOnlyTimeoutMs);
+      if (!reason) continue;
+      if (mode === "observe") handleObserveTimeout(state, reason, idleDurationMs, nonToolCallIdleMs);
+      else if (mode === "cancel") {
+        void handleCancelTimeout(state, reason, controllerRegistry, maxRetryAttempts, activeStates);
+      }
       else if (mode === "warn-then-cancel") {
-        handleWarnThenCancelTimeout(state, controllerRegistry, maxRetryAttempts, idleTimeoutMs, graceMs, activeStates);
+        handleWarnThenCancelTimeout(
+          state,
+          reason,
+          controllerRegistry,
+          maxRetryAttempts,
+          idleTimeoutMs,
+          toolCallOnlyTimeoutMs,
+          graceMs,
+          activeStates,
+        );
       }
     }
     if (activeStates.size > 0) scheduleTickIfNeeded(tickRef, tick, tickIntervalMs);
@@ -178,9 +248,11 @@ export function attachAgentIdleWatchdog(
           pid: event.pid,
           startedAt: now,
           lastActivityAt: now,
+          lastNonToolCallActivityAt: now,
           messageUpdates: 0,
           thinkingUpdates: 0,
           usageUpdates: 0,
+          toolCallUpdates: 0,
           cancelAttempts: 0,
           inGracePeriod: false,
           warnedForCurrentIdlePeriod: false,
@@ -190,6 +262,7 @@ export function attachAgentIdleWatchdog(
           callId: event.callId,
           mode,
           idleTimeoutMs,
+          toolCallOnlyTimeoutMs,
         });
         scheduleTickIfNeeded(tickRef, tick, tickIntervalMs);
         break;
@@ -198,7 +271,8 @@ export function attachAgentIdleWatchdog(
         const state = activeStates.get(event.callId);
         if (state && activityKinds.has("message_update")) {
           state.messageUpdates++;
-          resetActivity(state, event.timestamp);
+          state.lastNonToolCallActivityAt = event.timestamp;
+          resetActivity(state, event.timestamp, { clearGrace: true });
         }
         break;
       }
@@ -206,7 +280,8 @@ export function attachAgentIdleWatchdog(
         const state = activeStates.get(event.callId);
         if (state && activityKinds.has("thinking_update")) {
           state.thinkingUpdates++;
-          resetActivity(state, event.timestamp);
+          state.lastNonToolCallActivityAt = event.timestamp;
+          resetActivity(state, event.timestamp, { clearGrace: true });
         }
         break;
       }
@@ -214,7 +289,18 @@ export function attachAgentIdleWatchdog(
         const state = activeStates.get(event.callId);
         if (state && activityKinds.has("usage_update")) {
           state.usageUpdates++;
-          resetActivity(state, event.timestamp);
+          state.lastNonToolCallActivityAt = event.timestamp;
+          resetActivity(state, event.timestamp, { clearGrace: true });
+        }
+        break;
+      }
+      case "agent.tool_call_update": {
+        const state = activeStates.get(event.callId);
+        if (state && activityKinds.has("tool_call_update")) {
+          state.toolCallUpdates++;
+          resetActivity(state, event.timestamp, {
+            clearGrace: state.graceReason === "idle_timeout_exceeded",
+          });
         }
         break;
       }

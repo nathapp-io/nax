@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` config fields removed. Use `agent.default` and `agent.fallback.map` instead (ADR-012 Phase 6). Loading a config containing any of these keys throws `NaxError CONFIG_LEGACY_AGENT_KEYS` with a per-key migration pointer.
 
+### Fixed
+
+- **watchdog:** Count ACP `tool_call` / `tool_call_update` stream activity by default, and add `agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds` (default 1800s) so long-running tool-only sessions stay alive without masking runaway tool loops.
+
 ## [0.51.2] — 2026-03-22
 
 ### Added  

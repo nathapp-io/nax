@@ -11,6 +11,7 @@ export interface ActiveCallState {
   messageUpdates: number;
   thinkingUpdates: number;
   usageUpdates: number;
+  toolCallUpdates: number;
   status: "active" | "ended";
 }
 
@@ -39,6 +40,7 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
               messageUpdates: 0,
               thinkingUpdates: 0,
               usageUpdates: 0,
+              toolCallUpdates: 0,
               status: "active",
             });
             break;
@@ -71,6 +73,17 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
               next.set(event.callId, {
                 ...state,
                 usageUpdates: state.usageUpdates + 1,
+                lastActivityAt: event.timestamp,
+              });
+            }
+            break;
+          }
+          case "agent.tool_call_update": {
+            const state = next.get(event.callId);
+            if (state) {
+              next.set(event.callId, {
+                ...state,
+                toolCallUpdates: state.toolCallUpdates + 1,
                 lastActivityAt: event.timestamp,
               });
             }

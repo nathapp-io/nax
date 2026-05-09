@@ -72,9 +72,15 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.idleWatchdog?.enabled).toBe(true);
     expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
     expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(900);
+    expect(result.agent?.idleWatchdog?.toolCallOnlyIdleTimeoutSeconds).toBe(1800);
     expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
     expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(3);
-    expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
+    expect(result.agent?.idleWatchdog?.activityKinds).toEqual([
+      "message_update",
+      "thinking_update",
+      "usage_update",
+      "tool_call_update",
+    ]);
   });
 
   test("agent.idleWatchdog internal defaults when provided", () => {
@@ -87,9 +93,15 @@ describe("AgentConfigSchema", () => {
     expect(result.agent?.idleWatchdog?.enabled).toBe(true);
     expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
     expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(900);
+    expect(result.agent?.idleWatchdog?.toolCallOnlyIdleTimeoutSeconds).toBe(1800);
     expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
     expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(3);
-    expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update", "thinking_update", "usage_update"]);
+    expect(result.agent?.idleWatchdog?.activityKinds).toEqual([
+      "message_update",
+      "thinking_update",
+      "usage_update",
+      "tool_call_update",
+    ]);
   });
 
   test("agent.idleWatchdog accepts fully populated config", () => {
@@ -99,6 +111,7 @@ describe("AgentConfigSchema", () => {
           enabled: true,
           mode: "warn-then-cancel",
           idleTimeoutSeconds: 60,
+          toolCallOnlyIdleTimeoutSeconds: 120,
           cancelGraceSeconds: 10,
           maxRetryAttempts: 5,
           activityKinds: ["message_update"],
@@ -108,6 +121,7 @@ describe("AgentConfigSchema", () => {
     const result = NaxConfigSchema.parse(raw);
     expect(result.agent?.idleWatchdog?.mode).toBe("warn-then-cancel");
     expect(result.agent?.idleWatchdog?.idleTimeoutSeconds).toBe(60);
+    expect(result.agent?.idleWatchdog?.toolCallOnlyIdleTimeoutSeconds).toBe(120);
     expect(result.agent?.idleWatchdog?.cancelGraceSeconds).toBe(10);
     expect(result.agent?.idleWatchdog?.maxRetryAttempts).toBe(5);
     expect(result.agent?.idleWatchdog?.activityKinds).toEqual(["message_update"]);
@@ -230,15 +244,20 @@ describe("AgentConfigSchema", () => {
   });
 
   test("agent.idleWatchdog accepts all valid activityKinds combinations", () => {
-    const validCombinations: Array<Array<"message_update" | "thinking_update" | "usage_update">> = [
+    const validCombinations: Array<Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">> = [
       [],
       ["message_update"],
       ["thinking_update"],
       ["usage_update"],
+      ["tool_call_update"],
       ["message_update", "thinking_update"],
       ["message_update", "usage_update"],
       ["thinking_update", "usage_update"],
+      ["message_update", "tool_call_update"],
+      ["thinking_update", "tool_call_update"],
+      ["usage_update", "tool_call_update"],
       ["message_update", "thinking_update", "usage_update"],
+      ["message_update", "thinking_update", "usage_update", "tool_call_update"],
     ];
 
     for (const kinds of validCombinations) {

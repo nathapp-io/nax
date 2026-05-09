@@ -135,14 +135,16 @@ export const DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG: {
   enabled: boolean;
   mode: "warn-then-cancel";
   idleTimeoutSeconds: number;
-  activityKinds: Array<"message_update" | "thinking_update" | "usage_update">;
+  toolCallOnlyIdleTimeoutSeconds: number;
+  activityKinds: Array<"message_update" | "thinking_update" | "usage_update" | "tool_call_update">;
   cancelGraceSeconds: number;
   maxRetryAttempts: number;
 } = {
   enabled: true,
   mode: "warn-then-cancel",
   idleTimeoutSeconds: 900,
-  activityKinds: ["message_update", "thinking_update", "usage_update"],
+  toolCallOnlyIdleTimeoutSeconds: 1800,
+  activityKinds: ["message_update", "thinking_update", "usage_update", "tool_call_update"],
   cancelGraceSeconds: 10,
   maxRetryAttempts: 3,
 };
@@ -152,9 +154,10 @@ const AgentIdleWatchdogConfigSchema = z
     enabled: z.boolean().default(true),
     mode: z.enum(["off", "observe", "warn-then-cancel", "cancel"]).default("warn-then-cancel"),
     idleTimeoutSeconds: z.number().nonnegative().default(900),
+    toolCallOnlyIdleTimeoutSeconds: z.number().nonnegative().default(1800),
     activityKinds: z
-      .array(z.enum(["message_update", "thinking_update", "usage_update"]))
-      .default(["message_update", "thinking_update", "usage_update"]),
+      .array(z.enum(["message_update", "thinking_update", "usage_update", "tool_call_update"]))
+      .default(["message_update", "thinking_update", "usage_update", "tool_call_update"]),
     cancelGraceSeconds: z.number().nonnegative().default(10),
     maxRetryAttempts: z.number().int().nonnegative().default(3),
   })
