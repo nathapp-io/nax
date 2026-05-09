@@ -112,7 +112,10 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     let configuredBridge: ReturnType<typeof buildInteractionBridge> | undefined;
     if (interactionChain) {
       try {
-        configuredBridge = buildInteractionBridge(interactionChain, { featureName: options.feature, stage: "pre-flight" });
+        configuredBridge = buildInteractionBridge(interactionChain, {
+          featureName: options.feature,
+          stage: "pre-flight",
+        });
       } catch {}
     }
     const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
