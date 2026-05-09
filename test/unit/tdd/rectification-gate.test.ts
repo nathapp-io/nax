@@ -6,38 +6,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../src/config";
 import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
-import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
-import { makeStory } from "../../helpers";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeConfig(): NaxConfig {
-  return {
-    models: {
-      claude: {
-        fast: { model: "fast-model" },
-        balanced: { model: "balanced-model" },
-        powerful: { model: "powerful-model" },
-      },
-    },
-    agent: { default: "claude" },
-    execution: {
-      rectification: {
-        enabled: true,
-        maxRetries: 1,
-        fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 1000,
-      },
-      sessionTimeoutSeconds: 300,
-      dangerouslySkipPermissions: true,
-    },
-    quality: { commands: { test: "bun test" } },
-  } as unknown as NaxConfig;
-}
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
 
 const SILENT_LOGGER = {
   info: () => {},
@@ -66,7 +36,7 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
   // must fail the gate even when the failed counter is 0 (parser mis-count).
   test("fails gate when exitCode=1 and failures.length > 0 even if failed counter is 0", async () => {
     const story = makeStory({ id: "US-BUG-060" });
-    const config = makeConfig();
+    const config = makeNaxConfig({ execution: { rectification: { maxRetries: 1, fullSuiteTimeoutSeconds: 60 } } });
     const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" });
 
     _rectificationGateDeps.executeWithTimeout = mock(async () => ({
@@ -99,7 +69,7 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
 
   test("passes gate when exitCode=1 but failures.length === 0 and failed === 0 (environmental noise)", async () => {
     const story = makeStory({ id: "US-ENV-NOISE" });
-    const config = makeConfig();
+    const config = makeNaxConfig({ execution: { rectification: { maxRetries: 1, fullSuiteTimeoutSeconds: 60 } } });
     const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" });
 
     _rectificationGateDeps.executeWithTimeout = mock(async () => ({
@@ -131,7 +101,7 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
 
   test("passes gate cleanly when exitCode=0", async () => {
     const story = makeStory({ id: "US-CLEAN" });
-    const config = makeConfig();
+    const config = makeNaxConfig({ execution: { rectification: { maxRetries: 1, fullSuiteTimeoutSeconds: 60 } } });
     const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" });
 
     _rectificationGateDeps.executeWithTimeout = mock(async () => ({
