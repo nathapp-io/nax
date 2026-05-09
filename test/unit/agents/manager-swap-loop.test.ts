@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
-import type { HopKind } from "../../../src/agents/manager-types";
-import { makeNaxConfig } from "../../helpers";
+import { AgentManager, _agentManagerDeps } from "@/agents";
+import type { HopKind } from "@/agents";
+import type { ContextBundle } from "@/context/engine";
+import { makeNaxConfig } from "@test/helpers";
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
-const mockBundle = {} as import("../../../src/context/engine").ContextBundle;
+const mockBundle = {} as ContextBundle;
 
 function makeConfig(map: Record<string, string[]> = { claude: ["codex"] }) {
   return makeNaxConfig({

@@ -12,21 +12,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { ContextOrchestrator } from "../../../src/context/engine/orchestrator";
-import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProvider } from "../../../src/context/engine/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { AgentManager } from "../../../src/agents/manager";
-import { SessionFailureError } from "../../../src/agents/types";
-
-import { _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
-import { executionStage, _executionDeps } from "../../../src/pipeline/stages/execution";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { AgentAdapter } from "../../../src/agents/types";
-import type { AgentRegistry } from "../../../src/agents/registry";
+import { ContextOrchestrator } from "@/context";
+import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProvider } from "@/context/engine";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { AgentManager, SessionFailureError } from "@/agents";
+import { _buildHopCallbackDeps } from "@/operations";
+import { executionStage, _executionDeps } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import type { AgentAdapter } from "@/agents";
+import type { AgentRegistry } from "@/agents/registry";
 import { _gitDeps } from "../../../src/utils/git";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // Saved deps for restoration
 const origGetAgent = _executionDeps.getAgent;

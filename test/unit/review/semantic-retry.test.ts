@@ -9,17 +9,14 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRunRequest } from "../../../src/agents";
-import * as loggerModule from "../../../src/logger";
-import { callOp } from "../../../src/operations/call";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
+import type { AgentRunRequest } from "@/agents";
+import * as loggerModule from "@/logger";
+import { callOp, semanticReviewOp } from "@/operations";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { SemanticStory } from "../../../src/review/semantic";
-import type { SemanticReviewConfig } from "../../../src/review/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import { makeMockRuntime } from "../../helpers/runtime";
-import { withTempDir } from "../../helpers/temp";
+import type { SemanticStory } from "@/review/semantic";
+import type { SemanticReviewConfig } from "@/review/types";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime, makeMockRuntime, withTempDir } from "@test/helpers";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -490,7 +487,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+      const { semanticReviewOp } = await import("@/operations");
       const result = await semanticReviewOp.hopBody!("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,
@@ -541,7 +538,7 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
         };
       });
 
-      const { semanticReviewOp } = await import("../../../src/operations/semantic-review");
+      const { semanticReviewOp } = await import("@/operations");
       const result = await semanticReviewOp.hopBody!("initial prompt", {
         send: mockSend,
         sendWithParseRetry: mockSend,

@@ -11,13 +11,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/execution";
-import { _buildHopCallbackDeps } from "../../../../src/operations/build-hop-callback";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { ContextBundle } from "../../../../src/context/engine/types";
-import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "../../../../src/agents/manager-types";
-import { makeSparseNaxConfig, makeSessionManager } from "../../../helpers";
+import { _executionDeps, executionStage } from "@/pipeline";
+import { _buildHopCallbackDeps } from "@/operations";
+import type { PipelineContext } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import type { ContextBundle } from "@/context/engine";
+import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "@/agents";
+import { makeSparseNaxConfig, makeSessionManager } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

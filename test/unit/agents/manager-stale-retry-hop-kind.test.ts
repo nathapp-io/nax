@@ -10,11 +10,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AgentManager } from "../../../src/agents/manager";
-import type { HopKind } from "../../../src/agents/manager-types";
-import type { AgentResult } from "../../../src/agents/types";
-import type { AdapterFailure, ContextBundle } from "../../../src/context/engine/types";
-import { makeNaxConfig } from "../../helpers/mock-nax-config";
+import { AgentManager } from "@/agents";
+import type { HopKind, AgentResult } from "@/agents";
+import type { AdapterFailure, ContextBundle } from "@/context/engine";
+import { makeNaxConfig } from "@test/helpers";
 
 const STALE_FAILURE: AdapterFailure = {
   category: "availability",

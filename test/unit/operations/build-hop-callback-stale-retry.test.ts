@@ -12,10 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildHopCallback, _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
-import type { SessionHandle, TurnResult } from "../../../src/agents/types";
-import type { AdapterFailure } from "../../../src/context/engine/types";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "../../helpers";
+import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
+import type { SessionHandle, TurnResult } from "@/agents/types";
+import type { AdapterFailure } from "@/context/engine";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared stubs

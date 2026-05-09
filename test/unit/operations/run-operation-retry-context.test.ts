@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AgentRunRequest } from "../../../src/agents";
-import type { RetryContext } from "../../../src/agents/retry/types";
-import { pickSelector } from "../../../src/config";
-import type { DEFAULT_CONFIG } from "../../../src/config";
-import { callOp } from "../../../src/operations/call";
-import type { RunOperation } from "../../../src/operations/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { AgentRunRequest } from "@/agents";
+import type { RetryContext } from "@/agents/retry/types";
+import { pickSelector } from "@/config";
+import type { DEFAULT_CONFIG } from "@/config";
+import { callOp } from "@/operations";
+import type { RunOperation } from "@/operations/types";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
@@ -89,7 +89,7 @@ describe("callOp — RunOperation.retry RetryContext threading (US-004)", () => 
   });
 
   test("synthetic hopBody calls shouldRetry with ParseValidationError when parse fails", async () => {
-    const { ParseValidationError } = await import("../../../src/agents/retry");
+    const { ParseValidationError } = await import("@/agents");
 
     const retryStrategyCalls: Array<unknown> = [];
 

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentRunRequest, AgentRunOutcome, HopKind } from "../../../src/agents/manager-types";
-import type { ContextBundle } from "../../../src/context/engine";
-import type { AgentResult } from "../../../src/agents/types";
+import type { AgentRunRequest, AgentRunOutcome, HopKind, AgentResult } from "@/agents";
+import type { ContextBundle } from "@/context/engine";
 
 describe("AgentRunRequest — executeHop callback", () => {
   test("AgentRunRequest accepts executeHop callback", () => {

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
-import type { IAgentManager } from "../../../../src/agents/manager-types";
-import { ContextOrchestrator } from "../../../../src/context/engine";
-import type { ContextBundle } from "../../../../src/context/engine";
-import { makeAgentAdapter } from "../../../../test/helpers";
+import { executionStage, _executionDeps } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import type { IAgentManager } from "@/agents";
+import { ContextOrchestrator } from "@/context";
+import type { ContextBundle } from "@/context/engine";
+import { makeAgentAdapter } from "@test/helpers";
 
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
@@ -77,7 +77,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }, fallbacks: [] }),
-      run: async (request: import("../../../../src/agents/manager-types").AgentRunRequest) => {
+      run: async (request: import("@/agents").AgentRunRequest) => {
         const outcome = await manager.runWithFallback(request);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       },
