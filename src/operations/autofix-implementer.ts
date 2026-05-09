@@ -18,6 +18,8 @@ export interface AutofixImplementerOutput {
   unresolvedReason?: string;
   /** Parsed TEST_EDIT_REASON blocks. Empty when no escape valve was invoked. */
   testEditDeclarations: TestEditDeclaration[];
+  /** Shorthand for a single mock_structure handoff; bypasses testEditDeclarations flow. */
+  mockStructureDeclaration?: { files: string[]; reasonDetail: string };
 }
 
 export const implementerRectifyOp: RunOperation<AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> = {

@@ -8,8 +8,10 @@ import type { RunOperation } from "./types";
 export interface AutofixTestWriterInput {
   failedChecks: ReviewCheckResult[];
   story: UserStory;
-  mode?: "fix-test-files" | "write-failing-test";
+  mode?: "fix-test-files" | "write-failing-test" | "mock-restructure";
   blockingThreshold?: "error" | "warning" | "info";
+  handoffReason?: string;
+  handoffFiles?: string[];
 }
 
 export interface AutofixTestWriterOutput {
@@ -26,6 +28,8 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
     const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, input.story, {
       mode: input.mode,
       blockingThreshold: input.blockingThreshold,
+      handoffReason: input.handoffReason,
+      handoffFiles: input.handoffFiles,
     });
     return {
       role: { id: "role", content: "", overridable: false },

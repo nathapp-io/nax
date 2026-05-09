@@ -122,6 +122,15 @@ export function buildAutofixStrategies(
       if (decls.length > 0) {
         ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...decls];
       }
+      if (output.mockStructureDeclaration) {
+        ctx.pendingMockStructureHandoffs = [
+          ...(ctx.pendingMockStructureHandoffs ?? []),
+          {
+            files: output.mockStructureDeclaration.files,
+            reasonDetail: output.mockStructureDeclaration.reasonDetail,
+          },
+        ];
+      }
       return {
         summary: output.unresolvedReason ?? "",
         unresolved: output.unresolvedReason,
@@ -131,15 +140,26 @@ export function buildAutofixStrategies(
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
     name: "autofix-test-writer",
-    // D2: also fires for adversarial source-bug error findings so the test-writer can
-    // generate a failing test that documents spec-correct behavior before the implementer runs.
-    appliesTo: (f) =>
-      f.fixTarget === "test" ||
-      ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
+    // Fires for test-targeted findings, or for any finding when mock-structure handoffs are pending.
+    appliesTo: (f) => f.fixTarget === "test" || (ctx.pendingMockStructureHandoffs?.length ?? 0) > 0,
     fixOp: testWriterRectifyOp,
     maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
+      const handoffs = ctx.pendingMockStructureHandoffs;
+      if (handoffs && handoffs.length > 0) {
+        ctx.pendingMockStructureHandoffs = [];
+        const allFiles = [...new Set(handoffs.flatMap((h) => h.files))];
+        const reason = handoffs.map((h) => h.reasonDetail).join("\n\n---\n\n");
+        return {
+          failedChecks: collectFailedChecks(ctx),
+          story: ctx.story,
+          mode: "mock-restructure",
+          handoffFiles: allFiles,
+          handoffReason: reason,
+          blockingThreshold: ctx.config.review?.blockingThreshold,
+        };
+      }
       const hasSourceBug = findings.some(
         (f) => (f.fixTarget ?? "source") === "source" && f.source === "adversarial-review",
       );
