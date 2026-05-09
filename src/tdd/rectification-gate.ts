@@ -157,6 +157,36 @@ export async function runFullSuiteGate(
       );
     }
 
+    // @design: BUG-059 / BUG-060 defense: if structured failures exist but
+    // failed === 0 (parser drift), failures.length wins — treat as real failure.
+    if (testSummary.failures.length > 0) {
+      logger.warn("tdd", "Full suite gate: parser counter mismatch — routing to rectification using failures.length", {
+        storyId: story.id,
+        failedCounter: testSummary.failed,
+        failuresLength: testSummary.failures.length,
+        exitCode: fullSuiteResult.exitCode,
+      });
+      return await runRectificationLoop(
+        story,
+        config,
+        workdir,
+        agentManager,
+        implementerTier,
+        lite,
+        logger,
+        { ...testSummary, failed: Math.max(testSummary.failed, testSummary.failures.length) },
+        rectificationConfig,
+        effectiveTestCmd,
+        fullSuiteTimeout,
+        fullSuiteResult.output,
+        featureName,
+        projectDir,
+        sessionManager,
+        sessionId,
+        runtime,
+      );
+    }
+
     // @design: BUG-059: Non-zero exit with 0 parsed failures could mean:
     // (a) Environmental noise (linter warning) — safe to pass
     // (b) Bun crashed/OOM mid-run — truncated output, parser found nothing

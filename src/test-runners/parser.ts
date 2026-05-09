@@ -151,8 +151,8 @@ function parseBunOutput(output: string): TestSummary {
   //   "X passed, Y failed [duration]"  (verbose output)
   //   "X tests passed [duration]"  (all-pass output)
   // Match the last occurrence of each to handle multi-file runs.
-  const summaryPassMatches = Array.from(output.matchAll(/(\d+)\s+(?:tests?\s+)?(?:pass|passed)\b/g));
-  const summaryFailMatches = Array.from(output.matchAll(/(\d+)\s+(?:fail|failed)\b/g));
+  const summaryPassMatches = Array.from(output.matchAll(/^\s*(\d+)\s+(?:tests?\s+)?(?:pass|passed)\b.*$/gm));
+  const summaryFailMatches = Array.from(output.matchAll(/^\s*(\d+)\s+(?:fail|failed)\b.*$/gm));
   if (summaryPassMatches.length > 0) {
     passed = Math.max(passed, Number.parseInt(summaryPassMatches[summaryPassMatches.length - 1][1], 10));
   }
@@ -161,8 +161,8 @@ function parseBunOutput(output: string): TestSummary {
   }
 
   // BUG-060: If we have no summary fail count but have failures from (fail) lines,
-  // use the failure count as the backstop. This handles edge cases where bun outputs
-  // (fail) blocks without a summary line.
+  // use the failure count as the backstop. This handles truncated output (e.g. OOM kill,
+  // crash mid-run) where bun never emitted the summary line.
   if (summaryFailMatches.length === 0 && failures.length > failed) {
     failed = failures.length;
   }

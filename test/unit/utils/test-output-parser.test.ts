@@ -380,6 +380,32 @@ Error: Expected false
     expect(result.passed).toBe(0);
     expect(result.failures).toHaveLength(2);
   });
+
+  // BUG-060: verbose mode must not double-count — ✗ glyph + (fail) block for same test
+  test("does not double-count failures in verbose mode (glyph and (fail) block for same test)", () => {
+    const output = `
+test/unit/cli/plan.test.ts:
+✓ passing test [0.5ms]
+✗ failing test 1 [1.2ms]
+✗ failing test 2 [0.8ms]
+
+(fail) failing test 1 [1.2ms]
+Error: Expected true
+  at test.ts:10:5
+(fail) failing test 2 [0.8ms]
+Error: Expected false
+  at test.ts:20:5
+
+2 pass
+2 fail`.trim();
+
+    const result = parseTestOutput(output);
+
+    // 2 failures, not 4 (must not count ✗ glyph AND (fail) block separately)
+    expect(result.failed).toBe(2);
+    expect(result.passed).toBe(2);
+    expect(result.failures).toHaveLength(2);
+  });
 });
 
 describe("formatFailureSummary", () => {
