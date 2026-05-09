@@ -37,7 +37,9 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   },
   parse(output, input, _ctx) {
     const unresolvedMatch = output.match(/^UNRESOLVED:\s*(.+)$/m);
-    const declarations = parseTestEditDeclarations(output);
+    const allDeclarations = parseTestEditDeclarations(output);
+    const mockDecl = allDeclarations.find((d) => d.reason === "mock_structure");
+    const declarations = allDeclarations.filter((d) => d.reason !== "mock_structure");
     for (const d of declarations) {
       getSafeLogger()?.info("autofix", "test_edit_declared", {
         storyId: input.story.id,
@@ -48,6 +50,9 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
     return {
       applied: true,
       testEditDeclarations: declarations,
+      ...(mockDecl?.files && mockDecl?.reasonDetail
+        ? { mockStructureDeclaration: { files: mockDecl.files, reasonDetail: mockDecl.reasonDetail } }
+        : {}),
       ...(unresolvedMatch ? { unresolvedReason: unresolvedMatch[1]?.trim() } : {}),
     };
   },
