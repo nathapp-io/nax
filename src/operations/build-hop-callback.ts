@@ -171,8 +171,7 @@ export function buildHopCallback(
           attempt: hopKind.attempt,
         });
         const modelDef =
-          resolvedRunOptions.modelDef ??
-          resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+          resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
         handle = await sessionManager.openSession(sessionName, {
           agentName,
           role: resolvedRunOptions.sessionRole ?? "implementer",
@@ -188,8 +187,7 @@ export function buildHopCallback(
     } else {
       const modelDef =
         hopKind.kind === "primary"
-          ? (resolvedRunOptions.modelDef ??
-            resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
+          ? (resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
           : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
       // openSession errors propagate naturally — no handle, no closeSession needed
       handle = await sessionManager.openSession(sessionName, {

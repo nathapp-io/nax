@@ -210,7 +210,6 @@ export class AgentManager implements IAgentManager {
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
     let currentBundle = request.bundle;
-    // biome-ignore lint/style/useConst: mutated in stale-retry and swap branches below
     let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
 
