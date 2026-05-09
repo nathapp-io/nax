@@ -7,6 +7,7 @@
  */
 
 import type { NaxConfig } from "../../config/runtime-types";
+import { NaxError } from "../../errors";
 import { verifyTestWriterIsolation } from "../../tdd/isolation";
 import { resolveTestFilePatterns } from "../../test-runners";
 import { spawn } from "../../utils/bun-deps";
@@ -41,7 +42,11 @@ export async function assertionSiteDiffCheck(
       stderr: "pipe",
     });
 
-    const [exitCode, diffOutput] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    const [exitCode, diffOutput] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
 
     if (exitCode !== 0) continue;
 
@@ -95,7 +100,7 @@ export async function runIsolationGuard(
   );
 
   if (!result.passed) {
-    return { violated: true, files: result.violations };
+    return { violated: true, files: result.violations ?? [] };
   }
 
   return { violated: false };
@@ -120,6 +125,10 @@ export async function revertDiff(workdir: string, files: string[]): Promise<void
   ]);
 
   if (exitCode !== 0) {
-    throw new Error(`[autofix-guards] git checkout HEAD failed with exit code ${exitCode}`);
+    throw new NaxError(
+      `[autofix-guards] git checkout HEAD failed with exit code ${exitCode}`,
+      "GIT_CHECKOUT_FAILED",
+      { stage: "autofix-guards", workdir, files, exitCode },
+    );
   }
 }
