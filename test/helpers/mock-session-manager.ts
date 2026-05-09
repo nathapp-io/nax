@@ -12,6 +12,7 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
   const stubTurnResult: TurnResult = {
     output: "",
     tokenUsage: { inputTokens: 0, outputTokens: 0 },
+    estimatedCostUsd: 0,
     internalRoundTrips: 0,
   };
   return {
@@ -39,6 +40,7 @@ export function makeSessionManager(overrides: Partial<ISessionManager> = {}): IS
     sendPrompt: mock(async () => stubTurnResult),
     nameFor: mock(() => "nax-00000000"),
     descriptor: mock(() => null),
+    getLiveHandle: mock((_name: string) => undefined as SessionHandle | undefined),
     ...overrides,
   } as ISessionManager;
 }

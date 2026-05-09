@@ -76,7 +76,7 @@ export { constitutionStage } from "./constitution";
 export { contextStage } from "./context";
 export { promptStage } from "./prompt";
 export { optimizerStage } from "./optimizer";
-export { executionStage } from "./execution";
+export { executionStage, _executionDeps } from "./execution";
 export { verifyStage } from "./verify";
 export { rectifyStage } from "./rectify";
 export { reviewStage } from "./review";

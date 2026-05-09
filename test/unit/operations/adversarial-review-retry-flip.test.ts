@@ -14,14 +14,13 @@
 /* biome-ignore lint/suspicious/noExplicitAny: test mocking and type compatibility */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import * as loggerModule from "../../../src/logger";
-import type { AgentRunRequest } from "../../../src/agents";
-import { ParseValidationError } from "../../../src/agents/retry/types";
-import { _callOpDeps, callOp, type CallContext } from "../../../src/operations";
-import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import * as loggerModule from "@/logger";
+import type { AgentRunRequest } from "@/agents";
+import { ParseValidationError } from "@/agents";
+import { _callOpDeps, callOp, adversarialReviewOp, type CallContext } from "@/operations";
+import type { AdversarialReviewInput } from "@/operations/adversarial-review";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -228,7 +227,7 @@ describe("AC6: cost accumulation — estimatedCostUsd sums both turns", () => {
     let turnCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {

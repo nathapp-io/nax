@@ -12,21 +12,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { ContextOrchestrator } from "../../../src/context/engine/orchestrator";
-import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProvider } from "../../../src/context/engine/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { AgentManager } from "../../../src/agents/manager";
-import { SessionFailureError } from "../../../src/agents/types";
-
-import { _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
-import { executionStage, _executionDeps } from "../../../src/pipeline/stages/execution";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../src/prd";
-import type { AgentAdapter } from "../../../src/agents/types";
-import type { AgentRegistry } from "../../../src/agents/registry";
+import { ContextOrchestrator } from "@/context";
+import type { AdapterFailure, ContextBundle, ContextProviderResult, IContextProvider } from "@/context/engine";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { AgentManager, SessionFailureError } from "@/agents";
+import { _buildHopCallbackDeps } from "@/operations";
+import { executionStage, _executionDeps } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import type { AgentAdapter } from "@/agents";
+import type { AgentRegistry } from "@/agents/registry";
 import { _gitDeps } from "../../../src/utils/git";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 // Saved deps for restoration
 const origGetAgent = _executionDeps.getAgent;
@@ -225,7 +223,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [],
           };
         }
-        const swapped = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const swapped = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
         return {
           result: { ...swapped.result, agentFallbacks: [] },
           fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
@@ -260,7 +258,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
       }),
       runWithFallbackFn: async (req) => {
         if (req.executeHop) {
-          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          const { result } = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
           return {
             result: { ...result, agentFallbacks: [] },
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
@@ -299,7 +297,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
       }),
       runWithFallbackFn: async (req) => {
         if (req.executeHop) {
-          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          const { result } = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
           return {
             result: { ...result, agentFallbacks: [] },
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
@@ -353,7 +351,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [],
           };
         }
-        const swapped = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const swapped = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
         return {
           result: { ...swapped.result, agentFallbacks: [] },
           fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],
@@ -429,9 +427,9 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [],
           };
         }
-        const firstSwap = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const firstSwap = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
         const secondFailure = firstSwap.result.adapterFailure ?? QUOTA_FAILURE;
-        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, secondFailure, req.runOptions);
+        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, { kind: "swap", failure: secondFailure }, req.runOptions);
         return {
           result: { ...secondSwap.result, agentFallbacks: [] },
           fallbacks: [
@@ -481,9 +479,9 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
             fallbacks: [],
           };
         }
-        const firstSwap = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+        const firstSwap = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
         const secondFailure = firstSwap.result.adapterFailure ?? QUOTA_FAILURE;
-        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, secondFailure, req.runOptions);
+        const secondSwap = await req.executeHop("gemini", firstSwap.bundle, { kind: "swap", failure: secondFailure }, req.runOptions);
         return {
           result: { ...secondSwap.result, agentFallbacks: [] },
           fallbacks: [
@@ -530,7 +528,7 @@ describe("execution stage — agent-swap on availability failure (Phase 5.5)", (
       }),
       runWithFallbackFn: async (req) => {
         if (req.executeHop) {
-          const { result } = await req.executeHop("codex", req.bundle, QUOTA_FAILURE, req.runOptions);
+          const { result } = await req.executeHop("codex", req.bundle, { kind: "swap", failure: QUOTA_FAILURE }, req.runOptions);
           return {
             result: { ...result, agentFallbacks: [] },
             fallbacks: [{ storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, timestamp: new Date().toISOString(), costUsd: 0 }],

@@ -34,7 +34,7 @@ export {
 export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "./shared/validation";
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
-export { AgentManager } from "./manager";
+export { AgentManager, _agentManagerDeps } from "./manager";
 export type {
   IAgentManager,
   AgentFallbackRecord,
@@ -43,5 +43,7 @@ export type {
   AgentManagerEvents,
   AgentManagerEventName,
   AgentRunRequest,
+  HopKind,
 } from "./manager-types";
 export { resolveDefaultAgent } from "./utils";
+export { ParseValidationError, makeParseRetryStrategy } from "./retry";

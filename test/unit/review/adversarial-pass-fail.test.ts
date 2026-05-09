@@ -9,11 +9,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { AdversarialReviewConfig } from "../../../src/review/types";
-import type { SemanticStory } from "../../../src/review/types";
-import type { AgentAdapter } from "../../../src/agents/types";
-import type { IAgentManager } from "../../../src/agents/manager-types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import type { AgentAdapter, IAgentManager } from "@/agents";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -47,7 +45,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
     getDefaultAgent: "claude",
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async () => ({

@@ -11,13 +11,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _executionDeps, executionStage } from "../../../../src/pipeline/stages/execution";
-import { _buildHopCallbackDeps } from "../../../../src/operations/build-hop-callback";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { ContextBundle } from "../../../../src/context/engine/types";
-import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "../../../../src/agents/manager-types";
-import { makeSparseNaxConfig, makeSessionManager } from "../../../helpers";
+import { _executionDeps, executionStage } from "@/pipeline";
+import { _buildHopCallbackDeps } from "@/operations";
+import type { PipelineContext } from "@/pipeline";
+import type { PRD, UserStory } from "@/prd";
+import type { ContextBundle } from "@/context/engine";
+import type { IAgentManager, AgentRunRequest, AgentRunOutcome } from "@/agents";
+import { makeSparseNaxConfig, makeSessionManager } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -72,7 +72,7 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
     nextCandidate: () => null,
     runWithFallback: async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
       if (req.executeHop) {
-        const { result, bundle, prompt } = await req.executeHop("claude", req.bundle, undefined, req.runOptions);
+        const { result, bundle, prompt } = await req.executeHop("claude", req.bundle, { kind: "primary" }, req.runOptions);
         return { result, fallbacks: outcome.fallbacks ?? [], finalBundle: bundle, finalPrompt: prompt };
       }
       return {
@@ -328,8 +328,8 @@ describe("execution stage — AC-41 fallback observability", () => {
     });
     manager.runWithFallback = async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
       if (req.executeHop) {
-        const failure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
-        const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, failure, req.runOptions);
+        const swapFailure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
+        const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, { kind: "swap", failure: swapFailure }, req.runOptions);
         return { result, fallbacks: swapFallbacks, finalBundle: bundle, finalPrompt: prompt };
       }
       return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }, fallbacks: [] };

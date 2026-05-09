@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { NaxConfig } from "../../../../src/config";
-import type { IAgentManager } from "../../../../src/agents/manager-types";
-import { ContextOrchestrator } from "../../../../src/context/engine";
-import type { ContextBundle } from "../../../../src/context/engine";
-import { makeAgentAdapter } from "../../../../test/helpers";
+import { executionStage, _executionDeps } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import type { IAgentManager } from "@/agents";
+import { ContextOrchestrator } from "@/context";
+import type { ContextBundle } from "@/context/engine";
+import { makeAgentAdapter } from "@test/helpers";
 
 const origGetAgent = _executionDeps.getAgent;
 const origValidateAgent = _executionDeps.validateAgentForTier;
@@ -70,14 +70,14 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         // executeHop is only provided when sessionManager is wired; fall back to
         // a stub success result when the test omits sessionManager.
         if (request.executeHop) {
-          const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, undefined, request.runOptions);
+          const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, { kind: "primary" }, request.runOptions);
           return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
         }
         const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCostUsd: 0.01 };
         return { result, fallbacks: [], finalBundle: request.bundle, finalPrompt: request.runOptions.prompt };
       }),
       completeWithFallback: async () => ({ result: { output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }, fallbacks: [] }),
-      run: async (request: import("../../../../src/agents/manager-types").AgentRunRequest) => {
+      run: async (request: import("@/agents").AgentRunRequest) => {
         const outcome = await manager.runWithFallback(request);
         return { ...outcome.result, agentFallbacks: outcome.fallbacks };
       },

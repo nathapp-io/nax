@@ -6,6 +6,16 @@
 import type { ContextBundle } from "../context/engine";
 import type { AdapterFailure } from "../context/engine/types";
 import type { SessionRole } from "../runtime/session-role";
+
+/**
+ * Discriminates which kind of hop executeHop is being invoked for.
+ * Replaces the old `failure: AdapterFailure | undefined` encoding, which
+ * conflated "primary" and "stale-retry" as both `undefined`.
+ */
+export type HopKind =
+  | { kind: "primary" }
+  | { kind: "stale-retry"; attempt: number } // same agent, reuse existing session
+  | { kind: "swap"; failure: AdapterFailure }; // new agent, fresh session
 import type { SessionRunHopFn } from "../runtime/session-run-hop";
 import type {
   AgentAdapter,
@@ -67,14 +77,14 @@ export interface AgentRunRequest {
    * sequence for every hop (primary AND fallback). Called with:
    *   - agentName: which agent to use for this hop
    *   - bundle: the context bundle at the start of this hop (rebuilt between hops)
-   *   - failure: the AdapterFailure that triggered this hop; undefined for the primary hop
+   *   - hopKind: discriminated union — `{kind:"primary"}`, `{kind:"stale-retry",attempt:n}`, or `{kind:"swap",failure}`
    * Returns the agent result, the bundle used (may differ after rebuild), and the prompt used.
    * Used by execution stage to inject context rebuild, session handoff, and prompt building.
    */
   executeHop?: (
     agentName: string,
     bundle: ContextBundle | undefined,
-    failure: AdapterFailure | undefined,
+    hopKind: HopKind,
     resolvedRunOptions: AgentRunOptions,
   ) => Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }>;
   /**

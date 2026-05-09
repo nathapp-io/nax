@@ -11,3 +11,4 @@ export * from "./finding-projection";
 export * from "./orchestrator";
 export * from "./types";
 export * from "./runner";
+export { validateLLMShape } from "./semantic-helpers";
