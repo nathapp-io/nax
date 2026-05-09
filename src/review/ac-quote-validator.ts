@@ -45,6 +45,18 @@ function normalizeWs(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Strip inline markdown formatting (backticks, bold, italic) for substring matching.
+ *
+ * The AC-quote validator's purpose is to confirm the model cited real AC text, not to
+ * enforce markdown formatting fidelity. LLMs routinely drop backtick spans when quoting
+ * — this normalisation prevents false `ac_quote_not_substring` rejections caused solely
+ * by backtick presence/absence.
+ */
+function stripMarkdownInline(s: string): string {
+  return s.replace(/`/g, "").replace(/\*\*/g, "").replace(/\*/g, "");
+}
+
 // ─── Locus extraction ─────────────────────────────────────────────────────────
 
 /**
@@ -108,8 +120,8 @@ export function validateAcQuote(finding: AcQuotable, acceptanceCriteria: string[
     return { valid: false, code: "ac_index_out_of_range" };
   }
 
-  const acText = normalizeWs(acceptanceCriteria[acIndex - 1]);
-  const normalizedQuote = normalizeWs(acQuote);
+  const acText = normalizeWs(stripMarkdownInline(acceptanceCriteria[acIndex - 1]));
+  const normalizedQuote = normalizeWs(stripMarkdownInline(acQuote));
 
   if (!acText.toLowerCase().includes(normalizedQuote.toLowerCase())) {
     return { valid: false, code: "ac_quote_not_substring" };
