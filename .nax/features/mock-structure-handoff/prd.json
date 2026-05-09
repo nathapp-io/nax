@@ -4,7 +4,7 @@
   "analysis": "This feature adds a fourth TEST_EDIT_REASON escape valve ('mock_structure') enabling the autofix implementer to declare a structural test-rewrite handoff instead of emitting UNRESOLVED and triggering wasteful tier escalation. The change spans 5 interdependent stories across 9+ source files.\n\n**Dependency chain:** US-001 (parser) → US-002 (validator + side-channel) → US-004 (strategy wiring) → US-005 (guards + config). US-003 (prompts) is independent and can run in parallel.\n\n**Key architectural decision — FindingSource extension:** The synthetic findings synthesized in US-002 use `source: \"implementer-handoff\"`. The current `FindingSource` union in `src/findings/types.ts` does NOT include this value. US-002 implementer MUST add `\"implementer-handoff\"` to `FindingSource` or TypeScript strict mode will reject the code. This is an implicit but mandatory change.\n\n**`applyTestEditDeclarations` stays pure/sync:** All I/O is in `validateMockStructureFiles` (async). The existing `applyTestEditDeclarations` function must remain synchronous. US-002 extends it (likely with an optional 4th parameter for the invalid partition) to produce advisory findings for invalid declarations while keeping source-tagged findings unchanged.\n\n**Side-channel follows existing `testEditDeclarations` pattern:** `ctx.pendingMockStructureHandoffs` is populated by `validate()` (stash), consumed one-shot by `buildInput` in the test-writer strategy (clear on read). US-004 must clear the array after consumption.\n\n**`beforeRef` for guards (US-005):** Guards diff against the git HEAD captured *just before* the test-writer op starts in `mock-restructure` mode. The implementation must call `git rev-parse HEAD` at that point — the existing `ctx.storyGitRef` is per-story-iteration (set before execution), not per-op.\n\n**Guard revert semantics:** Guards run post-commit (after the test-writer op completes). `revertDiff(workdir, files)` runs `git checkout HEAD -- <files>` to undo the test-writer's changes. The cycle then records the failed iteration and exits via the existing `agent-gave-up` rail — NOT a new exit path.\n\n**Existing test files to extend:** `test/unit/operations/test-edit-declaration.test.ts`, `test/unit/pipeline/stages/autofix-cycle.test.ts`, `test/unit/prompts/builders/rectifier-builder.test.ts`, `test/integration/autofix-implementer-feedback.test.ts`. Check these paths exist before implementing; the integration test file may need to be created if absent.\n\n**Config schema location:** The autofix Zod schema lives in `src/config/schemas-execution.ts`. The hand-maintained default literal is in `src/config/schemas.ts` at the `quality.autofix` key (lines ~147-153 at commit 01cdda7e). The runtime-types interface is in `src/config/runtime-types.ts` at `QualityConfig.autofix` (lines ~209-220).\n\n**`validate()` orchestration order (US-002):** (1) `recheckReview`, (2) `resolveTestFilePatterns` + `validateMockStructureFiles`, (3) populate `ctx.pendingMockStructureHandoffs` from valid partition, (4) call `applyTestEditDeclarations` with both valid and invalid mock_structure declarations, (5) clear `ctx.testEditDeclarations`.\n\n**`buildAutofixStrategies` is called with the outer `ctx` closed over:** The testWriter `buildInput` already closes over `ctx` via the outer function scope. US-004 extends this closure to read and clear `ctx.pendingMockStructureHandoffs`.\n\n**`_gitDeps.spawn` pattern (US-005):** `src/utils/git.ts` exports `_gitDeps` with injectable `spawn`. New guards in `autofix-guards.ts` should follow the same `_deps` injection pattern for testability, accepting an optional deps parameter rather than importing `spawn` directly.",
   "branchName": "feat/mock-structure-handoff",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T15:35:35.976Z",
+  "updatedAt": "2026-05-09T16:05:30.753Z",
   "userStories": [
     {
       "id": "US-001",
@@ -82,8 +82,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
@@ -236,13 +236,16 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module wiring across operations and pipeline stages, integration test spanning the full cycle, new type fields, one-shot consumption semantics."
+        "reasoning": "Cross-module wiring across operations and pipeline stages, integration test spanning the full cycle, new type fields, one-shot consumption semantics.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "escalations": [],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "73fe3950706cd2e1c924786eae5dea9644a1e0a1"
     },
     {
       "id": "US-005",
