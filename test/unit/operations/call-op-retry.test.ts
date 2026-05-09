@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _callOpDeps, callOp } from "../../../src/operations";
-import type { CompleteOperation } from "../../../src/operations";
+import type { CompleteOperation, RunOperation } from "../../../src/operations";
 import type { RetryPreset } from "../../../src/agents/retry";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeMockAgentManager, makeTestRuntime } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 import { pickSelector } from "../../../src/config";
 import type { CompleteResult } from "../../../src/agents/types";
@@ -152,5 +152,50 @@ describe("callOp retry loop (kind:complete)", () => {
     await expect(callOp(ctx, opWithNullResolver, "hello")).rejects.toThrow("transient");
     expect(callCount).toBe(1);
     expect(sleepCalls).toHaveLength(0);
+  });
+});
+
+describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)", () => {
+  test("op.parse throws after retry exhaustion AND op.recover returns non-null — returns recover value not TurnResult", async () => {
+    _callOpDeps.sleep = async () => {};
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "File already valid.", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    const runtime = makeTestRuntime({ agentManager, sessionManager });
+    createdRuntimes.push(runtime);
+
+    const recovered = { userStories: [{ id: "US-001", title: "existing" }] };
+
+    const runOp: RunOperation<string, typeof recovered, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "strict-parse-run-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      parse: (_output) => { throw new Error("cannot parse chat ack"); },
+      retry: {
+        shouldRetry: (_failure, attempt) =>
+          attempt < 2 ? { retry: true, delayMs: 0, nextPrompt: "retry" } : { retry: false },
+      },
+      recover: async () => recovered,
+    };
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runOp,
+      "feature-x",
+    );
+
+    expect(result).toBe(recovered);
+    expect(result.userStories[0]?.id).toBe("US-001");
   });
 });

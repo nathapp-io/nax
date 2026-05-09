@@ -687,3 +687,156 @@ describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", ()
     expect("interactionBridge" in reqArg.runOptions).toBe(false);
   });
 });
+
+describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)", () => {
+  // A run-kind op whose parse() always throws to simulate unparseable agent output.
+  function makeStrictRunOp(overrides: Partial<RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">>> = {}): RunOperation<{ id: string }, { value: string }, Pick<typeof DEFAULT_CONFIG, "routing">> {
+    return {
+      kind: "run",
+      name: "strict-parse-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input.id, overridable: false },
+      }),
+      parse: (_output) => { throw new Error("parse always throws"); },
+      retry: {
+        shouldRetry: (_failure, attempt) =>
+          attempt < 2 ? { retry: true, delayMs: 0, nextPrompt: "retry" } : { retry: false },
+      },
+      ...overrides,
+    };
+  }
+
+  // Builds an agentManager that actually invokes req.executeHop so sendWithParseRetry
+  // runs and sets lastRetryTurn. Necessary for testing (b), (c), (d) which depend on
+  // lastRetryTurn / retryFallback being set inside the retry loop closure.
+  function makeHopInvokingAgentManager() {
+    return makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "File already valid.",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+      }),
+      runWithFallbackFn: async (req) => {
+        const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return {
+          result: { success: true, exitCode: 0, rateLimited: false, durationMs: 1, output: result.result.output, estimatedCostUsd: result.result.estimatedCostUsd ?? 0, agentFallbacks: [] },
+          fallbacks: [],
+        };
+      },
+    });
+  }
+
+  // For tests (a) and (e), the mock doesn't need to invoke executeHop because
+  // op.recover is called from the catch block regardless of lastRetryTurn.
+  function makeChatAckAgentManager() {
+    return makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "File already valid.", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+  }
+
+  test("(a) op.recover defined and returns non-null — returns recovered value, not TurnResult", async () => {
+    const agentManager = makeChatAckAgentManager();
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const recovered = { value: "from-disk" };
+    const op = makeStrictRunOp({ recover: async () => recovered });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      op,
+      { id: "f1" },
+    );
+
+    expect(result).toBe(recovered);
+  });
+
+  test("(b) op.recover undefined — falls through to envelope passthrough with warn log", async () => {
+    // Uses hop-invoking mock so sendWithParseRetry actually runs and sets lastRetryTurn.
+    const agentManager = makeHopInvokingAgentManager();
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const op = makeStrictRunOp(); // no recover
+
+    // Should not throw; returns the TurnResult-shaped last turn (envelope passthrough)
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      op,
+      { id: "f1" },
+    ) as unknown as { output: string };
+
+    expect(typeof result).toBe("object");
+    expect("output" in result).toBe(true);
+  });
+
+  test("(c) both exhaustedFallback and op.recover — exhaustedFallback wins", async () => {
+    // Uses hop-invoking mock so sendWithParseRetry runs and retryFallback is set.
+    const agentManager = makeHopInvokingAgentManager();
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const recoverCalled: boolean[] = [];
+    const op = makeStrictRunOp({
+      retry: {
+        shouldRetry: (_failure, attempt) =>
+          attempt < 2
+            ? { retry: true, delayMs: 0, nextPrompt: "retry" }
+            : { retry: false, fallback: { value: "from-exhausted-fallback" } },
+      },
+      recover: async () => { recoverCalled.push(true); return { value: "from-recover" }; },
+    });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      op,
+      { id: "f1" },
+    );
+
+    // exhaustedFallback value wins; recover never called
+    expect((result as { value: string }).value).toBe("from-exhausted-fallback");
+    expect(recoverCalled).toHaveLength(0);
+  });
+
+  test("(d) op.recover returns null — falls through to envelope passthrough", async () => {
+    // Uses hop-invoking mock so sendWithParseRetry runs and sets lastRetryTurn.
+    const agentManager = makeHopInvokingAgentManager();
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const op = makeStrictRunOp({ recover: async () => null });
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      op,
+      { id: "f1" },
+    ) as unknown as { output: string };
+
+    // Falls through to envelope passthrough
+    expect("output" in result).toBe(true);
+  });
+
+  test("(e) op.recover throws — error propagates out of callOp", async () => {
+    const agentManager = makeChatAckAgentManager();
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const op = makeStrictRunOp({ recover: async () => { throw new Error("disk-read-error"); } });
+
+    await expect(
+      callOp(
+        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+        op,
+        { id: "f1" },
+      ),
+    ).rejects.toThrow("disk-read-error");
+  });
+});
