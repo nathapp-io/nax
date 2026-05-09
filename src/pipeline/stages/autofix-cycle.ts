@@ -32,6 +32,7 @@ import type { AutofixImplementerInput, AutofixImplementerOutput } from "../../op
 import type { AutofixTestWriterInput } from "../../operations";
 import type { UserStory } from "../../prd";
 import type { ReviewCheckResult } from "../../review/types";
+import { type ResolvedTestPatterns, resolveTestFilePatterns } from "../../test-runners";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
 
@@ -262,29 +263,60 @@ async function writeShadowReport(
 
 // ─── Mock structure validation ────────────────────────────────────────────────
 
+/** Injectable dependencies for file I/O in validateMockStructureFiles. */
+export const _autofixCycleDeps = {
+  fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
+};
+
 /**
  * Async validator for mock_structure declarations.
  *
  * Partitions declarations into { valid, invalid }:
  * - valid: non-mock_structure declarations (pass-through) + mock_structure with all paths existing and classified as test files
  * - invalid: mock_structure declarations with missing/non-test paths, tagged with missing and nonTest arrays
- *
- * @param decls - Test edit declarations to validate
- * @param workdir - Working directory for file existence checks
- * @param resolved - Resolved test file patterns for classification
- * @returns Promise<{ valid: TestEditDeclaration[], invalid: Array<{ decl, missing, nonTest }> }>
  */
 export async function validateMockStructureFiles(
   decls: TestEditDeclaration[],
   workdir: string,
-  resolved: import("../../test-runners/resolver").ResolvedTestPatterns,
+  resolved: ResolvedTestPatterns,
 ): Promise<{
   valid: TestEditDeclaration[];
   invalid: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }>;
 }> {
-  // Stub implementation — tests expect the function to exist and return the right structure
-  // Real implementation: iterate decls, classify each mock_structure into valid/invalid
-  return { valid: [], invalid: [] };
+  const valid: TestEditDeclaration[] = [];
+  const invalid: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }> = [];
+
+  for (const decl of decls) {
+    if (decl.reason !== "mock_structure") {
+      valid.push(decl);
+      continue;
+    }
+
+    const files = decl.files ?? [];
+    const missing: string[] = [];
+    const nonTest: string[] = [];
+
+    for (const filePath of files) {
+      const absPath = join(workdir, filePath);
+      const exists = await _autofixCycleDeps.fileExists(absPath);
+      if (!exists) {
+        missing.push(filePath);
+        continue;
+      }
+      const isTest = resolved.regex.some((re) => re.test(filePath));
+      if (!isTest) {
+        nonTest.push(filePath);
+      }
+    }
+
+    if (missing.length === 0 && nonTest.length === 0) {
+      valid.push(decl);
+    } else {
+      invalid.push({ decl, missing, nonTest });
+    }
+  }
+
+  return { valid, invalid };
 }
 
 // ─── Declaration application ──────────────────────────────────────────────────
@@ -315,8 +347,9 @@ export function applyTestEditDeclarations(
   findings: Finding[],
   declarations: TestEditDeclaration[],
   story: UserStory,
+  invalidMockStructure?: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }>,
 ): Finding[] {
-  if (declarations.length === 0) return findings;
+  if (declarations.length === 0 && (!invalidMockStructure || invalidMockStructure.length === 0)) return findings;
 
   const out: Finding[] = [...findings];
   const originalLength = findings.length;
@@ -356,21 +389,33 @@ export function applyTestEditDeclarations(
         reTaggedKeys.add(i);
       }
     } else if (decl.reason === "mock_structure") {
-      // Generate synthetic findings for valid mock_structure declarations
-      // Stub: implementation will check validity and generate accordingly
+      // Generate one synthetic finding per path for valid mock_structure declarations.
       if (decl.files) {
         for (const file of decl.files) {
           out.push({
             source: "implementer-handoff",
             severity: "error",
             category: "test_mock_restructure",
-            message: `Restructure mocks per implementer handoff: ${decl.reasonDetail ?? ""}`,
+            message: "Restructure mocks per implementer handoff",
             file,
             fixTarget: "test",
           });
         }
       }
     }
+  }
+
+  // Advisory findings for invalid mock_structure declarations (from validateMockStructureFiles).
+  for (const { decl, missing, nonTest } of invalidMockStructure ?? []) {
+    const offendingPaths = [...missing, ...nonTest];
+    out.push({
+      source: "implementer-handoff",
+      severity: "warning",
+      category: "mock_structure_invalid_files",
+      message: `mock_structure declaration refers to missing or non-test paths: ${offendingPaths.join(", ")}`,
+      file: decl.file,
+      fixTarget: "source",
+    });
   }
 
   return out;
@@ -416,7 +461,24 @@ export async function runAgentRectificationV2(
       const fresh = collectCurrentFindings(ctx);
       const pending = ctx.testEditDeclarations ?? [];
       if (pending.length === 0) return fresh;
-      const retagged = applyTestEditDeclarations(fresh, pending, ctx.story);
+
+      // Partition mock_structure declarations via async validator.
+      const resolved = await resolveTestFilePatterns(ctx.config, ctx.workdir);
+      const { valid, invalid } = await validateMockStructureFiles(pending, ctx.workdir, resolved);
+
+      // Stash valid mock_structure handoffs for the TDD orchestrator before applying.
+      const validMockStructure = valid.filter((d) => d.reason === "mock_structure");
+      if (validMockStructure.length > 0) {
+        ctx.pendingMockStructureHandoffs = [
+          ...(ctx.pendingMockStructureHandoffs ?? []),
+          ...validMockStructure.map((d) => ({
+            files: d.files ?? [],
+            reasonDetail: d.reasonDetail ?? "",
+          })),
+        ];
+      }
+
+      const retagged = applyTestEditDeclarations(fresh, valid, ctx.story, invalid);
       // Clear side-channel after consumption so the next iteration starts fresh.
       ctx.testEditDeclarations = [];
       logger.info("autofix-cycle", "applied test-edit declarations", {
