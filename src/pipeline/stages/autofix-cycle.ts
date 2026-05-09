@@ -140,8 +140,12 @@ export function buildAutofixStrategies(
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
     name: "autofix-test-writer",
-    // Fires for test-targeted findings, or for any finding when mock-structure handoffs are pending.
-    appliesTo: (f) => f.fixTarget === "test" || (ctx.pendingMockStructureHandoffs?.length ?? 0) > 0,
+    // Fires for test-targeted findings, for any finding when mock-structure handoffs are pending,
+    // or for adversarial-source error findings (to write a failing test for the bug).
+    appliesTo: (f) =>
+      f.fixTarget === "test" ||
+      (ctx.pendingMockStructureHandoffs?.length ?? 0) > 0 ||
+      ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
     fixOp: testWriterRectifyOp,
     maxAttempts: 2,
     coRun: "co-run-sequential",
