@@ -337,6 +337,14 @@ export interface ISessionManager {
   nameFor(req: NameForRequest): string;
 
   /**
+   * Return the live adapter-level handle for a session name, if one is open.
+   * Used by buildHopCallback on stale-retry hops to reuse the existing session
+   * without closing + reopening (avoids the ~7 s reconnect overhead).
+   * Returns undefined when the session is not currently open.
+   */
+  getLiveHandle(name: string): import("../agents/types").SessionHandle | undefined;
+
+  /**
    * Look up a SessionDescriptor by session name (the handle string).
    * Returns null if no descriptor with that handle exists.
    */

@@ -72,7 +72,7 @@ function makeAgentManager(outcome: Partial<AgentRunOutcome> = {}): IAgentManager
     nextCandidate: () => null,
     runWithFallback: async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
       if (req.executeHop) {
-        const { result, bundle, prompt } = await req.executeHop("claude", req.bundle, undefined, req.runOptions);
+        const { result, bundle, prompt } = await req.executeHop("claude", req.bundle, { kind: "primary" }, req.runOptions);
         return { result, fallbacks: outcome.fallbacks ?? [], finalBundle: bundle, finalPrompt: prompt };
       }
       return {
@@ -328,8 +328,8 @@ describe("execution stage — AC-41 fallback observability", () => {
     });
     manager.runWithFallback = async (req: AgentRunRequest): Promise<AgentRunOutcome> => {
       if (req.executeHop) {
-        const failure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
-        const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, failure, req.runOptions);
+        const swapFailure = { category: "availability" as const, outcome: "fail-quota" as const, message: "quota", retriable: false };
+        const { result, bundle, prompt } = await req.executeHop("codex", req.bundle, { kind: "swap", failure: swapFailure }, req.runOptions);
         return { result, fallbacks: swapFallbacks, finalBundle: bundle, finalPrompt: prompt };
       }
       return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 }, fallbacks: [] };

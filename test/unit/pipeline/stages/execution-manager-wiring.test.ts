@@ -70,7 +70,7 @@ describe("execution stage — uses agentManager.runWithFallback", () => {
         // executeHop is only provided when sessionManager is wired; fall back to
         // a stub success result when the test omits sessionManager.
         if (request.executeHop) {
-          const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, undefined, request.runOptions);
+          const { result, bundle: b, prompt } = await request.executeHop("claude", request.bundle, { kind: "primary" }, request.runOptions);
           return { result, fallbacks: [], finalBundle: b, finalPrompt: prompt };
         }
         const result = { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 100, estimatedCostUsd: 0.01 };

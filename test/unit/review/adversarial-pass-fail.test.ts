@@ -47,7 +47,7 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
     getDefaultAgent: "claude",
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async () => ({

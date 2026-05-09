@@ -416,6 +416,10 @@ export class SessionManager implements ISessionManager {
     return formatSessionName(req);
   }
 
+  getLiveHandle(name: string): SessionHandle | undefined {
+    return this._liveHandles.get(name);
+  }
+
   async openSession(name: string, opts: OpenSessionRequest): Promise<SessionHandle> {
     const liveHandle = this._liveHandles.get(name);
     if (liveHandle && liveHandle.agentName === opts.agentName) {

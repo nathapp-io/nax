@@ -96,16 +96,17 @@ export function buildHopCallback(
   return async (
     agentName,
     hopBundle,
-    failure,
+    hopKind,
     resolvedRunOptions,
   ): Promise<{ result: AgentResult; bundle: ContextBundle | undefined; prompt?: string }> => {
     const logger = getLogger();
     let workingBundle = hopBundle;
     let prompt: string = resolvedRunOptions.prompt;
 
-    // On failure hops: rebuild bundle for the new agent and rewrite the prompt
-    if (failure && hopBundle) {
-      workingBundle = _buildHopCallbackDeps.rebuildForAgent(hopBundle, agentName, failure, story.id);
+    // SWAP only: rebuild bundle for the new agent, rewrite the prompt, and record the handoff.
+    // Stale-retry reuses the same agent and session — no rebuild, no prompt rewrite.
+    if (hopKind.kind === "swap" && hopBundle) {
+      workingBundle = _buildHopCallbackDeps.rebuildForAgent(hopBundle, agentName, hopKind.failure, story.id);
       if (projectDir && featureName && workingBundle.manifest.rebuildInfo) {
         try {
           await _buildHopCallbackDeps.writeRebuildManifest(projectDir, featureName, story.id, {
@@ -129,10 +130,9 @@ export function buildHopCallback(
       }
       prompt = RectifierPromptBuilder.swapHandoff(resolvedRunOptions.prompt, workingBundle.pushMarkdown);
     }
-
-    // Update descriptor metadata for failure hops
-    if (failure && sessionId) {
-      sessionManager.handoff?.(sessionId, agentName, failure.outcome);
+    // Record descriptor handoff for any swap, regardless of whether a bundle was rebuilt.
+    if (hopKind.kind === "swap" && sessionId) {
+      sessionManager.handoff?.(sessionId, agentName, hopKind.failure.outcome);
     }
 
     const contextToolRuntime = workingBundle
@@ -153,24 +153,57 @@ export function buildHopCallback(
       role: resolvedRunOptions.sessionRole ?? "implementer",
       pipelineStage: stage,
     });
-    const modelDef =
-      failure === undefined
-        ? (resolvedRunOptions.modelDef ?? resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
-        : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
-    const timeoutSeconds = resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds;
 
-    // openSession errors propagate naturally — no handle, no closeSession needed
-    const handle = await sessionManager.openSession(sessionName, {
-      agentName,
-      role: resolvedRunOptions.sessionRole ?? "implementer",
-      workdir,
-      pipelineStage: stage,
-      modelDef,
-      timeoutSeconds,
-      featureName,
-      storyId: story.id,
-      signal: resolvedRunOptions.abortSignal,
-    });
+    // STALE-RETRY: reuse the existing live handle — no openSession, no acpx reconnect.
+    // PRIMARY / SWAP: open (or resume) the session via the normal path.
+    let handle: import("../agents/types").SessionHandle;
+    if (hopKind.kind === "stale-retry") {
+      const cached = sessionManager.getLiveHandle(sessionName);
+      if (cached && cached.agentName === agentName) {
+        handle = cached;
+      } else {
+        // Defensive: cache miss should never happen in practice (the handle was just
+        // used by the prior attempt), but fall back to openSession so the retry
+        // can still proceed. Logged at warn to detect unexpected misses in production.
+        logger.warn("execution", "Stale-retry: live handle missing, re-opening session", {
+          storyId: story.id,
+          sessionName,
+          attempt: hopKind.attempt,
+        });
+        const modelDef =
+          resolvedRunOptions.modelDef ??
+          resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+        handle = await sessionManager.openSession(sessionName, {
+          agentName,
+          role: resolvedRunOptions.sessionRole ?? "implementer",
+          workdir,
+          pipelineStage: stage,
+          modelDef,
+          timeoutSeconds: resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds,
+          featureName,
+          storyId: story.id,
+          signal: resolvedRunOptions.abortSignal,
+        });
+      }
+    } else {
+      const modelDef =
+        hopKind.kind === "primary"
+          ? (resolvedRunOptions.modelDef ??
+            resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent))
+          : resolveModelForAgent(config.models, agentName, effectiveTier, defaultAgent);
+      // openSession errors propagate naturally — no handle, no closeSession needed
+      handle = await sessionManager.openSession(sessionName, {
+        agentName,
+        role: resolvedRunOptions.sessionRole ?? "implementer",
+        workdir,
+        pipelineStage: stage,
+        modelDef,
+        timeoutSeconds: resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds,
+        featureName,
+        storyId: story.id,
+        signal: resolvedRunOptions.abortSignal,
+      });
+    }
 
     try {
       // Bound `send` closure: each call dispatches one turn through AgentManager
@@ -218,7 +251,12 @@ export function buildHopCallback(
         prompt,
       };
     } finally {
-      await sessionManager.closeSession(handle);
+      // STALE-RETRY: keep the handle open for the next attempt. The session stays
+      // cached in _liveHandles; the subsequent hop (success, swap, or exhaustion)
+      // either closes it in its own finally or SessionManager teardown handles it.
+      if (hopKind.kind !== "stale-retry") {
+        await sessionManager.closeSession(handle);
+      }
     }
   };
 }

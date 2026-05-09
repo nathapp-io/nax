@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { AgentManager, _agentManagerDeps } from "../../../src/agents/manager";
+import type { HopKind } from "../../../src/agents/manager-types";
 import { makeNaxConfig } from "../../helpers";
 
 const availFailure = { category: "availability" as const, outcome: "fail-auth" as const, retriable: false, message: "" };
@@ -107,14 +108,14 @@ describe("AgentManager.runWithFallback — real loop (Phase 4)", () => {
 });
 
 describe("AgentManager.runWithFallback — executeHop callback", () => {
-  test("calls executeHop for primary hop (failure=undefined)", async () => {
-    const calls: Array<{ agentName: string; failure: unknown }> = [];
+  test("calls executeHop for primary hop (kind='primary')", async () => {
+    const calls: Array<{ agentName: string; hopKind: HopKind }> = [];
     const m = new AgentManager(makeConfig(), undefined /* no registry — executeHop replaces it */);
     const outcome = await m.runWithFallback({
       runOptions: {} as never,
       bundle: mockBundle,
-      executeHop: async (agentName, bundle, failure) => {
-        calls.push({ agentName, failure });
+      executeHop: async (agentName, bundle, hopKind) => {
+        calls.push({ agentName, hopKind });
         return {
           result: { success: true, exitCode: 0, output: "ok", rateLimited: false, durationMs: 0, estimatedCostUsd: 0 },
           bundle,
@@ -124,20 +125,20 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].agentName).toBe("claude");
-    expect(calls[0].failure).toBeUndefined();
+    expect(calls[0].hopKind).toEqual({ kind: "primary" });
     expect(outcome.result.success).toBe(true);
     expect(outcome.finalPrompt).toBe("test");
   });
 
-  test("calls executeHop for swap hop with failure set", async () => {
-    const calls: Array<{ agentName: string; failure: unknown }> = [];
+  test("calls executeHop for swap hop with kind='swap' and failure", async () => {
+    const calls: Array<{ agentName: string; hopKind: HopKind }> = [];
     let hop = 0;
     const m = new AgentManager(makeConfig({ claude: ["codex"] }), undefined);
     const outcome = await m.runWithFallback({
       runOptions: {} as never,
       bundle: mockBundle,
-      executeHop: async (agentName, bundle, failure) => {
-        calls.push({ agentName, failure });
+      executeHop: async (agentName, bundle, hopKind) => {
+        calls.push({ agentName, hopKind });
         hop++;
         const success = hop === 2; // first fails, second succeeds
         return {
@@ -157,9 +158,9 @@ describe("AgentManager.runWithFallback — executeHop callback", () => {
     });
     expect(calls).toHaveLength(2);
     expect(calls[0].agentName).toBe("claude");
-    expect(calls[0].failure).toBeUndefined();
+    expect(calls[0].hopKind).toEqual({ kind: "primary" });
     expect(calls[1].agentName).toBe("codex");
-    expect(calls[1].failure).toEqual(availFailure);
+    expect(calls[1].hopKind).toMatchObject({ kind: "swap", failure: availFailure });
     expect(outcome.fallbacks).toHaveLength(1);
     expect(outcome.finalPrompt).toBe("prompt-codex");
   });
