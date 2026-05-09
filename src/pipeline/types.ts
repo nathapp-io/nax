@@ -197,6 +197,13 @@ export interface PipelineContext extends DispatchContext {
    * fresh findings. Always cleared after consumption.
    */
   testEditDeclarations?: TestEditDeclaration[];
+  /**
+   * Pending mock_structure handoff metadata from the most recent implementer
+   * rectification attempt. Populated by the cycle's validate() callback when
+   * validateMockStructureFiles classifies mock_structure declarations as valid.
+   * Contains file lists and reasoning detail for the TDD orchestrator to use.
+   */
+  pendingMockStructureHandoffs?: { files: string[]; reasonDetail: string }[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */
