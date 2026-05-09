@@ -22,3 +22,4 @@ export {
   makeSpawnMock,
   mockDiffUtilsDeps,
 } from "./review-audit";
+export { withDepsRestore } from "./deps";

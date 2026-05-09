@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { getLogger, initLogger, resetLogger } from "../../../../src/logger";
-import type { LogEntry } from "../../../../src/logger/types";
-import { AgentStreamEventBus, type AgentStreamEvent } from "../../../../src/runtime/agent-stream-events";
-import { attachAgentIdleWatchdog } from "../../../../src/runtime/middleware/idle-watchdog";
-import { makeNaxConfig } from "../../../helpers";
-import { cleanupTempDir, makeTempDir } from "../../../helpers";
+import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { LogEntry } from "@/logger/types";
+import { AgentStreamEventBus, attachAgentIdleWatchdog, type AgentStreamEvent } from "@/runtime";
+import { cleanupTempDir, makeTempDir, makeNaxConfig } from "@test/helpers";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

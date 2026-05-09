@@ -41,11 +41,13 @@ export {
   NaxConfigSchema,
   AcceptanceConfigSchema,
 } from "./schema";
+export { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
 export { loadConfig, findProjectDir, globalConfigPath } from "./loader";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
 export { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "./path-security";
 export { globalConfigDir, projectConfigDir } from "./paths";
 export { deepMergeConfig } from "./merger";
+export type { PipelineStage } from "./permissions";
 export { resolveProfileName, loadProfile, loadProfileEnv, listProfiles } from "./profile";
 export { pickSelector, reshapeSelector } from "./selector";
 export type { ConfigSelector } from "./selector";

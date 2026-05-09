@@ -13,12 +13,21 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { getSafeLogger } from "../../logger";
-import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
-import { typedSpawn } from "../../utils/bun-deps";
+import {
+  type AcpClient,
+  type AcpClientOptions,
+  type AcpLineActivity,
+  type AcpParseState,
+  type AcpSession,
+  type AcpSessionResponse,
+  createParseState,
+  finalizeParseState,
+  parseAcpxJsonLine,
+} from "@/agents";
+import { getSafeLogger } from "@/logger";
+import type { AgentStreamEvent } from "@/runtime";
+import { typedSpawn } from "@/utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
-import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-import { type AcpxParseState, createParseState, finalizeParseState, parseAcpxJsonLine } from "./parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -56,8 +65,8 @@ export const _spawnClientDeps = {
  */
 async function readAndParseLines(
   stream: ReadableStream<Uint8Array>,
-  state: AcpxParseState,
-  onActivity?: (activity: import("./parser").AcpxLineActivity) => void,
+  state: AcpParseState,
+  onActivity?: (activity: AcpLineActivity) => void,
 ): Promise<void> {
   const decoder = new TextDecoder();
   let remainder = "";
@@ -288,7 +297,7 @@ export class SpawnAcpSession implements AcpSession {
       // AC7: Emit activity events during stdout reading.
       const parseState = createParseState();
       const onActivity = emit
-        ? (activity: import("./parser").AcpxLineActivity) => {
+        ? (activity: AcpLineActivity) => {
             if (activity.kind === "message_update") {
               emit({ ...baseEvent, kind: "agent.message_update", deltaBytes: activity.deltaBytes, timestamp: now() });
             } else if (activity.kind === "thinking_update") {

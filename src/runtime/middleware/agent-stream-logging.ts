@@ -1,5 +1,5 @@
-import { getSafeLogger } from "../../logger";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "../agent-stream-events";
+import { getSafeLogger } from "@/logger";
+import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
 
 interface CallTrackingState {
   callId: string;

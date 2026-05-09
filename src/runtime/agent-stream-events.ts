@@ -1,6 +1,6 @@
-import type { PipelineStage } from "../config/permissions";
-import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
+import type { PipelineStage } from "@/config";
+import { getSafeLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 
 export interface AgentStreamEventBase {
   readonly callId: string;

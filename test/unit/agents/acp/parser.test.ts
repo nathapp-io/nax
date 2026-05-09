@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createParseState, finalizeParseState, parseAcpxJsonLine, parseAcpxJsonOutput } from "../../../../src/agents/acp/parser";
+import { createParseState, finalizeParseState, parseAcpxJsonLine, parseAcpxJsonOutput } from "@/agents";
 
 // Real acpx JSON-RPC envelope format (captured from live acpx v0.3.0)
 const REAL_ACPX_OUTPUT = [

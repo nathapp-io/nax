@@ -1,7 +1,6 @@
-import type { NaxConfig } from "../../config";
-import type { PipelineStage } from "../../config/permissions";
-import { getSafeLogger } from "../../logger";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "../agent-stream-events";
+import type { NaxConfig, PipelineStage } from "@/config";
+import { getSafeLogger } from "@/logger";
+import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
 
 export interface WatchdogState {
   readonly callId: string;

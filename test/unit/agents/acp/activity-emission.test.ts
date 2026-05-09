@@ -12,10 +12,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { createParseState, parseAcpxJsonLine, type AcpxLineActivity } from "../../../../src/agents/acp/parser";
-import { SpawnAcpClient, _spawnClientDeps } from "../../../../src/agents/acp/spawn-client";
-import type { AgentStreamEvent } from "../../../../src/runtime/agent-stream-events";
-import { withDepsRestore } from "../../../helpers/deps";
+import { createParseState, parseAcpxJsonLine, SpawnAcpClient, type AcpLineActivity, _spawnClientDeps } from "@/agents";
+import type { AgentStreamEvent } from "@/runtime";
+import { withDepsRestore } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // parseAcpxJsonLine activity metadata tests
@@ -219,7 +218,7 @@ describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () =
 
   test("activity type has no message or thought fields in its interface", () => {
     // This test validates the type definition itself
-    const activity: AcpxLineActivity = {
+    const activity: AcpLineActivity = {
       kind: "message_update",
       deltaBytes: 42,
     };

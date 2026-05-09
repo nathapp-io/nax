@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { NaxConfigSchema } from "@/config";
 
 describe("AgentConfigSchema", () => {
   test("default values", () => {

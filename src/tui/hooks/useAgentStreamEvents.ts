@@ -1,5 +1,5 @@
+import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
 import { useEffect, useState } from "react";
-import type { AgentStreamEvent, IAgentStreamEventBus } from "../../runtime/agent-stream-events";
 
 export interface ActiveCallState {
   callId: string;
