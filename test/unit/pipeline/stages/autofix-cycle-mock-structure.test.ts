@@ -14,13 +14,15 @@ import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import {
   _autofixCycleDeps,
   applyTestEditDeclarations,
+  runAgentRectificationV2,
   validateMockStructureFiles,
 } from "../../../../src/pipeline/stages/autofix-cycle";
+import { _cycleDeps } from "../../../../src/findings/cycle";
 import type { Finding } from "../../../../src/findings";
 import type { TestEditDeclaration } from "../../../../src/operations";
-import type { ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
+import { _resolverDeps, type ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
 import type { PipelineContext } from "../../../../src/pipeline/types";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "../../../helpers";
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -364,30 +366,95 @@ describe("PipelineContext extension", () => {
 // ─── Cycle validate() callback orchestration ─────────────────────────────────
 
 describe("cycle validate() callback with mock_structure handling", () => {
+  // Per-describe lifecycle for deps used only in the runAgentRectificationV2 integration tests.
+  let savedCycleCallOp: typeof _cycleDeps.callOp;
+  let savedResolverDetect: typeof _resolverDeps.detectTestFilePatterns;
+  const cycleCreatedRuntimes: Array<ReturnType<typeof makeMockRuntime>> = [];
+
+  beforeEach(() => {
+    savedCycleCallOp = _cycleDeps.callOp;
+    savedResolverDetect = _resolverDeps.detectTestFilePatterns;
+  });
+
+  afterEach(async () => {
+    _cycleDeps.callOp = savedCycleCallOp;
+    _resolverDeps.detectTestFilePatterns = savedResolverDetect;
+    await Promise.allSettled(cycleCreatedRuntimes.map((r) => r.close()));
+    cycleCreatedRuntimes.length = 0;
+  });
+
+  /** Build a PipelineContext with a runtime and one failing adversarial finding. */
+  function makeCycleTestCtx(): PipelineContext {
+    const runtime = makeMockRuntime();
+    cycleCreatedRuntimes.push(runtime);
+    return {
+      story: makeStory(),
+      config: makeNaxConfig(),
+      reviewResult: {
+        success: false,
+        checks: [
+          {
+            check: "adversarial",
+            success: false,
+            findings: [makeFinding({ source: "adversarial-review", fixTarget: "source", severity: "error" })],
+          },
+        ],
+      },
+      workdir: "/tmp",
+      agentManager: makeMockAgentManager(),
+      runtime,
+      prd: { feature: "_test", project: "test", userStories: [], branchName: "main", createdAt: "", updatedAt: "" },
+    } as any;
+  }
+
   test("populates ctx.pendingMockStructureHandoffs from valid mock_structure declarations before applyTestEditDeclarations", async () => {
-    const ctx = makeMinCtx();
+    const ctx = makeCycleTestCtx();
     ctx.testEditDeclarations = [
       {
         reason: "mock_structure",
         file: "test/foo.test.ts",
-        files: ["test/foo.test.ts", "test/bar.spec.ts"],
+        // Use only .test.ts files — the fallback resolver pattern is "test/**/*.test.ts"
+        // which only matches .test.ts, not .spec.ts.
+        files: ["test/foo.test.ts", "test/bar.test.ts"],
         reasonDetail: "Restructure mocks",
       },
     ];
 
+    // Strategy execution returns empty output — ctx.testEditDeclarations is not modified,
+    // so our pre-set declarations remain when validate() runs.
+    _cycleDeps.callOp = mock(async () => ({ testEditDeclarations: [], unresolvedReason: undefined })) as any;
+
+    // recheckReview clears findings so the cycle resolves after validate()
     _autofixDeps.recheckReview = mock(async (pctx: PipelineContext): Promise<boolean> => {
       pctx.reviewResult = { success: true, checks: [] } as any;
       return true;
     });
 
-    // In the actual implementation, this would be called in validate()
-    // For now, verify the structure is sound
-    expect(ctx.testEditDeclarations).toBeDefined();
-    expect(ctx.testEditDeclarations?.[0].reason).toBe("mock_structure");
+    // fileExists returns true for the declared test paths so validateMockStructureFiles marks them valid
+    _autofixCycleDeps.fileExists = mock(
+      async (path: string) => path.includes("test/foo.test.ts") || path.includes("test/bar.test.ts"),
+    );
+
+    // Force fallback test patterns (avoids real filesystem scan of workdir)
+    _resolverDeps.detectTestFilePatterns = mock(async () => ({
+      confidence: "empty" as const,
+      patterns: [] as string[],
+      sources: [] as { type: string }[],
+    })) as any;
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // AC#7: validate() must populate pendingMockStructureHandoffs from the valid
+    // mock_structure declarations before applyTestEditDeclarations runs.
+    expect(ctx.pendingMockStructureHandoffs).toBeDefined();
+    expect(ctx.pendingMockStructureHandoffs).toHaveLength(1);
+    expect(ctx.pendingMockStructureHandoffs?.[0].files).toContain("test/foo.test.ts");
+    expect(ctx.pendingMockStructureHandoffs?.[0].files).toContain("test/bar.test.ts");
+    expect(ctx.pendingMockStructureHandoffs?.[0].reasonDetail).toBe("Restructure mocks");
   });
 
   test("clears ctx.testEditDeclarations after validate() completes", async () => {
-    const ctx = makeMinCtx();
+    const ctx = makeCycleTestCtx();
     ctx.testEditDeclarations = [
       {
         reason: "prd_contract",
@@ -398,14 +465,26 @@ describe("cycle validate() callback with mock_structure handling", () => {
       },
     ];
 
+    _cycleDeps.callOp = mock(async () => ({ testEditDeclarations: [], unresolvedReason: undefined })) as any;
+
+    // recheckReview clears findings so validate() can run with pending declarations
     _autofixDeps.recheckReview = mock(async (pctx: PipelineContext): Promise<boolean> => {
       pctx.reviewResult = { success: true, checks: [] } as any;
       return true;
     });
 
-    // After validate() in the real implementation, testEditDeclarations should be cleared
-    // For the test, we verify the pattern is set up correctly
-    expect(ctx.testEditDeclarations).toBeDefined();
+    _autofixCycleDeps.fileExists = mock(async () => false);
+
+    _resolverDeps.detectTestFilePatterns = mock(async () => ({
+      confidence: "empty" as const,
+      patterns: [] as string[],
+      sources: [] as { type: string }[],
+    })) as any;
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // AC#8: validate() clears testEditDeclarations after consuming them
+    expect(ctx.testEditDeclarations).toEqual([]);
   });
 
   test("handles mixed declarations: mock_structure + prd_contract", async () => {
