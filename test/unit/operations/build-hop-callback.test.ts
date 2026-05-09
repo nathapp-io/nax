@@ -1,6 +1,7 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
 import { buildHopCallback, _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
 import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
+import type { HopKind } from "../../../src/agents/manager-types";
 import { makeNaxConfig, makeSessionManager, makeStory } from "../../helpers";
 import type { IAgentManager, RunAsSessionOpts } from "../../../src/agents/manager-types";
 import { SessionFailureError } from "../../../src/agents/types";
@@ -114,7 +115,7 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     const optionsWithPinnedModel = { ...baseOptions, modelDef: pinnedModelDef } as AgentRunOptions;
     const cb = buildHopCallback(ctx, SESSION_ID, optionsWithPinnedModel);
 
-    await cb("claude", makeBundle(), undefined, optionsWithPinnedModel);
+    await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, optionsWithPinnedModel);
 
     const openOpts = (sessionManager.openSession as ReturnType<typeof mock>).mock.calls[0]?.[1] as {
       modelDef: { provider: string; model: string };
@@ -132,7 +133,7 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     const baseOptions = makeBaseOptions("do the work", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", makeBundle(), undefined, baseOptions);
+    const hop = await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(_buildHopCallbackDeps.rebuildForAgent).not.toHaveBeenCalled();
     expect(sessionManager.openSession).toHaveBeenCalledTimes(1);
@@ -180,7 +181,7 @@ describe("buildHopCallback — failure hop (fallback)", () => {
     } as AgentRunOptions;
     const cb = buildHopCallback(ctx, SESSION_ID, optionsWithPinnedModel);
 
-    await cb("codex", makeBundle(), failure, optionsWithPinnedModel);
+    await cb("codex", makeBundle(), { kind: "swap", failure } satisfies HopKind, optionsWithPinnedModel);
 
     const openOpts = (sessionManager.openSession as ReturnType<typeof mock>).mock.calls[0]?.[1] as {
       modelDef: { provider: string; model: string };
@@ -206,7 +207,7 @@ describe("buildHopCallback — failure hop (fallback)", () => {
     const baseOptions = makeBaseOptions("original prompt", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("codex", makeBundle(), failure, baseOptions);
+    const hop = await cb("codex", makeBundle(), { kind: "swap", failure } satisfies HopKind, baseOptions);
 
     expect(_buildHopCallbackDeps.rebuildForAgent).toHaveBeenCalledWith(
       expect.anything(),
@@ -236,7 +237,7 @@ describe("buildHopCallback — runAsSession throws", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", makeBundle(), undefined, baseOptions);
+    const hop = await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
     expect(hop.result.success).toBe(false);
@@ -261,7 +262,7 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", undefined, undefined, baseOptions);
+    const hop = await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
     expect(hop.result.success).toBe(false);
@@ -284,7 +285,7 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", undefined, undefined, baseOptions);
+    const hop = await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(hop.result.success).toBe(false);
     expect(hop.result.rateLimited).toBe(false);
@@ -298,7 +299,7 @@ describe("buildHopCallback — failure classification (Finding 3)", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", undefined, undefined, baseOptions);
+    const hop = await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(hop.result.success).toBe(false);
     expect(hop.result.rateLimited).toBe(false);
@@ -334,7 +335,7 @@ describe("buildHopCallback — hopBody (multi-prompt within one hop)", () => {
     const baseOptions = makeBaseOptions("initial-prompt", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    const hop = await cb("claude", undefined, undefined, baseOptions);
+    const hop = await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(observed).toEqual(["initial-prompt", "after-first:first-output"]);
     expect(runAsCount).toBe(2);
@@ -351,7 +352,7 @@ describe("buildHopCallback — hopBody (multi-prompt within one hop)", () => {
     const baseOptions = makeBaseOptions("only-prompt", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    await cb("claude", undefined, undefined, baseOptions);
+    await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     expect(agentManager.runAsSession).toHaveBeenCalledTimes(1);
     const promptArg = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[2] as string;
@@ -371,7 +372,7 @@ describe("buildHopCallback — openSession throws", () => {
 
     let thrown: Error | null = null;
     try {
-      await cb("claude", makeBundle(), undefined, baseOptions);
+      await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, baseOptions);
     } catch (err) {
       thrown = err as Error;
     }
@@ -395,7 +396,7 @@ describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    await cb("claude", undefined, undefined, baseOptions);
+    await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     const opts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
     expect(opts.interactionHandler).not.toBeUndefined();
@@ -411,7 +412,7 @@ describe("buildHopCallback — interactionBridge threading (AC6/AC7)", () => {
     const baseOptions = makeBaseOptions("p", ctx.config);
     const cb = buildHopCallback(ctx, SESSION_ID, baseOptions);
 
-    await cb("claude", undefined, undefined, baseOptions);
+    await cb("claude", undefined, { kind: "primary" } satisfies HopKind, baseOptions);
 
     const opts = (agentManager.runAsSession as ReturnType<typeof mock>).mock.calls[0]?.[3] as RunAsSessionOpts;
     expect(opts.maxTurns).toBe(5);

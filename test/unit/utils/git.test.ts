@@ -5,18 +5,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _gitDeps, captureOutputFiles, detectMergeConflict } from "../../../src/utils/git";
+import { _gitDeps, captureOutputFiles, detectMergeConflict } from "@/utils/git";
 
 describe("detectMergeConflict", () => {
-  test("returns true when output contains uppercase CONFLICT", () => {
+  // True positives — real git conflict signals
+  test("returns true for CONFLICT (content): marker", () => {
     expect(detectMergeConflict("CONFLICT (content): Merge conflict in src/foo.ts")).toBe(true);
   });
 
-  test("returns true when output contains lowercase conflict", () => {
-    expect(detectMergeConflict("Auto-merging failed due to conflict in file")).toBe(true);
-  });
-
-  test("returns true for typical git merge CONFLICT output", () => {
+  test("returns true for typical git merge output with CONFLICT (content):", () => {
     const output = [
       "Auto-merging src/index.ts",
       "CONFLICT (content): Merge conflict in src/index.ts",
@@ -25,11 +22,48 @@ describe("detectMergeConflict", () => {
     expect(detectMergeConflict(output)).toBe(true);
   });
 
-  test("returns true for git rebase CONFLICT output", () => {
+  test("returns true for CONFLICT (modify/delete): rebase output", () => {
     const output = "CONFLICT (modify/delete): src/bar.ts deleted in HEAD";
     expect(detectMergeConflict(output)).toBe(true);
   });
 
+  test("returns true when <<<<<<< conflict marker is present", () => {
+    const output = "<<<<<<< HEAD\nconst x = 1;\n=======\nconst x = 2;\n>>>>>>> feature";
+    expect(detectMergeConflict(output)).toBe(true);
+  });
+
+  test("returns true when >>>>>>> conflict marker is present", () => {
+    expect(detectMergeConflict(">>>>>>> feature-branch")).toBe(true);
+  });
+
+  test("returns true for 'Merge conflict in <file>' message", () => {
+    expect(detectMergeConflict("Merge conflict in src/index.ts")).toBe(true);
+  });
+
+  test("returns true when git conflict markers appear in combined stderr output", () => {
+    const combined = "stdout: commit abc123\nstderr: CONFLICT (content): Merge conflict in src/foo.ts";
+    expect(detectMergeConflict(combined)).toBe(true);
+  });
+
+  // False positives — words that must NOT trigger the detector
+  test("returns false for bare lowercase 'conflict' (e.g. HTTP 409 implementation)", () => {
+    expect(detectMergeConflict("Auto-merging failed due to conflict in file")).toBe(false);
+  });
+
+  test("returns false for HTTP 409 Conflict in agent output", () => {
+    const output = "throw new HttpException('HTTP 409 Conflict: duplicate connection', 409)";
+    expect(detectMergeConflict(output)).toBe(false);
+  });
+
+  test("returns false for 'already-synced conflict' wording in code comments", () => {
+    expect(detectMergeConflict("// return 409 when there is a duplicate conflict")).toBe(false);
+  });
+
+  test("returns false for CONFLICT without parenthesised type (unstructured word)", () => {
+    expect(detectMergeConflict("stderr: CONFLICT detected in merge")).toBe(false);
+  });
+
+  // Unrelated output
   test("returns false when output has no conflict markers", () => {
     expect(detectMergeConflict("All changes committed successfully.")).toBe(false);
   });
@@ -41,11 +75,6 @@ describe("detectMergeConflict", () => {
   test("returns false for unrelated git output", () => {
     const output = "3 files changed, 10 insertions(+), 2 deletions(-)";
     expect(detectMergeConflict(output)).toBe(false);
-  });
-
-  test("returns true when CONFLICT appears in stderr portion of combined output", () => {
-    const combined = "stdout: commit abc123\nstderr: CONFLICT detected in merge";
-    expect(detectMergeConflict(combined)).toBe(true);
   });
 });
 

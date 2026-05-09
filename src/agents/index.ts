@@ -2,6 +2,25 @@ export type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, Com
 export type { InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { CompleteError, SessionFailureError } from "./types";
+export {
+  AcpAgentAdapter,
+  SpawnAcpClient,
+  _acpAdapterDeps,
+  _spawnClientDeps,
+  createParseState,
+  createSpawnAcpClient,
+  finalizeParseState,
+  parseAcpxJsonLine,
+  parseAcpxJsonOutput,
+} from "./acp";
+export type {
+  AcpClient,
+  AcpClientOptions,
+  AcpLineActivity,
+  AcpParseState,
+  AcpSession,
+  AcpSessionResponse,
+} from "./acp";
 export { getAllAgentNames, getInstalledAgents, checkAgentHealth, KNOWN_AGENT_NAMES } from "./registry";
 export type { ModelCostRates, TokenUsage, CostEstimate, TokenUsageWithConfidence } from "./cost";
 export {
@@ -15,7 +34,7 @@ export {
 export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "./shared/validation";
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
-export { AgentManager } from "./manager";
+export { AgentManager, _agentManagerDeps } from "./manager";
 export type {
   IAgentManager,
   AgentFallbackRecord,
@@ -24,5 +43,7 @@ export type {
   AgentManagerEvents,
   AgentManagerEventName,
   AgentRunRequest,
+  HopKind,
 } from "./manager-types";
 export { resolveDefaultAgent } from "./utils";
+export { ParseValidationError, makeParseRetryStrategy } from "./retry";

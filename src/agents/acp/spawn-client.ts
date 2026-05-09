@@ -13,12 +13,21 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { getSafeLogger } from "../../logger";
-import type { AgentStreamEvent } from "../../runtime/agent-stream-events";
-import { typedSpawn } from "../../utils/bun-deps";
+import {
+  type AcpClient,
+  type AcpClientOptions,
+  type AcpLineActivity,
+  type AcpParseState,
+  type AcpSession,
+  type AcpSessionResponse,
+  createParseState,
+  finalizeParseState,
+  parseAcpxJsonLine,
+} from "@/agents";
+import { getSafeLogger } from "@/logger";
+import type { AgentStreamEvent } from "@/runtime";
+import { typedSpawn } from "@/utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
-import type { AcpClient, AcpClientOptions, AcpSession, AcpSessionResponse } from "./adapter-session-types";
-import { type AcpxParseState, createParseState, finalizeParseState, parseAcpxJsonLine } from "./parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -51,12 +60,13 @@ export const _spawnClientDeps = {
  * where piped streams may not close after SIGTERM.
  *
  * When onActivity is provided, it is called immediately for each line that
- * produces activity metadata (message_update, thinking_update, usage_update).
+ * produces activity metadata
+ * (message_update, thinking_update, usage_update, tool_call_update).
  */
 async function readAndParseLines(
   stream: ReadableStream<Uint8Array>,
-  state: AcpxParseState,
-  onActivity?: (activity: import("./parser").AcpxLineActivity) => void,
+  state: AcpParseState,
+  onActivity?: (activity: AcpLineActivity) => void,
 ): Promise<void> {
   const decoder = new TextDecoder();
   let remainder = "";
@@ -284,10 +294,10 @@ export class SpawnAcpSession implements AcpSession {
       // the full NDJSON output. Only extracted fields (strings + numbers) are held in
       // memory — raw bytes are discarded immediately after each line is processed.
       // .catch(() => {}) guards against stream errors (e.g. acpx crash mid-run).
-      // AC7: Emit message_update/thinking_update/usage_update events during stdout reading.
+      // AC7: Emit activity events during stdout reading.
       const parseState = createParseState();
       const onActivity = emit
-        ? (activity: import("./parser").AcpxLineActivity) => {
+        ? (activity: AcpLineActivity) => {
             if (activity.kind === "message_update") {
               emit({ ...baseEvent, kind: "agent.message_update", deltaBytes: activity.deltaBytes, timestamp: now() });
             } else if (activity.kind === "thinking_update") {
@@ -299,6 +309,13 @@ export class SpawnAcpSession implements AcpSession {
                 inputTokens: activity.inputTokens,
                 outputTokens: activity.outputTokens,
                 costUsd: activity.costUsd,
+                timestamp: now(),
+              });
+            } else if (activity.kind === "tool_call_update") {
+              emit({
+                ...baseEvent,
+                kind: "agent.tool_call_update",
+                toolName: activity.toolName,
                 timestamp: now(),
               });
             }

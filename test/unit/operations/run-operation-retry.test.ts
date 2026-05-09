@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AgentRunRequest } from "../../../src/agents";
-import { pickSelector } from "../../../src/config";
-import type { DEFAULT_CONFIG } from "../../../src/config";
-import { callOp } from "../../../src/operations/call";
-import type { HopBodyContext, RunOperation } from "../../../src/operations/types";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { AgentRunRequest } from "@/agents";
+import { pickSelector } from "@/config";
+import type { DEFAULT_CONFIG } from "@/config";
+import { callOp } from "@/operations";
+import type { HopBodyContext, RunOperation } from "@/operations/types";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
@@ -159,7 +159,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
         // Invoke executeHop to drive the effective hop body
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -214,7 +214,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -334,7 +334,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     // executeHop must be called so sendWithParseRetry drives the retry loop inside one session.
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -384,15 +384,15 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
   test("op.retry runs all attempts in a single session (Phase A same-session regression)", async () => {
     // All parse-retry attempts must share one session — openSession called exactly once.
     let sendCallCount = 0;
-    const { makeParseRetryStrategy } = await import("../../../src/agents/retry");
-    const { ReviewPromptBuilder } = await import("../../../src/prompts");
-    const { validateLLMShape } = await import("../../../src/review/semantic-helpers");
+    const { makeParseRetryStrategy } = await import("@/agents");
+    const { ReviewPromptBuilder } = await import("@/prompts");
+    const { validateLLMShape } = await import("@/review");
 
     const validOutput = JSON.stringify({ passed: true, findings: [] });
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -432,15 +432,15 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
   });
 
   test("cost is summed across retry attempts via sendWithParseRetry", async () => {
-    const { makeParseRetryStrategy } = await import("../../../src/agents/retry");
-    const { validateLLMShape } = await import("../../../src/review/semantic-helpers");
+    const { makeParseRetryStrategy } = await import("@/agents");
+    const { validateLLMShape } = await import("@/review");
 
     let sendCallCount = 0;
     const validOutput = JSON.stringify({ passed: true, findings: [] });
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => {
@@ -478,11 +478,11 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
   });
 
   test("when op.retry exhausts with decision.fallback, callOp returns the fallback merged with cost", async () => {
-    const { makeParseRetryStrategy } = await import("../../../src/agents/retry");
+    const { makeParseRetryStrategy } = await import("@/agents");
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async (_agentName, _handle, _prompt, _opts) => ({
@@ -539,7 +539,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {
@@ -582,14 +582,14 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     }
 
     expect(thrownError).not.toBeNull();
-    expect((thrownError as import("../../../src/errors").NaxError).code).toBe("CALL_OP_ABORTED");
+    expect((thrownError as import("@/errors").NaxError).code).toBe("CALL_OP_ABORTED");
   });
 
   test("two sendWithParseRetry calls in one hopBody have independent retry state", async () => {
     // P1-4: retryFallback/lastRetryTurn reset per sendWithParseRetry call.
     // First call always fails parse (fallback captured), second call succeeds.
     // The op.parse outcome should reflect only the second call's result.
-    const { makeParseRetryStrategy } = await import("../../../src/agents/retry");
+    const { makeParseRetryStrategy } = await import("@/agents");
 
     const FALLBACK_VALUE = { status: "exhausted-first-call" };
     const SECOND_OUTPUT = JSON.stringify({ status: "success-second-call" });
@@ -597,7 +597,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     let sessionCallCount = 0;
     const agentManager = makeMockAgentManager({
       runWithFallbackFn: async (req: AgentRunRequest) => {
-        const hopResult = await req.executeHop!("claude", undefined, undefined, req.runOptions);
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
         return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
       },
       runAsSessionFn: async () => {

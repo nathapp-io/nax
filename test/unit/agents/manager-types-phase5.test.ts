@@ -1,14 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentRunRequest, AgentRunOutcome } from "../../../src/agents/manager-types";
-import type { ContextBundle } from "../../../src/context/engine";
-import type { AdapterFailure } from "../../../src/context/engine/types";
-import type { AgentResult } from "../../../src/agents/types";
+import type { AgentRunRequest, AgentRunOutcome, HopKind, AgentResult } from "@/agents";
+import type { ContextBundle } from "@/context/engine";
 
 describe("AgentRunRequest — executeHop callback", () => {
   test("AgentRunRequest accepts executeHop callback", () => {
     const req: AgentRunRequest = {
       runOptions: {} as never,
-      executeHop: async (agentName: string, bundle: ContextBundle | undefined, failure: AdapterFailure | undefined) => ({
+      executeHop: async (_agentName: string, bundle: ContextBundle | undefined, _hopKind: HopKind) => ({
         result: {} as AgentResult,
         bundle,
         prompt: "test",

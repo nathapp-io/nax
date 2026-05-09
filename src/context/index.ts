@@ -28,6 +28,7 @@ export {
 } from "./builder";
 
 export { estimateTokens } from "../optimizer/types";
+export { ContextOrchestrator } from "./engine";
 
 export {
   generateTestCoverageSummary,

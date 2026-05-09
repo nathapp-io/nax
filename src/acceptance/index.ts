@@ -6,6 +6,7 @@
 
 export type {
   AcceptanceCriterion,
+  DiagnosisResult,
   RefinedCriterion,
   RefinementContext,
 } from "./types";
@@ -28,3 +29,9 @@ export {
 
 export type { AcceptanceEntry } from "./content-loader";
 export { loadAcceptanceTestContent } from "./content-loader";
+export { loadSemanticVerdicts } from "./semantic-verdict";
+export {
+  findExistingAcceptanceTestPath,
+  groupStoriesByPackage,
+  resolveAcceptanceFeatureTestPath,
+} from "./test-path";

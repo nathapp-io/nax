@@ -116,6 +116,39 @@ describe("validateAcQuote", () => {
       expect(validateAcQuote(finding, ACS)).toEqual({ valid: true });
     });
 
+    test("acQuote without backticks matches AC text that has backtick formatting", () => {
+      // Regression: adversarial reviewer dropped backticks when copying AC text verbatim.
+      // The validator must normalise inline markdown before substring matching so that
+      // `planInteractiveOp` in the AC matches planInteractiveOp in the quote.
+      const backtickAcs = [
+        "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts` with `kind: \"run\"`.",
+        "The `jsonRepair` method must return a non-empty string containing the word JSON.",
+      ];
+      const finding: AcQuotable = {
+        severity: "error",
+        file: "src/operations/plan.ts",
+        issue: "planInteractiveOp is not exported",
+        // acQuote is the AC text with backticks stripped — as the LLM commonly produces
+        acQuote: "planInteractiveOp is a RunOperation exported from src/operations/plan.ts",
+        acIndex: 1,
+      };
+      expect(validateAcQuote(finding, backtickAcs)).toEqual({ valid: true });
+    });
+
+    test("acQuote with backticks also matches AC text that has backtick formatting", () => {
+      const backtickAcs = [
+        "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`.",
+      ];
+      const finding: AcQuotable = {
+        severity: "error",
+        file: "src/operations/plan.ts",
+        issue: "planInteractiveOp missing",
+        acQuote: "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`",
+        acIndex: 1,
+      };
+      expect(validateAcQuote(finding, backtickAcs)).toEqual({ valid: true });
+    });
+
     test("no acceptanceCriteria → ac_index_out_of_range", () => {
       const finding = makeFinding({ severity: "error", acQuote: "something", acIndex: 1 });
       expect(validateAcQuote(finding, [])).toEqual({ valid: false, code: "ac_index_out_of_range" });

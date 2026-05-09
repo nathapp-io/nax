@@ -210,7 +210,7 @@ export class AgentManager implements IAgentManager {
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
     let currentBundle = request.bundle;
-    let currentFailure: AdapterFailure | undefined;
+    let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
 
     const _opStartMs = Date.now();
@@ -224,7 +224,7 @@ export class AgentManager implements IAgentManager {
         let updatedBundle = currentBundle;
 
         if (request.executeHop) {
-          const hopOut = await request.executeHop(currentAgent, currentBundle, currentFailure, request.runOptions);
+          const hopOut = await request.executeHop(currentAgent, currentBundle, currentHopKind, request.runOptions);
           result = hopOut.result;
           updatedBundle = hopOut.bundle ?? currentBundle;
           finalPrompt = hopOut.prompt ?? finalPrompt;
@@ -292,6 +292,7 @@ export class AgentManager implements IAgentManager {
             attempt: staleRetryAttempts,
             agent: currentAgent,
           });
+          currentHopKind = { kind: "stale-retry", attempt: staleRetryAttempts };
           continue;
         }
 
@@ -373,7 +374,7 @@ export class AgentManager implements IAgentManager {
         // Reset per-agent rate-limit counter so the new agent gets its own backoff budget.
         rateLimitRetry = 0;
         currentBundle = updatedBundle;
-        currentFailure = adapterFailure;
+        currentHopKind = { kind: "swap", failure: adapterFailure };
 
         const hop: AgentFallbackRecord = {
           storyId: request.runOptions.storyId,

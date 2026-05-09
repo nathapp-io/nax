@@ -25,11 +25,12 @@ export interface AcpxTokenUsage {
 
 /** Activity metadata from a single parsed line — emitted to stream listeners. */
 export interface AcpxLineActivity {
-  kind?: "message_update" | "thinking_update" | "usage_update";
+  kind?: "message_update" | "thinking_update" | "usage_update" | "tool_call_update";
   deltaBytes?: number;
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  toolName?: string;
 }
 
 /** Mutable accumulator for incremental NDJSON line parsing. */
@@ -61,7 +62,8 @@ export function createParseState(): AcpxParseState {
 /**
  * Process a single NDJSON line into the accumulator state.
  * Handles JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON.
- * Returns activity metadata if the line contains a stream event (message_update, thinking_update, usage_update).
+ * Returns activity metadata if the line contains a stream event
+ * (message_update, thinking_update, usage_update, tool_call_update).
  * Activity metadata includes only deltaBytes/tokens/cost — never raw text content.
  */
 export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLineActivity | undefined {
@@ -115,6 +117,13 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
             state.exactCostUsd = update.cost.amount;
           }
           return activity;
+        }
+
+        if (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") {
+          return {
+            kind: "tool_call_update",
+            toolName: extractToolName(update),
+          };
         }
       }
 
@@ -177,6 +186,17 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
     }
   } catch {
     if (!state.text) state.text = line;
+  }
+  return undefined;
+}
+
+function extractToolName(update: Record<string, unknown>): string | undefined {
+  const directName = update.toolName;
+  if (typeof directName === "string" && directName.trim()) return directName;
+  const nestedTool = update.tool;
+  if (nestedTool && typeof nestedTool === "object") {
+    const name = (nestedTool as Record<string, unknown>).name;
+    if (typeof name === "string" && name.trim()) return name;
   }
   return undefined;
 }
