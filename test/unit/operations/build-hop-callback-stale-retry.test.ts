@@ -182,7 +182,7 @@ describe("buildHopCallback — stale-retry session reuse", () => {
     expect(handoff).toHaveBeenCalledWith("session-1", "codex", SWAP_FAILURE.outcome);
   });
 
-  test("closeSession called on stale-retry when send throws (still skipped — handle stays open)", async () => {
+  test("closeSession NOT called on stale-retry when send throws (handle stays open for watchdog to cancel)", async () => {
     const getLiveHandle = mock((_name: string) => STUB_HANDLE);
     const openSession = mock(async () => STUB_HANDLE);
     const closeSession = mock(async () => {});

@@ -77,7 +77,7 @@ export interface AgentRunRequest {
    * sequence for every hop (primary AND fallback). Called with:
    *   - agentName: which agent to use for this hop
    *   - bundle: the context bundle at the start of this hop (rebuilt between hops)
-   *   - failure: the AdapterFailure that triggered this hop; undefined for the primary hop
+   *   - hopKind: discriminated union — `{kind:"primary"}`, `{kind:"stale-retry",attempt:n}`, or `{kind:"swap",failure}`
    * Returns the agent result, the bundle used (may differ after rebuild), and the prompt used.
    * Used by execution stage to inject context rebuild, session handoff, and prompt building.
    */

@@ -218,8 +218,8 @@ export const executionStage: PipelineStage = {
         : undefined;
 
     const executeHop: AgentRunRequest["executeHop"] | undefined = hopCallback
-      ? async (agentName, hopBundle, failure, resolvedRunOptions) => {
-          const hop = await hopCallback(agentName, hopBundle, failure, resolvedRunOptions);
+      ? async (agentName, hopBundle, hopKind, resolvedRunOptions) => {
+          const hop = await hopCallback(agentName, hopBundle, hopKind, resolvedRunOptions);
           finalBundle = hop.bundle ?? finalBundle;
           finalPrompt = hop.prompt;
           return hop;
