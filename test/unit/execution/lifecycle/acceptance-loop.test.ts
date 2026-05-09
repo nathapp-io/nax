@@ -381,6 +381,32 @@ describe("resolveAcceptanceFixTarget", () => {
     expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
     expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
   });
+
+  test("uses failed package path and config command when failed package is not in acceptanceTestPaths", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "npx jest --config jest.nax.config.js {{FILE}}" },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [
+        {
+          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/api",
+          commandOverride: "npx jest {{FILE}}",
+        },
+      ],
+      [
+        {
+          testPath: "/repo/apps/other/.nax-acceptance.test.ts",
+          packageDir: "/repo/apps/other",
+        },
+      ],
+      config,
+    );
+
+    expect(result.acceptanceTestPath).toBe("/repo/apps/other/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

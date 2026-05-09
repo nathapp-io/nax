@@ -5,9 +5,10 @@
  * Extracted from runner.ts for better code organization.
  */
 
+import path from "node:path";
 import { groupStoriesByPackage } from "../acceptance/test-path";
-import { loadConfigForWorkdir } from "../config/loader";
 import type { NaxConfig } from "../config";
+import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
@@ -22,7 +23,6 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import type { ISessionManager } from "../session";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
-import path from "node:path";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";

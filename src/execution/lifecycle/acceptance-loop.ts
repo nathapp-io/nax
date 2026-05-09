@@ -124,19 +124,17 @@ export function resolveAcceptanceFixTarget(
   testCommand: string | undefined;
 } {
   const failedPackage = failedPackages?.[0];
-  const selectedPathEntry =
-    (failedPackage
-      ? acceptanceTestPaths?.find(
-          (entry) =>
-            entry.testPath === failedPackage.testPath ||
-            (entry.packageDir === failedPackage.packageDir && entry.commandOverride === failedPackage.commandOverride),
-        )
-      : undefined) ?? acceptanceTestPaths?.[0];
+  const matchedEntry = failedPackage
+    ? acceptanceTestPaths?.find(
+        (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
+      )
+    : undefined;
+  const selectedPathEntry = matchedEntry ?? acceptanceTestPaths?.[0];
   return {
     acceptanceTestPath: failedPackage?.testPath ?? selectedPathEntry?.testPath ?? "",
     testCommand:
       failedPackage?.commandOverride ??
-      selectedPathEntry?.commandOverride ??
+      matchedEntry?.commandOverride ??
       config.acceptance.command ??
       config.quality?.commands?.test,
   };
