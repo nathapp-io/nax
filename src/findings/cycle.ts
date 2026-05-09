@@ -250,7 +250,7 @@ export async function runFixCycle<F extends Finding>(
       const relevantFindings = findingsBefore.filter((f) => strategy.appliesTo(f));
       const input = strategy.buildInput(relevantFindings, cycle.iterations, ctx);
       const output = await doCallOp(ctx, strategy.fixOp, input);
-      const extracted = strategy.extractApplied?.(output, input) ?? {};
+      const extracted = await (strategy.extractApplied?.(output, input) ?? {});
       fixesApplied.push({
         strategyName: strategy.name,
         op: strategy.fixOp.name,

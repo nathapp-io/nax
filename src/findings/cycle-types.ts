@@ -140,7 +140,9 @@ export interface FixStrategy<
   extractApplied?: (
     output: O,
     input: I,
-  ) => { targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string };
+  ) =>
+    | { targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string }
+    | Promise<{ targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string }>;
 
   /**
    * Optional bail predicate called before each iteration. Return a non-null

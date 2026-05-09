@@ -18,6 +18,7 @@
  */
 
 import { join } from "node:path";
+import { captureGitRef } from "@/utils/git";
 import type { AutofixConfig } from "../../config/selectors";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "../../findings";
 import { runFixCycle } from "../../findings";
@@ -35,6 +36,7 @@ import type { ReviewCheckResult } from "../../review/types";
 import { type ResolvedTestPatterns, resolveTestFilePatterns } from "../../test-runners";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
+import { assertionSiteDiffCheck, revertDiff, runIsolationGuard } from "./autofix-guards";
 
 // ─── Context conversion ───────────────────────────────────────────────────────
 
@@ -308,6 +310,14 @@ export const _autofixCycleDeps = {
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
 };
 
+/** Injectable dependencies for guard checks in runAgentRectificationV2. */
+export const _autofixCycleGuardDeps = {
+  captureGitRef,
+  assertionSiteDiffCheck,
+  runIsolationGuard,
+  revertDiff,
+};
+
 /**
  * Async validator for mock_structure declarations.
  *
@@ -487,15 +497,57 @@ export async function runAgentRectificationV2(
     maxTotalAttempts,
   });
 
+  // Capture HEAD before any test-writer op commits, so guards can diff against it.
+  let iterationBeforeRef: string | undefined = await _autofixCycleGuardDeps.captureGitRef(ctx.workdir);
+
+  const strategies = buildAutofixStrategies(ctx, maxAttempts);
+
+  // Patch testWriter's extractApplied to run safety guards in mock-restructure mode.
+  const twStrategy = strategies.find((s) => s.name === "autofix-test-writer");
+  if (twStrategy) {
+    twStrategy.extractApplied = async (_output: unknown, input: AutofixTestWriterInput) => {
+      if (input.mode !== "mock-restructure" || !iterationBeforeRef || !input.handoffFiles?.length) {
+        return {};
+      }
+      const handoffFiles = input.handoffFiles;
+      const beforeRef = iterationBeforeRef;
+
+      const assertionResult = await _autofixCycleGuardDeps.assertionSiteDiffCheck(ctx.workdir, beforeRef, handoffFiles);
+      if (assertionResult.violated) {
+        await _autofixCycleGuardDeps.revertDiff(ctx.workdir, handoffFiles);
+        logger.info("autofix-cycle", "assertion-site guard violated — reverted", {
+          storyId,
+          file: assertionResult.file,
+          line: assertionResult.line,
+        });
+        return { unresolved: `assertion_weakening:${assertionResult.file}:${assertionResult.line}` };
+      }
+
+      const isolationResult = await _autofixCycleGuardDeps.runIsolationGuard(ctx.workdir, beforeRef, ctx.config);
+      if (isolationResult.violated) {
+        await _autofixCycleGuardDeps.revertDiff(ctx.workdir, isolationResult.files);
+        logger.info("autofix-cycle", "test-writer isolation guard violated — reverted", {
+          storyId,
+          files: isolationResult.files,
+        });
+        return { unresolved: `test_writer_isolation_violation:${isolationResult.files.join(",")}` };
+      }
+
+      return {};
+    };
+  }
+
   const cycle: FixCycle<Finding> = {
     findings: initialFindings,
     iterations: [...(ctx.autofixPriorIterations ?? [])],
-    strategies: buildAutofixStrategies(ctx, maxAttempts),
+    strategies,
     config: {
       maxAttemptsTotal: maxTotalAttempts,
       validatorRetries: 1,
     },
     async validate(_cycleCtx: FixCycleContext): Promise<Finding[]> {
+      // Update beforeRef after all strategies in this iteration have committed.
+      iterationBeforeRef = (await _autofixCycleGuardDeps.captureGitRef(ctx.workdir)) ?? iterationBeforeRef;
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state
       await _autofixDeps.recheckReview(ctx);
       const fresh = collectCurrentFindings(ctx);

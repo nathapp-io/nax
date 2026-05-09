@@ -91,7 +91,7 @@ export async function runIsolationGuard(
     workdir,
     beforeRef,
     config.tdd?.testWriterAllowedPaths,
-    resolved.regex.map((re) => re.source),
+    resolved.globs,
   );
 
   if (!result.passed) {
