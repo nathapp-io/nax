@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import type { PtyHandle } from "../../src/agents/types";
-import { AgentPanel } from "../../src/tui/components/AgentPanel";
+import type { PtyHandle } from "@/agents/types";
+import { AgentPanel } from "@/tui/components/AgentPanel";
 
 describe("AgentPanel", () => {
   test("renders placeholder when no output", () => {

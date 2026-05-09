@@ -7,9 +7,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { PipelineEventEmitter } from "../../src/pipeline/events";
+import { PipelineEventEmitter } from "@/pipeline";
 import { App } from "../../src/tui/App";
-import type { StoryDisplayState } from "../../src/tui/types";
+import type { StoryDisplayState } from "@/tui";
 
 // BUN-001: node-pty removed — PTY spawn test always skipped in this environment.
 // PTY integration now uses Bun.spawn (piped stdio). TUI PTY test preserved for future re-enablement.

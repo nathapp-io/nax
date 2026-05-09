@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { _cycleDeps } from "../../../src/findings";
+import { DEFAULT_CONFIG } from "@/config";
+import { _cycleDeps } from "@/findings";
 import { _autofixDeps } from "../../../src/pipeline/stages/autofix";
 import { runAgentRectification } from "../../../src/pipeline/stages/autofix-agent";
-import type { PipelineContext } from "../../../src/pipeline/types";
-import type { ReviewCheckResult } from "../../../src/review/types";
-import { makeMockAgentManager, makeMockRuntime } from "../../helpers";
+import type { PipelineContext } from "@/pipeline/types";
+import type { ReviewCheckResult } from "@/review/types";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 
 function failedCheck(check: ReviewCheckResult["check"], output = `${check} failed`): ReviewCheckResult {
   return {
@@ -54,13 +54,11 @@ function makeCtx(agentManager: PipelineContext["agentManager"]): PipelineContext
 }
 
 let savedRecheck: typeof _autofixDeps.recheckReview;
-let savedTreeChange: typeof _autofixDeps.hasWorkingTreeChange;
 let savedTestWriter: typeof _autofixDeps.runTestWriterRectification;
 let savedCycleDepsCallOp: typeof _cycleDeps.callOp;
 
 beforeEach(() => {
   savedRecheck = _autofixDeps.recheckReview;
-  savedTreeChange = _autofixDeps.hasWorkingTreeChange;
   savedTestWriter = _autofixDeps.runTestWriterRectification;
   savedCycleDepsCallOp = _cycleDeps.callOp;
   _autofixDeps.runTestWriterRectification = mock(async () => 0);
@@ -68,57 +66,25 @@ beforeEach(() => {
 
 afterEach(() => {
   _autofixDeps.recheckReview = savedRecheck;
-  _autofixDeps.hasWorkingTreeChange = savedTreeChange;
   _autofixDeps.runTestWriterRectification = savedTestWriter;
   _cycleDeps.callOp = savedCycleDepsCallOp;
   mock.restore();
 });
 
 describe("autofix fresh-failure propagation contract", () => {
-  test("legacy runAgentRectification forwards post-recheck failures to next prompt", async () => {
-    const prompts: string[] = [];
-    const manager = makeMockAgentManager({
-      runAsSessionFn: async (_agentName, _handle, prompt) => {
-        prompts.push(prompt);
-        return {
-          output: "attempt output",
-          estimatedCostUsd: 0,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 0,
-        };
-      },
-    });
-
-    _autofixDeps.hasWorkingTreeChange = mock(async () => false);
-    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
-      ctx.reviewResult = {
-        success: false,
-        checks: [failedCheck("adversarial", "adversarial failure output")],
-      } as unknown as PipelineContext["reviewResult"];
-      return false;
-    });
-
-    await runAgentRectification(makeCtx(manager), undefined, undefined, "/tmp");
-
-    expect(prompts.length).toBeGreaterThanOrEqual(2);
-    expect(prompts[1]).toContain("adversarial failure output");
-    expect(prompts[1]).not.toContain("build failure output");
-  });
-
-  test("V2 runAgentRectification path forwards post-recheck findings to next buildInput", async () => {
-    const capturedChecks: ReviewCheckResult[][] = [];
-
-    // Mock cycle callOp to capture what each strategy invocation receives
+  test("implementer receives fresh post-recheck failures in second iteration", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: test mock captures heterogeneous op inputs
-    _cycleDeps.callOp = mock(async (_ctx: unknown, _op: unknown, input: any): Promise<any> => {
-      if (input?.failedChecks) {
-        capturedChecks.push(input.failedChecks as ReviewCheckResult[]);
+    const capturedInputs: { opName: string; failedChecks: ReviewCheckResult[] }[] = [];
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock captures heterogeneous op inputs
+    _cycleDeps.callOp = mock(async (_ctx: unknown, op: any, input: any): Promise<any> => {
+      if (input?.failedChecks !== undefined) {
+        capturedInputs.push({ opName: op.name as string, failedChecks: input.failedChecks as ReviewCheckResult[] });
       }
       return { applied: true };
     });
 
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
-      // Mutate ctx.reviewResult to adversarial failure (fresh state after first fix attempt)
       ctx.reviewResult = {
         success: false,
         checks: [failedCheck("adversarial", "adversarial failure output")],
@@ -126,24 +92,44 @@ describe("autofix fresh-failure propagation contract", () => {
       return false;
     });
 
-    const manager = makeMockAgentManager({});
-    const ctx = makeCtx(manager);
-    ctx.config = {
-      ...ctx.config,
-      quality: {
-        ...ctx.config.quality,
-        autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 10, cycleV2: true },
-      },
-    } as PipelineContext["config"];
+    await runAgentRectification(makeCtx(makeMockAgentManager({})), undefined, undefined, "/tmp");
 
-    await runAgentRectification(ctx, undefined, undefined, "/tmp");
+    // Iteration 1: only implementer fires (build finding, fixTarget=source, not adversarial)
+    const implementerInvocations = capturedInputs.filter((i) => i.opName === "autofix-implementer");
+    expect(implementerInvocations.length).toBeGreaterThanOrEqual(2);
+    expect(implementerInvocations[0]?.failedChecks.some((c) => c.check === "build")).toBe(true);
 
-    // V2 should have run at least 2 iterations (build → adversarial)
-    expect(capturedChecks.length).toBeGreaterThanOrEqual(2);
-    // First invocation: original build failure
-    expect(capturedChecks[0]?.some((c) => c.check === "build")).toBe(true);
-    // Second invocation: fresh adversarial failure (not the original build)
-    expect(capturedChecks[1]?.some((c) => c.check === "adversarial")).toBe(true);
-    expect(capturedChecks[1]?.some((c) => c.check === "build")).toBe(false);
+    // Iteration 2: after recheckReview, implementer must see only the fresh adversarial check
+    expect(implementerInvocations[1]?.failedChecks.some((c) => c.check === "adversarial")).toBe(true);
+    expect(implementerInvocations[1]?.failedChecks.some((c) => c.check === "build")).toBe(false);
+  });
+
+  test("test-writer does not receive build findings after recheckReview returns adversarial", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test mock captures heterogeneous op inputs
+    const capturedInputs: { opName: string; failedChecks: ReviewCheckResult[] }[] = [];
+
+    // biome-ignore lint/suspicious/noExplicitAny: test mock captures heterogeneous op inputs
+    _cycleDeps.callOp = mock(async (_ctx: unknown, op: any, input: any): Promise<any> => {
+      if (input?.failedChecks !== undefined) {
+        capturedInputs.push({ opName: op.name as string, failedChecks: input.failedChecks as ReviewCheckResult[] });
+      }
+      return { applied: true };
+    });
+
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
+      ctx.reviewResult = {
+        success: false,
+        checks: [failedCheck("adversarial", "adversarial failure output")],
+      } as unknown as PipelineContext["reviewResult"];
+      return false;
+    });
+
+    await runAgentRectification(makeCtx(makeMockAgentManager({})), undefined, undefined, "/tmp");
+
+    // test-writer should never see a build check (only applies to test-targeted or adversarial findings)
+    const testWriterInvocations = capturedInputs.filter((i) => i.opName === "autofix-test-writer");
+    for (const inv of testWriterInvocations) {
+      expect(inv.failedChecks.some((c) => c.check === "build")).toBe(false);
+    }
   });
 });
