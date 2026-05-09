@@ -153,9 +153,7 @@ export function buildAutofixStrategies(
         (f) => f.source === "implementer-handoff" && f.category === "test_mock_restructure",
       );
       if (handoffFindings.length > 0) {
-        const handoffFiles = [
-          ...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null)),
-        ];
+        const handoffFiles = [...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null))];
         const reason = (ctx.pendingMockStructureHandoffs ?? []).map((h) => h.reasonDetail).join("\n\n---\n\n");
         return {
           failedChecks: collectFailedChecks(ctx),
