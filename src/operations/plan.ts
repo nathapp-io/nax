@@ -41,6 +41,12 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
       invalid: () => PlanPromptBuilder.jsonRepair(0, "Invalid JSON — response was not parseable"),
       truncated: () => PlanPromptBuilder.jsonRepair(0, "JSON appears truncated — please rewrite completely"),
     },
+    // Intentionally no exhaustedFallback: it is synchronous and only receives
+    // lastOutput, so it cannot read outputPath from disk. Disk recovery is
+    // handled by op.recover below, which callOp's catch path invokes when retry
+    // exhausts. See issue #993 and .claude/rules/retry-strategy.md
+    // "Strict-parser interaction" — op.recover is the third sanctioned escape
+    // hatch alongside exhaustedFallback and graceful-degradation parse().
   }),
   hopBody: async (initialPrompt, ctx) => {
     return ctx.sendWithParseRetry(initialPrompt);

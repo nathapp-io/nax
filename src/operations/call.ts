@@ -416,25 +416,34 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       }
       return { ...retryFallback, estimatedCostUsd: totalCost } as O;
     }
-    // When retryStrategy engaged but provided no fallback, return the last TurnResult
-    // as-is (per spec: "ops must provide exhaustedFallback if they cannot tolerate a
-    // raw TurnResult as output").
+    // When retryStrategy engaged but provided no fallback, prefer op.recover before
+    // falling back to envelope passthrough. recover is the disk-recovery escape hatch
+    // (#993: silently returning a TurnResult typed-as-O corrupted prd.json).
+    if (op.recover) {
+      const verifyCtx = makeVerifyCtx(buildCtx);
+      const recovered = await op.recover(input, verifyCtx);
+      if (recovered !== null) return recovered;
+    }
+
     if (lastRetryTurn !== undefined) {
+      // Last-resort envelope passthrough. Logged so silent corruption stops being silent.
+      getSafeLogger()?.warn(
+        "callop",
+        "Op exhausted retries with no fallback and no recover — returning raw TurnResult",
+        {
+          storyId: ctx.storyId,
+          opName: op.name,
+          site: "run" as const,
+        },
+      );
       return lastRetryTurn as unknown as O;
     }
     throw _parseErr;
   }
 }
 
-async function runPostParse<I, O, C>(
-  op: Operation<I, O, C>,
-  parsed: O,
-  input: I,
-  buildCtx: BuildContext<C>,
-): Promise<O> {
-  if (!op.verify && !op.recover) return parsed;
-
-  const verifyCtx: VerifyContext<C> = {
+function makeVerifyCtx<C>(buildCtx: BuildContext<C>): VerifyContext<C> {
+  return {
     packageView: buildCtx.packageView,
     config: buildCtx.config,
     readFile: async (p) => {
@@ -446,6 +455,17 @@ async function runPostParse<I, O, C>(
     },
     fileExists: async (p) => Bun.file(p).exists(),
   };
+}
+
+async function runPostParse<I, O, C>(
+  op: Operation<I, O, C>,
+  parsed: O,
+  input: I,
+  buildCtx: BuildContext<C>,
+): Promise<O> {
+  if (!op.verify && !op.recover) return parsed;
+
+  const verifyCtx = makeVerifyCtx(buildCtx);
 
   let final: O | null = parsed;
 

@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { NaxError } from "../errors";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import { callOp, planInteractiveOp } from "../operations";
@@ -169,6 +170,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         });
         if (debateResult.outcome !== "failed" && debateResult.output) {
           const finalPrd = validatePlanOutput(debateResult.output, options.feature, branchName);
+          assertIsValidPrd(finalPrd);
           await _planDeps.writeFile(outputPath, JSON.stringify({ ...finalPrd, project: projectName }, null, 2));
           logger?.info("plan", "[OK] PRD written via debate", { outputPath });
           return outputPath;
@@ -185,6 +187,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
               packageView: debateRt.packages.resolve(),
               packageDir: workdir,
               agentName: debateRt.agentManager.getDefault(),
+              storyId: options.feature,
               featureName: options.feature,
               interactionBridge,
               maxInteractionTurns: config?.agent?.maxInteractionTurns,
@@ -201,6 +204,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
               projectProfile: config?.project,
             },
           );
+          assertIsValidPrd(prd);
           await _planDeps.writeFile(outputPath, JSON.stringify({ ...prd, project: projectName }, null, 2));
           logger?.info("plan", "[OK] PRD written via debate fallback", { outputPath });
           return outputPath;
@@ -233,6 +237,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           packageView: rt.packages.resolve(),
           packageDir: workdir,
           agentName: rt.agentManager.getDefault(),
+          storyId: options.feature,
           featureName: options.feature,
           interactionBridge,
           maxInteractionTurns: config?.agent?.maxInteractionTurns,
@@ -249,6 +254,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           projectProfile: config?.project,
         },
       );
+      assertIsValidPrd(prd);
       await _planDeps.writeFile(outputPath, JSON.stringify({ ...prd, project: projectName }, null, 2));
       logger?.info("plan", "[OK] PRD written", { outputPath });
       return outputPath;
@@ -277,6 +283,25 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Constant-time envelope check: confirms callOp returned a PRD, not a TurnResult.
+ * Does NOT call validatePlanOutput to avoid re-stamping updatedAt (timestamp drift).
+ * Defence-in-depth for issue #993 — the primary fix lives in callOp's catch path.
+ */
+function assertIsValidPrd(prd: unknown): asserts prd is import("../prd/types").PRD {
+  if (typeof prd !== "object" || prd === null || Array.isArray(prd)) {
+    throw new NaxError("plan: callOp returned a non-PRD value", "PLAN_INVALID_RESULT", { stage: "plan" });
+  }
+  const obj = prd as Record<string, unknown>;
+  if (!Array.isArray(obj.userStories) || obj.userStories.length === 0) {
+    throw new NaxError(
+      "plan: callOp returned an envelope-shaped object (no userStories) — likely retry exhaustion (#993)",
+      "PLAN_ENVELOPE_LEAK",
+      { stage: "plan", keys: Object.keys(obj).join(",") },
+    );
+  }
+}
 
 /**
  * Detect project name from package.json or git remote.

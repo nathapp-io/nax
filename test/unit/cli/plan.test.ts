@@ -12,8 +12,7 @@ import { _planDeps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
-import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -637,5 +636,155 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
     const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain("story scope");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// assertIsValidPrd guard — issue #993 regression tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("assertIsValidPrd guard (#993)", () => {
+  let tmpDir993: string;
+  let capturedWrites993: Array<[string, string]>;
+
+  const origCreateRuntime993 = _planDeps.createRuntime;
+  const origExistsSync993 = _planDeps.existsSync;
+  const origReadFile993 = _planDeps.readFile;
+  const origWriteFile993 = _planDeps.writeFile;
+
+  beforeEach(async () => {
+    tmpDir993 = makeTempDir("nax-plan-993-");
+    capturedWrites993 = [];
+    await mkdir(join(tmpDir993, ".nax"), { recursive: true });
+
+    _planDeps.scanCodebase = mock(async () => ({
+      fileTree: "└── src/\n    └── index.ts",
+      dependencies: {},
+      devDependencies: {},
+      testPatterns: [],
+    }));
+    _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
+    _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
+    _planDeps.mkdirp = mock(async () => {});
+    _planDeps.writeFile = mock(async (path: string, content: string) => {
+      capturedWrites993.push([path, content]);
+    });
+  });
+
+  afterEach(async () => {
+    mock.restore();
+    _planDeps.createRuntime = origCreateRuntime993;
+    _planDeps.existsSync = origExistsSync993;
+    _planDeps.readFile = origReadFile993;
+    _planDeps.writeFile = origWriteFile993;
+    await rm(tmpDir993, { recursive: true, force: true });
+  });
+
+  function makeHopInvokingRuntime() {
+    return makeMockRuntime({
+      agentManager: makeMockAgentManager({
+        runAsSessionFn: async () => ({
+          output: "File already valid. No changes needed.",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 0,
+        }),
+        runWithFallbackFn: async (req: any) => {
+          const result = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          return {
+            result: {
+              success: true,
+              exitCode: 0,
+              rateLimited: false,
+              durationMs: 1,
+              output: result.result.output,
+              estimatedCostUsd: result.result.estimatedCostUsd ?? 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          };
+        },
+      }),
+    });
+  }
+
+  test("chat-ack on all retry attempts with no prd.json on disk throws PLAN_ENVELOPE_LEAK", async () => {
+    // op.recover reads Bun.file(outputPath) — file not on real disk → returns null.
+    // callOp returns lastRetryTurn (envelope). assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
+    // No prd.json → catch block re-throws.
+    _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
+    _planDeps.existsSync = mock(() => false);
+    _planDeps.readFile = mock(async () => SAMPLE_SPEC);
+
+    await expect(
+      planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+        from: "/spec.md",
+        feature: "url-shortener",
+      }),
+    ).rejects.toThrow("envelope-shaped object");
+  });
+
+  test("chat-ack on all retry attempts triggers _planDeps disk recovery when existsSync is true", async () => {
+    // op.recover reads Bun.file(outputPath) — real file absent → returns null.
+    // callOp returns lastRetryTurn (TurnResult envelope).
+    // assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
+    // planCommand catch: existsSync → true; _planDeps.readFile returns valid PRD → recovered.
+    _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
+    _planDeps.existsSync = mock((p: string) => p.endsWith("prd.json"));
+    _planDeps.readFile = mock(async (p: string) => {
+      if (p.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
+      return SAMPLE_SPEC;
+    });
+
+    const result = await planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+    });
+
+    expect(result).toContain("url-shortener");
+    expect(result).toContain("prd.json");
+    // Field-equality on stable identity fields — validatePlanOutput may transform
+    // routing.reasoning, so compare id/title rather than the full object.
+    expect(capturedWrites993.length).toBeGreaterThan(0);
+    const written = JSON.parse(capturedWrites993[capturedWrites993.length - 1]?.[1] ?? "{}");
+    const writtenIds = (written.userStories as Array<{ id: string; title: string }>).map((s) => s.id);
+    const expectedIds = SAMPLE_PRD.userStories.map((s) => s.id);
+    expect(writtenIds).toEqual(expectedIds);
+  });
+
+  test("success path: valid PRD from agent preserves all userStories (field-equality regression guard)", async () => {
+    // Regression guard: on the normal success path, userStories must be preserved exactly.
+    _planDeps.createRuntime = mock((_cfg: any) =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({
+            result: {
+              success: true,
+              exitCode: 0,
+              output: JSON.stringify(SAMPLE_PRD),
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          }),
+        }),
+      }),
+    );
+    _planDeps.existsSync = mock(() => false);
+    _planDeps.readFile = mock(async () => SAMPLE_SPEC);
+
+    await planCommand(tmpDir993, DEFAULT_CONFIG as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+    });
+
+    expect(capturedWrites993.length).toBeGreaterThan(0);
+    const written = JSON.parse(capturedWrites993[capturedWrites993.length - 1]?.[1] ?? "{}");
+    // Field-equality on stable identity fields — validatePlanOutput may transform
+    // routing.reasoning, so compare ids rather than the full object.
+    const writtenIds = (written.userStories as Array<{ id: string }>).map((s) => s.id);
+    expect(writtenIds).toEqual(SAMPLE_PRD.userStories.map((s) => s.id));
   });
 });

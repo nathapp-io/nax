@@ -152,7 +152,13 @@ type RetryDecision =
 
 When `exhaustedFallback` is absent, `callOp` returns the last `TurnResult` as-is (typed as `O`). **Ops that cannot tolerate a raw `TurnResult` as their output MUST provide `exhaustedFallback`.**
 
-**Strict-parser interaction:** when an op's `parse()` throws on unparseable input (e.g. `adversarialReviewOp`), the strategy MUST provide `exhaustedFallback` — otherwise retry exhaustion throws `ParseValidationError` to the caller. Graceful parsers (returning `FAIL_OPEN`-style values, e.g. `semanticReviewOp`) make `exhaustedFallback` optional.
+**Strict-parser interaction:** when an op's `parse()` throws on unparseable input (e.g. `adversarialReviewOp`), the op MUST use one of three sanctioned escape hatches to avoid `ParseValidationError` propagating to the caller:
+
+1. **`exhaustedFallback`** on the strategy — synchronous, receives `lastOutput`; ideal when a safe degraded value can be synthesised from the agent's last output.
+2. **Graceful-degradation `parse()`** — returns a `FAIL_OPEN`-style value instead of throwing (e.g. `semanticReviewOp`).
+3. **`op.recover`** — async, receives the full `input` and a `VerifyContext` (file I/O); invoked by `callOp`'s catch path before the envelope passthrough. Ideal for disk-recovery ops that cannot synthesise from `lastOutput` alone (e.g. `planInteractiveOp` re-reads `outputPath` from disk, see issue #993).
+
+`callOp` tries the escape hatches in order: `exhaustedFallback` wins if present on the strategy decision; then `op.recover` if defined and returns non-null; then the last-resort TurnResult passthrough (logged as warn — indicates a missing escape hatch). Graceful parsers make all three optional.
 
 ```typescript
 // ✅ Always provide exhaustedFallback for ops with structured output types
@@ -209,4 +215,4 @@ await _callOpDeps.sleep(decision.delayMs, ctx.runtime.signal);
 | `MAX_RATE_LIMIT_RETRIES` constant (deleted) | `defaultRetryStrategy` / `RetryPreset.maxAttempts` |
 | Hand-rolled parse-retry loops inside an `op.hopBody` | `ctx.sendWithParseRetry` — declare `op.retry` and call `sendWithParseRetry` in the body |
 | Strategy `validate` and `op.parse` having different acceptance criteria | Define a shared validator helper (e.g. `validateLLMShape`) and call it from both |
-| Run-kind op with strict (throwing) `parse()` and `op.retry` but no `exhaustedFallback` | Either provide `exhaustedFallback` on the strategy OR return a graceful degradation value from `parse()` for unparseable inputs |
+| Run-kind op with strict (throwing) `parse()` and `op.retry` but no `exhaustedFallback` AND no `op.recover` that returns a non-null value | Provide `exhaustedFallback` on the strategy, OR a graceful-degradation `parse()`, OR `op.recover` — see "Strict-parser interaction" above |

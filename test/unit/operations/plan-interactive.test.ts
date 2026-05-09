@@ -535,3 +535,108 @@ describe("planInteractiveOp.retry — validate/parse consistency (adversarial AC
     expect(decision.retry).toBe(true);
   });
 });
+
+// ─── US-002 (#993): op.recover is the load-bearing escape hatch ──────────────
+//
+// planInteractiveOp deliberately omits exhaustedFallback (it is synchronous
+// and only receives lastOutput, so it cannot read outputPath from disk).
+// op.recover is the third sanctioned escape hatch per retry-strategy.md.
+// These tests verify the three required recover behaviours.
+
+describe("planInteractiveOp.recover — disk-recovery escape hatch (#993)", () => {
+  const baseInput = {
+    specContent: "spec",
+    codebaseContext: "ctx",
+    featureName: "test-feature",
+    branchName: "feat/test",
+    outputPath: "/tmp/prd.json",
+  };
+
+  const validPrdJson = JSON.stringify({
+    project: "test-project",
+    feature: "test-feature",
+    analysis: "analysis",
+    branchName: "feat/test",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userStories: [
+      {
+        id: "US-001",
+        title: "Story",
+        description: "desc",
+        acceptanceCriteria: ["AC1"],
+        contextFiles: [],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "test", reasoning: "test" },
+        escalations: [],
+        attempts: 0,
+      },
+    ],
+  });
+
+  const envelopeJson = JSON.stringify({
+    output: "File already valid.",
+    tokenUsage: { inputTokens: 10, outputTokens: 5 },
+    estimatedCostUsd: 0.001,
+    internalRoundTrips: 3,
+  });
+
+  test("(a) recover returns valid PRD when outputPath exists with parseable userStories", async () => {
+    const { planInteractiveOp } = await import("@/operations");
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+
+    const ctx = {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_path: string) => validPrdJson,
+      fileExists: async (_path: string) => true,
+    };
+
+    const result = await planInteractiveOp.recover!(baseInput, ctx as any);
+
+    expect(result).not.toBeNull();
+    expect(Array.isArray(result!.userStories)).toBe(true);
+    expect(result!.userStories.length).toBe(1);
+    expect(result!.userStories[0]?.id).toBe("US-001");
+  });
+
+  test("(b) recover returns null when outputPath is missing (readFile returns null)", async () => {
+    const { planInteractiveOp } = await import("@/operations");
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+
+    const ctx = {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_path: string) => null,
+      fileExists: async (_path: string) => false,
+    };
+
+    const result = await planInteractiveOp.recover!(baseInput, ctx as any);
+    expect(result).toBeNull();
+  });
+
+  test("(c) recover returns null when outputPath contains the envelope shape (not a valid PRD)", async () => {
+    const { planInteractiveOp } = await import("@/operations");
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+
+    const ctx = {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_path: string) => envelopeJson,
+      fileExists: async (_path: string) => true,
+    };
+
+    // validatePlanOutput throws inside recover's try/catch → recover returns null
+    const result = await planInteractiveOp.recover!(baseInput, ctx as any);
+    expect(result).toBeNull();
+  });
+});
