@@ -11,7 +11,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
-import type { ProjectProfile } from "../../config/runtime-types";
+import type { ProjectProfile } from "@/config";
 import {
   COMPLEXITY_GUIDE,
   DESCRIPTION_QUALITY_RULES,
@@ -19,7 +19,7 @@ import {
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
   getAcQualityRules,
-} from "../../config/test-strategy";
+} from "@/config";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,21 @@ export class PlanPromptBuilder {
    * - Complexity + test strategy guides
    * - MW-007: Monorepo hint and package list when packages are detected
    */
+
+  /**
+   * JSON repair prompt — instructs the agent to fix invalid JSON in the PRD.
+   * Includes the parse error so the agent can understand what failed.
+   */
+  static jsonRepair(_attempt: number, parseError: string): string {
+    return `Your previous response was not valid JSON and could not be parsed.
+
+Parse error: ${parseError}
+
+Please re-write the complete PRD JSON from scratch. The JSON must be valid and complete — do not truncate it.
+
+Write the complete PRD JSON to the output file path specified in your instructions, then reply with a brief confirmation.`;
+  }
+
   build(
     specContent: string,
     codebaseContext: string,

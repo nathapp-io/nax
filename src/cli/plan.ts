@@ -1,27 +1,24 @@
 /**
- * Plan Command — Generate prd.json from a spec file via LLM one-shot call
+ * Plan Command — Generate prd.json from a spec file via planInteractiveOp
  *
  * Reads a spec file (--from), builds a planning prompt with codebase context,
- * runs planning via agent adapter (plan()/complete() depending on mode),
- * validates the JSON response, and writes prd.json.
+ * runs planning via callOp + planInteractiveOp, validates the JSON response,
+ * and writes prd.json.
  *
  * Interactive mode: uses ACP session + stdin bridge for Q&A.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { resolveDefaultAgent } from "../agents";
 import type { NaxConfig } from "../config";
-import { resolvePermissions } from "../config/permissions";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
-import { callOp, planOp } from "../operations";
+import { callOp, planInteractiveOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
-import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
 import { buildCodebaseContext, buildPackageSummary } from "./plan-helpers";
-import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
+import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
 export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
@@ -35,7 +32,7 @@ export interface PlanCommandOptions {
   from: string;
   /** Feature name (-f) — required */
   feature: string;
-  /** Run in auto (one-shot LLM) mode */
+  /** @deprecated No longer used — kept for caller compatibility only */
   auto?: boolean;
   /** Override default branch name (-b) */
   branch?: string;
@@ -46,7 +43,7 @@ export interface PlanCommandOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Run the plan command: read spec, call LLM, write prd.json.
+ * Run the plan command: read spec, call LLM via planInteractiveOp, write prd.json.
  *
  * @param workdir - Project root directory
  * @param config  - Nax configuration
@@ -101,215 +98,180 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const outputPath = join(outputDir, "prd.json");
   await _planDeps.mkdirp(outputDir);
 
-  const defaultAgentName = resolveDefaultAgent(config);
-
   // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
-  // Route: debate > auto (one-shot) > interactive (multi-turn)
-  // Debate fires whenever config.debate.enabled + stages.plan.enabled — regardless of auto/interactive mode.
-  let rawResponse: string;
-
-  // Debate check is SSOT here — applies to both auto and interactive paths (Option A).
+  // Debate fires whenever config.debate.enabled + stages.plan.enabled.
   const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
 
-  if (debateEnabled) {
-    // Debate path: run N agents in parallel via DebateRunner.runPlan().
-    // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
-    // taskContext is passed to the rebuttal loop; outputFormat is proposal-round only.
-    const { taskContext: planTaskContext, outputFormat: planOutputFormat } = new PlanPromptBuilder().build(
-      specContent,
-      codebaseContext,
-      undefined, // no file path — runPlan() appends per-debater temp path
-      relativePackages,
-      packageDetails,
-      config?.project,
-    );
-    // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
-    const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
-    const debateRt = createPlanRuntime(config, workdir, options.feature);
-    const debateAgentManager = debateRt.agentManager;
-    const debateCallCtx = {
-      runtime: debateRt,
-      packageView: debateRt.packages.resolve(),
-      packageDir: workdir,
-      agentName: debateAgentManager.getDefault(),
-      storyId: options.feature,
-      featureName: options.feature,
-    } satisfies import("../operations/types").CallContext;
-    const debateRunner = _planDeps.createDebateRunner({
-      ctx: debateCallCtx,
-      stage: "plan",
-      stageConfig: planStageConfig,
-      config,
-      workdir,
-      featureName: options.feature,
-      timeoutSeconds,
-      sessionManager: debateRt.sessionManager,
-    });
-    logger?.info("plan", "Starting debate planning session", {
-      debaters: planStageConfig.debaters?.map((d) => d.agent),
-      rounds: planStageConfig.rounds,
-      feature: options.feature,
-    });
-    const debateResult = await debateRunner.runPlan(planTaskContext, planOutputFormat, {
-      workdir,
-      feature: options.feature,
-      outputDir: outputDir,
-      timeoutSeconds,
-      maxInteractionTurns: config?.agent?.maxInteractionTurns,
-      specContent,
-    });
-    if (debateResult.outcome !== "failed" && debateResult.output) {
-      rawResponse = debateResult.output;
-    } else {
-      logger?.warn("debate", "All plan debaters failed — falling back to single agent", {
-        stage: "plan",
-        event: "fallback",
-      });
-      // Fallback: interactive single-agent plan (most robust — writes to file)
-      rawResponse = await runInteractivePlan();
+  // Initialize interaction chain before debate/op dispatch so destroy() always runs in finally.
+  const headless = !process.stdin.isTTY;
+  const interactionChain = config ? await _planDeps.initInteractionChain(config, headless) : null;
+
+  try {
+    let configuredBridge: ReturnType<typeof buildInteractionBridge> | undefined;
+    if (interactionChain) {
+      try {
+        configuredBridge = buildInteractionBridge(interactionChain, {
+          featureName: options.feature,
+          stage: "pre-flight",
+        });
+      } catch {}
     }
-  } else if (options.auto) {
-    // Auto (one-shot) path — callOp routes via completeAs, returns JSON directly
-    const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
-    const agentName = resolvedPlanModel.agent;
+    const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
+
+    if (debateEnabled) {
+      // Debate path: run N agents in parallel via DebateRunner.runPlan().
+      // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
+      const { taskContext: planTaskContext, outputFormat: planOutputFormat } = new PlanPromptBuilder().build(
+        specContent,
+        codebaseContext,
+        undefined, // no file path — runPlan() appends per-debater temp path
+        relativePackages,
+        packageDetails,
+        config?.project,
+      );
+      // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
+      const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
+      const debateRt = createPlanRuntime(config, workdir, options.feature);
+      const debateAgentManager = debateRt.agentManager;
+      const debateCallCtx = {
+        runtime: debateRt,
+        packageView: debateRt.packages.resolve(),
+        packageDir: workdir,
+        agentName: debateAgentManager.getDefault(),
+        storyId: options.feature,
+        featureName: options.feature,
+      } satisfies import("../operations/types").CallContext;
+      const debateRunner = _planDeps.createDebateRunner({
+        ctx: debateCallCtx,
+        stage: "plan",
+        stageConfig: planStageConfig,
+        config,
+        workdir,
+        featureName: options.feature,
+        timeoutSeconds,
+        sessionManager: debateRt.sessionManager,
+      });
+      logger?.info("plan", "Starting debate planning session", {
+        debaters: planStageConfig.debaters?.map((d) => d.agent),
+        rounds: planStageConfig.rounds,
+        feature: options.feature,
+      });
+      try {
+        const debateResult = await debateRunner.runPlan(planTaskContext, planOutputFormat, {
+          workdir,
+          feature: options.feature,
+          outputDir: outputDir,
+          timeoutSeconds,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+          specContent,
+        });
+        if (debateResult.outcome !== "failed" && debateResult.output) {
+          const finalPrd = validatePlanOutput(debateResult.output, options.feature, branchName);
+          await _planDeps.writeFile(outputPath, JSON.stringify({ ...finalPrd, project: projectName }, null, 2));
+          logger?.info("plan", "[OK] PRD written via debate", { outputPath });
+          return outputPath;
+        }
+        logger?.warn("debate", "All plan debaters failed — falling back to single agent", {
+          stage: "plan",
+          event: "fallback",
+        });
+        // Debate fallback: callOp + planInteractiveOp (reuses debateRt)
+        try {
+          const prd = await callOp(
+            {
+              runtime: debateRt,
+              packageView: debateRt.packages.resolve(),
+              packageDir: workdir,
+              agentName: debateRt.agentManager.getDefault(),
+              featureName: options.feature,
+              interactionBridge,
+              maxInteractionTurns: config?.agent?.maxInteractionTurns,
+            },
+            planInteractiveOp,
+            {
+              specContent,
+              codebaseContext,
+              featureName: options.feature,
+              branchName,
+              outputPath,
+              packages: relativePackages,
+              packageDetails,
+              projectProfile: config?.project,
+            },
+          );
+          await _planDeps.writeFile(outputPath, JSON.stringify({ ...prd, project: projectName }, null, 2));
+          logger?.info("plan", "[OK] PRD written via debate fallback", { outputPath });
+          return outputPath;
+        } catch (err) {
+          if (_planDeps.existsSync(outputPath)) {
+            logger?.warn("plan", "Debate fallback callOp failed; recovering from agent-written PRD", { outputPath });
+            let rawContent: string;
+            try {
+              rawContent = await _planDeps.readFile(outputPath);
+            } catch {
+              return outputPath;
+            }
+            const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
+            await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
+            return outputPath;
+          }
+          throw err;
+        }
+      } finally {
+        await debateRt.close().catch(() => {});
+      }
+    }
+
+    // Non-debate path: callOp + planInteractiveOp
     const rt = createPlanRuntime(config, workdir, options.feature);
-    const agentManager = rt.agentManager;
-    if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-
-    logger?.info("plan", "Starting auto planning via callOp", {
-      agent: agentName,
-      model: resolvedPlanModel.modelDef.model,
-      workdir,
-      feature: options.feature,
-    });
-
-    let autoPrd: PRD;
     try {
-      autoPrd = await callOp(
+      const prd = await callOp(
         {
           runtime: rt,
           packageView: rt.packages.resolve(),
           packageDir: workdir,
-          agentName,
+          agentName: rt.agentManager.getDefault(),
           featureName: options.feature,
+          interactionBridge,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
         },
-        planOp,
+        planInteractiveOp,
         {
           specContent,
           codebaseContext,
           featureName: options.feature,
           branchName,
+          outputPath,
           packages: relativePackages,
           packageDetails,
           projectProfile: config?.project,
         },
       );
+      await _planDeps.writeFile(outputPath, JSON.stringify({ ...prd, project: projectName }, null, 2));
+      logger?.info("plan", "[OK] PRD written", { outputPath });
+      return outputPath;
+    } catch (err) {
+      if (_planDeps.existsSync(outputPath)) {
+        logger?.warn("plan", "callOp failed; recovering from agent-written PRD", { outputPath });
+        let rawContent: string;
+        try {
+          rawContent = await _planDeps.readFile(outputPath);
+        } catch {
+          return outputPath;
+        }
+        const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
+        await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
+        return outputPath;
+      }
+      throw err;
     } finally {
       await rt.close().catch(() => {});
     }
-    await _planDeps.writeFile(outputPath, JSON.stringify({ ...autoPrd, project: projectName }, null, 2));
-    logger?.info("plan", "[OK] PRD written", { outputPath });
-    return outputPath;
-  } else {
-    rawResponse = await runInteractivePlan();
+  } finally {
+    if (interactionChain) await interactionChain.destroy().catch(() => {});
   }
-
-  // ── Interactive plan helper (used by: interactive path + debate fallback) ──────────────────────
-  async function runInteractivePlan(): Promise<string> {
-    // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const { taskContext: interactiveTaskCtx, outputFormat: interactiveOutputFmt } = new PlanPromptBuilder().build(
-      specContent,
-      codebaseContext,
-      outputPath,
-      relativePackages,
-      packageDetails,
-      config?.project,
-    );
-    const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
-    const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
-    const agentName = resolvedPlanModel.agent;
-    const rt = createPlanRuntime(config, workdir, options.feature);
-    const agentManager = rt.agentManager;
-    if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    // Use configured interaction plugin (telegram/webhook/auto) if available;
-    // fall back to hardcoded stdin bridge when no interaction config is set.
-    const headless = !process.stdin.isTTY;
-    const interactionChain = config ? await _planDeps.initInteractionChain(config, headless) : null;
-    const configuredBridge = interactionChain
-      ? buildInteractionBridge(interactionChain, {
-          featureName: options.feature,
-          stage: "pre-flight",
-        })
-      : undefined;
-    const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
-    const resolvedPerm = resolvePermissions(config, "plan");
-    logger?.info("plan", "Starting interactive planning session", {
-      agent: agentName,
-      model: resolvedPlanModel.modelDef.model,
-      permission: resolvedPerm.mode,
-      workdir,
-      feature: options.feature,
-      timeoutSeconds,
-    });
-    const planStartTime = Date.now();
-    let planError: Error | null = null;
-    try {
-      try {
-        await agentManager.runAs(agentName, {
-          runOptions: {
-            prompt,
-            workdir,
-            timeoutSeconds,
-            interactionBridge,
-            config,
-            modelTier: resolvedPlanModel.modelTier ?? "balanced",
-            modelDef: resolvedPlanModel.modelDef,
-            maxInteractionTurns: config?.agent?.maxInteractionTurns,
-            featureName: options.feature,
-            sessionRole: "plan",
-            pipelineStage: "plan",
-          },
-        });
-      } catch (err) {
-        planError = err instanceof Error ? err : new Error(String(err));
-        logger?.warn("plan", "Interactive planning did not complete cleanly; checking for written PRD", {
-          error: planError.message,
-          outputPath,
-        });
-      }
-    } finally {
-      await rt.pidRegistry.killAll().catch(() => {});
-      if (interactionChain) await interactionChain.destroy().catch(() => {});
-      await rt.close().catch(() => {});
-      logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
-    }
-    // Read back from file written by agent
-    if (!_planDeps.existsSync(outputPath)) {
-      if (planError) {
-        throw new Error(`[plan] Planning failed and no PRD was written: ${planError.message}`, { cause: planError });
-      }
-      throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-    }
-    if (planError) {
-      logger?.warn("plan", "Proceeding with PRD written by agent despite incomplete terminal response", {
-        outputPath,
-      });
-    }
-    return _planDeps.readFile(outputPath);
-  }
-
-  // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
-  // complexity normalization, dependency cross-ref, and forces status → pending.
-  const finalPrd = validatePlanOutput(rawResponse, options.feature, branchName);
-
-  // Write normalized PRD — spread to avoid mutating the validated object
-  await _planDeps.writeFile(outputPath, JSON.stringify({ ...finalPrd, project: projectName }, null, 2));
-
-  logger?.info("plan", "[OK] PRD written", { outputPath });
-
-  return outputPath;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

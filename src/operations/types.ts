@@ -36,6 +36,17 @@ export interface CallContext {
    * so buildHopCallback can create contextToolRuntime for the first hop.
    */
   readonly contextBundle?: import("../context/engine").ContextBundle;
+  /**
+   * Optional interaction bridge for mid-session human Q&A. When set, the hop
+   * callback wires an interactionHandler so the agent can ask questions and
+   * receive answers without terminating the session.
+   */
+  readonly interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
+  /** Max interaction round-trips when interactionBridge is active (default: 10). */
+  readonly maxInteractionTurns?: number;
 }
 
 interface OperationBase<I, O, C> {

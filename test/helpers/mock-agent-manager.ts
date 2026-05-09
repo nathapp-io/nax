@@ -1,8 +1,8 @@
 import { mock } from "bun:test";
-import type { AgentAdapter, IAgentManager } from "../../src/agents";
-import type { AgentRunRequest, RunAsSessionOpts } from "../../src/agents/manager-types";
-import type { SessionHandle, TurnResult } from "../../src/agents/types";
-import type { AgentRunOptions, CompleteOptions, CompleteResult } from "../../src/agents/types";
+import type { AgentAdapter, IAgentManager } from "@/agents";
+import type { AgentRunRequest, RunAsSessionOpts } from "@/agents/manager-types";
+import type { SessionHandle, TurnResult } from "@/agents/types";
+import type { AgentRunOptions, CompleteOptions, CompleteResult } from "@/agents/types";
 import { makeAgentAdapter } from "./mock-agent-adapter";
 
 const DEFAULT_RESULT = {
@@ -26,7 +26,7 @@ export interface MockAgentManagerOptions {
   getAgentFn?: (name: string) => AgentAdapter | undefined;
   runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  runWithFallbackFn?: (req: AgentRunRequest) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
+  runWithFallbackFn?: (req: AgentRunRequest, primaryAgentOverride?: string) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
   completeWithFallbackFn?: (prompt: string, opts?: CompleteOptions) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
   runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
@@ -69,7 +69,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     resolveFallbackChain: () => [],
     shouldSwap: () => false,
     nextCandidate: () => null,
-    runWithFallback: opts.runWithFallbackFn ? mock((req: AgentRunRequest) => opts.runWithFallbackFn!(req)) : mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] })),
+    runWithFallback: opts.runWithFallbackFn ? mock((req: AgentRunRequest, primaryAgentOverride?: string) => opts.runWithFallbackFn!(req, primaryAgentOverride)) : mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] })),
     completeWithFallback: opts.completeWithFallbackFn ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeWithFallbackFn!(prompt, completeOpts)) : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
     run: runFn,
     complete: completeFn,

@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-09T07-11-06-806Z",
+    "feature": "plan-interactive-callop",
+    "startedAt": "2026-05-09T07:11:06.806Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 6858
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 9.894845370000002,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-05-09T09:13:06.464Z",
+  "durationMs": 7319658,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-05-09T09:13:05.690Z"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-09T09:13:05.691Z"
+    }
+  }
+}

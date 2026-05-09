@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PlanPromptBuilder } from "../../../../src/prompts";
-import type { PackageSummary } from "../../../../src/prompts";
+import { PlanPromptBuilder } from "@/prompts";
+import type { PackageSummary } from "@/prompts";
 
 const SPEC = "Refactor auth module to use @nathapp/nestjs-auth";
 const CTX = "## Codebase Structure\nsrc/auth/auth.module.ts";
@@ -161,5 +161,55 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
   test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
     expect(taskContext).toContain("story scope");
+  });
+});
+
+// ─── PlanPromptBuilder.jsonRepair() static method ─────────────────────────────
+
+describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
+  test("AC1: method exists as a static method on PlanPromptBuilder", () => {
+    expect(typeof PlanPromptBuilder.jsonRepair).toBe("function");
+  });
+
+  test("AC1: returns a non-empty string", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("AC1: returned string contains the word 'JSON'", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
+    expect(result).toContain("JSON");
+  });
+
+  test("AC2: output includes the parseError string passed as argument", () => {
+    const parseError = "Unexpected token } at position 42";
+    const result = PlanPromptBuilder.jsonRepair(0, parseError);
+    expect(result).toContain(parseError);
+  });
+
+  test("accepts attempt parameter (ignored in current implementation)", () => {
+    const result0 = PlanPromptBuilder.jsonRepair(0, "Error");
+    const result2 = PlanPromptBuilder.jsonRepair(2, "Error");
+    // Both should return valid repair prompts
+    expect(result0).toContain("JSON");
+    expect(result2).toContain("JSON");
+  });
+
+  test("returned prompt instructs agent to re-write JSON", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "Parse error");
+    expect(result).toContain("re-write");
+    expect(result.toLowerCase()).toContain("complete");
+  });
+
+  test("returned prompt mentions the output file path instruction", () => {
+    const result = PlanPromptBuilder.jsonRepair(0, "Some error");
+    expect(result).toContain("output file path");
+  });
+
+  test("different parseError values produce different outputs", () => {
+    const result1 = PlanPromptBuilder.jsonRepair(0, "Error type A");
+    const result2 = PlanPromptBuilder.jsonRepair(0, "Error type B");
+    expect(result1).not.toEqual(result2);
   });
 });

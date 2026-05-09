@@ -1,12 +1,13 @@
 import { afterEach, describe, test, expect, mock } from "bun:test";
-import { callOp } from "../../../src/operations/call";
-import type { CompleteOperation, RunOperation } from "../../../src/operations/types";
-import { pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { CompleteResult, TurnResult } from "../../../src/agents/types";
-import type { RetryPreset } from "../../../src/agents/retry";
-import type { NaxRuntime } from "../../../src/runtime";
+import { callOp } from "@/operations";
+import type { CompleteOperation, RunOperation } from "@/operations";
+import { pickSelector } from "@/config";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { CompleteResult, TurnResult } from "@/agents/types";
+import type { RetryPreset } from "@/agents/retry";
+import type { NaxRuntime } from "@/runtime";
+import type { AgentRunRequest } from "@/agents/manager-types";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
@@ -596,5 +597,93 @@ describe("callOp — op.hopBody + op.retry compose (US-004)", () => {
 
     expect(result).toBe("ran");
     expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("callOp — kind:run — interactionBridge threading (AC3/AC4/AC8)", () => {
+  test("includes interactionBridge in runOptions when ctx.interactionBridge is set", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    const bridge = {
+      detectQuestion: async (_: string) => false,
+      onQuestionDetected: async (_: string) => "answer",
+    };
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+        interactionBridge: bridge,
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest;
+    expect(reqArg.runOptions.interactionBridge).toBe(bridge);
+  });
+
+  test("includes maxInteractionTurns in runOptions when ctx.maxInteractionTurns is set", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+        maxInteractionTurns: 7,
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest;
+    expect(reqArg.runOptions.maxInteractionTurns).toBe(7);
+  });
+
+  test("does not include interactionBridge key in runOptions when ctx.interactionBridge is absent", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "ran", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({ agentManager, sessionManager });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+        // interactionBridge intentionally absent
+      },
+      runEchoOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as AgentRunRequest;
+    expect("interactionBridge" in reqArg.runOptions).toBe(false);
   });
 });

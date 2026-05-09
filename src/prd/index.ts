@@ -276,3 +276,4 @@ export function markStoryPaused(prd: PRD, storyId: string): void {
     story.attempts = (story.attempts ?? 0) + 1;
   }
 }
+export { validatePlanOutput } from "./schema";

@@ -1,0 +1,198 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "`CallContext` in `src/operations/types.ts` has an optional `interactionBridge` field with shape `{ detectQuestion: (text: string) => Promise<boolean>; onQuestionDetected: (text: string) => Promise<string> }`.",
+    "refined": "The `CallContext` interface exported from `src/operations/types.ts` includes a field `interactionBridge?: { detectQuestion: (text: string) => Promise<boolean>; onQuestionDetected: (text: string) => Promise<string> }` with readonly modifier.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "`CallContext` in `src/operations/types.ts` has an optional `maxInteractionTurns?: number` field.",
+    "refined": "The `CallContext` interface exported from `src/operations/types.ts` includes a field `readonly maxInteractionTurns?: number`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When `callOp` dispatches a `kind:\"run\"` op and `ctx.interactionBridge` is set, then `runOptions` passed to `runWithFallback` includes the `interactionBridge` value.",
+    "refined": "In `src/operations/call.ts`, when dispatching a `kind:\"run\"` operation with `ctx.interactionBridge` defined (truthy), the `runOptions` object passed to `runWithFallback` contains the key `interactionBridge` with value equal to `ctx.interactionBridge`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When `callOp` dispatches a `kind:\"run\"` op and `ctx.maxInteractionTurns` is set, then `runOptions` includes the `maxInteractionTurns` value.",
+    "refined": "In `src/operations/call.ts`, when dispatching a `kind:\"run\"` operation with `ctx.maxInteractionTurns` defined (non-undefined), the `runOptions` object passed to `runWithFallback` contains the key `maxInteractionTurns` with value equal to `ctx.maxInteractionTurns`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "`BuildHopCallbackContext` in `build-hop-callback.ts` has optional `interactionBridge` and `maxInteractionTurns` fields.",
+    "refined": "The `BuildHopCallbackContext` interface in `src/operations/build-hop-callback.ts` includes fields `interactionBridge?: { detectQuestion: (text: string) => Promise<boolean>; onQuestionDetected: (text: string) => Promise<string> }` and `maxInteractionTurns?: number`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.interactionBridge` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes a non-null `interactionHandler` produced by `buildRunInteractionHandler`.",
+    "refined": "In `src/operations/build-hop-callback.ts`, within the `send` closure that calls `agentManager.runAsSession(...)`, when `ctx.interactionBridge` is defined (truthy), the `RunAsSessionOpts` argument includes `interactionHandler` property with a non-null value returned by `buildRunInteractionHandler(agentRunOptions)`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.maxInteractionTurns` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes the `maxTurns` value.",
+    "refined": "In `src/operations/build-hop-callback.ts`, within the `send` closure that calls `agentManager.runAsSession(...)`, when `ctx.maxInteractionTurns` is defined (non-undefined), the `RunAsSessionOpts` argument includes `maxTurns: ctx.maxInteractionTurns`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When `ctx.interactionBridge` is absent from `CallContext`, then the compiled `runOptions` does not include an `interactionBridge` key (no `undefined` spreading).",
+    "refined": "In `src/operations/call.ts`, when `ctx.interactionBridge` is undefined, the `runOptions` object passed to `runWithFallback` does not contain the key `interactionBridge` (verified by `!('interactionBridge' in runOptions)` or `runOptions.interactionBridge === undefined`).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "`PlanPromptBuilder` has a static method `jsonRepair(attempt: number, parseError: string): string` that returns a non-empty string containing the word \"JSON\".",
+    "refined": "`PlanPromptBuilder.jsonRepair` is a static method with signature `(attempt: number, parseError: string) => string` that returns a non-empty string containing the word 'JSON' (case-insensitive).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "`PlanPromptBuilder.jsonRepair()` output includes the `parseError` string passed as argument.",
+    "refined": "For any string S, `PlanPromptBuilder.jsonRepair(0, S)` returns a string R where R.includes(S) is true.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts` with `kind: \"run\"`, `name: \"plan-interactive\"`, and `session.role: \"plan\"`.",
+    "refined": "`planInteractiveOp` is exported from `src/operations/plan.ts`, has type `RunOperation<PlanInteractiveInput, PRD, PlanConfig>`, and satisfies: `planInteractiveOp.kind === 'run'` AND `planInteractiveOp.name === 'plan-interactive'` AND `planInteractiveOp.session.role === 'plan'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "`planInteractiveOp.retry` is set and resolves to a `RetryStrategy` (not `null`) when invoked with any `PlanInteractiveInput`.",
+    "refined": "`planInteractiveOp.retry` is defined, is not null, and is either a `RetryStrategy` object or a function that returns a `RetryStrategy` with properties: `validate`, `reviewerKind`, `maxAttempts`, `prompts`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `planInteractiveOp.parse()` receives output that is valid PRD JSON, then it returns a `PRD` object without throwing.",
+    "refined": "Calling `planInteractiveOp.parse(validJsonString, mockInput, mockCtx)` where `validJsonString` is JSON with keys id, featureName, branchName, userStories returns an object with type `PRD` (contains those properties) without throwing.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `planInteractiveOp.parse()` receives output that is not valid JSON, then it throws (triggering the retry strategy).",
+    "refined": "Calling `planInteractiveOp.parse(invalidJson, mockInput, mockCtx)` where `invalidJson` is a malformed JSON string (e.g., '{invalid') throws an error of type Error or NaxError.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "`planInteractiveOp.hopBody` calls `ctx.sendWithParseRetry` with the initial prompt (not `ctx.send`).",
+    "refined": "The implementation of `planInteractiveOp.hopBody` contains a call to `ctx.sendWithParseRetry` and does not call `ctx.send` directly.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "`planInteractiveOp.recover` is defined and, when `outputPath` file exists on disk and contains valid PRD JSON, returns the parsed `PRD` without throwing.",
+    "refined": "`planInteractiveOp.recover` is defined, and calling it with `input` and `ctx` where `ctx.readFile(input.outputPath)` returns a valid PRD JSON string returns a `PRD` object without throwing.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When `planInteractiveOp.recover` is called and the `outputPath` file does not exist, it returns `null`.",
+    "refined": "Calling `planInteractiveOp.recover(input, ctx)` where `ctx.readFile(input.outputPath)` returns `null` or empty string returns `null` (not undefined, not an error).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "`planOp` (`kind:\"complete\"`) is removed from `src/operations/plan.ts` and `src/operations/index.ts`.",
+    "refined": "`planOp` is not exported from `src/operations/index.ts`, and the string 'export const planOp' does not appear in `src/operations/plan.ts`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "src/cli/plan.ts does not contain any call to `agentManager.runAs(...)`.",
+    "refined": "Grep search for 'agentManager.runAs' in src/cli/plan.ts returns 0 matches.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "src/cli/plan.ts does not contain an `options.auto` branch or the `--auto` flag handling.",
+    "refined": "Grep search for 'options.auto' in src/cli/plan.ts returns 0 matches; PlanCommandOptions type does not include an 'auto' property.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "src/cli/plan.ts does not contain the `runInteractivePlan` inner function.",
+    "refined": "Grep search for 'function runInteractivePlan' or 'const runInteractivePlan' in src/cli/plan.ts returns 0 matches.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `planCommand()` is called (non-debate path), then it calls `callOp(ctx, planInteractiveOp, input)` where `ctx.interactionBridge` is set from the resolved interaction chain.",
+    "refined": "The non-debate code path in planCommand contains a callOp invocation where the second argument is planInteractiveOp and the context object includes an interactionBridge property assigned from buildInteractionBridge(interactionChain, ...) or the fallback.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When `planCommand()` is called and `interactionChain` is `null`, then `ctx.interactionBridge` is set from `_planDeps.createInteractionBridge()` (the stdin fallback).",
+    "refined": "When interactionChain is null, the assigned interactionBridge value is _planDeps.createInteractionBridge() and this bridge is passed in the context to callOp.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `planCommand()` calls `callOp` for the interactive path, then `ctx.maxInteractionTurns` is set from `config?.agent?.maxInteractionTurns`.",
+    "refined": "The context object passed to callOp contains a maxInteractionTurns property with value config?.agent?.maxInteractionTurns.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When the debate fallback fires (all debaters fail), then the fallback calls `callOp(ctx, planInteractiveOp, input)` instead of `runInteractivePlan()`.",
+    "refined": "The debate error handler or fallback branch contains a callOp invocation with planInteractiveOp as the second argument; grep search for 'runInteractivePlan' in the fallback path returns 0 matches.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When `callOp + planInteractiveOp` succeeds and the agent has written a valid PRD to `outputPath`, then `planCommand()` returns the `outputPath` string.",
+    "refined": "When callOp resolves, planCommand writes the result to outputPath via _planDeps.writeFile and returns the outputPath string.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When `callOp + planInteractiveOp` throws and `outputPath` does not exist on disk, then `planCommand()` propagates the error.",
+    "refined": "When callOp throws and _planDeps.existsSync(outputPath) returns false, the error is rethrown without catching it.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "`import { planOp }` is removed from `src/cli/plan.ts`; `planInteractiveOp` is imported instead.",
+    "refined": "Grep search for 'import.*planOp' in src/cli/plan.ts shows planInteractiveOp imported; grep for 'import.*planOp[^I]' returns 0 matches; src/operations/index.ts barrel does not export planOp.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]

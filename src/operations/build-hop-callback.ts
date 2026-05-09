@@ -5,6 +5,7 @@
  * directly to runWithFallback.
  */
 
+import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import { SessionFailureError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
@@ -41,6 +42,16 @@ export interface BuildHopCallbackContext {
   defaultAgent: string;
   contextToolRunCounter?: RunCallCounter;
   pipelineStage?: import("../config/permissions").PipelineStage;
+  /**
+   * Optional interaction bridge for mid-session human Q&A. Forwarded to
+   * `buildRunInteractionHandler` so the agent can ask questions during a hop.
+   */
+  interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
+  /** Max interaction round-trips when interactionBridge is active (default: 10). */
+  maxInteractionTurns?: number;
   /**
    * Optional intra-hop multi-prompt body. When set, the callback invokes
    * `hopBody(initialPrompt, { send })` instead of issuing a single
@@ -87,6 +98,8 @@ export function buildHopCallback(
     defaultAgent,
     contextToolRunCounter,
     pipelineStage,
+    interactionBridge,
+    maxInteractionTurns,
     hopBody,
     hopBodyInput,
   } = ctx;
@@ -145,6 +158,14 @@ export function buildHopCallback(
         })
       : undefined;
     const contextPullTools = workingBundle?.pullTools;
+
+    const interactionHandler = interactionBridge
+      ? buildRunInteractionHandler({
+          contextToolRuntime,
+          contextPullTools,
+          interactionBridge,
+        } as unknown as AgentRunOptions)
+      : undefined;
 
     const sessionName = sessionManager.nameFor({
       workdir,
@@ -217,6 +238,8 @@ export function buildHopCallback(
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,
           contextToolRuntime,
+          ...(interactionHandler ? { interactionHandler } : {}),
+          ...(maxInteractionTurns !== undefined ? { maxTurns: maxInteractionTurns } : {}),
         });
 
       const turnResult = hopBody ? await hopBody(prompt, { send, input: hopBodyInput }) : await send(prompt);

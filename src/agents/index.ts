@@ -1,4 +1,12 @@
-export type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, CompleteOptions } from "./types";
+export type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentResult,
+  AgentRunOptions,
+  CompleteOptions,
+  SessionHandle,
+  TurnResult,
+} from "./types";
 export type { InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
 export { CompleteError, SessionFailureError } from "./types";
@@ -44,6 +52,8 @@ export type {
   AgentManagerEventName,
   AgentRunRequest,
   HopKind,
+  RunAsSessionOpts,
 } from "./manager-types";
 export { resolveDefaultAgent } from "./utils";
 export { ParseValidationError, makeParseRetryStrategy } from "./retry";
+export type { RetryStrategy, RetryPreset, RetryContext, RetryDecision } from "./retry";
