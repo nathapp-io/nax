@@ -20,13 +20,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps } from "../../../src/agents/acp/adapter";
-import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../src/agents/acp/adapter";
-import type { AcpClientOptions } from "../../../src/agents/acp/adapter-session-types";
-import { AgentStreamEventBus } from "../../../src/runtime/agent-stream-events";
-import type { AgentStreamEvent } from "../../../src/runtime/agent-stream-events";
-import { attachAgentIdleWatchdog } from "../../../src/runtime/middleware";
-import { makeNaxConfig } from "../../helpers";
+import { AcpAgentAdapter, type AcpClient, type AcpClientOptions, type AcpSession, type AcpSessionResponse, _acpAdapterDeps } from "@/agents";
+import { AgentStreamEventBus, attachAgentIdleWatchdog, type AgentStreamEvent } from "@/runtime";
+import { makeNaxConfig } from "@test/helpers";
 
 // setTimeout is permitted here for controlled test delays (not Bun.sleep — see testing-rules.md)
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,11 +33,13 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 function makeWatchdogConfig(
   idleTimeoutMs: number,
-  activityKinds: ("message_update" | "thinking_update" | "usage_update")[] = [
+  activityKinds: ("message_update" | "thinking_update" | "usage_update" | "tool_call_update")[] = [
     "message_update",
     "thinking_update",
     "usage_update",
+    "tool_call_update",
   ],
+  toolCallOnlyIdleTimeoutMs = idleTimeoutMs * 2,
 ) {
   return makeNaxConfig({
     agent: {
@@ -49,6 +47,7 @@ function makeWatchdogConfig(
         enabled: true,
         mode: "cancel",
         idleTimeoutSeconds: idleTimeoutMs / 1000,
+        toolCallOnlyIdleTimeoutSeconds: toolCallOnlyIdleTimeoutMs / 1000,
         activityKinds,
         cancelGraceSeconds: 0,
         maxRetryAttempts: 1,
@@ -154,7 +153,11 @@ function makeHangingMockClient(opts: AcpClientOptions | undefined): AcpClient {
  */
 function makeActiveSessionMockClient(
   opts: AcpClientOptions | undefined,
-  activityKind: "agent.message_update" | "agent.thinking_update" | "agent.usage_update",
+  activityKind:
+    | "agent.message_update"
+    | "agent.thinking_update"
+    | "agent.usage_update"
+    | "agent.tool_call_update",
   intervalMs: number,
   durationMs: number,
 ): AcpClient {
@@ -181,6 +184,8 @@ function makeActiveSessionMockClient(
         const activityBase = { ...BASE_STREAM_EVENT, callId, timestamp: Date.now() };
         if (activityKind === "agent.usage_update") {
           opts?.onStreamActivity?.({ ...activityBase, kind: activityKind, inputTokens: 10, outputTokens: 5 });
+        } else if (activityKind === "agent.tool_call_update") {
+          opts?.onStreamActivity?.({ ...activityBase, kind: activityKind, toolName: "bash" });
         } else {
           opts?.onStreamActivity?.({ ...activityBase, kind: activityKind, deltaBytes: 16 });
         }
@@ -312,6 +317,37 @@ describe("Idle watchdog stale cancellation (ACP)", () => {
       });
 
       // Watchdog must NOT have fired — usage_update resets the timer
+      expect(result.adapterFailure).toBeUndefined();
+      expect(result.output).toBe("done");
+    } finally {
+      detach();
+    }
+  });
+
+  test("prompt emitting only periodic tool_call_update events is NOT cancelled before the secondary cap", async () => {
+    const IDLE_TIMEOUT_MS = 80;
+    const TOOL_CALL_ONLY_TIMEOUT_MS = 220;
+    const ACTIVITY_INTERVAL_MS = 30;
+    const PROMPT_DURATION_MS = 170;
+
+    const eventBus = new AgentStreamEventBus();
+    const registry = new Map<string, () => Promise<void>>();
+    const config = makeWatchdogConfig(
+      IDLE_TIMEOUT_MS,
+      ["message_update", "thinking_update", "usage_update", "tool_call_update"],
+      TOOL_CALL_ONLY_TIMEOUT_MS,
+    );
+    const detach = attachAgentIdleWatchdog(eventBus, registry, config);
+
+    _acpAdapterDeps.createClient = (_cmd, _cwd, _timeout, _onPid, _retries, _onExit, opts) =>
+      makeActiveSessionMockClient(opts, "agent.tool_call_update", ACTIVITY_INTERVAL_MS, PROMPT_DURATION_MS);
+
+    try {
+      const adapter = new AcpAgentAdapter("claude");
+      const result = await adapter.complete("test prompt", {
+        ...makeCompleteOptions(registry, eventBus.emitAgentStream.bind(eventBus)),
+      });
+
       expect(result.adapterFailure).toBeUndefined();
       expect(result.output).toBe("done");
     } finally {
