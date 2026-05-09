@@ -28,11 +28,13 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
   retry: makeParseRetryStrategy({
-    validate: (parsed) =>
-      parsed !== null &&
-      typeof parsed === "object" &&
-      "userStories" in (parsed as Record<string, unknown>) &&
-      Array.isArray((parsed as Record<string, unknown>).userStories),
+    validate: (parsed) => {
+      if (parsed === null || typeof parsed !== "object") return false;
+      const obj = parsed as Record<string, unknown>;
+      if (!("userStories" in obj)) return false;
+      if (!Array.isArray(obj.userStories)) return false;
+      return obj.userStories.length > 0;
+    },
     reviewerKind: "plan",
     maxAttempts: 3,
     prompts: {
