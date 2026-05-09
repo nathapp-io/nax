@@ -207,11 +207,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         } catch (err) {
           if (_planDeps.existsSync(outputPath)) {
             logger?.warn("plan", "Debate fallback callOp failed; recovering from agent-written PRD", { outputPath });
+            let rawContent: string;
             try {
-              const rawContent = await _planDeps.readFile(outputPath);
-              const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
-              await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
-            } catch {}
+              rawContent = await _planDeps.readFile(outputPath);
+            } catch {
+              return outputPath;
+            }
+            const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
+            await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
             return outputPath;
           }
           throw err;
@@ -252,11 +255,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     } catch (err) {
       if (_planDeps.existsSync(outputPath)) {
         logger?.warn("plan", "callOp failed; recovering from agent-written PRD", { outputPath });
+        let rawContent: string;
         try {
-          const rawContent = await _planDeps.readFile(outputPath);
-          const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
-          await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
-        } catch {}
+          rawContent = await _planDeps.readFile(outputPath);
+        } catch {
+          return outputPath;
+        }
+        const recoveredPrd = validatePlanOutput(rawContent, options.feature, branchName);
+        await _planDeps.writeFile(outputPath, JSON.stringify({ ...recoveredPrd, project: projectName }, null, 2));
         return outputPath;
       }
       throw err;
