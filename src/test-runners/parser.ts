@@ -103,6 +103,9 @@ function parseBunOutput(output: string): TestSummary {
     }
 
     // Parse failure line: "(fail) TestName > nested > name [duration]"
+    // Do not increment failed here. In verbose mode, the ✗ glyph line above already
+    // counted this failure. In batch mode, no ✗ lines are emitted — the summary-line
+    // backstop below (Math.max) corrects the count from the authoritative summary.
     const failMatch = line.match(/^\(fail\)\s+(.+?)\s+\[[\d.]+m?s\]/);
     if (failMatch) {
       const testName = failMatch[1].trim();
@@ -139,6 +142,29 @@ function parseBunOutput(output: string): TestSummary {
     }
 
     i++;
+  }
+
+  // Backstop: bun summary lines are authoritative — they are the canonical source of truth.
+  // The summary is more reliable than per-line counts because it's the global total.
+  // Bun summary can appear in multiple formats:
+  //   "X pass, Y fail [duration]"  (batch output)
+  //   "X passed, Y failed [duration]"  (verbose output)
+  //   "X tests passed [duration]"  (all-pass output)
+  // Match the last occurrence of each to handle multi-file runs.
+  const summaryPassMatches = Array.from(output.matchAll(/^\s*(\d+)\s+(?:tests?\s+)?(?:pass|passed)\b.*$/gm));
+  const summaryFailMatches = Array.from(output.matchAll(/^\s*(\d+)\s+(?:fail|failed)\b.*$/gm));
+  if (summaryPassMatches.length > 0) {
+    passed = Math.max(passed, Number.parseInt(summaryPassMatches[summaryPassMatches.length - 1][1], 10));
+  }
+  if (summaryFailMatches.length > 0) {
+    failed = Math.max(failed, Number.parseInt(summaryFailMatches[summaryFailMatches.length - 1][1], 10));
+  }
+
+  // BUG-060: If we have no summary fail count but have failures from (fail) lines,
+  // use the failure count as the backstop. This handles truncated output (e.g. OOM kill,
+  // crash mid-run) where bun never emitted the summary line.
+  if (summaryFailMatches.length === 0 && failures.length > failed) {
+    failed = failures.length;
   }
 
   return { passed, failed, failures };
