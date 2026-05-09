@@ -3,7 +3,7 @@
   "feature": "plan-interactive-callop",
   "branchName": "feat/plan-interactive-callop",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T04:02:48.662Z",
+  "updatedAt": "2026-05-09T04:26:49.644Z",
   "userStories": [
     {
       "id": "US-001",
@@ -77,13 +77,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC #10 (remove `planOp` from operations) and the scope constraint (\"Out: No changes to `src/cli/plan.ts` (US-003)\") are mutually incompatible — removing `planOp` from the operations barrel necessarily breaks `cli/plan.ts`'s import, requiring a change to that file to avoid 37 test failures. Reverting the `cli/plan.ts` change would restore the scope violation but break AC #10 or cause the 37 `plan.test.ts` tests to fail at module load time. The full resolution requires US-003 to also update the `plan.test.ts` mocks to use `runAsFn` when it migrates `cli/plan.ts` to `callOp(planInteractiveOp, ...)`.",
+          "timestamp": "2026-05-09T04:26:47.617Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/prompts/builders/plan-builder.ts",
@@ -100,8 +107,19 @@
         "`planInteractiveOp` uses `planConfigSelector` as its `config` field.",
         "`planInteractiveOp.timeoutMs` resolves from `ctx.config.plan.timeoutSeconds` with a 600-second default."
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: AC #10 (remove `planOp` from operations) and the scope constraint (\"Out: No changes to `src/cli/plan.ts` (US-003)\") are mutually incompatible — removing `planOp` from the operations barrel necessarily breaks `cli/plan.ts`'s import, requiring a change to that file to avoid 37 test failures. Reverting the `cli/plan.ts` change would restore the scope violation but break AC #10 or cause the 37 `plan.test.ts` tests to fail at module load time. The full resolution requires US-003 to also update the `plan.test.ts` mocks to use `runAsFn` when it migrates `cli/plan.ts` to `callOp(planInteractiveOp, ...)`."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 2.3521605400000003,
+          "timestamp": "2026-05-09T04:26:47.617Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "b71dde088e2306fe79770dc810a9a579bf108a8b"
     },
