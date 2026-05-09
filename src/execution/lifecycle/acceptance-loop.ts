@@ -68,7 +68,7 @@ export interface AcceptanceLoopContext extends DispatchContext {
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
-  acceptanceTestPaths?: Array<{ testPath: string; packageDir: string }>;
+  acceptanceTestPaths?: PipelineContext["acceptanceTestPaths"];
 }
 
 export interface AcceptanceLoopResult {
@@ -107,6 +107,39 @@ interface AcceptanceTestRunResult {
   passed: boolean;
   failedACs: string[];
   testOutput: string;
+  failedPackages?: Array<{
+    testPath: string;
+    packageDir: string;
+    testFramework?: string;
+    commandOverride?: string;
+  }>;
+}
+
+export function resolveAcceptanceFixTarget(
+  acceptanceTestPaths: PipelineContext["acceptanceTestPaths"] | undefined,
+  failedPackages: AcceptanceTestRunResult["failedPackages"],
+  config: NaxConfig,
+): {
+  acceptanceTestPath: string;
+  testCommand: string | undefined;
+} {
+  const failedPackage = failedPackages?.[0];
+  const selectedPathEntry =
+    (failedPackage
+      ? acceptanceTestPaths?.find(
+          (entry) =>
+            entry.testPath === failedPackage.testPath ||
+            (entry.packageDir === failedPackage.packageDir && entry.commandOverride === failedPackage.commandOverride),
+        )
+      : undefined) ?? acceptanceTestPaths?.[0];
+  return {
+    acceptanceTestPath: failedPackage?.testPath ?? selectedPathEntry?.testPath ?? "",
+    testCommand:
+      failedPackage?.commandOverride ??
+      selectedPathEntry?.commandOverride ??
+      config.acceptance.command ??
+      config.quality?.commands?.test,
+  };
 }
 
 function convertFailuresToFindings(failedACs: string[], testOutput: string): Finding[] {
@@ -190,7 +223,12 @@ async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Pro
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
   const failures = acceptanceContext.acceptanceFailures;
   if (!failures || failures.failedACs.length === 0) return { passed: true, failedACs: [], testOutput: "" };
-  return { passed: false, failedACs: failures.failedACs, testOutput: failures.testOutput };
+  return {
+    passed: false,
+    failedACs: failures.failedACs,
+    testOutput: failures.testOutput,
+    failedPackages: failures.failedPackages,
+  };
 }
 
 /**
@@ -420,12 +458,17 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     }
 
     // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
+    const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(
+      ctx.acceptanceTestPaths,
+      failures.failedPackages,
+      ctx.config,
+    );
     const testEntries = ctx.acceptanceTestPaths
       ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
-    const testFileContent = testEntries[0]?.content ?? "";
-    const acceptanceTestPath = testEntries[0]?.testPath ?? ctx.acceptanceTestPaths?.[0]?.testPath ?? "";
-    const testCommand = ctx.config.quality?.commands?.test;
+    const effectiveAcceptanceTestPath = acceptanceTestPath || testEntries[0]?.testPath || "";
+    const selectedTestEntry = testEntries.find((entry) => entry.testPath === effectiveAcceptanceTestPath);
+    const testFileContent = selectedTestEntry?.content ?? testEntries[0]?.content ?? "";
 
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
     const diagnosis = await resolveAcceptanceDiagnosis({
@@ -437,7 +480,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       diagnosisOpts: {
         testOutput: failures.testOutput,
         testFileContent,
-        acceptanceTestPath,
+        acceptanceTestPath: effectiveAcceptanceTestPath,
         workdir: ctx.workdir,
         storyId: firstStory?.id,
       },
@@ -451,7 +494,14 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     });
 
     // ── 5. Run acceptance fix cycle ────────────────────────────────────
-    const cycleResult = await runAcceptanceFixCycle(ctx, prd, failures, diagnosis, acceptanceTestPath, testCommand);
+    const cycleResult = await runAcceptanceFixCycle(
+      ctx,
+      prd,
+      failures,
+      diagnosis,
+      effectiveAcceptanceTestPath,
+      testCommand,
+    );
     // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
     // accumulation here is best-effort and may undercount. The authoritative total
     // is reconciled in handleRunCompletion via Math.max(local, aggregator).

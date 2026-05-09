@@ -204,6 +204,68 @@ describe("US-002: per-package acceptance runner", () => {
       (Bun as any).file = origFile;
     }
   });
+
+  test("records failed package metadata in acceptanceFailures for downstream fix routing", async () => {
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (cmd: string[], opts: any) => {
+      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
+      const output = isApi ? "FAIL AC-2" : "1 pass\n";
+      const exitCode = isApi ? 1 : 0;
+      return {
+        exited: Promise.resolve(exitCode),
+        stdout: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(output));
+            controller.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      };
+    };
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        {
+          testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/api",
+          testFramework: "jest",
+          commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
+        },
+        {
+          testPath: "/tmp/test-workdir/apps/web/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/web",
+          testFramework: "vitest",
+          commandOverride: "pnpm vitest run {{FILE}}",
+        },
+      ],
+    });
+
+    try {
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("fail");
+      expect(ctx.acceptanceFailures?.failedPackages).toEqual([
+        {
+          testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/api",
+          testFramework: "jest",
+          commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
+        },
+      ]);
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

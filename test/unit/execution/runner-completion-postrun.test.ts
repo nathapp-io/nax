@@ -118,6 +118,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
+  _runnerCompletionDeps.loadConfigForWorkdir = mock(async () => makeConfig(true));
 });
 
 afterEach(() => {
@@ -463,5 +464,125 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
     await runCompletionPhase(opts);
 
     expect(capturedCtx?.acceptanceTestPaths).toBeUndefined();
+  });
+
+  test("loads per-package config and forwards commandOverride/testFramework", async () => {
+    let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
+
+    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+      if (relativeWorkdir === "apps/api") {
+        return makeNaxConfig({
+          acceptance: { enabled: true, command: "npx jest --config jest.nax.config.js {{FILE}}" },
+          project: { testFramework: "jest" },
+          execution: { regressionGate: { mode: "disabled" } },
+        });
+      }
+      if (relativeWorkdir === "apps/cli") {
+        return makeNaxConfig({
+          acceptance: { enabled: true, command: "pnpm vitest run {{FILE}}" },
+          project: { testFramework: "vitest" },
+          execution: { regressionGate: { mode: "disabled" } },
+        });
+      }
+      return makeConfig(true);
+    });
+    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
+      capturedCtx = ctx;
+      return {
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 2,
+        prdDirty: false,
+      };
+    });
+
+    const prd: PRD = {
+      project: "proj",
+      feature: "graphify-kb-cc",
+      branchName: "feat/graphify-kb-cc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        { ...makeStory("US-001", "passed"), workdir: "apps/api" },
+        { ...makeStory("US-002", "passed"), workdir: "apps/cli" },
+      ],
+    };
+
+    const config = makeConfig(true);
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/.nax/features/graphify-kb-cc`,
+    };
+
+    await runCompletionPhase(opts);
+
+    const paths = capturedCtx?.acceptanceTestPaths ?? [];
+    expect(paths.length).toBe(2);
+    expect(loadConfigForWorkdirMock).toHaveBeenCalledTimes(2);
+    expect(paths[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+    expect(paths[0]?.testFramework).toBe("jest");
+    expect(paths[1]?.commandOverride).toBe("pnpm vitest run {{FILE}}");
+    expect(paths[1]?.testFramework).toBe("vitest");
+  });
+
+  test("falls back to root config when per-package config load fails", async () => {
+    let capturedCtx: Parameters<typeof _runnerCompletionDeps.runAcceptanceLoop>[0] | undefined;
+
+    const loadConfigForWorkdirMock = mock(async (_rootConfigPath: string, relativeWorkdir?: string) => {
+      if (relativeWorkdir === "apps/api") {
+        throw new Error("simulated read failure");
+      }
+      return makeConfig(true);
+    });
+    _runnerCompletionDeps.loadConfigForWorkdir = loadConfigForWorkdirMock;
+
+    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx): Promise<AcceptanceLoopResult> => {
+      capturedCtx = ctx;
+      return {
+        success: true,
+        prd: ctx.prd,
+        totalCost: 0,
+        iterations: 1,
+        storiesCompleted: 1,
+        prdDirty: false,
+      };
+    });
+
+    const prd: PRD = {
+      project: "proj",
+      feature: "graphify-kb-cc",
+      branchName: "feat/graphify-kb-cc",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [{ ...makeStory("US-001", "passed"), workdir: "apps/api" }],
+    };
+
+    const config = makeNaxConfig({
+      acceptance: {
+        enabled: true,
+        maxRetries: 3,
+        command: "bun test {{FILE}} --timeout=60000",
+      },
+      project: { testFramework: "bun" },
+      execution: {
+        regressionGate: { mode: "disabled" },
+      },
+    });
+    const statusWriter = makeStatusWriter();
+    const opts: RunnerCompletionOptions = {
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/.nax/features/graphify-kb-cc`,
+    };
+
+    await runCompletionPhase(opts);
+
+    const path = capturedCtx?.acceptanceTestPaths?.[0];
+    expect(path?.commandOverride).toBe("bun test {{FILE}} --timeout=60000");
+    expect(path?.testFramework).toBe("bun");
   });
 });

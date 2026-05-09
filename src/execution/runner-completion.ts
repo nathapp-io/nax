@@ -6,6 +6,7 @@
  */
 
 import { groupStoriesByPackage } from "../acceptance/test-path";
+import { loadConfigForWorkdir } from "../config/loader";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -19,7 +20,9 @@ import type { PRD } from "../prd";
 import { reviewOrchestrator } from "../review/orchestrator";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { ISessionManager } from "../session";
+import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
+import path from "node:path";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
@@ -77,6 +80,7 @@ export interface RunnerCompletionResult {
 export const _runnerCompletionDeps: {
   runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
   handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
+  loadConfigForWorkdir(rootConfigPath: string, workdir?: string): Promise<NaxConfig>;
 } = {
   async runAcceptanceLoop(ctx) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -86,6 +90,7 @@ export const _runnerCompletionDeps: {
     const { handleRunCompletion } = await import("./lifecycle/run-completion");
     return handleRunCompletion(opts);
   },
+  loadConfigForWorkdir,
 };
 
 /**
@@ -124,13 +129,40 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       // not propagated here; it's also skipped entirely when the PRD is already
       // complete at run start (re-run). groupStoriesByPackage is the SSOT.
       const acceptanceTestPaths = options.featureDir
-        ? groupStoriesByPackage(
-            options.prd,
-            options.workdir,
-            options.feature,
-            options.config.acceptance.testPath,
-            options.config.project?.language,
-          ).map((g) => ({ testPath: g.testPath, packageDir: g.packageDir }))
+        ? await Promise.all(
+            groupStoriesByPackage(
+              options.prd,
+              options.workdir,
+              options.feature,
+              options.config.acceptance.testPath,
+              options.config.project?.language,
+            ).map(async (g) => {
+              const relativeWorkdir = path.relative(options.workdir, g.packageDir);
+              let groupConfig = options.config;
+
+              if (relativeWorkdir && relativeWorkdir !== ".") {
+                try {
+                  groupConfig = await _runnerCompletionDeps.loadConfigForWorkdir(
+                    path.join(options.workdir, ".nax", "config.json"),
+                    relativeWorkdir,
+                  );
+                } catch (error) {
+                  logger?.warn("execution", "Falling back to root config for package acceptance settings", {
+                    packageDir: g.packageDir,
+                    relativeWorkdir,
+                    error: errorMessage(error),
+                  });
+                }
+              }
+
+              return {
+                testPath: g.testPath,
+                packageDir: g.packageDir,
+                testFramework: groupConfig.project?.testFramework,
+                commandOverride: groupConfig.acceptance.command,
+              };
+            }),
+          )
         : undefined;
 
       const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({

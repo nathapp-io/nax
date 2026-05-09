@@ -145,6 +145,12 @@ export const acceptanceStage: PipelineStage = {
     // Collect combined results across all packages
     const allFailedACs: string[] = [];
     const allFindings: Finding[] = [];
+    const failedPackages: Array<{
+      testPath: string;
+      packageDir: string;
+      testFramework?: string;
+      commandOverride?: string;
+    }> = [];
     const allOutputParts: string[] = [];
     let anyError = false;
     let errorExitCode = 0;
@@ -214,6 +220,7 @@ export const acceptanceStage: PipelineStage = {
         errorExitCode = exitCode;
         allFailedACs.push("AC-ERROR");
         allFindings.push(acSentinelToFinding("AC-ERROR", output));
+        failedPackages.push({ testPath, packageDir, testFramework, commandOverride });
         continue;
       }
 
@@ -227,6 +234,7 @@ export const acceptanceStage: PipelineStage = {
       }
 
       if (actualFailures.length > 0) {
+        failedPackages.push({ testPath, packageDir, testFramework, commandOverride });
         logger.error("acceptance", "Acceptance tests failed", {
           storyId: ctx.story.id,
           failedACs: actualFailures,
@@ -291,6 +299,7 @@ export const acceptanceStage: PipelineStage = {
       failedACs: allFailedACs,
       findings: allFindings,
       testOutput: combinedOutput,
+      failedPackages,
     };
 
     // Emit canonical verdict: ACs failed
