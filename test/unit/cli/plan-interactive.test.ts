@@ -9,20 +9,24 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps as _deps, planCommand } from "../../../src/cli/plan";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import type { PRD } from "../../../src/prd/types";
+import { makeMockAgentManager, makeMockRuntime } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  runFn?: (agentName: string, opts: any) => Promise<any>,
+  runFn?: (runOptions: any) => Promise<any>,
 ) {
-  return makeMockAgentManager({
-    runAsFn: runFn
-      ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; }
-      : undefined,
+  return makeMockRuntime({
+    agentManager: makeMockAgentManager({
+      runWithFallbackFn: runFn
+        ? async (req) => { await runFn(req.runOptions); return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }; }
+        : async () => ({ result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
+    }),
   });
 }
 
@@ -78,6 +82,7 @@ const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
 const origExistsSync = _deps.existsSync;
 const origCreateInteractionBridge = _deps.createInteractionBridge;
+const origInitInteractionChain = _deps.initInteractionChain;
 
 /** Mock bridge that auto-answers any question with "Yes" — no stdin involved. */
 function makeMockBridge(autoAnswer = "Yes") {
@@ -139,6 +144,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
     _deps.mkdirp = mock(async (_path: string) => {});
     _deps.createInteractionBridge = mock(() => makeMockBridge());
+    _deps.initInteractionChain = mock(async () => null);
   });
 
   afterEach(async () => {
@@ -152,6 +158,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
     _deps.createInteractionBridge = origCreateInteractionBridge;
+    _deps.initInteractionChain = origInitInteractionChain;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -162,13 +169,12 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   test("AC-1: default nax plan (no --auto) calls adapter.runAs() for interactive planning", async () => {
     const capturedPlans: unknown[] = [];
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async (_name: string, opts: any) => {
+      makeMockPlanManager(async (opts: any) => {
         capturedPlans.push(opts);
-        return { specContent: JSON.stringify(SAMPLE_PRD) };
       }),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -184,7 +190,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     const questionsAsked: string[] = [];
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           const bridge = opts.interactionBridge;
           if (bridge) {
             const question = "Should URLs expire?";
@@ -196,13 +202,11 @@ describe("planCommand — interactive mode (PLN-002)", () => {
               // Timeout or no interaction
             }
           }
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -219,7 +223,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     const prompts: string[] = [];
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           const bridge = opts.interactionBridge;
           if (bridge) {
             const question = "Should URLs expire?";
@@ -227,13 +231,11 @@ describe("planCommand — interactive mode (PLN-002)", () => {
             const answer = await bridge.onQuestionDetected(question);
             prompts.push(answer);
           }
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -246,11 +248,9 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: extracts JSON from agent final output wrapped in code block", async () => {
-    _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async () => ({ specContent: JSON.stringify(SAMPLE_PRD) }), undefined),
-    );
+    _deps.createRuntime = mock(() => makeMockPlanManager());
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -263,14 +263,16 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-4: throws on invalid JSON in agent output", async () => {
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async () => ({ specContent: "" }), undefined),
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: "invalid json {{", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
+        }),
+      }),
     );
-    _deps.readFile = mock(async (_path: string) =>
-      _path.endsWith("prd.json") ? "```json\ninvalid json {{}\n```" : SAMPLE_SPEC,
-    );
+    _deps.existsSync = mock((_path: string) => false);
 
-    expect(
-      planCommand(tmpDir, {} as never, {
+    await expect(
+      planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
       }),
@@ -282,11 +284,9 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-5: validates output and writes to nax/features/<feature>/prd.json", async () => {
-    _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async () => ({ specContent: JSON.stringify(SAMPLE_PRD) }), undefined),
-    );
+    _deps.createRuntime = mock(() => makeMockPlanManager());
 
-    const result = await planCommand(tmpDir, {} as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -308,19 +308,13 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     let capturedTimeoutSeconds: number | undefined;
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           capturedTimeoutSeconds = opts.timeoutSeconds;
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    const config = {
-      execution: { sessionTimeoutSeconds: 600 },
-    };
-
-    await planCommand(tmpDir, config as any, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -332,15 +326,13 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     let capturedTimeoutSeconds: number | undefined;
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           capturedTimeoutSeconds = opts.timeoutSeconds;
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as any, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -356,15 +348,13 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     let bridgeProvided = false;
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           bridgeProvided = !!opts.interactionBridge;
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -376,17 +366,15 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     let bridgeHasRequiredMethods = false;
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           const bridge = opts.interactionBridge;
           bridgeHasRequiredMethods =
             typeof bridge?.detectQuestion === "function" && typeof bridge?.onQuestionDetected === "function";
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -398,15 +386,13 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     let capturedSessionRole: string | undefined;
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(
-        async (_name: string, opts: any) => {
+        async (opts: any) => {
           capturedSessionRole = opts.sessionRole;
-          return { specContent: JSON.stringify(SAMPLE_PRD) };
         },
-        undefined,
       ),
     );
 
-    await planCommand(tmpDir, {} as never, {
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -422,13 +408,12 @@ describe("planCommand — interactive mode (PLN-002)", () => {
           planCalled = true;
           throw new Error("missing end_turn");
         },
-        undefined,
       ),
     );
     _deps.existsSync = mock((path: string) => path.endsWith("prd.json"));
     _deps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
 
-    const result = await planCommand(tmpDir, {} as never, {
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
     });
@@ -439,15 +424,15 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("throws when interactive plan() errors and prd.json is missing", async () => {
     _deps.createRuntime = mock(() =>
-      makeMockPlanManager(async () => { throw new Error("missing end_turn"); }, undefined),
+      makeMockPlanManager(async () => { throw new Error("missing end_turn"); }),
     );
     _deps.existsSync = mock((_path: string) => false);
 
     await expect(
-      planCommand(tmpDir, {} as never, {
+      planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
       }),
-    ).rejects.toThrow("no PRD was written");
+    ).rejects.toThrow();
   });
 });

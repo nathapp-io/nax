@@ -12,7 +12,7 @@ import { _planDeps, planCommand } from "../../../src/cli/plan";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
 import { PlanPromptBuilder } from "../../../src/prompts";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,11 +119,14 @@ describe("planCommand", () => {
 
     _planDeps.createRuntime = mock((_cfg: any) => {
       capturedPlanArgs = [];
-      return makeMockAgentManager({
-        completeAsFn: async (_name: string, prompt: string, _opts?: any) => {
-          if (prompt) capturedPlanArgs.push(prompt);
-          return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-        },
+      return makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async (req) => {
+            const prompt = req.runOptions.prompt;
+            if (prompt) capturedPlanArgs.push(prompt);
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       });
     });
   });
@@ -182,12 +185,15 @@ describe("planCommand", () => {
   test("uses explicit plan model selector to choose adapter", async () => {
     let receivedAgentName: string | undefined;
 
-    _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        completeAsFn: async (name: string, _prompt: string, _opts?: any) => {
-          receivedAgentName = name;
-          return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-        },
+    _planDeps.createRuntime = mock((cfg: any) =>
+      makeMockRuntime({
+        config: cfg,
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async (_req, primaryAgentOverride) => {
+            receivedAgentName = primaryAgentOverride;
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       }),
     );
 
@@ -261,15 +267,17 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
-    const planSpy = mock(async (_options: any) => {});
+    const planSpy = mock(async (_req: any) => {});
     _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        runAsFn: async (_name: string, opts: any) => { await planSpy(opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; },
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async (req) => {
+            await planSpy(req);
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       }),
     );
-    // Simulate agent having written the PRD file to disk
-    _planDeps.existsSync = mock((_path: string) => true);
-    _planDeps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
 
     await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
@@ -285,10 +293,13 @@ describe("planCommand", () => {
 
   test("AC-4: throws on invalid JSON response from adapter", async () => {
     _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        completeAsFn: async () => ({ output: "not valid json {{", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: "not valid json {{", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
+        }),
       }),
     );
+    _planDeps.existsSync = mock(() => false);
 
     await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {
@@ -305,10 +316,9 @@ describe("planCommand", () => {
     prdWithoutProject.project = undefined;
 
     _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify(prdWithoutProject),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: JSON.stringify(prdWithoutProject), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
         }),
       }),
     );
@@ -330,15 +340,15 @@ describe("planCommand", () => {
     badPrd.userStories = undefined;
 
     _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify(badPrd),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: JSON.stringify(badPrd), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
         }),
       }),
     );
+    _planDeps.existsSync = mock(() => false);
 
-    expect(
+    await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
@@ -390,10 +400,9 @@ describe("planCommand", () => {
     };
 
     _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify(prdWithBadStatuses),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0,
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({ result: { success: true, exitCode: 0, output: JSON.stringify(prdWithBadStatuses), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
         }),
       }),
     );

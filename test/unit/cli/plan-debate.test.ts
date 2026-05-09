@@ -27,12 +27,14 @@ import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../help
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  runFn?: (agentName: string, opts: any) => Promise<any>,
-  completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
+  runFn?: (runOptions: any) => Promise<any>,
 ) {
-  return makeMockAgentManager({
-    runAsFn: runFn ? async (name: string, opts: any) => { await runFn(name, opts); return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }; } : undefined,
-    completeAsFn: completeFn,
+  return makeMockRuntime({
+    agentManager: makeMockAgentManager({
+      runWithFallbackFn: runFn
+        ? async (req) => { await runFn(req.runOptions); return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }; }
+        : async () => ({ result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] }),
+    }),
   });
 }
 
@@ -195,13 +197,11 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Set up mocks for a successful interactive plan (adapter.runAs() path) */
+/** Set up mocks for a successful interactive plan (callOp + planInteractiveOp path) */
 function setupInteractivePlanMocks(
-  runFn: (name: string, opts: any) => Promise<any>,
+  runFn: (_runOptions: any) => Promise<any>,
 ) {
-  _planDeps.createRuntime = mock(() =>
-    makeMockPlanManager(runFn, undefined),
-  );
+  _planDeps.createRuntime = mock(() => makeMockPlanManager(runFn));
   _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
   _planDeps.readFile = mock(async () => JSON.stringify(SAMPLE_PRD));
 }
@@ -232,12 +232,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.existsSync = mock(() => false);
     _planDeps.initInteractionChain = mock(async () => null);
-    _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(
-        undefined,
-        async (_name: string, _prompt: string, _opts: any) => ({ output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
-      ),
-    );
+    _planDeps.createRuntime = mock(() => makeMockPlanManager());
     _planDeps.createDebateRunner = origCreateDebateSession;
   });
 
@@ -350,16 +345,16 @@ describe("planCommand — debate integration (US-004)", () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC2: adapter.complete() called exactly once when debate.enabled=false", async () => {
-    const completeCalls: string[] = [];
+    const runWithFallbackCalls: string[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
-        completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => {
+            runWithFallbackCalls.push("called");
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       }),
-    );
-    _planDeps.existsSync = mock(() => true);
-    _planDeps.readFile = mock(async (p: string) =>
-      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
@@ -371,21 +366,21 @@ describe("planCommand — debate integration (US-004)", () => {
       { from: "/spec.md", feature: "debate-plan", auto: true },
     );
 
-    expect(completeCalls).toHaveLength(1);
+    expect(runWithFallbackCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
   test("AC2: adapter.complete() called exactly once when debate config is absent", async () => {
-    const completeCalls: string[] = [];
+    const runWithFallbackCalls: string[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
-        completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => {
+            runWithFallbackCalls.push("called");
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       }),
-    );
-    _planDeps.existsSync = mock(() => true);
-    _planDeps.readFile = mock(async (p: string) =>
-      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
@@ -397,21 +392,21 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    expect(completeCalls).toHaveLength(1);
+    expect(runWithFallbackCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
   test("AC2: adapter.complete() called when debate.stages.plan.enabled=false", async () => {
-    const completeCalls: string[] = [];
+    const runWithFallbackCalls: string[] = [];
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(undefined, async (_name, _prompt, _opts) => {
-        completeCalls.push("called");
-        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => {
+            runWithFallbackCalls.push("called");
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
       }),
-    );
-    _planDeps.existsSync = mock(() => true);
-    _planDeps.readFile = mock(async (p: string) =>
-      p.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
     );
 
     const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
@@ -423,7 +418,7 @@ describe("planCommand — debate integration (US-004)", () => {
       { from: "/spec.md", feature: "debate-plan", auto: true },
     );
 
-    expect(completeCalls).toHaveLength(1);
+    expect(runWithFallbackCalls).toHaveLength(1);
     expect(createDebateMock).not.toHaveBeenCalled();
   });
 
@@ -433,7 +428,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC6: falls back to interactive plan path when DebateSession returns outcome=failed", async () => {
     const adapterPlan = mock(async () => {});
-    setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
+    setupInteractivePlanMocks(async (_runOptions: any) => { adapterPlan(); });
 
     _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),
@@ -449,7 +444,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
   test("AC6: planCommand succeeds (does not throw) when debate fails and fallback is used", async () => {
     const adapterPlan = mock(async () => {});
-    setupInteractivePlanMocks(async (_name: string, _opts: any) => { adapterPlan(); return { specContent: "" }; });
+    setupInteractivePlanMocks(async (_runOptions: any) => { adapterPlan(); });
 
     _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => DEBATE_FAILED_RESULT),

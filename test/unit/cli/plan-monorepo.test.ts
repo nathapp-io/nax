@@ -14,16 +14,25 @@ import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
 import { makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makeMockPlanManager(
-  completeFn?: (name: string, prompt: string, opts: any) => Promise<{ output: string; costUsd: number; source: "exact" | "estimated" | "fallback" }>,
+  capturePrompt?: (prompt: string) => void,
+  prdOutput?: object,
 ) {
-  return makeMockAgentManager({ completeAsFn: completeFn });
+  const output = JSON.stringify(prdOutput ?? SAMPLE_PRD);
+  return makeMockRuntime({
+    agentManager: makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        if (capturePrompt) capturePrompt(req.runOptions.prompt ?? "");
+        return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+      },
+    }),
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +81,7 @@ const origExistsSync = _planDeps.existsSync;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
 const origCreateInteractionBridge = _planDeps.createInteractionBridge;
+const origInitInteractionChain = _planDeps.initInteractionChain;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -102,11 +112,9 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.existsSync = mock(() => true);
+    _planDeps.initInteractionChain = mock(async () => null);
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
-        capturedPrompts.push(prompt);
-        return { output: JSON.stringify(SAMPLE_PRD), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-      }),
+      makeMockPlanManager((prompt) => { capturedPrompts.push(prompt); }),
     );
   });
 
@@ -122,6 +130,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _planDeps.mkdirp = origMkdirp;
     _planDeps.existsSync = origExistsSync;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+    _planDeps.initInteractionChain = origInitInteractionChain;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -265,11 +274,9 @@ describe("planCommand — per-package tech stack in prompt", () => {
       if (path.endsWith("prd.json")) return JSON.stringify(minimalPrd);
       return "# Spec\nDo something.\n";
     });
+    _planDeps.initInteractionChain = mock(async () => null);
     _planDeps.createRuntime = mock(() =>
-      makeMockPlanManager(async (_name: string, prompt: string, _opts: any) => {
-        capturedPrompts.push(prompt);
-        return { output: JSON.stringify(minimalPrd), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-      }),
+      makeMockPlanManager((prompt) => { capturedPrompts.push(prompt); }, minimalPrd),
     );
   });
 
@@ -286,6 +293,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
     _planDeps.createInteractionBridge = origCreateInteractionBridge;
+    _planDeps.initInteractionChain = origInitInteractionChain;
     await rm(tmpDir, { recursive: true, force: true });
   });
 

@@ -26,7 +26,7 @@ export interface MockAgentManagerOptions {
   getAgentFn?: (name: string) => AgentAdapter | undefined;
   runFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
-  runWithFallbackFn?: (req: AgentRunRequest) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
+  runWithFallbackFn?: (req: AgentRunRequest, primaryAgentOverride?: string) => Promise<{ result: { success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }; fallbacks: unknown[] }>;
   completeWithFallbackFn?: (prompt: string, opts?: CompleteOptions) => Promise<{ result: CompleteResult; fallbacks: unknown[] }>;
   runAsFn?: (agentName: string, opts: AgentRunOptions) => Promise<{ success: boolean; exitCode: number; output: string; rateLimited: boolean; durationMs: number; estimatedCostUsd: number; agentFallbacks: unknown[] }>;
   completeAsFn?: (agentName: string, prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
@@ -69,7 +69,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     resolveFallbackChain: () => [],
     shouldSwap: () => false,
     nextCandidate: () => null,
-    runWithFallback: opts.runWithFallbackFn ? mock((req: AgentRunRequest) => opts.runWithFallbackFn!(req)) : mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] })),
+    runWithFallback: opts.runWithFallbackFn ? mock((req: AgentRunRequest, primaryAgentOverride?: string) => opts.runWithFallbackFn!(req, primaryAgentOverride)) : mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] })),
     completeWithFallback: opts.completeWithFallbackFn ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeWithFallbackFn!(prompt, completeOpts)) : mock(() => Promise.resolve({ result: DEFAULT_COMPLETE_RESULT, fallbacks: [] })),
     run: runFn,
     complete: completeFn,
