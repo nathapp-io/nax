@@ -210,7 +210,15 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     logger?.info("plan", "[OK] PRD written", { outputPath });
     return outputPath;
   } else {
-    rawResponse = await runInteractivePlan();
+    try {
+      rawResponse = await runInteractivePlan();
+    } catch (err) {
+      if (_planDeps.existsSync(outputPath)) {
+        logger?.warn("plan", "Interactive planning failed; using PRD written by agent", { outputPath });
+        return outputPath;
+      }
+      throw err;
+    }
   }
 
   // ── Interactive plan helper (used by: interactive path + debate fallback) ──────────────────────
@@ -227,74 +235,78 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = `${interactiveTaskCtx}\n\n${interactiveOutputFmt}`;
     const resolvedPlanModel = resolvePlanModelSelection(config, defaultAgentName);
     const agentName = resolvedPlanModel.agent;
-    const rt = createPlanRuntime(config, workdir, options.feature);
-    const agentManager = rt.agentManager;
-    if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     // Use configured interaction plugin (telegram/webhook/auto) if available;
     // fall back to hardcoded stdin bridge when no interaction config is set.
+    // Initialized before createPlanRuntime so destroy() always runs in finally.
     const headless = !process.stdin.isTTY;
     const interactionChain = config ? await _planDeps.initInteractionChain(config, headless) : null;
-    const configuredBridge = interactionChain
-      ? buildInteractionBridge(interactionChain, {
-          featureName: options.feature,
-          stage: "pre-flight",
-        })
-      : undefined;
-    const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
-    const resolvedPerm = resolvePermissions(config, "plan");
-    logger?.info("plan", "Starting interactive planning session", {
-      agent: agentName,
-      model: resolvedPlanModel.modelDef.model,
-      permission: resolvedPerm.mode,
-      workdir,
-      feature: options.feature,
-      timeoutSeconds,
-    });
-    const planStartTime = Date.now();
-    let planError: Error | null = null;
     try {
-      try {
-        await agentManager.runAs(agentName, {
-          runOptions: {
-            prompt,
-            workdir,
-            timeoutSeconds,
-            interactionBridge,
-            config,
-            modelTier: resolvedPlanModel.modelTier ?? "balanced",
-            modelDef: resolvedPlanModel.modelDef,
-            maxInteractionTurns: config?.agent?.maxInteractionTurns,
+      const configuredBridge = interactionChain
+        ? buildInteractionBridge(interactionChain, {
             featureName: options.feature,
-            sessionRole: "plan",
-            pipelineStage: "plan",
-          },
+            stage: "pre-flight",
+          })
+        : undefined;
+      const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
+      const rt = createPlanRuntime(config, workdir, options.feature);
+      const planStartTime = Date.now();
+      let planError: Error | null = null;
+      try {
+        const agentManager = rt.agentManager;
+        if (!agentManager.getAgent(agentName)) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+        const resolvedPerm = resolvePermissions(config, "plan");
+        logger?.info("plan", "Starting interactive planning session", {
+          agent: agentName,
+          model: resolvedPlanModel.modelDef.model,
+          permission: resolvedPerm.mode,
+          workdir,
+          feature: options.feature,
+          timeoutSeconds,
         });
-      } catch (err) {
-        planError = err instanceof Error ? err : new Error(String(err));
-        logger?.warn("plan", "Interactive planning did not complete cleanly; checking for written PRD", {
-          error: planError.message,
+        try {
+          await agentManager.runAs(agentName, {
+            runOptions: {
+              prompt,
+              workdir,
+              timeoutSeconds,
+              interactionBridge,
+              config,
+              modelTier: resolvedPlanModel.modelTier ?? "balanced",
+              modelDef: resolvedPlanModel.modelDef,
+              maxInteractionTurns: config?.agent?.maxInteractionTurns,
+              featureName: options.feature,
+              sessionRole: "plan",
+              pipelineStage: "plan",
+            },
+          });
+        } catch (err) {
+          planError = err instanceof Error ? err : new Error(String(err));
+          logger?.warn("plan", "Interactive planning did not complete cleanly; checking for written PRD", {
+            error: planError.message,
+            outputPath,
+          });
+        }
+      } finally {
+        await rt.pidRegistry.killAll().catch(() => {});
+        await rt.close().catch(() => {});
+        logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
+      }
+      // Read back from file written by agent
+      if (!_planDeps.existsSync(outputPath)) {
+        if (planError) {
+          throw new Error(`[plan] Planning failed and no PRD was written: ${planError.message}`, { cause: planError });
+        }
+        throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+      }
+      if (planError) {
+        logger?.warn("plan", "Proceeding with PRD written by agent despite incomplete terminal response", {
           outputPath,
         });
       }
+      return _planDeps.readFile(outputPath);
     } finally {
-      await rt.pidRegistry.killAll().catch(() => {});
       if (interactionChain) await interactionChain.destroy().catch(() => {});
-      await rt.close().catch(() => {});
-      logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
     }
-    // Read back from file written by agent
-    if (!_planDeps.existsSync(outputPath)) {
-      if (planError) {
-        throw new Error(`[plan] Planning failed and no PRD was written: ${planError.message}`, { cause: planError });
-      }
-      throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-    }
-    if (planError) {
-      logger?.warn("plan", "Proceeding with PRD written by agent despite incomplete terminal response", {
-        outputPath,
-      });
-    }
-    return _planDeps.readFile(outputPath);
   }
 
   // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
