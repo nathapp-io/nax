@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand } from "../../../src/cli/plan";
-import type { PRD } from "../../../src/prd/types";
-import { makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { _planDeps, planCommand } from "@/cli";
+import type { PRD } from "@/prd/types";
+import { makeNaxConfig } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

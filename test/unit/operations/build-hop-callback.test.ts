@@ -1,12 +1,12 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { buildHopCallback, _buildHopCallbackDeps } from "../../../src/operations/build-hop-callback";
-import type { BuildHopCallbackContext } from "../../../src/operations/build-hop-callback";
-import type { HopKind } from "../../../src/agents/manager-types";
-import { makeNaxConfig, makeSessionManager, makeStory } from "../../helpers";
-import type { IAgentManager, RunAsSessionOpts } from "../../../src/agents/manager-types";
-import { SessionFailureError } from "../../../src/agents/types";
-import type { AgentRunOptions, SessionHandle, TurnResult } from "../../../src/agents/types";
-import type { AdapterFailure, ContextBundle } from "../../../src/context/engine";
+import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
+import type { BuildHopCallbackContext } from "@/operations";
+import type { HopKind } from "@/agents";
+import { makeNaxConfig, makeSessionManager, makeStory } from "@test/helpers";
+import type { IAgentManager, RunAsSessionOpts } from "@/agents";
+import { SessionFailureError } from "@/agents";
+import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents";
+import type { AdapterFailure, ContextBundle } from "@/context/engine";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

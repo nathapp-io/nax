@@ -76,3 +76,14 @@ export {
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";
+export {
+  COMPLEXITY_GUIDE,
+  TEST_STRATEGY_GUIDE,
+  AC_QUALITY_RULES,
+  SPEC_ANCHOR_RULES,
+  DESCRIPTION_QUALITY_RULES,
+  GROUPING_RULES,
+  getAcQualityRules,
+  resolveTestStrategy,
+  VALID_TEST_STRATEGIES,
+} from "./test-strategy";

@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
-import type { NaxRuntime } from "../../../src/runtime";
+import { adversarialReviewOp, decomposeOp, planInteractiveOp, semanticReviewOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
-import { decomposeOp } from "../../../src/operations/decompose";
-import { planInteractiveOp } from "../../../src/operations/plan";
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
 
 describe("operation timeout resolvers", () => {
   test("planInteractiveOp timeoutMs resolves from plan.timeoutSeconds", () => {

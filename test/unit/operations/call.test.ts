@@ -1,13 +1,13 @@
 import { afterEach, describe, test, expect, mock } from "bun:test";
-import { callOp } from "../../../src/operations/call";
-import type { CompleteOperation, RunOperation } from "../../../src/operations/types";
-import { pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { CompleteResult, TurnResult } from "../../../src/agents/types";
-import type { RetryPreset } from "../../../src/agents/retry";
-import type { NaxRuntime } from "../../../src/runtime";
-import type { AgentRunRequest } from "../../../src/agents/manager-types";
+import { callOp } from "@/operations";
+import type { CompleteOperation, RunOperation } from "@/operations";
+import { pickSelector } from "@/config";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { CompleteResult, TurnResult } from "@/agents/types";
+import type { RetryPreset } from "@/agents/retry";
+import type { NaxRuntime } from "@/runtime";
+import type { AgentRunRequest } from "@/agents/manager-types";
 
 let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });

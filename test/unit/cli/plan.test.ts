@@ -8,12 +8,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand } from "../../../src/cli/plan";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { PRD } from "../../../src/prd/types";
-import { PlanPromptBuilder } from "../../../src/prompts";
-import { makeMockAgentManager, makeMockRuntime } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { _planDeps, planCommand } from "@/cli";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PRD } from "@/prd/types";
+import { PlanPromptBuilder } from "@/prompts";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

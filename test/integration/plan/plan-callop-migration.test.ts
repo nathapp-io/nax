@@ -14,9 +14,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand } from "../../../src/cli/plan";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeTempDir } from "../../helpers/temp";
+import { _planDeps, planCommand } from "@/cli";
+import { DEFAULT_CONFIG } from "@/config";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

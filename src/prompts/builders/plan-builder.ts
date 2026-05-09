@@ -11,7 +11,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
-import type { ProjectProfile } from "../../config/runtime-types";
+import type { ProjectProfile } from "@/config";
 import {
   COMPLEXITY_GUIDE,
   DESCRIPTION_QUALITY_RULES,
@@ -19,7 +19,7 @@ import {
   SPEC_ANCHOR_RULES,
   TEST_STRATEGY_GUIDE,
   getAcQualityRules,
-} from "../../config/test-strategy";
+} from "@/config";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

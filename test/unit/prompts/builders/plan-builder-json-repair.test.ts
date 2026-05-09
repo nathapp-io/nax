@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { PlanPromptBuilder } from "../../../../src/prompts";
+import { PlanPromptBuilder } from "@/prompts";
 
 describe("PlanPromptBuilder.jsonRepair()", () => {
   test("static method exists and returns a string", () => {

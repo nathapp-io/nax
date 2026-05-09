@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PlanCommandOptions } from "../../../src/cli/plan";
-import { planInteractiveOp } from "../../../src/operations";
+import type { PlanCommandOptions } from "@/cli";
+import { planInteractiveOp } from "@/operations";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests

@@ -18,12 +18,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand } from "../../../src/cli/plan";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { PRD } from "../../../src/prd/types";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../helpers";
-import { makeTempDir } from "../../helpers/temp";
+import { _planDeps, planCommand } from "@/cli";
+import type { NaxConfig } from "@/config";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PRD } from "@/prd/types";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures

@@ -11,12 +11,12 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { ParseValidationError } from "../../../src/agents/retry";
-import type { RetryStrategy } from "../../../src/agents/retry";
-import type { TurnResult } from "../../../src/agents/types";
-import { validatePlanOutput } from "../../../src/prd/schema";
-import { makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { ParseValidationError } from "@/agents";
+import type { RetryStrategy } from "@/agents";
+import type { TurnResult } from "@/agents/types";
+import { validatePlanOutput } from "@/prd";
+import { makeTestRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -29,54 +29,54 @@ afterEach(async () => {
 describe("planInteractiveOp shape", () => {
   test("exports planInteractiveOp", async () => {
     // This test will pass once planInteractiveOp is exported
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     expect(mod).toHaveProperty("planInteractiveOp");
   });
 
   test("planInteractiveOp has kind === 'run'", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.kind).toBe("run");
   });
 
   test("planInteractiveOp.name === 'plan-interactive'", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.name).toBe("plan-interactive");
   });
 
   test("planInteractiveOp.stage === 'plan'", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.stage).toBe("plan");
   });
 
   test("planInteractiveOp.session.role === 'plan'", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.session.role).toBe("plan");
   });
 
   test("planInteractiveOp.session.lifetime === 'fresh'", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.session.lifetime).toBe("fresh");
   });
 
   test("planInteractiveOp.config is defined", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.config).toBeDefined();
   });
 
   test("planInteractiveOp.build is a function", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(typeof planInteractiveOp.build).toBe("function");
   });
 
   test("planInteractiveOp.parse is a function", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(typeof planInteractiveOp.parse).toBe("function");
   });
@@ -84,13 +84,13 @@ describe("planInteractiveOp shape", () => {
 
 describe("planInteractiveOp.retry", () => {
   test("retry field is defined", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.retry).toBeDefined();
   });
 
   test("retry resolves to a RetryStrategy-like object with shouldRetry method", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -115,19 +115,19 @@ describe("planInteractiveOp.retry", () => {
 
 describe("planInteractiveOp.hopBody", () => {
   test("hopBody is defined", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.hopBody).toBeDefined();
   });
 
   test("hopBody is an async function", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(typeof planInteractiveOp.hopBody).toBe("function");
   });
 
   test("hopBody calls ctx.sendWithParseRetry (not ctx.send)", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
 
     // Create a mock context to verify sendWithParseRetry is called
@@ -163,7 +163,7 @@ describe("planInteractiveOp.hopBody", () => {
 
 describe("planInteractiveOp.parse()", () => {
   test("returns PRD object when output is valid JSON", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -215,7 +215,7 @@ describe("planInteractiveOp.parse()", () => {
   });
 
   test("throws error when output is not valid JSON", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -236,7 +236,7 @@ describe("planInteractiveOp.parse()", () => {
   });
 
   test("throws error when JSON is missing required fields", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -261,19 +261,19 @@ describe("planInteractiveOp.parse()", () => {
 
 describe("planInteractiveOp.recover", () => {
   test("recover method is defined", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.recover).toBeDefined();
   });
 
   test("recover is an async function", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(typeof planInteractiveOp.recover).toBe("function");
   });
 
   test("recover returns null when outputPath file does not exist", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -298,7 +298,7 @@ describe("planInteractiveOp.recover", () => {
   });
 
   test("recover returns parsed PRD when outputPath file exists with valid JSON", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -356,7 +356,7 @@ describe("planInteractiveOp.recover", () => {
   });
 
   test("recover returns null when file exists but contains invalid JSON", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -384,13 +384,13 @@ describe("planInteractiveOp.recover", () => {
 
 describe("planInteractiveOp.verify", () => {
   test("verify method is defined", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     expect(planInteractiveOp.verify).toBeDefined();
   });
 
   test("verify returns null when userStories is empty", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -418,7 +418,7 @@ describe("planInteractiveOp.verify", () => {
   });
 
   test("verify returns the PRD when userStories is not empty", async () => {
-    const mod = await import("../../../src/operations/plan");
+    const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
     const runtime = makeTestRuntime();
     createdRuntimes.push(runtime);
@@ -482,7 +482,7 @@ describe("planInteractiveOp.verify", () => {
 
 describe("planInteractiveOp.retry — validate/parse consistency (adversarial AC-4)", () => {
   test("retry.shouldRetry requests a retry when LLM returns empty userStories", async () => {
-    const { planInteractiveOp } = await import("../../../src/operations/plan");
+    const { planInteractiveOp } = await import("@/operations");
 
     const strategyOrFn = planInteractiveOp.retry;
     const retryStrategy: RetryStrategy = (
