@@ -326,6 +326,60 @@ Error: Alternative marks error
     expect(result.failed).toBe(1);
     expect(result.failures).toHaveLength(1);
   });
+
+  // BUG-060 (issue #989): (fail) lines in batch output must increment `failed`
+  test("counts failed correctly when only (fail) lines appear (no cross-mark glyphs)", () => {
+    const output = `
+test/example.test.ts:
+(fail) suite > test name [10.00ms]
+(fail) suite > test name 2 [2.00ms]
+
+ 38 pass
+ 23 fail
+Ran 61 tests across 3 files.`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.failed).toBe(23);
+    expect(result.passed).toBe(38);
+    expect(result.failures).toHaveLength(2);
+  });
+
+  // BUG-060: summary line counts dominate per-line glyph counts
+  test("uses bun summary line counts as backstop when summary exceeds per-line counts", () => {
+    const output = `
+test/unit/cli/plan.test.ts:
+(fail) plan > US-001 > something [5.00ms]
+
+ 9 pass
+ 9 fail
+Ran 18 tests across 1 file.`.trim();
+
+    const result = parseTestOutput(output);
+
+    // summary says 9 fail — must win over the 0 counted from missing glyphs
+    expect(result.failed).toBe(9);
+    expect(result.passed).toBe(9);
+    expect(result.failures).toHaveLength(1);
+  });
+
+  // BUG-060: (fail) lines increment failed even without a summary line
+  test("increments failed counter for each (fail) line even with no summary line", () => {
+    const output = `
+test/unit/cli/plan.test.ts:
+(fail) plan > AC-1 [3.00ms]
+Error: Expected true
+  at test.ts:12:5
+(fail) plan > AC-2 [2.00ms]
+Error: Expected false
+  at test.ts:22:5`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.failed).toBe(2);
+    expect(result.passed).toBe(0);
+    expect(result.failures).toHaveLength(2);
+  });
 });
 
 describe("formatFailureSummary", () => {
