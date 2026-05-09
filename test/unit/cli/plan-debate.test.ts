@@ -20,7 +20,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { DebateResult } from "../../../src/debate/types";
 import type { PRD } from "../../../src/prd/types";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
-import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -461,5 +461,64 @@ describe("planCommand — debate integration (US-004)", () => {
         feature: "debate-plan",
       }),
     ).resolves.toBeDefined();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bug[line-214]: silent catch block in debate fallback recovery path
+  // swallows validatePlanOutput errors — error must propagate, not be
+  // silently discarded while returning an unvalidated outputPath.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("BUG[214]: propagates validatePlanOutput error from debate-fallback disk recovery instead of silently returning outputPath", async () => {
+    // Scenario:
+    //   1. debate.runPlan returns outcome=failed → fallback callOp is invoked
+    //   2. fallback callOp fails (agent throws) → catch(err) block entered
+    //   3. _planDeps.existsSync(outputPath) → true → disk-recovery branch entered
+    //   4. readFile(outputPath) returns corrupt/invalid content
+    //   5. validatePlanOutput throws a schema error
+    //
+    // Spec-correct: the schema error must propagate out of planCommand.
+    // Current bug (line 214): catch {} swallows it; planCommand returns
+    // outputPath as if the PRD on disk were valid — silent contract violation.
+
+    // Debate always fails so the fallback callOp path is exercised.
+    _planDeps.createDebateRunner = mock(() => ({
+      runPlan: mock(async () => DEBATE_FAILED_RESULT),
+    }));
+
+    // Force the fallback callOp to throw so the catch(err) recovery block is entered.
+    _planDeps.createRuntime = mock(() =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => {
+            throw new Error("fallback-agent-failed-forcing-recovery-path");
+          },
+        }),
+      }),
+    );
+
+    // readFile: spec file returns fine; prd.json at outputPath holds corrupt
+    // content that will cause validatePlanOutput to throw a schema error.
+    _planDeps.readFile = mock(async (path: string) => {
+      if (path.endsWith("prd.json")) return "CORRUPT_CONTENT_NOT_VALID_JSON";
+      return SAMPLE_SPEC;
+    });
+
+    // existsSync → true so disk-recovery is attempted (not short-circuited).
+    _planDeps.existsSync = mock(() => true);
+
+    // Spec-correct behaviour: validatePlanOutput throws, so planCommand must
+    // propagate the error.  With the current bug planCommand swallows it and
+    // resolves with outputPath — a silent contract violation.
+    let caughtError: unknown;
+    try {
+      await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+        from: "/spec.md",
+        feature: "debate-plan",
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+    expect(caughtError).toBeDefined();
   });
 });

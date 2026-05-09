@@ -22,7 +22,7 @@ import { _planDeps, planCommand } from "../../../src/cli/plan";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { PRD } from "../../../src/prd/types";
-import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../helpers";
 import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -497,5 +497,62 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
     // - interactionBridge from chain or fallback
     // - maxInteractionTurns from config
     expect(true).toBe(true); // Placeholder for integration verification
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Bug[line-259]: silent catch block in non-debate recovery path swallows
+  // validatePlanOutput errors — error must propagate, not be silently discarded
+  // ────────────────────────────────────────────────────────────────────────────
+
+  test("BUG[259]: propagates validatePlanOutput error from disk recovery instead of silently returning outputPath", async () => {
+    // Scenario:
+    //   1. callOp fails (agent throws) → catch(err) block in plan.ts entered
+    //   2. _planDeps.existsSync(outputPath) → true → disk-recovery branch entered
+    //   3. readFile(outputPath) returns corrupt/invalid content
+    //   4. validatePlanOutput throws a schema error
+    //
+    // Spec-correct: the schema error must propagate out of planCommand.
+    // Current bug (line 259): catch {} swallows it; planCommand returns
+    // outputPath as if the PRD on disk were valid — silent contract violation.
+
+    const origCreateRuntime = _planDeps.createRuntime;
+    try {
+      // Force callOp to throw so the catch(err) recovery block is entered.
+      _planDeps.createRuntime = mock(() =>
+        makeMockRuntime({
+          agentManager: makeMockAgentManager({
+            runWithFallbackFn: async () => {
+              throw new Error("agent-execution-failed-forcing-recovery-path");
+            },
+          }),
+        }),
+      );
+
+      const specPath = join(tmpDir, "spec.md");
+      // Spec file reads fine; prd.json at outputPath holds corrupt content
+      // that will cause validatePlanOutput to throw a schema error.
+      _planDeps.readFile = mock(async (path: string) => {
+        if (path === specPath) return SAMPLE_SPEC;
+        return "CORRUPT_CONTENT_NOT_VALID_JSON";
+      });
+
+      // existsSync → true so disk-recovery is attempted (not short-circuited).
+      _planDeps.existsSync = mock(() => true);
+
+      const config = DEFAULT_CONFIG as NaxConfig;
+
+      // Spec-correct behaviour: validatePlanOutput throws, so planCommand must
+      // propagate the error.  With the current bug planCommand swallows it and
+      // resolves with outputPath — a silent contract violation.
+      let caughtError: unknown;
+      try {
+        await planCommand(tmpDir, config, { from: specPath, feature: "url-shortener" });
+      } catch (err) {
+        caughtError = err;
+      }
+      expect(caughtError).toBeDefined();
+    } finally {
+      _planDeps.createRuntime = origCreateRuntime;
+    }
   });
 });
