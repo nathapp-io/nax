@@ -156,7 +156,10 @@ Worked example:
 
 **Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
 
-If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\`. A finding dropped by the validator is worse than one correctly classified as advisory.`;
+**Scope constraints are not Acceptance Criteria:**
+The story description may contain a "Scope" section with "In:" and "Out:" bullets. These are implementation guidelines, not ACs. A finding about code changed outside the stated scope (e.g., a file listed under "Out:") cannot cite a scope constraint as its \`acQuote\`/\`acIndex\` because scope text is not in the numbered AC list. Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1).
+
+If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\` or \`"warning"\`. A finding dropped by the validator is worse than one correctly classified as advisory.`;
 
 /**
  * Build the diff section for "ref" mode.
