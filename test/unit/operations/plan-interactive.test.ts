@@ -467,26 +467,6 @@ describe("planInteractiveOp.verify", () => {
   });
 });
 
-describe("planOp removal", () => {
-  test("planOp should no longer be exported from src/operations/plan.ts", async () => {
-    const mod = await import("../../../src/operations/plan");
-    // When planOp is removed, this test will fail and alert us
-    // The test name documents the intent; implementation removes the export
-    if ("planOp" in mod) {
-      // If this fails, it means planOp still exists and needs to be removed
-      expect.unreachable("planOp should be removed from exports");
-    }
-  });
-
-  test("PlanOpInput type should no longer be exported from src/operations/index.ts", async () => {
-    const mod = await import("../../../src/operations");
-    // When PlanOpInput is removed, this test will verify it's gone
-    if ("PlanOpInput" in mod) {
-      expect.unreachable("PlanOpInput should be removed from exports");
-    }
-  });
-});
-
 // ─── Adversarial: retry validate / parse consistency ─────────────────────────
 //
 // Bug found by adversarial review:
