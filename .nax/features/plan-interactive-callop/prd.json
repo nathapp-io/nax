@@ -3,7 +3,7 @@
   "feature": "plan-interactive-callop",
   "branchName": "feat/plan-interactive-callop",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T04:26:49.644Z",
+  "updatedAt": "2026-05-09T04:38:35.430Z",
   "userStories": [
     {
       "id": "US-001",
@@ -74,9 +74,9 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [
         {
           "fromTier": "balanced",
