@@ -53,6 +53,7 @@ nax.lock
 .nax/**/semantic-verdicts/
 .nax/**/verdicts/
 .nax/**/sessions/
+.nax/**/stories/
 test/tmp/
 test/integration/tmp/
 TEST_SUMMARY_*.md

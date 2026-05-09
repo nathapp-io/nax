@@ -1,0 +1,146 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-interactive-callop",
+  "branchName": "feat/plan-interactive-callop",
+  "createdAt": "2026-05-09T00:00:00.000Z",
+  "updatedAt": "2026-05-09T03:47:20.759Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Thread interactionBridge through the operations layer",
+      "description": "**Goal** — Add `interactionBridge` and `maxInteractionTurns` to `CallContext` and `BuildHopCallbackContext`, and thread both fields into the `kind:\"run\"` dispatch path so `RunOperation`s can support interactive Q&A sessions.\n\n**Motivation** — The `CallContext`, `call.ts`, and `build-hop-callback.ts` have zero references to `interactionBridge`, so any `RunOperation` that needs interactive Q&A (e.g. plan's mid-session clarification) cannot use the `callOp` dispatch path without losing that capability.\n\n**Approach**\n\nExtend `CallContext` in `src/operations/types.ts`:\n```typescript\nexport interface CallContext {\n  // ... existing fields ...\n  readonly interactionBridge?: {\n    detectQuestion: (text: string) => Promise<boolean>;\n    onQuestionDetected: (text: string) => Promise<string>;\n  };\n  readonly maxInteractionTurns?: number;\n}\n```\n\nExtend `BuildHopCallbackContext` in `src/operations/build-hop-callback.ts`:\n```typescript\nexport interface BuildHopCallbackContext {\n  // ... existing fields ...\n  interactionBridge?: {\n    detectQuestion: (text: string) => Promise<boolean>;\n    onQuestionDetected: (text: string) => Promise<string>;\n  };\n  maxInteractionTurns?: number;\n}\n```\n\nIn `call.ts`, when assembling `runOptions` for `kind:\"run\"` ops, conditionally spread `interactionBridge` and `maxInteractionTurns` from `ctx` (no undefined spreading — use `...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {})` pattern). Also add both fields to `hopCtx` so they propagate into `BuildHopCallbackContext`.\n\nIn `build-hop-callback.ts`, inside the `send` closure that calls `agentManager.runAsSession(...)`, import and call `buildRunInteractionHandler` from `src/agents/acp/adapter-output` (or the re-export at `src/agents/acp/adapter` — check which path is used) to produce a non-null `interactionHandler` when `ctx.interactionBridge` is set. Pass both `interactionHandler` and `maxTurns: ctx.maxInteractionTurns` in the `RunAsSessionOpts`. The `buildRunInteractionHandler` function reads `interactionBridge`, `contextToolRuntime`, and `contextPullTools` from an `AgentRunOptions`-shaped object — all three are available in the `buildHopCallback` closure.\n\n**Scope**\nIn: `src/operations/types.ts`, `src/operations/call.ts`, `src/operations/build-hop-callback.ts`.\nOut: No changes to `src/agents/`, `src/runtime/`, or any pipeline stages.",
+      "acceptanceCriteria": [
+        "`CallContext` in `src/operations/types.ts` has an optional `interactionBridge` field with shape `{ detectQuestion: (text: string) => Promise<boolean>; onQuestionDetected: (text: string) => Promise<string> }`.",
+        "`CallContext` in `src/operations/types.ts` has an optional `maxInteractionTurns?: number` field.",
+        "When `callOp` dispatches a `kind:\"run\"` op and `ctx.interactionBridge` is set, then `runOptions` passed to `runWithFallback` includes the `interactionBridge` value.",
+        "When `callOp` dispatches a `kind:\"run\"` op and `ctx.maxInteractionTurns` is set, then `runOptions` includes the `maxInteractionTurns` value.",
+        "`BuildHopCallbackContext` in `build-hop-callback.ts` has optional `interactionBridge` and `maxInteractionTurns` fields.",
+        "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.interactionBridge` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes a non-null `interactionHandler` produced by `buildRunInteractionHandler`.",
+        "When `buildHopCallback` dispatches a turn via `agentManager.runAsSession(...)` and `ctx.maxInteractionTurns` is set, then the `RunAsSessionOpts` passed to `runAsSession` includes the `maxTurns` value.",
+        "When `ctx.interactionBridge` is absent from `CallContext`, then the compiled `runOptions` does not include an `interactionBridge` key (no `undefined` spreading)."
+      ],
+      "tags": [
+        "feature",
+        "operations"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/types.ts",
+        "src/operations/call.ts",
+        "src/operations/build-hop-callback.ts",
+        "src/agents/manager-types.ts",
+        "src/agents/acp/adapter-output.ts"
+      ],
+      "suggestedCriteria": [
+        "When `ctx.maxInteractionTurns` is absent from `CallContext`, then `runOptions` does not include a `maxInteractionTurns` key (no `undefined` spreading).",
+        "When both `ctx.interactionBridge` and `contextPullTools` are set, then the `interactionHandler` produced by `buildRunInteractionHandler` handles both question-detection and context-tool-call interactions."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add PlanPromptBuilder.jsonRepair() and planInteractiveOp",
+      "description": "**Goal** — Add `PlanPromptBuilder.jsonRepair()` static method and replace `planOp` (kind:\"complete\") with `planInteractiveOp` (kind:\"run\") in `src/operations/plan.ts`, using `hopBody` + `op.retry` for same-session JSON parse repair.\n\n**Motivation** — When the agent produces invalid JSON for the PRD, `validatePlanOutput()` throws and the entire plan fails. There is no in-session repair — the user has to restart from scratch. The semantic/adversarial review ops already handle this with `makeParseRetryStrategy` + `sendWithParseRetry`; plan should use the same pattern.\n\n**Approach — PlanPromptBuilder.jsonRepair()**\n\nAdd a static method to `PlanPromptBuilder` in `src/prompts/builders/plan-builder.ts`:\n```typescript\nstatic jsonRepair(attempt: number, parseError: string): string\n```\nReturns a repair prompt that: (a) tells the agent its previous response was not valid JSON, (b) includes the `parseError` string so the agent can see what failed, (c) instructs the agent to re-write the complete PRD JSON to `outputPath`. Biome's `noStaticOnlyClass` rule is satisfied because `build()` is already an instance method.\n\n**Approach — PlanInteractiveInput and planInteractiveOp**\n\nNew input type:\n```typescript\nexport interface PlanInteractiveInput {\n  specContent: string;\n  codebaseContext: string;\n  featureName: string;\n  branchName: string;\n  outputPath: string;       // file path agent writes PRD to\n  packages?: string[];\n  packageDetails?: PackageSummary[];\n  projectProfile?: ProjectProfile;\n}\n```\n\nNew operation (replaces `planOp`):\n```typescript\nexport const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConfig> = {\n  kind: \"run\",\n  name: \"plan-interactive\",\n  stage: \"plan\",\n  session: { role: \"plan\", lifetime: \"fresh\" },\n  config: planConfigSelector,\n  model: (_input, ctx) => ctx.config.plan.model,\n  timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,\n  retry: makeParseRetryStrategy({\n    validate: (parsed) => /* lightweight PRD shape check */,\n    reviewerKind: \"plan\",\n    maxAttempts: 3,\n    prompts: {\n      invalid: () => PlanPromptBuilder.jsonRepair(0, \"Invalid JSON — response was not parseable\"),\n      truncated: () => PlanPromptBuilder.jsonRepair(0, \"JSON appears truncated — please rewrite completely\"),\n    },\n    // exhaustedFallback omitted — Bun has no synchronous file-read API;\n    // disk fallback on retry exhaustion is handled at plan.ts level\n  }),\n  hopBody: async (initialPrompt, ctx) => {\n    return ctx.sendWithParseRetry(initialPrompt);\n  },\n  build(input, _ctx) {\n    const { taskContext, outputFormat } = new PlanPromptBuilder().build(\n      input.specContent,\n      input.codebaseContext,\n      input.outputPath,       // outputPath variant — agent writes to file\n      input.packages,\n      input.packageDetails,\n      input.projectProfile,\n    );\n    return {\n      role: { id: \"role\", content: \"\", overridable: false },\n      task: { id: \"task\", content: `${taskContext}\\n\\n${outputFormat}`, overridable: false },\n    };\n  },\n  parse(output, input, _ctx) {\n    return validatePlanOutput(output, input.featureName, input.branchName);\n  },\n  verify: async (parsed, _input, _ctx) => {\n    // Return null when userStories is empty — signals recover should try disk\n    if (!parsed.userStories || parsed.userStories.length === 0) return null;\n    return parsed;\n  },\n  recover: async (input, ctx) => {\n    const content = await ctx.readFile(input.outputPath);\n    if (!content) return null;\n    try {\n      return validatePlanOutput(content, input.featureName, input.branchName);\n    } catch {\n      return null;\n    }\n  },\n};\n```\n\n`planOp` (kind:\"complete\") and its export from `src/operations/index.ts` are removed in this story. `PlanOpInput` type export is also removed.\n\n**Scope**\nIn: `src/prompts/builders/plan-builder.ts`, `src/operations/plan.ts`, `src/operations/index.ts`.\nOut: No changes to `src/cli/plan.ts` (US-003).",
+      "acceptanceCriteria": [
+        "`PlanPromptBuilder` has a static method `jsonRepair(attempt: number, parseError: string): string` that returns a non-empty string containing the word \"JSON\".",
+        "`PlanPromptBuilder.jsonRepair()` output includes the `parseError` string passed as argument.",
+        "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts` with `kind: \"run\"`, `name: \"plan-interactive\"`, and `session.role: \"plan\"`.",
+        "`planInteractiveOp.retry` is set and resolves to a `RetryStrategy` (not `null`) when invoked with any `PlanInteractiveInput`.",
+        "When `planInteractiveOp.parse()` receives output that is valid PRD JSON, then it returns a `PRD` object without throwing.",
+        "When `planInteractiveOp.parse()` receives output that is not valid JSON, then it throws (triggering the retry strategy).",
+        "`planInteractiveOp.hopBody` calls `ctx.sendWithParseRetry` with the initial prompt (not `ctx.send`).",
+        "`planInteractiveOp.recover` is defined and, when `outputPath` file exists on disk and contains valid PRD JSON, returns the parsed `PRD` without throwing.",
+        "When `planInteractiveOp.recover` is called and the `outputPath` file does not exist, it returns `null`.",
+        "`planOp` (`kind:\"complete\"`) is removed from `src/operations/plan.ts` and `src/operations/index.ts`."
+      ],
+      "tags": [
+        "feature",
+        "operations"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/prompts/builders/plan-builder.ts",
+        "src/operations/plan.ts",
+        "src/agents/retry/parse-retry.ts",
+        "src/operations/semantic-review.ts",
+        "src/prd/schema.ts"
+      ],
+      "suggestedCriteria": [
+        "When `planInteractiveOp.parse()` receives output containing a PRD JSON wrapped in markdown code fences, it still returns a valid `PRD` (validatePlanOutput handles fence extraction).",
+        "When `planInteractiveOp.verify()` is called with a `PRD` that has an empty `userStories` array, it returns `null`.",
+        "When `planInteractiveOp.verify()` is called with a `PRD` that has at least one story, it returns the parsed PRD.",
+        "`planInteractiveOp.build()` passes `input.outputPath` to `PlanPromptBuilder.build()` so the output directive instructs the agent to write to file rather than print JSON.",
+        "`planInteractiveOp` uses `planConfigSelector` as its `config` field.",
+        "`planInteractiveOp.timeoutMs` resolves from `ctx.config.plan.timeoutSeconds` with a 600-second default."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Migrate plan.ts to callOp + planInteractiveOp; remove --auto and runAs",
+      "description": "**Goal** — Refactor `src/cli/plan.ts` to replace the `runInteractivePlan()` inner function and `--auto` branch with a single `callOp(ctx, planInteractiveOp, input)` call, threading `interactionBridge` and `maxInteractionTurns` through `CallContext`.\n\n**Motivation** — The interactive plan path bypasses `callOp` entirely, calling `agentManager.runAs()` directly and skipping all middleware: hop-level retry, `op.verify`/`op.recover`, abort propagation, and future op-level instrumentation. The `--auto` path is a separate implementation of the same behavior.\n\n**Approach**\n\nRemove from `src/cli/plan.ts`:\n- `auto?: boolean` from `PlanCommandOptions`\n- The `} else if (options.auto) {` branch (lines 173–214)\n- The `runInteractivePlan()` inner function (lines 220–301)\n- The `rawResponse` variable and the final `validatePlanOutput(rawResponse, ...)` call (line 305)\n- `import { planOp }` → replace with `import { planInteractiveOp }`\n\nAdd in `src/cli/plan.ts` (non-debate path):\n```typescript\n// Resolve interaction bridge (same logic previously inside runInteractivePlan)\nconst headless = !process.stdin.isTTY;\nconst interactionChain = config ? await _planDeps.initInteractionChain(config, headless) : null;\nconst configuredBridge = interactionChain\n  ? buildInteractionBridge(interactionChain, { featureName: options.feature, stage: \"pre-flight\" })\n  : undefined;\nconst interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();\n\nconst rt = createPlanRuntime(config, workdir, options.feature);\ntry {\n  const prd = await callOp(\n    {\n      runtime: rt,\n      packageView: rt.packages.resolve(),\n      packageDir: workdir,\n      agentName: rt.agentManager.getDefault(),\n      featureName: options.feature,\n      interactionBridge,\n      maxInteractionTurns: config?.agent?.maxInteractionTurns,\n    },\n    planInteractiveOp,\n    {\n      specContent,\n      codebaseContext,\n      featureName: options.feature,\n      branchName,\n      outputPath,\n      packages: relativePackages,\n      packageDetails,\n      projectProfile: config?.project,\n    },\n  );\n  await _planDeps.writeFile(outputPath, JSON.stringify({ ...prd, project: projectName }, null, 2));\n  logger?.info(\"plan\", \"[OK] PRD written\", { outputPath });\n  return outputPath;\n} catch (err) {\n  // Disk fallback: agent may have written a valid PRD even if session failed\n  if (_planDeps.existsSync(outputPath)) {\n    logger?.warn(\"plan\", \"callOp failed; using PRD written by agent\", { outputPath });\n    return outputPath;\n  }\n  throw err;\n} finally {\n  if (interactionChain) await interactionChain.destroy().catch(() => {});\n  await rt.close().catch(() => {});\n}\n```\n\nDebate fallback: Replace `rawResponse = await runInteractivePlan()` with a `callOp(ctx, planInteractiveOp, input)` call using the `debateRt` runtime (already created), same `interactionBridge`/`maxInteractionTurns` threading.\n\n**`src/operations/index.ts` barrel update:**\n- Remove: `export { planOp } from \"./plan\"` and `export type { PlanOpInput } from \"./plan\"`\n- Add: `export { planInteractiveOp } from \"./plan\"` and `export type { PlanInteractiveInput } from \"./plan\"`\n\n**`resolvePlanModelSelection` status:**\nModel resolution moves into `planInteractiveOp.model`. `resolvePlanModelSelection` no longer needs to be called in `planCommand()`. The function remains in `plan-runtime.ts` (exported for backward compat) but remove the call in `plan.ts`.\n\n**Scope**\nIn: `src/cli/plan.ts`, `src/operations/index.ts`.\nOut: No changes to `src/cli/plan-runtime.ts` internals, `src/debate/`, or pipeline stages.",
+      "acceptanceCriteria": [
+        "`src/cli/plan.ts` does not contain any call to `agentManager.runAs(...)`.",
+        "`src/cli/plan.ts` does not contain an `options.auto` branch or the `--auto` flag handling.",
+        "`src/cli/plan.ts` does not contain the `runInteractivePlan` inner function.",
+        "When `planCommand()` is called (non-debate path), then it calls `callOp(ctx, planInteractiveOp, input)` where `ctx.interactionBridge` is set from the resolved interaction chain.",
+        "When `planCommand()` is called and `interactionChain` is `null`, then `ctx.interactionBridge` is set from `_planDeps.createInteractionBridge()` (the stdin fallback).",
+        "When `planCommand()` calls `callOp` for the interactive path, then `ctx.maxInteractionTurns` is set from `config?.agent?.maxInteractionTurns`.",
+        "When the debate fallback fires (all debaters fail), then the fallback calls `callOp(ctx, planInteractiveOp, input)` instead of `runInteractivePlan()`.",
+        "When `callOp + planInteractiveOp` succeeds and the agent has written a valid PRD to `outputPath`, then `planCommand()` returns the `outputPath` string.",
+        "When `callOp + planInteractiveOp` throws and `outputPath` does not exist on disk, then `planCommand()` propagates the error.",
+        "`import { planOp }` is removed from `src/cli/plan.ts`; `planInteractiveOp` is imported instead."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "operations"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/cli/plan-runtime.ts",
+        "src/operations/call.ts",
+        "src/operations/index.ts",
+        "src/interaction/bridge-builder.ts"
+      ],
+      "suggestedCriteria": [
+        "When `callOp + planInteractiveOp` throws and `outputPath` DOES exist on disk (agent wrote to file before session ended), then `planCommand()` returns `outputPath` without re-throwing.",
+        "When `planCommand()` exits (success or failure), `interactionChain.destroy()` is called if the chain was initialized.",
+        "When `planCommand()` exits (success or failure), `rt.close()` is called on the plan runtime.",
+        "`resolvePlanModelSelection` is no longer called inside `planCommand()` after migration (model resolution moves into `planInteractiveOp.model`).",
+        "`PlanCommandOptions` no longer has the `auto?: boolean` field after migration."
+      ]
+    }
+  ],
+  "analysis": "## Key Files and Impact Areas\n\n### US-001: Thread interactionBridge through the operations layer\n\n**`src/operations/types.ts` — `CallContext` interface (lines 15–39):**\n`CallContext` has no `interactionBridge` or `maxInteractionTurns` fields. Both must be added as optional fields. The shape of `interactionBridge` matches `AgentRunOptions.interactionBridge` in `src/agents/types.ts` (lines 103–107): `{ detectQuestion: (text: string) => Promise<boolean>; onQuestionDetected: (text: string) => Promise<string> }`.\n\n**`src/operations/call.ts` — `runOptions` assembly for kind:\"run\" ops (lines 201–212):**\nThe `runOptions` object built for `runWithFallback` does NOT include `interactionBridge` or `maxInteractionTurns`. Both must be spread in conditionally (no `undefined` spreading — use `...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {})` pattern).\nThe `hopCtx` object (lines 215–226) is the `BuildHopCallbackContext` passed to `buildHopCallback`. It also does NOT include `interactionBridge` or `maxInteractionTurns`. Both must be added here too.\n\n**`src/operations/build-hop-callback.ts` — `BuildHopCallbackContext` + `send` closure (lines 32–56 and 179–189):**\n`BuildHopCallbackContext` has no `interactionBridge` or `maxInteractionTurns` fields — add both as optional.\nThe `send` closure calls `agentManager.runAsSession(agentName, handle, turnPrompt, { ... })` but does NOT pass `interactionHandler` or `maxTurns` to `RunAsSessionOpts`. After the change, `buildRunInteractionHandler` (from `../agents/acp/adapter-output` or `../agents/acp/adapter`) must be called with the interaction bridge and context tool options to produce the `interactionHandler`. Pass `maxTurns: maxInteractionTurns` when the field is set.\n\n**`src/agents/acp/adapter-output.ts` — `buildRunInteractionHandler` (line 123):**\nThis function accepts `AgentRunOptions` and builds an `InteractionHandler` that handles both context-tool calls and `interactionBridge` Q&A. Currently used only in `src/runtime/session-run-hop.ts`. Must be imported and called in `build-hop-callback.ts`. Note: `session-run-hop.ts` imports from `\"../agents/acp/adapter\"` not `\"../agents/acp/adapter-output\"` — implementer must check the correct import path.\n\n**`src/agents/manager-types.ts` — `RunAsSessionOpts` (lines 91–111):**\n`RunAsSessionOpts` already has `interactionHandler?: InteractionHandler` (line 104) and `maxTurns?: number` (line 106). No changes needed here — these just need to be populated by `buildHopCallback`.\n\n### US-002: Add PlanPromptBuilder.jsonRepair() and planInteractiveOp\n\n**`src/prompts/builders/plan-builder.ts` — `PlanPromptBuilder` class:**\nThe class has one instance method `build()` and zero static methods. Add a static method `jsonRepair(attempt: number, parseError: string): string`. Biome's `noStaticOnlyClass` rule allows static methods alongside instance methods — `ReviewPromptBuilder` follows this same pattern (has both instance and static methods). The method returns a repair prompt telling the agent its previous response was not valid JSON, includes the `parseError` string, and asks it to re-write the PRD JSON to `outputPath`.\n\n**`src/operations/plan.ts` — existing `planOp`:**\n`planOp` is a `CompleteOperation<PlanOpInput, PRD, PlanConfig>` (kind:\"complete\"). It must be REPLACED with `planInteractiveOp` as a `RunOperation<PlanInteractiveInput, PRD, PlanConfig>` (kind:\"run\").\n`PlanInteractiveInput` extends `PlanOpInput` by adding an `outputPath: string` field — the file path the agent is asked to write the PRD to. This enables:\n(a) `build()` to pass `outputPath` to `PlanPromptBuilder.build()` so the agent writes to file rather than printing JSON\n(b) `op.recover` to read from that file on session failure\n\n**`src/agents/retry/parse-retry.ts` — `makeParseRetryStrategy`:**\n`makeParseRetryStrategy` is used by `semanticReviewOp` and `adversarialReviewOp` as the canonical JSON parse retry pattern for `RunOperation`s. `planInteractiveOp` uses the same pattern. `prompts.invalid()` and `prompts.truncated()` in the opts should call `PlanPromptBuilder.jsonRepair(...)` with appropriate repair text. The `validate` function checks if the parsed object is a valid PRD (has `userStories` array, etc.) — a lightweight structural check without calling full `validatePlanOutput`. The `exhaustedFallback` should be omitted or return undefined — `op.recover` handles disk fallback when verify fails.\n\n**`src/prd/schema.ts` — `validatePlanOutput`:**\n`validatePlanOutput(output, featureName, branchName)` is the authoritative PRD parser. It handles markdown extraction, trailing commas, LLM quirks, complexity normalization, and forces status→pending. Called in `op.parse(output, input, _ctx)`. Throws on invalid JSON — this is intentional and triggers the retry strategy via `ParseValidationError`.\n\n**`op.verify` + `op.recover` pattern:**\n`op.verify` should return null when the output-parsed PRD lacks `userStories` entries (indicating the agent may have written a richer version to disk but truncated its output). `op.recover` reads `input.outputPath` from disk, calls `validatePlanOutput` on the file contents, and returns the PRD or null. This matches `runPostParse` behavior: `verify → null → recover` is the recovery path for soft failures (agent wrote to file but stdout was truncated). For hard failures (session abort/timeout), `plan.ts` catches `callOp` errors and reads from disk — same behavior as the current `runInteractivePlan()` error recovery.\n\n**IMPORTANT — exhaustedFallback constraint:**\n`makeParseRetryStrategy`'s `exhaustedFallback` is synchronous. Bun has no synchronous file-read API. Therefore, `exhaustedFallback` MUST NOT attempt async disk reads. Omit it or have it return `undefined`. The disk-fallback for retry exhaustion is handled at the `plan.ts` level (try-catch around `callOp`).\n\n**IMPORTANT — `noStaticOnlyClass` vs static method:**\nBiome's `noStaticOnlyClass` only fires when ALL class members are static. `PlanPromptBuilder` has the instance method `build()`, so adding a static `jsonRepair()` is safe.\n\n### US-003: Migrate plan.ts; remove --auto and runAs\n\n**`src/cli/plan.ts` — full file:**\nCurrent structure:\n- `PlanCommandOptions.auto?: boolean` field\n- `options.auto` branch at lines 173–214 (calls `callOp + planOp` via completeAs)\n- `runInteractivePlan()` inner function at lines 220–301 (calls `agentManager.runAs()` directly)\n- Debate fallback at line 171: `rawResponse = await runInteractivePlan()`\n- Final `rawResponse` validated at line 305 via `validatePlanOutput(rawResponse, ...)`\n\nAfter migration:\n- Remove `auto?: boolean` from `PlanCommandOptions`\n- Remove the `options.auto` branch entirely\n- Remove the `runInteractivePlan()` inner function\n- Replace both with a single `callOp(ctx, planInteractiveOp, input)` call where `ctx.interactionBridge` is resolved from `interactionChain` (or stdin fallback) and `ctx.maxInteractionTurns` comes from `config?.agent?.maxInteractionTurns`\n- The debate fallback replaces `rawResponse = await runInteractivePlan()` with a `callOp + planInteractiveOp` call\n- Remove the `rawResponse` variable and the final `validatePlanOutput(rawResponse, ...)` call — validation is now inside `planInteractiveOp.parse()`\n- The returned PRD is written to `outputPath` via `_planDeps.writeFile`\n- Wrap `callOp` in try-catch; on error, attempt disk read from `outputPath` (preserving current error recovery)\n\n**`src/cli/plan-runtime.ts` — `resolvePlanModelSelection`:**\nAfter migration, model resolution moves into `planInteractiveOp.model`. `resolvePlanModelSelection` is still exported (for backward compat) but no longer called inside `planCommand()`. `createPlanRuntime` is still needed for the `NaxRuntime`.\n\n**`src/operations/index.ts` — barrel:**\nRemove `export { planOp } from \"./plan\"` and `export type { PlanOpInput }`. Add `export { planInteractiveOp } from \"./plan\"` and `export type { PlanInteractiveInput }` from \"./plan\".\n\n**`src/interaction/bridge-builder.ts`:**\n`buildInteractionBridge(chain, opts)` is already used in current `runInteractivePlan()`. In the migrated code, this call moves to `planCommand()` scope and the bridge is passed as `ctx.interactionBridge`.\n\n**Risk: debate path**\nThe debate fallback path currently calls `runInteractivePlan()` (inner function). After removal, the fallback must call `callOp(ctx, planInteractiveOp, input)` directly — same `ctx` shape as the non-debate path. The `debateRt` runtime is already created before this point; the `callCtx` for the fallback can be built from it.\n\n**Risk: rawResponse flow change**\nThe current non-debate interactive path returns `rawResponse` (a string) which is then validated at the bottom of `planCommand()`. After migration, `callOp` returns a `PRD` directly — the validation step at the bottom must be removed or replaced with a write of the already-validated PRD.\n\n**Risk: rt.close() / pidRegistry cleanup**\nThe current `runInteractivePlan()` does explicit cleanup (`pidRegistry.killAll`, `interactionChain.destroy`, `rt.close()`). After migration, `rt.close()` is still needed in a finally block around `callOp`. `interactionChain.destroy()` and `pidRegistry.killAll()` must still be called in finally.\n\n**Tests to check:**\n- `test/unit/cli/plan.test.ts` — if it exists, covers `planCommand()` behavior\n- `test/unit/operations/plan.test.ts` — covers `planOp`; must be updated for `planInteractiveOp`\n- `test/unit/operations/call.test.ts` — may need new test for `interactionBridge` threading"
+}
