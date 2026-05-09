@@ -49,7 +49,9 @@ function handleObserveTimeout(
   state.warnedForCurrentIdlePeriod = true;
   getSafeLogger()?.warn(
     "idle-watchdog",
-    reason === "tool_call_only_idle_timeout_exceeded" ? "Tool-call-only idle timeout exceeded" : "Idle timeout exceeded",
+    reason === "tool_call_only_idle_timeout_exceeded"
+      ? "Tool-call-only idle timeout exceeded"
+      : "Idle timeout exceeded",
     {
       storyId: state.storyId,
       key: reason,
@@ -158,11 +160,7 @@ function clearGrace(state: WatchdogStateInternal): void {
   }
 }
 
-function resetActivity(
-  state: WatchdogStateInternal,
-  newTimestamp: number,
-  options: { clearGrace: boolean },
-): void {
+function resetActivity(state: WatchdogStateInternal, newTimestamp: number, options: { clearGrace: boolean }): void {
   state.lastActivityAt = newTimestamp;
   state.warnedForCurrentIdlePeriod = false;
   if (options.clearGrace) clearGrace(state);
@@ -218,8 +216,7 @@ export function attachAgentIdleWatchdog(
       if (mode === "observe") handleObserveTimeout(state, reason, idleDurationMs, nonToolCallIdleMs);
       else if (mode === "cancel") {
         void handleCancelTimeout(state, reason, controllerRegistry, maxRetryAttempts, activeStates);
-      }
-      else if (mode === "warn-then-cancel") {
+      } else if (mode === "warn-then-cancel") {
         handleWarnThenCancelTimeout(
           state,
           reason,
