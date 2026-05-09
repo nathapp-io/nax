@@ -181,11 +181,11 @@ export async function hasCommitsForStory(workdir: string, storyId: string, maxCo
 /**
  * Detect if git operation output contains merge conflict markers.
  *
- * Git outputs "CONFLICT" in uppercase for merge/rebase conflicts.
- * Also checks lowercase "conflict" for edge cases.
+ * Matches git-specific conflict signals only — not general use of the word
+ * "conflict" in agent output (e.g. HTTP 409 Conflict implementations).
  *
  * @param output - Combined stdout/stderr output from a git operation
- * @returns true if output contains CONFLICT markers
+ * @returns true if output contains git conflict markers
  *
  * @example
  * ```typescript
@@ -196,7 +196,14 @@ export async function hasCommitsForStory(workdir: string, storyId: string, maxCo
  * ```
  */
 export function detectMergeConflict(output: string): boolean {
-  return output.includes("CONFLICT") || output.includes("conflict");
+  return (
+    output.includes("<<<<<<<") ||
+    output.includes(">>>>>>>") ||
+    // "CONFLICT (content):", "CONFLICT (delete/modify):", etc.
+    /\bCONFLICT\s*\(/.test(output) ||
+    // "Merge conflict in <file>"
+    output.includes("Merge conflict in")
+  );
 }
 
 /**
