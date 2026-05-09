@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import {
+  _autofixCycleDeps,
   applyTestEditDeclarations,
   validateMockStructureFiles,
 } from "../../../../src/pipeline/stages/autofix-cycle";
@@ -58,13 +59,16 @@ function makeMinCtx(): PipelineContext {
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 let savedRecheck: typeof _autofixDeps.recheckReview;
+let savedFileExists: typeof _autofixCycleDeps.fileExists;
 
 beforeEach(() => {
   savedRecheck = _autofixDeps.recheckReview;
+  savedFileExists = _autofixCycleDeps.fileExists;
 });
 
 afterEach(() => {
   _autofixDeps.recheckReview = savedRecheck;
+  _autofixCycleDeps.fileExists = savedFileExists;
   mock.restore();
 });
 
@@ -72,6 +76,7 @@ afterEach(() => {
 
 describe("validateMockStructureFiles", () => {
   test("partitions valid mock_structure declarations into valid partition", async () => {
+    _autofixCycleDeps.fileExists = mock(async (_path: string) => true);
     const decls: TestEditDeclaration[] = [
       {
         reason: "mock_structure",
@@ -82,17 +87,15 @@ describe("validateMockStructureFiles", () => {
     ];
     const resolved = makeMockResolved();
 
-    // Since this is test-writer phase, we create a minimal stub that fails
     const result = await validateMockStructureFiles(decls, "/tmp", resolved);
 
-    // Test expects the structure but implementation should fail initially
-    expect(result).toHaveProperty("valid");
-    expect(result).toHaveProperty("invalid");
-    expect(Array.isArray(result.valid)).toBe(true);
-    expect(Array.isArray(result.invalid)).toBe(true);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].reason).toBe("mock_structure");
+    expect(result.invalid).toHaveLength(0);
   });
 
   test("returns { valid, invalid } partition where valid contains mock_structure with all paths as test files", async () => {
+    _autofixCycleDeps.fileExists = mock(async (_path: string) => true);
     const decls: TestEditDeclaration[] = [
       {
         reason: "mock_structure",
@@ -105,13 +108,18 @@ describe("validateMockStructureFiles", () => {
 
     const result = await validateMockStructureFiles(decls, "/tmp", resolved);
 
-    // When all files exist and are test files, decl goes to valid
-    if (result.valid.some((d: TestEditDeclaration) => d.reason === "mock_structure")) {
-      expect(result.valid.some((d: TestEditDeclaration) => d.reason === "mock_structure")).toBe(true);
-    }
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].reason).toBe("mock_structure");
+    expect(result.valid[0].files).toContain("test/foo.test.ts");
+    expect(result.valid[0].files).toContain("test/bar.spec.ts");
+    expect(result.invalid).toHaveLength(0);
   });
 
   test("returns { valid, invalid } partition where invalid contains mock_structure with missing/non-test paths", async () => {
+    // test/foo.test.ts and src/nontest.ts exist; test/missing.spec.ts is missing
+    _autofixCycleDeps.fileExists = mock(async (path: string) => {
+      return path.endsWith("test/foo.test.ts") || path.endsWith("src/nontest.ts");
+    });
     const decls: TestEditDeclaration[] = [
       {
         reason: "mock_structure",
@@ -124,13 +132,12 @@ describe("validateMockStructureFiles", () => {
 
     const result = await validateMockStructureFiles(decls, "/tmp", resolved);
 
-    // Declarations with non-test or missing paths should be in invalid
-    expect(result.invalid).toBeDefined();
-    // Invalid items should have missing and nonTest arrays
-    if (result.invalid.length > 0) {
-      expect(result.invalid[0]).toHaveProperty("missing");
-      expect(result.invalid[0]).toHaveProperty("nonTest");
-    }
+    expect(result.invalid).toHaveLength(1);
+    expect(result.invalid[0]).toHaveProperty("missing");
+    expect(result.invalid[0]).toHaveProperty("nonTest");
+    expect(result.invalid[0].missing).toContain("test/missing.spec.ts");
+    expect(result.invalid[0].nonTest).toContain("src/nontest.ts");
+    expect(result.valid).toHaveLength(0);
   });
 
   test("passes through non-mock_structure declarations unchanged in valid", async () => {
@@ -158,6 +165,8 @@ describe("validateMockStructureFiles", () => {
   });
 
   test("marks paths missing when they don't exist on disk", async () => {
+    // test/foo.test.ts exists; test/nonexistent.spec.ts does not
+    _autofixCycleDeps.fileExists = mock(async (path: string) => path.endsWith("test/foo.test.ts"));
     const decls: TestEditDeclaration[] = [
       {
         reason: "mock_structure",
@@ -170,15 +179,14 @@ describe("validateMockStructureFiles", () => {
 
     const result = await validateMockStructureFiles(decls, "/tmp", resolved);
 
-    // Invalid partition should contain entries with missing files
-    const invalid = result.invalid.filter((inv: any) => inv.decl.reason === "mock_structure");
-    if (invalid.length > 0) {
-      expect(invalid[0].missing).toBeDefined();
-      expect(Array.isArray(invalid[0].missing)).toBe(true);
-    }
+    expect(result.invalid).toHaveLength(1);
+    expect(result.invalid[0].missing).toContain("test/nonexistent.spec.ts");
+    expect(result.invalid[0].nonTest).toHaveLength(0);
   });
 
   test("marks paths non-test when they exist but don't match test pattern regex", async () => {
+    // Both files exist; only test/foo.test.ts matches the test regex
+    _autofixCycleDeps.fileExists = mock(async (_path: string) => true);
     const decls: TestEditDeclaration[] = [
       {
         reason: "mock_structure",
@@ -191,12 +199,9 @@ describe("validateMockStructureFiles", () => {
 
     const result = await validateMockStructureFiles(decls, "/tmp", resolved);
 
-    // Invalid partition should contain entries with non-test files
-    const invalid = result.invalid.filter((inv: any) => inv.decl.reason === "mock_structure");
-    if (invalid.length > 0) {
-      expect(invalid[0].nonTest).toBeDefined();
-      expect(Array.isArray(invalid[0].nonTest)).toBe(true);
-    }
+    expect(result.invalid).toHaveLength(1);
+    expect(result.invalid[0].nonTest).toContain("src/code.ts");
+    expect(result.invalid[0].missing).toHaveLength(0);
   });
 });
 
@@ -272,28 +277,24 @@ describe("applyTestEditDeclarations with mock_structure", () => {
   test("generates one advisory finding for invalid mock_structure declaration with missing/nonTest paths", () => {
     const story = makeStory();
     const findings: Finding[] = [];
-    // Create a declaration marked as invalid (passed from validateMockStructureFiles's invalid partition)
-    const declarations: TestEditDeclaration[] = [
-      {
-        reason: "mock_structure",
-        file: "test/foo.test.ts",
-        files: ["test/foo.test.ts", "src/code.ts"],
-        reasonDetail: "Restructure",
-      },
-    ];
 
-    // In the real implementation, invalid declarations would be passed separately
-    // For now, we expect the function to handle them when decorated with metadata
-    const result = applyTestEditDeclarations(findings, declarations, story);
+    // Invalid declarations come from the `invalid` partition of validateMockStructureFiles and
+    // must be passed as the 4th argument — NOT in `declarations` (which is for valid decls only).
+    const invalidDecl: TestEditDeclaration = {
+      reason: "mock_structure",
+      file: "test/foo.test.ts",
+      files: ["test/foo.test.ts", "src/code.ts"],
+      reasonDetail: "Restructure",
+    };
+    const invalidMockStructure = [{ decl: invalidDecl, missing: [], nonTest: ["src/code.ts"] }];
 
-    // Should contain advisory finding with category mock_structure_invalid_files and severity warning
+    const result = applyTestEditDeclarations(findings, [], story, invalidMockStructure);
+
     const advisoryFindings = result.filter((f) => f.category === "mock_structure_invalid_files");
-    if (advisoryFindings.length > 0) {
-      advisoryFindings.forEach((f) => {
-        expect(f.severity).toBe("warning");
-        expect(f.category).toBe("mock_structure_invalid_files");
-      });
-    }
+    expect(advisoryFindings).toHaveLength(1);
+    expect(advisoryFindings[0].severity).toBe("warning");
+    expect(advisoryFindings[0].category).toBe("mock_structure_invalid_files");
+    expect(advisoryFindings[0].message).toContain("src/code.ts");
   });
 
   test("retains original source-tagged findings unchanged", () => {
