@@ -58,6 +58,15 @@ export class PlanPromptBuilder {
    * - Complexity + test strategy guides
    * - MW-007: Monorepo hint and package list when packages are detected
    */
+
+  /**
+   * JSON repair prompt — instructs the agent to fix invalid JSON in the PRD.
+   * Includes the parse error so the agent can understand what failed.
+   */
+  static jsonRepair(attempt: number, parseError: string): string {
+    return "";
+  }
+
   build(
     specContent: string,
     codebaseContext: string,

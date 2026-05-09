@@ -3,7 +3,7 @@
   "feature": "plan-interactive-callop",
   "branchName": "feat/plan-interactive-callop",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-09T03:53:21.742Z",
+  "updatedAt": "2026-05-09T04:02:48.662Z",
   "userStories": [
     {
       "id": "US-001",
@@ -24,8 +24,8 @@
         "operations"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -81,7 +81,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/prompts/builders/plan-builder.ts",
@@ -100,7 +102,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b71dde088e2306fe79770dc810a9a579bf108a8b"
     },
     {
       "id": "US-003",
