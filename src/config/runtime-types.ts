@@ -217,6 +217,8 @@ export interface QualityConfig {
     rethinkAtAttempt?: number;
     /** Inject final-attempt urgency language on and after this autofix attempt number (default: 3) */
     urgencyAtAttempt?: number;
+    /** Revert and escalate on testWriter source-file edits in mock-restructure mode (default: true). */
+    enforceTestWriterIsolation?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;

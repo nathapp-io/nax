@@ -156,6 +156,7 @@ export const QualityConfigSchema = z.object({
       maxTotalAttempts: z.number().int().min(1).default(12),
       rethinkAtAttempt: z.number().int().min(1).default(2),
       urgencyAtAttempt: z.number().int().min(1).default(3),
+      enforceTestWriterIsolation: z.boolean().default(true),
     })
     .default({
       enabled: true,
@@ -163,6 +164,7 @@ export const QualityConfigSchema = z.object({
       maxTotalAttempts: 12,
       rethinkAtAttempt: 2,
       urgencyAtAttempt: 3,
+      enforceTestWriterIsolation: true,
     }),
   forceExit: z.boolean().default(false),
   detectOpenHandles: z.boolean().default(true),
