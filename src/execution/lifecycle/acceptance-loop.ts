@@ -9,26 +9,27 @@
  * 5. Retries until max retries or all tests pass
  */
 
-import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
-import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
-import { findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions } from "../../acceptance/test-path";
-import type { DiagnosisResult } from "../../acceptance/types";
-import type { NaxConfig } from "../../config";
-import type { Finding } from "../../findings";
-import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "../../findings";
-import type { FixCycle, FixCycleContext, FixCycleResult } from "../../findings";
-import { type LoadedHooksConfig, fireHook } from "../../hooks";
-import { getSafeLogger } from "../../logger";
-import type { StoryMetrics } from "../../metrics";
-import { acceptanceFixSourceOp, acceptanceFixTestOp } from "../../operations";
-import type { PipelineEventEmitter } from "../../pipeline/events";
-import type { AgentGetFn, PipelineContext } from "../../pipeline/types";
-import type { PluginRegistry } from "../../plugins";
-import type { PRD } from "../../prd/types";
-import { buildPriorIterationsBlock } from "../../prompts";
-
-import type { DispatchContext } from "../../runtime/dispatch-context";
-import type { NaxIgnoreIndex } from "../../utils/path-filters";
+import {
+  type DiagnosisResult,
+  findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
+  loadAcceptanceTestContent as loadAcceptanceTestContentModule,
+  loadSemanticVerdicts,
+} from "@/acceptance";
+import type { NaxConfig } from "@/config";
+import type { Finding } from "@/findings";
+import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
+import { type LoadedHooksConfig, fireHook } from "@/hooks";
+import { getSafeLogger } from "@/logger";
+import type { StoryMetrics } from "@/metrics";
+import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
+import type { PipelineEventEmitter } from "@/pipeline/events";
+import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
+import type { PluginRegistry } from "@/plugins";
+import type { PRD } from "@/prd/types";
+import { buildPriorIterationsBlock } from "@/prompts";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 import { resolveAcceptanceDiagnosis } from "./acceptance-fix";
@@ -68,7 +69,7 @@ export interface AcceptanceLoopContext extends DispatchContext {
   /** Pre-resolved .naxignore matcher cache shared across run stages */
   naxIgnoreIndex?: NaxIgnoreIndex;
   /** Per-package acceptance test paths — used to load test content for fix routing */
-  acceptanceTestPaths?: PipelineContext["acceptanceTestPaths"];
+  acceptanceTestPaths?: AcceptanceTestPathEntry[];
 }
 
 export interface AcceptanceLoopResult {
@@ -107,16 +108,13 @@ interface AcceptanceTestRunResult {
   passed: boolean;
   failedACs: string[];
   testOutput: string;
-  failedPackages?: Array<{
-    testPath: string;
-    packageDir: string;
-    testFramework?: string;
-    commandOverride?: string;
-  }>;
+  failedPackages?: AcceptanceTestPathEntry[];
 }
 
+type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
+
 export function resolveAcceptanceFixTarget(
-  acceptanceTestPaths: PipelineContext["acceptanceTestPaths"] | undefined,
+  acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
   failedPackages: AcceptanceTestRunResult["failedPackages"],
   config: NaxConfig,
 ): {

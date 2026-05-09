@@ -17,10 +17,10 @@ import {
   resolveAcceptanceFixTarget,
   regenerateAcceptanceTest,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
-import type { AgentGetFn, PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD } from "../../../../src/prd";
-import { makeNaxConfig } from "../../../helpers";
-import { cleanupTempDir, makeTempDir } from "../../../helpers/temp";
+import type { AgentGetFn, PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd";
+import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
