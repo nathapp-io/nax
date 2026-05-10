@@ -125,10 +125,11 @@ export async function revertDiff(workdir: string, files: string[]): Promise<void
   ]);
 
   if (exitCode !== 0) {
-    throw new NaxError(
-      `[autofix-guards] git checkout HEAD failed with exit code ${exitCode}`,
-      "GIT_CHECKOUT_FAILED",
-      { stage: "autofix-guards", workdir, files, exitCode },
-    );
+    throw new NaxError(`[autofix-guards] git checkout HEAD failed with exit code ${exitCode}`, "GIT_CHECKOUT_FAILED", {
+      stage: "autofix-guards",
+      workdir,
+      files,
+      exitCode,
+    });
   }
 }
