@@ -11,12 +11,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IAgentManager } from "@/agents";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
-import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import { _evidenceDeps } from "../../../src/review/semantic-evidence";
-import { makeLogger } from "../../helpers/mock-logger";
-import { withTempDir } from "../../helpers/temp";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeLogger, withTempDir } from "@test/helpers";
+import { _adversarialDeps, _diffUtilsDeps, _evidenceDeps, runAdversarialReview } from "@/review";
 
 // ---------------------------------------------------------------------------
 // Fixtures

@@ -6,6 +6,7 @@
 
 export * from "./ac-structural-counterfactual";
 export * from "./adversarial";
+export * from "./semantic-evidence";
 export * from "./categorization";
 export * from "./diff-utils";
 export * from "./finding-projection";
