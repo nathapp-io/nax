@@ -15,11 +15,8 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
-import type {
-  AdversarialAcceptAnalysis,
-  AdversarialDropAnalysis,
-} from "./ac-structural-counterfactual";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
+import type { AdversarialAcceptAnalysis, AdversarialDropAnalysis } from "./ac-structural-counterfactual";
 
 export interface ReviewAuditEntry {
   /** Runtime run ID for correlation with prompt/cost audit. */

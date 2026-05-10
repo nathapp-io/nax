@@ -22,12 +22,7 @@ import type { AcQuoteRejectionCode } from "./ac-quote-validator";
  * `convention` and `test-gap` as advisory by design — they are deliberately
  * excluded from this set.
  */
-export const BLOCKING_CATEGORIES: ReadonlySet<string> = new Set([
-  "input",
-  "error-path",
-  "abandonment",
-  "assumption",
-]);
+export const BLOCKING_CATEGORIES: ReadonlySet<string> = new Set(["input", "error-path", "abandonment", "assumption"]);
 
 export interface StructuralCounterfactual {
   acIndexInRange: boolean;
@@ -53,12 +48,9 @@ export function analyzeStructuralCounterfactual(
   diffFiles: ReadonlySet<string>,
 ): StructuralCounterfactual {
   const acIndexInRange =
-    typeof finding.acIndex === "number" &&
-    finding.acIndex >= 1 &&
-    finding.acIndex <= acceptanceCriteria.length;
+    typeof finding.acIndex === "number" && finding.acIndex >= 1 && finding.acIndex <= acceptanceCriteria.length;
 
-  const categoryBlocking =
-    typeof finding.category === "string" && BLOCKING_CATEGORIES.has(finding.category);
+  const categoryBlocking = typeof finding.category === "string" && BLOCKING_CATEGORIES.has(finding.category);
 
   const fileInDiff = typeof finding.file === "string" && diffFiles.has(finding.file);
 
