@@ -1,7 +1,7 @@
 import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
-import type { ConfiguredModel, ModelTier, ResolvedConfiguredModel } from "../config";
+import type { ConfiguredModel, ModelTier } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelsConfig } from "../config/schema-types";
@@ -9,10 +9,9 @@ import type { ModelDef } from "../config/schema-types";
 import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
-import { formatSessionName } from "../session/naming";
-import { tryParseLLMJson } from "../utils/llm-json";
-import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
-import type { DebateResult, DebateStageConfig, Debater } from "./types";
+import { pickSelectorKind, resolveSelector } from "./selectors";
+import type { SelectorContext } from "./selectors";
+import type { DebateConfig as DebateInnerConfig, DebateResult, DebateStageConfig, Debater } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 export const RESOLVER_FALLBACK_AGENT = "synthesis";
@@ -179,7 +178,7 @@ export function resolveModelDefForDebater(
   }
 }
 
-/** Standalone resolver logic — extracted from DebateSession.resolve(). */
+/** Standalone resolver logic — delegates to resolveSelector(pickSelectorKind(...)). */
 export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
@@ -195,87 +194,9 @@ export async function resolveOutcome(
   debaters: Debater[] | undefined,
   agentManager: IAgentManager,
 ): Promise<ResolveOutcome> {
-  const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();
 
-  // ── Debate + dialogue path ───────────────────────────────────────────────
-  // When a ReviewerSession and resolver context are both provided, delegate
-  // to the session for a tool-verified verdict. Falls back to stateless on error.
-  if (reviewerSession && resolverContext) {
-    try {
-      const debateCtx: import("./types").DebateResolverContext = {
-        resolverType: resolverConfig.type,
-      };
-
-      // For majority resolvers: compute raw vote + tally first, pass as context.
-      if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
-        const failOpen = resolverConfig.type === "majority-fail-open";
-        const rawOutcome = majorityResolver(proposalOutputs, failOpen);
-        let passCount = 0;
-        let failCount = 0;
-        for (const proposal of proposalOutputs) {
-          const parsed = tryParseLLMJson<Record<string, unknown>>(proposal);
-          if (parsed !== null && typeof parsed.passed === "boolean" && parsed.passed) passCount++;
-          else if (failOpen) passCount++;
-          else failCount++;
-        }
-        debateCtx.majorityVote = { passed: rawOutcome === "passed", passCount, failCount };
-      }
-
-      const story = {
-        id: resolverContext.story.id,
-        title: resolverContext.story.title,
-        description: "",
-        acceptanceCriteria: resolverContext.story.acceptanceCriteria,
-      };
-
-      // Build diffContext from resolverContext — discriminated on diffMode.
-      const diffContext: import("../review/types").DiffContext =
-        resolverContext.diffMode === "ref"
-          ? {
-              mode: "ref",
-              storyGitRef: resolverContext.storyGitRef ?? "",
-              stat: resolverContext.stat,
-              productionExcludePatterns: resolverContext.productionExcludePatterns,
-            }
-          : { mode: "embedded", diff: resolverContext.diff ?? "" };
-
-      let dialogueResult: import("../review/dialogue").ReviewDialogueResult;
-      if (resolverContext.isReReview) {
-        dialogueResult = await reviewerSession.reReviewDebate(
-          resolverContext.labeledProposals,
-          critiqueOutputs,
-          diffContext,
-          debateCtx,
-        );
-      } else {
-        dialogueResult = await reviewerSession.resolveDebate(
-          resolverContext.labeledProposals,
-          critiqueOutputs,
-          diffContext,
-          story,
-          resolverContext.semanticConfig,
-          debateCtx,
-        );
-      }
-
-      const outcome = dialogueResult.checkResult.success ? "passed" : "failed";
-      return {
-        outcome,
-        resolverCostUsd: dialogueResult.cost ?? 0,
-        dialogueResult,
-      };
-    } catch (err) {
-      logger?.warn("debate", "ReviewerSession.resolveDebate() failed — falling back to stateless resolver", {
-        storyId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // Fall through to stateless resolver
-    }
-  }
-
-  // Stateless paths (no ReviewerSession, or fallback after error)
-  // US-004 AC: warn when session supplied without resolverContext (cannot call resolveDebate without diff/story)
+  // Warn when session supplied without resolverContext
   if (reviewerSession && !resolverContext) {
     logger?.warn(
       "debate",
@@ -284,105 +205,89 @@ export async function resolveOutcome(
     );
   }
 
-  if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
-    if (workdir !== undefined && !reviewerSession) {
-      logger?.warn(
-        "debate",
-        "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",
-      );
-    }
-    return {
-      outcome: majorityResolver(proposalOutputs, resolverConfig.type === "majority-fail-open"),
-      resolverCostUsd: 0,
-    };
+  // Strip labeledProposals to build resolverContextInput
+  const resolverContextInput: ResolverContextInput | undefined = resolverContext
+    ? (({ labeledProposals: _lp, ...rest }) => rest)(resolverContext)
+    : undefined;
+
+  const kind = pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput });
+
+  // Legacy: majority resolver warning when workdir is defined
+  if ((kind === "majority-fail-closed" || kind === "majority-fail-open") && workdir !== undefined && !reviewerSession) {
+    logger?.warn(
+      "debate",
+      "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",
+    );
   }
 
-  if (resolverConfig.type === "synthesis") {
-    const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = agentManager ?? _debateSessionDeps.agentManager;
-    if (manager !== undefined && manager.getAgent(agentName) !== undefined) {
-      const configModels = config.models ?? DEFAULT_CONFIG.models;
-      const configDefaultAgent = resolveDefaultAgent(config);
-      const synthesisSessionName =
-        workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "synthesis" }) : undefined;
-      const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
-      const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
-      let resolvedResolverModel: ResolvedConfiguredModel;
-      try {
-        resolvedResolverModel = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent);
-      } catch {
-        resolvedResolverModel = {
-          agent: agentName,
-          modelDef: { provider: "unknown", model: resolverSelection.model } as ModelDef,
-          modelTier: modelTierFromDebater(resolverDebater),
-        };
-      }
-      const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
-        agentManager: manager,
-        agentName,
-        promptSuffix,
-        debaters,
-        completeOptions: {
-          modelDef: resolvedResolverModel.modelDef,
-          workdir: workdir ?? "",
-          storyId,
-          featureName,
-          sessionRole: "synthesis",
-          timeoutMs,
-          ...(synthesisSessionName !== undefined && { sessionName: synthesisSessionName }),
-        },
-      });
-      return {
-        outcome: "passed",
-        resolverCostUsd: resolverResult.exactCostUsd ?? resolverResult.estimatedCostUsd,
-        output: resolverResult.output,
-      };
-    }
-    return { outcome: "passed", resolverCostUsd: 0 };
-  }
+  // Reconstruct SuccessfulProposal[] from flat arrays
+  const proposalList = debaters
+    ? debaters.map((debater, i) => ({
+        debater,
+        agentName: debater.agent,
+        output: proposalOutputs[i] ?? "",
+        cost: 0,
+      }))
+    : proposalOutputs.map((output) => ({
+        debater: { agent: RESOLVER_FALLBACK_AGENT },
+        agentName: RESOLVER_FALLBACK_AGENT,
+        output,
+        cost: 0,
+      }));
 
-  if (resolverConfig.type === "custom") {
-    const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-    const manager = agentManager ?? _debateSessionDeps.agentManager;
-    if (!manager) {
-      return { outcome: "passed", resolverCostUsd: 0 };
+  const effectiveAgentManager = (agentManager ?? _debateSessionDeps.agentManager) as IAgentManager;
+
+  const selectorCtx: SelectorContext = {
+    storyId,
+    stage: "",
+    stageConfig,
+    // `config` is the debate config slice (Pick<NaxConfig,...>); SelectorContext.config uses the inner debate field
+    config: ((config as Record<string, unknown> | undefined)?.debate ?? DEFAULT_CONFIG.debate) as DebateInnerConfig,
+    proposals: proposalList,
+    critiques: critiqueOutputs,
+    workdir: workdir ?? "",
+    featureName: featureName ?? "",
+    timeoutMs,
+    agentManager: effectiveAgentManager,
+    reviewerSession,
+    resolverContextInput,
+    promptSuffix,
+    debaters: debaters ?? [],
+  };
+
+  // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)
+  const resolverTypeMappedKind = (() => {
+    switch (stageConfig.resolver.type) {
+      case "synthesis":
+        return "synthesis";
+      case "majority-fail-closed":
+        return "majority-fail-closed";
+      case "majority-fail-open":
+        return "majority-fail-open";
+      case "custom":
+        return "judge";
     }
-    const configModels = config.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent = resolveDefaultAgent(config);
-    const judgeSessionName =
-      workdir !== undefined ? formatSessionName({ workdir, featureName, storyId, role: "judge" }) : undefined;
-    const resolverDebater: Debater = { agent: agentName, model: resolverConfig.model };
-    const resolverSelection = { agent: agentName, model: resolverConfig.model ?? "fast" };
-    let resolvedResolverModel: ResolvedConfiguredModel;
+  })();
+
+  // When the selected kind differs from the base resolver.type mapping, apply try/catch fallback
+  if (resolverTypeMappedKind !== kind) {
     try {
-      resolvedResolverModel = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent);
-    } catch {
-      resolvedResolverModel = {
-        agent: agentName,
-        modelDef: { provider: "unknown", model: resolverSelection.model } as ModelDef,
-        modelTier: modelTierFromDebater(resolverDebater),
+      const result = await resolveSelector(kind)(selectorCtx);
+      return { outcome: result.outcome, resolverCostUsd: result.resolverCostUsd, output: result.output };
+    } catch (err) {
+      logger?.warn("debate", "dialogue-verdict selector failed, falling back to stateless", {
+        storyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const fallbackResult = await resolveSelector(resolverTypeMappedKind)(selectorCtx);
+      return {
+        outcome: fallbackResult.outcome,
+        resolverCostUsd: fallbackResult.resolverCostUsd,
+        output: fallbackResult.output,
       };
     }
-    const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
-      agentManager: manager,
-      defaultAgentName: RESOLVER_FALLBACK_AGENT,
-      debaters,
-      completeOptions: {
-        modelDef: resolvedResolverModel.modelDef,
-        workdir: workdir ?? "",
-        storyId,
-        featureName,
-        sessionRole: "judge",
-        timeoutMs,
-        ...(judgeSessionName !== undefined && { sessionName: judgeSessionName }),
-      },
-    });
-    return {
-      outcome: "passed",
-      resolverCostUsd: resolverResult.exactCostUsd ?? resolverResult.estimatedCostUsd,
-      output: resolverResult.output,
-    };
   }
 
-  return { outcome: "passed", resolverCostUsd: 0 };
+  const result = await resolveSelector(kind)(selectorCtx);
+  return { outcome: result.outcome, resolverCostUsd: result.resolverCostUsd, output: result.output };
 }

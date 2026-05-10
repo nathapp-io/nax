@@ -9,6 +9,7 @@ import type { IAgentManager } from "@/agents";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "@/config";
 import { DebatePromptBuilder } from "@/prompts";
+import { formatSessionName } from "../../session/naming";
 import { RESOLVER_FALLBACK_AGENT } from "../session-helpers";
 import type { Debater } from "../types";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
@@ -43,6 +44,15 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
     modelDef = { provider: "unknown", model: ctx.stageConfig.resolver.model ?? "fast" };
   }
 
+  const sessionName =
+    ctx.workdir.length > 0
+      ? formatSessionName({
+          workdir: ctx.workdir,
+          featureName: ctx.featureName || undefined,
+          storyId: ctx.storyId || undefined,
+          role: "synthesis",
+        })
+      : undefined;
   const completeOptions: CompleteOptions = {
     modelDef,
     workdir: ctx.workdir,
@@ -50,6 +60,8 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
     featureName: ctx.featureName,
     timeoutMs: ctx.timeoutMs,
     pipelineStage: "run",
+    sessionRole: "synthesis",
+    ...(sessionName !== undefined && { sessionName }),
   };
 
   const result = await callSynthesisComplete(

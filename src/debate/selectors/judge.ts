@@ -9,6 +9,7 @@ import type { IAgentManager } from "@/agents";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
 import { DEFAULT_CONFIG, resolveModelForAgent } from "@/config";
 import { DebatePromptBuilder } from "@/prompts";
+import { formatSessionName } from "../../session/naming";
 import { RESOLVER_FALLBACK_AGENT } from "../session-helpers";
 import type { Debater } from "../types";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
@@ -41,6 +42,15 @@ export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<Sel
     modelDef = { provider: "unknown", model: ctx.stageConfig.resolver.model ?? "fast" };
   }
 
+  const sessionName =
+    ctx.workdir.length > 0
+      ? formatSessionName({
+          workdir: ctx.workdir,
+          featureName: ctx.featureName || undefined,
+          storyId: ctx.storyId || undefined,
+          role: "judge",
+        })
+      : undefined;
   const completeOptions: CompleteOptions = {
     modelDef,
     workdir: ctx.workdir,
@@ -48,6 +58,8 @@ export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<Sel
     featureName: ctx.featureName,
     timeoutMs: ctx.timeoutMs,
     pipelineStage: "run",
+    sessionRole: "judge",
+    ...(sessionName !== undefined && { sessionName }),
   };
 
   const result = await callJudgeComplete(
