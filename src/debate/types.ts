@@ -4,6 +4,8 @@
  * Type definitions for the multi-agent debate system.
  */
 
+import type { ConfiguredModel } from "@/config/schema-types";
+
 /** How the resolver determines the outcome of a debate round */
 export type ResolverType = "synthesis" | "majority-fail-closed" | "majority-fail-open" | "custom";
 
@@ -41,6 +43,12 @@ export interface ResolverConfig {
   maxPromptTokens?: number;
 }
 
+/** Configuration for the grounder pre-phase */
+export interface GrounderConfig {
+  model: ConfiguredModel;
+  timeoutSeconds: number;
+}
+
 /** Per-stage debate configuration */
 export interface DebateStageConfig {
   /** Enable debate for this stage */
@@ -59,12 +67,31 @@ export interface DebateStageConfig {
   timeoutSeconds?: number;
   /** When true, auto-assign personas to debaters that have no explicit persona. Default: false. */
   autoPersona?: boolean;
+  /** Optional pre-debate phase to run before proposers */
+  preDebatePhase?: { kind: "grounder" | "custom" };
+  /** Optional proposer constraints */
+  proposers?: {
+    citationsRequired?: boolean;
+    fileReadAccess?: boolean;
+    fileReadBudget?: number;
+  };
+  /** Optional selector strategy override */
+  selector?:
+    | { kind: "synthesis" }
+    | { kind: "majority-fail-closed" }
+    | { kind: "majority-fail-open" }
+    | { kind: "judge" }
+    | { kind: "dialogue-verdict" };
+  /** Optional post-debate verifier */
+  postDebateVerifier?: { kind: "plan-checklist" | "review-grounding-filter" | "custom" };
 }
 
 /** Top-level debate configuration */
 export interface DebateConfig {
   /** Enable multi-agent debate globally */
   enabled: boolean;
+  /** Grounder pre-phase configuration (defaulted by Zod, always present after parse) */
+  grounder: GrounderConfig;
   /** Default number of debating agents when no explicit debaters array is specified */
   agents: number;
   /** Maximum number of debaters running concurrently per debate round (default: 2) */

@@ -4,8 +4,14 @@
  */
 
 import { z } from "zod";
+import { ConfiguredModelSchema } from "./schemas-model";
 
 const DebaterPersonaEnum = z.enum(["challenger", "pragmatist", "completionist", "security", "testability"]);
+
+const GrounderConfigSchema = z.object({
+  model: ConfiguredModelSchema.default("fast"),
+  timeoutSeconds: z.number().int().positive().default(300),
+});
 
 const DebaterSchema = z.object({
   agent: z.string().min(1, "debater.agent must be non-empty"),
@@ -46,6 +52,31 @@ const DebateStageConfigSchema = (defaults: {
       debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
       timeoutSeconds: z.number().int().positive().default(600),
       autoPersona: z.boolean().default(false),
+      preDebatePhase: z
+        .object({ kind: z.enum(["grounder", "custom"]) })
+        .strict()
+        .optional(),
+      proposers: z
+        .object({
+          citationsRequired: z.boolean().optional(),
+          fileReadAccess: z.boolean().optional(),
+          fileReadBudget: z.number().int().positive().optional(),
+        })
+        .optional(),
+      selector: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("synthesis") }),
+          z.object({ kind: z.literal("majority-fail-closed") }),
+          z.object({ kind: z.literal("majority-fail-open") }),
+          z.object({ kind: z.literal("judge") }),
+          z.object({ kind: z.literal("dialogue-verdict") }),
+        ])
+        .optional(),
+      postDebateVerifier: z
+        .object({
+          kind: z.enum(["plan-checklist", "review-grounding-filter", "custom"]),
+        })
+        .optional(),
     }),
   );
 
@@ -55,6 +86,7 @@ export const DebateConfigSchema = z.preprocess(
     enabled: z.boolean().default(false),
     agents: z.number().int().min(2).default(3),
     maxConcurrentDebaters: z.number().int().min(1).max(10).default(2),
+    grounder: z.preprocess(toObject, GrounderConfigSchema),
     stages: z.preprocess(
       toObject,
       z.object({
