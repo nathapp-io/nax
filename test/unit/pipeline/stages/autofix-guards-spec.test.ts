@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _cycleDeps } from "../../../../src/findings/cycle";
+import { NaxError } from "../../../../src/errors";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import { _autofixCycleGuardDeps, runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
 import {
@@ -90,6 +91,28 @@ describe("assertionSiteDiffCheck — spec-correct behavior (AC2, AC3)", () => {
 		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
 		expect(result.violated).toBe(false);
 	});
+
+	test("adversarial: drains stderr stream concurrently to prevent >64KB pipe stall", async () => {
+		// Bug: original code only consumed stdout; stderr was never drained.
+		// If the git process writes >64KB to stderr the OS pipe buffer fills,
+		// the process blocks, and proc.exited never resolves — deadlock.
+		// Fix: add new Response(proc.stderr).text() to Promise.all.
+		let stderrDrained = false;
+		const stderrStream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				stderrDrained = true;
+				controller.close();
+			},
+		});
+		_guardDeps.spawn = mock(() => ({
+			exited: Promise.resolve(0),
+			stdout: new Response("@@ -0,0 +1 @@\n+const x = 1;\n").body as ReadableStream<Uint8Array>,
+			stderr: stderrStream,
+			kill: () => {},
+		})) as unknown as typeof _guardDeps.spawn;
+		await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(stderrDrained).toBe(true);
+	});
 });
 
 // ─── runIsolationGuard — spec-correct behavior ────────────────────────────────
@@ -146,6 +169,26 @@ describe("runIsolationGuard — spec-correct behavior (AC4, AC5)", () => {
 		expect(result.violated).toBe(false);
 		expect((result as { skipped?: boolean }).skipped).toBeUndefined();
 	});
+
+	test("adversarial: returns files:[] (not undefined) when verifyTestWriterIsolation.violations is undefined", async () => {
+		// Bug: original code returned `{ violated: true, files: result.violations }`
+		// without the `?? []` guard.  When the isolation checker omits `violations`
+		// the caller receives `files: undefined`, breaking any downstream `.length`
+		// or spread operation on the files array.
+		// Fix: `files: result.violations ?? []`.
+		_guardDeps.verifyTestWriterIsolation = mock(async () => ({
+			passed: false,
+			violations: undefined as unknown as string[],
+			description: "edited non-test file",
+		})) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		const result = await runIsolationGuard("/workdir", "abc123", config);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(Array.isArray(result.files)).toBe(true);
+			expect(result.files).toEqual([]);
+		}
+	});
 });
 
 // ─── revertDiff — spec-correct git command ────────────────────────────────────
@@ -180,6 +223,22 @@ describe("revertDiff — spec-correct git command (AC6, AC7)", () => {
 		}
 		expect(threw).toBe(true);
 		expect(errorMsg).toContain("[autofix-guards] git checkout HEAD failed with exit code 1");
+	});
+
+	test("adversarial: throws NaxError (not plain Error) with code GIT_CHECKOUT_FAILED when git checkout fails", async () => {
+		// Bug: original code threw `new Error(...)` which loses the structured
+		// code and context fields. Callers that distinguish NaxError from generic
+		// Error (e.g. error-reporting middleware) would misclassify the failure.
+		// Fix: throw new NaxError(..., "GIT_CHECKOUT_FAILED", { ... }) instead.
+		_guardDeps.spawn = makeGitDiffSpawn("fatal: pathspec error", 1);
+		let caughtError: unknown;
+		try {
+			await revertDiff("/workdir", ["test/foo.test.ts"]);
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(NaxError);
+		expect((caughtError as NaxError).code).toBe("GIT_CHECKOUT_FAILED");
 	});
 });
 
