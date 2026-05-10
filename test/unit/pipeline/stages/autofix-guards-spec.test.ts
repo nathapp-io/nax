@@ -285,7 +285,7 @@ function makeGuardIntegrationCtx() {
 	} as unknown as Parameters<typeof runAgentRectificationV2>[0];
 }
 
-describe("runAgentRectificationV2 — guard integration spec (AC6, AC7)", () => {
+describe("runAgentRectificationV2 — guard integration spec (AC6, AC7, AC8)", () => {
 	let origCallOp: typeof _cycleDeps.callOp;
 	let origCaptureGitRef: typeof _autofixCycleGuardDeps.captureGitRef;
 	let origAssertionCheck: typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
@@ -367,5 +367,26 @@ describe("runAgentRectificationV2 — guard integration spec (AC6, AC7)", () => 
 		expect(revertedFiles).toContain("src/foo.ts");
 		expect(result.unresolvedReason).toBeDefined();
 		expect(result.unresolvedReason?.startsWith("test_writer_isolation_violation:")).toBe(true);
+	});
+
+	test("AC8: when both guards pass, revertDiff is NOT called and the cycle proceeds normally without a guard-triggered unresolvedReason", async () => {
+		let revertCalled = false;
+		_autofixCycleGuardDeps.assertionSiteDiffCheck = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
+		_autofixCycleGuardDeps.runIsolationGuard = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.runIsolationGuard;
+		_autofixCycleGuardDeps.revertDiff = mock(async (_workdir, _files) => {
+			revertCalled = true;
+		}) as typeof _autofixCycleGuardDeps.revertDiff;
+
+		const ctx = makeGuardIntegrationCtx();
+		const result = await runAgentRectificationV2(ctx, undefined, undefined, ctx.workdir);
+
+		expect(revertCalled).toBe(false);
+		const reason = result.unresolvedReason ?? "";
+		expect(reason.startsWith("assertion_weakening:")).toBe(false);
+		expect(reason.startsWith("test_writer_isolation_violation:")).toBe(false);
 	});
 });
