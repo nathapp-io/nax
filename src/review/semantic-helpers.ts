@@ -17,9 +17,9 @@ export interface LLMFinding {
   suggestion: string;
   acId?: string;
   /**
-   * Optional advisory metadata: the AC bullet text the model believes constrains
-   * this finding. Surfaced in audit logs for human review. NOT validated — see
-   * `validateAcGroundingMinimal`. The blocking contract is `acIndex` only.
+   * Verbatim substring of the AC bullet that constrains this finding's locus.
+   * Required for severity "error" / "critical" (Issue #930 Part 1).
+   * Validated by filterByAcQuote() before findings reach the story blocker pipeline.
    */
   acQuote?: string;
   /** 1-based index into story.acceptanceCriteria corresponding to acQuote. */
