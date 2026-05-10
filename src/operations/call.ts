@@ -198,6 +198,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   // ctx.sendWithParseRetry which applies this strategy per call.
   const retryStrategy = resolveOpRetry(runOp, input, buildCtx);
 
+  // op.fileOutput: when set, callOp reads this file after each agent send and
+  // replaces the turn's text output with the file content before the probe fires.
+  // This makes the retry probe check the actual written file, not the text
+  // confirmation — so retries only fire when the file is missing or invalid.
+  const fileOutputPath = runOp.fileOutput?.(input);
+
   const runOptions = {
     prompt,
     workdir: ctx.packageDir,
@@ -263,6 +269,12 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     let lastTurn!: TurnResult;
     while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
       lastTurn = await bodyCtx.send(currentPrompt);
+      // op.fileOutput: inject file content as output so the probe checks the
+      // file the agent wrote, not the text confirmation it replied with.
+      if (fileOutputPath) {
+        const fileContent = await Bun.file(fileOutputPath).text().catch(() => null);
+        if (fileContent !== null) lastTurn = { ...lastTurn, output: fileContent };
+      }
       cumCost += lastTurn.estimatedCostUsd ?? 0;
       const decision = retryStrategy.shouldRetry(
         new ParseValidationError(`[${op.name}] sendWithParseRetry: probe attempt ${attempt}`),

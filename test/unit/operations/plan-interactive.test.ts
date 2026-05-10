@@ -13,7 +13,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
-import type { TurnResult } from "@/agents/types";
 import { validatePlanOutput } from "@/prd";
 import { makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
@@ -113,51 +112,29 @@ describe("planInteractiveOp.retry", () => {
   });
 });
 
-describe("planInteractiveOp.hopBody", () => {
-  test("hopBody is defined", async () => {
+describe("planInteractiveOp.fileOutput", () => {
+  test("fileOutput is defined and returns outputPath", async () => {
+    // The plan op uses file-based output: the agent writes JSON to disk and
+    // replies with a text confirmation. callOp reads the file via fileOutput
+    // and substitutes it as the probe output so retries check the actual JSON.
     const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
-    expect(planInteractiveOp.hopBody).toBeDefined();
+    expect(planInteractiveOp.fileOutput).toBeDefined();
+    const path = planInteractiveOp.fileOutput?.({
+      specContent: "",
+      codebaseContext: "",
+      featureName: "f",
+      branchName: "feat/f",
+      outputPath: "/tmp/prd.json",
+    });
+    expect(path).toBe("/tmp/prd.json");
   });
 
-  test("hopBody is an async function", async () => {
+  test("hopBody is NOT defined (file-reading done by callOp via fileOutput)", async () => {
+    // hopBody is no longer needed — callOp injects file content directly.
     const mod = await import("@/operations");
     const { planInteractiveOp } = mod;
-    expect(typeof planInteractiveOp.hopBody).toBe("function");
-  });
-
-  test("hopBody calls ctx.sendWithParseRetry (not ctx.send)", async () => {
-    const mod = await import("@/operations");
-    const { planInteractiveOp } = mod;
-
-    // Create a mock context to verify sendWithParseRetry is called
-    let sendWithParseRetryCalled = false;
-    const mockCtx = {
-      send: async (prompt: string) => {
-        throw new Error("send should not be called, use sendWithParseRetry");
-      },
-      sendWithParseRetry: async (prompt: string): Promise<TurnResult> => {
-        sendWithParseRetryCalled = true;
-        return {
-          output: '{"userStories": []}',
-          estimatedCostUsd: 0.01,
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          internalRoundTrips: 1,
-        };
-      },
-      input: {
-        specContent: "Test",
-        codebaseContext: "Test",
-        featureName: "test",
-        branchName: "feat/test",
-        outputPath: "/tmp/prd.json",
-      },
-    };
-
-    if (planInteractiveOp.hopBody) {
-      await planInteractiveOp.hopBody("initial prompt", mockCtx as any);
-      expect(sendWithParseRetryCalled).toBe(true);
-    }
+    expect(planInteractiveOp.hopBody).toBeUndefined();
   });
 });
 

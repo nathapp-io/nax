@@ -372,6 +372,15 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.description).toBe('line1\nline2\ttab"quote\\backslash/slash\rCR');
   });
 
+  test("preserves \\\\( (valid JSON escaped backslash+paren) — regression for sanitizeInvalidEscapes corruption", () => {
+    // \\( in JSON represents the string \( (backslash-paren), as seen in regex literals in descriptions.
+    // The old code would incorrectly strip the second \ in \\(, producing \( which JSON.parse rejects.
+    const escaped = "regex /expect\\\\(|foo/";
+    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
+    const prd = validatePlanOutput(json, "feat", "branch");
+    expect(prd.userStories[0]!.description).toBe("regex /expect\\(|foo/");
+  });
+
   test("fixes \\x escape in markdown-wrapped JSON", () => {
     const escaped = "\\x41";
     const wrapped = `\`\`\`json\n{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}\n\`\`\``;

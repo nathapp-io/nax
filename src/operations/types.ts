@@ -194,6 +194,17 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
     | RetryPreset
     | RetryStrategy
     | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
+  /**
+   * Optional file-output path resolver. When set, `callOp` reads this file
+   * after each agent send (inside `sendWithParseRetry`) and replaces the
+   * turn's text output with the file content before the retry probe fires.
+   *
+   * Use for ops where the agent writes its output to disk and replies with
+   * a text confirmation (not JSON) — e.g. the plan op. This makes the probe
+   * check the actual file content, so retries only fire when the file is
+   * missing or contains invalid JSON, not on every text-confirmation turn.
+   */
+  readonly fileOutput?: (input: I) => string | undefined;
 }
 
 export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {

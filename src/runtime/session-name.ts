@@ -19,7 +19,11 @@ export function formatSessionName(req: SessionNameRequest): string {
 
   const parts = ["nax", hash];
   if (req.featureName) parts.push(sanitize(req.featureName));
-  if (req.storyId) parts.push(sanitize(req.storyId));
+  // Skip storyId when it equals featureName to avoid duplicate segments in the name
+  // (e.g. plan op passes both as options.feature → would produce …-feat-feat-plan)
+  if (req.storyId && sanitize(req.storyId) !== sanitize(req.featureName ?? "")) {
+    parts.push(sanitize(req.storyId));
+  }
 
   const suffix =
     req.role && req.role !== "main"
