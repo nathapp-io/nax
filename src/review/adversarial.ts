@@ -24,8 +24,14 @@ import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
+import { extractDiffFiles } from "../utils/diff-files";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { filterByAcQuote } from "./ac-quote-validator";
+import {
+  type AdversarialAcceptAnalysis,
+  type AdversarialDropAnalysis,
+  analyzeStructuralCounterfactual,
+} from "./ac-structural-counterfactual";
 import {
   type AdversarialLLMFinding,
   type AdversarialLLMResponse,
@@ -33,7 +39,13 @@ import {
   isBlockingSeverity,
   toAdversarialReviewFindings,
 } from "./adversarial-helpers";
-import { collectDiff, collectDiffStat, computeTestInventory, resolveEffectiveRef } from "./diff-utils";
+import {
+  collectDiff,
+  collectDiffFileList,
+  collectDiffStat,
+  computeTestInventory,
+  resolveEffectiveRef,
+} from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
@@ -57,6 +69,10 @@ function recordAdversarialAudit(opts: {
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
+  // Issue #986 — adversarial-only structural counterfactual telemetry.
+  diffAvailable?: boolean;
+  adversarialDropAnalysis?: AdversarialDropAnalysis[];
+  adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
 }): void {
   opts.runtime?.dispatchEvents.emitReviewDecision({
     kind: "review-decision",
@@ -73,6 +89,9 @@ function recordAdversarialAudit(opts: {
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,
+    diffAvailable: opts.diffAvailable,
+    adversarialDropAnalysis: opts.adversarialDropAnalysis,
+    adversarialAcceptAnalysis: opts.adversarialAcceptAnalysis,
   });
 }
 
@@ -358,6 +377,26 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     findings: opResult.findings as AdversarialLLMFinding[],
   };
 
+  // Issue #986 — build diff file set for structural counterfactual telemetry.
+  // Embedded mode: parse `diff` (already in memory). Ref mode: shell git diff
+  // --name-only via collectDiffFileList. diffAvailable=false signals "exclude
+  // this entry from percentage calculations" to the aggregation script.
+  let diffFiles: ReadonlySet<string>;
+  let diffAvailable: boolean;
+  if (diff && diff.length > 0) {
+    diffFiles = extractDiffFiles(diff);
+    diffAvailable = true;
+  } else {
+    const list = await collectDiffFileList(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
+    if (list === undefined) {
+      diffFiles = new Set();
+      diffAvailable = false;
+    } else {
+      diffFiles = new Set(list);
+      diffAvailable = true;
+    }
+  }
+
   // Issue #930 Part 1: drop error findings not grounded in AC text
   const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcQuote(
     rawParsed.findings,
@@ -369,11 +408,48 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
     });
   }
+
+  // Issue #986 — counterfactual analysis for every drop. Adversarial-only.
+  const adversarialDropAnalysis: AdversarialDropAnalysis[] = acDropped.map((d) => ({
+    finding: {
+      file: d.finding.file ?? "<unknown>",
+      line: d.finding.line ?? 0,
+      severity: d.finding.severity,
+      category: d.finding.category ?? "<unknown>",
+      issue: d.finding.issue,
+    },
+    dropCode: d.code,
+    acIndex: d.finding.acIndex,
+    rawCategory: d.finding.category ?? "",
+    counterfactual: analyzeStructuralCounterfactual(
+      { acIndex: d.finding.acIndex, category: d.finding.category, file: d.finding.file },
+      story.acceptanceCriteria,
+      diffFiles,
+    ),
+  }));
+
   const parsed: AdversarialLLMResponse = { ...rawParsed, findings: acGroundedFindings };
 
   const threshold = blockingThreshold ?? "error";
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
   const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+
+  // Issue #986 — counterfactual analysis for every accepted blocking finding.
+  const adversarialAcceptAnalysis: AdversarialAcceptAnalysis[] = blockingFindings.map((f) => ({
+    finding: {
+      file: f.file,
+      line: f.line,
+      severity: f.severity,
+      category: f.category,
+    },
+    acIndex: f.acIndex,
+    rawCategory: f.category,
+    counterfactual: analyzeStructuralCounterfactual(
+      { acIndex: f.acIndex, category: f.category, file: f.file },
+      story.acceptanceCriteria,
+      diffFiles,
+    ),
+  }));
 
   if (advisoryFindings.length > 0) {
     logger?.debug(
@@ -425,6 +501,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         advisoryFindings.length > 0
           ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
           : undefined,
+      diffAvailable,
+      adversarialDropAnalysis,
+      adversarialAcceptAnalysis,
     });
     return {
       check: "adversarial",
@@ -474,6 +553,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
           advisoryFindings.length > 0
             ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
             : undefined,
+        diffAvailable,
+        adversarialDropAnalysis,
+        adversarialAcceptAnalysis: [],
       });
       return {
         check: "adversarial",
@@ -509,6 +591,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         advisoryFindings.length > 0
           ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
           : undefined,
+      diffAvailable,
+      adversarialDropAnalysis,
+      adversarialAcceptAnalysis: [],
     });
     return {
       check: "adversarial",
@@ -544,6 +629,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       advisoryFindings.length > 0
         ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
         : undefined,
+    diffAvailable,
+    adversarialDropAnalysis,
+    adversarialAcceptAnalysis,
   });
   return {
     check: "adversarial",
