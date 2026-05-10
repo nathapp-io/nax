@@ -4,7 +4,7 @@
   "analysis": "This feature adds a fourth TEST_EDIT_REASON escape valve ('mock_structure') enabling the autofix implementer to declare a structural test-rewrite handoff instead of emitting UNRESOLVED and triggering wasteful tier escalation. The change spans 5 interdependent stories across 9+ source files.\n\n**Dependency chain:** US-001 (parser) → US-002 (validator + side-channel) → US-004 (strategy wiring) → US-005 (guards + config). US-003 (prompts) is independent and can run in parallel.\n\n**Key architectural decision — FindingSource extension:** The synthetic findings synthesized in US-002 use `source: \"implementer-handoff\"`. The current `FindingSource` union in `src/findings/types.ts` does NOT include this value. US-002 implementer MUST add `\"implementer-handoff\"` to `FindingSource` or TypeScript strict mode will reject the code. This is an implicit but mandatory change.\n\n**`applyTestEditDeclarations` stays pure/sync:** All I/O is in `validateMockStructureFiles` (async). The existing `applyTestEditDeclarations` function must remain synchronous. US-002 extends it (likely with an optional 4th parameter for the invalid partition) to produce advisory findings for invalid declarations while keeping source-tagged findings unchanged.\n\n**Side-channel follows existing `testEditDeclarations` pattern:** `ctx.pendingMockStructureHandoffs` is populated by `validate()` (stash), consumed one-shot by `buildInput` in the test-writer strategy (clear on read). US-004 must clear the array after consumption.\n\n**`beforeRef` for guards (US-005):** Guards diff against the git HEAD captured *just before* the test-writer op starts in `mock-restructure` mode. The implementation must call `git rev-parse HEAD` at that point — the existing `ctx.storyGitRef` is per-story-iteration (set before execution), not per-op.\n\n**Guard revert semantics:** Guards run post-commit (after the test-writer op completes). `revertDiff(workdir, files)` runs `git checkout HEAD -- <files>` to undo the test-writer's changes. The cycle then records the failed iteration and exits via the existing `agent-gave-up` rail — NOT a new exit path.\n\n**Existing test files to extend:** `test/unit/operations/test-edit-declaration.test.ts`, `test/unit/pipeline/stages/autofix-cycle.test.ts`, `test/unit/prompts/builders/rectifier-builder.test.ts`, `test/integration/autofix-implementer-feedback.test.ts`. Check these paths exist before implementing; the integration test file may need to be created if absent.\n\n**Config schema location:** The autofix Zod schema lives in `src/config/schemas-execution.ts`. The hand-maintained default literal is in `src/config/schemas.ts` at the `quality.autofix` key (lines ~147-153 at commit 01cdda7e). The runtime-types interface is in `src/config/runtime-types.ts` at `QualityConfig.autofix` (lines ~209-220).\n\n**`validate()` orchestration order (US-002):** (1) `recheckReview`, (2) `resolveTestFilePatterns` + `validateMockStructureFiles`, (3) populate `ctx.pendingMockStructureHandoffs` from valid partition, (4) call `applyTestEditDeclarations` with both valid and invalid mock_structure declarations, (5) clear `ctx.testEditDeclarations`.\n\n**`buildAutofixStrategies` is called with the outer `ctx` closed over:** The testWriter `buildInput` already closes over `ctx` via the outer function scope. US-004 extends this closure to read and clear `ctx.pendingMockStructureHandoffs`.\n\n**`_gitDeps.spawn` pattern (US-005):** `src/utils/git.ts` exports `_gitDeps` with injectable `spawn`. New guards in `autofix-guards.ts` should follow the same `_deps` injection pattern for testability, accepting an optional deps parameter rather than importing `spawn` directly.",
   "branchName": "feat/mock-structure-handoff",
   "createdAt": "2026-05-09T00:00:00.000Z",
-  "updatedAt": "2026-05-10T02:50:12.711Z",
+  "updatedAt": "2026-05-10T03:09:22.331Z",
   "userStories": [
     {
       "id": "US-001",
@@ -16,9 +16,7 @@
         "When the `mock_structure` block has empty `FILES:` (or the field is missing), then `parseTestEditDeclarations` returns no declaration for that block.",
         "When the `mock_structure` block has missing `REASON:` (or the field is empty), then `parseTestEditDeclarations` returns no declaration for that block.",
         "When `FILES` contains whitespace around commas (`a.test.ts , b.test.ts`), then `files` returns trimmed paths with no surrounding whitespace.",
-        "Existing `prd_contract`, `lint_only`, and `sibling_scope` parser behavior is unchanged — every existing test in `test-edit-declaration.test.ts` still passes."
-      ],
-      "suggestedCriteria": [
+        "Existing `prd_contract`, `lint_only`, and `sibling_scope` parser behavior is unchanged — every existing test in `test-edit-declaration.test.ts` still passes.",
         "When a `mock_structure` block is followed by another block separated by a blank line, only the content before the blank line is parsed as the block's fields.",
         "When `REASON:` spans multiple lines before the next blank line, all lines after `REASON:` up to the blank line are captured in `reasonDetail`.",
         "When output contains both a `mock_structure` block and a `prd_contract` block separated by blank lines, `parseTestEditDeclarations` returns two independent declarations."
@@ -60,9 +58,7 @@
         "When `applyTestEditDeclarations` receives an invalid `mock_structure` declaration (passed in via the `invalid` partition), the returned array contains one advisory finding with `category === \"mock_structure_invalid_files\"` and `severity === \"warning\"` whose `message` lists the offending paths.",
         "`applyTestEditDeclarations` returns the original source-tagged findings unchanged in the array — source `fixTarget` is retained on all pre-existing findings.",
         "In the cycle's `validate()` callback, when `ctx.testEditDeclarations` contains `mock_structure` declarations and `validateMockStructureFiles` classifies them as valid, `ctx.pendingMockStructureHandoffs` is populated with `{ files, reasonDetail }` entries (one per valid declaration) before `applyTestEditDeclarations` runs.",
-        "After `validate()` completes, `ctx.testEditDeclarations` is cleared (existing behavior preserved)."
-      ],
-      "suggestedCriteria": [
+        "After `validate()` completes, `ctx.testEditDeclarations` is cleared (existing behavior preserved).",
         "When `decls` is empty, `validateMockStructureFiles` returns `{ valid: [], invalid: [] }` without making any filesystem calls.",
         "When all declarations are non-`mock_structure`, `validateMockStructureFiles` returns them all in `valid` without making any filesystem calls.",
         "When a `mock_structure` declaration lists three paths but only two exist on disk, `invalid` entry lists the missing path in `missing` and `nonTest` is empty."
@@ -168,9 +164,7 @@
         "`RectifierPromptBuilder.testWriterRectification` accepts `mode: \"mock-restructure\"` and dispatches to `_testWriterMockRestructure`.",
         "When `testWriterRectification` is called with `mode: \"mock-restructure\"` and `options.handoffReason` and `options.handoffFiles` set, the returned prompt contains the verbatim `handoffReason` text and lists every entry from `handoffFiles` under a \"Files to rewrite (only these)\" heading.",
         "The `mock-restructure` prompt explicitly instructs the agent to NOT modify any source file and NOT modify any assertion site — literal substrings \"Do NOT modify any source file\" and at least one of `expect(`, `toBe`, `toEqual`, `toThrow` are present in the returned prompt.",
-        "When `testWriterRectification` is called without a `mode` argument, it returns the existing `_testWriterFixTestFiles` prompt unchanged."
-      ],
-      "suggestedCriteria": [
+        "When `testWriterRectification` is called without a `mode` argument, it returns the existing `_testWriterFixTestFiles` prompt unchanged.",
         "When `testWriterRectification` is called with `mode: \"mock-restructure\"` but `handoffFiles` is undefined, the prompt renders without throwing.",
         "When `testWriterRectification` is called with `mode: \"mock-restructure\"` and `handoffFiles` contains three entries, all three appear as separate lines under the files heading."
       ],
@@ -210,11 +204,9 @@
         "When `buildInput` consumes `ctx.pendingMockStructureHandoffs`, it clears the side-channel (sets to empty array).",
         "When `ctx.pendingMockStructureHandoffs` is undefined or empty, `buildInput` returns its existing shape (`mode: \"fix-test-files\"` or `\"write-failing-test\"` per existing branches).",
         "When `testWriterRectifyOp.build` receives an input with `mode: \"mock-restructure\"`, it forwards `handoffReason` and `handoffFiles` into the `options` argument of `RectifierPromptBuilder.testWriterRectification`.",
-        "Integration test: given a review with one source-targeted finding in `src/foo.ts`, an implementer mock that returns a `mock_structure` declaration with `files: [\"test/foo.test.ts\"]` on its first call (and `applied: true` on subsequent calls), and a test-writer mock that returns success, then `runAgentRectificationV2` makes at least one implementer call (the first emitting the `mock_structure` declaration) followed by at least one test-writer call where the test-writer's input carries `mode === \"mock-restructure\"` AND the source finding in `src/foo.ts` was never re-tagged to `fixTarget: \"test\"` in any callOp input. Note: the implementer may be called again in the same iteration as the test-writer (both strategies are co-run-sequential and apply when both source and synthetic test findings are present); the test must not assert an exact implementer call count."
-      ],
-      "suggestedCriteria": [
+        "Integration test: given a review with one source-targeted finding in `src/foo.ts`, an implementer mock that returns a `mock_structure` declaration with `files: [\"test/foo.test.ts\"]` on its first call (and `applied: true` on subsequent calls), and a test-writer mock that returns success, then `runAgentRectificationV2` makes at least one implementer call (the first emitting the `mock_structure` declaration) followed by at least one test-writer call where the test-writer's input carries `mode === \"mock-restructure\"` AND the source finding in `src/foo.ts` was never re-tagged to `fixTarget: \"test\"` in any callOp input. Note: the implementer may be called again in the same iteration as the test-writer (both strategies are co-run-sequential and apply when both source and synthetic test findings are present); the test must not assert an exact implementer call count.",
         "When `ctx.pendingMockStructureHandoffs` contains two handoffs each listing the same file, `handoffFiles` contains that file exactly once after deduplication.",
-        "When `ctx.pendingMockStructureHandoffs` contains two handoffs with different `reasonDetail` values, `handoffReason` contains both paragraphs separated by `\\n\\n---\\n\\n`."
+        "When `ctx.pendingMockStructureHandoffs` contains two handoffs with different `reasonDetail` values, `handoffReason` contains both paragraphs separated by `\n\n---\n\n`."
       ],
       "contextFiles": [
         "src/operations/autofix-test-writer.ts",
@@ -277,9 +269,7 @@
         "`runIsolationGuard` returns `{ violated: false, skipped: true }` when `config.quality.autofix.enforceTestWriterIsolation === false` — the underlying `verifyTestWriterIsolation` is not invoked.",
         "When the autofix test-writer op completes in `mock-restructure` mode and `assertionSiteDiffCheck` returns violated, `runAgentRectificationV2` calls `revertDiff(workdir, handoffFiles)` (which runs `git checkout HEAD -- <files>`) and the iteration's recorded `unresolved` reason starts with `assertion_weakening:`.",
         "When the autofix test-writer op completes in `mock-restructure` mode and `runIsolationGuard` returns violated, `runAgentRectificationV2` calls `revertDiff` against the violated files and the iteration's recorded `unresolved` reason starts with `test_writer_isolation_violation:`.",
-        "When both guards pass, the test-writer's commit is retained, the cycle proceeds to validate normally, and no `revertDiff` call occurs."
-      ],
-      "suggestedCriteria": [
+        "When both guards pass, the test-writer's commit is retained, the cycle proceeds to validate normally, and no `revertDiff` call occurs.",
         "When `assertionSiteDiffCheck` is called with an empty `files` array, it returns `{ violated: false }` immediately without spawning a git process.",
         "When `revertDiff` is called and `git checkout HEAD -- <files>` exits non-zero, it throws a `NaxError` rather than silently continuing.",
         "When `config.quality.autofix.enforceTestWriterIsolation` is `false` and Guard B would have fired, the cycle logs at `warn` level and retains the commit."
@@ -300,8 +290,8 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",

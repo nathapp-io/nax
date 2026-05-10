@@ -1,36 +1,38 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-10T02-22-35-207Z",
+    "id": "run-2026-05-10T02-50-12-626Z",
     "feature": "mock-structure-handoff",
-    "startedAt": "2026-05-10T02:22:35.207Z",
-    "status": "failed",
+    "startedAt": "2026-05-10T02:50:12.626Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 15011
+    "pid": 24972
   },
   "progress": {
     "total": 5,
-    "passed": 4,
-    "failed": 1,
+    "passed": 5,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 0.9910697000000002,
+    "spent": 0.8036845100000001,
     "limit": 50
   },
   "current": null,
-  "iterations": 1,
-  "updatedAt": "2026-05-10T02:48:37.839Z",
-  "durationMs": 1562632,
+  "iterations": 2,
+  "updatedAt": "2026-05-10T03:09:23.058Z",
+  "durationMs": 1150432,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-05-10T03:09:22.332Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-10T02:48:37.099Z"
+      "skipped": true,
+      "lastRunAt": "2026-05-10T03:09:22.333Z"
     }
   }
 }

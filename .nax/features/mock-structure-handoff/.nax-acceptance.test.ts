@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { parseTestEditDeclarations } from "../../../src/operations/test-edit-declaration";
-import { NaxConfigSchema } from "../../../src/config/schemas";
 import type { TestEditDeclaration } from "../../../src/operations";
 import type { ReviewCheckResult } from "../../../src/review/types";
 import { makeStory } from "../../../test/helpers/mock-story";
@@ -562,13 +561,15 @@ describe("AC-26: Integration test for mock-restructure handoff workflow", () => 
 // ============================================================================
 
 describe("AC-27: NaxConfigSchema default enforceTestWriterIsolation", () => {
-  test("NaxConfigSchema.parse({}) defaults enforceTestWriterIsolation to true", () => {
+  test("NaxConfigSchema.parse({}) defaults enforceTestWriterIsolation to true", async () => {
+    const { NaxConfigSchema } = await import("../../../src/config/schemas");
     const config = NaxConfigSchema.parse({});
 
     expect(config.quality.autofix.enforceTestWriterIsolation).toBe(true);
   });
 
-  test("enforceTestWriterIsolation can be explicitly set to false", () => {
+  test("enforceTestWriterIsolation can be explicitly set to false", async () => {
+    const { NaxConfigSchema } = await import("../../../src/config/schemas");
     const config = NaxConfigSchema.parse({
       quality: {
         autofix: {
@@ -621,8 +622,9 @@ describe("AC-30 and AC-31: runIsolationGuard behavior", () => {
     expect(violation.files).toContain("src/index.ts");
   });
 
-  test("AC-31: runIsolationGuard skips check when enforceTestWriterIsolation is false", () => {
+  test("AC-31: runIsolationGuard skips check when enforceTestWriterIsolation is false", async () => {
     // Document expected skip behavior
+    const { NaxConfigSchema } = await import("../../../src/config/schemas");
     const config = NaxConfigSchema.parse({
       quality: {
         autofix: {
@@ -688,7 +690,8 @@ REASON: test reason`;
     expect(decls[0].reason).toBe("mock_structure");
   });
 
-  test("Config schema accepts autofix.enforceTestWriterIsolation", () => {
+  test("Config schema accepts autofix.enforceTestWriterIsolation", async () => {
+    const { NaxConfigSchema } = await import("../../../src/config/schemas");
     const config = NaxConfigSchema.parse({
       quality: {
         autofix: {
