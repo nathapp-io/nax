@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas, wrapJsonPrompt } from "../../../src/utils/llm-json";
+import {
+  extractJsonFromMarkdown,
+  extractJsonObject,
+  parseLLMJson,
+  stripTrailingCommas,
+  wrapJsonPrompt,
+} from "../../../src/utils/llm-json";
 
 // ---------------------------------------------------------------------------
 // extractJsonFromMarkdown
@@ -132,6 +138,71 @@ describe("extractJsonObject", () => {
 
   test("returns null for empty string", () => {
     expect(extractJsonObject("")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseLLMJson — regression tests for multi-fence and bracket-in-text bugs
+// ---------------------------------------------------------------------------
+
+describe("parseLLMJson", () => {
+  type Obj = Record<string, unknown>;
+
+  test("parses clean JSON directly", () => {
+    const input = '{"verdict":"test_bug","confidence":1}';
+    expect(parseLLMJson<Obj>(input)).toEqual({ verdict: "test_bug", confidence: 1 });
+  });
+
+  test("extracts JSON from ```json fence with preamble reasoning", () => {
+    const json = '{"verdict":"test_bug","confidence":1}';
+    const input = `Some reasoning here.\n\`\`\`json\n${json}\n\`\`\``;
+    expect(parseLLMJson<Obj>(input)).toEqual({ verdict: "test_bug", confidence: 1 });
+  });
+
+  // Regression: plain ``` fence (e.g. bun test output) appears before ```json fence.
+  // Bug: tier 2 used to match the plain fence and extract non-JSON content.
+  test("prefers ```json fence over earlier plain ``` fence", () => {
+    const json = '{"verdict":"test_bug","confidence":1}';
+    const input = [
+      "Analysis:\n",
+      "```\nbun test v1.3.13\n  5 pass\n  0 fail\nRan 5 tests [7.00ms]\n```\n",
+      "The assertion is wrong.\n",
+      "```json\n",
+      json,
+      "\n```",
+    ].join("");
+    expect(parseLLMJson<Obj>(input)).toEqual({ verdict: "test_bug", confidence: 1 });
+  });
+
+  // Regression: bun test output contains "[7.00ms]" before the JSON object.
+  // Bug: tier 3 used to pick "[" from "[7.00ms]" as the JSON array start,
+  // extracting garbage from there to the last "]" in the findings array.
+  test("extracts JSON object when [ appears before { in narration text", () => {
+    const json = '{"verdict":"test_bug","findings":[{"id":1}]}';
+    const input = `Ran 5 tests [7.00ms]\n\nResult: ${json}`;
+    expect(parseLLMJson<Obj>(input)).toEqual({ verdict: "test_bug", findings: [{ id: 1 }] });
+  });
+
+  // Combined regression: both problems at once — same shape as the real failing response.
+  test("handles plain-fence-before-json-fence AND [time] before JSON object", () => {
+    const json = '{"verdict":"test_bug","confidence":1,"findings":[{"fixTarget":"test"}]}';
+    const input = [
+      "Looking at the failing test.\n",
+      "```\nbun test v1.3.13\n 5 pass\n 0 fail\nRan 5 tests [7.00ms]\n```\n",
+      "The string '0 failures' never appears in the output.\n",
+      "```json\n",
+      json,
+      "\n```",
+    ].join("");
+    expect(parseLLMJson<Obj>(input)).toEqual({
+      verdict: "test_bug",
+      confidence: 1,
+      findings: [{ fixTarget: "test" }],
+    });
+  });
+
+  test("throws SyntaxError when all tiers fail", () => {
+    expect(() => parseLLMJson("no JSON here at all")).toThrow(SyntaxError);
   });
 });
 
