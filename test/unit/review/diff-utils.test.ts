@@ -14,6 +14,7 @@ import {
   DIFF_CAP_BYTES,
   _diffUtilsDeps,
   collectDiff,
+  collectDiffFileList,
   collectDiffStat,
   computeTestInventory,
   resolveEffectiveRef,
@@ -272,5 +273,28 @@ describe("computeTestInventory()", () => {
 
     expect(result.addedTestFiles).toHaveLength(0);
     expect(result.newSourceFilesWithoutTests).toHaveLength(0);
+  });
+});
+
+describe("collectDiffFileList", () => {
+  test("returns parsed file list on git success", async () => {
+    _diffUtilsDeps.spawn = makeSpawnMock("src/a.ts\nsrc/b.ts\n", 0);
+    const files = await collectDiffFileList("/tmp/repo", "abc123");
+    expect(files).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  test("returns empty array when git produces no output", async () => {
+    _diffUtilsDeps.spawn = makeSpawnMock("", 0);
+    expect(await collectDiffFileList("/tmp/repo", "abc123")).toEqual([]);
+  });
+
+  test("returns undefined on git failure (signals diffAvailable=false)", async () => {
+    _diffUtilsDeps.spawn = makeSpawnMock("", 128);
+    expect(await collectDiffFileList("/tmp/repo", "abc123")).toBeUndefined();
+  });
+
+  test("trims and skips empty lines", async () => {
+    _diffUtilsDeps.spawn = makeSpawnMock("src/a.ts\n\nsrc/b.ts\n  \n", 0);
+    expect(await collectDiffFileList("/tmp/repo", "abc123")).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });

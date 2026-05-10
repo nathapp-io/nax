@@ -242,3 +242,38 @@ export async function computeTestInventory(
 
   return { addedTestFiles, newSourceFilesWithoutTests };
 }
+
+/**
+ * Collect the list of file paths modified between `storyGitRef` and HEAD.
+ *
+ * Used by adversarial review (#986) in `mode: "ref"` to compute the
+ * `fileInDiff` axis of the structural counterfactual telemetry without
+ * inspecting an inline diff. Returns `undefined` on git failure so callers
+ * can mark `diffAvailable: false`.
+ */
+export async function collectDiffFileList(
+  workdir: string,
+  storyGitRef: string,
+  options?: DiffIgnoreOptions,
+): Promise<string[] | undefined> {
+  const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
+  const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
+  const proc = _diffUtilsDeps.spawn({
+    cmd: ["git", "diff", "--name-only", `${storyGitRef}..HEAD`, "--", ".", ...merged],
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [exitCode, stdout] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+
+  if (exitCode !== 0) return undefined;
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
