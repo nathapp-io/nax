@@ -8,10 +8,10 @@
  * capture packageDir via closure in buildInput)
  */
 
-import { getSafeLogger } from "../logger";
-import { callOp as _callOp } from "../operations/call";
-import type { Operation } from "../operations/types";
-import { errorMessage } from "../utils/errors";
+import { getSafeLogger } from "@/logger";
+import { callOp as _callOp } from "@/operations/call";
+import type { Operation } from "@/operations/types";
+import { errorMessage } from "@/utils/errors";
 import type {
   FixApplied,
   FixCycle,

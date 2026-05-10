@@ -5,8 +5,8 @@
  * All helpers are pure functions with no dependencies on the builder class.
  */
 
-import type { UserStory } from "../../prd";
-import type { ReviewCheckResult } from "../../review/types";
+import type { UserStory } from "@/prd";
+import type { ReviewCheckResult } from "@/review/types";
 
 /**
  * Reviewer contradiction escape hatch (REVIEW-003).

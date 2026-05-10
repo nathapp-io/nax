@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseTestEditDeclarations, validatePrdQuote } from "../../../src/operations/test-edit-declaration";
-import { makeStory } from "../../helpers/mock-story";
+import { parseTestEditDeclarations, validatePrdQuote } from "@/operations/test-edit-declaration";
+import { makeStory } from "@test/helpers/mock-story";
 
 describe("parseTestEditDeclarations", () => {
   test("parses a single prd_contract block", () => {

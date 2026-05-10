@@ -5,8 +5,8 @@
  * including execution limits, quality gates, and feature settings.
  */
 
-import type { ConstitutionConfig } from "../constitution/types";
-import type { ReviewConfig } from "../review/types";
+import type { ConstitutionConfig } from "@/constitution/types";
+import type { ReviewConfig } from "@/review/types";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { ContextConfig } from "./runtime-types-context";
 import type {
@@ -266,10 +266,10 @@ export interface TddConfig {
 }
 
 // Re-exported from constitution/types.ts to maintain single source of truth
-export type { ConstitutionConfig } from "../constitution/types";
+export type { ConstitutionConfig } from "@/constitution/types";
 
 // Re-exported from review/types.ts to maintain single source of truth
-export type { AdversarialReviewConfig, ReviewConfig } from "../review/types";
+export type { AdversarialReviewConfig, ReviewConfig } from "@/review/types";
 
 /** Plan config */
 export interface PlanConfig {

@@ -7,9 +7,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { testWriterRectifyOp } from "../../../src/operations/autofix-test-writer";
-import type { AutofixTestWriterInput } from "../../../src/operations/autofix-test-writer";
-import { makeStory } from "../../helpers";
+import { testWriterRectifyOp } from "@/operations/autofix-test-writer";
+import type { AutofixTestWriterInput } from "@/operations/autofix-test-writer";
+import { makeStory } from "@test/helpers";
 
 describe("AutofixTestWriterInput", () => {
   test("interface accepts mode: 'mock-restructure'", () => {

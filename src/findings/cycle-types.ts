@@ -8,7 +8,7 @@
  * Only types live here; behaviour is in cycle.ts (ADR-022 Phase 2).
  */
 
-import type { Operation } from "../operations/types";
+import type { Operation } from "@/operations/types";
 import type { Finding } from "./types";
 
 // ─── Iteration record ────────────────────────────────────────────────────────

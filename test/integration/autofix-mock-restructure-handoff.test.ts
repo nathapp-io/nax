@@ -15,13 +15,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { _autofixDeps } from "../../src/pipeline/stages/autofix";
-import { _autofixCycleDeps, _autofixCycleGuardDeps, runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
-import { _cycleDeps } from "../../src/findings";
-import type { Finding } from "../../src/findings";
-import type { PipelineContext } from "../../src/pipeline/types";
-import type { AutofixTestWriterInput } from "../../src/operations/autofix-test-writer";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "../helpers";
+import { _autofixDeps } from "@/pipeline/stages/autofix";
+import { _autofixCycleDeps, _autofixCycleGuardDeps, runAgentRectificationV2 } from "@/pipeline/stages/autofix-cycle";
+import { _cycleDeps } from "@/findings";
+import type { Finding } from "@/findings";
+import type { PipelineContext } from "@/pipeline/types";
+import type { AutofixTestWriterInput } from "@/operations/autofix-test-writer";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
 
 // biome-ignore lint/suspicious/noExplicitAny: integration test fixture construction
 function makeCtx(

@@ -6,11 +6,11 @@
  * revertDiff: undoes committed changes via `git checkout HEAD -- <files>`.
  */
 
-import type { NaxConfig } from "../../config/runtime-types";
-import { NaxError } from "../../errors";
-import { verifyTestWriterIsolation } from "../../tdd/isolation";
-import { resolveTestFilePatterns } from "../../test-runners";
-import { spawn } from "../../utils/bun-deps";
+import type { NaxConfig } from "@/config/runtime-types";
+import { NaxError } from "@/errors";
+import { verifyTestWriterIsolation } from "@/tdd/isolation";
+import { resolveTestFilePatterns } from "@/test-runners";
+import { spawn } from "@/utils/bun-deps";
 
 /** Injectable deps for testability. */
 export const _guardDeps = {

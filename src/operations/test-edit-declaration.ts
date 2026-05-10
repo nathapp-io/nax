@@ -1,4 +1,4 @@
-import type { UserStory } from "../prd";
+import type { UserStory } from "@/prd";
 
 /**
  * Structured representation of a TEST_EDIT_REASON block emitted by the implementer

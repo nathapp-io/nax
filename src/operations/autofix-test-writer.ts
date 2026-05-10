@@ -1,8 +1,8 @@
-import { autofixConfigSelector } from "../config";
-import type { AutofixConfig } from "../config/selectors";
-import type { UserStory } from "../prd";
-import { RectifierPromptBuilder } from "../prompts";
-import type { ReviewCheckResult } from "../review/types";
+import { autofixConfigSelector } from "@/config";
+import type { AutofixConfig } from "@/config/selectors";
+import type { UserStory } from "@/prd";
+import { RectifierPromptBuilder } from "@/prompts";
+import type { ReviewCheckResult } from "@/review/types";
 import type { RunOperation } from "./types";
 
 export interface AutofixTestWriterInput {
