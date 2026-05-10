@@ -396,7 +396,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // sees implementation-axis-grounded findings.
   const blockingThresholdEffective = blockingThreshold ?? "error";
   let substantiatedFindings: AdversarialLLMFinding[];
-  if (adversarialConfig.diffMode === "ref") {
+  if (diffMode === "ref") {
     substantiatedFindings = await Promise.all(
       rawParsedRaw.findings.map(async (finding) => {
         if (!isBlockingSeverity(finding.severity, blockingThresholdEffective)) return finding;

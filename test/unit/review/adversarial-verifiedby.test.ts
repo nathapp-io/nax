@@ -9,12 +9,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { IAgentManager } from "@/agents";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
 import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
 import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import { _evidenceDeps } from "../../../src/review/semantic-evidence";
-import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
-import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
-import type { IAgentManager } from "@/agents";
 import { makeLogger } from "../../helpers/mock-logger";
 import { withTempDir } from "../../helpers/temp";
 
@@ -50,7 +50,8 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
     getDefaultAgent: "claude",
     completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
     runWithFallbackFn: async (req) => {
-      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      if (!req.executeHop) throw new Error("executeHop not available");
+      const hopResult = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
       return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
     },
     runAsSessionFn: async () => ({
@@ -59,7 +60,10 @@ function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
       estimatedCostUsd: cost,
       internalRoundTrips: 0,
     }),
-    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeWithFallbackFn: async () => ({
+      result: { output: llmResponse, costUsd: cost, source: "mock" },
+      fallbacks: [],
+    }),
     completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
     getAgentFn: () => makeAgentAdapter(),
   });
@@ -173,7 +177,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
       expect(result.success).toBe(true);
       expect(result.findings).toBeUndefined();
       expect(result.advisoryFindings).toBeDefined();
-      expect(result.advisoryFindings![0].severity).toBe("unverifiable");
+      expect(result.advisoryFindings?.[0]?.severity).toBe("unverifiable");
     });
   });
 
@@ -212,7 +216,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
 
       expect(result.success).toBe(true);
       expect(result.advisoryFindings).toBeDefined();
-      expect(result.advisoryFindings![0].severity).toBe("unverifiable");
+      expect(result.advisoryFindings?.[0]?.severity).toBe("unverifiable");
     });
   });
 
@@ -257,8 +261,8 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
 
       expect(result.success).toBe(false);
       expect(result.findings).toBeDefined();
-      expect(result.findings!.length).toBe(1);
-      expect(result.findings![0].severity).toBe("error");
+      expect(result.findings?.length).toBe(1);
+      expect(result.findings?.[0]?.severity).toBe("error");
     });
   });
 
@@ -296,7 +300,50 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
 
       expect(result.success).toBe(true);
       expect(result.advisoryFindings).toBeDefined();
-      expect(result.advisoryFindings![0].severity).toBe("info");
+      expect(result.advisoryFindings?.[0]?.severity).toBe("info");
+    });
+  });
+
+  test("preserves blocking finding when source file is unreadable (fail-open)", async () => {
+    await withTempDir(async (workdir) => {
+      // Deliberately do NOT write src/log.ts — readSafeFile returns null → "unreadable" → fail-open.
+      // file stem "log" appears in acQuote "can log in" so filterByAcQuote passes.
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/log.ts",
+            line: 1,
+            issue: "login handler stub",
+            suggestion: "Fix it",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: {
+              file: "src/log.ts",
+              line: 1,
+              observed: "some excerpt from the file",
+            },
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      // "unreadable" = tool failure, not fabrication → finding preserved as blocking
+      expect(result.success).toBe(false);
+      expect(result.findings).toBeDefined();
+      expect(result.findings?.[0]?.severity).toBe("error");
     });
   });
 
@@ -306,8 +353,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
       writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
 
       const logger = makeLogger();
-      _evidenceDeps.getLogger = () =>
-        logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
+      _evidenceDeps.getLogger = () => logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
 
       const llmResponse = JSON.stringify({
         passed: false,

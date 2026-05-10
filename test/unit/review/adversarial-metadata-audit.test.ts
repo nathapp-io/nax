@@ -83,15 +83,12 @@ const CATEGORY_FINDING_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     {
-      severity: "error",
+      severity: "warning",
       category: "test-gap",
       file: "src/log.ts",
       line: 30,
       issue: "Missing test for edge case",
       suggestion: "Add test",
-      acQuote: "can log in",
-      acIndex: 1,
-      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
   ],
 });
@@ -150,8 +147,8 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings).toBeDefined();
-    expect(result.findings![0].source).toBe("adversarial-review");
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings?.[0]?.source).toBe("adversarial-review");
   });
 
   test("finding has source 'adversarial-review'", async () => {
@@ -167,7 +164,7 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings![0].source).toBe("adversarial-review");
+    expect(result.advisoryFindings?.[0]?.source).toBe("adversarial-review");
   });
 
   test("finding carries category field from LLM response", async () => {
@@ -183,7 +180,7 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings![0].category).toBe("test-gap");
+    expect(result.advisoryFindings?.[0]?.category).toBe("test-gap");
   });
 });
 
