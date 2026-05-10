@@ -9,6 +9,7 @@ const OBSERVED_PREVIEW_CHARS = 160;
 const ISSUE_PREVIEW_CHARS = 200;
 
 export const SEMANTIC_FINDING_DOWNGRADED_EVENT = "review.semantic.finding.downgraded";
+export const ADVERSARIAL_FINDING_DOWNGRADED_EVENT = "review.adversarial.finding.downgraded";
 
 export interface EvidenceCheckResult {
   status: "matched" | "unmatched" | "unreadable" | "missing-observed";
@@ -20,6 +21,24 @@ export interface EvidenceCheckResult {
 export const _evidenceDeps = {
   getLogger: getSafeLogger,
 };
+
+/**
+ * Structural shape needed for evidence substantiation. Both LLMFinding (semantic)
+ * and AdversarialLLMFinding satisfy this — the substantiator only reads these
+ * fields. Issue #987.
+ */
+export interface FindingWithEvidence {
+  severity: string;
+  file: string;
+  line: number;
+  issue: string;
+  verifiedBy?: {
+    command?: string;
+    file: string;
+    line?: number;
+    observed: string;
+  };
+}
 
 export async function substantiateSemanticEvidence(
   findings: LLMFinding[],
@@ -40,7 +59,7 @@ export async function substantiateSemanticEvidence(
 }
 
 export async function checkFindingEvidence(opts: {
-  finding: LLMFinding;
+  finding: FindingWithEvidence;
   workdir: string;
 }): Promise<EvidenceCheckResult> {
   const observed = opts.finding.verifiedBy?.observed?.trim();
@@ -54,15 +73,15 @@ export async function checkFindingEvidence(opts: {
     : { status: "unmatched", file, line, observed };
 }
 
-export function downgradeUnsubstantiatedFinding(opts: {
-  finding: LLMFinding;
+export function downgradeUnsubstantiatedFinding<F extends FindingWithEvidence>(opts: {
+  finding: F;
   storyId: string;
   event?: string;
   file?: string;
   line?: number;
   observed?: string;
-}): LLMFinding {
-  _evidenceDeps.getLogger()?.warn("review", "Downgraded unsubstantiated semantic error finding", {
+}): F {
+  _evidenceDeps.getLogger()?.warn("review", "Downgraded unsubstantiated review finding", {
     storyId: opts.storyId,
     event: opts.event ?? SEMANTIC_FINDING_DOWNGRADED_EVENT,
     file: opts.file ?? opts.finding.verifiedBy?.file ?? opts.finding.file,
