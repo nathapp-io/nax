@@ -95,21 +95,40 @@ export function wrapJsonPrompt(prompt: string): string {
 /**
  * Parse JSON from raw LLM output using multi-tier extraction.
  *
- * Tier 1: Direct JSON.parse (clean responses)
- * Tier 2: Markdown fence extraction — non-anchored, handles preamble text
- * Tier 3: Bare JSON object/array extraction — handles JSON embedded in narration
+ * Tier 1:   Direct JSON.parse (clean responses)
+ * Tier 1.5: Explicit ```json fence — prioritised over generic fences to avoid
+ *           matching an earlier plain ``` fence (e.g. bun test output blocks)
+ * Tier 2:   Generic markdown fence — non-anchored, handles preamble text
+ * Tier 3a:  Bare JSON object extraction — first { … last }
+ * Tier 3b:  Bare JSON array extraction — first [ … last ] (fallback)
  *
- * @throws {SyntaxError} when all three tiers fail to produce valid JSON
+ * Tier 3 tries objects before arrays because almost all LLM responses are
+ * objects; this avoids the bug where "[7.00ms]" in assistant narration is
+ * mistaken for the start of a JSON array.
+ *
+ * @throws {SyntaxError} when all tiers fail to produce valid JSON
  */
 export function parseLLMJson<T = unknown>(text: string): T {
   const trimmed = text.trim();
 
+  // Tier 1: direct parse
   try {
     return JSON.parse(trimmed) as T;
   } catch {
     /* not raw JSON */
   }
 
+  // Tier 1.5: explicit ```json fence (must come before generic fence search)
+  const jsonFenceContent = trimmed.match(/```json\s*\n([\s\S]*?)\n?\s*```/)?.[1];
+  if (jsonFenceContent) {
+    try {
+      return JSON.parse(stripTrailingCommas(jsonFenceContent)) as T;
+    } catch {
+      /* json-tagged fence content not valid JSON */
+    }
+  }
+
+  // Tier 2: generic markdown fence
   const fromFence = extractJsonFromMarkdown(trimmed);
   if (fromFence !== trimmed) {
     try {
@@ -119,12 +138,25 @@ export function parseLLMJson<T = unknown>(text: string): T {
     }
   }
 
-  const bareJson = extractJsonObject(trimmed);
-  if (bareJson) {
+  // Tier 3a: bare JSON object — try { … } first
+  const objStart = trimmed.indexOf("{");
+  const objEnd = trimmed.lastIndexOf("}");
+  if (objStart !== -1 && objEnd > objStart) {
     try {
-      return JSON.parse(stripTrailingCommas(bareJson)) as T;
+      return JSON.parse(stripTrailingCommas(trimmed.slice(objStart, objEnd + 1))) as T;
     } catch {
-      /* extracted text not valid JSON */
+      /* extracted object not valid JSON */
+    }
+  }
+
+  // Tier 3b: bare JSON array — fallback to [ … ]
+  const arrStart = trimmed.indexOf("[");
+  const arrEnd = trimmed.lastIndexOf("]");
+  if (arrStart !== -1 && arrEnd > arrStart) {
+    try {
+      return JSON.parse(stripTrailingCommas(trimmed.slice(arrStart, arrEnd + 1))) as T;
+    } catch {
+      /* extracted array not valid JSON */
     }
   }
 
