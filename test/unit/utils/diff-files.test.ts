@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractDiffFiles } from "../../../src/utils/diff-files";
+import { extractDiffFiles } from "@/utils/diff-files";
 
 describe("extractDiffFiles", () => {
   test("returns empty set for empty input", () => {

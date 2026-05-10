@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   BLOCKING_CATEGORIES,
   analyzeStructuralCounterfactual,
-} from "../../../src/review/ac-structural-counterfactual";
+} from "@/review";
 
 const ACS = ["AC1: validate input", "AC2: error path", "AC3: assumption"];
 

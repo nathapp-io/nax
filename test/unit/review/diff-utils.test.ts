@@ -19,7 +19,7 @@ import {
   computeTestInventory,
   resolveEffectiveRef,
   truncateDiff,
-} from "../../../src/review/diff-utils";
+} from "@/review";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────────
 

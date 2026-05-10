@@ -4,16 +4,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ReviewAuditDecision } from "../../../src/runtime";
-import { runAdversarialReview } from "../../../src/review/adversarial";
-import { _diffUtilsDeps } from "../../../src/review/diff-utils";
-import type { AdversarialReviewConfig, SemanticStory } from "../../../src/review/types";
+import type { ReviewAuditDecision } from "@/runtime";
+import { _diffUtilsDeps, runAdversarialReview } from "@/review";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import {
   agentManagerWithFixedLLMResponse,
   captureAuditDecisions,
-  mockDiffUtilsDeps,
   makeMockRuntime,
-} from "../../helpers";
+  mockDiffUtilsDeps,
+} from "@test/helpers";
 
 const STORY: SemanticStory = {
   id: "US-001",
