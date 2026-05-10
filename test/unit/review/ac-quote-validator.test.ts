@@ -4,11 +4,8 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  type AcGroundingMinimalRejection,
   type AcQuotable,
-  filterByAcGroundingMinimal,
   filterByAcQuote,
-  validateAcGroundingMinimal,
   validateAcQuote,
 } from "../../../src/review/ac-quote-validator";
 
@@ -257,142 +254,6 @@ describe("filterByAcQuote", () => {
       acIndex: 1,
     };
     const result = filterByAcQuote([finding], ACS);
-    expect(result.accepted).toHaveLength(1);
-    expect((result.accepted[0] as AdversarialShape).category).toBe("convention");
-  });
-});
-
-// ─── validateAcGroundingMinimal ───────────────────────────────────────────────
-
-describe("validateAcGroundingMinimal", () => {
-  describe("non-blocking severities bypass validation", () => {
-    test.each(["warning", "info", "unverifiable", "low"] as const)("%s severity → valid", (severity) => {
-      const finding = makeFinding({ severity });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-  });
-
-  describe("blocking severities require valid acIndex", () => {
-    test("error with no acIndex → missing_ac_index", () => {
-      const finding = makeFinding({ severity: "error" });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "missing_ac_index" });
-    });
-
-    test("critical with acIndex 0 → missing_ac_index", () => {
-      const finding = makeFinding({ severity: "critical", acIndex: 0 });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "missing_ac_index" });
-    });
-
-    test("error with acIndex beyond array → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 99 });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "ac_index_out_of_range" });
-    });
-
-    test("error with acIndex: 1 and no acceptanceCriteria → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 1 });
-      expect(validateAcGroundingMinimal(finding, [])).toEqual({ valid: false, code: "ac_index_out_of_range" });
-    });
-
-    // Contract regression test: acQuote content is NEVER inspected
-    test("error with acIndex in range and acQuote: 'this text is nowhere in any AC' → valid", () => {
-      const finding = makeFinding({
-        severity: "error",
-        acIndex: 1,
-        acQuote: "this text is nowhere in any AC",
-      });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-
-    test("error with valid acIndex and no acQuote → valid", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 1 });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-
-    test("error with acIndex in range (last AC) → valid", () => {
-      const finding = makeFinding({ severity: "error", acIndex: ACS.length });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-  });
-});
-
-// ─── filterByAcGroundingMinimal ───────────────────────────────────────────────
-
-describe("filterByAcGroundingMinimal", () => {
-  test("empty findings → empty accepted and dropped", () => {
-    const result = filterByAcGroundingMinimal([], ACS);
-    expect(result.accepted).toHaveLength(0);
-    expect(result.dropped).toHaveLength(0);
-  });
-
-  test("non-blocking findings always accepted", () => {
-    const findings: AcQuotable[] = [
-      makeFinding({ severity: "warning" }),
-      makeFinding({ severity: "info" }),
-      makeFinding({ severity: "unverifiable" }),
-    ];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(3);
-    expect(result.dropped).toHaveLength(0);
-  });
-
-  test("error finding without acIndex is dropped with missing_ac_index", () => {
-    const findings = [makeFinding({ severity: "error" })];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(0);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("missing_ac_index");
-  });
-
-  test("error finding with acIndex out of range is dropped with ac_index_out_of_range", () => {
-    const findings = [makeFinding({ severity: "error", acIndex: 99 })];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(0);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("ac_index_out_of_range");
-  });
-
-  test("error finding with valid acIndex and bogus acQuote is accepted", () => {
-    const findings = [makeFinding({ severity: "error", acIndex: 1, acQuote: "completely made up text" })];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(1);
-    expect(result.dropped).toHaveLength(0);
-  });
-
-  test("mixed: valid error accepted, no-acIndex error dropped, non-blocking pass through", () => {
-    const findings: AcQuotable[] = [
-      makeFinding({ severity: "error", acIndex: 1 }),
-      makeFinding({ severity: "error" }),
-      makeFinding({ severity: "warning" }),
-    ];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(2);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("missing_ac_index");
-  });
-
-  test("dropped entry preserves the original finding reference", () => {
-    const finding = makeFinding({ severity: "error", issue: "sentinel-issue-minimal" });
-    const result = filterByAcGroundingMinimal([finding], ACS);
-    expect(result.dropped[0].finding.issue).toBe("sentinel-issue-minimal");
-  });
-
-  test("critical severity is also subject to validation", () => {
-    const findings = [makeFinding({ severity: "critical" })];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("missing_ac_index");
-  });
-
-  test("preserves concrete AdversarialLLMFinding shape (category field)", () => {
-    type AdversarialShape = AcQuotable & { category: string };
-    const finding: AdversarialShape = {
-      severity: "error",
-      file: "src/review/ac-quote-validator.ts",
-      issue: "minimal check broken",
-      category: "convention",
-      acIndex: 1,
-    };
-    const result = filterByAcGroundingMinimal([finding], ACS);
     expect(result.accepted).toHaveLength(1);
     expect((result.accepted[0] as AdversarialShape).category).toBe("convention");
   });
