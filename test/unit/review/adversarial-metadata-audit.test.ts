@@ -91,6 +91,7 @@ const CATEGORY_FINDING_RESPONSE = JSON.stringify({
       suggestion: "Add test",
       acQuote: "can log in",
       acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
   ],
 });

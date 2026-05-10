@@ -96,6 +96,7 @@ const FAILING_ERROR_RESPONSE = JSON.stringify({
       suggestion: "Add try/catch",
       acQuote: "can log in",
       acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
   ],
 });
@@ -154,6 +155,7 @@ const PASSED_TRUE_WITH_ERROR_RESPONSE = JSON.stringify({
       suggestion: "Add .catch()",
       acQuote: "can log in",
       acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
     },
   ],
 });
@@ -316,6 +318,9 @@ const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
       // and even if it were, the locus check would fail. The validator drops this.
       acQuote: "convention forbids custom ExtendedPrismaClient",
       acIndex: 1,
+      // verifiedBy present so substantiation returns "unreadable" (file doesn't exist in /tmp/wd)
+      // and preserves the finding, allowing it to reach filterByAcQuote and be dropped there.
+      verifiedBy: { file: "src/log.ts", observed: "ExtendedPrismaClient stub" },
     },
   ],
 });

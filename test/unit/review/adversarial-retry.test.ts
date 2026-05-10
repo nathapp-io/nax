@@ -208,7 +208,7 @@ describe("runAdversarialReview — JSON retry outcomes", () => {
   test("returns failure with blocking findings when callOp returns findings", async () => {
     _adversarialDeps.callOp = mock(async () => ({
       passed: false,
-      findings: [{ severity: "error", file: "src/log.ts", line: 1, issue: "Bug", suggestion: "Fix", acQuote: "can log in", acIndex: 1 }],
+      findings: [{ severity: "error", file: "src/log.ts", line: 1, issue: "Bug", suggestion: "Fix", acQuote: "can log in", acIndex: 1, verifiedBy: { file: "src/log.ts", observed: "bug stub" } }],
     }));
     const agentManager = makeAgentManager(PASSING_RESPONSE);
     const runtime = makeMockRuntime({ agentManager });

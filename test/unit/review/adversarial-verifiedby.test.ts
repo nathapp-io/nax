@@ -1,0 +1,351 @@
+/**
+ * Unit tests for verifiedBy.observed substantiation in runAdversarialReview (Issue #987).
+ *
+ * Split from adversarial-pass-fail.test.ts to keep that file within the 600-line limit.
+ * Covers: downgrade on phantom quote, downgrade on missing verifiedBy, preservation on
+ * verbatim match, info-severity bypass, and downgrade event emission.
+ */
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
+import { _evidenceDeps } from "../../../src/review/semantic-evidence";
+import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
+import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
+import { makeLogger } from "../../helpers/mock-logger";
+import { withTempDir } from "../../helpers/temp";
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const STORY: SemanticStory = {
+  id: "STORY-001",
+  title: "Add auth",
+  description: "Auth feature",
+  acceptanceCriteria: ["Users can log in"],
+};
+
+const ADVERSARIAL_CONFIG: AdversarialReviewConfig = {
+  model: "balanced",
+  diffMode: "ref",
+  rules: [],
+  timeoutMs: 180_000,
+  excludePatterns: [],
+  parallel: false,
+  maxConcurrentSessions: 2,
+};
+
+const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeAgentManager(llmResponse: string, cost = 0.001): IAgentManager {
+  return makeMockAgentManager({
+    getDefaultAgent: "claude",
+    completeFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" as const }),
+    runWithFallbackFn: async (req) => {
+      const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+      return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+    },
+    runAsSessionFn: async () => ({
+      output: llmResponse,
+      tokenUsage: { inputTokens: 10, outputTokens: 20 },
+      estimatedCostUsd: cost,
+      internalRoundTrips: 0,
+    }),
+    completeWithFallbackFn: async () => ({ result: { output: llmResponse, costUsd: cost, source: "mock" }, fallbacks: [] }),
+    completeAsFn: async () => ({ output: llmResponse, costUsd: cost, source: "mock" }),
+    getAgentFn: () => makeAgentAdapter(),
+  });
+}
+
+function makeSpawnMock(stdout: string, exitCode = 0) {
+  return mock((_opts: unknown) => ({
+    exited: Promise.resolve(exitCode),
+    stdout: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(stdout));
+        controller.close();
+      },
+    }),
+    stderr: new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    }),
+    kill: () => {},
+  })) as unknown as typeof _diffUtilsDeps.spawn;
+}
+
+// ---------------------------------------------------------------------------
+// Shared dep save/restore
+// ---------------------------------------------------------------------------
+
+let origSpawn: typeof _diffUtilsDeps.spawn;
+let origIsGitRefValid: typeof _diffUtilsDeps.isGitRefValid;
+let origGetMergeBase: typeof _diffUtilsDeps.getMergeBase;
+let origWriteReviewAudit: typeof _adversarialDeps.writeReviewAudit;
+
+function saveAllDeps() {
+  origSpawn = _diffUtilsDeps.spawn;
+  origIsGitRefValid = _diffUtilsDeps.isGitRefValid;
+  origGetMergeBase = _diffUtilsDeps.getMergeBase;
+  origWriteReviewAudit = _adversarialDeps.writeReviewAudit;
+}
+
+function restoreAllDeps() {
+  _diffUtilsDeps.spawn = origSpawn;
+  _diffUtilsDeps.isGitRefValid = origIsGitRefValid;
+  _diffUtilsDeps.getMergeBase = origGetMergeBase;
+  _adversarialDeps.writeReviewAudit = origWriteReviewAudit;
+}
+
+function setupHappyPathDeps(statContent = STAT_OUTPUT) {
+  _diffUtilsDeps.isGitRefValid = mock(async () => true);
+  _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+  _diffUtilsDeps.spawn = makeSpawnMock(statContent);
+  _adversarialDeps.writeReviewAudit = mock(async () => {});
+}
+
+// ---------------------------------------------------------------------------
+// AC-5 (Issue #987): Implementation-axis grounding — verifiedBy.observed
+// ---------------------------------------------------------------------------
+
+describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", () => {
+  let origGetLogger: typeof _evidenceDeps.getLogger;
+
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+    origGetLogger = _evidenceDeps.getLogger;
+  });
+
+  afterEach(() => {
+    _evidenceDeps.getLogger = origGetLogger;
+    restoreAllDeps();
+  });
+
+  test("downgrades blocking finding when verifiedBy.observed is not in source", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "login is broken",
+            suggestion: "Fix it",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: {
+              command: "cat src/auth.ts",
+              file: "src/auth.ts",
+              line: 1,
+              observed: "this string is not in the file",
+            },
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      // Downgraded to "unverifiable" → not blocking → review passes
+      expect(result.success).toBe(true);
+      expect(result.findings).toBeUndefined();
+      expect(result.advisoryFindings).toBeDefined();
+      expect(result.advisoryFindings![0].severity).toBe("unverifiable");
+    });
+  });
+
+  test("downgrades blocking finding when verifiedBy.observed is missing", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "login is broken",
+            suggestion: "Fix it",
+            acQuote: "can log in",
+            acIndex: 1,
+            // verifiedBy intentionally omitted
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.advisoryFindings).toBeDefined();
+      expect(result.advisoryFindings![0].severity).toBe("unverifiable");
+    });
+  });
+
+  test("preserves blocking finding when verifiedBy.observed matches source verbatim", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      // file "log.ts" → keyword "log" → appears in acQuote "can log in"
+      writeFileSync(join(workdir, "src/log.ts"), "export function login() { return null; }\n");
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/log.ts",
+            line: 1,
+            issue: "login returns null",
+            suggestion: "Return a session",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: {
+              command: "cat src/log.ts",
+              file: "src/log.ts",
+              line: 1,
+              observed: "export function login() { return null; }",
+            },
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.findings).toBeDefined();
+      expect(result.findings!.length).toBe(1);
+      expect(result.findings![0].severity).toBe("error");
+    });
+  });
+
+  test("non-blocking finding (info) skips substantiation entirely", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      // info severity — substantiation must NOT run; finding passes through
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "info",
+            category: "convention",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Could add docstring",
+            suggestion: "Add JSDoc",
+            // No verifiedBy — info doesn't require it
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.advisoryFindings).toBeDefined();
+      expect(result.advisoryFindings![0].severity).toBe("info");
+    });
+  });
+
+  test("emits review.adversarial.finding.downgraded log event on downgrade", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      const logger = makeLogger();
+      _evidenceDeps.getLogger = () =>
+        logger as unknown as ReturnType<typeof _evidenceDeps.getLogger>;
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "fabricated issue",
+            suggestion: "Fix",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: {
+              command: "cat",
+              file: "src/auth.ts",
+              line: 1,
+              observed: "phantom code that is not in the file",
+            },
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+      });
+
+      const downgradeEvent = logger.calls.find(
+        (c) => (c.data as Record<string, unknown> | undefined)?.event === "review.adversarial.finding.downgraded",
+      );
+      expect(downgradeEvent).toBeDefined();
+    });
+  });
+});
