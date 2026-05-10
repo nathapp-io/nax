@@ -558,4 +558,49 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     expect(allFiles).toContain("src/review/semantic.ts");
     expect(allFiles).toContain("src/cli/plan.ts");
   });
+
+  test("drops blocking findings with missing acIndex in debate path (acQuote advisory only)", async () => {
+    const proposalMissingAcIndex = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          file: "src/review/semantic.ts",
+          line: 10,
+          issue: "blocking concern without AC index",
+          suggestion: "add AC index",
+          acQuote: "this is advisory and not validated",
+        },
+      ],
+    });
+    const debateFailedWithUngroundedBlocking: DebateResult = {
+      storyId: "US-004",
+      stage: "review",
+      outcome: "failed",
+      rounds: 1,
+      debaters: ["claude"],
+      resolverType: "majority-fail-closed",
+      proposals: [{ debater: { agent: "claude" }, output: proposalMissingAcIndex }],
+      totalCostUsd: 0.001,
+    };
+
+    _semanticDeps.createDebateRunner = mock(() => ({
+      run: mock(async () => debateFailedWithUngroundedBlocking),
+    })) as unknown as typeof _semanticDeps.createDebateRunner;
+
+    const result = await runSemanticReview({
+      workdir: WORKDIR,
+      storyGitRef: STORY_GIT_REF,
+      story: STORY,
+      semanticConfig: SEMANTIC_CONFIG,
+      agentManager: makeAgentManager(PROPOSAL_PASS),
+      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
+      runtime: makeMockRuntime(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.findings ?? []).toHaveLength(0);
+    expect(result.advisoryFindings ?? []).toHaveLength(0);
+    expect(result.output).toContain("all findings were advisory");
+  });
 });
