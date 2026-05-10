@@ -23,3 +23,4 @@ export {
   mockDiffUtilsDeps,
 } from "./review-audit";
 export { withDepsRestore } from "./deps";
+export { waitForCondition } from "./timeout";
