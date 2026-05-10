@@ -243,10 +243,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   // Split debate findings by blocking threshold — drop ungrounded error findings first
   const debateThreshold = blockingThreshold ?? "error";
   const sanitized = sanitizeRefModeFindings(deduped, diffMode, debateThreshold);
-  const { accepted: debateFindings, dropped: acDropped } = filterByAcGroundingMinimal(
-    sanitized,
-    story.acceptanceCriteria ?? [],
-  );
+  const { accepted: debateFindings, dropped: acDropped } = filterByAcGroundingMinimal(sanitized, story.acceptanceCriteria ?? []);
   if (acDropped.length > 0) {
     logger?.warn("review", "Semantic debate findings dropped: acIndex missing or out of range", {
       storyId: story.id,
