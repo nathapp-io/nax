@@ -81,6 +81,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         testGlobs: input.testGlobs,
         refExcludePatterns: input.refExcludePatterns,
         priorAdversarialIterations: input.priorAdversarialIterations,
+        blockingThreshold: input.blockingThreshold,
       },
     );
     const content = input.featureCtxBlock ? `${input.featureCtxBlock}${base}` : base;

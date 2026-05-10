@@ -426,6 +426,31 @@ describe("AdversarialReviewPromptBuilder — verifiedBy implementation-axis grou
     });
     expect(result).toContain("verifiedBy.observed");
     expect(result.toLowerCase()).toContain("verbatim");
+    expect(result).toContain('blocking threshold is `"error"`');
+  });
+
+  test("instructions align verifiedBy requirement with warning blocking threshold", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      blockingThreshold: "warning",
+    });
+    expect(result).toContain('blocking threshold is `"warning"`');
+    expect(result).toContain('`"error"` and `"warning"`');
+    expect(result).toContain("MUST include `verifiedBy.observed`");
+  });
+
+  test("passed guidance aligns with info blocking threshold", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+      blockingThreshold: "info",
+    });
+    expect(result).toContain('blocking threshold is `"info"`');
+    expect(result).toContain('`"error"`, `"warning"`, and `"info"`');
+    expect(result).toContain("`passed` must be `false` if any finding has blocking severity");
+    expect(result).toContain('advisory (`"unverifiable"`)');
+    expect(result).not.toContain('all findings are `"info"` or `"unverifiable"`');
   });
 
   test("instructions tell LLM to downgrade rather than fabricate quotes", () => {

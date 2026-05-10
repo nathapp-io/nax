@@ -55,6 +55,8 @@ export interface AdversarialReviewPromptOptions {
    * for adversarial carry-forward iterations (fix ran in the implementation session).
    */
   priorAdversarialIterations?: Iteration[];
+  /** Minimum severity that blocks the story for this run. Defaults to "error". */
+  blockingThreshold?: "error" | "warning" | "info";
 }
 
 const ADVERSARIAL_ROLE = `You are an adversarial code reviewer with full access to the repository.
@@ -143,11 +145,8 @@ Severity guide:
 - \`"info"\`: noteworthy but not actionable as a blocker
 - \`"unverifiable"\`: suspect problem but couldn't confirm from available artifacts
 
-\`passed\` must be \`false\` if any finding has severity \`"error"\` or \`"warning"\`.
-\`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.
-
-**Implementation-axis grounding — required for every "error" finding:**
-- Every "error" finding MUST include \`verifiedBy.observed\`: a verbatim 1–3 line code excerpt copy-pasted from the cited file that demonstrates the issue.
+**Implementation-axis grounding — required for every blocking finding:**
+- Every finding at or above the configured blocking threshold MUST include \`verifiedBy.observed\`: a verbatim 1–3 line code excerpt copy-pasted from the cited file that demonstrates the issue.
 - A description like "function X does not check Y" is not a verifiable observation; quote the lines that prove the omission instead.
 - The \`verifiedBy.observed\` field is substring-checked against the file at HEAD. If your quoted text does not appear in the file, the finding will be silently downgraded to \`"unverifiable"\`.
 - If you cannot quote an exact excerpt that proves your point, downgrade the finding to \`"unverifiable"\` rather than fabricating a quote.
@@ -172,6 +171,29 @@ Worked example:
 The story description may contain a "Scope" section with "In:" and "Out:" bullets. These are implementation guidelines, not ACs. A finding about code changed outside the stated scope (e.g., a file listed under "Out:") cannot cite a scope constraint as its \`acQuote\`/\`acIndex\` because scope text is not in the numbered AC list. Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1).
 
 If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\` or \`"warning"\`. A finding dropped by the validator is worse than one correctly classified as advisory.`;
+
+function buildBlockingThresholdBlock(threshold: "error" | "warning" | "info"): string {
+  const blocking =
+    threshold === "info"
+      ? '`"error"`, `"warning"`, and `"info"`'
+      : threshold === "warning"
+        ? '`"error"` and `"warning"`'
+        : '`"error"`';
+  const advisory =
+    threshold === "info"
+      ? '`"unverifiable"`'
+      : threshold === "warning"
+        ? '`"info"` and `"unverifiable"`'
+        : '`"warning"`, `"info"`, and `"unverifiable"`';
+  return `## Blocking Threshold
+
+The configured blocking threshold is \`"${threshold}"\`. Findings with severity ${blocking} can block this story, so they MUST include \`verifiedBy.observed\`.
+
+\`passed\` must be \`false\` if any finding has blocking severity ${blocking}.
+\`passed\` may be \`true\` with findings only if all findings are advisory (${advisory}).
+
+`;
+}
 
 /**
  * Build the diff section for "ref" mode.
@@ -273,6 +295,7 @@ export class AdversarialReviewPromptBuilder {
       testGlobs,
       refExcludePatterns,
       priorAdversarialIterations,
+      blockingThreshold,
     } = options;
 
     const priorFindingsBlock = buildPriorIterationsBlock(priorAdversarialIterations ?? []);
@@ -316,6 +339,7 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
       ADVERSARIAL_INSTRUCTIONS,
       "\n\n",
       customRulesBlock,
+      buildBlockingThresholdBlock(blockingThreshold ?? "error"),
       OUTPUT_SCHEMA,
       "\n\n",
       diffBlock,

@@ -388,33 +388,24 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // as substantiateSemanticEvidence (#826/#827) on the semantic side. Mirrors that
   // gate so adversarial findings can no longer fabricate code claims.
   //
-  // Only runs in "ref" mode (LLM self-serves files via git; diff is not inlined).
-  // In "embedded" mode the LLM only sees a diff snippet, so file-on-disk checks
-  // would be unreliable. Mirrors the same diffMode guard in substantiateSemanticEvidence.
-  //
   // Order matters: this runs BEFORE filterByAcQuote so AC-axis validation only
   // sees implementation-axis-grounded findings.
   const blockingThresholdEffective = blockingThreshold ?? "error";
-  let substantiatedFindings: AdversarialLLMFinding[];
-  if (diffMode === "ref") {
-    substantiatedFindings = await Promise.all(
-      rawParsedRaw.findings.map(async (finding) => {
-        if (!isBlockingSeverity(finding.severity, blockingThresholdEffective)) return finding;
-        const evidence = await checkFindingEvidence({ finding, workdir });
-        if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
-        return downgradeUnsubstantiatedFinding({
-          finding,
-          storyId: story.id,
-          event: ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
-          file: evidence.file,
-          line: evidence.line,
-          observed: evidence.observed,
-        });
-      }),
-    );
-  } else {
-    substantiatedFindings = rawParsedRaw.findings;
-  }
+  const substantiatedFindings = await Promise.all(
+    rawParsedRaw.findings.map(async (finding) => {
+      if (!isBlockingSeverity(finding.severity, blockingThresholdEffective)) return finding;
+      const evidence = await checkFindingEvidence({ finding, workdir });
+      if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
+      return downgradeUnsubstantiatedFinding({
+        finding,
+        storyId: story.id,
+        event: ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
+        file: evidence.file,
+        line: evidence.line,
+        observed: evidence.observed,
+      });
+    }),
+  );
   const rawParsed: AdversarialLLMResponse = { ...rawParsedRaw, findings: substantiatedFindings };
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
