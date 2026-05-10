@@ -3,7 +3,7 @@
   "feature": "enhanced-debate-phase-1",
   "branchName": "feat/enhanced-debate-phase-1",
   "createdAt": "2026-05-10T00:00:00.000Z",
-  "updatedAt": "2026-05-10T14:11:56.314Z",
+  "updatedAt": "2026-05-10T14:31:33.590Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,7 +31,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/types.ts",
@@ -44,7 +46,11 @@
         "registerSelector(kind, strategy) followed by resolveSelector(kind) returns the registered strategy function",
         "DebateStageConfigSchema.parse({ postDebateVerifier: { kind: 'review-grounding-filter' } }) returns an object where postDebateVerifier.kind === 'review-grounding-filter'",
         "DebateConfigSchema.parse({}) preserves all existing stage defaults unchanged (plan: enabled=true, resolver.type='synthesis'; review: enabled=true, resolver.type='majority-fail-closed')"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4530170d7f01c2c163e4783e7d639b2a78caa219"
     },
     {
       "id": "US-002",
@@ -86,7 +92,10 @@
         "synthesisSelector returns outcome === 'failed' when the synthesizer produces an empty string output",
         "judgeSelector returns resolverCostUsd === 0 when agentManager.completeAs returns zero cost",
         "majorityFailClosedSelector and majorityFailOpenSelector differ only in the failOpen parameter passed to majorityResolver"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -133,7 +142,10 @@
         "pickSelectorKind with stageConfig.selector = { kind: 'dialogue-verdict' } explicitly set returns 'dialogue-verdict' even when reviewerSession and resolverContextInput are both absent (explicit selector bypasses auto-elevation)",
         "reviewGroundingFilterVerifier returns costUsd === 0 (verifier is mechanical, no LLM calls)",
         "dialogueVerdictSelector registered under 'dialogue-verdict' key in selector registry"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -178,7 +190,10 @@
         "When preDebatePhase is set and resolvePreDebatePhase throws, runPanelOneShot propagates the error (no silent swallow)",
         "When postDebateVerifier returns outcome === 'skipped', runPanelOneShot returns the selector's original outcome unchanged",
         "totalCost in runPanelOneShot accumulates pre-phase costUsd + selector resolverCostUsd + post-verifier costUsd"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -223,7 +238,10 @@
         "renderManifestSection returns a string containing 'verified'/'unverified'/'partial'/'contradicted' status for each specClaim",
         "groundOp.stage === 'plan'",
         "groundOp is exported from src/operations/index.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a pure internal refactor + foundation phase — no production LLM behavior changes for any existing user. All new plug-point fields default off; existing call sites remain byte-equivalent after the extractions.\n\n**Key existing files to modify:**\n- `src/debate/types.ts` — add optional plug-point fields to `DebateStageConfig` and new `GrounderConfig` + `grounder` field to `DebateConfig`\n- `src/config/schemas-debate.ts` — add optional plug-point fields to the `DebateStageConfigSchema` factory inner object and add top-level `grounder` block to `DebateConfigSchema`. IMPORTANT: `DebateStageConfigSchema` is currently a factory function `(defaults) => z.preprocess(...)` — the spec ACs reference `DebateStageConfigSchema.parse({})` directly. Implementer must either (a) export a canonical named `DebateStageConfigSchema` at module level (e.g. with plan-stage defaults) alongside the factory, or (b) ensure tests call one of the concrete stage schemas. The cleanest approach matching the ACs is to export a single canonical schema instance.\n- `src/debate/resolvers.ts` — bodies of `synthesisResolver`, `majorityResolver`, `judgeResolver` should delegate to the new strategies; exports remain for compat\n- `src/debate/session-helpers.ts` — `resolveOutcome()` body replaced with thin dispatcher; dialogue-path branch extracted to strategy\n- `src/debate/runner.ts` — `runPanelOneShot()` gains pre/post plug-point dispatch hooks\n- `src/debate/runner-plan.ts` — separate 273-line file; also calls `resolveOutcome` and must be wired\n- `src/debate/runner-hybrid.ts` and `src/debate/runner-stateful.ts` — also call `resolveOutcome`\n- `src/review/semantic-debate.ts` — force-override block at the location around lines 97-105 removed; replaced with explicit composition (`selector: { kind: 'dialogue-verdict' }` + `postDebateVerifier: { kind: 'review-grounding-filter' }`); grounding-filter extraction block around lines 245-290\n\n**New files to create:**\n- `src/debate/pre-phase/types.ts`, `src/debate/pre-phase/registry.ts`, `src/debate/pre-phase/index.ts` (barrel)\n- `src/debate/selectors/types.ts`, `src/debate/selectors/registry.ts`, `src/debate/selectors/synthesis.ts`, `src/debate/selectors/majority.ts`, `src/debate/selectors/judge.ts`, `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/pick.ts`, `src/debate/selectors/index.ts` (barrel)\n- `src/debate/verifiers/types.ts`, `src/debate/verifiers/registry.ts`, `src/debate/verifiers/review-grounding-filter.ts`, `src/debate/verifiers/index.ts` (barrel)\n- `src/debate/facts-manifest.ts`\n- `src/operations/ground.ts`\n- `src/prompts/builders/grounder-builder.ts`\n\n**Pattern references:**\n- Selector strategy shape: `(ctx: SelectorContext) => Promise<SelectorResult>` — wrap existing resolver bodies\n- Pattern A op: `model: (_input, ctx) => ctx.config.grounder.model` — same as `planInteractiveOp` and `acceptanceGenerateOp`\n- `ConfiguredModelSchema` is imported from `@/config` barrel (see `src/config/schemas-infra.ts`)\n- `debateConfigSelector` already exists in `src/config/selectors.ts`\n- Static registry: function map + `resolve*(kind)` that throws `NaxError` on unknown kind\n\n**Critical risks:**\n1. `resolveOutcome()` refactor in `session-helpers.ts` — highest risk. Must be byte-equivalent. Existing tests in `test/unit/debate/session-helpers.test.ts` cover all resolver types and the dialogue path.\n2. The `try/catch` fallback wrapping the dialogue path today must be preserved at dispatcher level — when `dialogueVerdictSelector` throws, fall back to stateless selector.\n3. `runner-plan.ts` is a separate file from `runner.ts` — both entry points must independently route through the refactored `resolveOutcome`.\n4. Compat wrappers in `resolvers.ts` must remain intact — downstream callers may import them directly.\n5. `semantic-debate.ts` force-override removal must result in byte-equivalent behavior via explicit composition.\n\n**Dependency order:** US-001 → US-002 → US-003 → US-004. US-005 is independent and can be developed in parallel with US-001/2/3/4.\n\n**Barrel exports:** Each new `src/debate/*/index.ts` must be added to `src/debate/index.ts` if not already re-exported; `src/operations/ground.ts` must be added to `src/operations/index.ts`; `src/prompts/builders/grounder-builder.ts` must be added to `src/prompts/index.ts`.\n\n**`DebateConfig` selector note:** `debateConfigSelector = pickSelector('debate', 'debate', 'models', 'agent')` — `groundOp.config = debateConfigSelector` gives access to `ctx.config.debate.grounder.model` and `ctx.config.debate.grounder.timeoutSeconds`. Inside the op, the slice is the full `DebateConfig` (including `grounder`), so `ctx.config.grounder` is the correct path."
