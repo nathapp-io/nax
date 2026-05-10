@@ -59,6 +59,7 @@ export type {
 export { AgentStreamEventBus } from "./agent-stream-events";
 export { attachAgentIdleWatchdog, attachAgentStreamLogging } from "./middleware";
 export type { WatchdogState } from "./middleware";
+export { formatSessionName } from "./session-name";
 
 import { basename, join } from "node:path";
 import type { IAgentManager } from "../agents";

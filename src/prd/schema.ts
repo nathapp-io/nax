@@ -265,9 +265,12 @@ function sanitizeInvalidEscapes(text: string): string {
   result = result.replace(/\\u([0-9a-fA-F]{1,3})(?![0-9a-fA-F])/g, (_, digits) => `\\u${digits.padStart(4, "0")}`);
   result = result.replace(/\\u(?![0-9a-fA-F])/g, "\\");
 
-  // Remove backslash before any character that is NOT a valid JSON escape char
+  // Remove backslash before any character that is NOT a valid JSON escape char.
   // Valid: " \ / b f n r t u
-  result = result.replace(/\\([^"\\\/bfnrtu])/g, "$1");
+  // Match valid \\ pairs first (to preserve them), then strip lone \ before invalid char.
+  // Without the pair-first branch, \\( would corrupt to \( (invalid), because the regex
+  // would match the second \ + ( after skipping the first \ + \ (which IS in the exclusion).
+  result = result.replace(/(\\\\)|\\([^"\\\/bfnrtu])/g, (_, pair, bad) => pair ?? bad);
 
   return result;
 }

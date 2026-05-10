@@ -27,6 +27,11 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
+  // fileOutput: the plan prompt instructs the agent to write JSON to disk and reply
+  // with a brief text confirmation. callOp reads this file after each send and
+  // substitutes its content as the probe output — so retries only fire when the
+  // file is missing or contains invalid JSON, not on every text-confirmation turn.
+  fileOutput: (input) => input.outputPath,
   retry: makeParseRetryStrategy({
     validate: (parsed) => {
       if (parsed === null || typeof parsed !== "object") return false;
@@ -41,16 +46,10 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
       invalid: () => PlanPromptBuilder.jsonRepair(0, "Invalid JSON — response was not parseable"),
       truncated: () => PlanPromptBuilder.jsonRepair(0, "JSON appears truncated — please rewrite completely"),
     },
-    // Intentionally no exhaustedFallback: it is synchronous and only receives
-    // lastOutput, so it cannot read outputPath from disk. Disk recovery is
-    // handled by op.recover below, which callOp's catch path invokes when retry
-    // exhausts. See issue #993 and .claude/rules/retry-strategy.md
-    // "Strict-parser interaction" — op.recover is the third sanctioned escape
-    // hatch alongside exhaustedFallback and graceful-degradation parse().
+    // Intentionally no exhaustedFallback: synchronous and only receives lastOutput.
+    // Disk recovery is handled by op.recover. See issue #993 and retry-strategy.md
+    // "Strict-parser interaction".
   }),
-  hopBody: async (initialPrompt, ctx) => {
-    return ctx.sendWithParseRetry(initialPrompt);
-  },
   build(input, _ctx) {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       input.specContent,
