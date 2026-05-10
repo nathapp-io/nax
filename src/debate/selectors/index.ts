@@ -3,3 +3,6 @@ export { resolveSelector, registerSelector } from "./registry";
 export { majorityFailClosedSelector, majorityFailOpenSelector, computeMajority } from "./majority";
 export { synthesisSelector, callSynthesisComplete } from "./synthesis";
 export { judgeSelector, callJudgeComplete } from "./judge";
+export { dialogueVerdictSelector } from "./dialogue-verdict";
+export { pickSelectorKind } from "./pick";
+export type { PickSelectorKindContext } from "./pick";

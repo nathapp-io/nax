@@ -1,1 +1,2 @@
 [2026-05-10T14:50:02.065Z] US-001 — PASSED — Plug-point schema + contracts + registries — Cost: $1.5493
+[2026-05-10T15:15:50.369Z] US-002 — PASSED — Extract synthesis, majority-fail-closed, majority-fail-open, judge selector strategies — Cost: $2.3997

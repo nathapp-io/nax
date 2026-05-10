@@ -3,6 +3,7 @@
  */
 
 import { NaxError } from "@/errors";
+import { reviewGroundingFilterVerifier } from "./review-grounding-filter";
 import type { PostDebateVerifier } from "./types";
 
 const STRATEGIES: Record<string, PostDebateVerifier> = {};
@@ -18,3 +19,6 @@ export function resolvePostDebateVerifier(kind: string): PostDebateVerifier {
 export function registerPostDebateVerifier(kind: string, strategy: PostDebateVerifier): void {
   STRATEGIES[kind] = strategy;
 }
+
+// Register built-in verifiers at module load
+registerPostDebateVerifier("review-grounding-filter", reviewGroundingFilterVerifier);
