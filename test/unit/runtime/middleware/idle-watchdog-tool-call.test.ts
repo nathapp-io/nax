@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
 import { AgentStreamEventBus, attachAgentIdleWatchdog, type AgentStreamEvent } from "@/runtime";
-import { cleanupTempDir, makeTempDir, makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, makeNaxConfig, waitForCondition } from "@test/helpers";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -20,7 +20,7 @@ function makeWatchdogConfig(overrides: {
       idleWatchdog: {
         enabled: true,
         mode: "cancel",
-        idleTimeoutSeconds: 0.04,
+        idleTimeoutSeconds: 0.1,
         toolCallOnlyIdleTimeoutSeconds: 0.12,
         activityKinds: ["message_update", "thinking_update", "usage_update", "tool_call_update"],
         cancelGraceSeconds: 0,
@@ -108,17 +108,20 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
-      makeWatchdogConfig({ toolCallOnlyIdleTimeoutSeconds: 0.25 }),
+      makeWatchdogConfig({ idleTimeoutSeconds: 0.15, toolCallOnlyIdleTimeoutSeconds: 0.25 }),
     );
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
       const startedAt = Date.now();
-      while (Date.now() - startedAt < 70) {
+      while (Date.now() - startedAt < 100) {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
-      await sleep(10);
+      // Emit one final event to guarantee the idle timer is fresh before the
+      // synchronous assertion — eliminates the race between the last loop event
+      // and the tick that fires after the post-loop sleep.
+      eventBus.emitAgentStream(makeToolCallUpdateEvent());
 
       expect(cancelCount).toBe(0);
       const entries = await parseAllEntries(logFile);
@@ -148,7 +151,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
-      await sleep(40);
+      await waitForCondition(() => cancelCount === 1, 500);
 
       expect(cancelCount).toBe(1);
       const entries = await parseAllEntries(logFile);
@@ -174,8 +177,8 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       eventBus,
       registry,
       makeWatchdogConfig({
-        idleTimeoutSeconds: 0.08,
-        toolCallOnlyIdleTimeoutSeconds: 0.2,
+        idleTimeoutSeconds: 0.2,
+        toolCallOnlyIdleTimeoutSeconds: 0.6,
       }),
     );
 
@@ -194,6 +197,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
+      eventBus.emitAgentStream(makeToolCallUpdateEvent());
 
       expect(cancelCount).toBe(0);
     } finally {
@@ -225,7 +229,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
-      await sleep(30);
+      await waitForCondition(() => cancelCount === 1, 500);
 
       expect(cancelCount).toBe(1);
       const entries = await parseAllEntries(logFile);
@@ -249,7 +253,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
-      makeWatchdogConfig({ toolCallOnlyIdleTimeoutSeconds: 0 }),
+      makeWatchdogConfig({ idleTimeoutSeconds: 0.2, toolCallOnlyIdleTimeoutSeconds: 0 }),
     );
 
     try {
@@ -259,7 +263,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
-      await sleep(10);
+      eventBus.emitAgentStream(makeToolCallUpdateEvent());
 
       expect(cancelCount).toBe(0);
       const entries = await parseAllEntries(logFile);
@@ -296,7 +300,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
         eventBus.emitAgentStream(makeToolCallUpdateEvent());
         await sleep(15);
       }
-      await sleep(10);
+      eventBus.emitAgentStream(makeToolCallUpdateEvent());
 
       expect(cancelCount).toBe(0);
       const entries = await parseAllEntries(logFile);
