@@ -48,6 +48,11 @@ import {
 } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
+import {
+  ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
+  checkFindingEvidence,
+  downgradeUnsubstantiatedFinding,
+} from "./semantic-evidence";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
@@ -372,10 +377,45 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
-  const rawParsed: AdversarialLLMResponse = {
+  const rawParsedRaw: AdversarialLLMResponse = {
     passed: opResult.passed,
     findings: opResult.findings as AdversarialLLMFinding[],
   };
+
+  // Issue #987 — implementation-axis grounding. Substantiate verifiedBy.observed
+  // against source files at HEAD before AC-axis validation. Findings whose claimed
+  // source quote is not on disk are downgraded to "unverifiable" — same semantics
+  // as substantiateSemanticEvidence (#826/#827) on the semantic side. Mirrors that
+  // gate so adversarial findings can no longer fabricate code claims.
+  //
+  // Only runs in "ref" mode (LLM self-serves files via git; diff is not inlined).
+  // In "embedded" mode the LLM only sees a diff snippet, so file-on-disk checks
+  // would be unreliable. Mirrors the same diffMode guard in substantiateSemanticEvidence.
+  //
+  // Order matters: this runs BEFORE filterByAcQuote so AC-axis validation only
+  // sees implementation-axis-grounded findings.
+  const blockingThresholdEffective = blockingThreshold ?? "error";
+  let substantiatedFindings: AdversarialLLMFinding[];
+  if (diffMode === "ref") {
+    substantiatedFindings = await Promise.all(
+      rawParsedRaw.findings.map(async (finding) => {
+        if (!isBlockingSeverity(finding.severity, blockingThresholdEffective)) return finding;
+        const evidence = await checkFindingEvidence({ finding, workdir });
+        if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
+        return downgradeUnsubstantiatedFinding({
+          finding,
+          storyId: story.id,
+          event: ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
+          file: evidence.file,
+          line: evidence.line,
+          observed: evidence.observed,
+        });
+      }),
+    );
+  } else {
+    substantiatedFindings = rawParsedRaw.findings;
+  }
+  const rawParsed: AdversarialLLMResponse = { ...rawParsedRaw, findings: substantiatedFindings };
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
   // Embedded mode: parse `diff` (already in memory). Ref mode: shell git diff
@@ -430,7 +470,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
 
   const parsed: AdversarialLLMResponse = { ...rawParsed, findings: acGroundedFindings };
 
-  const threshold = blockingThreshold ?? "error";
+  const threshold = blockingThresholdEffective;
   const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
   const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 

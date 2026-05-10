@@ -25,6 +25,19 @@ export interface AdversarialLLMFinding {
   acQuote?: string;
   /** 1-based index into story.acceptanceCriteria corresponding to acQuote. */
   acIndex?: number;
+  /**
+   * Required for severity "error" / "critical" (Issue #987): evidence anchoring
+   * the finding to real source. `observed` is a verbatim 1–3 line code excerpt
+   * from `verifiedBy.file` (defaulting to `file`). Substring-checked against
+   * HEAD by checkFindingEvidence + downgradeUnsubstantiatedFinding before
+   * findings reach filterByAcQuote.
+   */
+  verifiedBy?: {
+    command?: string;
+    file: string;
+    line?: number;
+    observed: string;
+  };
 }
 
 export interface AdversarialLLMResponse {
@@ -83,6 +96,7 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
     const metaExtras: Record<string, unknown> = {};
     if (f.acQuote) metaExtras.acQuote = f.acQuote;
     if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
+    if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
     return {
       source: "adversarial-review",
       severity: normalizeSeverity(f.severity),

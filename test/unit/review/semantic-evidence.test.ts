@@ -22,8 +22,10 @@ import { join } from "node:path";
 import {
   _evidenceDeps,
   checkFindingEvidence,
+  downgradeUnsubstantiatedFinding,
   substantiateSemanticEvidence,
 } from "../../../src/review/semantic-evidence";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { LLMFinding } from "../../../src/review/semantic-helpers";
 import { makeLogger, type MockLogger } from "../../helpers/mock-logger";
 import { withTempDir } from "../../helpers/temp";
@@ -136,7 +138,7 @@ describe("substantiateSemanticEvidence — ref mode", () => {
 
       await substantiateSemanticEvidence([finding], "ref", workdir, STORY_ID);
 
-      const downgradeCall = logger.calls.find((c) => c.message === "Downgraded unsubstantiated semantic error finding");
+      const downgradeCall = logger.calls.find((c) => c.message === "Downgraded unsubstantiated review finding");
       expect(downgradeCall).toBeDefined();
       expect(downgradeCall?.level).toBe("warn");
       expect(downgradeCall?.stage).toBe("review");
@@ -300,5 +302,56 @@ describe("checkFindingEvidence()", () => {
 
       expect(result.status).toBe("unreadable");
     });
+  });
+});
+
+describe("checkFindingEvidence — generalized over Finding shape (Issue #987)", () => {
+  test("accepts AdversarialLLMFinding shape and substantiates against disk", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function login() {}\n");
+
+      const adversarialFinding: AdversarialLLMFinding = {
+        severity: "error",
+        category: "abandonment",
+        file: "src/foo.ts",
+        line: 1,
+        issue: "login is empty",
+        suggestion: "Implement it",
+        verifiedBy: {
+          command: "cat src/foo.ts",
+          file: "src/foo.ts",
+          line: 1,
+          observed: "export function login() {}",
+        },
+      };
+
+      const result = await checkFindingEvidence({ finding: adversarialFinding, workdir });
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("downgradeUnsubstantiatedFinding preserves AdversarialLLMFinding fields and sets severity=unverifiable", () => {
+    const adversarialFinding: AdversarialLLMFinding = {
+      severity: "error",
+      category: "convention",
+      file: "src/bar.ts",
+      line: 5,
+      issue: "phantom violation",
+      suggestion: "Fix it",
+      acQuote: "must X",
+      acIndex: 1,
+      verifiedBy: { command: "cat", file: "src/bar.ts", line: 5, observed: "not in file" },
+    };
+
+    const result = downgradeUnsubstantiatedFinding({
+      finding: adversarialFinding,
+      storyId: STORY_ID,
+      event: "review.adversarial.finding.downgraded",
+    });
+
+    expect(result.severity).toBe("unverifiable");
+    expect(result.category).toBe("convention");
+    expect(result.acIndex).toBe(1);
   });
 });

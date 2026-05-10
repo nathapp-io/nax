@@ -83,14 +83,12 @@ const CATEGORY_FINDING_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
     {
-      severity: "error",
+      severity: "warning",
       category: "test-gap",
       file: "src/log.ts",
       line: 30,
       issue: "Missing test for edge case",
       suggestion: "Add test",
-      acQuote: "can log in",
-      acIndex: 1,
     },
   ],
 });
@@ -149,8 +147,8 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings).toBeDefined();
-    expect(result.findings![0].source).toBe("adversarial-review");
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings?.[0]?.source).toBe("adversarial-review");
   });
 
   test("finding has source 'adversarial-review'", async () => {
@@ -166,7 +164,7 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings![0].source).toBe("adversarial-review");
+    expect(result.advisoryFindings?.[0]?.source).toBe("adversarial-review");
   });
 
   test("finding carries category field from LLM response", async () => {
@@ -182,7 +180,7 @@ describe("runAdversarialReview — finding category and metadata", () => {
       runtime,
     });
 
-    expect(result.findings![0].category).toBe("test-gap");
+    expect(result.advisoryFindings?.[0]?.category).toBe("test-gap");
   });
 });
 
@@ -349,5 +347,43 @@ describe("runAdversarialReview — review audit gate", () => {
     expect((auditCalls[0] as any).parsed).toBe(false);
     expect((auditCalls[0] as any).looksLikeFail).toBe(false);
     expect((auditCalls[0] as any).result).toBeNull();
+  });
+});
+
+describe("toAdversarialReviewFindings — verifiedBy passthrough (#987)", () => {
+  test("surfaces verifiedBy into Finding.meta", () => {
+    const { toAdversarialReviewFindings } = require("../../../src/review/adversarial-helpers");
+    const findings = [
+      {
+        severity: "error",
+        category: "abandonment",
+        file: "src/foo.ts",
+        line: 5,
+        issue: "X",
+        suggestion: "Y",
+        verifiedBy: {
+          command: "cat src/foo.ts",
+          file: "src/foo.ts",
+          line: 5,
+          observed: "export function foo() {}",
+        },
+      },
+    ];
+    const wireFindings = toAdversarialReviewFindings(findings);
+    expect(wireFindings[0].meta?.verifiedBy).toEqual({
+      command: "cat src/foo.ts",
+      file: "src/foo.ts",
+      line: 5,
+      observed: "export function foo() {}",
+    });
+  });
+
+  test("omits verifiedBy when not provided", () => {
+    const { toAdversarialReviewFindings } = require("../../../src/review/adversarial-helpers");
+    const findings = [
+      { severity: "info", category: "convention", file: "src/foo.ts", line: 5, issue: "X", suggestion: "Y" },
+    ];
+    const wireFindings = toAdversarialReviewFindings(findings);
+    expect(wireFindings[0].meta?.verifiedBy).toBeUndefined();
   });
 });

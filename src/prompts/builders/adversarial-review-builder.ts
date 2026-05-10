@@ -125,7 +125,13 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
       "issue": "Precise description of the weakness",
       "suggestion": "Concrete fix or mitigation",
       "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
-      "acIndex": 2
+      "acIndex": 2,
+      "verifiedBy": {
+        "command": "command used to inspect the current codebase",
+        "file": "relative/path/to/file.ts",
+        "line": 42,
+        "observed": "verbatim 1-3 line code excerpt copy-pasted from the file (not a description)"
+      }
     }
   ]
 }
@@ -139,6 +145,12 @@ Severity guide:
 
 \`passed\` must be \`false\` if any finding has severity \`"error"\` or \`"warning"\`.
 \`passed\` may be \`true\` with findings if all findings are \`"info"\` or \`"unverifiable"\`.
+
+**Implementation-axis grounding — required for every "error" finding:**
+- Every "error" finding MUST include \`verifiedBy.observed\`: a verbatim 1–3 line code excerpt copy-pasted from the cited file that demonstrates the issue.
+- A description like "function X does not check Y" is not a verifiable observation; quote the lines that prove the omission instead.
+- The \`verifiedBy.observed\` field is substring-checked against the file at HEAD. If your quoted text does not appear in the file, the finding will be silently downgraded to \`"unverifiable"\`.
+- If you cannot quote an exact excerpt that proves your point, downgrade the finding to \`"unverifiable"\` rather than fabricating a quote.
 
 **AC-grounding rule — required for every "error" finding:**
 - \`acQuote\` must be a verbatim substring of one AC bullet (from the Acceptance Criteria above) that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.

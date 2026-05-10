@@ -46,22 +46,22 @@ const STAT_OUTPUT = "src/foo.ts | 5 +++++\n 1 file changed, 5 insertions(+)";
 const WARNING_ONLY_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
-    { severity: "warning", category: "input", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix it" },
+    { severity: "warning", category: "input", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix it", verifiedBy: { file: "src/foo.ts", observed: "warning stub" } },
   ],
 });
 
 const ERROR_ONLY_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
-    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "findings", acIndex: 1 },
+    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix error", acQuote: "findings", acIndex: 1, verifiedBy: { file: "src/findings-bar.ts", observed: "error stub" } },
   ],
 });
 
 const MIXED_RESPONSE = JSON.stringify({
   passed: false,
   findings: [
-    { severity: "warning", category: "input", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix w" },
-    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix e", acQuote: "findings", acIndex: 1 },
+    { severity: "warning", category: "input", file: "src/foo.ts", line: 1, issue: "A warning", suggestion: "Fix w", verifiedBy: { file: "src/foo.ts", observed: "warning stub" } },
+    { severity: "error", category: "error-path", file: "src/findings-bar.ts", line: 2, issue: "An error", suggestion: "Fix e", acQuote: "findings", acIndex: 1, verifiedBy: { file: "src/findings-bar.ts", observed: "error stub" } },
   ],
 });
 
