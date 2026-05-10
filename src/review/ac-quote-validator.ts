@@ -1,20 +1,16 @@
 /**
- * AC Grounding Validators
+ * AC Quote Validator (Issue #930 Part 1)
  *
- * Two validation strategies for reviewer "error" findings:
- *
- * **Adversarial path (Issue #930):** validateAcQuote / filterByAcQuote
- * - Requires acQuote to be a whitespace-normalised substring of the indexed AC
- * - Requires acQuote to contain a locus keyword (file basename or issue token)
- * - Used by src/review/adversarial.ts
- *
- * **Semantic path (Issue #985):** validateAcGroundingMinimal / filterByAcGroundingMinimal
- * - Requires only a valid acIndex (1-based, in range)
- * - acQuote is advisory metadata, never inspected
- * - Used by src/review/semantic.ts and semantic-debate.ts
- *
- * Ungrounded findings are dropped before they can block a story or bias
+ * Validates that reviewer "error" findings are grounded in the story's acceptance
+ * criteria. Ungrounded findings are dropped before they can block a story or bias
  * next-tier escalation context.
+ *
+ * Rules (per issue spec):
+ * 1. acQuote must be a whitespace-normalised substring of acceptanceCriteria[acIndex-1].
+ * 2. acQuote must contain at least one keyword from the flagged locus (file basename or
+ *    first meaningful token of the issue message).
+ * 3. Only findings with severity "error" or "critical" are subject to validation.
+ *    Warnings, info, and unverifiable pass through unchanged.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
