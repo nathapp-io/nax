@@ -13,6 +13,8 @@ export interface PostDebateVerifierContext {
   readonly selectorResult: SelectorResult;
   readonly workdir: string;
   readonly ctx: CallContext;
+  /** Acceptance criteria from the story — used by review-grounding-filter to validate acIndex. */
+  readonly acceptanceCriteria?: readonly string[];
 }
 
 export interface PostDebateVerifierResult {

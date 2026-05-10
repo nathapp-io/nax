@@ -6,21 +6,22 @@
  */
 
 import { filterByAcGroundingMinimal, isBlockingSeverity } from "@/review";
+import type { AcQuotable } from "@/review";
 import type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "./types";
 
 export const reviewGroundingFilterVerifier: PostDebateVerifier = async (
   ctx: PostDebateVerifierContext,
 ): Promise<PostDebateVerifierResult> => {
-  // Default implementation — stub for test RED phase
-  // Real implementation will:
-  // 1. Get findings from ctx.selectorResult
-  // 2. Filter through filterByAcGroundingMinimal
-  // 3. Check blocking severity
-  // 4. Return outcome + filtered findings
+  const rawFindings = (ctx.selectorResult.findings ?? []) as AcQuotable[];
+  const acceptanceCriteria = (ctx.acceptanceCriteria ?? []) as string[];
+
+  const { accepted } = filterByAcGroundingMinimal(rawFindings, acceptanceCriteria);
+
+  const hasBlocking = accepted.some((f) => isBlockingSeverity(f.severity));
 
   return {
-    outcome: "passed",
-    findings: [],
+    outcome: hasBlocking ? "failed" : "passed",
+    findings: accepted,
     costUsd: 0,
   };
 };
