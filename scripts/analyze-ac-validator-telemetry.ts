@@ -104,7 +104,6 @@ function main(): void {
   let dropsNotSurviveStructuralWithDiff = 0;
   const dropsByCode = new Map<string, number>();
   const dropCrosstab = new Map<string, { survive: number; notSurvive: number }>();
-  const fragilitySurviveByCode = new Map<string, number>();
   let totalAccepts = 0;
   let totalAcceptsWithDiff = 0;
   let acceptsSurviveStructural = 0;
@@ -119,6 +118,8 @@ function main(): void {
     if (audit.adversarialDropAnalysis === null && audit.adversarialAcceptAnalysis === null) continue;
 
     totalReviews += 1;
+    // null (pre-#986 entries or failOpen/looksLikeFail paths) is treated the same as false:
+    // both mean "diff file list was unavailable, exclude from % calculations".
     const diffOk = audit.diffAvailable === true;
     if (!diffOk) entriesNoDiff += 1;
 
@@ -139,9 +140,6 @@ function main(): void {
       else bucket.notSurvive += 1;
       dropCrosstab.set(drop.dropCode, bucket);
 
-      if (SUBSTRING_FRAGILITY_CODES.has(drop.dropCode) && survive) {
-        fragilitySurviveByCode.set(drop.dropCode, (fragilitySurviveByCode.get(drop.dropCode) ?? 0) + 1);
-      }
     }
 
     for (const accept of audit.adversarialAcceptAnalysis ?? []) {
