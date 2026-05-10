@@ -4,6 +4,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ReviewAuditDecision } from "@/runtime";
 import { _diffUtilsDeps, runAdversarialReview } from "@/review";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
@@ -12,6 +14,7 @@ import {
   captureAuditDecisions,
   makeMockRuntime,
   mockDiffUtilsDeps,
+  withTempDir,
 } from "@test/helpers";
 
 const STORY: SemanticStory = {
@@ -146,102 +149,122 @@ describe("adversarial structural counterfactual telemetry (#986)", () => {
   afterEach(() => teardown());
 
   test("dropped finding gets adversarialDropAnalysis with counterfactual", async () => {
-    // Drop trigger: missing acQuote on a "error" finding.
-    const llmResponse = JSON.stringify({
-      passed: false,
-      findings: [
-        {
-          severity: "error",
-          category: "input",
-          file: "src/foo.ts",
-          line: 10,
-          issue: "missing input validation",
-          suggestion: "add zod schema",
-          // No acQuote / acIndex → filterByAcQuote drops with missing_ac_quote.
-        },
-      ],
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export const foo = 1;\n");
+
+      // Drop trigger: missing acQuote on a "error" finding.
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "input",
+            file: "src/foo.ts",
+            line: 10,
+            issue: "missing input validation",
+            suggestion: "add zod schema",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "export const foo = 1;",
+            },
+            // No acQuote / acIndex → filterByAcQuote drops with missing_ac_quote.
+          },
+        ],
+      });
+
+      const { auditor, decisions } = captureAuditDecisions();
+      const agentManager = agentManagerWithFixedLLMResponse(llmResponse);
+      const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+      await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: { ...CFG, diffMode: "embedded" },
+        agentManager,
+        featureName: "feat-x",
+        runtime,
+      });
+
+      expect(decisions.length).toBeGreaterThanOrEqual(1);
+      const decision = decisions[0]!;
+      expect(decision.diffAvailable).toBe(true);
+      expect(Array.isArray(decision.adversarialDropAnalysis)).toBe(true);
+      expect(decision.adversarialDropAnalysis!.length).toBe(1);
+
+      const drop = decision.adversarialDropAnalysis![0]!;
+      expect(drop.dropCode).toBe("missing_ac_quote");
+      expect(drop.finding.file).toBe("src/foo.ts");
+      expect(drop.rawCategory).toBe("input");
+      expect(drop.counterfactual.fileInDiff).toBe(true);
+      expect(drop.counterfactual.categoryBlocking).toBe(true);
+      expect(drop.counterfactual.acIndexInRange).toBe(false); // no acIndex
+      expect(drop.counterfactual.wouldSurviveStructural).toBe(false);
     });
-
-    const { auditor, decisions } = captureAuditDecisions();
-    const agentManager = agentManagerWithFixedLLMResponse(llmResponse);
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
-
-    await runAdversarialReview({
-      workdir: "/tmp/test",
-      storyGitRef: "abc123",
-      story: STORY,
-      adversarialConfig: { ...CFG, diffMode: "embedded" },
-      agentManager,
-      featureName: "feat-x",
-      runtime,
-    });
-
-    expect(decisions.length).toBeGreaterThanOrEqual(1);
-    const decision = decisions[0]!;
-    expect(decision.diffAvailable).toBe(true);
-    expect(Array.isArray(decision.adversarialDropAnalysis)).toBe(true);
-    expect(decision.adversarialDropAnalysis!.length).toBe(1);
-
-    const drop = decision.adversarialDropAnalysis![0]!;
-    expect(drop.dropCode).toBe("missing_ac_quote");
-    expect(drop.finding.file).toBe("src/foo.ts");
-    expect(drop.rawCategory).toBe("input");
-    expect(drop.counterfactual.fileInDiff).toBe(true);
-    expect(drop.counterfactual.categoryBlocking).toBe(true);
-    expect(drop.counterfactual.acIndexInRange).toBe(false); // no acIndex
-    expect(drop.counterfactual.wouldSurviveStructural).toBe(false);
   });
 
   test("accepted blocking finding gets adversarialAcceptAnalysis", async () => {
-    // Accept path: valid acQuote substring + locus keyword present.
-    const story: SemanticStory = {
-      id: "US-002",
-      title: "Accept path",
-      description: "",
-      acceptanceCriteria: ["The foo function must validate input arguments"],
-    };
-    const llmResponse = JSON.stringify({
-      passed: false,
-      findings: [
-        {
-          severity: "error",
-          category: "input",
-          file: "src/foo.ts",
-          line: 10,
-          issue: "foo missing validation",
-          suggestion: "add check",
-          acQuote: "foo function must validate",
-          acIndex: 1,
-        },
-      ],
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo(input: string) { return input; }\n");
+
+      // Accept path: valid acQuote substring + locus keyword present.
+      const story: SemanticStory = {
+        id: "US-002",
+        title: "Accept path",
+        description: "",
+        acceptanceCriteria: ["The foo function must validate input arguments"],
+      };
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "input",
+            file: "src/foo.ts",
+            line: 10,
+            issue: "foo missing validation",
+            suggestion: "add check",
+            acQuote: "foo function must validate",
+            acIndex: 1,
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "export function foo(input: string) { return input; }",
+            },
+          },
+        ],
+      });
+
+      const { auditor, decisions } = captureAuditDecisions();
+      const agentManager = agentManagerWithFixedLLMResponse(llmResponse);
+      const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
+
+      await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story,
+        adversarialConfig: { ...CFG, diffMode: "embedded" },
+        agentManager,
+        featureName: "feat-y",
+        runtime,
+      });
+
+      const decision = decisions[0]!;
+      expect(decision.adversarialDropAnalysis ?? []).toEqual([]);
+      expect(Array.isArray(decision.adversarialAcceptAnalysis)).toBe(true);
+      expect(decision.adversarialAcceptAnalysis!.length).toBe(1);
+
+      const accept = decision.adversarialAcceptAnalysis![0]!;
+      expect(accept.finding.file).toBe("src/foo.ts");
+      expect(accept.acIndex).toBe(1);
+      expect(accept.counterfactual.acIndexInRange).toBe(true);
+      expect(accept.counterfactual.categoryBlocking).toBe(true);
+      expect(accept.counterfactual.fileInDiff).toBe(true);
+      expect(accept.counterfactual.wouldSurviveStructural).toBe(true);
     });
-
-    const { auditor, decisions } = captureAuditDecisions();
-    const agentManager = agentManagerWithFixedLLMResponse(llmResponse);
-    const runtime = makeMockRuntime({ agentManager, reviewAuditor: auditor });
-
-    await runAdversarialReview({
-      workdir: "/tmp/test",
-      storyGitRef: "abc123",
-      story,
-      adversarialConfig: { ...CFG, diffMode: "embedded" },
-      agentManager,
-      featureName: "feat-y",
-      runtime,
-    });
-
-    const decision = decisions[0]!;
-    expect(decision.adversarialDropAnalysis ?? []).toEqual([]);
-    expect(Array.isArray(decision.adversarialAcceptAnalysis)).toBe(true);
-    expect(decision.adversarialAcceptAnalysis!.length).toBe(1);
-
-    const accept = decision.adversarialAcceptAnalysis![0]!;
-    expect(accept.finding.file).toBe("src/foo.ts");
-    expect(accept.acIndex).toBe(1);
-    expect(accept.counterfactual.acIndexInRange).toBe(true);
-    expect(accept.counterfactual.categoryBlocking).toBe(true);
-    expect(accept.counterfactual.fileInDiff).toBe(true);
-    expect(accept.counterfactual.wouldSurviveStructural).toBe(true);
   });
 
   test("ref mode without diff records diffAvailable=false", async () => {

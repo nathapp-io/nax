@@ -216,6 +216,87 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
     });
   });
 
+  test("downgrades blocking finding with phantom evidence in embedded diff mode", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "abandonment",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "login is broken",
+            suggestion: "Fix it",
+            acQuote: "can log in",
+            acIndex: 1,
+            verifiedBy: {
+              command: "cat src/auth.ts",
+              file: "src/auth.ts",
+              line: 1,
+              observed: "this embedded-mode quote is not in the file",
+            },
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: { ...ADVERSARIAL_CONFIG, diffMode: "embedded" },
+        agentManager,
+        runtime,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.findings).toBeUndefined();
+      expect(result.advisoryFindings?.[0]?.severity).toBe("unverifiable");
+    });
+  });
+
+  test("downgrades warning finding without verifiedBy when warning threshold blocks", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
+
+      const llmResponse = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "warning",
+            category: "input",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "login mishandles empty input",
+            suggestion: "Validate input",
+          },
+        ],
+      });
+
+      const agentManager = makeAgentManager(llmResponse);
+      const runtime = makeMockRuntime({ agentManager });
+      const result = await runAdversarialReview({
+        workdir,
+        storyGitRef: "abc123",
+        story: STORY,
+        adversarialConfig: ADVERSARIAL_CONFIG,
+        agentManager,
+        runtime,
+        blockingThreshold: "warning",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.findings).toBeUndefined();
+      expect(result.advisoryFindings?.[0]?.severity).toBe("unverifiable");
+    });
+  });
+
   test("preserves blocking finding when verifiedBy.observed matches source verbatim", async () => {
     await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
