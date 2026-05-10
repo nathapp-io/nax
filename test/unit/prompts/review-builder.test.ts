@@ -133,19 +133,6 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
       expect(result).toMatch(/observed.*(verbatim|copy-pasted|exact)/i);
       expect(result).toContain("not a description");
     });
-
-    test("AC-grounding section does not contain the old substring/locus-keyword contract phrases", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).not.toContain("verbatim substring");
-      expect(result).not.toContain("copy backticks exactly");
-      expect(result).not.toContain("AC names the file but not the symbol");
-    });
-
-    test("AC-grounding section instructs acIndex is required for error findings", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).toContain("acIndex");
-      expect(result).toContain("acQuote");
-    });
   });
 });
 

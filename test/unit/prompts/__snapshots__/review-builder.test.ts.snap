@@ -33,9 +33,14 @@ For each acceptance criterion, verify the current codebase implements it correct
 - The \`verifiedBy.observed\` field MUST be a **verbatim** 1-3 line code excerpt copy-pasted from the file — not a description. Paste the actual source lines (or a substring of them) that prove your claim. A description like "function X does not check Y" is not a verifiable observation; quote the lines that demonstrate the omission instead. If you cannot quote an exact excerpt that proves your point, downgrade the finding to "unverifiable".
 
 **AC-grounding rule — required for every "error" finding:**
-- Every "error" finding MUST include \`acIndex\` (1-based, into the Acceptance Criteria above).
-- \`acQuote\` is optional advisory text describing which part of the AC bullet you are enforcing — not validated.
-- If no AC specifically constrains your finding, downgrade to \`"info"\`. Convention/coding-standard violations that no AC names belong as \`"info"\`.
+- Every "error" finding MUST include \`acQuote\`: a verbatim substring of one AC bullet that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.
+- Include \`acIndex\` (1-based) indicating which AC bullet you are quoting.
+- Copy \`acQuote\` directly from the Acceptance Criteria — including any backticks, asterisks, or punctuation. Do not paraphrase, strip formatting, or rewrite.
+
+**The "AC names the file but not the symbol" trap (most common failure mode):**
+If the AC bullet mentions a file or component but the **specific symbol you are flagging** (the function, class, interface, type, or convention) is not named in that bullet, the AC does **not** constrain your finding. Emit it as \`severity: "info"\` — not \`"error"\`. **Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
+
+If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\`. A finding dropped by the validator as ungrounded is worse than one correctly classified as advisory.
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
@@ -54,7 +59,7 @@ Respond with JSON only — no explanation text before or after:
       "line": 42,
       "issue": "description of the issue",
       "suggestion": "how to fix it",
-      "acQuote": "<optional: AC bullet text you believe constrains this finding — advisory only>",
+      "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
       "acIndex": 3,
       "verifiedBy": {
         "command": "command used to inspect the current codebase",
@@ -67,9 +72,8 @@ Respond with JSON only — no explanation text before or after:
 }
 
 Notes:
-- \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
-- \`acQuote\` is optional advisory metadata for human auditors — not validated.
-- Omit both for "warning", "info", "unverifiable".
+- \`acQuote\` and \`acIndex\` are required when severity is "error". Omit them for "warning", "info", "unverifiable".
+- \`acIndex\` is 1-based (AC 1 = first bullet in the Acceptance Criteria list above).
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
 
 YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
@@ -112,9 +116,14 @@ For each acceptance criterion, verify the current codebase implements it correct
 - The \`verifiedBy.observed\` field MUST be a **verbatim** 1-3 line code excerpt copy-pasted from the file — not a description. Paste the actual source lines (or a substring of them) that prove your claim. A description like "function X does not check Y" is not a verifiable observation; quote the lines that demonstrate the omission instead. If you cannot quote an exact excerpt that proves your point, downgrade the finding to "unverifiable".
 
 **AC-grounding rule — required for every "error" finding:**
-- Every "error" finding MUST include \`acIndex\` (1-based, into the Acceptance Criteria above).
-- \`acQuote\` is optional advisory text describing which part of the AC bullet you are enforcing — not validated.
-- If no AC specifically constrains your finding, downgrade to \`"info"\`. Convention/coding-standard violations that no AC names belong as \`"info"\`.
+- Every "error" finding MUST include \`acQuote\`: a verbatim substring of one AC bullet that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.
+- Include \`acIndex\` (1-based) indicating which AC bullet you are quoting.
+- Copy \`acQuote\` directly from the Acceptance Criteria — including any backticks, asterisks, or punctuation. Do not paraphrase, strip formatting, or rewrite.
+
+**The "AC names the file but not the symbol" trap (most common failure mode):**
+If the AC bullet mentions a file or component but the **specific symbol you are flagging** (the function, class, interface, type, or convention) is not named in that bullet, the AC does **not** constrain your finding. Emit it as \`severity: "info"\` — not \`"error"\`. **Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
+
+If you cannot find an AC that names the **specific symbol** in your finding, downgrade to \`"info"\`. A finding dropped by the validator as ungrounded is worse than one correctly classified as advisory.
 
 Flag issues only when you have confirmed:
 1. An AC is not implemented or partially implemented (verified by reading the actual files)
@@ -133,7 +142,7 @@ Respond with JSON only — no explanation text before or after:
       "line": 42,
       "issue": "description of the issue",
       "suggestion": "how to fix it",
-      "acQuote": "<optional: AC bullet text you believe constrains this finding — advisory only>",
+      "acQuote": "<verbatim substring of one AC bullet constraining this locus — required for 'error'>",
       "acIndex": 3,
       "verifiedBy": {
         "command": "command used to inspect the current codebase",
@@ -146,9 +155,8 @@ Respond with JSON only — no explanation text before or after:
 }
 
 Notes:
-- \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
-- \`acQuote\` is optional advisory metadata for human auditors — not validated.
-- Omit both for "warning", "info", "unverifiable".
+- \`acQuote\` and \`acIndex\` are required when severity is "error". Omit them for "warning", "info", "unverifiable".
+- \`acIndex\` is 1-based (AC 1 = first bullet in the Acceptance Criteria list above).
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
 
 YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
