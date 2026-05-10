@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-09T15-35-35-895Z",
+    "id": "run-2026-05-10T02-22-35-207Z",
     "feature": "mock-structure-handoff",
-    "startedAt": "2026-05-09T15:35:35.895Z",
+    "startedAt": "2026-05-10T02:22:35.207Z",
     "status": "failed",
     "dryRun": false,
-    "pid": 59972
+    "pid": 15011
   },
   "progress": {
     "total": 5,
@@ -17,21 +17,20 @@
     "pending": 0
   },
   "cost": {
-    "spent": 8.55064681,
+    "spent": 0.9910697000000002,
     "limit": 50
   },
   "current": null,
-  "iterations": 4,
-  "updatedAt": "2026-05-09T18:54:49.839Z",
-  "durationMs": 11953944,
+  "iterations": 1,
+  "updatedAt": "2026-05-10T02:48:37.839Z",
+  "durationMs": 1562632,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
       "status": "passed",
-      "skipped": true,
-      "lastRunAt": "2026-05-09T18:54:49.092Z"
+      "lastRunAt": "2026-05-10T02:48:37.099Z"
     }
   }
 }
