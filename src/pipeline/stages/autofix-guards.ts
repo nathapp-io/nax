@@ -8,7 +8,7 @@
 
 import type { NaxConfig } from "@/config/runtime-types";
 import { NaxError } from "@/errors";
-import { verifyTestWriterIsolation } from "@/tdd/isolation";
+import { verifyTestWriterIsolation } from "@/tdd";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { spawn } from "@/utils/bun-deps";
 

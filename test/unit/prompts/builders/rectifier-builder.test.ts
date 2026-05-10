@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { RectifierPromptBuilder } from "@/prompts/builders/rectifier-builder";
-import type { ReviewCheckResult } from "@/review/types";
+import { RectifierPromptBuilder } from "@/prompts";
+import type { ReviewCheckResult } from "@/review";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -636,7 +636,7 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 // CONTRADICTION_ESCAPE_HATCH — Exception 4 (mock-structure handoff)
 // ---------------------------------------------------------------------------
 
-import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts/builders/rectifier-builder";
+import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts";
 
 describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
   test("includes a section titled 'Exception 4 — Mock-structure handoff'", () => {

@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { testWriterRectifyOp } from "@/operations/autofix-test-writer";
-import type { AutofixTestWriterInput } from "@/operations/autofix-test-writer";
+import { testWriterRectifyOp } from "@/operations";
+import type { AutofixTestWriterInput } from "@/operations";
 import { makeStory } from "@test/helpers";
 
 describe("AutofixTestWriterInput", () => {

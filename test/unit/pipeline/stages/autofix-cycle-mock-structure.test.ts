@@ -10,18 +10,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _autofixDeps } from "@/pipeline/stages/autofix";
+import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import {
   _autofixCycleDeps,
   applyTestEditDeclarations,
   runAgentRectificationV2,
   validateMockStructureFiles,
-} from "@/pipeline/stages/autofix-cycle";
-import { _cycleDeps } from "@/findings/cycle";
+} from "../../../../src/pipeline/stages/autofix-cycle";
+import { _cycleDeps } from "../../../../src/findings/cycle";
 import type { Finding } from "@/findings";
 import type { TestEditDeclaration } from "@/operations";
-import { _resolverDeps, type ResolvedTestPatterns } from "@/test-runners/resolver";
-import type { PipelineContext } from "@/pipeline/types";
+import { _resolverDeps, type ResolvedTestPatterns } from "../../../../src/test-runners/resolver";
+import type { PipelineContext } from "../../../../src/pipeline/types";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────

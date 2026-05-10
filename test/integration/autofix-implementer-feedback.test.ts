@@ -11,12 +11,12 @@
  * assert the routing decisions made by buildAutofixStrategies + the modified validate.
  */
 import { describe, expect, test } from "bun:test";
-import { _autofixDeps } from "@/pipeline/stages/autofix";
-import { _autofixCycleDeps, runAgentRectificationV2 } from "@/pipeline/stages/autofix-cycle";
-import { _cycleDeps } from "@/findings/cycle";
+import { _autofixDeps } from "../../src/pipeline/stages/autofix";
+import { _autofixCycleDeps, runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
+import { _cycleDeps } from "../../src/findings/cycle";
 import type { Finding } from "@/findings";
-import type { PipelineContext } from "@/pipeline/types";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "@test/helpers";
+import type { PipelineContext } from "../../src/pipeline/types";
+import { makeMockAgentManager, makeNaxConfig, makeStory } from "../helpers";
 
 function makeCtx(
   story = makeStory({

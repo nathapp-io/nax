@@ -9,8 +9,8 @@
  */
 
 import { getSafeLogger } from "@/logger";
-import { callOp as _callOp } from "@/operations/call";
-import type { Operation } from "@/operations/types";
+import { callOp as _callOp } from "@/operations";
+import type { Operation } from "@/operations";
 import { errorMessage } from "@/utils/errors";
 import type {
   FixApplied,

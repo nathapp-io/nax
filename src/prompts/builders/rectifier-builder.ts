@@ -14,10 +14,10 @@
 
 import type { RectificationConfig } from "@/config";
 import type { UserStory } from "@/prd";
-import { isBlockingSeverity } from "@/review/severity";
-import type { ReviewCheckName, ReviewCheckResult } from "@/review/types";
-import { formatFailureSummary } from "@/verification/parser";
-import type { TestFailure } from "@/verification/types";
+import { isBlockingSeverity } from "@/review";
+import type { ReviewCheckName, ReviewCheckResult } from "@/review";
+import { formatFailureSummary } from "@/verification";
+import type { TestFailure } from "@/verification";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
 import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";

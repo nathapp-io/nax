@@ -18,22 +18,17 @@
  */
 
 import { join } from "node:path";
-import { captureGitRef } from "@/utils/git";
 import type { AutofixConfig } from "@/config/selectors";
 import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "@/findings";
 import { runFixCycle } from "@/findings";
 import { getLogger } from "@/logger";
-import {
-  type TestEditDeclaration,
-  implementerRectifyOp,
-  testWriterRectifyOp,
-  validatePrdQuote,
-} from "@/operations";
+import { type TestEditDeclaration, implementerRectifyOp, testWriterRectifyOp, validatePrdQuote } from "@/operations";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "@/operations";
 import type { AutofixTestWriterInput } from "@/operations";
 import type { UserStory } from "@/prd";
 import type { ReviewCheckResult } from "@/review/types";
 import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
+import { captureGitRef } from "@/utils/git";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
 import { assertionSiteDiffCheck, revertDiff, runIsolationGuard } from "./autofix-guards";

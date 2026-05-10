@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
-import { _cycleDeps } from "@/findings/cycle";
+import { _cycleDeps } from "../../../../src/findings/cycle";
 import { NaxError } from "@/errors";
-import { _autofixDeps } from "@/pipeline/stages/autofix";
-import { _autofixCycleGuardDeps, runAgentRectificationV2 } from "@/pipeline/stages/autofix-cycle";
+import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
+import { _autofixCycleGuardDeps, runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
 import {
 	_guardDeps,
 	assertionSiteDiffCheck,
 	revertDiff,
 	runIsolationGuard,
-} from "@/pipeline/stages/autofix-guards";
+} from "../../../../src/pipeline/stages/autofix-guards";
 import { makeMockAgentManager, makeNaxConfig, makeStory, withDepsRestore } from "@test/helpers";
 
 function makeGitDiffSpawn(output: string, exitCode = 0): typeof _guardDeps.spawn {
