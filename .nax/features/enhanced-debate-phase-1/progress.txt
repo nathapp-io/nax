@@ -1,3 +1,4 @@
 [2026-05-10T14:50:02.065Z] US-001 — PASSED — Plug-point schema + contracts + registries — Cost: $1.5493
 [2026-05-10T15:15:50.369Z] US-002 — PASSED — Extract synthesis, majority-fail-closed, majority-fail-open, judge selector strategies — Cost: $2.3997
 [2026-05-10T15:54:43.318Z] US-003 — PASSED — Extract dialogue-verdict selector + review-grounding-filter verifier + pickSelectorKind dispatcher — Cost: $2.3465
+[2026-05-10T16:39:40.955Z] US-004 — PASSED — Wire selector dispatch in main runner and runner-plan.ts — Cost: $4.9751
