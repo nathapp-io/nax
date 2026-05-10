@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { z } from "zod";
-import type { ZodError } from "zod";
+import { ZodError } from "zod";
 import { NaxError } from "../../../src/errors";
 import { NaxConfigSchema, DEFAULT_CONFIG } from "../../../src/config";
 import type {

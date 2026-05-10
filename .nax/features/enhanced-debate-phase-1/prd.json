@@ -3,7 +3,7 @@
   "feature": "enhanced-debate-phase-1",
   "branchName": "feat/enhanced-debate-phase-1",
   "createdAt": "2026-05-10T00:00:00.000Z",
-  "updatedAt": "2026-05-10T16:39:43.810Z",
+  "updatedAt": "2026-05-10T17:08:33.467Z",
   "userStories": [
     {
       "id": "US-001",
@@ -16,7 +16,10 @@
         "DebateStageConfigSchema.parse({ preDebatePhase: { kind: 'grounder' } }) returns preDebatePhase.kind === 'grounder'; parse({ preDebatePhase: { kind: 'grounder', model: 'balanced' } }) throws ZodError because model is not a valid preDebatePhase field",
         "DebateConfigSchema.parse({}) returns grounder.model === 'fast' and grounder.timeoutSeconds === 300; parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'; parse({ grounder: { model: { agent: 'claude', model: 'claude-opus-4-7' } } }) returns grounder.model.agent === 'claude'; parse({ grounder: { timeoutSeconds: 600 } }) returns timeoutSeconds === 600 with model defaulting to 'fast'",
         "resolveSelector(kind), resolvePreDebatePhase(kind), and resolvePostDebateVerifier(kind) each throw NaxError with codes 'SELECTOR_UNKNOWN', 'PRE_DEBATE_PHASE_UNKNOWN', and 'POST_DEBATE_VERIFIER_UNKNOWN' respectively when no strategy is registered for the given kind",
-        "src/debate/pre-phase/types.ts, src/debate/selectors/types.ts, and src/debate/verifiers/types.ts each export their respective Context, Result, and Strategy types (PreDebatePhase, Selector, PostDebateVerifier)"
+        "src/debate/pre-phase/types.ts, src/debate/selectors/types.ts, and src/debate/verifiers/types.ts each export their respective Context, Result, and Strategy types (PreDebatePhase, Selector, PostDebateVerifier)",
+        "registerSelector(kind, strategy) followed by resolveSelector(kind) returns the registered strategy function",
+        "DebateStageConfigSchema.parse({ postDebateVerifier: { kind: 'review-grounding-filter' } }) returns an object where postDebateVerifier.kind === 'review-grounding-filter'",
+        "DebateConfigSchema.parse({}) preserves all existing stage defaults unchanged (plan: enabled=true, resolver.type='synthesis'; review: enabled=true, resolver.type='majority-fail-closed')"
       ],
       "tags": [
         "feature",
@@ -42,11 +45,6 @@
         "src/errors.ts",
         "src/config/schema-types.ts"
       ],
-      "suggestedCriteria": [
-        "registerSelector(kind, strategy) followed by resolveSelector(kind) returns the registered strategy function",
-        "DebateStageConfigSchema.parse({ postDebateVerifier: { kind: 'review-grounding-filter' } }) returns an object where postDebateVerifier.kind === 'review-grounding-filter'",
-        "DebateConfigSchema.parse({}) preserves all existing stage defaults unchanged (plan: enabled=true, resolver.type='synthesis'; review: enabled=true, resolver.type='majority-fail-closed')"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -62,7 +60,9 @@
         "judgeSelector calls agentManager.completeAs exactly once using the agent name from ctx.stageConfig.resolver.agent (or RESOLVER_FALLBACK_AGENT when unset) with the prompt produced by DebatePromptBuilder.resolverJudgePrompt(ctx.proposals.map(p => p.output), ctx.critiques, ctx.debaters)",
         "After registry registration, resolveSelector('synthesis'), resolveSelector('majority-fail-closed'), resolveSelector('majority-fail-open'), and resolveSelector('judge') each return their respective strategy functions",
         "The compat wrappers at src/debate/resolvers.ts (synthesisResolver, majorityResolver, judgeResolver) continue to exist with their current signatures and their bodies delegate to the new strategies",
-        "All existing tests in test/unit/debate/resolvers.test.ts pass unchanged"
+        "All existing tests in test/unit/debate/resolvers.test.ts pass unchanged",
+        "judgeSelector returns resolverCostUsd === 0 when agentManager.completeAs returns zero cost",
+        "majorityFailClosedSelector and majorityFailOpenSelector differ only in the failOpen parameter passed to majorityResolver"
       ],
       "tags": [
         "feature",
@@ -91,9 +91,7 @@
         "test/unit/debate/resolvers.test.ts"
       ],
       "suggestedCriteria": [
-        "synthesisSelector returns outcome === 'failed' when the synthesizer produces an empty string output",
-        "judgeSelector returns resolverCostUsd === 0 when agentManager.completeAs returns zero cost",
-        "majorityFailClosedSelector and majorityFailOpenSelector differ only in the failOpen parameter passed to majorityResolver"
+        "synthesisSelector returns outcome === 'failed' when the synthesizer produces an empty string output"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -113,7 +111,10 @@
         "reviewGroundingFilterVerifier invokes filterByAcGroundingMinimal(ctx.selectorResult.findings, ...) and returns a PostDebateVerifierResult where findings is the filtered subset; outcome === 'failed' when any filtered finding has blocking severity per isBlockingSeverity, 'passed' otherwise",
         "semantic-debate.ts no longer contains the force-override block; its runSemanticDebate() builds a DebateStageConfig with selector: { kind: 'dialogue-verdict' } and postDebateVerifier: { kind: 'review-grounding-filter' } before instantiating DebateRunner, yielding byte-equivalent behavior",
         "dialogueVerdictSelector is registered under 'dialogue-verdict' in the selector registry; reviewGroundingFilterVerifier is registered under 'review-grounding-filter' in the post-debate-verifier registry",
-        "All tests in test/integration/review/review.test.ts, test/unit/review/, and test/unit/debate/session-helpers.test.ts pass unchanged"
+        "All tests in test/integration/review/review.test.ts, test/unit/review/, and test/unit/debate/session-helpers.test.ts pass unchanged",
+        "pickSelectorKind with stageConfig.selector = { kind: 'dialogue-verdict' } explicitly set returns 'dialogue-verdict' even when reviewerSession and resolverContextInput are both absent (explicit selector bypasses auto-elevation)",
+        "reviewGroundingFilterVerifier returns costUsd === 0 (verifier is mechanical, no LLM calls)",
+        "dialogueVerdictSelector registered under 'dialogue-verdict' key in selector registry"
       ],
       "tags": [
         "feature",
@@ -143,11 +144,6 @@
         "src/review/semantic-helpers.ts",
         "src/debate/selectors/pick.ts"
       ],
-      "suggestedCriteria": [
-        "pickSelectorKind with stageConfig.selector = { kind: 'dialogue-verdict' } explicitly set returns 'dialogue-verdict' even when reviewerSession and resolverContextInput are both absent (explicit selector bypasses auto-elevation)",
-        "reviewGroundingFilterVerifier returns costUsd === 0 (verifier is mechanical, no LLM calls)",
-        "dialogueVerdictSelector registered under 'dialogue-verdict' key in selector registry"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -165,7 +161,10 @@
         "When stageConfig.postDebateVerifier is set, runPanelOneShot() invokes resolvePostDebateVerifier(stageConfig.postDebateVerifier.kind)(verifierCtx) after the selector emits its result and returns the verifier's outcome with merged cost; when unset, returns the selector's outcome directly",
         "runner-plan.ts::runPlan(), runner-hybrid.ts, and runner-stateful.ts all continue calling resolveOutcome(...) (refactored); behavior is byte-equivalent",
         "All tests in test/unit/debate/runner-mode-routing.test.ts, test/unit/debate/runner-rounds-and-cost.test.ts, test/unit/debate/runner-plan.test.ts, test/unit/debate/runner-hybrid.test.ts, test/unit/debate/runner-stateful.test.ts, and test/unit/debate/session-helpers.test.ts pass unchanged",
-        "A new unit test test/unit/debate/runner-plug-point-dispatch.test.ts asserts: when stageConfig.selector = { kind: 'synthesis' }, pickSelectorKind returns 'synthesis' and resolveSelector('synthesis') is invoked exactly once; when stageConfig.selector is unset with reviewerSession + resolverContextInput present, pickSelectorKind returns 'dialogue-verdict'; when neither applies, pickSelectorKind falls back to resolver.type mapping"
+        "A new unit test test/unit/debate/runner-plug-point-dispatch.test.ts asserts: when stageConfig.selector = { kind: 'synthesis' }, pickSelectorKind returns 'synthesis' and resolveSelector('synthesis') is invoked exactly once; when stageConfig.selector is unset with reviewerSession + resolverContextInput present, pickSelectorKind returns 'dialogue-verdict'; when neither applies, pickSelectorKind falls back to resolver.type mapping",
+        "When preDebatePhase is set and resolvePreDebatePhase throws, runPanelOneShot propagates the error (no silent swallow)",
+        "When postDebateVerifier returns outcome === 'skipped', runPanelOneShot returns the selector's original outcome unchanged",
+        "totalCost in runPanelOneShot accumulates pre-phase costUsd + selector resolverCostUsd + post-verifier costUsd"
       ],
       "tags": [
         "feature",
@@ -194,11 +193,6 @@
         "src/debate/runner-hybrid.ts",
         "src/debate/runner-stateful.ts"
       ],
-      "suggestedCriteria": [
-        "When preDebatePhase is set and resolvePreDebatePhase throws, runPanelOneShot propagates the error (no silent swallow)",
-        "When postDebateVerifier returns outcome === 'skipped', runPanelOneShot returns the selector's original outcome unchanged",
-        "totalCost in runPanelOneShot accumulates pre-phase costUsd + selector resolverCostUsd + post-verifier costUsd"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -216,7 +210,12 @@
         "groundOp does NOT expose a model field on its GrounderInput interface; model is entirely config-driven via groundOp.model(_input, ctx) === ctx.config.debate.grounder.model regardless of input",
         "groundOp.parse(validJsonString) returns a FactsManifest when given valid JSON matching the schema; throws NaxError with code 'GROUNDER_PARSE_FAILED' when given invalid JSON or schema-violating input",
         "groundOp.model(input, ctx) returns ctx.config.debate.grounder.model verbatim — whether it is a ModelTier string (e.g. 'balanced') or a ConfiguredModelObject (e.g. { agent: 'claude', model: 'claude-opus-4-7' })",
-        "groundOp.timeoutMs(input, ctx) === ctx.config.debate.grounder.timeoutSeconds * 1000; groundOp is exported from src/operations/index.ts"
+        "groundOp.timeoutMs(input, ctx) === ctx.config.debate.grounder.timeoutSeconds * 1000; groundOp is exported from src/operations/index.ts",
+        "parseFactsManifest with a valid specClaims entry where verification.factId is undefined (optional field) returns { ok: true }",
+        "parseFactsManifest with a gap entry where evidence is undefined (optional field) returns { ok: true }",
+        "renderManifestSection returns a string containing 'verified'/'unverified'/'partial'/'contradicted' status for each specClaim",
+        "groundOp.stage === 'plan'",
+        "groundOp is exported from src/operations/index.ts"
       ],
       "tags": [
         "feature",
@@ -225,8 +224,8 @@
         "manifest"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -242,13 +241,6 @@
         "src/config/schemas-infra.ts",
         "src/config/selectors.ts",
         "src/prompts/builders/plan-builder.ts"
-      ],
-      "suggestedCriteria": [
-        "parseFactsManifest with a valid specClaims entry where verification.factId is undefined (optional field) returns { ok: true }",
-        "parseFactsManifest with a gap entry where evidence is undefined (optional field) returns { ok: true }",
-        "renderManifestSection returns a string containing 'verified'/'unverified'/'partial'/'contradicted' status for each specClaim",
-        "groundOp.stage === 'plan'",
-        "groundOp is exported from src/operations/index.ts"
       ],
       "priorErrors": [],
       "priorFailures": [],
