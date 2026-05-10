@@ -1,0 +1,240 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "`TestEditDeclaration` union includes `\"mock_structure\"` as a valid `reason` value, and the interface declares optional `files: string[]` and `reasonDetail: string` fields.",
+    "refined": "The `TestEditDeclaration` type defines `reason: \"prd_contract\" | \"lint_only\" | \"sibling_scope\" | \"mock_structure\"` and includes optional fields `files?: string[]` and `reasonDetail?: string`. TypeScript compilation succeeds with no `any` assertions.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When agent output contains a block beginning `TEST_EDIT_REASON: mock_structure` with `FILES: a.test.ts, b.test.ts` and a non-empty `REASON:`, then `parseTestEditDeclarations(output)` returns a single declaration with `reason === \"mock_structure\"`, `file === \"a.test.ts\"`, `files.length === 2`, and `reasonDetail` set to the verbatim REASON paragraph.",
+    "refined": "Given input with block `TEST_EDIT_REASON: mock_structure\\nFILES: a.test.ts, b.test.ts\\nREASON: which mock is wrong...`, `parseTestEditDeclarations()` returns array of length 1 with declaration where `reason === \"mock_structure\"`, `file === \"a.test.ts\"`, `files === [\"a.test.ts\", \"b.test.ts\"]`, and `reasonDetail === \"which mock is wrong...\"` (exact text after `REASON: `).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When the `mock_structure` block has empty `FILES:` (or the field is missing), then `parseTestEditDeclarations` returns no declaration for that block.",
+    "refined": "Given input with block `TEST_EDIT_REASON: mock_structure\\nFILES:\\nREASON: text` or `TEST_EDIT_REASON: mock_structure\\nREASON: text` (missing FILES), `parseTestEditDeclarations()` returns empty array or omits that block entirely.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When the `mock_structure` block has missing `REASON:` (or the field is empty), then `parseTestEditDeclarations` returns no declaration for that block.",
+    "refined": "Given input with block `TEST_EDIT_REASON: mock_structure\\nFILES: a.test.ts\\nREASON:` or block missing REASON field entirely, `parseTestEditDeclarations()` returns empty array or omits that block entirely.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `FILES` contains whitespace around commas (`a.test.ts , b.test.ts`), then `files` returns trimmed paths with no surrounding whitespace.",
+    "refined": "Given input `FILES: a.test.ts , b.test.ts\\nREASON: text`, `parseTestEditDeclarations()` returns declaration with `files === [\"a.test.ts\", \"b.test.ts\"]` (each element stripped of leading/trailing whitespace).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Existing `prd_contract`, `lint_only`, and `sibling_scope` parser behavior is unchanged — every existing test in `test-edit-declaration.test.ts` still passes.",
+    "refined": "All test cases in `test/unit/operations/test-edit-declaration.test.ts` for `prd_contract`, `lint_only`, and `sibling_scope` reason types execute and pass without modification to test code.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "`PipelineContext` interface declares optional `pendingMockStructureHandoffs?: { files: string[]; reasonDetail: string }[]`.",
+    "refined": "The `PipelineContext` interface in `src/pipeline/types.ts` includes a property `pendingMockStructureHandoffs` with type `{ files: string[]; reasonDetail: string }[] | undefined` that is optional.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "`validateMockStructureFiles(decls, workdir, resolvedPatterns)` returns `{ valid, invalid }` partition where `valid` contains every `mock_structure` declaration whose every path exists on disk and is classified as a test file by `resolvedPatterns.regex`, and `invalid` contains the others tagged with `missing` and `nonTest` arrays.",
+    "refined": "`validateMockStructureFiles` returns an object with shape `{ valid: TestEditDeclaration[]; invalid: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }> }` where: `valid` contains all mock_structure decls where every path in `decl.files` exists on disk AND matches at least one regex in `resolvedPatterns.regex`; `invalid` contains non-mock_structure decls that fail validation, with `missing` listing paths that don't exist and `nonTest` listing paths that fail regex matching.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "`validateMockStructureFiles` passes through non-`mock_structure` declarations unchanged in `valid`.",
+    "refined": "For each declaration in `decls` where `decl.type !== 'mock_structure'`, the identical declaration object (by reference equality or deep equality) appears in the returned `valid` array.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `applyTestEditDeclarations` receives a valid `mock_structure` declaration, the returned finding array contains one synthetic finding per path in `decl.files` with `source === \"implementer-handoff\"`, `severity === \"error\"`, `category === \"test_mock_restructure\"`, `fixTarget === \"test\"`, and `file` set to the path.",
+    "refined": "For each valid `mock_structure` declaration passed to `applyTestEditDeclarations`, the returned findings array contains exactly `decl.files.length` new findings, each with: `source === 'implementer-handoff'`, `severity === 'error'`, `category === 'test_mock_restructure'`, `fixTarget === 'test'`, `file === <path from decl.files>`, and `message` containing descriptive text such as 'Restructure mocks per implementer handoff'.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `applyTestEditDeclarations` receives an invalid `mock_structure` declaration (passed in via the `invalid` partition), the returned array contains one advisory finding with `category === \"mock_structure_invalid_files\"` and `severity === \"warning\"` whose `message` lists the offending paths.",
+    "refined": "For each invalid `mock_structure` declaration in the `invalid` partition passed to `applyTestEditDeclarations`, the returned findings array contains exactly one new finding with: `category === 'mock_structure_invalid_files'`, `severity === 'warning'`, `source === 'implementer-handoff'`, and `message` containing space-separated or comma-separated list of all paths from both `missing` and `nonTest` arrays.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "`applyTestEditDeclarations` returns the original source-tagged findings unchanged in the array — source `fixTarget` is retained on all pre-existing findings.",
+    "refined": "All findings that existed in `ctx.currentFindings` before `applyTestEditDeclarations` runs are present in the returned array with identical `source` and `fixTarget` values (no mutations of these properties).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "In the cycle's `validate()` callback, when `ctx.testEditDeclarations` contains `mock_structure` declarations and `validateMockStructureFiles` classifies them as valid, `ctx.pendingMockStructureHandoffs` is populated with `{ files, reasonDetail }` entries (one per valid declaration) before `applyTestEditDeclarations` runs.",
+    "refined": "Inside `autofix-cycle.ts` `validate()` callback, after `validateMockStructureFiles` returns and before `applyTestEditDeclarations` is called, for each declaration in `valid` partition with `type === 'mock_structure'`, `ctx.pendingMockStructureHandoffs` is initialized (if undefined) and contains an object with `files === decl.files` and `reasonDetail` set to a descriptive string derived from the declaration.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "After `validate()` completes, `ctx.testEditDeclarations` is cleared (existing behavior preserved).",
+    "refined": "Upon `validate()` callback completion in `autofix-cycle.ts`, `ctx.testEditDeclarations` is set to an empty array (`[]`) or undefined, removing all test-edit declarations from the context.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "`CONTRADICTION_ESCAPE_HATCH` text includes a section titled \"Exception 4 — Mock-structure handoff\" that lists `TEST_EDIT_REASON: mock_structure`, `FILES:`, and `REASON:` as required fields.",
+    "refined": "The string constant `CONTRADICTION_ESCAPE_HATCH` in `src/prompts/builders/rectifier-builder-helpers.ts` contains a subsection with the header \"Exception 4 — Mock-structure handoff\" and the text includes all three field identifiers: \"TEST_EDIT_REASON: mock_structure\", \"FILES:\", and \"REASON:\" as required fields.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "`CONTRADICTION_ESCAPE_HATCH` Exception 4 text states the rule: \"Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.\"",
+    "refined": "The Exception 4 section within the `CONTRADICTION_ESCAPE_HATCH` string constant contains the exact substring: \"Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "`RectifierPromptBuilder.testWriterRectification` accepts `mode: \"mock-restructure\"` and dispatches to `_testWriterMockRestructure`.",
+    "refined": "The method `RectifierPromptBuilder.testWriterRectification` in `src/prompts/builders/rectifier-builder.ts` accepts an optional `options` parameter with a `mode` property that can equal `\"mock-restructure\"`, and when invoked with `mode: \"mock-restructure\"`, the method calls a private static method named `_testWriterMockRestructure`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `testWriterRectification` is called with `mode: \"mock-restructure\"` and `options.handoffReason` and `options.handoffFiles` set, the returned prompt contains the verbatim `handoffReason` text and lists every entry from `handoffFiles` under a \"Files to rewrite (only these)\" heading.",
+    "refined": "When `RectifierPromptBuilder.testWriterRectification(findings, story, { mode: \"mock-restructure\", handoffReason: string, handoffFiles: string[] })` is called, the returned prompt string: (a) contains the exact value of `handoffReason` verbatim, (b) contains a line or section with the heading \"Files to rewrite (only these)\" followed by each entry from `handoffFiles` listed on separate lines, and (c) every element from `handoffFiles` array appears in the output.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "The `mock-restructure` prompt explicitly instructs the agent to NOT modify any source file and NOT modify any assertion site — literal substrings \"Do NOT modify any source file\" and at least one of `expect(`, `toBe`, `toEqual`, `toThrow` are present in the returned prompt.",
+    "refined": "When `RectifierPromptBuilder.testWriterRectification` is called with `mode: \"mock-restructure\"`, the returned prompt string contains: (a) the exact substring \"Do NOT modify any source file\", AND (b) at least one of the following substrings: \"expect(\", \"toBe(\", \"toEqual(\", or \"toThrow(\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `testWriterRectification` is called without a `mode` argument, it returns the existing `_testWriterFixTestFiles` prompt unchanged.",
+    "refined": "When `RectifierPromptBuilder.testWriterRectification(findings, story)` is called without an `options` parameter or with `options.mode` undefined, the returned prompt string is identical to the prompt that would be returned by `_testWriterFixTestFiles(findings, story, blockingThreshold)` with default blockingThreshold value.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "`AutofixTestWriterInput` interface declares optional `handoffReason: string` and `handoffFiles: string[]` fields and the `mode` union accepts `\"mock-restructure\"`.",
+    "refined": "The `AutofixTestWriterInput` interface defined in `src/operations/autofix-test-writer.ts` includes optional properties `handoffReason?: string` and `handoffFiles?: string[]`, and the `mode` property's type is a union that includes the literal `\"mock-restructure\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `buildAutofixStrategies` testWriter `buildInput` is called and `ctx.pendingMockStructureHandoffs` is non-empty, the returned input has `mode === \"mock-restructure\"`, `handoffFiles` set to the deduplicated union of all `files` arrays across the handoffs, and `handoffReason` set to the `reasonDetail` paragraphs joined with `\\n\\n---\\n\\n`.",
+    "refined": "When the testWriter `buildInput` function in `buildAutofixStrategies` executes with `ctx.pendingMockStructureHandoffs` containing at least one handoff object, the returned `AutofixTestWriterInput` has: `mode === \"mock-restructure\"`, `handoffFiles` is an array equal to the set-union of all `files` arrays from all handoff objects (deduplicated, preserving all unique entries), and `handoffReason` is a string formed by joining all `reasonDetail` strings from all handoff objects with the separator `\"\\n\\n---\\n\\n\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When `buildInput` consumes `ctx.pendingMockStructureHandoffs`, it clears the side-channel (sets to empty array).",
+    "refined": "After the testWriter `buildInput` function in `buildAutofixStrategies` returns an input with `mode === \"mock-restructure\"`, the value of `ctx.pendingMockStructureHandoffs` is set to an empty array `[]`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When `ctx.pendingMockStructureHandoffs` is undefined or empty, `buildInput` returns its existing shape (`mode: \"fix-test-files\"` or `\"write-failing-test\"` per existing branches).",
+    "refined": "When the testWriter `buildInput` function in `buildAutofixStrategies` executes with `ctx.pendingMockStructureHandoffs` being `undefined` or an empty array, the returned `AutofixTestWriterInput` has `mode` set to either `\"fix-test-files\"` or `\"write-failing-test\"` (and not `\"mock-restructure\"`).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When `testWriterRectifyOp.build` receives an input with `mode: \"mock-restructure\"`, it forwards `handoffReason` and `handoffFiles` into the `options` argument of `RectifierPromptBuilder.testWriterRectification`.",
+    "refined": "When `testWriterRectifyOp.build` is invoked with an `AutofixTestWriterInput` where `mode === \"mock-restructure\"`, the method `RectifierPromptBuilder.testWriterRectification` is called with an `options` parameter containing `handoffReason` set to the input's `handoffReason` value and `handoffFiles` set to the input's `handoffFiles` value.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Integration test: given a review with one source-targeted finding in `src/foo.ts`, an implementer mock returning a `mock_structure` declaration with `files: [\"test/foo.test.ts\"]` on its first call (and `applied: true` on subsequent calls), and a test-writer mock returning success, verifies that `runAgentRectificationV2` makes at least one implementer call (the first emitting the `mock_structure` declaration) followed by at least one test-writer call where the test-writer input carries `mode === \"mock-restructure\"` AND the source finding in `src/foo.ts` was never re-tagged to `fixTarget: \"test\"` in any callOp input. The implementer may also be invoked again in the same iteration as the test-writer (both strategies are co-run-sequential and apply when both source and synthetic test findings are present); the test must not assert an exact implementer call count.",
+    "refined": "In an integration test with mocked agents configured as: (1) implementer agent returns a mock_structure declaration containing `files: [\"test/foo.test.ts\"]` on first invocation and `applied: true` on all subsequent invocations, (2) test-writer agent returns success, (3) a review input containing exactly one source-targeted finding in `src/foo.ts`. After `runAgentRectificationV2` completes, verify: (a) implementer agent was invoked at least once with the first invocation returning the mock_structure declaration; (b) test-writer agent was invoked at least once; (c) in at least one test-writer agent invocation, the input parameter has `mode === \"mock-restructure\"`; (d) across all implementer callOp invocations (both before and after any test-writer invocations), the source finding targeting `src/foo.ts` was never assigned `fixTarget: \"test\"`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "NaxConfigSchema.parse({}) returns a config where `quality.autofix.enforceTestWriterIsolation === true`.",
+    "refined": "Calling NaxConfigSchema.parse({}) returns an object where config.quality.autofix.enforceTestWriterIsolation is strictly equal to true (boolean).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "`assertionSiteDiffCheck(workdir, beforeRef, files)` returns `{ violated: true, file, line, content }` when `git diff --unified=0 <beforeRef> -- <file>` output for any file in `files` contains an added line matching `/expect\\(|\\._toBe\\(|\\._toEqual\\(|\\._toThrow\\(|\\bnot\\.|\\._toMatch\\(|\\bassert\\./`.",
+    "refined": "Given files=['test.ts'] with beforeRef at a commit where test.ts has no assertion calls, after adding a line '+expect(x).toBe(5)' and calling assertionSiteDiffCheck(workdir, beforeRef, files), the function returns an object where violated===true, file==='test.ts', line is a non-negative integer, and content contains 'expect'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "`assertionSiteDiffCheck` returns `{ violated: false }` when the diff added lines contain no assertion-call patterns (e.g. mock setup, import, comment edits only).",
+    "refined": "Given files=['test.ts'] with beforeRef at a commit where test.ts has a mock setup block, after adding lines like '+jest.mock(...)' and '+import { fn } from ...' without assertion patterns, calling assertionSiteDiffCheck(workdir, beforeRef, files) returns an object where violated===false.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "`runIsolationGuard(workdir, beforeRef, config)` calls `verifyTestWriterIsolation` with `config.tdd.testWriterAllowedPaths` and the configured test patterns, and returns `{ violated: true, files: violations }` when the check returns `passed: false`.",
+    "refined": "Given a mock verifyTestWriterIsolation that returns {passed: false, violations: ['src/index.ts']}, when runIsolationGuard is called with a config and _deps={verifyTestWriterIsolation: mockFn}, the function returns an object where violated===true and files is an array containing 'src/index.ts'. The mock is called with (workdir, beforeRef, config.tdd?.testWriterAllowedPaths, resolvedTestPatterns).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "`runIsolationGuard` returns `{ violated: false, skipped: true }` when `config.quality.autofix.enforceTestWriterIsolation === false` — the underlying `verifyTestWriterIsolation` is not invoked.",
+    "refined": "Given a config where quality.autofix.enforceTestWriterIsolation===false and a mock verifyTestWriterIsolation function, when runIsolationGuard is called, it returns an object where violated===false and skipped===true, and the verifyTestWriterIsolation mock is never called (callCount===0).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When the autofix test-writer op completes in `mock-restructure` mode and `assertionSiteDiffCheck` returns violated, `runAgentRectificationV2` calls `revertDiff(workdir, handoffFiles)` (which runs `git checkout HEAD -- <files>`) and the iteration's recorded `unresolved` reason starts with `assertion_weakening:`.",
+    "refined": "Given a mock revertDiff function and assertionSiteDiffCheck returning {violated: true, file: 'test.ts', line: 5, content: 'expect(x).toBe(5)'}, when runAgentRectificationV2 is called in mock-restructure mode with _deps={revertDiff: mockFn, assertionSiteDiffCheck: mockAssertion}, the mock revertDiff is called with (workdir, files) and the iteration context's unresolved property is set to a string that starts with 'assertion_weakening:'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When the autofix test-writer op completes in `mock-restructure` mode and `runIsolationGuard` returns violated, `runAgentRectificationV2` calls `revertDiff` against the violated files and the iteration's recorded `unresolved` reason starts with `test_writer_isolation_violation:`.",
+    "refined": "Given a mock revertDiff function and runIsolationGuard returning {violated: true, files: ['src/index.ts']}, when runAgentRectificationV2 is called in mock-restructure mode with _deps={revertDiff: mockFn, runIsolationGuard: mockGuard}, the mock revertDiff is called with (workdir, ['src/index.ts']) and the iteration context's unresolved property is set to a string that starts with 'test_writer_isolation_violation:'.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When both guards pass, the test-writer's commit is retained, the cycle proceeds to validate normally, and no `revertDiff` call occurs.",
+    "refined": "Given assertionSiteDiffCheck returning {violated: false} and runIsolationGuard returning {violated: false}, when runAgentRectificationV2 is called in mock-restructure mode with _deps={revertDiff: mockFn, assertionSiteDiffCheck: ..., runIsolationGuard: ...}, the revertDiff mock is never called (callCount===0) and the iteration proceeds to the validate stage without recording an unresolved reason from these guards.",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

@@ -12,9 +12,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import { _autofixDeps } from "../../src/pipeline/stages/autofix";
-import { runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
+import { _autofixCycleDeps, runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
 import { _cycleDeps } from "../../src/findings/cycle";
-import type { Finding } from "../../src/findings";
+import type { Finding } from "@/findings";
 import type { PipelineContext } from "../../src/pipeline/types";
 import { makeMockAgentManager, makeNaxConfig, makeStory } from "../helpers";
 
@@ -216,5 +216,121 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
       .flatMap((e) => e.findings)
       .filter((f) => f.category === "prd_quote_mismatch");
     expect(advisorySeenByImplementer).toHaveLength(0);
+  });
+
+  test("implementer mock_structure handoff flows through to test-writer with mode mock-restructure", async () => {
+    const ctx = makeCtx(
+      makeStory({
+        description: "Service exposes foo(x: number): void",
+      }),
+    );
+    const initialFinding: Finding = {
+      source: "adversarial-review",
+      severity: "error",
+      category: "convention",
+      message: "test behavior mismatch",
+      file: "src/foo.ts",
+      fixTarget: "source",
+    };
+    ctx.reviewResult = {
+      success: false,
+      checks: [
+        {
+          check: "adversarial",
+          success: false,
+          command: "",
+          exitCode: 1,
+          output: "",
+          durationMs: 0,
+          findings: [initialFinding],
+        },
+      ],
+    } as any;
+
+    const savedAutofix = { ..._autofixDeps };
+    const savedCycle = { ..._cycleDeps };
+    const saveCycleDeps = { ..._autofixCycleDeps };
+
+    // Capture implementer and test-writer calls for assertions
+    // biome-ignore lint/suspicious/noExplicitAny: test instrumentation
+    const callLog: { op: string; input: any }[] = [];
+    let implementerCallCount = 0;
+
+    _autofixDeps.recheckReview = async () => false;
+    _autofixCycleDeps.fileExists = async (_path: string) => true;
+
+    _cycleDeps.callOp = (async (_ctx: any, op: any, input: any) => {
+      callLog.push({ op: op.name, input });
+
+      if (op.name === "autofix-implementer") {
+        implementerCallCount++;
+        // On first call, return mock_structure declaration
+        if (implementerCallCount === 1) {
+          return {
+            applied: true,
+            testEditDeclarations: [
+              {
+                reason: "mock_structure",
+                file: "test/foo.test.ts",
+                files: ["test/foo.test.ts"],
+                reasonDetail: "Mock dispatch shape must align with service interface",
+              },
+            ],
+          };
+        }
+        // On subsequent calls, return applied: true without declaration
+        return {
+          applied: true,
+          testEditDeclarations: [],
+        };
+      }
+
+      if (op.name === "autofix-test-writer") {
+        return { applied: true };
+      }
+
+      throw new Error(`Unexpected op: ${op.name}`);
+    }) as any;
+
+    try {
+      await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+    } finally {
+      Object.assign(_autofixDeps, savedAutofix);
+      Object.assign(_cycleDeps, savedCycle);
+      Object.assign(_autofixCycleDeps, saveCycleDeps);
+    }
+
+    // Assert that implementer was called at least once
+    const implementerCalls = callLog.filter((e) => e.op === "autofix-implementer");
+    expect(implementerCalls.length).toBeGreaterThanOrEqual(1);
+
+    // Assert that test-writer was called at least once
+    const testWriterCalls = callLog.filter((e) => e.op === "autofix-test-writer");
+    expect(testWriterCalls.length).toBeGreaterThanOrEqual(1);
+
+    // The test-writer call must carry mode === "mock-restructure"
+    const mockRestructureCalls = testWriterCalls.filter((e) => e.input.mode === "mock-restructure");
+    expect(mockRestructureCalls.length).toBeGreaterThanOrEqual(1);
+
+    // The test-writer input must have handoffFiles set to files from the mock_structure
+    const callWithHandoff = mockRestructureCalls[0];
+    expect(callWithHandoff.input.handoffFiles).toEqual(["test/foo.test.ts"]);
+    expect(callWithHandoff.input.handoffReason).toBe(
+      "Mock dispatch shape must align with service interface",
+    );
+
+    // The source finding in src/foo.ts must never be re-tagged to fixTarget: "test" in any callOp input
+    const allInputs = callLog.map((e) => e.input);
+    for (const inp of allInputs) {
+      const failedChecks = inp.failedChecks ?? [];
+      const findings = failedChecks.flatMap((c: any) => c.findings ?? []);
+      const reTaggedSource = findings.filter(
+        (f: any) => f.file === "src/foo.ts" && f.fixTarget === "test",
+      );
+      expect(reTaggedSource).toHaveLength(0);
+    }
+
+    // Side-channel must be cleared (set to empty array)
+    expect(ctx.pendingMockStructureHandoffs).toEqual([]);
   });
 });

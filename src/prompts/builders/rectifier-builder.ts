@@ -12,12 +12,12 @@
  * Remaining: static methods for review, autofix, and escalation prompts.
  */
 
-import type { RectificationConfig } from "../../config";
-import type { UserStory } from "../../prd";
-import { isBlockingSeverity } from "../../review/severity";
-import type { ReviewCheckName, ReviewCheckResult } from "../../review/types";
-import { formatFailureSummary } from "../../verification/parser";
-import type { TestFailure } from "../../verification/types";
+import type { RectificationConfig } from "@/config";
+import type { UserStory } from "@/prd";
+import { isBlockingSeverity } from "@/review";
+import type { ReviewCheckName, ReviewCheckResult } from "@/review";
+import { formatFailureSummary } from "@/verification";
+import type { TestFailure } from "@/verification";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
 import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
@@ -234,18 +234,30 @@ export class RectifierPromptBuilder {
   /**
    * Prompt for the test-writer to fix test file issues or write failing tests (D2, #897).
    *
-   * Two modes:
+   * Three modes:
    * - "fix-test-files" (default): fix existing test files flagged by review (#409).
    * - "write-failing-test": write a NEW failing test that documents spec-correct behavior
    *   described in an adversarial source-bug finding. The implementer then makes it pass.
+   * - "mock-restructure": restructure mock setup/dispatch wiring to align with the
+   *   AC-mandated dispatch shape handed off via the Exception 4 escape hatch.
    */
   static testWriterRectification(
     findings: ReviewCheckResult[],
     story: UserStory,
-    options?: { mode?: "fix-test-files" | "write-failing-test"; blockingThreshold?: "error" | "warning" | "info" },
+    options?: {
+      mode?: "fix-test-files" | "write-failing-test" | "mock-restructure";
+      blockingThreshold?: "error" | "warning" | "info";
+      /** mock-restructure only */
+      handoffReason?: string;
+      /** mock-restructure only */
+      handoffFiles?: string[];
+    },
   ): string {
     if (options?.mode === "write-failing-test") {
       return RectifierPromptBuilder._testWriterWriteFailingTest(findings, story, options);
+    }
+    if (options?.mode === "mock-restructure") {
+      return RectifierPromptBuilder._testWriterMockRestructure(story, options);
     }
     return RectifierPromptBuilder._testWriterFixTestFiles(findings, story, options);
   }
@@ -288,6 +300,35 @@ Rules:
 4. The test must fail with the current code.
 
 Commit your new tests when done.${scopeConstraint}`;
+  }
+
+  private static _testWriterMockRestructure(
+    story: UserStory,
+    opts: { handoffReason?: string; handoffFiles?: string[] },
+  ): string {
+    const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+    const fileList = (opts.handoffFiles ?? []).join("\n");
+    const reason = opts.handoffReason ?? "";
+
+    return `You are restructuring test mocks to align with the AC-mandated dispatch shape.
+
+Story: ${story.title} (${story.id})
+
+### Acceptance Criteria
+${acList}
+
+### Files to rewrite (only these)
+${fileList}
+
+### Implementer handoff
+${reason}
+
+Rules:
+1. Modify ONLY the files listed above.
+2. Do NOT modify any source file.
+3. Do NOT loosen, remove, or rewrite any assertion site (\`expect(\`, \`toBe\`, \`toEqual\`, \`toThrow\`, \`not.\`, language equivalents). Restructure mock setup, dispatch wiring, and arrangement only.
+4. The tests must continue to encode the SPECIFICATION, not the current behavior.
+5. Commit your changes when done.`;
   }
 
   private static _testWriterFixTestFiles(

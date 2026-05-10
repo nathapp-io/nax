@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { implementerRectifyOp } from "../../../src/operations/autofix-implementer";
-import { makeStory } from "../../helpers/mock-story";
+import { implementerRectifyOp } from "@/operations";
+import { makeStory } from "@test/helpers";
 
 describe("implementerRectifyOp.parse", () => {
   const input = { failedChecks: [], story: makeStory() };
@@ -42,3 +42,4 @@ CHANGE: a! → a?`;
     expect(out.testEditDeclarations).toHaveLength(1);
   });
 });
+

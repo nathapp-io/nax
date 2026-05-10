@@ -4,22 +4,22 @@
  * Composable stage-based execution pipeline for refactoring the monolithic runner.
  */
 
-import type { AgentResult } from "../agents/types";
-import type { NaxConfig } from "../config/schema";
-import type { ConstitutionResult } from "../constitution/types";
-import type { BuiltContext } from "../context/types";
-import type { Finding } from "../findings";
-import type { Iteration } from "../findings";
-import type { HooksConfig } from "../hooks/types";
-import type { InteractionChain } from "../interaction/chain";
-import type { StoryMetrics } from "../metrics/types";
-import type { TestEditDeclaration } from "../operations";
-import type { PluginRegistry } from "../plugins/registry";
-import type { PRD, UserStory } from "../prd/types";
-import type { ReviewResult } from "../review/types";
-import type { DispatchContext } from "../runtime/dispatch-context";
-import type { FailureCategory } from "../tdd/types";
-import type { VerifyResult } from "../verification/orchestrator-types";
+import type { AgentResult } from "@/agents/types";
+import type { NaxConfig } from "@/config/schema";
+import type { ConstitutionResult } from "@/constitution/types";
+import type { BuiltContext } from "@/context/types";
+import type { Finding } from "@/findings";
+import type { Iteration } from "@/findings";
+import type { HooksConfig } from "@/hooks/types";
+import type { InteractionChain } from "@/interaction/chain";
+import type { StoryMetrics } from "@/metrics/types";
+import type { TestEditDeclaration } from "@/operations";
+import type { PluginRegistry } from "@/plugins/registry";
+import type { PRD, UserStory } from "@/prd/types";
+import type { ReviewResult } from "@/review/types";
+import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { FailureCategory } from "@/tdd/types";
+import type { VerifyResult } from "@/verification/orchestrator-types";
 
 /**
  * Routing result from complexity classification
@@ -197,6 +197,13 @@ export interface PipelineContext extends DispatchContext {
    * fresh findings. Always cleared after consumption.
    */
   testEditDeclarations?: TestEditDeclaration[];
+  /**
+   * Pending mock_structure handoff metadata from the most recent implementer
+   * rectification attempt. Populated by the cycle's validate() callback when
+   * validateMockStructureFiles classifies mock_structure declarations as valid.
+   * Contains file lists and reasoning detail for the TDD orchestrator to use.
+   */
+  pendingMockStructureHandoffs?: { files: string[]; reasonDetail: string }[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseTestEditDeclarations, validatePrdQuote } from "../../../src/operations/test-edit-declaration";
-import { makeStory } from "../../helpers/mock-story";
+import { parseTestEditDeclarations, validatePrdQuote } from "@/operations";
+import { makeStory } from "@test/helpers";
 
 describe("parseTestEditDeclarations", () => {
   test("parses a single prd_contract block", () => {
@@ -93,6 +93,71 @@ TEST_AFTER: fn()`;
 FILE: foo.ts`;
 
     expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+
+  test("parses a single mock_structure block", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES: a.test.ts, b.test.ts
+REASON: The old mock uses callService but the new code dispatches via eventBus.`;
+
+    const declarations = parseTestEditDeclarations(output);
+    expect(declarations).toHaveLength(1);
+    expect(declarations[0]).toEqual({
+      reason: "mock_structure",
+      file: "a.test.ts",
+      files: ["a.test.ts", "b.test.ts"],
+      reasonDetail: "The old mock uses callService but the new code dispatches via eventBus.",
+    });
+  });
+
+  test("sets file to first entry in FILES for mock_structure", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES: first.test.ts, second.test.ts, third.test.ts
+REASON: Structural rewrite required.`;
+
+    const declarations = parseTestEditDeclarations(output);
+    expect(declarations[0].file).toBe("first.test.ts");
+    expect(declarations[0].files).toHaveLength(3);
+  });
+
+  test("ignores mock_structure block with empty FILES", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES:
+REASON: Some reason.`;
+
+    expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+
+  test("ignores mock_structure block with missing FILES field", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+REASON: Some reason.`;
+
+    expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+
+  test("ignores mock_structure block with empty REASON", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES: a.test.ts
+REASON:`;
+
+    expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+
+  test("ignores mock_structure block with missing REASON field", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES: a.test.ts`;
+
+    expect(parseTestEditDeclarations(output)).toEqual([]);
+  });
+
+  test("trims whitespace around commas in FILES", () => {
+    const output = `TEST_EDIT_REASON: mock_structure
+FILES: a.test.ts , b.test.ts , c.test.ts
+REASON: Some reason.`;
+
+    const declarations = parseTestEditDeclarations(output);
+    expect(declarations).toHaveLength(1);
+    expect(declarations[0].files).toEqual(["a.test.ts", "b.test.ts", "c.test.ts"]);
   });
 });
 

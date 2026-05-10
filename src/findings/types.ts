@@ -35,7 +35,8 @@ export type FindingSource =
   | "adversarial-review"
   | "acceptance-diagnose"
   | "tdd-verifier"
-  | "plugin";
+  | "plugin"
+  | "implementer-handoff";
 
 /**
  * Severity scale. Standardised on "warning" (not "warn") to align with

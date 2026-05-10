@@ -18,22 +18,20 @@
  */
 
 import { join } from "node:path";
-import type { AutofixConfig } from "../../config/selectors";
-import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "../../findings";
-import { runFixCycle } from "../../findings";
-import { getLogger } from "../../logger";
-import {
-  type TestEditDeclaration,
-  implementerRectifyOp,
-  testWriterRectifyOp,
-  validatePrdQuote,
-} from "../../operations";
-import type { AutofixImplementerInput, AutofixImplementerOutput } from "../../operations";
-import type { AutofixTestWriterInput } from "../../operations";
-import type { UserStory } from "../../prd";
-import type { ReviewCheckResult } from "../../review/types";
+import type { AutofixConfig } from "@/config/selectors";
+import type { Finding, FixCycle, FixCycleContext, FixCycleResult, FixStrategy } from "@/findings";
+import { runFixCycle } from "@/findings";
+import { getLogger } from "@/logger";
+import { type TestEditDeclaration, implementerRectifyOp, testWriterRectifyOp, validatePrdQuote } from "@/operations";
+import type { AutofixImplementerInput, AutofixImplementerOutput } from "@/operations";
+import type { AutofixTestWriterInput } from "@/operations";
+import type { UserStory } from "@/prd";
+import type { ReviewCheckResult } from "@/review/types";
+import { type ResolvedTestPatterns, resolveTestFilePatterns } from "@/test-runners";
+import { captureGitRef } from "@/utils/git";
 import type { PipelineContext } from "../types";
 import { _autofixDeps } from "./autofix";
+import { assertionSiteDiffCheck, revertDiff, runIsolationGuard } from "./autofix-guards";
 
 // ─── Context conversion ───────────────────────────────────────────────────────
 
@@ -130,15 +128,31 @@ export function buildAutofixStrategies(
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
     name: "autofix-test-writer",
-    // D2: also fires for adversarial source-bug error findings so the test-writer can
-    // generate a failing test that documents spec-correct behavior before the implementer runs.
-    appliesTo: (f) =>
-      f.fixTarget === "test" ||
-      ((f.fixTarget ?? "source") === "source" && f.severity === "error" && f.source === "adversarial-review"),
+    appliesTo: (f) => f.fixTarget === "test",
     fixOp: testWriterRectifyOp,
     maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
+      // Branch 1: synthetic implementer-handoff findings present (mock_structure path).
+      const handoffFindings = findings.filter(
+        (f) => f.source === "implementer-handoff" && f.category === "test_mock_restructure",
+      );
+      if (handoffFindings.length > 0) {
+        const handoffFiles = [...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null))];
+        const handoffs = ctx.pendingMockStructureHandoffs ?? [];
+        const handoffReason = handoffs.map((h) => h.reasonDetail).join("\n\n---\n\n");
+        // Clear side-channel after consumption — one-shot per spec US-004 AC #3.
+        ctx.pendingMockStructureHandoffs = [];
+        return {
+          failedChecks: collectFailedChecks(ctx),
+          story: ctx.story,
+          mode: "mock-restructure",
+          handoffFiles,
+          handoffReason,
+          blockingThreshold: ctx.config.review?.blockingThreshold,
+        };
+      }
+      // Existing branches unchanged below this point.
       const hasSourceBug = findings.some(
         (f) => (f.fixTarget ?? "source") === "source" && f.source === "adversarial-review",
       );
@@ -260,6 +274,78 @@ async function writeShadowReport(
   }
 }
 
+// ─── Mock structure validation ────────────────────────────────────────────────
+
+/** Injectable dependencies for file I/O in validateMockStructureFiles. */
+export const _autofixCycleDeps = {
+  fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
+};
+
+/** Injectable dependencies for guard checks in runAgentRectificationV2. */
+export const _autofixCycleGuardDeps = {
+  captureGitRef,
+  assertionSiteDiffCheck,
+  runIsolationGuard,
+  revertDiff,
+};
+
+/**
+ * Async validator for mock_structure declarations.
+ *
+ * Partitions declarations into { valid, invalid }:
+ * - valid: non-mock_structure declarations (pass-through) + mock_structure with all paths existing and classified as test files
+ * - invalid: mock_structure declarations with missing/non-test paths, tagged with missing and nonTest arrays
+ */
+export async function validateMockStructureFiles(
+  decls: TestEditDeclaration[],
+  workdir: string,
+  resolved: ResolvedTestPatterns,
+): Promise<{
+  valid: TestEditDeclaration[];
+  invalid: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }>;
+}> {
+  const valid: TestEditDeclaration[] = [];
+  const invalid: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }> = [];
+
+  for (const decl of decls) {
+    if (decl.reason !== "mock_structure") {
+      valid.push(decl);
+      continue;
+    }
+
+    const files = decl.files ?? [];
+    // Defensive: empty FILES is structurally invalid even if the parser dropped the block.
+    if (files.length === 0) {
+      invalid.push({ decl, missing: [], nonTest: [] });
+      continue;
+    }
+
+    const missing: string[] = [];
+    const nonTest: string[] = [];
+
+    for (const filePath of files) {
+      const absPath = join(workdir, filePath);
+      const exists = await _autofixCycleDeps.fileExists(absPath);
+      if (!exists) {
+        missing.push(filePath);
+        continue;
+      }
+      const isTest = resolved.regex.some((re) => re.test(filePath));
+      if (!isTest) {
+        nonTest.push(filePath);
+      }
+    }
+
+    if (missing.length === 0 && nonTest.length === 0) {
+      valid.push(decl);
+    } else {
+      invalid.push({ decl, missing, nonTest });
+    }
+  }
+
+  return { valid, invalid };
+}
+
 // ─── Declaration application ──────────────────────────────────────────────────
 
 /**
@@ -271,6 +357,14 @@ async function writeShadowReport(
  *   - Otherwise, re-tag any finding whose file matches FILE: change fixTarget
  *     from "source" to "test" so the testWriter strategy claims it next iteration.
  *
+ * For each `mock_structure` declaration (valid):
+ *   - Append one synthetic finding per path in `decl.files` with source="implementer-handoff",
+ *     severity="error", category="test_mock_restructure", fixTarget="test".
+ *
+ * For each `mock_structure` declaration (invalid):
+ *   - Append one advisory finding with category="mock_structure_invalid_files",
+ *     severity="warning", listing missing/non-test paths in message.
+ *
  * `lint_only` and `sibling_scope` declarations are passthrough (parsed for
  * telemetry but not routed by this function).
  *
@@ -280,47 +374,75 @@ export function applyTestEditDeclarations(
   findings: Finding[],
   declarations: TestEditDeclaration[],
   story: UserStory,
+  invalidMockStructure?: Array<{ decl: TestEditDeclaration; missing: string[]; nonTest: string[] }>,
 ): Finding[] {
-  if (declarations.length === 0) return findings;
+  if (declarations.length === 0 && (!invalidMockStructure || invalidMockStructure.length === 0)) return findings;
 
   const out: Finding[] = [...findings];
   const originalLength = findings.length;
   const reTaggedKeys = new Set<number>();
 
   for (const decl of declarations) {
-    if (decl.reason !== "prd_contract") continue;
+    if (decl.reason === "prd_contract") {
+      if (!validatePrdQuote(decl.prdQuote ?? "", story)) {
+        out.push({
+          source: "adversarial-review",
+          severity: "warning",
+          category: "prd_quote_mismatch",
+          message: `Implementer declared TEST_EDIT_REASON: prd_contract with PRD_QUOTE not found in story description or AC text: ${decl.prdQuote}`,
+          file: decl.file,
+          fixTarget: "source",
+        });
+        continue;
+      }
 
-    if (!validatePrdQuote(decl.prdQuote ?? "", story)) {
-      out.push({
-        source: "adversarial-review",
-        severity: "warning",
-        category: "prd_quote_mismatch",
-        message: `Implementer declared TEST_EDIT_REASON: prd_contract with PRD_QUOTE not found in story description or AC text: ${decl.prdQuote}`,
-        file: decl.file,
-        fixTarget: "source",
-      });
-      continue;
-    }
-
-    // Only iterate original findings — not advisory findings appended earlier in this loop.
-    for (let i = 0; i < originalLength; i++) {
-      if (reTaggedKeys.has(i)) continue;
-      if (out[i].file !== decl.file) continue;
-      if ((out[i].fixTarget ?? "source") === "test") continue;
-      out[i] = {
-        ...out[i],
-        fixTarget: "test",
-        meta: {
-          ...(out[i].meta ?? {}),
-          prdContractDeclaration: {
-            prdQuote: decl.prdQuote,
-            testBefore: decl.testBefore,
-            testAfter: decl.testAfter,
+      // Only iterate original findings — not advisory findings appended earlier in this loop.
+      for (let i = 0; i < originalLength; i++) {
+        if (reTaggedKeys.has(i)) continue;
+        if (out[i].file !== decl.file) continue;
+        if ((out[i].fixTarget ?? "source") === "test") continue;
+        out[i] = {
+          ...out[i],
+          fixTarget: "test",
+          meta: {
+            ...(out[i].meta ?? {}),
+            prdContractDeclaration: {
+              prdQuote: decl.prdQuote,
+              testBefore: decl.testBefore,
+              testAfter: decl.testAfter,
+            },
           },
-        },
-      };
-      reTaggedKeys.add(i);
+        };
+        reTaggedKeys.add(i);
+      }
+    } else if (decl.reason === "mock_structure") {
+      // Generate one synthetic finding per path for valid mock_structure declarations.
+      if (decl.files) {
+        for (const file of decl.files) {
+          out.push({
+            source: "implementer-handoff",
+            severity: "error",
+            category: "test_mock_restructure",
+            message: "Restructure mocks per implementer handoff",
+            file,
+            fixTarget: "test",
+          });
+        }
+      }
     }
+  }
+
+  // Advisory findings for invalid mock_structure declarations (from validateMockStructureFiles).
+  for (const { decl, missing, nonTest } of invalidMockStructure ?? []) {
+    const offendingPaths = [...missing, ...nonTest];
+    out.push({
+      source: "implementer-handoff",
+      severity: "warning",
+      category: "mock_structure_invalid_files",
+      message: `mock_structure declaration refers to missing or non-test paths: ${offendingPaths.join(", ")}`,
+      file: decl.file,
+      fixTarget: "source",
+    });
   }
 
   return out;
@@ -352,21 +474,85 @@ export async function runAgentRectificationV2(
     maxTotalAttempts,
   });
 
+  // Capture HEAD before any test-writer op commits, so guards can diff against it.
+  let iterationBeforeRef: string | undefined = await _autofixCycleGuardDeps.captureGitRef(ctx.workdir);
+
+  const strategies = buildAutofixStrategies(ctx, maxAttempts);
+
+  // Patch testWriter's extractApplied to run safety guards in mock-restructure mode.
+  const twStrategy = strategies.find((s) => s.name === "autofix-test-writer");
+  if (twStrategy) {
+    twStrategy.extractApplied = async (_output: unknown, input: AutofixTestWriterInput) => {
+      if (input.mode !== "mock-restructure" || !iterationBeforeRef || !input.handoffFiles?.length) {
+        return {};
+      }
+      const handoffFiles = input.handoffFiles;
+      const beforeRef = iterationBeforeRef;
+
+      const assertionResult = await _autofixCycleGuardDeps.assertionSiteDiffCheck(ctx.workdir, beforeRef, handoffFiles);
+      if (assertionResult.violated) {
+        await _autofixCycleGuardDeps.revertDiff(ctx.workdir, handoffFiles);
+        logger.info("autofix-cycle", "assertion-site guard violated — reverted", {
+          storyId,
+          file: assertionResult.file,
+          line: assertionResult.line,
+        });
+        return { unresolved: `assertion_weakening:${assertionResult.file}:${assertionResult.line}` };
+      }
+
+      const isolationResult = await _autofixCycleGuardDeps.runIsolationGuard(
+        ctx.workdir,
+        beforeRef,
+        ctx.config,
+        ctx.story.workdir || undefined,
+      );
+      if (isolationResult.violated) {
+        await _autofixCycleGuardDeps.revertDiff(ctx.workdir, isolationResult.files);
+        logger.info("autofix-cycle", "test-writer isolation guard violated — reverted", {
+          storyId,
+          files: isolationResult.files,
+        });
+        return { unresolved: `test_writer_isolation_violation:${isolationResult.files.join(",")}` };
+      }
+
+      return {};
+    };
+  }
+
   const cycle: FixCycle<Finding> = {
     findings: initialFindings,
     iterations: [...(ctx.autofixPriorIterations ?? [])],
-    strategies: buildAutofixStrategies(ctx, maxAttempts),
+    strategies,
     config: {
       maxAttemptsTotal: maxTotalAttempts,
       validatorRetries: 1,
     },
     async validate(_cycleCtx: FixCycleContext): Promise<Finding[]> {
+      // Update beforeRef after all strategies in this iteration have committed.
+      iterationBeforeRef = (await _autofixCycleGuardDeps.captureGitRef(ctx.workdir)) ?? iterationBeforeRef;
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state
       await _autofixDeps.recheckReview(ctx);
       const fresh = collectCurrentFindings(ctx);
       const pending = ctx.testEditDeclarations ?? [];
       if (pending.length === 0) return fresh;
-      const retagged = applyTestEditDeclarations(fresh, pending, ctx.story);
+
+      // Partition mock_structure declarations via async validator.
+      const resolved = await resolveTestFilePatterns(ctx.config, ctx.workdir, ctx.story.workdir || undefined);
+      const { valid, invalid } = await validateMockStructureFiles(pending, ctx.workdir, resolved);
+
+      // Stash valid mock_structure handoffs for the TDD orchestrator before applying.
+      const validMockStructure = valid.filter((d) => d.reason === "mock_structure");
+      if (validMockStructure.length > 0) {
+        ctx.pendingMockStructureHandoffs = [
+          ...(ctx.pendingMockStructureHandoffs ?? []),
+          ...validMockStructure.map((d) => ({
+            files: d.files ?? [],
+            reasonDetail: d.reasonDetail ?? "",
+          })),
+        ];
+      }
+
+      const retagged = applyTestEditDeclarations(fresh, valid, ctx.story, invalid);
       // Clear side-channel after consumption so the next iteration starts fresh.
       ctx.testEditDeclarations = [];
       logger.info("autofix-cycle", "applied test-edit declarations", {

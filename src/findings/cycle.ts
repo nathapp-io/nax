@@ -8,10 +8,10 @@
  * capture packageDir via closure in buildInput)
  */
 
-import { getSafeLogger } from "../logger";
-import { callOp as _callOp } from "../operations/call";
-import type { Operation } from "../operations/types";
-import { errorMessage } from "../utils/errors";
+import { getSafeLogger } from "@/logger";
+import { callOp as _callOp } from "@/operations";
+import type { Operation } from "@/operations";
+import { errorMessage } from "@/utils/errors";
 import type {
   FixApplied,
   FixCycle,
@@ -250,7 +250,7 @@ export async function runFixCycle<F extends Finding>(
       const relevantFindings = findingsBefore.filter((f) => strategy.appliesTo(f));
       const input = strategy.buildInput(relevantFindings, cycle.iterations, ctx);
       const output = await doCallOp(ctx, strategy.fixOp, input);
-      const extracted = strategy.extractApplied?.(output, input) ?? {};
+      const extracted = await (strategy.extractApplied?.(output, input) ?? {});
       fixesApplied.push({
         strategyName: strategy.name,
         op: strategy.fixOp.name,
