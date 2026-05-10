@@ -287,11 +287,11 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
-  // Regression: passed:false with all blocking findings dropped as ungrounded
+  // Regression: passed:false with all blocking findings dropped (acIndex missing)
   // must fail-closed (must NOT silently flip to pass).
-  test("fails closed when all blocking findings are dropped as ungrounded by acQuote", async () => {
+  test("fails closed when all blocking findings are dropped due to missing acIndex", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    // The acQuote does not appear in any AC — validator drops; previously the
+    // No acIndex → filterByAcGroundingMinimal drops; previously the
     // "all advisory" branch silently flipped success to true.
     const llmResponse = JSON.stringify({
       passed: false,
@@ -302,8 +302,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
           line: 10,
           issue: "Defines custom ExtendedPrismaClient interface, violating convention",
           suggestion: "Use a Record<string, unknown> cast",
-          acQuote: "convention forbids custom ExtendedPrismaClient",
-          acIndex: 1,
+          // No acIndex — dropped by filterByAcGroundingMinimal
         },
       ],
     });
@@ -312,7 +311,7 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     expect(result.success).toBe(false);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("dropped as ungrounded");
+    expect(result.output).toContain("acIndex was missing or out of range");
     expect(result.output).toContain("ExtendedPrismaClient");
   });
 });
