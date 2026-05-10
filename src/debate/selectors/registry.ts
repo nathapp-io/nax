@@ -3,6 +3,9 @@
  */
 
 import { NaxError } from "@/errors";
+import { judgeSelector } from "./judge";
+import { majorityFailClosedSelector, majorityFailOpenSelector } from "./majority";
+import { synthesisSelector } from "./synthesis";
 import type { Selector } from "./types";
 
 const STRATEGIES: Record<string, Selector> = {};
@@ -18,3 +21,9 @@ export function resolveSelector(kind: string): Selector {
 export function registerSelector(kind: string, strategy: Selector): void {
   STRATEGIES[kind] = strategy;
 }
+
+// Register built-in strategies at module load
+registerSelector("synthesis", synthesisSelector);
+registerSelector("majority-fail-closed", majorityFailClosedSelector);
+registerSelector("majority-fail-open", majorityFailOpenSelector);
+registerSelector("judge", judgeSelector);

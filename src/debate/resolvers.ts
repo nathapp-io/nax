@@ -1,62 +1,28 @@
 /**
- * Debate Resolvers
+ * Debate Resolvers — compat wrappers
  *
- * Strategies for resolving the outcome of a debate session:
- * - majorityResolver: parses JSON pass/fail from each proposal, returns majority vote
- * - synthesisResolver: calls adapter.complete() with a synthesis prompt
- * - judgeResolver: calls adapter.complete() with a judge prompt using resolver.agent
+ * These functions keep their original public signatures for backwards compatibility.
+ * The underlying logic now lives in src/debate/selectors/:
+ * - majorityResolver → delegates to computeMajority (selectors/majority.ts)
+ * - synthesisResolver → delegates to callSynthesisComplete (selectors/synthesis.ts)
+ * - judgeResolver → delegates to callJudgeComplete (selectors/judge.ts)
  */
 
 import type { IAgentManager } from "../agents";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
-import { DebatePromptBuilder } from "../prompts";
+import { callJudgeComplete } from "./selectors/judge";
+import { computeMajority } from "./selectors/majority";
+import { callSynthesisComplete } from "./selectors/synthesis";
 import type { Debater, ResolverConfig } from "./types";
 
 const DEFAULT_FALLBACK_AGENT = "claude";
-
-/**
- * Strip markdown fences from a string, returning the inner content.
- */
-function stripMarkdownFence(text: string): string {
-  const match = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return match ? (match[1] ?? text) : text;
-}
-
-/**
- * Parse a proposal string and extract the "passed" boolean.
- * Returns null when the proposal is not valid JSON or lacks a "passed" field.
- */
-function parsePassedField(proposal: string): boolean | null {
-  try {
-    const stripped = stripMarkdownFence(proposal.trim());
-    const parsed = JSON.parse(stripped) as unknown;
-    if (typeof parsed === "object" && parsed !== null && "passed" in parsed) {
-      const { passed } = parsed as Record<string, unknown>;
-      if (typeof passed === "boolean") return passed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Majority resolver — parses JSON pass/fail from each proposal.
  * Returns 'passed' when a strict majority pass. Fail-closed on tie.
  */
 export function majorityResolver(proposals: string[], failOpen: boolean): "passed" | "failed" {
-  let passCount = 0;
-  let failCount = 0;
-
-  for (const proposal of proposals) {
-    const passed = parsePassedField(proposal);
-    if (passed === true) passCount++;
-    else if (failOpen)
-      passCount++; // null (unparseable) counts as pass — fail-open
-    else failCount++; // null (unparseable) counts as fail — fail-closed
-  }
-
-  return passCount > failCount ? "passed" : "failed";
+  return computeMajority(proposals, failOpen);
 }
 
 /**
@@ -74,9 +40,15 @@ export async function synthesisResolver(
     debaters?: Debater[];
   },
 ): Promise<CompleteResult> {
-  const base = DebatePromptBuilder.resolverSynthesisPrompt(proposals, critiques, opts.debaters);
-  const prompt = opts.promptSuffix ? `${base}\n\n${opts.promptSuffix}` : base;
-  return opts.agentManager.completeAs(opts.agentName, prompt, opts.completeOptions);
+  return callSynthesisComplete(
+    proposals,
+    critiques,
+    opts.debaters,
+    opts.agentManager,
+    opts.agentName,
+    opts.completeOptions,
+    opts.promptSuffix,
+  );
 }
 
 /**
@@ -96,6 +68,5 @@ export async function judgeResolver(
   },
 ): Promise<CompleteResult> {
   const agentName = resolverConfig.agent ?? opts.defaultAgentName ?? DEFAULT_FALLBACK_AGENT;
-  const prompt = DebatePromptBuilder.resolverJudgePrompt(proposals, critiques, opts.debaters);
-  return opts.agentManager.completeAs(agentName, prompt, opts.completeOptions);
+  return callJudgeComplete(proposals, critiques, agentName, opts.agentManager, opts.completeOptions, opts.debaters);
 }

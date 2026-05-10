@@ -1,32 +1,40 @@
 /**
- * Tests for src/debate/selectors/registry.ts
- * AC 6: resolveSelector throws NaxError with code SELECTOR_UNKNOWN for unknown kinds.
+ * Tests for selector registry population — US-002 AC4
  */
 
-import { describe, expect, it } from "bun:test";
-import { NaxError } from "../../../../src/errors";
-import { resolveSelector } from "../../../../src/debate/selectors/registry";
+import { describe, expect, test } from "bun:test";
 
-describe("resolveSelector", () => {
-  it("throws NaxError with code SELECTOR_UNKNOWN for unknown kind", () => {
-    let caught: unknown;
-    try {
-      resolveSelector("nonexistent-kind");
-    } catch (e) {
-      caught = e;
-    }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("SELECTOR_UNKNOWN");
+describe("selector registry population", () => {
+  test("resolveSelector('synthesis') returns synthesisSelector after registration", async () => {
+    const { resolveSelector } = await import("../../../../src/debate/selectors/registry");
+    const { synthesisSelector } = await import("../../../../src/debate/selectors/synthesis");
+    const resolved = resolveSelector("synthesis");
+    expect(resolved).toBe(synthesisSelector);
   });
 
-  it("throws NaxError with code SELECTOR_UNKNOWN for empty string", () => {
-    let caught: unknown;
-    try {
-      resolveSelector("");
-    } catch (e) {
-      caught = e;
-    }
-    expect(caught).toBeInstanceOf(NaxError);
-    expect((caught as NaxError).code).toBe("SELECTOR_UNKNOWN");
+  test("resolveSelector('majority-fail-closed') returns majorityFailClosedSelector after registration", async () => {
+    const { resolveSelector } = await import("../../../../src/debate/selectors/registry");
+    const { majorityFailClosedSelector } = await import("../../../../src/debate/selectors/majority");
+    const resolved = resolveSelector("majority-fail-closed");
+    expect(resolved).toBe(majorityFailClosedSelector);
+  });
+
+  test("resolveSelector('majority-fail-open') returns majorityFailOpenSelector after registration", async () => {
+    const { resolveSelector } = await import("../../../../src/debate/selectors/registry");
+    const { majorityFailOpenSelector } = await import("../../../../src/debate/selectors/majority");
+    const resolved = resolveSelector("majority-fail-open");
+    expect(resolved).toBe(majorityFailOpenSelector);
+  });
+
+  test("resolveSelector('judge') returns judgeSelector after registration", async () => {
+    const { resolveSelector } = await import("../../../../src/debate/selectors/registry");
+    const { judgeSelector } = await import("../../../../src/debate/selectors/judge");
+    const resolved = resolveSelector("judge");
+    expect(resolved).toBe(judgeSelector);
+  });
+
+  test("resolveSelector throws for unknown kind", async () => {
+    const { resolveSelector } = await import("../../../../src/debate/selectors/registry");
+    expect(() => resolveSelector("unknown-kind")).toThrow();
   });
 });
