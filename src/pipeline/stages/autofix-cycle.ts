@@ -124,15 +124,6 @@ export function buildAutofixStrategies(
       if (decls.length > 0) {
         ctx.testEditDeclarations = [...(ctx.testEditDeclarations ?? []), ...decls];
       }
-      if (output.mockStructureDeclaration) {
-        ctx.pendingMockStructureHandoffs = [
-          ...(ctx.pendingMockStructureHandoffs ?? []),
-          {
-            files: output.mockStructureDeclaration.files,
-            reasonDetail: output.mockStructureDeclaration.reasonDetail,
-          },
-        ];
-      }
       return {
         summary: output.unresolvedReason ?? "",
         unresolved: output.unresolvedReason,
@@ -142,46 +133,33 @@ export function buildAutofixStrategies(
 
   const testWriter: FixStrategy<Finding, AutofixTestWriterInput, { applied: true }, AutofixConfig> = {
     name: "autofix-test-writer",
-    // Fires for test-targeted findings or for any finding when mock-structure handoffs are pending.
-    appliesTo: (f) => f.fixTarget === "test" || (ctx.pendingMockStructureHandoffs?.length ?? 0) > 0,
+    appliesTo: (f) => f.fixTarget === "test",
     fixOp: testWriterRectifyOp,
     maxAttempts: 2,
     coRun: "co-run-sequential",
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
-      // Branch 1: synthetic implementer-handoff findings present (testEditDeclarations path).
-      // Files come from findings; handoffs are NOT cleared — they belong to the outer
-      // TDD orchestrator and must persist past this cycle.
+      // Branch 1: synthetic implementer-handoff findings present (mock_structure path).
       const handoffFindings = findings.filter(
         (f) => f.source === "implementer-handoff" && f.category === "test_mock_restructure",
       );
       if (handoffFindings.length > 0) {
-        const handoffFiles = [...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null))];
-        const reason = (ctx.pendingMockStructureHandoffs ?? []).map((h) => h.reasonDetail).join("\n\n---\n\n");
+        const handoffFiles = [
+          ...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null)),
+        ];
+        const handoffs = ctx.pendingMockStructureHandoffs ?? [];
+        const handoffReason = handoffs.map((h) => h.reasonDetail).join("\n\n---\n\n");
+        // Clear side-channel after consumption — one-shot per spec US-004 AC #3.
+        ctx.pendingMockStructureHandoffs = [];
         return {
           failedChecks: collectFailedChecks(ctx),
           story: ctx.story,
           mode: "mock-restructure",
           handoffFiles,
-          handoffReason: reason,
+          handoffReason,
           blockingThreshold: ctx.config.review?.blockingThreshold,
         };
       }
-      // Branch 2: no synthetic findings, but direct mockStructureDeclaration handoffs exist.
-      // Consume and clear since extractApplied stashed them without creating synthetic findings.
-      const handoffs = ctx.pendingMockStructureHandoffs;
-      if (handoffs && handoffs.length > 0) {
-        ctx.pendingMockStructureHandoffs = [];
-        const allFiles = [...new Set(handoffs.flatMap((h) => h.files))];
-        const reason = handoffs.map((h) => h.reasonDetail).join("\n\n---\n\n");
-        return {
-          failedChecks: collectFailedChecks(ctx),
-          story: ctx.story,
-          mode: "mock-restructure",
-          handoffFiles: allFiles,
-          handoffReason: reason,
-          blockingThreshold: ctx.config.review?.blockingThreshold,
-        };
-      }
+      // Existing branches unchanged below this point.
       const hasSourceBug = findings.some(
         (f) => (f.fixTarget ?? "source") === "source" && f.source === "adversarial-review",
       );
@@ -343,6 +321,12 @@ export async function validateMockStructureFiles(
     }
 
     const files = decl.files ?? [];
+    // Defensive: empty FILES is structurally invalid even if the parser dropped the block.
+    if (files.length === 0) {
+      invalid.push({ decl, missing: [], nonTest: [] });
+      continue;
+    }
+
     const missing: string[] = [];
     const nonTest: string[] = [];
 
@@ -523,7 +507,12 @@ export async function runAgentRectificationV2(
         return { unresolved: `assertion_weakening:${assertionResult.file}:${assertionResult.line}` };
       }
 
-      const isolationResult = await _autofixCycleGuardDeps.runIsolationGuard(ctx.workdir, beforeRef, ctx.config);
+      const isolationResult = await _autofixCycleGuardDeps.runIsolationGuard(
+        ctx.workdir,
+        beforeRef,
+        ctx.config,
+        ctx.story.workdir || undefined,
+      );
       if (isolationResult.violated) {
         await _autofixCycleGuardDeps.revertDiff(ctx.workdir, isolationResult.files);
         logger.info("autofix-cycle", "test-writer isolation guard violated — reverted", {
@@ -555,7 +544,11 @@ export async function runAgentRectificationV2(
       if (pending.length === 0) return fresh;
 
       // Partition mock_structure declarations via async validator.
-      const resolved = await resolveTestFilePatterns(ctx.config, ctx.workdir);
+      const resolved = await resolveTestFilePatterns(
+        ctx.config,
+        ctx.workdir,
+        ctx.story.workdir || undefined,
+      );
       const { valid, invalid } = await validateMockStructureFiles(pending, ctx.workdir, resolved);
 
       // Stash valid mock_structure handoffs for the TDD orchestrator before applying.

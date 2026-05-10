@@ -18,8 +18,6 @@ export interface AutofixImplementerOutput {
   unresolvedReason?: string;
   /** Parsed TEST_EDIT_REASON blocks. Empty when no escape valve was invoked. */
   testEditDeclarations: TestEditDeclaration[];
-  /** Shorthand for a single mock_structure handoff; bypasses testEditDeclarations flow. */
-  mockStructureDeclaration?: { files: string[]; reasonDetail: string };
 }
 
 export const implementerRectifyOp: RunOperation<AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> = {
@@ -37,9 +35,7 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   },
   parse(output, input, _ctx) {
     const unresolvedMatch = output.match(/^UNRESOLVED:\s*(.+)$/m);
-    const allDeclarations = parseTestEditDeclarations(output);
-    const mockDecl = allDeclarations.find((d) => d.reason === "mock_structure");
-    const declarations = allDeclarations.filter((d) => d.reason !== "mock_structure");
+    const declarations = parseTestEditDeclarations(output);
     for (const d of declarations) {
       getSafeLogger()?.info("autofix", "test_edit_declared", {
         storyId: input.story.id,
@@ -50,9 +46,6 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
     return {
       applied: true,
       testEditDeclarations: declarations,
-      ...(mockDecl?.files && mockDecl?.reasonDetail
-        ? { mockStructureDeclaration: { files: mockDecl.files, reasonDetail: mockDecl.reasonDetail } }
-        : {}),
       ...(unresolvedMatch ? { unresolvedReason: unresolvedMatch[1]?.trim() } : {}),
     };
   },

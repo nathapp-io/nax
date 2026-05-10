@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { _autofixDeps } from "../../src/pipeline/stages/autofix";
-import { runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
+import { _autofixCycleDeps, runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
 import { _cycleDeps } from "../../src/findings/cycle";
 import type { Finding } from "../../src/findings";
 import type { PipelineContext } from "../../src/pipeline/types";
@@ -249,6 +249,7 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
 
     const savedAutofix = { ..._autofixDeps };
     const savedCycle = { ..._cycleDeps };
+    const saveCycleDeps = { ..._autofixCycleDeps };
 
     // Capture implementer and test-writer calls for assertions
     // biome-ignore lint/suspicious/noExplicitAny: test instrumentation
@@ -256,6 +257,7 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
     let implementerCallCount = 0;
 
     _autofixDeps.recheckReview = async () => false;
+    _autofixCycleDeps.fileExists = async (_path: string) => true;
 
     _cycleDeps.callOp = (async (_ctx: any, op: any, input: any) => {
       callLog.push({ op: op.name, input });
@@ -266,15 +268,20 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
         if (implementerCallCount === 1) {
           return {
             applied: true,
-            mockStructureDeclaration: {
-              files: ["test/foo.test.ts"],
-              reasonDetail: "Mock dispatch shape must align with service interface",
-            },
+            testEditDeclarations: [
+              {
+                reason: "mock_structure",
+                file: "test/foo.test.ts",
+                files: ["test/foo.test.ts"],
+                reasonDetail: "Mock dispatch shape must align with service interface",
+              },
+            ],
           };
         }
         // On subsequent calls, return applied: true without declaration
         return {
           applied: true,
+          testEditDeclarations: [],
         };
       }
 
@@ -290,6 +297,7 @@ describe("autofix V2 cycle — implementer→test-writer feedback (#933)", () =>
     } finally {
       Object.assign(_autofixDeps, savedAutofix);
       Object.assign(_cycleDeps, savedCycle);
+      Object.assign(_autofixCycleDeps, saveCycleDeps);
     }
 
     // Assert that implementer was called at least once

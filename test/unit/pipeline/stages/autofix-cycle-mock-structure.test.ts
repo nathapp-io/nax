@@ -205,6 +205,18 @@ describe("validateMockStructureFiles", () => {
     expect(result.invalid[0].nonTest).toContain("src/code.ts");
     expect(result.invalid[0].missing).toHaveLength(0);
   });
+
+  test("partitions a mock_structure declaration with empty files into invalid", async () => {
+    const result = await validateMockStructureFiles(
+      [{ reason: "mock_structure", file: "", files: [], reasonDetail: "x" }],
+      "/tmp",
+      makeMockResolved(),
+    );
+    expect(result.valid).toHaveLength(0);
+    expect(result.invalid).toHaveLength(1);
+    expect(result.invalid[0].missing).toEqual([]);
+    expect(result.invalid[0].nonTest).toEqual([]);
+  });
 });
 
 // ─── applyTestEditDeclarations — mock_structure support ──────────────────────

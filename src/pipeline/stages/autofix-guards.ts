@@ -86,12 +86,13 @@ export async function runIsolationGuard(
   workdir: string,
   beforeRef: string,
   config: NaxConfig,
+  packageDir?: string,
 ): Promise<IsolationGuardResult> {
   if (config.quality.autofix?.enforceTestWriterIsolation === false) {
     return { violated: false, skipped: true };
   }
 
-  const resolved = await resolveTestFilePatterns(config, workdir);
+  const resolved = await resolveTestFilePatterns(config, workdir, packageDir);
   const result = await _guardDeps.verifyTestWriterIsolation(
     workdir,
     beforeRef,

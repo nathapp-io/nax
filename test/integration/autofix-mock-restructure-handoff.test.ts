@@ -16,7 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { _autofixDeps } from "../../src/pipeline/stages/autofix";
-import { runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
+import { _autofixCycleDeps, _autofixCycleGuardDeps, runAgentRectificationV2 } from "../../src/pipeline/stages/autofix-cycle";
 import { _cycleDeps } from "../../src/findings";
 import type { Finding } from "../../src/findings";
 import type { PipelineContext } from "../../src/pipeline/types";
@@ -72,7 +72,10 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
 
     const savedAutofix = { ..._autofixDeps };
     const savedCycle = { ..._cycleDeps };
+    const saveCycleDeps = { ..._autofixCycleDeps };
+    const saveGuardDeps = { ..._autofixCycleGuardDeps };
     _autofixDeps.recheckReview = async () => false;
+    _autofixCycleDeps.fileExists = async (_path: string) => true;
 
     // Track all callOp invocations
     const callLog: {
@@ -93,10 +96,14 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
         // First call: emit mock_structure declaration with files and reasonDetail
         return {
           applied: true,
-          mockStructureDeclaration: {
-            files: ["test/foo.test.ts"],
-            reasonDetail: "Mock dispatch shape mismatch: test expects async but impl returns sync",
-          },
+          testEditDeclarations: [
+            {
+              reason: "mock_structure",
+              file: "test/foo.test.ts",
+              files: ["test/foo.test.ts"],
+              reasonDetail: "Mock dispatch shape mismatch: test expects async but impl returns sync",
+            },
+          ],
         };
       }
 
@@ -120,6 +127,8 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
     } finally {
       Object.assign(_autofixDeps, savedAutofix);
       Object.assign(_cycleDeps, savedCycle);
+      Object.assign(_autofixCycleDeps, saveCycleDeps);
+      Object.assign(_autofixCycleGuardDeps, saveGuardDeps);
     }
 
     // Verify call sequence
@@ -176,7 +185,9 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
 
     const savedAutofix = { ..._autofixDeps };
     const savedCycle = { ..._cycleDeps };
+    const saveCycleDeps = { ..._autofixCycleDeps };
     _autofixDeps.recheckReview = async () => false;
+    _autofixCycleDeps.fileExists = async (_path: string) => true;
 
     const testWriterInputs: AutofixTestWriterInput[] = [];
 
@@ -184,10 +195,14 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
       if (op.name === "autofix-implementer") {
         return {
           applied: true,
-          mockStructureDeclaration: {
-            files: ["test/service.test.ts"],
-            reasonDetail: "Multiple dispatch issues:\n1. Async/await handling\n2. Mock return shape",
-          },
+          testEditDeclarations: [
+            {
+              reason: "mock_structure",
+              file: "test/service.test.ts",
+              files: ["test/service.test.ts"],
+              reasonDetail: "Multiple dispatch issues:\n1. Async/await handling\n2. Mock return shape",
+            },
+          ],
         };
       }
 
@@ -204,6 +219,7 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
     } finally {
       Object.assign(_autofixDeps, savedAutofix);
       Object.assign(_cycleDeps, savedCycle);
+      Object.assign(_autofixCycleDeps, saveCycleDeps);
     }
 
     expect(testWriterInputs.length).toBeGreaterThanOrEqual(1);
@@ -242,7 +258,9 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
 
     const savedAutofix = { ..._autofixDeps };
     const savedCycle = { ..._cycleDeps };
+    const saveCycleDeps = { ..._autofixCycleDeps };
     _autofixDeps.recheckReview = async () => false;
+    _autofixCycleDeps.fileExists = async (_path: string) => true;
 
     let callCount = 0;
     const testWriterInputs: AutofixTestWriterInput[] = [];
@@ -255,22 +273,30 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
         if (callCount === 1) {
           return {
             applied: true,
-            mockStructureDeclaration: {
-              files: ["test/a.test.ts", "test/b.test.ts"],
-              reasonDetail: "First batch of mock adjustments",
-            },
+            testEditDeclarations: [
+              {
+                reason: "mock_structure",
+                file: "test/a.test.ts",
+                files: ["test/a.test.ts", "test/b.test.ts"],
+                reasonDetail: "First batch of mock adjustments",
+              },
+            ],
           };
         }
         if (callCount === 3) {
           return {
             applied: true,
-            mockStructureDeclaration: {
-              files: ["test/b.test.ts", "test/c.test.ts"],
-              reasonDetail: "Second batch of mock adjustments",
-            },
+            testEditDeclarations: [
+              {
+                reason: "mock_structure",
+                file: "test/b.test.ts",
+                files: ["test/b.test.ts", "test/c.test.ts"],
+                reasonDetail: "Second batch of mock adjustments",
+              },
+            ],
           };
         }
-        return { applied: true };
+        return { applied: true, testEditDeclarations: [] };
       }
 
       if (op.name === "autofix-test-writer") {
@@ -286,6 +312,7 @@ describe("autofix V2 cycle — mock-restructure handoff through test-writer (#12
     } finally {
       Object.assign(_autofixDeps, savedAutofix);
       Object.assign(_cycleDeps, savedCycle);
+      Object.assign(_autofixCycleDeps, saveCycleDeps);
     }
 
     expect(testWriterInputs.length).toBeGreaterThanOrEqual(1);

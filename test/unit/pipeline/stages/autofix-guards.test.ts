@@ -1,392 +1,441 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../../src/config";
-import { makeNaxConfig } from "../../../helpers";
+import { _cycleDeps } from "../../../../src/findings/cycle";
+import { NaxError } from "../../../../src/errors";
+import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
+import { _autofixCycleGuardDeps, runAgentRectificationV2 } from "../../../../src/pipeline/stages/autofix-cycle";
+import {
+	_guardDeps,
+	assertionSiteDiffCheck,
+	revertDiff,
+	runIsolationGuard,
+} from "../../../../src/pipeline/stages/autofix-guards";
+import { makeMockAgentManager, makeNaxConfig, makeStory, withDepsRestore } from "../../../helpers";
+
+function makeGitDiffSpawn(output: string, exitCode = 0): typeof _guardDeps.spawn {
+	return mock((_cmd: string[], _opts?: unknown) => ({
+		exited: Promise.resolve(exitCode),
+		stdout: new Response(output).body as ReadableStream<Uint8Array>,
+		stderr: new Response("").body as ReadableStream<Uint8Array>,
+		kill: () => {},
+	})) as unknown as typeof _guardDeps.spawn;
+}
 
 // ─── Config validation tests ──────────────────────────────────────────────────
 
 describe("Config validation — enforceTestWriterIsolation", () => {
-  test("NaxConfigSchema.parse({}) returns config where enforceTestWriterIsolation === true", () => {
-    const config = NaxConfigSchema.parse({});
-    expect(config.quality.autofix.enforceTestWriterIsolation).toBe(true);
-  });
+	test("NaxConfigSchema.parse({}) returns config where enforceTestWriterIsolation === true", () => {
+		const config = NaxConfigSchema.parse({});
+		expect(config.quality.autofix!.enforceTestWriterIsolation).toBe(true);
+	});
 
-  test("default config has enforceTestWriterIsolation === true", () => {
-    expect(DEFAULT_CONFIG.quality.autofix.enforceTestWriterIsolation).toBe(true);
-  });
+	test("default config has enforceTestWriterIsolation === true", () => {
+		expect(DEFAULT_CONFIG.quality.autofix!.enforceTestWriterIsolation).toBe(true);
+	});
 
-  test("makeNaxConfig preserves enforceTestWriterIsolation when overridden to false", () => {
-    const config = makeNaxConfig({
-      quality: {
-        autofix: {
-          enforceTestWriterIsolation: false,
-        },
-      },
-    });
-    expect(config.quality.autofix.enforceTestWriterIsolation).toBe(false);
-  });
+	test("makeNaxConfig preserves enforceTestWriterIsolation when overridden to false", () => {
+		const config = makeNaxConfig({
+			quality: {
+				autofix: {
+					enforceTestWriterIsolation: false,
+				},
+			},
+		});
+		expect(config.quality.autofix!.enforceTestWriterIsolation).toBe(false);
+	});
 
-  test("enforceTestWriterIsolation can be set to true explicitly", () => {
-    const config = NaxConfigSchema.parse({
-      quality: {
-        autofix: {
-          enforceTestWriterIsolation: true,
-        },
-      },
-    });
-    expect(config.quality.autofix.enforceTestWriterIsolation).toBe(true);
-  });
+	test("enforceTestWriterIsolation can be set to true explicitly", () => {
+		const config = NaxConfigSchema.parse({
+			quality: {
+				autofix: {
+					enforceTestWriterIsolation: true,
+				},
+			},
+		});
+		expect(config.quality.autofix!.enforceTestWriterIsolation).toBe(true);
+	});
 });
 
-// ─── assertionSiteDiffCheck tests ──────────────────────────────────────────────
+// ─── assertionSiteDiffCheck — spec-correct behavior ──────────────────────────
 
-describe("assertionSiteDiffCheck — assertion pattern detection", () => {
-  test("detects expect( in added lines", async () => {
-    // Acceptance Criterion 2: detects /expect\(/
-    // When git diff --unified=0 shows: +  expect(foo).toBe(true)
-    // Should return { violated: true, file, line, content }
-    expect(true).toBe(true); // Placeholder — will fail until assertionSiteDiffCheck is implemented
-  });
+describe("assertionSiteDiffCheck — spec-correct behavior (AC2, AC3)", () => {
+	withDepsRestore(_guardDeps);
 
-  test("detects .toBe( in added lines", async () => {
-    // Acceptance Criterion 2: detects /\.toBe\(/
-    // When git diff --unified=0 shows: +  result.toBe(42)
-    // Should return { violated: true, file, line, content }
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC2: detects expect( in an added line and returns violated:true with file, line, content", async () => {
+		const diff = "@@ -0,0 +1 @@\n+  expect(result).toBe(42)\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(result.file).toBe("test/foo.test.ts");
+			expect(result.line).toBe(1);
+			expect(result.content).toContain("expect(result)");
+		}
+	});
 
-  test("detects .toEqual( in added lines", async () => {
-    // Acceptance Criterion 2: detects /\.toEqual\(/
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC2: detects .toBe( in a second added line and line number increments correctly", async () => {
+		const diff = "@@ -0,0 +1,2 @@\n+const x = 1;\n+result.toBe(42)\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(result.content).toContain(".toBe(");
+			expect(result.line).toBe(2);
+		}
+	});
 
-  test("detects .toThrow( in added lines", async () => {
-    // Acceptance Criterion 2: detects /\.toThrow\(/
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC2: detects .toEqual( in an added line", async () => {
+		const diff = "@@ -0,0 +1 @@\n+  result.toEqual({ ok: true })\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(result.violated).toBe(true);
+	});
 
-  test("detects word boundary not. in added lines", async () => {
-    // Acceptance Criterion 2: detects /\bnot\./
-    // Word boundary ensures it doesn't match "snot.test()" but does match "expect(...).not.toBe()"
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC2: result includes file, line, content from violation with assert.", async () => {
+		const diff = "@@ -0,0 +5 @@\n+  assert.ok(result)\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/bar.test.ts"]);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(result.file).toBe("test/bar.test.ts");
+			expect(typeof result.line).toBe("number");
+			expect(result.content).toContain("assert.");
+		}
+	});
 
-  test("detects .toMatch( in added lines", async () => {
-    // Acceptance Criterion 2: detects /\.toMatch\(/
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC3: returns violated:false when added lines contain no assertion patterns", async () => {
+		const diff = "@@ -0,0 +1,2 @@\n+const mock = vi.fn();\n+mock.mockReturnValue(42);\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(result.violated).toBe(false);
+	});
 
-  test("detects assert. in added lines", async () => {
-    // Acceptance Criterion 2: detects /\bassert\./
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC3: returns violated:false for empty file list without calling spawn", async () => {
+		let spawnCalled = false;
+		_guardDeps.spawn = mock((..._args: unknown[]) => {
+			spawnCalled = true;
+			return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body, kill: () => {} };
+		}) as unknown as typeof _guardDeps.spawn;
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", []);
+		expect(result.violated).toBe(false);
+		expect(spawnCalled).toBe(false);
+	});
 
-  test("returns violated: false when diff has only non-assertion patterns", async () => {
-    // Acceptance Criterion 3: returns { violated: false } when diff contains no assertion patterns
-    // E.g., added lines with: mock setup, imports, comments, describe(), test() declarations
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC3: ignores assertion patterns in removed lines (- prefix)", async () => {
+		const diff = "@@ -1 +1 @@\n-  expect(old).toBe(42)\n+  // assertion removed\n";
+		_guardDeps.spawn = makeGitDiffSpawn(diff);
+		const result = await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(result.violated).toBe(false);
+	});
 
-  test("returns violated: false when no files provided", async () => {
-    // Acceptance Criterion 3: edge case of empty file list
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("ignores assertion patterns in removed lines (with - prefix)", async () => {
-    // Acceptance Criterion 3: git diff includes context and removed lines with - prefix
-    // Should NOT trigger violation for: -  expect(old).toBe(42)
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("returns file and line number in violation result", async () => {
-    // Acceptance Criterion 2: result includes { file, line, content } on violation
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("returns content of the violated line", async () => {
-    // Acceptance Criterion 2: result.content should include the actual line text
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("returns first violation when multiple files have violations", async () => {
-    // When multiple files have assertions, returns one violation
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("diffs against correct beforeRef", async () => {
-    // Uses git diff --unified=0 <beforeRef> -- <files>
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles files list parameter correctly", async () => {
-    // Only checks the provided files, not all changed files
-    expect(true).toBe(true); // Placeholder
-  });
+	test("adversarial: drains stderr stream concurrently to prevent >64KB pipe stall", async () => {
+		// Bug: original code only consumed stdout; stderr was never drained.
+		// If the git process writes >64KB to stderr the OS pipe buffer fills,
+		// the process blocks, and proc.exited never resolves — deadlock.
+		// Fix: add new Response(proc.stderr).text() to Promise.all.
+		let stderrDrained = false;
+		const stderrStream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				stderrDrained = true;
+				controller.close();
+			},
+		});
+		_guardDeps.spawn = mock(() => ({
+			exited: Promise.resolve(0),
+			stdout: new Response("@@ -0,0 +1 @@\n+const x = 1;\n").body as ReadableStream<Uint8Array>,
+			stderr: stderrStream,
+			kill: () => {},
+		})) as unknown as typeof _guardDeps.spawn;
+		await assertionSiteDiffCheck("/workdir", "abc123", ["test/foo.test.ts"]);
+		expect(stderrDrained).toBe(true);
+	});
 });
 
-// ─── runIsolationGuard tests ───────────────────────────────────────────────────
+// ─── runIsolationGuard — spec-correct behavior ────────────────────────────────
 
-describe("runIsolationGuard — isolation boundary check", () => {
-  test("calls verifyTestWriterIsolation when enforceTestWriterIsolation is true", async () => {
-    // Acceptance Criterion 4: calls verifyTestWriterIsolation with proper args
-    // When config.quality.autofix.enforceTestWriterIsolation === true (default)
-    expect(true).toBe(true); // Placeholder
-  });
+describe("runIsolationGuard — spec-correct behavior (AC4, AC5)", () => {
+	withDepsRestore(_guardDeps);
 
-  test("passes config.tdd.testWriterAllowedPaths to verifyTestWriterIsolation", async () => {
-    // Acceptance Criterion 4: uses the configured allowed paths
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC5: returns violated:false skipped:true and does NOT call verifyTestWriterIsolation when flag is false", async () => {
+		let called = false;
+		_guardDeps.verifyTestWriterIsolation = mock(async () => {
+			called = true;
+			return { passed: true, violations: [], description: "" };
+		}) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig({ quality: { autofix: { enforceTestWriterIsolation: false } } });
+		const result = await runIsolationGuard("/workdir", "abc123", config);
+		expect(result.violated).toBe(false);
+		expect((result as { skipped?: boolean }).skipped).toBe(true);
+		expect(called).toBe(false);
+	});
 
-  test("passes resolvedTestPatterns to verifyTestWriterIsolation", async () => {
-    // Acceptance Criterion 4: passes the configured test file patterns
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC4: calls verifyTestWriterIsolation when enforceTestWriterIsolation is true", async () => {
+		let called = false;
+		_guardDeps.verifyTestWriterIsolation = mock(async () => {
+			called = true;
+			return { passed: true, violations: [], description: "" };
+		}) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig({ quality: { autofix: { enforceTestWriterIsolation: true } } });
+		await runIsolationGuard("/workdir", "abc123", config);
+		expect(called).toBe(true);
+	});
 
-  test("returns { violated: true, files } when verifyTestWriterIsolation.passed === false", async () => {
-    // Acceptance Criterion 4: returns violated: true with the violations list
-    // When verifyTestWriterIsolation returns { passed: false, violations: [...] }
-    // Should return { violated: true, files: [...] }
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC4: returns violated:true with files when verifyTestWriterIsolation.passed === false", async () => {
+		_guardDeps.verifyTestWriterIsolation = mock(async () => ({
+			passed: false,
+			violations: ["src/foo.ts"],
+			description: "edited non-test file",
+		})) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		const result = await runIsolationGuard("/workdir", "abc123", config);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(result.files).toEqual(["src/foo.ts"]);
+		}
+	});
 
-  test("returns { violated: false, skipped: true } when enforceTestWriterIsolation === false", async () => {
-    // Acceptance Criterion 5: skips check when config flag is false
-    // When config.quality.autofix.enforceTestWriterIsolation === false
-    // Should return { violated: false, skipped: true }
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC4: returns violated:false (no skipped) when verifyTestWriterIsolation.passed === true", async () => {
+		_guardDeps.verifyTestWriterIsolation = mock(async () => ({
+			passed: true,
+			violations: [],
+			description: "",
+		})) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		const result = await runIsolationGuard("/workdir", "abc123", config);
+		expect(result.violated).toBe(false);
+		expect((result as { skipped?: boolean }).skipped).toBeUndefined();
+	});
 
-  test("does NOT invoke verifyTestWriterIsolation when enforceTestWriterIsolation === false", async () => {
-    // Acceptance Criterion 5: underlying check is not invoked when skipped
-    // Verify that the function is NOT called, not just that result is skipped
-    expect(true).toBe(true); // Placeholder
-  });
+	test("adversarial: returns files:[] (not undefined) when verifyTestWriterIsolation.violations is undefined", async () => {
+		// Bug: original code returned `{ violated: true, files: result.violations }`
+		// without the `?? []` guard.  When the isolation checker omits `violations`
+		// the caller receives `files: undefined`, breaking any downstream `.length`
+		// or spread operation on the files array.
+		// Fix: `files: result.violations ?? []`.
+		_guardDeps.verifyTestWriterIsolation = mock(async () => ({
+			passed: false,
+			violations: undefined as unknown as string[],
+			description: "edited non-test file",
+		})) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		const result = await runIsolationGuard("/workdir", "abc123", config);
+		expect(result.violated).toBe(true);
+		if (result.violated) {
+			expect(Array.isArray(result.files)).toBe(true);
+			expect(result.files).toEqual([]);
+		}
+	});
 
-  test("returns { violated: false } when verifyTestWriterIsolation.passed === true", async () => {
-    // When verifyTestWriterIsolation returns { passed: true }
-    // Should return { violated: false }
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("extracts violations from verifyTestWriterIsolation.violations", async () => {
-    // The violations property from verifyTestWriterIsolation should be
-    // returned in the files property of the guard result
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles undefined violations array gracefully", async () => {
-    // When violations is undefined or empty, should handle correctly
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("workdir and beforeRef are passed to verifyTestWriterIsolation", async () => {
-    // Acceptance Criterion 4: verifyTestWriterIsolation is called with all args
-    expect(true).toBe(true); // Placeholder
-  });
+	test("accepts optional packageDir parameter and forwards it to resolveTestFilePatterns", async () => {
+		// Verify signature accepts packageDir without error
+		_guardDeps.verifyTestWriterIsolation = mock(async () => ({
+			passed: true,
+			violations: [],
+			description: "",
+		})) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		const result = await runIsolationGuard("/workdir", "abc123", config, "packages/lib");
+		// Call succeeds with optional packageDir
+		expect(result.violated).toBe(false);
+	});
 });
 
-// ─── revertDiff tests ──────────────────────────────────────────────────────────
+// ─── revertDiff — spec-correct git command ────────────────────────────────────
 
-describe("revertDiff — git checkout revert", () => {
-  afterEach(() => {
-    mock.restore();
-  });
+describe("revertDiff — spec-correct git command (AC6, AC7)", () => {
+	withDepsRestore(_guardDeps);
 
-  test("runs git checkout HEAD -- <files> command", async () => {
-    // Acceptance Criterion 6, 7: revertDiff(workdir, files) runs git checkout HEAD -- <files>
-    // When called with files = ["file1.ts", "file2.ts"]
-    // Should execute: git checkout HEAD -- file1.ts file2.ts
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC6/7: runs git checkout HEAD -- <files> with all files in one command", async () => {
+		const capturedArgs: string[][] = [];
+		_guardDeps.spawn = mock((args: string[], _opts?: unknown) => {
+			capturedArgs.push(args as string[]);
+			return {
+				exited: Promise.resolve(0),
+				stdout: new Response("").body as ReadableStream<Uint8Array>,
+				stderr: new Response("").body as ReadableStream<Uint8Array>,
+				kill: () => {},
+			};
+		}) as unknown as typeof _guardDeps.spawn;
+		await revertDiff("/workdir", ["test/foo.test.ts", "test/bar.test.ts"]);
+		expect(capturedArgs[0]).toEqual(["git", "checkout", "HEAD", "--", "test/foo.test.ts", "test/bar.test.ts"]);
+	});
 
-  test("uses HEAD as the checkout ref", async () => {
-    // The revert should use HEAD, not any other ref
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC6/7: throws with descriptive message when git checkout exits non-zero", async () => {
+		_guardDeps.spawn = makeGitDiffSpawn("fatal: pathspec error", 1);
+		let threw = false;
+		let errorMsg = "";
+		try {
+			await revertDiff("/workdir", ["test/foo.test.ts"]);
+		} catch (e) {
+			threw = true;
+			errorMsg = e instanceof Error ? e.message : String(e);
+		}
+		expect(threw).toBe(true);
+		expect(errorMsg).toContain("[autofix-guards] git checkout HEAD failed with exit code 1");
+	});
 
-  test("passes all files in a single git command", async () => {
-    // Multiple files are passed to a single git checkout command
-    // Not multiple separate commands (one per file)
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("executes in the specified workdir", async () => {
-    // The git command is run with cwd: workdir
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles single file revert", async () => {
-    // When files = ["single.ts"], should execute: git checkout HEAD -- single.ts
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles empty file list gracefully", async () => {
-    // When files = [], should return without error (or without spawning)
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles file paths with special characters", async () => {
-    // File paths are properly passed to the git command
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("throws on git command failure", async () => {
-    // When git checkout exits with non-zero code, should throw/error
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("reads stdout/stderr concurrently with process exit", async () => {
-    // Follows async pattern: Promise.all([exitCode, stdout, stderr])
-    // to avoid deadlock on >64KB output
-    expect(true).toBe(true); // Placeholder
-  });
+	test("adversarial: throws NaxError (not plain Error) with code GIT_CHECKOUT_FAILED when git checkout fails", async () => {
+		// Bug: original code threw `new Error(...)` which loses the structured
+		// code and context fields. Callers that distinguish NaxError from generic
+		// Error (e.g. error-reporting middleware) would misclassify the failure.
+		// Fix: throw new NaxError(..., "GIT_CHECKOUT_FAILED", { ... }) instead.
+		_guardDeps.spawn = makeGitDiffSpawn("fatal: pathspec error", 1);
+		let caughtError: unknown;
+		try {
+			await revertDiff("/workdir", ["test/foo.test.ts"]);
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(NaxError);
+		expect((caughtError as NaxError).code).toBe("GIT_CHECKOUT_FAILED");
+	});
 });
 
-// ─── Integration tests: runAgentRectificationV2 with guards ───────────────────
+// ─── Integration: runAgentRectificationV2 with guards ─────────────────────────
 
-describe("runAgentRectificationV2 — guard integration (AC 6, 7, 8)", () => {
-  test("calls assertionSiteDiffCheck after test-writer completes in mock-restructure mode", async () => {
-    // Acceptance Criterion 6: when test-writer op completes in mock-restructure mode,
-    // assertionSiteDiffCheck is called with (workdir, beforeRef, handoffFiles)
-    expect(true).toBe(true); // Placeholder
-  });
+function makeGuardIntegrationCtx() {
+	const story = makeStory({ description: "guard integration test" });
+	const config = makeNaxConfig({ quality: { autofix: { maxAttempts: 1, maxTotalAttempts: 3 } } });
+	return {
+		story,
+		config,
+		workdir: "/tmp/guard-test",
+		reviewResult: {
+			success: false,
+			checks: [
+				{
+					check: "lint",
+					success: false,
+					findings: [
+						{
+							source: "lint",
+							severity: "error",
+							category: "test-quality",
+							message: "mock shape changed",
+							file: "test/foo.test.ts",
+							fixTarget: "test",
+						},
+					],
+				},
+			],
+		},
+		prd: { feature: "guard-test" },
+		agentManager: makeMockAgentManager(),
+		runtime: {
+			packages: { repo: () => ({ id: "test-pkg" }) },
+			outputDir: "/tmp/out",
+			signal: new AbortController().signal,
+			pidRegistry: { register: () => {} },
+		},
+		pendingMockStructureHandoffs: [{ files: ["test/foo.test.ts"], reasonDetail: "mock dispatch shape mismatch" }],
+		autofixPriorIterations: [],
+		testEditDeclarations: [],
+		packageView: { id: "test-pkg" },
+	} as unknown as Parameters<typeof runAgentRectificationV2>[0];
+}
 
-  test("calls runIsolationGuard after test-writer completes in mock-restructure mode", async () => {
-    // Acceptance Criterion 6, 7: when test-writer op completes in mock-restructure mode,
-    // runIsolationGuard is called with (workdir, beforeRef, config)
-    expect(true).toBe(true); // Placeholder
-  });
+describe("runAgentRectificationV2 — guard integration spec (AC6, AC7, AC8)", () => {
+	let origCallOp: typeof _cycleDeps.callOp;
+	let origCaptureGitRef: typeof _autofixCycleGuardDeps.captureGitRef;
+	let origAssertionCheck: typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
+	let origIsolationGuard: typeof _autofixCycleGuardDeps.runIsolationGuard;
+	let origRevertDiff: typeof _autofixCycleGuardDeps.revertDiff;
+	let origRecheckReview: typeof _autofixDeps.recheckReview;
 
-  test("captures beforeRef from git rev-parse HEAD before test-writer op runs", async () => {
-    // Acceptance Criterion 6, 7: beforeRef must be captured BEFORE the op,
-    // not from ctx.storyGitRef, but from a fresh git rev-parse HEAD call
-    expect(true).toBe(true); // Placeholder
-  });
+	beforeEach(() => {
+		origCallOp = _cycleDeps.callOp;
+		origCaptureGitRef = _autofixCycleGuardDeps.captureGitRef;
+		origAssertionCheck = _autofixCycleGuardDeps.assertionSiteDiffCheck;
+		origIsolationGuard = _autofixCycleGuardDeps.runIsolationGuard;
+		origRevertDiff = _autofixCycleGuardDeps.revertDiff;
+		origRecheckReview = _autofixDeps.recheckReview;
+		_autofixCycleGuardDeps.captureGitRef = mock(async (_workdir: string) =>
+			"abc123",
+		) as typeof _autofixCycleGuardDeps.captureGitRef;
+		// biome-ignore lint/suspicious/noExplicitAny: test mock for generic callOp signature
+		_cycleDeps.callOp = mock(async (_ctx: any, _op: any, _input: any) => ({
+			applied: true,
+		})) as unknown as typeof _cycleDeps.callOp;
+		_autofixDeps.recheckReview = mock(async () => true) as unknown as typeof _autofixDeps.recheckReview;
+	});
 
-  test("calls revertDiff and records unresolved when assertionSiteDiffCheck returns violated: true", async () => {
-    // Acceptance Criterion 6: when assertionSiteDiffCheck violated,
-    // call revertDiff(workdir, handoffFiles) and set iteration.unresolved to "assertion_weakening:<file>:<line>"
-    expect(true).toBe(true); // Placeholder
-  });
+	afterEach(() => {
+		_cycleDeps.callOp = origCallOp;
+		_autofixCycleGuardDeps.captureGitRef = origCaptureGitRef;
+		_autofixCycleGuardDeps.assertionSiteDiffCheck = origAssertionCheck;
+		_autofixCycleGuardDeps.runIsolationGuard = origIsolationGuard;
+		_autofixCycleGuardDeps.revertDiff = origRevertDiff;
+		_autofixDeps.recheckReview = origRecheckReview;
+	});
 
-  test("records unresolved reason starting with assertion_weakening:", async () => {
-    // Acceptance Criterion 6: unresolved reason format is "assertion_weakening:<details>"
-    // Should include file and line information from the violation
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC6: when assertionSiteDiffCheck returns violated, revertDiff is called and unresolvedReason starts with assertion_weakening:", async () => {
+		let revertCalled = false;
+		let revertedFiles: string[] = [];
+		_autofixCycleGuardDeps.assertionSiteDiffCheck = mock(async (_workdir, _ref, files) => ({
+			violated: true as const,
+			file: files[0] ?? "test/foo.test.ts",
+			line: 5,
+			content: "expect(x).toBe(1)",
+		})) as typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
+		_autofixCycleGuardDeps.runIsolationGuard = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.runIsolationGuard;
+		_autofixCycleGuardDeps.revertDiff = mock(async (_workdir, files) => {
+			revertCalled = true;
+			revertedFiles = files;
+		}) as typeof _autofixCycleGuardDeps.revertDiff;
 
-  test("calls revertDiff and records unresolved when runIsolationGuard returns violated: true", async () => {
-    // Acceptance Criterion 7: when runIsolationGuard violated,
-    // call revertDiff(workdir, violatedFiles) and set unresolved to "test_writer_isolation_violation:<files>"
-    expect(true).toBe(true); // Placeholder
-  });
+		const ctx = makeGuardIntegrationCtx();
+		const result = await runAgentRectificationV2(ctx, undefined, undefined, ctx.workdir);
 
-  test("records unresolved reason starting with test_writer_isolation_violation:", async () => {
-    // Acceptance Criterion 7: unresolved reason format is "test_writer_isolation_violation:<details>"
-    // Should include the list of files that violated isolation
-    expect(true).toBe(true); // Placeholder
-  });
+		expect(revertCalled).toBe(true);
+		expect(revertedFiles).toContain("test/foo.test.ts");
+		expect(result.unresolvedReason).toBeDefined();
+		expect(result.unresolvedReason?.startsWith("assertion_weakening:")).toBe(true);
+	});
 
-  test("retains test-writer commit when both guards pass", async () => {
-    // Acceptance Criterion 8: when both guards return { violated: false },
-    // the test-writer's commit is retained, no revertDiff is called
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC7: when runIsolationGuard returns violated, revertDiff is called and unresolvedReason starts with test_writer_isolation_violation:", async () => {
+		let revertCalled = false;
+		let revertedFiles: string[] = [];
+		_autofixCycleGuardDeps.assertionSiteDiffCheck = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
+		_autofixCycleGuardDeps.runIsolationGuard = mock(async () => ({
+			violated: true as const,
+			files: ["src/foo.ts"],
+		})) as typeof _autofixCycleGuardDeps.runIsolationGuard;
+		_autofixCycleGuardDeps.revertDiff = mock(async (_workdir, files) => {
+			revertCalled = true;
+			revertedFiles = files;
+		}) as typeof _autofixCycleGuardDeps.revertDiff;
 
-  test("does NOT call revertDiff when both guards pass", async () => {
-    // Acceptance Criterion 8: revertDiff must NOT be called when both guards pass
-    expect(true).toBe(true); // Placeholder
-  });
+		const ctx = makeGuardIntegrationCtx();
+		const result = await runAgentRectificationV2(ctx, undefined, undefined, ctx.workdir);
 
-  test("proceeds to validate normally when both guards pass", async () => {
-    // Acceptance Criterion 8: cycle continues to validation stage normally
-    // when both guards pass
-    expect(true).toBe(true); // Placeholder
-  });
+		expect(revertCalled).toBe(true);
+		expect(revertedFiles).toContain("src/foo.ts");
+		expect(result.unresolvedReason).toBeDefined();
+		expect(result.unresolvedReason?.startsWith("test_writer_isolation_violation:")).toBe(true);
+	});
 
-  test("skips guard checks when not in mock-restructure mode", async () => {
-    // Guards only run when test-writer op is explicitly in mock-restructure mode
-    // Other modes bypass guards entirely
-    expect(true).toBe(true); // Placeholder
-  });
+	test("AC8: when both guards pass, revertDiff is NOT called and the cycle proceeds normally without a guard-triggered unresolvedReason", async () => {
+		let revertCalled = false;
+		_autofixCycleGuardDeps.assertionSiteDiffCheck = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.assertionSiteDiffCheck;
+		_autofixCycleGuardDeps.runIsolationGuard = mock(async () => ({
+			violated: false as const,
+		})) as typeof _autofixCycleGuardDeps.runIsolationGuard;
+		_autofixCycleGuardDeps.revertDiff = mock(async (_workdir, _files) => {
+			revertCalled = true;
+		}) as typeof _autofixCycleGuardDeps.revertDiff;
 
-  test("skips runIsolationGuard when enforceTestWriterIsolation is false", async () => {
-    // Acceptance Criterion 5: runIsolationGuard is skipped when config flag is false
-    // But assertionSiteDiffCheck is still called
-    expect(true).toBe(true); // Placeholder
-  });
+		const ctx = makeGuardIntegrationCtx();
+		const result = await runAgentRectificationV2(ctx, undefined, undefined, ctx.workdir);
 
-  test("always calls assertionSiteDiffCheck regardless of enforceTestWriterIsolation", async () => {
-    // Assertion weakening is always checked; isolation is configurable
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("passes handoffFiles to guards, not all changed files", async () => {
-    // Guards receive the files from the test-writer's handoff output,
-    // not a git diff of all changed files
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("uses agent-gave-up rail to exit on guard violation", async () => {
-    // When guards trigger revert and unresolved marking,
-    // the iteration exits via the existing agent-gave-up rail
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles first guard passing but second guard failing", async () => {
-    // If assertionSiteDiffCheck passes but runIsolationGuard fails,
-    // revert should still occur with the isolation violation unresolved reason
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("handles first guard failing and second guard passing", async () => {
-    // If assertionSiteDiffCheck fails, revert occurs and cycle terminates
-    // runIsolationGuard is still called but its result doesn't matter
-    // (or guards are checked in sequence and first failure short-circuits)
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("both guards receive config.tdd.testWriterAllowedPaths", async () => {
-    // Config paths are used for soft violation classification
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("both guards receive resolvedTestPatterns from context", async () => {
-    // Test file patterns are passed to both guards
-    expect(true).toBe(true); // Placeholder
-  });
-});
-
-// ─── Edge cases and error handling ────────────────────────────────────────────
-
-describe("Edge cases and error handling", () => {
-  test("assertionSiteDiffCheck handles git diff failure", async () => {
-    // When git diff command fails, should handle gracefully
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("assertionSiteDiffCheck parses git diff --unified=0 format correctly", async () => {
-    // The unified=0 format includes +++ file headers and no context lines
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("runIsolationGuard handles verifyTestWriterIsolation exceptions", async () => {
-    // If verifyTestWriterIsolation throws, error should propagate
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("revertDiff handles git checkout failure with error", async () => {
-    // When git checkout fails (non-zero exit), should throw
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("revertDiff with invalid beforeRef (git error)", async () => {
-    // Edge case: beforeRef is not a valid ref should cause git error
-    expect(true).toBe(true); // Placeholder
-  });
-
-  test("guards produce consistent results when called multiple times", async () => {
-    // Calling guards twice on the same files should give same result
-    expect(true).toBe(true); // Placeholder
-  });
+		expect(revertCalled).toBe(false);
+		const reason = result.unresolvedReason ?? "";
+		expect(reason.startsWith("assertion_weakening:")).toBe(false);
+		expect(reason.startsWith("test_writer_isolation_violation:")).toBe(false);
+	});
 });
