@@ -126,11 +126,11 @@ function main(): void {
     for (const drop of audit.adversarialDropAnalysis ?? []) {
       totalDrops += 1;
       dropsByCode.set(drop.dropCode, (dropsByCode.get(drop.dropCode) ?? 0) + 1);
+      if (!diffOk) continue;
+      totalDropsWithDiff += 1;
       if (!drop.counterfactual.fileInDiff && SUBSTRING_FRAGILITY_CODES.has(drop.dropCode)) {
         promptComplianceFailures += 1;
       }
-      if (!diffOk) continue;
-      totalDropsWithDiff += 1;
       const survive = drop.counterfactual.wouldSurviveStructural;
       if (survive) dropsSurviveStructuralWithDiff += 1;
       else dropsNotSurviveStructuralWithDiff += 1;
