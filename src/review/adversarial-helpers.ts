@@ -96,6 +96,7 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
     const metaExtras: Record<string, unknown> = {};
     if (f.acQuote) metaExtras.acQuote = f.acQuote;
     if (f.acIndex != null) metaExtras.acIndex = f.acIndex;
+    if (f.verifiedBy) metaExtras.verifiedBy = f.verifiedBy;
     return {
       source: "adversarial-review",
       severity: normalizeSeverity(f.severity),

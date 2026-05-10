@@ -352,3 +352,41 @@ describe("runAdversarialReview — review audit gate", () => {
     expect((auditCalls[0] as any).result).toBeNull();
   });
 });
+
+describe("toAdversarialReviewFindings — verifiedBy passthrough (#987)", () => {
+  test("surfaces verifiedBy into Finding.meta", () => {
+    const { toAdversarialReviewFindings } = require("../../../src/review/adversarial-helpers");
+    const findings = [
+      {
+        severity: "error",
+        category: "abandonment",
+        file: "src/foo.ts",
+        line: 5,
+        issue: "X",
+        suggestion: "Y",
+        verifiedBy: {
+          command: "cat src/foo.ts",
+          file: "src/foo.ts",
+          line: 5,
+          observed: "export function foo() {}",
+        },
+      },
+    ];
+    const wireFindings = toAdversarialReviewFindings(findings);
+    expect(wireFindings[0].meta?.verifiedBy).toEqual({
+      command: "cat src/foo.ts",
+      file: "src/foo.ts",
+      line: 5,
+      observed: "export function foo() {}",
+    });
+  });
+
+  test("omits verifiedBy when not provided", () => {
+    const { toAdversarialReviewFindings } = require("../../../src/review/adversarial-helpers");
+    const findings = [
+      { severity: "info", category: "convention", file: "src/foo.ts", line: 5, issue: "X", suggestion: "Y" },
+    ];
+    const wireFindings = toAdversarialReviewFindings(findings);
+    expect(wireFindings[0].meta?.verifiedBy).toBeUndefined();
+  });
+});
