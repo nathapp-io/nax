@@ -1,0 +1,268 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "DebateStageConfigSchema.parse({}) produces an object where all new optional fields (preDebatePhase, proposers, selector, postDebateVerifier) are undefined and existing fields (enabled, resolver, sessionMode, rounds, mode, timeoutSeconds, autoPersona) retain their current defaults",
+    "refined": "DebateStageConfigSchema.parse({}) returns an object where preDebatePhase === undefined, proposers === undefined, selector === undefined, postDebateVerifier === undefined, and existing fields enabled, resolver, sessionMode, rounds, mode, timeoutSeconds, autoPersona equal their respective default values",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "DebateStageConfigSchema.parse({ selector: { kind } }) returns result.selector.kind matching the input for each of the five valid kinds ('synthesis', 'majority-fail-closed', 'majority-fail-open', 'judge', 'dialogue-verdict'); parsing { kind: 'verifier-pick' } or { kind: 'unknown-kind' } throws ZodError",
+    "refined": "For each kind in ['synthesis', 'majority-fail-closed', 'majority-fail-open', 'judge', 'dialogue-verdict'], DebateStageConfigSchema.parse({ selector: { kind } }) returns result.selector.kind equal to input kind; DebateStageConfigSchema.parse({ selector: { kind: 'verifier-pick' } }) throws ZodError; DebateStageConfigSchema.parse({ selector: { kind: 'unknown-kind' } }) throws ZodError",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "DebateStageConfigSchema.parse({ proposers: { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 } }) returns the proposers object with all three fields preserved",
+    "refined": "DebateStageConfigSchema.parse({ proposers: { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 } }) returns result.proposers.citationsRequired === true && result.proposers.fileReadAccess === true && result.proposers.fileReadBudget === 10",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "DebateStageConfigSchema.parse({ preDebatePhase: { kind: 'grounder' } }) returns preDebatePhase.kind === 'grounder'; parse({ preDebatePhase: { kind: 'grounder', model: 'balanced' } }) throws ZodError because model is not a valid preDebatePhase field",
+    "refined": "DebateStageConfigSchema.parse({ preDebatePhase: { kind: 'grounder' } }) returns result.preDebatePhase.kind === 'grounder'; DebateStageConfigSchema.parse({ preDebatePhase: { kind: 'grounder', model: 'balanced' } }) throws ZodError",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "DebateConfigSchema.parse({}) returns grounder.model === 'fast' and grounder.timeoutSeconds === 300; parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'; parse({ grounder: { model: { agent: 'claude', model: 'claude-opus-4-7' } } }) returns grounder.model.agent === 'claude'; parse({ grounder: { timeoutSeconds: 600 } }) returns timeoutSeconds === 600 with model defaulting to 'fast'",
+    "refined": "DebateConfigSchema.parse({}) returns grounder.model === 'fast' && grounder.timeoutSeconds === 300; parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'; parse({ grounder: { model: { agent: 'claude', model: 'claude-opus-4-7' } } }) returns grounder.model.agent === 'claude' && grounder.model.model === 'claude-opus-4-7'; parse({ grounder: { timeoutSeconds: 600 } }) returns grounder.timeoutSeconds === 600 && grounder.model === 'fast'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "resolveSelector(kind), resolvePreDebatePhase(kind), and resolvePostDebateVerifier(kind) each throw NaxError with codes 'SELECTOR_UNKNOWN', 'PRE_DEBATE_PHASE_UNKNOWN', and 'POST_DEBATE_VERIFIER_UNKNOWN' respectively when no strategy is registered for the given kind",
+    "refined": "resolveSelector('unregistered') throws NaxError with code === 'SELECTOR_UNKNOWN'; resolvePreDebatePhase('unregistered') throws NaxError with code === 'PRE_DEBATE_PHASE_UNKNOWN'; resolvePostDebateVerifier('unregistered') throws NaxError with code === 'POST_DEBATE_VERIFIER_UNKNOWN'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "src/debate/pre-phase/types.ts, src/debate/selectors/types.ts, and src/debate/verifiers/types.ts each export their respective Context, Result, and Strategy types (PreDebatePhase, Selector, PostDebateVerifier)",
+    "refined": "src/debate/pre-phase/types.ts exports PreDebatePhaseContext, PreDebatePhaseResult, and PreDebatePhase as exportable symbols; src/debate/selectors/types.ts exports SelectorContext, SelectorResult, and Selector; src/debate/verifiers/types.ts exports PostDebateVerifierContext, PostDebateVerifierResult, and PostDebateVerifier",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "synthesisSelector calls agentManager.completeAs exactly once with the prompt produced by DebatePromptBuilder.resolverSynthesisPrompt(ctx.proposals.map(p => p.output), ctx.critiques, ctx.debaters), returns outcome === 'passed' when output is non-empty, and resolverCostUsd equal to the cost reported by completeAs",
+    "refined": "synthesisSelector implementation must: (1) call agentManager.completeAs exactly once with prompt from DebatePromptBuilder.resolverSynthesisPrompt(proposalOutputs, critiques, debaters) where proposalOutputs = ctx.proposals.map(p => p.output), (2) return SelectorResult with outcome='passed' when completeAs returns non-empty output string, outcome='failed' when output is empty, (3) return resolverCostUsd property equal to the cost value from completeAs response",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "majorityFailClosedSelector and majorityFailOpenSelector each return a SelectorResult where outcome is mapped from majorityResolver(proposalOutputs, false) and majorityResolver(proposalOutputs, true) respectively; both always return resolverCostUsd === 0",
+    "refined": "majorityFailClosedSelector must: (1) call majorityResolver(proposalOutputs, false) where proposalOutputs = ctx.proposals.map(p => p.output), (2) return SelectorResult with outcome from majorityResolver result, resolverCostUsd=0. majorityFailOpenSelector must: (1) call majorityResolver(proposalOutputs, true), (2) return SelectorResult with outcome from majorityResolver result, resolverCostUsd=0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "judgeSelector calls agentManager.completeAs exactly once using the agent name from ctx.stageConfig.resolver.agent (or RESOLVER_FALLBACK_AGENT when unset) with the prompt produced by DebatePromptBuilder.resolverJudgePrompt(ctx.proposals.map(p => p.output), ctx.critiques, ctx.debaters)",
+    "refined": "judgeSelector implementation must: (1) call agentManager.completeAs exactly once, (2) pass agent name from ctx.stageConfig?.resolver?.agent || RESOLVER_FALLBACK_AGENT, (3) pass prompt from DebatePromptBuilder.resolverJudgePrompt(proposalOutputs, critiques, debaters) where proposalOutputs = ctx.proposals.map(p => p.output), (4) return SelectorResult with resolverCostUsd from completeAs cost property and outcome='passed' when output non-empty else 'failed'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "After registry registration, resolveSelector('synthesis'), resolveSelector('majority-fail-closed'), resolveSelector('majority-fail-open'), and resolveSelector('judge') each return their respective strategy functions",
+    "refined": "src/debate/selectors/registry.ts must register four selectors at module load: registerSelector('synthesis', synthesisSelector), registerSelector('majority-fail-closed', majorityFailClosedSelector), registerSelector('majority-fail-open', majorityFailOpenSelector), registerSelector('judge', judgeSelector). Each call to resolveSelector with those keys must return the registered function",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "The compat wrappers at src/debate/resolvers.ts (synthesisResolver, majorityResolver, judgeResolver) continue to exist with their current signatures and their bodies delegate to the new strategies",
+    "refined": "src/debate/resolvers.ts must export synthesisResolver, majorityResolver, and judgeResolver with original signatures. synthesisResolver body must call appropriate strategy via context adapter. majorityResolver body must call appropriate majority strategies. judgeResolver body must call judgeSelector strategy. All three must remain callable with existing test code",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "All existing tests in test/unit/debate/resolvers.test.ts pass unchanged",
+    "refined": "Running test/unit/debate/resolvers.test.ts must result in all test cases passing (no modifications to test file required, exit code 0)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "dialogueVerdictSelector invokes ctx.reviewerSession.resolveDebate(...) when ctx.resolverContextInput.isReReview === false and reReviewDebate(...) when isReReview === true, with arguments derived from ctx.resolverContextInput exactly as session-helpers.ts does today",
+    "refined": "When dialogueVerdictSelector is called with ctx.reviewerSession defined, ctx.resolverContextInput defined, and ctx.resolverContextInput.isReReview === false, it calls ctx.reviewerSession.resolveDebate() exactly once with debateCtx argument constructed from ctx.resolverContextInput fields; when isReReview === true, it calls ctx.reviewerSession.reReviewDebate() exactly once with matching argument construction",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When ctx.stageConfig.resolver.type is 'majority-fail-closed' or 'majority-fail-open', dialogueVerdictSelector pre-computes majorityVote using tryParseLLMJson for each proposal (matching existing session-helpers.ts behavior) and passes it as debateCtx.majorityVote to resolveDebate / reReviewDebate",
+    "refined": "When stageConfig.resolver.type === 'majority-fail-closed' or 'majority-fail-open', dialogueVerdictSelector computes majorityVote by calling tryParseLLMJson(proposal.decision) for each proposal in ctx.resolverContextInput.proposals and passes the resulting majorityVote object as debateCtx.majorityVote to resolveDebate/reReviewDebate calls; when resolver.type is 'synthesis' or 'custom', majorityVote is undefined/omitted from debateCtx",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "dialogueVerdictSelector returns outcome === 'passed' when dialogueResult.checkResult.success === true and 'failed' otherwise; resolverCostUsd === dialogueResult.cost ?? 0; when ctx.reviewerSession or ctx.resolverContextInput is undefined, falls back to the base selector indicated by ctx.stageConfig.resolver.type",
+    "refined": "dialogueVerdictSelector returns SelectorResult with outcome === 'passed' when dialogueResult.checkResult.success === true and outcome === 'failed' when dialogueResult.checkResult.success === false; resolverCostUsd field === dialogueResult.cost ?? 0; when ctx.reviewerSession is undefined or ctx.resolverContextInput is undefined, it calls resolveSelector(pickSelectorKind(ctx.stageConfig, ctx)) and returns its result unchanged without invoking reviewerSession",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "pickSelectorKind(stageConfig, ctx) returns stageConfig.selector.kind when stageConfig.selector is defined; returns 'dialogue-verdict' when selector is absent AND both ctx.reviewerSession and ctx.resolverContextInput are present",
+    "refined": "pickSelectorKind(stageConfig, ctx) returns stageConfig.selector.kind string when stageConfig.selector !== undefined; returns literal string 'dialogue-verdict' when stageConfig.selector === undefined AND ctx.reviewerSession !== undefined AND ctx.resolverContextInput !== undefined",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "pickSelectorKind maps resolver.type to selector kind ('synthesis'→'synthesis', 'majority-fail-closed'→'majority-fail-closed', 'majority-fail-open'→'majority-fail-open', 'custom'→'judge') when no selector field is set and auto-elevation does not apply",
+    "refined": "pickSelectorKind returns 'synthesis' when stageConfig.resolver.type === 'synthesis' and stageConfig.selector === undefined and ctx.reviewerSession === undefined; returns 'majority-fail-closed' when stageConfig.resolver.type === 'majority-fail-closed' under same conditions; returns 'majority-fail-open' when stageConfig.resolver.type === 'majority-fail-open'; returns 'judge' when stageConfig.resolver.type === 'custom'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "reviewGroundingFilterVerifier invokes filterByAcGroundingMinimal(ctx.selectorResult.findings, ...) and returns a PostDebateVerifierResult where findings is the filtered subset; outcome === 'failed' when any filtered finding has blocking severity per isBlockingSeverity, 'passed' otherwise",
+    "refined": "reviewGroundingFilterVerifier calls filterByAcGroundingMinimal(ctx.selectorResult.findings, ...) exactly once; returns PostDebateVerifierResult with findings field equal to the filtered findings return value; outcome === 'failed' if any element in filtered findings array satisfies isBlockingSeverity(finding) === true, outcome === 'passed' if no filtered findings have blocking severity",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "semantic-debate.ts no longer contains the force-override block; its runSemanticDebate() builds a DebateStageConfig with selector: { kind: 'dialogue-verdict' } and postDebateVerifier: { kind: 'review-grounding-filter' } before instantiating DebateRunner, yielding byte-equivalent behavior",
+    "refined": "src/review/semantic-debate.ts does not contain string 'force-override' or equivalent direct DebateRunner instantiation without config builders; runSemanticDebate() constructs DebateStageConfig object with selector: { kind: 'dialogue-verdict' } and postDebateVerifier: { kind: 'review-grounding-filter' } fields before passing to DebateRunner; all test inputs produce identical output to pre-refactor implementation",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "dialogueVerdictSelector is registered under 'dialogue-verdict' in the selector registry; reviewGroundingFilterVerifier is registered under 'review-grounding-filter' in the post-debate-verifier registry",
+    "refined": "src/debate/selectors/registry.ts file contains call to registerSelector('dialogue-verdict', dialogueVerdictSelector) and exports the registered function; src/debate/verifiers/registry.ts contains call to registerPostDebateVerifier('review-grounding-filter', reviewGroundingFilterVerifier) and exports the registered function; registry lookup of 'dialogue-verdict' returns dialogueVerdictSelector function; registry lookup of 'review-grounding-filter' returns reviewGroundingFilterVerifier function",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "All tests in test/integration/review/review.test.ts, test/unit/review/, and test/unit/debate/session-helpers.test.ts pass unchanged",
+    "refined": "Running test suite on files matching test/integration/review/review.test.ts, test/unit/review/**, and test/unit/debate/session-helpers.test.ts exits with code 0; bun test output shows 0 failed tests; no test skip annotations were added to previously passing tests",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "session-helpers.ts::resolveOutcome() body delegates to resolveSelector(pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput }))(selectorContext) and returns its result, replacing the inlined per-type if/else dispatch",
+    "refined": "resolveOutcome() calls pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput }) exactly once; passes result to resolveSelector(); invokes returned selector with selectorContext; returns selector result directly. No inline if/else dispatch for selector selection exists in function body.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When dialogueVerdictSelector throws, resolveOutcome logs a warning at warn level and re-dispatches via pickSelectorKind with reviewerSession: undefined to force the stateless path (preserving today's try/catch fallback behavior)",
+    "refined": "When selector returned by pickSelectorKind(...) with reviewerSession !== undefined throws an error: (1) logger.warn() is called with message matching 'dialogue-verdict selector failed'; (2) pickSelectorKind is called again with { reviewerSession: undefined, resolverContextInput }; (3) fallback selector is executed with selectorContext; (4) fallback selector result is returned.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "DebateRunner.runPanelOneShot() continues calling resolveOutcome(...) at the same call site — behavior is byte-equivalent",
+    "refined": "The call to resolveOutcome(...) in runPanelOneShot() remains at the same line number and passes identical parameters; the returned SelectorResult is used identically to pre-refactoring (no additional post-processing added).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When stageConfig.preDebatePhase is set, runPanelOneShot() invokes resolvePreDebatePhase(stageConfig.preDebatePhase.kind)(preDebateCtx) before the parallel proposer fan-out and pre-pends result.manifestSection to the proposer prompt's taskContext; when unset, proposer prompt is unchanged",
+    "refined": "When stageConfig.preDebatePhase is set: (1) resolvePreDebatePhase(stageConfig.preDebatePhase.kind) is invoked before Bun.spawn() calls for proposers; (2) returned manifestSection is prepended to proposer prompt taskContext. When stageConfig.preDebatePhase is undefined: proposer prompt taskContext equals pre-refactoring value (no modification).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When stageConfig.postDebateVerifier is set, runPanelOneShot() invokes resolvePostDebateVerifier(stageConfig.postDebateVerifier.kind)(verifierCtx) after the selector emits its result and returns the verifier's outcome with merged cost; when unset, returns the selector's outcome directly",
+    "refined": "When stageConfig.postDebateVerifier is set: (1) resolvePostDebateVerifier(stageConfig.postDebateVerifier.kind) is invoked after selector completes; (2) returned outcome replaces selector outcome in final result; (3) returned costUsd is added to selector.resolverCostUsd. When stageConfig.postDebateVerifier is undefined: selector result is returned with no modification.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "runner-plan.ts::runPlan(), runner-hybrid.ts, and runner-stateful.ts all continue calling resolveOutcome(...) (refactored); behavior is byte-equivalent",
+    "refined": "Each of runPlan(), runner-hybrid exports, and runner-stateful exports that call resolveOutcome() remain at the same call site with identical parameters; returned SelectorResult is processed identically to pre-refactoring.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "All tests in test/unit/debate/runner-mode-routing.test.ts, test/unit/debate/runner-rounds-and-cost.test.ts, test/unit/debate/runner-plan.test.ts, test/unit/debate/runner-hybrid.test.ts, test/unit/debate/runner-stateful.test.ts, and test/unit/debate/session-helpers.test.ts pass unchanged",
+    "refined": "All six test files execute without modification; exit code 0 returned; all assertions pass; no test cases are skipped or modified.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "A new unit test test/unit/debate/runner-plug-point-dispatch.test.ts asserts: when stageConfig.selector = { kind: 'synthesis' }, pickSelectorKind returns 'synthesis' and resolveSelector('synthesis') is invoked exactly once; when stageConfig.selector is unset with reviewerSession + resolverContextInput present, pickSelectorKind returns 'dialogue-verdict'; when neither applies, pickSelectorKind falls back to resolver.type mapping",
+    "refined": "File test/unit/debate/runner-plug-point-dispatch.test.ts exists and contains three test cases: (1) mockStageConfig with selector.kind='synthesis' → pickSelectorKind called once returning 'synthesis', resolveSelector('synthesis') called exactly once; (2) mockStageConfig with selector unset, reviewerSession and resolverContextInput both truthy → pickSelectorKind returns 'dialogue-verdict'; (3) mockStageConfig with selector unset, reviewerSession and resolverContextInput both falsy, resolver.type='X' → pickSelectorKind returns 'X'.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "parseFactsManifest returns { ok: true, manifest } for valid inputs including empty arrays and well-formed entries with all required fields (ids matching /^F-\\d{3}$/, /^S-\\d{3}$/, /^G-\\d{3}$/ respectively); optional fields (verification.factId, gap.evidence) may be absent",
+    "refined": "parseFactsManifest({ repoFacts: [], specClaims: [], gaps: [] }) returns { ok: true, manifest } with all arrays empty; parseFactsManifest with valid entries (repoFact id='F-001', specClaim id='S-042' with verification.status='verified' and no factId, gap id='G-100' with no evidence) returns { ok: true } with manifest.repoFacts[0].id === 'F-001', manifest.specClaims[0].id === 'S-042', manifest.gaps[0].id === 'G-100'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "parseFactsManifest returns { ok: false, error } when any required field fails validation: id not matching its pattern (e.g. 'X-001' for a repoFact), required string field is empty (e.g. evidence === ''), or invalid enum value",
+    "refined": "parseFactsManifest({ repoFacts: [{ id: 'X-001', kind: 'file', evidence: 'x', summary: 'y' }], specClaims: [], gaps: [] }) returns { ok: false }; parseFactsManifest({ repoFacts: [{ id: 'F-001', kind: 'file', evidence: '', summary: 'y' }], specClaims: [], gaps: [] }) returns { ok: false }; parseFactsManifest({ repoFacts: [{ id: 'F-001', kind: 'invalid-kind', evidence: 'x', summary: 'y' }], specClaims: [], gaps: [] }) returns { ok: false }; all { ok: false } results have error property containing a non-empty string",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "renderManifestSection(manifest) returns a non-empty string containing every repoFact.id, specClaim.id, and gap.id present in the manifest",
+    "refined": "renderManifestSection({ repoFacts: [{ id: 'F-001', kind: 'file', evidence: 'e', summary: 's' }], specClaims: [{ id: 'S-042', specSpan: 'x', claim: 'y', kind: 'factual', verification: { status: 'verified' } }], gaps: [{ id: 'G-100', kind: 'missing-context', note: 'n' }] }) returns a string that includes substring 'F-001' AND substring 'S-042' AND substring 'G-100'; string is non-empty",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "groundOp.kind === 'complete', groundOp.name === 'ground', and groundOp.stage === 'plan'",
+    "refined": "groundOp.kind === 'complete' AND groundOp.name === 'ground' AND groundOp.stage === 'plan'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "groundOp does NOT expose a model field on its GrounderInput interface; model is entirely config-driven via groundOp.model(_input, ctx) === ctx.config.debate.grounder.model regardless of input",
+    "refined": "GrounderInput interface has exactly 3 fields: specContent, codebaseContext, workdir; GrounderInput does not include 'model' field; groundOp.model is a function that receives (input, ctx) and returns ctx.config.debate.grounder.model verbatim",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-36",
+    "original": "groundOp.parse(validJsonString) returns a FactsManifest when given valid JSON matching the schema; throws NaxError with code 'GROUNDER_PARSE_FAILED' when given invalid JSON or schema-violating input",
+    "refined": "groundOp.parse('{\"repoFacts\": [], \"specClaims\": [], \"gaps\": []}', {}, mockCtx) returns an object matching FactsManifest type; groundOp.parse('invalid json', {}, mockCtx) throws NaxError with err.code === 'GROUNDER_PARSE_FAILED'; groundOp.parse('{\"repoFacts\": [{\"id\": \"BAD\"}]}', {}, mockCtx) throws NaxError with err.code === 'GROUNDER_PARSE_FAILED'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-37",
+    "original": "groundOp.model(input, ctx) returns ctx.config.debate.grounder.model verbatim — whether it is a ModelTier string (e.g. 'balanced') or a ConfiguredModelObject (e.g. { agent: 'claude', model: 'claude-opus-4-7' })",
+    "refined": "groundOp.model({}, ctx) where ctx.config.debate.grounder.model === 'balanced' returns 'balanced'; groundOp.model({}, ctx) where ctx.config.debate.grounder.model === { agent: 'claude', model: 'claude-opus-4-7' } returns { agent: 'claude', model: 'claude-opus-4-7' }; no transformation applied",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-38",
+    "original": "groundOp.timeoutMs(input, ctx) === ctx.config.debate.grounder.timeoutSeconds * 1000; groundOp is exported from src/operations/index.ts",
+    "refined": "groundOp.timeoutMs({}, ctx) where ctx.config.debate.grounder.timeoutSeconds === 30 returns 30000; groundOp.timeoutMs({}, ctx) where ctx.config.debate.grounder.timeoutSeconds === 60 returns 60000; import { groundOp } from 'src/operations' succeeds and groundOp is defined",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
