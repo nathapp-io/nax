@@ -11,7 +11,7 @@ import type { NaxConfig } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { DebateRunner, DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
-import { filterByAcGroundingMinimal } from "./ac-quote-validator";
+import { filterByAcQuote } from "./ac-quote-validator";
 import { findingsToReviewFindings, llmFindingsToReviewFindings } from "./finding-projection";
 import {
   type LLMFinding,
@@ -243,9 +243,9 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   // Split debate findings by blocking threshold — drop ungrounded error findings first
   const debateThreshold = blockingThreshold ?? "error";
   const sanitized = sanitizeRefModeFindings(deduped, diffMode, debateThreshold);
-  const { accepted: debateFindings, dropped: acDropped } = filterByAcGroundingMinimal(sanitized, story.acceptanceCriteria ?? []);
+  const { accepted: debateFindings, dropped: acDropped } = filterByAcQuote(sanitized, story.acceptanceCriteria ?? []);
   if (acDropped.length > 0) {
-    logger?.warn("review", "Semantic debate findings dropped: acIndex missing or out of range", {
+    logger?.warn("review", "Semantic debate findings dropped: acQuote validation failed", {
       storyId: story.id,
       dropped: acDropped.length,
     });
