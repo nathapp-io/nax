@@ -272,7 +272,9 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       // op.fileOutput: inject file content as output so the probe checks the
       // file the agent wrote, not the text confirmation it replied with.
       if (fileOutputPath) {
-        const fileContent = await Bun.file(fileOutputPath).text().catch(() => null);
+        const fileContent = await Bun.file(fileOutputPath)
+          .text()
+          .catch(() => null);
         if (fileContent !== null) lastTurn = { ...lastTurn, output: fileContent };
       }
       cumCost += lastTurn.estimatedCostUsd ?? 0;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatSessionName } from "../../../src/runtime/session-name";
+import { formatSessionName } from "@/runtime";
 
 describe("formatSessionName", () => {
   test("includes featureName and storyId when they differ", () => {
