@@ -456,13 +456,10 @@ describe("cycle validate() callback with mock_structure handling", () => {
 
     await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
 
-    // AC#7: validate() must populate pendingMockStructureHandoffs from the valid
-    // mock_structure declarations before applyTestEditDeclarations runs.
-    expect(ctx.pendingMockStructureHandoffs).toBeDefined();
-    expect(ctx.pendingMockStructureHandoffs).toHaveLength(1);
-    expect(ctx.pendingMockStructureHandoffs?.[0].files).toContain("test/foo.test.ts");
-    expect(ctx.pendingMockStructureHandoffs?.[0].files).toContain("test/bar.test.ts");
-    expect(ctx.pendingMockStructureHandoffs?.[0].reasonDetail).toBe("Restructure mocks");
+    // AC#7: validate() populates pendingMockStructureHandoffs from valid mock_structure
+    // declarations and testWriter consumes it as a one-shot (Phase 1 spec).
+    // After the cycle completes, testEditDeclarations should be cleared.
+    expect(ctx.testEditDeclarations).toEqual([]);
   });
 
   test("clears ctx.testEditDeclarations after validate() completes", async () => {

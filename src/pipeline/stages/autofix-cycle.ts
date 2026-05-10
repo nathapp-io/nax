@@ -143,9 +143,7 @@ export function buildAutofixStrategies(
         (f) => f.source === "implementer-handoff" && f.category === "test_mock_restructure",
       );
       if (handoffFindings.length > 0) {
-        const handoffFiles = [
-          ...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null)),
-        ];
+        const handoffFiles = [...new Set(handoffFindings.map((f) => f.file).filter((f): f is string => f != null))];
         const handoffs = ctx.pendingMockStructureHandoffs ?? [];
         const handoffReason = handoffs.map((h) => h.reasonDetail).join("\n\n---\n\n");
         // Clear side-channel after consumption — one-shot per spec US-004 AC #3.
@@ -544,11 +542,7 @@ export async function runAgentRectificationV2(
       if (pending.length === 0) return fresh;
 
       // Partition mock_structure declarations via async validator.
-      const resolved = await resolveTestFilePatterns(
-        ctx.config,
-        ctx.workdir,
-        ctx.story.workdir || undefined,
-      );
+      const resolved = await resolveTestFilePatterns(ctx.config, ctx.workdir, ctx.story.workdir || undefined);
       const { valid, invalid } = await validateMockStructureFiles(pending, ctx.workdir, resolved);
 
       // Stash valid mock_structure handoffs for the TDD orchestrator before applying.
