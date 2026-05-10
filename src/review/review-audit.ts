@@ -15,6 +15,10 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
+import type {
+  AdversarialAcceptAnalysis,
+  AdversarialDropAnalysis,
+} from "./ac-structural-counterfactual";
 import { findNaxProjectRoot } from "../utils/nax-project-root";
 
 export interface ReviewAuditEntry {
@@ -57,6 +61,12 @@ export interface ReviewAuditEntry {
   result: { passed: boolean; findings: unknown[] } | null;
   /** Findings retained as advisory after threshold handling. */
   advisoryFindings?: unknown[];
+  /** Issue #986 — true when diff file list was available; false signals "diff unavailable" (excluded from telemetry %). */
+  diffAvailable?: boolean;
+  /** Issue #986 — per-drop counterfactual analysis. Adversarial only. */
+  adversarialDropAnalysis?: AdversarialDropAnalysis[];
+  /** Issue #986 — per-accept counterfactual analysis (blocking findings only). Adversarial only. */
+  adversarialAcceptAnalysis?: AdversarialAcceptAnalysis[];
 }
 
 export interface ReviewAuditDispatch {
@@ -129,6 +139,10 @@ function toPersistedEntry(entry: ReviewAuditEntry, epochMs: number): string {
       blockingThreshold: entry.blockingThreshold ?? null,
       result: entry.result,
       advisoryFindings: entry.advisoryFindings ?? null,
+      // Issue #986 — adversarial-only structural counterfactual telemetry.
+      diffAvailable: entry.diffAvailable ?? null,
+      adversarialDropAnalysis: entry.adversarialDropAnalysis ?? null,
+      adversarialAcceptAnalysis: entry.adversarialAcceptAnalysis ?? null,
     },
     null,
     2,

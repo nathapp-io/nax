@@ -93,6 +93,10 @@ export interface ReviewDecisionEvent {
   readonly blockingThreshold?: "error" | "warning" | "info";
   readonly result: { passed: boolean; findings: unknown[] } | null;
   readonly advisoryFindings?: unknown[];
+  /** Issue #986 — adversarial-only structural-gate counterfactual telemetry. */
+  readonly diffAvailable?: boolean;
+  readonly adversarialDropAnalysis?: readonly unknown[];
+  readonly adversarialAcceptAnalysis?: readonly unknown[];
 }
 
 export type DispatchListener = (event: DispatchEvent) => void;

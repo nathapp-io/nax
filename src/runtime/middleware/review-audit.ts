@@ -51,6 +51,14 @@ export function attachReviewAuditSubscriber(
       blockingThreshold: event.blockingThreshold,
       result: event.result,
       advisoryFindings: event.advisoryFindings,
+      diffAvailable: event.diffAvailable,
+      // Cast unknown[] from the event boundary to the typed audit shapes.
+      adversarialDropAnalysis: event.adversarialDropAnalysis as
+        | import("../../review/ac-structural-counterfactual").AdversarialDropAnalysis[]
+        | undefined,
+      adversarialAcceptAnalysis: event.adversarialAcceptAnalysis as
+        | import("../../review/ac-structural-counterfactual").AdversarialAcceptAnalysis[]
+        | undefined,
     });
   });
 
