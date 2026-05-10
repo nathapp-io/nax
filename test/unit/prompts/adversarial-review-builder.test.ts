@@ -406,3 +406,33 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialIterations", () => 
     expect(result).toContain("FALSIFIED");
   });
 });
+
+// ─── Issue #987: Implementation-axis grounding ─────────────────────────────────
+
+describe("AdversarialReviewPromptBuilder — verifiedBy implementation-axis grounding (#987)", () => {
+  test("OUTPUT_SCHEMA includes verifiedBy field in JSON template", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    expect(result).toContain("verifiedBy");
+    expect(result).toContain("observed");
+  });
+
+  test("instructions require verifiedBy.observed for every error finding", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    expect(result).toContain("verifiedBy.observed");
+    expect(result.toLowerCase()).toContain("verbatim");
+  });
+
+  test("instructions tell LLM to downgrade rather than fabricate quotes", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
+      mode: "ref",
+      storyGitRef: STORY_GIT_REF,
+    });
+    expect(result.toLowerCase()).toContain("downgrade");
+  });
+});
