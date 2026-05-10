@@ -23,7 +23,7 @@ import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { filterByAcGroundingMinimal } from "./ac-quote-validator";
+import { filterByAcQuote } from "./ac-quote-validator";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
@@ -424,13 +424,13 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     blockingThreshold ?? "error",
   );
 
-  // Issue #985: drop error findings not grounded in AC index (acQuote is advisory only)
-  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcGroundingMinimal(
+  // Issue #930 Part 1: drop error findings not grounded in AC text
+  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcQuote(
     sanitizedFindings,
     story.acceptanceCriteria,
   );
   if (acDropped.length > 0) {
-    logger?.warn("review", "Semantic findings dropped: acIndex missing or out of range", {
+    logger?.warn("review", "Semantic findings dropped: acQuote validation failed", {
       storyId: story.id,
       dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
     });
@@ -506,14 +506,15 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   // If LLM said failed but all findings are advisory (below threshold), override to pass.
   //
-  // Guard: when blocking-severity findings were dropped because acIndex was missing or
-  // out of range, "no blocking findings remaining" is NOT evidence of "all advisory" — it
-  // is evidence of "the model produced blocking concerns without valid AC attribution."
+  // Guard: when blocking-severity findings were dropped by filterByAcQuote, "no blocking
+  // findings remaining" is NOT evidence of "all advisory" — it is evidence of "the model
+  // produced blocking concerns that it could not ground in any AC." Silently flipping to
+  // pass in that case turns "model misclassified findings as `error`" into "story shipped."
   // Fail closed and surface the drops so the curator can act on them.
   if (!sanitizedParsed.passed && blockingFindings.length === 0) {
     if (acDropped.length > 0) {
       const durationMs = Date.now() - startTime;
-      logger?.warn("review", "Semantic review fail-closed: blocking findings dropped (acIndex invalid)", {
+      logger?.warn("review", "Semantic review fail-closed: blocking findings dropped as ungrounded", {
         storyId: story.id,
         durationMs,
         droppedCount: acDropped.length,
@@ -543,7 +544,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
         success: false,
         command: "",
         exitCode: 1,
-        output: `Semantic review failed: ${acDropped.length} blocking finding(s) dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution. Either re-classify these as "info" or ensure each error finding includes a valid acIndex. Drops:\n\n${dropSummary}`,
+        output: `Semantic review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Either re-classify these as "info" upstream or extend the ACs. Drops:\n\n${dropSummary}`,
         durationMs,
         advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
         cost: llmCost,
