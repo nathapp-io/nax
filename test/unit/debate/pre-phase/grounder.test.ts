@@ -203,6 +203,8 @@ describe("grounderStrategy", () => {
 
   test("AC-15: grounderStrategy invokes _grounderDeps.scanCodebase (not scanSourceRoots)", async () => {
     runtime = await makeTestRuntime();
+    const { _grounderDeps } = require("@/debate/pre-phase/grounder");
+    const originalScanCodebase = _grounderDeps.scanCodebase;
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -226,14 +228,15 @@ describe("grounderStrategy", () => {
       specContent: "Test spec content",
     };
 
-    // This test verifies AC-15: the grounder path is unchanged
-    // and continues to use scanCodebase from _grounderDeps
+    // Force a sentinel error at scanCodebase call site to prove invocation.
+    _grounderDeps.scanCodebase = async () => {
+      throw new Error("scanCodebase sentinel");
+    };
+
     try {
-      await grounderStrategy(ctx);
-      // After implementation, verify that _grounderDeps exports scanCodebase
-      // and that the grounder continues to use it (not scanSourceRoots)
-    } catch {
-      // Expected to fail since implementation may be a stub
+      await expect(grounderStrategy(ctx)).rejects.toThrow("scanCodebase sentinel");
+    } finally {
+      _grounderDeps.scanCodebase = originalScanCodebase;
     }
   });
 

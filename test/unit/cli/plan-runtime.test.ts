@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { _planDeps } from "@/cli";
+import { withTempDir } from "@test/helpers";
 
 describe("_planDeps", () => {
   // ──────────────────────────────────────────────────────────────────────────
@@ -21,10 +22,10 @@ describe("_planDeps", () => {
     expect(_planDeps).not.toHaveProperty("scanCodebase");
   });
 
-  test("AC-14: scanSourceRoots is callable with workdir string", async () => {
-    // Verify the function exists and has the right signature
-    expect(typeof _planDeps.scanSourceRoots).toBe("function");
-    const result = _planDeps.scanSourceRoots as any;
-    expect(result.length).toBeGreaterThanOrEqual(0); // Takes at least 0 args (actually 1)
+  test("AC-14: scanSourceRoots returns an array for a real workdir", async () => {
+    await withTempDir(async (tmpDir) => {
+      const roots = await _planDeps.scanSourceRoots(tmpDir);
+      expect(Array.isArray(roots)).toBe(true);
+    });
   });
 });

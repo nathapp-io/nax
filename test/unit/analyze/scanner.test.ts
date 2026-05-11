@@ -5,9 +5,9 @@
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
-import { _scannerDeps, scanSourceRoots } from "../../../src/analyze/scanner";
-import type { Logger } from "../../../src/logger";
-import { makeLogger, withDepsRestore, withTempDir } from "../../helpers";
+import { _scannerDeps, scanSourceRoots } from "@/analyze";
+import type { Logger } from "@/logger";
+import { makeLogger, withDepsRestore, withTempDir } from "@test/helpers";
 
 // ── ACs 1 & 2: TypeScript single package ─────────────────────────────────────
 

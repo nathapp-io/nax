@@ -94,16 +94,26 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
   // Scan source roots for context
   logger?.info("plan", "Scanning source roots...");
-  const [sourceRoots, discoveredPackages, pkg] = await Promise.all([
+  const [sourceRoots, pkg] = await Promise.all([
     _planDeps.scanSourceRoots(workdir),
-    _planDeps.discoverWorkspacePackages(workdir),
     _planDeps.readPackageJson(workdir),
   ]);
-  const codebaseContext = buildSourceRootsSection(sourceRoots);
+  const normalizedRoots = sourceRoots.map((root) => ({
+    ...root,
+    path: root.path.startsWith("/") ? root.path.replace(`${workdir}/`, "") : root.path,
+  }));
+  const codebaseContext = buildSourceRootsSection(normalizedRoots);
 
-  // Normalize to repo-relative paths (discoverWorkspacePackages returns relative,
-  // but mocks/legacy callers may return absolute — strip workdir prefix if present)
-  const relativePackages = discoveredPackages.map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p));
+  // Derive package list from discovered source roots so plan context and package
+  // details are always aligned even when workspace discovery falls back.
+  const relativePackages = [
+    ...new Set(
+      sourceRoots
+        .map((root) => root.path)
+        .filter((p) => p !== ".")
+        .map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p)),
+    ),
+  ];
 
   // Scan per-package tech stacks for richer monorepo planning context
   const packageDetails =
