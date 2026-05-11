@@ -98,7 +98,7 @@ function makeFakeScan() {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
@@ -123,7 +123,7 @@ function setupBaseDeps(tmpDir: string, prd: PRD, capturedWrites: Array<[string, 
   _planDeps.writeFile = mock(async (path: string, content: string) => {
     capturedWrites.push([path, content]);
   });
-  _planDeps.scanCodebase = mock(async () => makeFakeScan());
+  _planDeps.scanSourceRoots = mock(async () => []);
   _planDeps.discoverWorkspacePackages = mock(async () => []);
   _planDeps.readPackageJson = mock(async () => null);
   _planDeps.readPackageJsonAt = mock(async () => null);
@@ -149,7 +149,7 @@ describe("planDecomposeCommand — fenced JSON parsing regression", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
@@ -234,7 +234,7 @@ describe("planDecomposeCommand — contract parity with adapter.decompose output
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;

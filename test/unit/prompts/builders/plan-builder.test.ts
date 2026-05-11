@@ -211,11 +211,13 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
     expect(taskContext).not.toContain("up to");
   });
 
-  test("original file names restriction present when fileReadAccess is false", () => {
+  test("no file read instruction emitted when fileReadAccess is false", () => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
       fileReadAccess: false,
     });
-    expect(taskContext).toContain("file names and structure only");
+    // When fileReadAccess is false, buildFileReadInstruction returns empty string
+    // (the Source Roots section already contains tool access guidance)
+    expect(taskContext).not.toContain("file names and structure only");
   });
 });
 
@@ -266,5 +268,90 @@ describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
     const result1 = PlanPromptBuilder.jsonRepair(0, "Error type A");
     const result2 = PlanPromptBuilder.jsonRepair(0, "Error type B");
     expect(result1).not.toEqual(result2);
+  });
+});
+
+// ─── Source Roots section (wireSourceRoots story) ─────────────────────────────
+
+describe("PlanPromptBuilder.build — Source Roots section", () => {
+  const SOURCE_ROOTS_CTX = `## Source Roots
+
+You have Read, Grep, and Glob tools — explore on demand. Cite findings as \`path:line\`.
+Budget: aim for ≤ 10 file reads per story.
+
+- packages/api  (typescript, framework: NestJS, tests: jest)`;
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-4: taskContext does NOT contain "## Codebase Structure"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-4: taskContext does NOT contain '## Codebase Structure'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).not.toContain("## Codebase Structure");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-5: taskContext DOES contain "## Source Roots"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-5: taskContext DOES contain '## Source Roots'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).toContain("## Source Roots");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-6: taskContext does NOT contain "file names and structure only"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-6: taskContext does NOT contain 'file names and structure only' in default mode", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).not.toContain("file names and structure only");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-7: taskContext DOES contain "You have Read, Grep, and Glob tools"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-7: taskContext contains 'You have Read, Grep, and Glob tools'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).toContain("You have Read, Grep, and Glob tools");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-8: taskContext contains "≤ 10 file reads per story"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-8: taskContext contains '≤ 10 file reads per story'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).toContain("≤ 10 file reads per story");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-9: taskContext does NOT contain "## Dependencies"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-9: taskContext does NOT contain '## Dependencies'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).not.toContain("## Dependencies");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-10: taskContext does NOT contain "## Test Setup"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-10: taskContext does NOT contain '## Test Setup'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
+    expect(taskContext).not.toContain("## Test Setup");
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-11: with fileReadAccess: true, taskContext contains "File Read Permission:"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-11: with fileReadAccess: true, taskContext section contains 'File Read Permission:'", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: true,
+    });
+    expect(taskContext).toContain("File Read Permission:");
   });
 });

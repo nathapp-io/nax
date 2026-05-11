@@ -196,4 +196,54 @@ describe("grounderStrategy", () => {
     expect(strategy).toBeDefined();
     expect(typeof strategy).toBe("function");
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-15: grounderStrategy uses scanCodebase (not scanSourceRoots)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-15: grounderStrategy invokes _grounderDeps.scanCodebase (not scanSourceRoots)", async () => {
+    runtime = await makeTestRuntime();
+    const { _grounderDeps } = require("@/debate/pre-phase/grounder");
+    const originalScanCodebase = _grounderDeps.scanCodebase;
+
+    const ctx: PreDebatePhaseContext = {
+      ctx: {
+        runtime,
+        packageView: runtime.packageView,
+        packageDir: "/tmp/test",
+        featureName: "test-feature",
+        storyId: "US-003",
+        agentName: "claude",
+      },
+      stage: "plan",
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "synthesis" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-003",
+      specContent: "Test spec content",
+    };
+
+    // Force a sentinel error at scanCodebase call site to prove invocation.
+    _grounderDeps.scanCodebase = async () => {
+      throw new Error("scanCodebase sentinel");
+    };
+
+    try {
+      await expect(grounderStrategy(ctx)).rejects.toThrow("scanCodebase sentinel");
+    } finally {
+      _grounderDeps.scanCodebase = originalScanCodebase;
+    }
+  });
+
+  test("AC-15: _grounderDeps exports scanCodebase function", () => {
+    // Verify the grounder has access to scanCodebase via its deps
+    const { _grounderDeps } = require("@/debate/pre-phase/grounder");
+    expect(_grounderDeps).toHaveProperty("scanCodebase");
+    expect(typeof _grounderDeps.scanCodebase).toBe("function");
+  });
 });

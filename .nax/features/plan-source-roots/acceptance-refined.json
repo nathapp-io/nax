@@ -1,0 +1,184 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "scanSourceRoots(workdir) returns an array of length 1 when workdir contains a single package.json declaring TypeScript and no workspace markers",
+    "refined": "Given a temp directory with a package.json (no workspaces field) declaring TypeScript, scanSourceRoots(workdir) returns an array of exactly length 1",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "The single root returned for a TypeScript single-package project has path equal to \".\" and language equal to \"typescript\"",
+    "refined": "Given a single-package TypeScript project, scanSourceRoots returns result where result[0].path === \".\" and result[0].language === \"typescript\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "scanSourceRoots(workdir) returns one SourceRoot per discovered package when workdir contains a pnpm/npm/lerna/turbo/nx workspace",
+    "refined": "Given a monorepo with N discovered packages (detected via discoverWorkspacePackages), scanSourceRoots returns an array of exactly length N",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Each workspace root has path equal to the workspace-relative package directory and language resolved per package",
+    "refined": "For each returned SourceRoot, root.path matches the relative path from workdir to the package directory and root.language is the result of detectLanguage(pkgDir) for that package",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "scanSourceRoots(workdir) returns [{ path: \".\", language: \"go\", framework: \"\", testRunner: \"go-test\" }] when workdir contains a go.mod and no package.json",
+    "refined": "Given a directory with only go.mod and no package.json, scanSourceRoots returns [{path: \".\", language: \"go\", framework: \"\", testRunner: \"go-test\"}]",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "scanSourceRoots(workdir) returns [{ path: \".\", language: \"python\", framework: \"\", testRunner: \"pytest\" }] when workdir contains a pyproject.toml",
+    "refined": "Given a directory with pyproject.toml and no package.json or go.mod, scanSourceRoots returns [{path: \".\", language: \"python\", framework: \"\", testRunner: \"pytest\"}]",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "scanSourceRoots(workdir) returns [{ path: \".\", language: undefined, framework: \"\", testRunner: \"\" }] when workdir contains no package.json, go.mod, Cargo.toml, pyproject.toml, or requirements.txt",
+    "refined": "Given an empty directory or directory with no language markers, scanSourceRoots returns [{path: \".\", language: undefined, framework: \"\", testRunner: \"\"}]",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "scanSourceRoots(workdir) returns at most 30 entries when the discovered package count exceeds 30",
+    "refined": "Given a monorepo with 31+ discovered packages, scanSourceRoots returns an array of length <= 30",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "scanSourceRoots(workdir) logs a warning with count and truncatedTo fields when the discovered package count exceeds 30",
+    "refined": "Given a monorepo with 31+ packages, scanSourceRoots emits a log entry containing 'warning' in the level, plus {count: <number>, truncatedTo: 30} in the context fields",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "scanSourceRoots(workdir) returns the single-root fallback and does not throw when discoverWorkspacePackages rejects",
+    "refined": "When discoverWorkspacePackages(workdir) throws, scanSourceRoots catches the error, returns [{path: \".\", language: <detected>, framework: \"\", testRunner: \"\"}], and does not re-throw",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "scanSourceRoots(workdir) logs a warning with the error message when discoverWorkspacePackages rejects",
+    "refined": "When discoverWorkspacePackages(workdir) throws, scanSourceRoots emits a log entry containing 'warning' in the level and the caught error message in the context",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "buildSourceRootsSection(roots) returns a string starting with \"## Source Roots\"",
+    "refined": "buildSourceRootsSection(roots) returns a string where the first line is exactly \"## Source Roots\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "buildSourceRootsSection(roots) returns a string containing one \"- <path>  (<language|unknown>, framework: <framework|—>, tests: <testRunner|—>)\" line per root",
+    "refined": "For each SourceRoot in the input roots array, buildSourceRootsSection(roots) returns a string containing exactly one line matching the regex /^- [^ ]+ +\\([^]+, framework: [^]+, tests: [^)]+\\)$/ (one per input root; total matches === roots.length)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "buildSourceRootsSection([]) returns a string containing \"- .  (unknown, framework: —, tests: —)\" so the section is never empty",
+    "refined": "When called with an empty array, buildSourceRootsSection([]) returns a string containing the exact line \"- .  (unknown, framework: —, tests: —)\" and does not throw an error",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "PlanPromptBuilder.build() produces a taskContext that does NOT contain the substring \"## Codebase Structure\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() does not include the substring \"## Codebase Structure\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "PlanPromptBuilder.build() produces a taskContext that DOES contain \"## Source Roots\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() includes the substring \"## Source Roots\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "PlanPromptBuilder.build() produces a taskContext that does NOT contain the substring \"file names and structure only\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() does not include the substring \"file names and structure only\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "PlanPromptBuilder.build() produces a taskContext that DOES contain \"You have Read, Grep, and Glob tools\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() includes the substring \"You have Read, Grep, and Glob tools\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "PlanPromptBuilder.build() produces a taskContext that contains the substring \"≤ 10 file reads per story\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() includes the substring \"≤ 10 file reads per story\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "PlanPromptBuilder.build() produces a taskContext that does NOT contain \"## Dependencies\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() does not include the substring \"## Dependencies\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "PlanPromptBuilder.build() produces a taskContext that does NOT contain \"## Test Setup\"",
+    "refined": "The taskContext string returned by PlanPromptBuilder.build() does not include the substring \"## Test Setup\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "PlanPromptBuilder.build() with proposers.fileReadAccess: true produces a taskContext whose buildFileReadInstruction section contains \"File Read Permission:\"",
+    "refined": "When PlanPromptBuilder.build() is called with buildOptions.proposers.fileReadAccess === true, the returned taskContext includes the substring \"File Read Permission:\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "runPlanCommand() in src/cli/plan.ts invokes _planDeps.scanSourceRoots(workdir) and passes the rendered section as the codebaseContext argument to PlanPromptBuilder.build()",
+    "refined": "runPlanCommand() calls _planDeps.scanSourceRoots(workdir), receives a SourceRoot[], passes buildSourceRootsSection(result) as the codebaseContext argument to PlanPromptBuilder.build()",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "runPlanDecompose() in src/cli/plan-decompose.ts invokes _planDeps.scanSourceRoots(workdir) and passes the rendered section into the decompose prompt context",
+    "refined": "runPlanDecompose() calls _planDeps.scanSourceRoots(workdir), receives a SourceRoot[], and includes buildSourceRootsSection(result) in the decompose prompt context that is passed to the agent",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "_planDeps in src/cli/plan-runtime.ts exposes scanSourceRoots and does not expose scanCodebase",
+    "refined": "The _planDeps object exported from src/cli/plan-runtime.ts has a scanSourceRoots property and does not have a scanCodebase property",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "grounderStrategy in src/debate/pre-phase/grounder.ts continues to call scanCodebase (not scanSourceRoots) so the grounder facts-manifest path is unchanged",
+    "refined": "grounderStrategy in src/debate/pre-phase/grounder.ts calls scanCodebase (not scanSourceRoots) and has the same function signature and behavior as before this story",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]

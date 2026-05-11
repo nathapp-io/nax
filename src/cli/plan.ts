@@ -18,7 +18,7 @@ import { callOp, planInteractiveOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
-import { buildCodebaseContext, buildPackageSummary } from "./plan-helpers";
+import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
@@ -92,18 +92,28 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   logger?.info("plan", "Reading spec", { from: options.from });
   const specContent = await _planDeps.readFile(options.from);
 
-  // Scan codebase for context
-  logger?.info("plan", "Scanning codebase...");
-  const [scan, discoveredPackages, pkg] = await Promise.all([
-    _planDeps.scanCodebase(workdir),
-    _planDeps.discoverWorkspacePackages(workdir),
+  // Scan source roots for context
+  logger?.info("plan", "Scanning source roots...");
+  const [sourceRoots, pkg] = await Promise.all([
+    _planDeps.scanSourceRoots(workdir),
     _planDeps.readPackageJson(workdir),
   ]);
-  const codebaseContext = buildCodebaseContext(scan);
+  const normalizedRoots = sourceRoots.map((root) => ({
+    ...root,
+    path: root.path.startsWith("/") ? root.path.replace(`${workdir}/`, "") : root.path,
+  }));
+  const codebaseContext = buildSourceRootsSection(normalizedRoots);
 
-  // Normalize to repo-relative paths (discoverWorkspacePackages returns relative,
-  // but mocks/legacy callers may return absolute — strip workdir prefix if present)
-  const relativePackages = discoveredPackages.map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p));
+  // Derive package list from discovered source roots so plan context and package
+  // details are always aligned even when workspace discovery falls back.
+  const relativePackages = [
+    ...new Set(
+      sourceRoots
+        .map((root) => root.path)
+        .filter((p) => p !== ".")
+        .map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p)),
+    ),
+  ];
 
   // Scan per-package tech stacks for richer monorepo planning context
   const packageDetails =

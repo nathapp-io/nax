@@ -11,6 +11,7 @@
 
 export type { DetectionResult, DetectionSource } from "./detect/types";
 export { detectTestFilePatterns, detectTestFilePatternsForWorkspace } from "./detect/index";
+export { detectManifestFrameworksFromPackageJson } from "./detect/framework-defaults";
 
 // Re-export sub-module deps objects so tests can inject mocks without
 // touching the top-level module boundary.

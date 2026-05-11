@@ -100,7 +100,7 @@ function makeFakeScan() {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
@@ -128,7 +128,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
     });
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -155,7 +155,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
@@ -238,13 +238,13 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     expect(prompt).toContain("Second sibling");
   });
 
-  test("AC-5: prompt includes codebase context from buildCodebaseContext", async () => {
+  test("AC-5: prompt includes codebase context from buildSourceRootsSection", async () => {
     const prd = makePrd();
     setupDeps(prd);
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
     const prompt = capturedCompleteArgs[0];
-    expect(prompt).toContain("Codebase");
-    expect(prompt).toContain("zod");
+    expect(prompt.toUpperCase()).toContain("CODEBASE");
+    expect(prompt).toContain("Source Roots");
   });
 
   test("AC-5: completeAs() receives workdir and storyId context options", async () => {
@@ -257,7 +257,7 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
     });
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => null);
     _planDeps.readPackageJsonAt = mock(async () => null);

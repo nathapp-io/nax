@@ -85,7 +85,7 @@ function makeFakeScan() {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
@@ -120,7 +120,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
       capturedWriteArgs.push([path, content]);
     });
 
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -144,7 +144,7 @@ describe("planDecomposeCommand — PRD write-back", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;

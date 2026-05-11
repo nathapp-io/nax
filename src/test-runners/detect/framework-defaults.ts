@@ -47,6 +47,32 @@ const JS_FRAMEWORK_DEFAULTS: Array<{ depKey: string; framework: string; patterns
 ];
 
 /**
+ * Detect declared test frameworks from a parsed package.json manifest.
+ *
+ * Returns framework IDs in priority order from JS_FRAMEWORK_DEFAULTS.
+ * If no known framework dependency exists, falls back to "bun" when
+ * scripts.test contains "bun test".
+ */
+export function detectManifestFrameworksFromPackageJson(pkg: Record<string, unknown>): string[] {
+  const devDeps = (pkg.devDependencies as Record<string, unknown>) ?? {};
+  const deps = (pkg.dependencies as Record<string, unknown>) ?? {};
+  const allDeps = { ...deps, ...devDeps };
+
+  const frameworks = JS_FRAMEWORK_DEFAULTS.filter(({ depKey }) => depKey in allDeps).map(({ framework }) => framework);
+  if (frameworks.length > 0) {
+    return frameworks;
+  }
+
+  const scripts = pkg.scripts as Record<string, unknown> | undefined;
+  const testScript = typeof scripts?.test === "string" ? scripts.test : "";
+  if (testScript.includes("bun test")) {
+    return ["bun"];
+  }
+
+  return [];
+}
+
+/**
  * Bun test defaults — matches Bun's hardcoded discovery rules
  * (*.test.*, *_test.*, *.spec.*, *_spec.* across all JS/TS extensions).
  * Activated when `bun test` appears in package.json#scripts.test.
@@ -77,24 +103,17 @@ async function detectFromPackageJson(workdir: string): Promise<DetectionSource[]
     return [];
   }
 
-  const devDeps = (pkg.devDependencies as Record<string, unknown>) ?? {};
-  const deps = (pkg.dependencies as Record<string, unknown>) ?? {};
-  const allDeps = { ...deps, ...devDeps };
-
-  // Collect a source for every JS/TS framework found (all of them, not just first)
+  const frameworks = detectManifestFrameworksFromPackageJson(pkg);
   const results: DetectionSource[] = [];
-  for (const { depKey, framework, patterns } of JS_FRAMEWORK_DEFAULTS) {
-    if (depKey in allDeps) {
+  for (const { framework, patterns } of JS_FRAMEWORK_DEFAULTS) {
+    if (frameworks.includes(framework)) {
       results.push({ type: "manifest", framework, path, patterns: expandExtglobAll(patterns) });
     }
   }
 
   if (results.length > 0) return results;
 
-  // No recognised framework — check for bun test in scripts.test
-  const scripts = pkg.scripts as Record<string, unknown> | undefined;
-  const testScript = typeof scripts?.test === "string" ? scripts.test : "";
-  if (testScript.includes("bun test")) {
+  if (frameworks.includes("bun")) {
     return [{ type: "manifest", framework: "bun", path, patterns: expandExtglobAll(BUN_TEST_DEFAULTS) }];
   }
 

@@ -60,7 +60,7 @@ const SAMPLE_PRD: PRD = {
 /** Capture originals before any test overrides */
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
@@ -105,7 +105,7 @@ describe("planCommand", () => {
 
     _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
 
-    _planDeps.scanCodebase = mock(async (_workdir: string) => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async (_workdir: string) => []);
 
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-project" }));
 
@@ -134,7 +134,7 @@ describe("planCommand", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
@@ -177,8 +177,8 @@ describe("planCommand", () => {
     });
 
     const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("Codebase");
-    expect(prompt).toContain("express");
+    expect(prompt).toContain("Source Roots");
+    expect(prompt).toContain("Read, Grep, and Glob tools");
   });
 
   test("uses explicit plan model selector to choose adapter", async () => {
@@ -519,6 +519,72 @@ describe("planCommand", () => {
     expect(written.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(written.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-12: scanSourceRoots is invoked and rendered section is passed to builder
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-12: runPlanCommand invokes _planDeps.scanSourceRoots(workdir)", async () => {
+    let scanSourceRootsWasCalled = false;
+    let scanSourceRootsArg: string | undefined;
+
+    const origScanSourceRoots = _planDeps.scanSourceRoots;
+    _planDeps.scanSourceRoots = mock(async (workdir: string) => {
+      scanSourceRootsWasCalled = true;
+      scanSourceRootsArg = workdir;
+      return [];
+    });
+
+    try {
+      await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+        from: "/spec.md",
+        feature: "url-shortener",
+        auto: true,
+      });
+
+      expect(scanSourceRootsWasCalled).toBe(true);
+      expect(scanSourceRootsArg).toBe(tmpDir);
+    } finally {
+      if (origScanSourceRoots) _planDeps.scanSourceRoots = origScanSourceRoots;
+    }
+  });
+
+  test("AC-12: renders source roots section and passes as codebaseContext to PlanPromptBuilder", async () => {
+    let capturedCodebaseContext: string | undefined;
+
+    const origCreateRuntime = _planDeps.createRuntime;
+    _planDeps.createRuntime = mock((cfg: any) =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async (req) => {
+            const prompt = req.runOptions.prompt;
+            // The codebaseContext is passed to PlanPromptBuilder.build() and becomes part of taskContext
+            if (prompt) {
+              capturedCodebaseContext = prompt;
+            }
+            return { result: { success: true, exitCode: 0, output: JSON.stringify(SAMPLE_PRD), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          },
+        }),
+      }),
+    );
+
+    _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
+      { path: "packages/api", language: "typescript", framework: "NestJS", testRunner: "jest" },
+    ]);
+
+    try {
+      await planCommand(tmpDir, DEFAULT_CONFIG as never, {
+        from: "/spec.md",
+        feature: "url-shortener",
+        auto: true,
+      });
+
+      expect(capturedCodebaseContext).toContain("## Source Roots");
+      expect(capturedCodebaseContext).toContain("packages/api");
+    } finally {
+      if (origCreateRuntime) _planDeps.createRuntime = origCreateRuntime;
+    }
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -657,12 +723,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     capturedWrites993 = [];
     await mkdir(join(tmpDir993, ".nax"), { recursive: true });
 
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/\n    └── index.ts",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});

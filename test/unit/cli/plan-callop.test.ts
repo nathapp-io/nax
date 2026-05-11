@@ -80,7 +80,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
   let tmpDir: string;
   const origReadFile = _planDeps.readFile;
   const origWriteFile = _planDeps.writeFile;
-  const origScanCodebase = _planDeps.scanCodebase;
+  const origScanSourceRoots = _planDeps.scanSourceRoots;
   const origReadPackageJson = _planDeps.readPackageJson;
   const origSpawnSync = _planDeps.spawnSync;
   const origMkdirp = _planDeps.mkdirp;
@@ -104,7 +104,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
 
     _planDeps.existsSync = mock((_path: string) => true);
 
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
 
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
 
@@ -133,7 +133,7 @@ describe("planCommand — callOp + planInteractiveOp migration", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;

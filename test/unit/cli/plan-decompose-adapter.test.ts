@@ -106,7 +106,7 @@ function makeFakeScan() {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origMkdirp = _planDeps.mkdirp;
@@ -137,7 +137,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
     _planDeps.existsSync = mock((p: string) => p === prdPath);
     _planDeps.readFile = mock(async () => JSON.stringify(prd));
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => null);
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -155,7 +155,7 @@ describe("planDecomposeCommand — calls adapter.decompose() not adapter.complet
   afterEach(() => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;
@@ -217,7 +217,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
     _planDeps.existsSync = mock((p: string) => p === prdPath);
     _planDeps.readFile = mock(async () => JSON.stringify(prd));
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => null);
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -235,7 +235,7 @@ describe("planDecomposeCommand — adapter.decompose() option forwarding (US-002
   afterEach(() => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;
@@ -310,7 +310,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
     _planDeps.existsSync = mock((p: string) => p === prdPath);
     _planDeps.readFile = mock(async () => JSON.stringify(prd));
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => null);
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -321,7 +321,7 @@ describe("planDecomposeCommand — no raw JSON.parse of decompose response (US-0
   afterEach(() => {
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.mkdirp = origMkdirp;

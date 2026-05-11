@@ -1,0 +1,120 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-source-roots",
+  "branchName": "feat/plan-source-roots",
+  "createdAt": "2026-05-11T00:00:00.000Z",
+  "updatedAt": "2026-05-11T12:11:07.651Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add SourceRoot type and scanSourceRoots function",
+      "description": "**Goal** — Add the `SourceRoot` type to `src/analyze/types.ts` and implement `scanSourceRoots(workdir)` in `src/analyze/scanner.ts`, exporting both from the `src/analyze/index.ts` barrel. No callers yet — purely additive.\n\n**Motivation** — `scanCodebase()` hardcodes `<workdir>/src` (TypeScript-centric), producing an empty tree for Go/Python/Rust projects and emitting ~12k tokens of file-tree noise that the planning agent doesn't need.\n\n**Interface**\n```typescript\n// src/analyze/types.ts\nexport interface SourceRoot {\n  /** Relative path from workdir (e.g. \"packages/api\", \"cmd/worker\", \".\"). */\n  path: string;\n  /** Detected language; undefined when no language markers are present. */\n  language: \"typescript\" | \"javascript\" | \"go\" | \"rust\" | \"python\" | undefined;\n  /** Detected framework label (e.g. \"NestJS\", \"Next.js\"); empty string when unknown. */\n  framework: string;\n  /** Detected test runner label (e.g. \"jest\", \"vitest\", \"go-test\", \"pytest\"); empty string when unknown. */\n  testRunner: string;\n}\n\n// src/analyze/scanner.ts\nexport async function scanSourceRoots(workdir: string): Promise<SourceRoot[]>;\n```\n\n**Approach (from spec)**\n```\nscanSourceRoots(workdir):\n  packages = discoverWorkspacePackages(workdir)        // existing SSOT\n  if packages.length === 0:\n    packages = [\".\"]                                    // single-package fallback\n  if packages.length > MAX_SOURCE_ROOTS (30):\n    log warn, truncate to 30\n  for each pkgPath in packages:\n    pkgDir    = join(workdir, pkgPath)\n    language  = detectLanguage(pkgDir)                  // existing SSOT\n    pkgJson   = read package.json if present\n    summary   = buildPackageSummary(pkgPath, pkgJson)   // existing helper — framework + testRunner\n    testRunner = summary.testRunner || detectTestFramework(pkgDir) || \"\"\n    emit { path: pkgPath, language, framework: summary.framework, testRunner }\n  return roots\n```\n\n**Implementation note** — `buildPackageSummary` lives in `src/cli/plan-helpers.ts`. Since `src/analyze/` must not import from `src/cli/`, the implementer should either: (a) extract `FRAMEWORK_PATTERNS`/`TEST_RUNNER_PATTERNS` and the pattern-match logic to a shared utility (e.g. `src/analyze/package-summary.ts` or `src/utils/`), or (b) inline equivalent logic. The `SourceRoot` type only needs `framework` and `testRunner` strings — no need to produce a full `PackageSummary`. The `discoverWorkspacePackages` function is available from `src/context/generator.ts` (already imported in plan-runtime.ts) and `detectLanguage` from `src/project/detector.ts`.\n\n**Failure handling (from spec)**\n- No workspace packages AND no language markers → return `[{ path: \".\", language: undefined, framework: \"\", testRunner: \"\" }]`\n- `discoverWorkspacePackages` throws → catch, log warning with error message, fall back to `[{ path: \".\", language: detectLanguage(workdir), ... }]`\n- `detectLanguage` returns `undefined` for one root → emit `undefined` for that root only; do not fail others\n- More than 30 packages → log warning with `count` and `truncatedTo` fields, truncate to first 30 sorted alphabetically\n\n**Scope** — In: `src/analyze/types.ts`, `src/analyze/scanner.ts`, `src/analyze/index.ts`, new tests. Out: no callers wired yet, `scanCodebase` untouched, grounder untouched.",
+      "acceptanceCriteria": [
+        "scanSourceRoots(workdir) returns an array of length 1 when workdir contains a single package.json declaring TypeScript and no workspace markers",
+        "The single root returned for a TypeScript single-package project has path equal to \".\" and language equal to \"typescript\"",
+        "scanSourceRoots(workdir) returns one SourceRoot per discovered package when workdir contains a pnpm/npm/lerna/turbo/nx workspace",
+        "Each workspace root has path equal to the workspace-relative package directory and language resolved per package",
+        "scanSourceRoots(workdir) returns [{ path: \".\", language: \"go\", framework: \"\", testRunner: \"go-test\" }] when workdir contains a go.mod and no package.json",
+        "scanSourceRoots(workdir) returns [{ path: \".\", language: \"python\", framework: \"\", testRunner: \"pytest\" }] when workdir contains a pyproject.toml",
+        "scanSourceRoots(workdir) returns [{ path: \".\", language: undefined, framework: \"\", testRunner: \"\" }] when workdir contains no package.json, go.mod, Cargo.toml, pyproject.toml, or requirements.txt",
+        "scanSourceRoots(workdir) returns at most 30 entries when the discovered package count exceeds 30",
+        "scanSourceRoots(workdir) logs a warning with count and truncatedTo fields when the discovered package count exceeds 30",
+        "scanSourceRoots(workdir) returns the single-root fallback and does not throw when discoverWorkspacePackages rejects",
+        "scanSourceRoots(workdir) logs a warning with the error message when discoverWorkspacePackages rejects",
+        "scanSourceRoots(workdir) returns language: \"rust\" when workdir contains a Cargo.toml and no package.json",
+        "When a workspace package directory does not exist on disk, scanSourceRoots skips it and continues processing remaining packages"
+      ],
+      "tags": [
+        "feature",
+        "analyze",
+        "planning"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/analyze/types.ts",
+        "src/analyze/scanner.ts",
+        "src/analyze/index.ts",
+        "src/project/detector.ts",
+        "src/cli/plan-helpers.ts"
+      ],
+      "suggestedCriteria": [
+        "scanSourceRoots(workdir) returns language: \"typescript\" when workdir contains a tsconfig.json but no package.json",
+        "scanSourceRoots(workdir) returns roots sorted alphabetically by path when package count exceeds 30 and truncation occurs",
+        "When detectLanguage throws for one package, scanSourceRoots logs a warning and emits language: undefined for that root without failing"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2015b4c53617aa6657ca88010049ff26cb7de372"
+    },
+    {
+      "id": "US-002",
+      "title": "Wire scanSourceRoots into plan command and update PlanPromptBuilder",
+      "description": "**Goal** — Replace the static `scanCodebase()` + `buildCodebaseContext()` calls in the plan command with `scanSourceRoots()` + `buildSourceRootsSection()`, remove the 'file names and structure only' restriction from `PlanPromptBuilder`, and delete the now-unused `buildCodebaseContext` export.\n\n**Motivation** — The planning agent has Read/Grep/Glob tools available (op is `kind: \"run\"`) but the prompt explicitly blocks their use with 'file names and structure only — do NOT assert specific line numbers', making agents work blind in non-TS projects and wasting ~12k tokens on a static tree.\n\n**APIs to add (from spec)**\n```typescript\n// src/cli/plan-helpers.ts\n/** Render the source-roots section emitted into the planning prompt. */\nexport function buildSourceRootsSection(roots: SourceRoot[]): string;\n```\n\n**Rendered output format (from spec)**\n```markdown\n## Source Roots\n\nYou have Read, Grep, and Glob tools — explore on demand. Cite findings as `path:line`.\nBudget: aim for ≤ 10 file reads per story.\n\n- packages/api  (typescript, framework: NestJS, tests: jest)\n- packages/web  (typescript, framework: Next.js, tests: vitest)\n- cmd/worker    (go, tests: go-test)\n```\n\nSingle-package fallback renders as:\n```markdown\n- .  (typescript, framework: bun, tests: bun:test)\n```\n\nWhen `buildSourceRootsSection([])` is called, it must render a non-empty section with `- .  (unknown, framework: —, tests: —)` so the section is never empty.\n\n**Integration points (from spec)**\n- `src/cli/plan.ts` — replace `_planDeps.scanCodebase()` + `buildCodebaseContext()` with `_planDeps.scanSourceRoots()` + `buildSourceRootsSection()`\n- `src/cli/plan-decompose.ts` — same substitution\n- `src/cli/plan-runtime.ts` — replace `scanCodebase` entry in `_planDeps` with `scanSourceRoots`; remove the `scanCodebase` import\n- `src/prompts/builders/plan-builder.ts` — `codebaseContext` argument now carries the source-roots section string; revise `buildFileReadInstruction` default branch to remove 'file names and structure only' restriction; the Source Roots section header already contains the tool-access + budget line, so the default branch may simply return an empty string or a minimal note\n\n**Deletions (from spec)**\n- `buildCodebaseContext` in `src/cli/plan-helpers.ts` — remove after both callers (plan.ts, plan-decompose.ts) are migrated\n- `import { buildCodebaseContext }` lines in plan.ts and plan-decompose.ts\n\n**Kept intact (from spec)**\n- `scanCodebase` export in `src/analyze/scanner.ts` — grounder imports it\n- `buildCodebaseContext` local function in `src/debate/pre-phase/grounder.ts` — private, untouched\n- `proposers.fileReadAccess: true` path in `PlanPromptBuilder.build()` — debate-proposer path still emits 'File Read Permission:' block; only the default (non-fileReadAccess) branch changes\n- Monorepo hint section and `packageDetails` argument flow in `plan.ts` — these are separate from the codebase context and remain unchanged\n\n**Test file updates required**\n- `test/unit/cli/plan.test.ts` — mock `_planDeps.scanCodebase` → `_planDeps.scanSourceRoots`\n- `test/unit/cli/plan-callop.test.ts` — same\n- `test/unit/cli/plan-interactive.test.ts` — same\n- `test/unit/cli/plan-debate.test.ts` — verify grounder path unchanged (read-only verification in tests)\n\n**Scope** — In: plan-helpers.ts (add buildSourceRootsSection, remove buildCodebaseContext), plan-runtime.ts (_planDeps shape), plan.ts, plan-decompose.ts, plan-builder.ts, affected test files. Out: grounder.ts, scanCodebase function, debate proposer file-read path.",
+      "acceptanceCriteria": [
+        "buildSourceRootsSection(roots) returns a string starting with \"## Source Roots\"",
+        "buildSourceRootsSection(roots) returns a string containing one \"- <path>  (<language|unknown>, framework: <framework|—>, tests: <testRunner|—>)\" line per root",
+        "buildSourceRootsSection([]) returns a string containing \"- .  (unknown, framework: —, tests: —)\" so the section is never empty",
+        "PlanPromptBuilder.build() produces a taskContext that does NOT contain the substring \"## Codebase Structure\"",
+        "PlanPromptBuilder.build() produces a taskContext that DOES contain \"## Source Roots\"",
+        "PlanPromptBuilder.build() produces a taskContext that does NOT contain the substring \"file names and structure only\"",
+        "PlanPromptBuilder.build() produces a taskContext that DOES contain \"You have Read, Grep, and Glob tools\"",
+        "PlanPromptBuilder.build() produces a taskContext that contains the substring \"≤ 10 file reads per story\"",
+        "PlanPromptBuilder.build() produces a taskContext that does NOT contain \"## Dependencies\"",
+        "PlanPromptBuilder.build() produces a taskContext that does NOT contain \"## Test Setup\"",
+        "PlanPromptBuilder.build() with proposers.fileReadAccess: true produces a taskContext whose buildFileReadInstruction section contains \"File Read Permission:\"",
+        "runPlanCommand() in src/cli/plan.ts invokes _planDeps.scanSourceRoots(workdir) and passes the rendered section as the codebaseContext argument to PlanPromptBuilder.build()",
+        "runPlanDecompose() in src/cli/plan-decompose.ts invokes _planDeps.scanSourceRoots(workdir) and passes the rendered section into the decompose prompt context",
+        "_planDeps in src/cli/plan-runtime.ts exposes scanSourceRoots and does not expose scanCodebase",
+        "grounderStrategy in src/debate/pre-phase/grounder.ts continues to call scanCodebase (not scanSourceRoots) so the grounder facts-manifest path is unchanged",
+        "buildSourceRootsSection(roots) contains the budget line \"aim for ≤ 10 file reads per story\" in the section header",
+        "When a root has language: undefined, buildSourceRootsSection renders it as \"(unknown, ...)\" not as \"(undefined, ...)\"",
+        "When a root has framework: \"\" and testRunner: \"\", buildSourceRootsSection renders both as \"—\" not as empty string",
+        "PlanPromptBuilder.build() with proposers.fileReadAccess: false (explicit false) produces a taskContext that does NOT contain \"File Read Permission:\"",
+        "The scan in plan-decompose.ts no longer calls buildCodebaseContext and no longer imports it"
+      ],
+      "tags": [
+        "feature",
+        "planning",
+        "prompt"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/plan-helpers.ts",
+        "src/cli/plan-runtime.ts",
+        "src/cli/plan.ts",
+        "src/cli/plan-decompose.ts",
+        "src/prompts/builders/plan-builder.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ba781dd54c8ce9e7df70824e8cd43105b6d96822"
+    }
+  ],
+  "analysis": "This is a prompt-input substitution that replaces the static file-tree section in the nax plan prompt with a lightweight Source Roots section.\n\n## Files Modified\n\n**US-001 (pure addition):**\n- `src/analyze/types.ts` — add `SourceRoot` interface alongside existing `CodebaseScan`\n- `src/analyze/scanner.ts` — add `scanSourceRoots(workdir)` export; leave `scanCodebase` intact (grounder still uses it)\n- `src/analyze/index.ts` — re-export `SourceRoot` type and `scanSourceRoots` from barrel\n- New tests in `test/unit/analyze/` (mirroring `test/integration/plan/analyze-scanner.test.ts` patterns)\n\n**US-002 (wiring):**\n- `src/cli/plan-helpers.ts` — add `buildSourceRootsSection(roots: SourceRoot[])`; delete `buildCodebaseContext` (both callers migrate away)\n- `src/cli/plan-runtime.ts` — replace `scanCodebase` entry in `_planDeps` with `scanSourceRoots`; remove `scanCodebase` import\n- `src/cli/plan.ts` — replace `_planDeps.scanCodebase()` + `buildCodebaseContext()` call with `_planDeps.scanSourceRoots()` + `buildSourceRootsSection()`; drop the `buildCodebaseContext` import\n- `src/cli/plan-decompose.ts` — same substitution on the `scanCodebase` call at line ~63\n- `src/prompts/builders/plan-builder.ts` — revise `buildFileReadInstruction` default branch and the `taskContext` body to remove 'file names and structure only' language and reference the Source Roots section header instead\n\n## Key Dependencies\n\n- `discoverWorkspacePackages` lives in `src/context/generator.ts` (re-exported) — already imported in `plan-runtime.ts` for the monorepo package list; `scanSourceRoots` will call the same import\n- `detectLanguage` and `detectTestFramework` live in `src/project/detector.ts` — new import in `scanner.ts`\n- `buildPackageSummary` lives in `src/cli/plan-helpers.ts` — `scanSourceRoots` in `scanner.ts` must NOT import from `cli/`; instead the algorithm replicates the framework/testRunner extraction inline or accepts a resolver callback. The spec says reuse `buildPackageSummary` — but `scanner.ts` is in `src/analyze/`, not `src/cli/`. Resolution: move the framework/test-runner inference patterns (`FRAMEWORK_PATTERNS`, `TEST_RUNNER_PATTERNS`) to `src/analyze/scanner.ts` or a shared utility, OR import `buildPackageSummary` from `src/cli/plan-helpers` into `scanner.ts` (layering concern — cli/ should not be imported from analyze/). Best approach: duplicate the two-pattern-lookup locally in `scanner.ts` for framework/testRunner, since `buildPackageSummary` returns a `PackageSummary` with extra fields not needed by `SourceRoot`. Alternatively extract the patterns to `src/analyze/` or `src/utils/`. The implementer should pick the cleanest option that doesn't violate barrel/layering rules.\n\n## Risks\n\n1. **Import layering**: `src/analyze/scanner.ts` must not import from `src/cli/`. If reusing FRAMEWORK_PATTERNS/TEST_RUNNER_PATTERNS, they need to be in a shared location accessible from analyze/.\n2. **`_planDeps` shape change**: Tests that mock `_planDeps.scanCodebase` must be updated to mock `scanSourceRoots` instead. Three test files affected: `test/unit/cli/plan.test.ts`, `test/unit/cli/plan-callop.test.ts`, `test/unit/cli/plan-interactive.test.ts`.\n3. **`buildCodebaseContext` deletion**: `plan-decompose.ts` imports it; both callers must migrate before deletion.\n4. **`plan-builder.ts` taskContext string**: The `buildFileReadInstruction` function's default (non-fileReadAccess) branch currently returns the 'file names and structure only' restriction. Changing this default affects only the non-debate, non-grounding path — the `proposers.fileReadAccess: true` path is unchanged.\n5. **Grounder path**: `src/debate/pre-phase/grounder.ts` imports `scanCodebase` directly from `@/analyze`; this must remain unchanged. The spec explicitly says grounder is out of scope.\n\n## Existing Patterns to Follow\n\n- `discoverWorkspacePackages` is already called in `plan-runtime.ts`; it returns `string[]` of relative paths\n- `detectLanguage(packageDir)` in `src/project/detector.ts` returns a language string or undefined\n- `detectTestFramework(packageDir)` in `src/test-runners/detect/framework.ts` (check actual export path via test-runners barrel)\n- Integration test patterns: `test/integration/plan/analyze-scanner.test.ts` — use real temp dirs with fixture files\n- Unit test patterns: mock `discoverWorkspacePackages` and `detectLanguage` calls via `_deps` injection if possible, or test with real temp dirs\n- The `_planDeps` pattern: `plan-runtime.ts` uses a mutable exported object; tests override fields with mock implementations"
+}
