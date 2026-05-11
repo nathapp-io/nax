@@ -128,13 +128,22 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
   });
 
   test("propagates built-in failure when pluginMode is deferred", async () => {
-    // Built-in failure: simulate dirty working tree (triggers runner failure)
-    _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
+    // Built-in failure: semantic review fails. Dirty files are no longer a hard
+    // failure (warn-and-continue), so we use a mocked semantic failure to verify
+    // that deferred mode still propagates built-in outcomes without invoking plugins.
     const registry = makeRegistry([makeReviewer("semgrep")]);
     const orchestrator = new ReviewOrchestrator();
+    _reviewSemanticDeps.runSemanticReview = mock(async () => ({
+      check: "semantic" as const,
+      success: false,
+      command: "semantic-review",
+      exitCode: 1,
+      output: "findings: critical issue",
+      durationMs: 100,
+    }));
 
     const result = await orchestrator.review({
-      reviewConfig: makeReviewConfig("deferred"),
+      reviewConfig: { enabled: true, checks: ["semantic"], commands: {}, pluginMode: "deferred", gateLLMChecksOnMechanicalPass: false } as unknown as Parameters<ReviewOrchestrator["review"]>[0]["reviewConfig"],
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
       plugins: registry,

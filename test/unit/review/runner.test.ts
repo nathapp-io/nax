@@ -50,35 +50,38 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
   });
 
   describe("dirty working tree", () => {
-    test("returns failure with uncommitted files listed in failureReason", async () => {
+    test("logs warning but does not fail review when dirty files are found", async () => {
+      // autoCommitIfDirty is the primary guard. Any remaining dirty files after
+      // auto-commit produce a warning but review continues — escalation cannot fix
+      // structural commit-scope gaps (e.g. monorepo root package.json after bun add).
       _deps.getUncommittedFiles = mock(async (_workdir: string) => [
         "src/types.ts",
         "src/routing.ts",
       ]);
 
-      const result = await runReview({ config: typecheckConfig, workdir: "/tmp/fake-workdir" });
+      const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
-      expect(result.success).toBe(false);
-      expect(result.failureReason).toBeDefined();
-      expect(result.failureReason).toContain("src/types.ts");
-      expect(result.failureReason).toContain("src/routing.ts");
+      // Review proceeds — no early failure due to dirty files.
+      expect(result.success).toBe(true);
+      // No git-clean synthetic check is added to the checks array.
+      expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
     });
 
-    test("does not run typecheck when working tree is dirty", async () => {
+    test("proceeds to run configured checks even when working tree is dirty", async () => {
       _deps.getUncommittedFiles = mock(async (_workdir: string) => ["src/types.ts"]);
 
-      // Early return with a single git-clean failed check — typecheck is never executed.
-      const result = await runReview({ config: typecheckConfig, workdir: "/tmp/fake-workdir" });
+      // With noChecksConfig no checks run, so result succeeds regardless of dirty files.
+      const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
-      expect(result.checks).toHaveLength(1);
-      expect(result.checks[0]).toMatchObject({ check: "git-clean", success: false });
+      expect(result.success).toBe(true);
+      expect(result.checks).toHaveLength(0);
     });
 
     test("calls getUncommittedFiles with the provided workdir", async () => {
       const mockFn = mock(async (_workdir: string) => ["src/types.ts"]);
       _deps.getUncommittedFiles = mockFn;
 
-      await runReview({ config: typecheckConfig, workdir: "/tmp/my-project" });
+      await runReview({ config: noChecksConfig, workdir: "/tmp/my-project" });
 
       expect(mockFn).toHaveBeenCalledWith("/tmp/my-project");
     });
@@ -236,15 +239,16 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(true);
   });
 
-  test("agent source files are still caught by uncommitted check", async () => {
+  test("agent source files trigger a warning but review still proceeds", async () => {
+    // Dirty agent files produce a warning; review is not failed/escalated since
+    // escalation cannot fix structural commit-scope gaps in auto-commit.
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       ".nax/status.json",
       "src/config/types.ts",
     ]);
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(false);
-    expect(result.failureReason).toContain("src/config/types.ts");
-    expect(result.failureReason).not.toContain(".nax/status.json");
+    expect(result.success).toBe(true);
+    expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
   });
 
   test("test-output .jsonl files under test/ are excluded from uncommitted check", async () => {
@@ -267,19 +271,20 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(true);
   });
 
-  test("test artifact mixed with real file — real file still triggers failure", async () => {
+  test("test artifact mixed with real file — real file triggers warning, test artifact is excluded", async () => {
+    // The nax-ignore filtering still applies: test artifacts are filtered out of
+    // the warning; real agent files remain in the warning. Review proceeds either way.
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       "test/unit/runtime/middleware/test-logging-sub-abc123.jsonl",
       "src/real.ts",
     ]);
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(false);
-    expect(result.checks[0]?.output).toContain("src/real.ts");
-    expect(result.checks[0]?.output).not.toContain("test-logging-sub");
+    expect(result.success).toBe(true);
+    expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
   });
 });
 
-describe("runReview — git-clean named check (2C)", () => {
+describe("runReview — git-clean warn-and-continue (2C)", () => {
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
 
   beforeEach(() => {
@@ -291,28 +296,24 @@ describe("runReview — git-clean named check (2C)", () => {
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
   });
 
-  test("uncommitted changes return a named git-clean failed check", async () => {
+  test("uncommitted changes do not produce a git-clean check entry in results", async () => {
+    // Dirty files are logged as a warning; no synthetic git-clean check is added
+    // to result.checks so downstream consumers see only real check outcomes.
     _deps.getUncommittedFiles = mock(async (_workdir: string) => ["src/foo.ts"]);
 
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
-    expect(result.success).toBe(false);
-    expect(result.checks).toHaveLength(1);
-    expect(result.checks[0]).toMatchObject({
-      check: "git-clean",
-      success: false,
-      command: "git diff --name-only HEAD",
-      exitCode: 1,
-    });
-    expect(result.checks[0]?.output).toContain("src/foo.ts");
+    expect(result.success).toBe(true);
+    expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
   });
 
-  test("git-clean check has no findings field (non-LLM check)", async () => {
+  test("review succeeds with no checks configured even when dirty files exist", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => ["src/foo.ts"]);
 
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
 
-    expect((result.checks[0] as any).findings).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(0);
   });
 });
 
