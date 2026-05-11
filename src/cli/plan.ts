@@ -18,7 +18,7 @@ import { callOp, planInteractiveOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
-import { buildCodebaseContext, buildPackageSummary } from "./plan-helpers";
+import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
@@ -92,14 +92,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   logger?.info("plan", "Reading spec", { from: options.from });
   const specContent = await _planDeps.readFile(options.from);
 
-  // Scan codebase for context
-  logger?.info("plan", "Scanning codebase...");
-  const [scan, discoveredPackages, pkg] = await Promise.all([
-    _planDeps.scanCodebase(workdir),
+  // Scan source roots for context
+  logger?.info("plan", "Scanning source roots...");
+  const [sourceRoots, discoveredPackages, pkg] = await Promise.all([
+    _planDeps.scanSourceRoots(workdir),
     _planDeps.discoverWorkspacePackages(workdir),
     _planDeps.readPackageJson(workdir),
   ]);
-  const codebaseContext = buildCodebaseContext(scan);
+  const codebaseContext = buildSourceRootsSection(sourceRoots);
 
   // Normalize to repo-relative paths (discoverWorkspacePackages returns relative,
   // but mocks/legacy callers may return absolute — strip workdir prefix if present)

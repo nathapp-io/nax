@@ -197,8 +197,8 @@ ${outputDirective}`;
 
 /**
  * Build the file-read instruction block for the plan prompt.
- * When fileReadAccess is true, grants file-read permission and removes the
- * "file names only" restriction. Otherwise emits the default restriction.
+ * When fileReadAccess is true, grants file-read permission with tool-access text.
+ * Otherwise emits an empty string (tool access is already granted via the Source Roots section).
  */
 function buildFileReadInstruction(proposers?: { fileReadAccess?: boolean; fileReadBudget?: number }): string {
   if (proposers?.fileReadAccess === true) {
@@ -206,7 +206,7 @@ function buildFileReadInstruction(proposers?: { fileReadAccess?: boolean; fileRe
       proposers.fileReadBudget !== undefined ? ` You have up to ${proposers.fileReadBudget} file reads.` : "";
     return `**File Read Permission:** You may use file-read tools to verify spec claims against actual code.${budgetClause} Cite the resulting factId from the manifest, or include a verbatim excerpt with path:line-range for any claim derived from a file you read directly.`;
   }
-  return "**Important:** The codebase context below contains file names and structure only — no file content. Do NOT assert specific line numbers. The implementer will read the actual files via contextFiles.";
+  return "";
 }
 
 /**

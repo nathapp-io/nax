@@ -9,8 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { IAgentManager } from "../agents";
-import { scanCodebase } from "../analyze/scanner";
-import type { CodebaseScan } from "../analyze/types";
+import { scanSourceRoots } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { discoverWorkspacePackages } from "../context/generator";
@@ -60,7 +59,7 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
 export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
-  scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
+  scanSourceRoots: (workdir: string) => scanSourceRoots(workdir),
   createRuntime: (cfg: NaxConfig, wd: string, featureName: string) => createRuntime(cfg, wd, { featureName }),
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))

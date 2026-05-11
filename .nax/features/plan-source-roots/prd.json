@@ -3,7 +3,7 @@
   "feature": "plan-source-roots",
   "branchName": "feat/plan-source-roots",
   "createdAt": "2026-05-11T00:00:00.000Z",
-  "updatedAt": "2026-05-11T11:06:30.693Z",
+  "updatedAt": "2026-05-11T11:32:36.764Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,8 +28,8 @@
         "planning"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -94,7 +94,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/plan-helpers.ts",
@@ -112,7 +114,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ba781dd54c8ce9e7df70824e8cd43105b6d96822"
     }
   ],
   "analysis": "This is a prompt-input substitution that replaces the static file-tree section in the nax plan prompt with a lightweight Source Roots section.\n\n## Files Modified\n\n**US-001 (pure addition):**\n- `src/analyze/types.ts` — add `SourceRoot` interface alongside existing `CodebaseScan`\n- `src/analyze/scanner.ts` — add `scanSourceRoots(workdir)` export; leave `scanCodebase` intact (grounder still uses it)\n- `src/analyze/index.ts` — re-export `SourceRoot` type and `scanSourceRoots` from barrel\n- New tests in `test/unit/analyze/` (mirroring `test/integration/plan/analyze-scanner.test.ts` patterns)\n\n**US-002 (wiring):**\n- `src/cli/plan-helpers.ts` — add `buildSourceRootsSection(roots: SourceRoot[])`; delete `buildCodebaseContext` (both callers migrate away)\n- `src/cli/plan-runtime.ts` — replace `scanCodebase` entry in `_planDeps` with `scanSourceRoots`; remove `scanCodebase` import\n- `src/cli/plan.ts` — replace `_planDeps.scanCodebase()` + `buildCodebaseContext()` call with `_planDeps.scanSourceRoots()` + `buildSourceRootsSection()`; drop the `buildCodebaseContext` import\n- `src/cli/plan-decompose.ts` — same substitution on the `scanCodebase` call at line ~63\n- `src/prompts/builders/plan-builder.ts` — revise `buildFileReadInstruction` default branch and the `taskContext` body to remove 'file names and structure only' language and reference the Source Roots section header instead\n\n## Key Dependencies\n\n- `discoverWorkspacePackages` lives in `src/context/generator.ts` (re-exported) — already imported in `plan-runtime.ts` for the monorepo package list; `scanSourceRoots` will call the same import\n- `detectLanguage` and `detectTestFramework` live in `src/project/detector.ts` — new import in `scanner.ts`\n- `buildPackageSummary` lives in `src/cli/plan-helpers.ts` — `scanSourceRoots` in `scanner.ts` must NOT import from `cli/`; instead the algorithm replicates the framework/testRunner extraction inline or accepts a resolver callback. The spec says reuse `buildPackageSummary` — but `scanner.ts` is in `src/analyze/`, not `src/cli/`. Resolution: move the framework/test-runner inference patterns (`FRAMEWORK_PATTERNS`, `TEST_RUNNER_PATTERNS`) to `src/analyze/scanner.ts` or a shared utility, OR import `buildPackageSummary` from `src/cli/plan-helpers` into `scanner.ts` (layering concern — cli/ should not be imported from analyze/). Best approach: duplicate the two-pattern-lookup locally in `scanner.ts` for framework/testRunner, since `buildPackageSummary` returns a `PackageSummary` with extra fields not needed by `SourceRoot`. Alternatively extract the patterns to `src/analyze/` or `src/utils/`. The implementer should pick the cleanest option that doesn't violate barrel/layering rules.\n\n## Risks\n\n1. **Import layering**: `src/analyze/scanner.ts` must not import from `src/cli/`. If reusing FRAMEWORK_PATTERNS/TEST_RUNNER_PATTERNS, they need to be in a shared location accessible from analyze/.\n2. **`_planDeps` shape change**: Tests that mock `_planDeps.scanCodebase` must be updated to mock `scanSourceRoots` instead. Three test files affected: `test/unit/cli/plan.test.ts`, `test/unit/cli/plan-callop.test.ts`, `test/unit/cli/plan-interactive.test.ts`.\n3. **`buildCodebaseContext` deletion**: `plan-decompose.ts` imports it; both callers must migrate before deletion.\n4. **`plan-builder.ts` taskContext string**: The `buildFileReadInstruction` function's default (non-fileReadAccess) branch currently returns the 'file names and structure only' restriction. Changing this default affects only the non-debate, non-grounding path — the `proposers.fileReadAccess: true` path is unchanged.\n5. **Grounder path**: `src/debate/pre-phase/grounder.ts` imports `scanCodebase` directly from `@/analyze`; this must remain unchanged. The spec explicitly says grounder is out of scope.\n\n## Existing Patterns to Follow\n\n- `discoverWorkspacePackages` is already called in `plan-runtime.ts`; it returns `string[]` of relative paths\n- `detectLanguage(packageDir)` in `src/project/detector.ts` returns a language string or undefined\n- `detectTestFramework(packageDir)` in `src/test-runners/detect/framework.ts` (check actual export path via test-runners barrel)\n- Integration test patterns: `test/integration/plan/analyze-scanner.test.ts` — use real temp dirs with fixture files\n- Unit test patterns: mock `discoverWorkspacePackages` and `detectLanguage` calls via `_deps` injection if possible, or test with real temp dirs\n- The `_planDeps` pattern: `plan-runtime.ts` uses a mutable exported object; tests override fields with mock implementations"

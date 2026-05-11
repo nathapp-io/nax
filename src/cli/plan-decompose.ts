@@ -17,7 +17,7 @@ import { getLogger } from "../logger";
 import { callOp, decomposeOp } from "../operations";
 import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
-import { buildCodebaseContext } from "./plan-helpers";
+import { buildSourceRootsSection } from "./plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
 
 /**
@@ -60,8 +60,8 @@ export async function planDecomposeCommand(
     });
   }
 
-  const scan = await _planDeps.scanCodebase(workdir);
-  const codebaseContext = buildCodebaseContext(scan);
+  const sourceRoots = await _planDeps.scanSourceRoots(workdir);
+  const codebaseContext = buildSourceRootsSection(sourceRoots);
 
   const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
 

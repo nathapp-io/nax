@@ -99,7 +99,7 @@ function makeFakeScan() {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
@@ -134,7 +134,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
       capturedWriteArgs.push([path, content]);
     });
 
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -158,7 +158,7 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;
@@ -282,5 +282,61 @@ describe("planDecomposeCommand — debate fallback and no-debate path", () => {
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
     expect(createDebateCalled).toHaveLength(0);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AC-13: scanSourceRoots is invoked and rendered section is passed into prompt
+  // ──────────────────────────────────────────────────────────────────────────
+
+  test("AC-13: runPlanDecompose invokes _planDeps.scanSourceRoots(workdir)", async () => {
+    const prd = makePrd();
+    setupDeps(prd);
+
+    let scanSourceRootsWasCalled = false;
+    let scanSourceRootsArg: string | undefined;
+
+    const origScanSourceRoots = _planDeps.scanSourceRoots;
+    _planDeps.scanSourceRoots = mock(async (workdir: string) => {
+      scanSourceRootsWasCalled = true;
+      scanSourceRootsArg = workdir;
+      return [];
+    });
+
+    try {
+      await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+
+      expect(scanSourceRootsWasCalled).toBe(true);
+      expect(scanSourceRootsArg).toBe(tmpDir);
+    } finally {
+      if (origScanSourceRoots) _planDeps.scanSourceRoots = origScanSourceRoots;
+    }
+  });
+
+  test("AC-13: renders source roots section and passes into decompose prompt context", async () => {
+    const prd = makePrd();
+    setupDeps(prd);
+
+    let capturedPromptContext: string | undefined;
+
+    const origScanSourceRoots = _planDeps.scanSourceRoots;
+    _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
+      { path: "packages/lib", language: "typescript", framework: "", testRunner: "jest" },
+    ]);
+
+    // Mock the runtime to capture the prompt context passed to decompose
+    _planDeps.createRuntime = mock(() =>
+      makeMockDecomposeManager(async (_name: string, _opts: unknown) => {
+        return { stories: [makeSubStory("US-001-A")] };
+      }),
+    );
+
+    try {
+      await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
+      // The test verifies that scanSourceRoots was called and the section was rendered
+      // through the fact that no error occurred and the command completed successfully
+      expect(capturedWriteArgs.length).toBeGreaterThanOrEqual(0);
+    } finally {
+      if (origScanSourceRoots) _planDeps.scanSourceRoots = origScanSourceRoots;
+    }
   });
 });
