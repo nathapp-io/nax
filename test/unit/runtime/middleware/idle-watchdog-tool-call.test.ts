@@ -7,6 +7,20 @@ import { cleanupTempDir, makeTempDir, makeNaxConfig, waitForCondition } from "@t
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function emitToolCallUpdatesForDuration(
+  eventBus: AgentStreamEventBus,
+  durationMs: number,
+  intervalMs = 25,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < durationMs) {
+    eventBus.emitAgentStream(makeToolCallUpdateEvent());
+    await sleep(intervalMs);
+  }
+  // Keep the final activity timestamp fresh for immediate post-loop assertions.
+  eventBus.emitAgentStream(makeToolCallUpdateEvent());
+}
+
 type ActivityKind = "message_update" | "thinking_update" | "usage_update" | "tool_call_update";
 
 function makeWatchdogConfig(overrides: {
@@ -108,22 +122,15 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
-      makeWatchdogConfig({ idleTimeoutSeconds: 0.15, toolCallOnlyIdleTimeoutSeconds: 0.25 }),
+      makeWatchdogConfig({ idleTimeoutSeconds: 0.25, toolCallOnlyIdleTimeoutSeconds: 0.7 }),
     );
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 100) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      // Emit one final event to guarantee the idle timer is fresh before the
-      // synchronous assertion — eliminates the race between the last loop event
-      // and the tick that fires after the post-loop sleep.
-      eventBus.emitAgentStream(makeToolCallUpdateEvent());
+      await emitToolCallUpdatesForDuration(eventBus, 220, 30);
 
       expect(cancelCount).toBe(0);
+      await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "idle_timeout_exceeded")).toBe(false);
     } finally {
@@ -146,14 +153,11 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 170) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      await waitForCondition(() => cancelCount === 1, 500);
+      await emitToolCallUpdatesForDuration(eventBus, 220, 25);
+      await waitForCondition(() => cancelCount === 1, 1_000, 10);
 
       expect(cancelCount).toBe(1);
+      await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(true);
       expect(entries.some((entry) => entry.data?.key === "idle_timeout_exceeded")).toBe(false);
@@ -177,27 +181,18 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       eventBus,
       registry,
       makeWatchdogConfig({
-        idleTimeoutSeconds: 0.2,
-        toolCallOnlyIdleTimeoutSeconds: 0.6,
+        idleTimeoutSeconds: 0.25,
+        toolCallOnlyIdleTimeoutSeconds: 0.8,
       }),
     );
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const firstWindowStart = Date.now();
-      while (Date.now() - firstWindowStart < 60) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
+      await emitToolCallUpdatesForDuration(eventBus, 220, 30);
 
       eventBus.emitAgentStream(makeThinkingUpdateEvent());
 
-      const secondWindowStart = Date.now();
-      while (Date.now() - secondWindowStart < 60) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      eventBus.emitAgentStream(makeToolCallUpdateEvent());
+      await emitToolCallUpdatesForDuration(eventBus, 220, 30);
 
       expect(cancelCount).toBe(0);
     } finally {
@@ -224,14 +219,11 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 90) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      await waitForCondition(() => cancelCount === 1, 500);
+      await emitToolCallUpdatesForDuration(eventBus, 220, 30);
+      await waitForCondition(() => cancelCount === 1, 1_000, 10);
 
       expect(cancelCount).toBe(1);
+      await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "idle_timeout_exceeded")).toBe(true);
     } finally {
@@ -253,19 +245,15 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
     const detach = attachAgentIdleWatchdog(
       eventBus,
       registry,
-      makeWatchdogConfig({ idleTimeoutSeconds: 0.2, toolCallOnlyIdleTimeoutSeconds: 0 }),
+      makeWatchdogConfig({ idleTimeoutSeconds: 0.35, toolCallOnlyIdleTimeoutSeconds: 0 }),
     );
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 170) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      eventBus.emitAgentStream(makeToolCallUpdateEvent());
+      await emitToolCallUpdatesForDuration(eventBus, 260, 30);
 
       expect(cancelCount).toBe(0);
+      await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);
     } finally {
@@ -288,21 +276,17 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
       eventBus,
       registry,
       makeWatchdogConfig({
-        idleTimeoutSeconds: 0.12,
-        toolCallOnlyIdleTimeoutSeconds: 0.08,
+        idleTimeoutSeconds: 0.3,
+        toolCallOnlyIdleTimeoutSeconds: 0.2,
       }),
     );
 
     try {
       eventBus.emitAgentStream(makeCallStartedEvent());
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 70) {
-        eventBus.emitAgentStream(makeToolCallUpdateEvent());
-        await sleep(15);
-      }
-      eventBus.emitAgentStream(makeToolCallUpdateEvent());
+      await emitToolCallUpdatesForDuration(eventBus, 180, 30);
 
       expect(cancelCount).toBe(0);
+      await getLogger().flush();
       const entries = await parseAllEntries(logFile);
       expect(entries.some((entry) => entry.data?.key === "tool_call_only_idle_timeout_exceeded")).toBe(false);
     } finally {
