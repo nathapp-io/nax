@@ -309,23 +309,15 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
   // Pass workdir as packageDir so per-package .naxignore rules apply in monorepos.
   const uncommittedFiles = naxIgnoreIndex ? naxIgnoreIndex.filter(afterRuntimeFilter, workdir) : afterRuntimeFilter;
   if (uncommittedFiles.length > 0) {
+    // Warn but continue — autoCommitIfDirty already ran above as the primary guard.
+    // Any files still dirty here are either infra artifacts or edge cases (e.g. a
+    // cross-package file the add missed). Escalation cannot fix structural commit-scope
+    // gaps and only wastes tokens, so we proceed with the review on what IS committed.
     const fileList = uncommittedFiles.join(", ");
-    logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
-    return {
-      success: false,
-      checks: [
-        {
-          check: "git-clean",
-          success: false,
-          command: "git diff --name-only HEAD",
-          exitCode: 1,
-          output: uncommittedFiles.join("\n"),
-          durationMs: 0,
-        },
-      ],
-      totalDurationMs: Date.now() - startTime,
-      failureReason: `Working tree has uncommitted changes:\n${uncommittedFiles.map((f) => `  - ${f}`).join("\n")}\n\nStage and commit these files before running review.`,
-    };
+    logger?.warn("review", `Uncommitted changes detected before review (proceeding): ${fileList}`, {
+      storyId,
+      uncommittedCount: uncommittedFiles.length,
+    });
   }
 
   for (const checkName of config.checks) {

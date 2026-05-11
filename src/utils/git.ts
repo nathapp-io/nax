@@ -274,11 +274,11 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
       dirtyFiles: statusOutput.trim().split("\n").length,
     });
 
-    // Use "git add ." when workdir is a monorepo package subdir — only stages files under
-    // that package, preventing accidental cross-package commits.
-    // Use "git add -A" at repo root to capture renames/deletions across the full tree.
-    const addArgs = isSubdir ? ["git", "add", "."] : ["git", "add", "-A"];
-    const addProc = _gitDeps.spawn(addArgs, { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    // Always stage from gitRoot with -A so that agent changes outside packageDir
+    // (e.g. monorepo root package.json after `bun add`) are captured. Using
+    // "git add . from workdir" misses those files, leaving them permanently dirty
+    // and causing false-positive escalations in the review dirty-file check.
+    const addProc = _gitDeps.spawn(["git", "add", "-A"], { cwd: realGitRoot, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
 
     const commitProc = _gitDeps.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
