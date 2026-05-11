@@ -149,7 +149,11 @@ describe("US-001: Schema extensions", () => {
       },
     };
 
-    expect(() => DebateConfigSchema.parse(invalidConfig)).toThrow(z.ZodError);
+    // Non-plan stages don't include evidenceMode in their schema, so Zod strips
+    // the unknown field silently — verifying it is absent confirms rejection.
+    const parsed = DebateConfigSchema.parse(invalidConfig);
+    const review = parsed.stages.review as Record<string, unknown>;
+    expect(review.evidenceMode).toBeUndefined();
   });
 
   // AC-4: validatePlanOutput accepts legacy PRD without citation fields
@@ -166,6 +170,7 @@ describe("US-001: Schema extensions", () => {
           title: "Test story",
           description: "A test story",
           acceptanceCriteria: ["AC 1", "AC 2"],
+          routing: { complexity: "medium" },
           tags: [],
           dependencies: [],
           status: "pending",
@@ -180,10 +185,13 @@ describe("US-001: Schema extensions", () => {
     const result = validatePlanOutput(legacyPrd, "test-feature", "main");
     expect(result.userStories).toHaveLength(1);
     expect(result.userStories[0].id).toBe("US-001");
+    expect(result.userStories[0].verifiedBy).toBeUndefined();
   });
 
   // AC-5: validatePlanOutput preserves citation fields when present
   test("AC-5: validatePlanOutput preserves verifiedBy, intent, and contextFiles[].factId fields", () => {
+    // verifiedBy is a story-level field (validated at s.verifiedBy in validateStory).
+    // acceptanceCriteria must be plain strings; verifiedBy sits alongside it on the story.
     const prdWithCitations = {
       project: "test",
       feature: "test-feature",
@@ -195,16 +203,14 @@ describe("US-001: Schema extensions", () => {
           id: "US-001",
           title: "Test story",
           description: "A test story",
-          acceptanceCriteria: [
-            {
-              text: "Spec requirement",
-              verifiedBy: {
-                kind: "test",
-                anchor: "test-file.ts",
-                factIds: ["F-001"],
-              },
-            },
-          ],
+          acceptanceCriteria: ["Spec requirement"],
+          routing: { complexity: "medium" },
+          verifiedBy: {
+            kind: "test",
+            anchor: "test-file.ts",
+            factIds: ["F-001"],
+          },
+          intent: true,
           tags: [],
           dependencies: [],
           status: "pending",
@@ -222,11 +228,12 @@ describe("US-001: Schema extensions", () => {
     };
 
     const result = validatePlanOutput(prdWithCitations, "test-feature", "main");
-    const ac = result.userStories[0].acceptanceCriteria[0] as Record<string, unknown>;
-    expect(ac.verifiedBy).toBeDefined();
-    if (typeof ac.verifiedBy === "object" && ac.verifiedBy !== null) {
-      expect((ac.verifiedBy as Record<string, unknown>).kind).toBe("test");
-    }
+    const story = result.userStories[0];
+    expect(story.verifiedBy).toBeDefined();
+    expect(story.verifiedBy?.kind).toBe("test");
+    expect(story.intent).toBe(true);
+    const cf = story.contextFiles?.[0];
+    expect(typeof cf === "object" && cf !== null && "factId" in cf ? cf.factId : undefined).toBe("F-001");
   });
 
   // AC-6: validatePlanOutput validates verifiedBy.kind enum
@@ -280,16 +287,13 @@ describe("US-001: Schema extensions", () => {
             id: `US-${kind}`,
             title: "Test story",
             description: "A test story",
-            acceptanceCriteria: [
-              {
-                text: "Spec requirement",
-                verifiedBy: {
-                  kind,
-                  anchor: "file.ts",
-                  factIds: ["F-001"],
-                },
-              },
-            ],
+            acceptanceCriteria: ["Spec requirement"],
+            routing: { complexity: "medium" },
+            verifiedBy: {
+              kind,
+              anchor: "file.ts",
+              factIds: ["F-001"],
+            },
             tags: [],
             dependencies: [],
             status: "pending",
@@ -302,6 +306,7 @@ describe("US-001: Schema extensions", () => {
 
       const result = validatePlanOutput(prd, "test-feature", "main");
       expect(result.userStories).toHaveLength(1);
+      expect(result.userStories[0].verifiedBy?.kind).toBe(kind);
     }
   });
 });
