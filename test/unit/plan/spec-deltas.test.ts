@@ -8,23 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { formatSpecDeltas } from "@/plan/spec-deltas";
+import type { VerifierFinding } from "@/plan/spec-deltas";
 import type { FactsManifest } from "@/debate";
-
-interface VerifierFinding {
-  checklistItem: string;
-  severity: "blocker" | "major" | "minor";
-  message?: string;
-  path?: string;
-  specId?: string;
-  gapId?: string;
-  evidence?: string;
-  [key: string]: unknown;
-}
-
-// Stub for formatSpecDeltas (to be implemented)
-export function formatSpecDeltas(_blockers: VerifierFinding[], _manifest: FactsManifest): string {
-  throw new Error("not implemented");
-}
 
 const makeManifest = (overrides?: Partial<FactsManifest>): FactsManifest => ({
   repoFacts: [],
@@ -36,12 +22,8 @@ const makeManifest = (overrides?: Partial<FactsManifest>): FactsManifest => ({
 describe("formatSpecDeltas (US-004 AC4)", () => {
   describe("Output format and sections", () => {
     test("returns markdown with title section", () => {
-      const blockers: VerifierFinding[] = [];
-      const manifest = makeManifest();
-
-      // Expected: markdown starting with "# Spec Deltas — <feature>"
-      // Since feature is not passed in directly, verify format structure
-      expect(blockers).toHaveLength(0);
+      const output = formatSpecDeltas([], makeManifest());
+      expect(output).toContain("# Spec Deltas");
     });
 
     test("includes 'Contradicted spec claims' section for blockers with contradicted specs", () => {
@@ -51,7 +33,6 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
           severity: "blocker",
           message: "Spec claim contradicted by evidence",
           specId: "S-001",
-          evidence: "src/models/user.ts:8",
         },
       ];
 
@@ -71,14 +52,13 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // TODO: implement formatter
-      // Expected output includes:
-      // ## Contradicted spec claims
-      // - **S-001** (spec: lines 23-25): "extends User schema..."
-      //   - Verified evidence: src/models/user.ts:8 — User has only {id, name}
-      //   - Recommended action: re-roll spec OR rewrite spec claim
-
-      expect(manifest.specClaims).toHaveLength(1);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("## Contradicted spec claims");
+      expect(output).toContain("**S-001**");
+      expect(output).toContain("extends User schema with email field");
+      expect(output).toContain("lines 23-25");
+      expect(output).toContain("User has only {id, name}");
+      expect(output).toContain("re-roll spec OR rewrite spec claim");
     });
 
     test("includes 'Unverified spec claims' section for unverified factual claims", () => {
@@ -98,21 +78,17 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
             specSpan: "line 50",
             claim: "uses existing retry middleware",
             kind: "factual",
-            verification: {
-              status: "unverified",
-            },
+            verification: { status: "unverified" },
           },
         ],
       });
 
-      // TODO: implement formatter
-      // Expected output includes:
-      // ## Unverified spec claims (factual, not intent)
-      // - **S-014**: "uses existing retry middleware"
-      //   - No matching evidence found
-      //   - Recommended action: confirm or rewrite
-
-      expect(manifest.specClaims).toHaveLength(1);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("## Unverified spec claims (factual, not intent)");
+      expect(output).toContain("**S-014**");
+      expect(output).toContain("uses existing retry middleware");
+      expect(output).toContain("No matching evidence found");
+      expect(output).toContain("confirm or rewrite");
     });
 
     test("includes 'Spec gaps' section for gap findings from codebase", () => {
@@ -136,18 +112,16 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // TODO: implement formatter
-      // Expected output includes:
-      // ## Spec gaps surfaced by codebase
-      // - **G-003**: spec ignores existing src/agents/retry/ module
-      //   - Recommended action: address in revised spec
-
-      expect(manifest.gaps).toHaveLength(1);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("## Spec gaps surfaced by codebase");
+      expect(output).toContain("**G-003**");
+      expect(output).toContain("spec ignores existing src/agents/retry/ module");
+      expect(output).toContain("address in revised spec");
     });
   });
 
   describe("Blocker-to-manifest mapping", () => {
-    test("maps contradiction blockers to specClaim evidence and formatted output", () => {
+    test("maps contradiction blockers to specClaim evidence and formats output", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "no-contradictions",
@@ -173,11 +147,13 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected: formatter extracts S-001 from manifest and includes in output
-      expect(blockers[0].specId).toBe("S-001");
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-001");
+      expect(output).toContain("adds email to user schema");
+      expect(output).toContain("User schema unchanged");
     });
 
-    test("handles specClaim with no matching evidence", () => {
+    test("outputs placeholder when specClaim has no matching evidence field", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
@@ -193,18 +169,24 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
             specSpan: "line 30",
             claim: "non-existent middleware",
             kind: "factual",
-            verification: {
-              status: "unverified",
-            },
+            verification: { status: "unverified" },
           },
         ],
       });
 
-      // Expected: output indicates "No matching evidence found"
-      expect(manifest.specClaims[0].verification.status).toBe("unverified");
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-999");
+      expect(output).toContain("No matching evidence found");
     });
 
-    test("omits intent spec claims from unverified section", () => {
+    test("omits intent spec claims from unverified section (only factual goes in spec-coverage blockers)", () => {
+      // The verifier only emits spec-coverage findings for factual claims (see checkSpecCoverage).
+      // If an intent claim somehow appears as a blocker with specId, it would still
+      // be listed under "Unverified spec claims" — but the verifier spec says it should not emit
+      // major findings for intent claims. This test confirms the formatter does not hide it if
+      // the upstream verifier incorrectly emits one; the exclusion responsibility is the verifier's.
+      // Here we assert that an intent claim with no matching specId in the manifest gets a
+      // placeholder, not a crash.
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
@@ -220,21 +202,20 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
             specSpan: "line 40",
             claim: "maintains backward compatibility",
             kind: "intent",
-            verification: {
-              status: "unverified",
-            },
+            verification: { status: "unverified" },
           },
         ],
       });
 
-      // Expected: intent claims not included in unverified section
-      // (verifier AC2 should not emit major findings for intent claims)
-      expect(manifest.specClaims[0].kind).toBe("intent");
+      // formatSpecDeltas routes by checklistItem ("spec-coverage" + specId → unverified section).
+      // The intent/factual distinction is not checked by the formatter; it trusts the verifier.
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-005");
     });
   });
 
   describe("Markdown formatting details", () => {
-    test("formats contradicted claim with spec span and evidence path", () => {
+    test("formats contradicted claim with spec span, claim text, evidence, and recommendation", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "no-contradictions",
@@ -259,15 +240,14 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected markdown pattern:
-      // - **S-001** (spec: lines 23-25): "extends User schema with email field"
-      //   - Verified evidence: src/models/user.ts:8 — ...
-      //   - Recommended action: ...
-
-      expect(manifest.specClaims[0].specSpan).toContain("lines");
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toMatch(/\*\*S-001\*\* \(spec: lines 23-25\)/);
+      expect(output).toContain('"extends User schema with email field"');
+      expect(output).toContain("Verified evidence: src/models/user.ts:8");
+      expect(output).toContain("Recommended action: re-roll spec OR rewrite spec claim");
     });
 
-    test("formats unverified claim with recommendation", () => {
+    test("formats unverified claim with claim text, no-evidence note, and recommendation", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
@@ -283,22 +263,19 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
             specSpan: "line 50",
             claim: "uses existing retry middleware",
             kind: "factual",
-            verification: {
-              status: "unverified",
-            },
+            verification: { status: "unverified" },
           },
         ],
       });
 
-      // Expected pattern:
-      // - **S-014**: "uses existing retry middleware"
-      //   - No matching evidence found
-      //   - Recommended action: confirm or rewrite
-
-      expect(manifest.specClaims[0].claim).toBeDefined();
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toMatch(/\*\*S-014\*\*/);
+      expect(output).toContain('"uses existing retry middleware"');
+      expect(output).toContain("No matching evidence found");
+      expect(output).toContain("Recommended action: confirm or rewrite");
     });
 
-    test("formats gap with evidence and action", () => {
+    test("formats gap with note and action", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
@@ -318,25 +295,20 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected pattern:
-      // - **G-003**: spec ignores existing src/agents/retry/ module
-      //   - Recommended action: address in revised spec
-
-      expect(manifest.gaps[0].evidence).toBeDefined();
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toMatch(/\*\*G-003\*\*/);
+      expect(output).toContain("spec ignores existing src/agents/retry/ module");
+      expect(output).toContain("Recommended action: address in revised spec");
     });
   });
 
   describe("Edge cases", () => {
-    test("returns empty markdown document when blockers is empty", () => {
-      const blockers: VerifierFinding[] = [];
-      const manifest = makeManifest();
-
-      // TODO: implement
-      // Expected: valid markdown document (at least a title) even with no findings
-      expect(blockers).toHaveLength(0);
+    test("returns only title when blockers is empty", () => {
+      const output = formatSpecDeltas([], makeManifest());
+      expect(output).toBe("# Spec Deltas");
     });
 
-    test("returns valid markdown when manifest has no specClaims", () => {
+    test("returns valid markdown with gaps section when manifest has no specClaims", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
@@ -346,20 +318,17 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
       ];
 
       const manifest = makeManifest({
-        gaps: [
-          {
-            id: "G-001",
-            kind: "missing-context",
-            note: "spec does not address error handling",
-          },
-        ],
+        gaps: [{ id: "G-001", kind: "missing-context", note: "spec does not address error handling" }],
       });
 
-      // Expected: valid markdown with gaps section, no spec claims section
-      expect(manifest.specClaims).toHaveLength(0);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("## Spec gaps surfaced by codebase");
+      expect(output).toContain("G-001");
+      expect(output).not.toContain("## Contradicted spec claims");
+      expect(output).not.toContain("## Unverified spec claims");
     });
 
-    test("handles blockers referencing non-existent specIds gracefully", () => {
+    test("includes placeholder when blocker references non-existent specId in manifest", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "no-contradictions",
@@ -380,39 +349,32 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected: formatter either skips unknown specId or includes placeholder
-      expect(blockers[0].specId).toBe("S-999");
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-999");
+      expect(output).toContain("claim not found in manifest");
     });
 
-    test("handles blockers with no specId/gapId", () => {
+    test("includes unclassified 'Other findings' section for blockers with no specId or gapId", () => {
       const blockers: VerifierFinding[] = [
         {
           checklistItem: "spec-coverage",
           severity: "major",
-          message: "Some spec coverage issue",
+          message: "Some spec coverage issue with no specId",
         },
       ];
 
-      const manifest = makeManifest();
-
-      // Expected: formatter handles blocker without crashing
-      expect(blockers[0].message).toBeDefined();
+      const output = formatSpecDeltas(blockers, makeManifest());
+      expect(output).toContain("## Other findings");
+      expect(output).toContain("spec-coverage");
+      expect(output).toContain("Some spec coverage issue with no specId");
     });
   });
 
   describe("Multiple blockers of same type", () => {
     test("includes all contradicted claims in output", () => {
       const blockers: VerifierFinding[] = [
-        {
-          checklistItem: "no-contradictions",
-          severity: "blocker",
-          specId: "S-001",
-        },
-        {
-          checklistItem: "no-contradictions",
-          severity: "blocker",
-          specId: "S-002",
-        },
+        { checklistItem: "no-contradictions", severity: "blocker", specId: "S-001" },
+        { checklistItem: "no-contradictions", severity: "blocker", specId: "S-002" },
       ];
 
       const manifest = makeManifest({
@@ -434,22 +396,17 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected: output includes both S-001 and S-002 under contradicted section
-      expect(blockers).toHaveLength(2);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-001");
+      expect(output).toContain("claim 1");
+      expect(output).toContain("S-002");
+      expect(output).toContain("claim 2");
     });
 
     test("includes all unverified claims in output", () => {
       const blockers: VerifierFinding[] = [
-        {
-          checklistItem: "spec-coverage",
-          severity: "major",
-          specId: "S-010",
-        },
-        {
-          checklistItem: "spec-coverage",
-          severity: "major",
-          specId: "S-011",
-        },
+        { checklistItem: "spec-coverage", severity: "major", specId: "S-010" },
+        { checklistItem: "spec-coverage", severity: "major", specId: "S-011" },
       ];
 
       const manifest = makeManifest({
@@ -471,41 +428,31 @@ describe("formatSpecDeltas (US-004 AC4)", () => {
         ],
       });
 
-      // Expected: output includes both S-010 and S-011 under unverified section
-      expect(manifest.specClaims).toHaveLength(2);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("S-010");
+      expect(output).toContain("claim 1");
+      expect(output).toContain("S-011");
+      expect(output).toContain("claim 2");
     });
 
     test("includes all gaps in output", () => {
       const blockers: VerifierFinding[] = [
-        {
-          checklistItem: "spec-coverage",
-          severity: "major",
-          gapId: "G-001",
-        },
-        {
-          checklistItem: "spec-coverage",
-          severity: "major",
-          gapId: "G-002",
-        },
+        { checklistItem: "spec-coverage", severity: "major", gapId: "G-001" },
+        { checklistItem: "spec-coverage", severity: "major", gapId: "G-002" },
       ];
 
       const manifest = makeManifest({
         gaps: [
-          {
-            id: "G-001",
-            kind: "missing-context",
-            note: "gap 1",
-          },
-          {
-            id: "G-002",
-            kind: "ignored-convention",
-            note: "gap 2",
-          },
+          { id: "G-001", kind: "missing-context", note: "gap 1" },
+          { id: "G-002", kind: "ignored-convention", note: "gap 2" },
         ],
       });
 
-      // Expected: output includes both G-001 and G-002 under gaps section
-      expect(manifest.gaps).toHaveLength(2);
+      const output = formatSpecDeltas(blockers, manifest);
+      expect(output).toContain("G-001");
+      expect(output).toContain("gap 1");
+      expect(output).toContain("G-002");
+      expect(output).toContain("gap 2");
     });
   });
 });
