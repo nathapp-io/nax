@@ -10,7 +10,7 @@ import type { AgentResult } from "../agents/types";
 import { resolvePermissions } from "../config/permissions";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import type { DispatchErrorEvent, IDispatchEventBus, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
+import type { DispatchErrorEvent, IDispatchEventBus } from "../runtime/dispatch-events";
 import type { ProtocolIds } from "../runtime/protocol-types";
 import { errorMessage } from "../utils/errors";
 import { _sessionManagerDeps } from "./manager-deps";
@@ -157,40 +157,13 @@ export async function runTrackedSession(
   if (current?.state === "RUNNING") {
     state.transition(id, result.success ? "COMPLETED" : "FAILED");
   }
-  const protocolIds = result.protocolIds ?? current?.protocolIds;
-  const turn = Math.max((result as { internalRoundTrips?: number }).internalRoundTrips ?? 1, 1);
 
-  const sessionName = state.nameFor({
-    workdir: pre.workdir,
-    featureName: pre.featureName,
-    storyId: pre.storyId,
-    role: pre.role,
-  });
-
-  const event: SessionTurnDispatchEvent = {
-    kind: "session-turn",
-    sessionName,
-    sessionRole: pre.role,
-    prompt: request.runOptions.prompt,
-    response: result.output,
-    agentName: pre.agent ?? state.defaultAgent,
-    stage,
-    storyId: pre.storyId,
-    featureName: pre.featureName,
-    workdir: pre.workdir,
-    resolvedPermissions,
-    turn,
-    protocolIds: {
-      sessionId: protocolIds?.sessionId ?? null,
-      recordId: protocolIds?.recordId ?? null,
-    },
-    origin: "runTrackedSession",
-    tokenUsage: result.tokenUsage,
-    exactCostUsd: result.exactCostUsd,
-    durationMs: Date.now() - startedAt,
-    timestamp: Date.now(),
-  };
-  state.dispatchEvents.emitDispatch(event);
-
+  // Dispatch is intentionally omitted here. runTrackedSession is a lifecycle
+  // wrapper (descriptor state transitions, bindHandle, handoff reconciliation).
+  // The SessionTurnDispatchEvent is emitted by agentManager.runAsSession, which
+  // is called from within runner.run() via createSessionRunHop. Emitting here
+  // too produced duplicate audit files — one from runAsSession and one from
+  // runTrackedSession — for each TDD session turn. See PR #1007 (which wired
+  // runAsSession) and the fix that removed this second emission.
   return result;
 }

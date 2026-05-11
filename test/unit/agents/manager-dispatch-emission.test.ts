@@ -7,7 +7,7 @@
  *
  * Boundaries under test:
  *   - runAsSession       → one SessionTurnDispatchEvent (origin:"runAsSession")
- *   - runTrackedSession  → one SessionTurnDispatchEvent (origin:"runTrackedSession")
+ *   - runTrackedSession  → zero SessionTurnDispatchEvents (dispatch deferred to runAsSession)
  *   - completeAs         → one CompleteDispatchEvent
  *   - runWithFallback    → N SessionTurnDispatchEvents + one OperationCompletedEvent
  *   - runAs envelope     → zero DispatchEvents + one OperationCompletedEvent
@@ -191,7 +191,12 @@ describe("runTrackedSession — dispatch emission", () => {
     };
   }
 
-  test("emits exactly one session-turn event with origin:runTrackedSession", async () => {
+  test("emits zero session-turn events (dispatch deferred to agentManager.runAsSession)", async () => {
+    // runTrackedSession is a lifecycle wrapper (descriptor state transitions,
+    // bindHandle, handoff reconciliation). The SessionTurnDispatchEvent is
+    // emitted by agentManager.runAsSession, which is called from within
+    // runner.run() via createSessionRunHop. Emitting here too would produce
+    // duplicate audit files — see the duplicate-audit fix in PR #1007+.
     const bus = new DispatchEventBus();
     const descriptor = makeDescriptor("implementer");
     const state = makeState(descriptor, bus);
@@ -226,11 +231,7 @@ describe("runTrackedSession — dispatch emission", () => {
       },
     });
 
-    expect(received).toHaveLength(1);
-    expect(received[0]?.origin).toBe("runTrackedSession");
-    expect(received[0]?.sessionRole).toBe("implementer");
-    expect(received[0]?.storyId).toBe("US-002");
-    expect(received[0]?.agentName).toBe("claude");
+    expect(received).toHaveLength(0);
   });
 });
 

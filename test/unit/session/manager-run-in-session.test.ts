@@ -118,7 +118,11 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
     expect(mgr.get(d.id)?.protocolIds).toEqual({ recordId: "rec-1", sessionId: "sess-1" });
   });
 
-  test("dispatch event falls back to descriptor protocolIds and turn=1 when result omits metadata", async () => {
+  test("emits zero session-turn dispatch events (dispatch is emitted by agentManager.runAsSession)", async () => {
+    // runTrackedSession is a lifecycle wrapper — it manages descriptor state
+    // transitions and bindHandle. The SessionTurnDispatchEvent is emitted by
+    // agentManager.runAsSession (called from createSessionRunHop inside runner.run).
+    // Emitting here too produced duplicate audit files. See PR #1007+.
     const bus = new DispatchEventBus();
     const events: SessionTurnDispatchEvent[] = [];
     bus.onDispatch((event) => {
@@ -130,9 +134,7 @@ describe("SessionManager.runInSession — ADR-013 Phase 1", () => {
 
     await mgr.runInSession(d.id, makeAgentManager(makeResult()), makeRequest());
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.protocolIds).toEqual({ recordId: "rec-bound", sessionId: "sess-bound" });
-    expect(events[0]?.turn).toBe(1);
+    expect(events).toHaveLength(0);
   });
 
   test("throws SESSION_NOT_FOUND for unknown id", async () => {
