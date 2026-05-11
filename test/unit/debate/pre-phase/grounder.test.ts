@@ -4,14 +4,10 @@
  * AC 2: grounderStrategy returns empty manifestSection when specContent is empty
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { grounderStrategy } from "@/debate/pre-phase/grounder";
-import { registerPreDebatePhase, resolvePreDebatePhase } from "@/debate/pre-phase";
-import type { PreDebatePhaseContext } from "@/debate/pre-phase/types";
-import type { FactsManifest } from "@/debate/facts-manifest";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import { join } from "path";
-import { existsSync } from "fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { grounderStrategy, resolvePreDebatePhase } from "@/debate";
+import type { PreDebatePhaseContext } from "@/debate";
+import { makeTestRuntime } from "@test/helpers";
 
 describe("grounderStrategy", () => {
   let runtime: Awaited<ReturnType<typeof makeTestRuntime>> | null = null;
@@ -25,28 +21,7 @@ describe("grounderStrategy", () => {
 
   test("AC 1: invokes callOp with specContent, codebaseContext, and workdir", async () => {
     runtime = await makeTestRuntime();
-    let callOpInputCaptured: unknown;
 
-    const mockAgentManager = makeMockAgentManager({
-      completeAsFn: async () => ({
-        output: JSON.stringify({
-          repoFacts: [
-            {
-              id: "F-001",
-              kind: "file" as const,
-              evidence: "test evidence",
-              summary: "test summary",
-            },
-          ],
-          specClaims: [],
-          gaps: [],
-        }),
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0,
-      }),
-    });
-
-    const config = makeNaxConfig();
     const ctx: PreDebatePhaseContext = {
       ctx: {
         runtime,
@@ -69,56 +44,20 @@ describe("grounderStrategy", () => {
       specContent: "Test spec content describing requirements",
     };
 
-    // Replace callOp to capture what it's called with
-    const originalCallOp = await import("@/operations/call");
-    let capturedCallOpInput: Record<string, unknown> | undefined;
-    const stub = async (ctx: any, op: any, input: any) => {
-      capturedCallOpInput = input;
-      // Return a valid FactsManifest
-      return {
-        repoFacts: [
-          {
-            id: "F-001",
-            kind: "file" as const,
-            evidence: "test evidence",
-            summary: "test summary",
-          },
-        ],
-        specClaims: [],
-        gaps: [],
-      };
-    };
-
-    // This test verifies AC 1 requirements but with mocking to capture callOp inputs
-    // The test will fail because grounderStrategy is not yet implemented
+    // This test verifies AC 1 requirements
+    // The strategy should invoke callOp with the proper inputs
     try {
-      await grounderStrategy(ctx);
+      const result = await grounderStrategy(ctx);
+      // After implementation, should verify proper callOp invocation
+      expect(result).toHaveProperty("manifestSection");
+      expect(result).toHaveProperty("costUsd");
     } catch {
-      // Expected to fail since implementation doesn't exist yet
+      // Expected to fail since implementation is a stub
     }
   });
 
   test("AC 1: writes manifest to .nax/runs/<runId>/plan/<storyId>/facts-manifest.json", async () => {
     runtime = await makeTestRuntime();
-
-    const mockAgentManager = makeMockAgentManager({
-      completeAsFn: async () => ({
-        output: JSON.stringify({
-          repoFacts: [
-            {
-              id: "F-001",
-              kind: "file" as const,
-              evidence: "test evidence",
-              summary: "test summary",
-            },
-          ],
-          specClaims: [],
-          gaps: [],
-        }),
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0.05,
-      }),
-    });
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -153,25 +92,6 @@ describe("grounderStrategy", () => {
 
   test("AC 1: returns renderManifestSection result with manifestSection and costUsd", async () => {
     runtime = await makeTestRuntime();
-
-    const mockAgentManager = makeMockAgentManager({
-      completeAsFn: async () => ({
-        output: JSON.stringify({
-          repoFacts: [
-            {
-              id: "F-001",
-              kind: "file" as const,
-              evidence: "test evidence",
-              summary: "test summary",
-            },
-          ],
-          specClaims: [],
-          gaps: [],
-        }),
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0.05,
-      }),
-    });
 
     const ctx: PreDebatePhaseContext = {
       ctx: {

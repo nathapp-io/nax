@@ -5,7 +5,12 @@
 export { DebateRunner } from "./runner";
 export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "./session-helpers";
-export type { DebateSessionOptions, ResolverContextInput, ResolveOutcome } from "./session-helpers";
+export type {
+  DebateSessionOptions,
+  ResolverContextInput,
+  ResolveOutcome,
+  SuccessfulProposal,
+} from "./session-helpers";
 export { parseFactsManifest, renderManifestSection } from "./facts-manifest";
 export {
   registerSelector,
@@ -21,7 +26,9 @@ export {
   computeMajority,
   verifierPickSelector,
 } from "./selectors";
+export type { SelectorContext } from "./selectors";
 export { registerPreDebatePhase, resolvePreDebatePhase } from "./pre-phase";
+export type { PreDebatePhaseContext } from "./pre-phase";
 export { grounderStrategy } from "./pre-phase/grounder";
 export { registerPostDebateVerifier, resolvePostDebateVerifier, reviewGroundingFilterVerifier } from "./verifiers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";

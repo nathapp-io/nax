@@ -7,14 +7,14 @@
  * AC 7: handles patch failures with onFailure config
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { verifierPickSelector } from "@/debate/selectors/verifier-pick";
-import { registerSelector, resolveSelector } from "@/debate/selectors";
-import type { SelectorContext } from "@/debate/selectors/types";
-import type { SuccessfulProposal } from "@/debate/session-helpers";
-import { makeMockAgentManager, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { SessionHandle } from "@/agents";
+import { resolveSelector, verifierPickSelector } from "@/debate";
+import type { SelectorContext } from "@/debate";
+import type { SuccessfulProposal } from "@/debate";
+import { makeMockAgentManager, type makeTestRuntime } from "@test/helpers";
 
-function makeProposal(output: string, agentName = "claude", handle?: any): SuccessfulProposal {
+function makeProposal(output: string, agentName = "claude", handle?: SessionHandle): SuccessfulProposal {
   return {
     debater: { agent: agentName },
     agentName,
@@ -103,11 +103,9 @@ describe("verifierPickSelector", () => {
     test("scores incorporate citationRate, citationDistributionScore, failureModesCovered, contextFilesValidRate", async () => {
       // This test verifies the scoring function uses all four signals
       const proposals = [
+        makeProposal("proposal1: fact1=F-001, failureMode1, contextFile=/src/main.ts, verified=verified"),
         makeProposal(
-          "proposal1: fact1=F-001, failureMode1, contextFile=/src/main.ts, verified=verified"
-        ),
-        makeProposal(
-          "proposal2: fact1=F-001, fact2=F-002, failureMode1, failureMode2, contextFile=/src/main.ts, verified=verified"
+          "proposal2: fact1=F-001, fact2=F-002, failureMode1, failureMode2, contextFile=/src/main.ts, verified=verified",
         ),
       ];
 
@@ -131,10 +129,7 @@ describe("verifierPickSelector", () => {
 
   describe("AC 4: skips patching when patch disabled or overlap high", () => {
     test("skips patch when patch.enabled is false", async () => {
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2, AC3"),
-        makeProposal("Proposal 2: AC1, AC2, AC3"),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2, AC3"), makeProposal("Proposal 2: AC1, AC2, AC3")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -160,10 +155,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("skips patch when patch is omitted", async () => {
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2, AC3"),
-        makeProposal("Proposal 2: AC1, AC2, AC3"),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2, AC3"), makeProposal("Proposal 2: AC1, AC2, AC3")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -186,10 +178,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("skips patch when AC overlap is at or above overlapThreshold (default 0.8)", async () => {
-      const proposals = [
-        makeProposal("Proposal 1: AC1, AC2, AC3"),
-        makeProposal("Proposal 2: AC1, AC2, AC3"),
-      ];
+      const proposals = [makeProposal("Proposal 1: AC1, AC2, AC3"), makeProposal("Proposal 2: AC1, AC2, AC3")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -216,10 +205,7 @@ describe("verifierPickSelector", () => {
 
     test("returns unpatched winner when skipping patch", async () => {
       const winnerOutput = "Winner proposal output";
-      const proposals = [
-        makeProposal(winnerOutput),
-        makeProposal("Runner-up output"),
-      ];
+      const proposals = [makeProposal(winnerOutput), makeProposal("Runner-up output")];
 
       const ctx = makeSelectorContext({
         proposals,
@@ -260,8 +246,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1, AC2, AC3", "claude", {} as any),
-        makeProposal("Proposal 2: AC4, AC5", "claude", {} as any),
+        makeProposal("Proposal 1: AC1, AC2, AC3", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC4, AC5", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -298,8 +284,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1, AC2", "claude", {} as any),
-        makeProposal("Proposal 2: AC3, AC4", "claude", {} as any),
+        makeProposal("Proposal 1: AC1, AC2", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC3, AC4", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -337,8 +323,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1, AC2", "claude", {} as any),
-        makeProposal("Proposal 2: AC3, AC4", "claude", {} as any),
+        makeProposal("Proposal 1: AC1, AC2", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC3, AC4", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -380,8 +366,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1", "opencode", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 1: AC1", "opencode", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -408,7 +394,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("calls runAsSession with winner.proposal.handle to continue session", async () => {
-      let capturedHandle: any;
+      let capturedHandle: SessionHandle | undefined;
       const testHandle = { sessionId: "nax-12345-test" };
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async (agentName, handle) => {
@@ -423,7 +409,7 @@ describe("verifierPickSelector", () => {
 
       const proposals = [
         makeProposal("Proposal 1: AC1", "claude", testHandle),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -450,7 +436,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("calls runAsSession with correct pipelineStage and storyId", async () => {
-      let capturedOptions: any;
+      let capturedOptions: Record<string, unknown> | undefined;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async (agentName, handle, prompt, options) => {
           capturedOptions = options;
@@ -463,8 +449,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -503,8 +489,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -543,8 +529,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal(unPatchedOutput, "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal(unPatchedOutput, "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -580,8 +566,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Original proposal", "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Original proposal", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -616,8 +602,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
@@ -646,7 +632,7 @@ describe("verifierPickSelector", () => {
     });
 
     test("logs warning when patch throws and onFailure='use-unpatched'", async () => {
-      let loggedWarning = false;
+      const loggedWarning = false;
       const mockAgentManager = makeMockAgentManager({
         runAsSessionFn: async () => {
           throw new Error("Patch operation timed out");
@@ -654,8 +640,8 @@ describe("verifierPickSelector", () => {
       });
 
       const proposals = [
-        makeProposal("Proposal 1: AC1", "claude", {} as any),
-        makeProposal("Proposal 2: AC2", "claude", {} as any),
+        makeProposal("Proposal 1: AC1", "claude", {} as SessionHandle),
+        makeProposal("Proposal 2: AC2", "claude", {} as SessionHandle),
       ];
 
       const ctx = makeSelectorContext({
