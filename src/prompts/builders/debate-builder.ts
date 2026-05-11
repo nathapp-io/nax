@@ -49,6 +49,12 @@ export interface PromptBuilderOptions {
   debaters: Debater[];
   /** Session mode — determines whether taskContext is re-sent in rebuttal prompts. */
   sessionMode: "stateful" | "one-shot";
+  /** Optional proposer constraints — gates citation and file-read instructions. */
+  proposers?: {
+    citationsRequired?: boolean;
+    fileReadAccess?: boolean;
+    fileReadBudget?: number;
+  };
 }
 
 // ─── Class ───────────────────────────────────────────────────────────────────
@@ -163,9 +169,14 @@ ${this.stageContext.outputFormat}`;
   // ─── Op slot methods (return ComposeInput for use in op build() functions) ──────
 
   proposeSlot(debaterIndex: number): ComposeInput {
+    const basePrompt = this.buildProposalPrompt(debaterIndex);
+    const citationInstruction =
+      this.options.proposers?.citationsRequired === true
+        ? "\n\n## Citations Required\nFor every factual claim, cite the supporting fact ID from the manifest using bracket notation (e.g., [F-001] or [S-001])."
+        : "";
     return {
       role: { id: "role", content: "", overridable: false },
-      task: { id: "task", content: this.buildProposalPrompt(debaterIndex), overridable: false },
+      task: { id: "task", content: `${basePrompt}${citationInstruction}`, overridable: false },
     };
   }
 

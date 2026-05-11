@@ -164,6 +164,61 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
   });
 });
 
+// ─── fileReadAccess gate (AC-6) ───────────────────────────────────────────────
+
+describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
+  test("output is byte-equivalent when fileReadAccess is false", () => {
+    const withFalse = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: false,
+    });
+    const withUndefined = new PlanPromptBuilder().build(SPEC, CTX);
+    expect(withFalse.taskContext).toBe(withUndefined.taskContext);
+    expect(withFalse.outputFormat).toBe(withUndefined.outputFormat);
+  });
+
+  test("output is byte-equivalent when proposers is omitted", () => {
+    const withProposers = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, undefined);
+    const withoutProposers = new PlanPromptBuilder().build(SPEC, CTX);
+    expect(withProposers.taskContext).toBe(withoutProposers.taskContext);
+  });
+
+  test("removes file names only restriction when fileReadAccess === true", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: true,
+    });
+    expect(taskContext).not.toContain("file names and structure only");
+  });
+
+  test("adds file-read permission instruction when fileReadAccess === true", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: true,
+    });
+    expect(taskContext).toContain("file-read");
+  });
+
+  test("includes 'up to N file reads' when fileReadBudget is set", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: true,
+      fileReadBudget: 5,
+    });
+    expect(taskContext).toContain("up to 5 file reads");
+  });
+
+  test("does not include 'up to N file reads' when fileReadBudget is not set", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: true,
+    });
+    expect(taskContext).not.toContain("up to");
+  });
+
+  test("original file names restriction present when fileReadAccess is false", () => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
+      fileReadAccess: false,
+    });
+    expect(taskContext).toContain("file names and structure only");
+  });
+});
+
 // ─── PlanPromptBuilder.jsonRepair() static method ─────────────────────────────
 
 describe("PlanPromptBuilder.jsonRepair() — US-002", () => {

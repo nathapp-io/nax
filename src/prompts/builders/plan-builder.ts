@@ -80,6 +80,7 @@ Write the complete PRD JSON to the output file path specified in your instructio
     packages?: string[],
     packageDetails?: PackageSummary[],
     projectProfile?: ProjectProfile,
+    proposers?: { fileReadAccess?: boolean; fileReadBudget?: number },
   ): PlanningPromptParts {
     const isMonorepo = packages && packages.length > 0;
     const packageDetailsSection =
@@ -122,7 +123,7 @@ If this is a greenfield project (empty or minimal codebase):
 
 Record ALL findings in the "analysis" field of the output JSON. This analysis is provided to every implementation agent as context — be thorough.
 
-**Important:** The codebase context below contains file names and structure only — no file content. Do NOT assert specific line numbers. The implementer will read the actual files via contextFiles.
+${buildFileReadInstruction(proposers)}
 
 ## Codebase Context
 
@@ -193,6 +194,20 @@ ${outputDirective}`;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Build the file-read instruction block for the plan prompt.
+ * When fileReadAccess is true, grants file-read permission and removes the
+ * "file names only" restriction. Otherwise emits the default restriction.
+ */
+function buildFileReadInstruction(proposers?: { fileReadAccess?: boolean; fileReadBudget?: number }): string {
+  if (proposers?.fileReadAccess === true) {
+    const budgetClause =
+      proposers.fileReadBudget !== undefined ? ` You have up to ${proposers.fileReadBudget} file reads.` : "";
+    return `**File Read Permission:** You may use file-read tools to verify spec claims against actual code.${budgetClause} Cite the resulting factId from the manifest, or include a verbatim excerpt with path:line-range for any claim derived from a file you read directly.`;
+  }
+  return "**Important:** The codebase context below contains file names and structure only — no file content. Do NOT assert specific line numbers. The implementer will read the actual files via contextFiles.";
+}
 
 /**
  * Render per-package summaries as a compact markdown table for the prompt.

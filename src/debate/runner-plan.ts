@@ -45,6 +45,8 @@ export async function runPlan(
     maxInteractionTurns?: number;
     /** Original spec content — anchors synthesis to prevent AC hallucination. */
     specContent?: string;
+    /** Grounding manifest section from a pre-debate phase, when available. */
+    manifestSection?: string;
   },
 ): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
@@ -82,10 +84,11 @@ export async function runPlan(
     { taskContext, outputFormat, stage: "plan" },
     { debaters: resolved.map((r) => r.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
   );
+  const manifestPrefix = opts.manifestSection ? `${opts.manifestSection}\n\n` : "";
   const settled = await allSettledBounded(
     resolved.map(({ debater: rd, agentName }, i) => async () => {
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-      const debaterPrompt = `${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+      const debaterPrompt = `${manifestPrefix}${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(rd);
       const model: ConfiguredModel = { agent: rd.agent, model: rd.model ?? modelTier };

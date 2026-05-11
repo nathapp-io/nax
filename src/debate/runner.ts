@@ -99,6 +99,8 @@ export class DebateRunner {
       timeoutSeconds?: number;
       maxInteractionTurns?: number;
       specContent?: string;
+      /** Grounding manifest section from a pre-debate phase, when available. */
+      manifestSection?: string;
     },
   ): Promise<DebateResult> {
     return runPlan(this.toPlanCtx(), taskContext, outputFormat, opts);
@@ -134,6 +136,7 @@ export class DebateRunner {
 
     // Pre-debate phase: run before parallel proposer fan-out
     let taskContext = prompt;
+    let preDebateManifestSection: string | undefined;
     if (config.preDebatePhase) {
       const prePhaseCtx: PreDebatePhaseContext = {
         ctx: this.ctx,
@@ -145,6 +148,7 @@ export class DebateRunner {
       };
       const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
       if (prePhaseResult.manifestSection) {
+        preDebateManifestSection = prePhaseResult.manifestSection;
         taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
       }
       totalCostUsd += prePhaseResult.costUsd;
@@ -159,6 +163,8 @@ export class DebateRunner {
           stage: this.stage,
           debaterIndex: i,
           debaters: resolved.map((r) => r.debater),
+          manifestSection: preDebateManifestSection,
+          stageConfig: config,
         }).then((output) => ({ debater, agentName, output, cost: 0 }) as SuccessfulProposal);
       }),
       concurrencyLimit,

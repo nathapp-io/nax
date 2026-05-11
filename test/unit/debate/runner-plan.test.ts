@@ -637,4 +637,80 @@ describe("DebateRunner.runPlan()", () => {
     resolvers[1]?.();
     await runPromise;
   });
+
+  test("prepends manifestSection to each debater prompt when provided", async () => {
+    const capturedPrompts: string[] = [];
+
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string, _opts: unknown) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("manifest-thread-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig(),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "manifest-thread-test",
+      outputDir: "/tmp/out",
+      manifestSection: "## Facts Manifest\n- F-001: some fact",
+    });
+
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    for (const prompt of capturedPrompts) {
+      expect(prompt).toContain("## Facts Manifest");
+      expect(prompt).toContain("F-001: some fact");
+    }
+  });
+
+  test("does not prepend manifest section when manifestSection is not provided", async () => {
+    const capturedPrompts: string[] = [];
+
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string, _opts: unknown) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("no-manifest-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig(),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "no-manifest-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    for (const prompt of capturedPrompts) {
+      expect(prompt).not.toContain("## Facts Manifest");
+    }
+  });
 });
