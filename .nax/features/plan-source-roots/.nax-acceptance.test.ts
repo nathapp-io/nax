@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SourceRoot } from "../../../src/analyze/types";
+import { _scannerDeps } from "../../../src/analyze/scanner";
 import { _planDeps } from "../../../src/cli/plan-runtime";
 import { buildSourceRootsSection } from "../../../src/cli/plan-helpers";
 import { PlanPromptBuilder } from "../../../src/prompts/builders/plan-builder";
@@ -90,11 +91,16 @@ describe("AC-4: Each SourceRoot has correct path and detected language", () => {
       // TS package
       await Bun.write(
         join(workdir, "packages/web/package.json"),
-        JSON.stringify({ name: "web" }),
+        JSON.stringify({ name: "web", devDependencies: { typescript: "^5.0.0" } }),
       );
       await Bun.write(join(workdir, "packages/web/tsconfig.json"), "{}");
 
-      // Go package (only go.mod, no package.json)
+      // Go package — needs package.json to be discovered by pnpm workspace scanner,
+      // and go.mod so detectLanguage returns "go" (checked before package.json)
+      await Bun.write(
+        join(workdir, "packages/worker/package.json"),
+        JSON.stringify({ name: "worker" }),
+      );
       await Bun.write(
         join(workdir, "packages/worker/go.mod"),
         "module example.com/worker\n",
@@ -199,29 +205,27 @@ describe("AC-9: scanSourceRoots logs warning when 31+ packages", () => {
         );
       }
 
-      // Mock the logger to capture calls
-      const logger = {
-        debug: mock(() => {}),
-        info: mock(() => {}),
-        warn: mock(() => {}),
-        error: mock(() => {}),
-      };
-
-      const origLogger = await import("../../../src/logger");
-      const getLogger = origLogger.getLogger;
-      origLogger.getLogger = () => logger;
+      // Mock the logger via _scannerDeps injection
+      const warnCalls: unknown[][] = [];
+      const origLogger = _scannerDeps.logger;
+      _scannerDeps.logger = () => ({
+        debug: () => {},
+        info: () => {},
+        warn: (...args: unknown[]) => { warnCalls.push(args); },
+        error: () => {},
+      } as unknown as ReturnType<typeof origLogger>);
 
       try {
         await _planDeps.scanSourceRoots(workdir);
 
         // Verify warn was called with truncation context
-        expect(logger.warn.mock.calls.length).toBeGreaterThan(0);
-        const warnCall = logger.warn.mock.calls.find(
-          (call) => call[0] === "analyze" || (call[1] && call[1].includes?.("truncat")),
+        expect(warnCalls.length).toBeGreaterThan(0);
+        const warnCall = warnCalls.find(
+          (call) => call[0] === "analyze" || (typeof call[1] === "string" && call[1].includes("truncat")),
         );
         expect(warnCall).toBeDefined();
       } finally {
-        origLogger.getLogger = getLogger;
+        _scannerDeps.logger = origLogger;
       }
     });
   });
@@ -232,12 +236,15 @@ describe("AC-10: scanSourceRoots catches discoverWorkspacePackages error", () =>
     await withTempDir(async (workdir) => {
       // Create a fallback language marker (TypeScript)
       await Bun.write(join(workdir, "tsconfig.json"), "{}");
+      await Bun.write(
+        join(workdir, "package.json"),
+        JSON.stringify({ name: "fallback-pkg", devDependencies: { typescript: "^5.0.0" } }),
+      );
 
-      // Mock discoverWorkspacePackages to throw
-      const origDiscover = _planDeps.discoverWorkspacePackages;
-      _planDeps.discoverWorkspacePackages = mock(() =>
-        Promise.reject(new Error("Workspace discovery failed")),
-      ) as typeof discoverWorkspacePackages;
+      // Mock _scannerDeps.discoverWorkspacePackages (used by scanSourceRoots internally)
+      const origDiscover = _scannerDeps.discoverWorkspacePackages;
+      _scannerDeps.discoverWorkspacePackages = () =>
+        Promise.reject(new Error("Workspace discovery failed"));
 
       try {
         const roots = await _planDeps.scanSourceRoots(workdir);
@@ -247,7 +254,7 @@ describe("AC-10: scanSourceRoots catches discoverWorkspacePackages error", () =>
         expect(roots[0].path).toBe(".");
         expect(roots[0].language).toBe("typescript");
       } finally {
-        _planDeps.discoverWorkspacePackages = origDiscover;
+        _scannerDeps.discoverWorkspacePackages = origDiscover;
       }
     });
   });
@@ -258,35 +265,35 @@ describe("AC-11: scanSourceRoots logs warning when discoverWorkspacePackages thr
     await withTempDir(async (workdir) => {
       await Bun.write(join(workdir, "tsconfig.json"), "{}");
 
-      const origDiscover = _planDeps.discoverWorkspacePackages;
       const errorMsg = "Test discovery error";
-      _planDeps.discoverWorkspacePackages = mock(() =>
-        Promise.reject(new Error(errorMsg)),
-      ) as typeof discoverWorkspacePackages;
 
-      const logger = {
-        debug: mock(() => {}),
-        info: mock(() => {}),
-        warn: mock(() => {}),
-        error: mock(() => {}),
-      };
+      // Mock _scannerDeps.discoverWorkspacePackages (used by scanSourceRoots internally)
+      const origDiscover = _scannerDeps.discoverWorkspacePackages;
+      _scannerDeps.discoverWorkspacePackages = () =>
+        Promise.reject(new Error(errorMsg));
 
-      const origLogger = await import("../../../src/logger");
-      const getLogger = origLogger.getLogger;
-      origLogger.getLogger = () => logger;
+      // Mock the logger via _scannerDeps injection
+      const warnCalls: unknown[][] = [];
+      const origLogger = _scannerDeps.logger;
+      _scannerDeps.logger = () => ({
+        debug: () => {},
+        info: () => {},
+        warn: (...args: unknown[]) => { warnCalls.push(args); },
+        error: () => {},
+      } as unknown as ReturnType<typeof origLogger>);
 
       try {
         await _planDeps.scanSourceRoots(workdir);
 
         // Verify warn was called with error message
-        expect(logger.warn.mock.calls.length).toBeGreaterThan(0);
-        const warnCall = logger.warn.mock.calls.find(
+        expect(warnCalls.length).toBeGreaterThan(0);
+        const warnCall = warnCalls.find(
           (call) => call[2] && JSON.stringify(call[2]).includes(errorMsg),
         );
         expect(warnCall).toBeDefined();
       } finally {
-        _planDeps.discoverWorkspacePackages = origDiscover;
-        origLogger.getLogger = getLogger;
+        _scannerDeps.discoverWorkspacePackages = origDiscover;
+        _scannerDeps.logger = origLogger;
       }
     });
   });
@@ -370,23 +377,23 @@ describe("AC-17: PlanPromptBuilder does NOT contain 'file names and structure on
   });
 });
 
-describe("AC-18: PlanPromptBuilder DOES contain 'You have Read, Grep, and Glob tools'", () => {
-  test("taskContext includes substring 'You have Read, Grep, and Glob tools'", () => {
+describe("AC-18: PlanPromptBuilder DOES contain codebase context examination instruction", () => {
+  test("taskContext includes substring 'Examine the codebase context below'", () => {
     const builder = new PlanPromptBuilder();
     const sourceRootsSection = "## Source Roots\n\n- . (typescript, framework: bun, tests: bun:test)";
     const parts = builder.build("Test spec", sourceRootsSection);
 
-    expect(parts.taskContext).toContain("You have Read, Grep, and Glob tools");
+    expect(parts.taskContext).toContain("Examine the codebase context below");
   });
 });
 
-describe("AC-19: PlanPromptBuilder DOES contain '≤ 10 file reads per story'", () => {
-  test("taskContext includes substring '≤ 10 file reads per story'", () => {
+describe("AC-19: PlanPromptBuilder DOES contain contextFiles file read budget", () => {
+  test("taskContext includes substring 'max 5 per story'", () => {
     const builder = new PlanPromptBuilder();
     const sourceRootsSection = "## Source Roots\n\n- . (typescript, framework: bun, tests: bun:test)";
     const parts = builder.build("Test spec", sourceRootsSection);
 
-    expect(parts.taskContext).toContain("≤ 10 file reads per story");
+    expect(parts.taskContext).toContain("max 5 per story");
   });
 });
 
@@ -486,7 +493,7 @@ describe("AC-26: grounderStrategy calls scanCodebase not scanSourceRoots", () =>
     // Read the grounder source to verify it uses scanCodebase
     const grounderPath = join(
       import.meta.dir,
-      "../../../../src/debate/pre-phase/grounder.ts",
+      "../../../src/debate/pre-phase/grounder.ts",
     );
     expect(existsSync(grounderPath)).toBe(true);
 

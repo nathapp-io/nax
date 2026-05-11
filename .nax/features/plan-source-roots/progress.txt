@@ -1,1 +1,2 @@
 [2026-05-11T11:32:33.941Z] US-001 — PASSED — Add SourceRoot type and scanSourceRoots function — Cost: $1.4202
+[2026-05-11T12:00:54.976Z] US-002 — PASSED — Wire scanSourceRoots into plan command and update PlanPromptBuilder — Cost: $5.3847
