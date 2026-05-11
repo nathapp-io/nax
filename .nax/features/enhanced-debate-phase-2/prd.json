@@ -3,7 +3,7 @@
   "feature": "enhanced-debate-phase-2",
   "branchName": "feat/enhanced-debate-phase-2",
   "createdAt": "2026-05-11T00:00:00.000Z",
-  "updatedAt": "2026-05-11T02:53:45.617Z",
+  "updatedAt": "2026-05-11T03:15:17.410Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,7 +29,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas-debate.ts",
@@ -42,7 +44,11 @@
         "DebateStageConfigSchema parse returns selector.patch.onFailure === \"use-unpatched\" when patch.onFailure is explicitly set to \"use-unpatched\"",
         "DebateStageConfigSchema parse rejects selector: { kind: \"verifier-pick\" } with an unknown extra field when the verifier-pick variant schema uses strict validation",
         "DebateConfigSchema.parse({}) returns result.stages.plan.evidenceMode === \"current\" (default applied when stages.plan is entirely absent)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "afe749dc4003810015a0a51b59767bd4b662068b"
     },
     {
       "id": "US-002",
@@ -85,7 +91,10 @@
         "citationDistribution returns { verifiedFacts: 0, specSpans: 0, uncited: 0 } when claims is empty",
         "citationDistribution correctly categorizes citations to specClaims (S-NNN factIds) as specSpans rather than verifiedFacts",
         "extractClaims handles multiple factIds in a single citation (e.g. [F-001, F-002]) by adding both to the claim's factIds array"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -132,7 +141,10 @@
         "grounderStrategy logs a warning with storyId when groundOp invocation fails before re-throwing or degrading",
         "verifierPickSelector(ctx) returns the sole proposal's output directly when ctx.proposals has exactly one entry (no scoring needed)",
         "computeScore returns contextFilesValidRate === 1.0 when the proposal has no contextFiles entries (vacuously valid)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -174,7 +186,10 @@
         "planChecklistVerifier returns outcome === \"passed\" with an empty findings array when the PRD has no contextFiles, all ACs have verifiedBy or intent: true, and the manifest has no contradicted claims",
         "formatSpecDeltas returns a non-empty string even when manifest.gaps is empty (sections with no entries are omitted rather than showing empty headers)",
         "planChecklistVerifier does not throw when the manifest artifact file does not exist on disk (treats all claims as uncited/unverified)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -221,7 +236,10 @@
         "buildPlanComposition() with evidenceMode === \"asymmetric\" preserves non-plug-point fields from the input stageConfig (e.g. enabled, rounds, timeoutSeconds) unchanged",
         "When stageConfig.evidenceMode === \"asymmetric\" AND user explicitly sets proposers: { citationsRequired: false }, the returned composition has proposers.citationsRequired === false (user override wins for the entire proposers object)",
         "runner-plan.ts warning log for degrade policy includes the grounder error message as a string (not just the storyId)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Phase 2 builds on Phase 1's plug-point infrastructure. Verified against the current codebase on 2026-05-11: src/debate/runner.ts already invokes resolvePreDebatePhase(...) before one-shot proposer fan-out and resolvePostDebateVerifier(...) after selector resolution, but src/debate/runner-plan.ts is still a separate orchestration path that bypasses both hooks and goes straight from proposal fan-out to resolveOutcome(). That means plan-mode Phase 2 wiring is not just policy handling; US-005 must add actual pre-phase dispatch, manifest threading, post-verifier dispatch, and result propagation in runPlan(). The schemas-debate.ts already has postDebateVerifier with plan-checklist in the kind enum, proposers object, preDebatePhase {kind: grounder|custom}, and the selector discriminated union with 5 kinds. CRITICAL: preDebatePhase uses .strict() which blocks adding onFailure — Phase 2 US-001 must remove .strict() when adding the onFailure field. DebateStageConfigSchema is a FACTORY FUNCTION taking defaults, not a plain schema — tests must call it with defaults before parsing. src/prd/schema.ts is a custom validator (not Zod-based at the PRD object level) and currently treats acceptanceCriteria as string[] plus contextFiles as string[]; adding verifiedBy/intent/factId means extending validateStory() with optional field handling, not introducing a separate top-level Zod parse path. DebateProposeInput (src/operations/debate-propose.ts) needs manifestSection?: string added, but plan mode also builds prompts directly via DebatePromptBuilder, so runner-plan.ts needs its own manifest threading. SuccessfulProposal in session-helpers.ts already has handle?: SessionHandle, but current runPlan() uses the prompt-form sessionManager.runInSession(...), which opens and closes the session within a single call and does not preserve a live handle for the selector patch step. To make verifier-pick patching real, runPlan() must follow the stateful/hybrid pattern: pre-open per-debater sessions, use those handles for proposal turns, retain them through selector resolution, then close them in finally after patch/verifier work completes. PostDebateVerifierContext lacks manifest — plan-checklist verifier must read it from disk at .nax/runs/<runId>/plan/<storyId>/facts-manifest.json (consistent with grounder writing it there). The patch step uses agentManager.runAsSession (Layer 3 sanctioned continuation per adapter-wiring.md Rule 3). PatchPromptBuilder goes in src/prompts/builders/patch-builder.ts (forbidden-patterns.md Prompt Builder Convention). New files: src/debate/citations.ts, src/debate/pre-phase/grounder.ts, src/debate/selectors/verifier-pick.ts, src/debate/verifiers/plan-checklist.ts, src/plan/spec-deltas.ts, src/prompts/builders/patch-builder.ts. src/plan/ directory does not yet exist. evidenceMode is plan-stage-only and is added via Zod merge (PlanStageExtensions merged into plan-stage schema); other stages must reject it. All logger calls must include storyId as first key per project-conventions.md. All glob scans must pass cwd explicitly per monorepo-awareness.md. No process.cwd() outside CLI entry points. File writes use Bun.write(), reads use Bun.file().text()."
