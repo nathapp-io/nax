@@ -1,0 +1,212 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "DebateStageConfigSchema({ enabled: false, resolverType: \"synthesis\", sessionMode: \"one-shot\", rounds: 1 }).parse(...) accepts selector.kind === \"verifier-pick\", preserves selector.patch fields when provided, and leaves patch.overlapThreshold / patch.maxDeltas undefined when omitted so defaults are applied at strategy time rather than parse time",
+    "refined": "DebateStageConfigSchema successfully parses a config with selector.kind === 'verifier-pick' and optional patch object; when patch.overlapThreshold and patch.maxDeltas are omitted from input, the parsed output contains the patch object with overlapThreshold and maxDeltas properties set to undefined (not pre-assigned defaults)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "DebateStageConfigSchema({ enabled: false, resolverType: \"synthesis\", sessionMode: \"one-shot\", rounds: 1 }).parse(...) accepts postDebateVerifier.kind === \"plan-checklist\" and preDebatePhase.kind === \"grounder\" with onBlocker / onFailure values from the allowed enums, and rejects invalid enum values with a ZodError",
+    "refined": "DebateStageConfigSchema.parse() accepts valid enum values (postDebateVerifier.onBlocker in ['block', 'tag-expert'] and preDebatePhase.onFailure in ['degrade', 'block']); parsing throws ZodError when onBlocker or onFailure contain values outside their respective allowed enums",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "DebateConfigSchema.parse(...) accepts stages.plan.evidenceMode === \"asymmetric\", defaults stages.plan.evidenceMode to \"current\" when omitted, rejects unknown evidenceMode values, and rejects evidenceMode outside the plan stage",
+    "refined": "DebateConfigSchema.parse() accepts stages.plan.evidenceMode === 'asymmetric'; when evidenceMode is omitted from stages.plan input, the parsed output has stages.plan.evidenceMode === 'current'; parsing throws ZodError when evidenceMode is an unknown value; parsing throws ZodError when evidenceMode appears on stages.review, stages.acceptance, stages.rectification, or stages.escalation",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "validatePlanOutput() accepts legacy PRD output that omits verifiedBy, intent, and contextFiles[].factId fields without changing existing stories",
+    "refined": "validatePlanOutput() returns a passing validation result (no errors) when given a PRD object with acceptance criteria omitting verifiedBy and intent fields and contextFiles entries omitting factId; the returned stories collection structure is identical in shape and length to the input",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "validatePlanOutput() preserves verifiedBy, intent, and contextFiles[].factId when those additive citation fields are present in a PRD",
+    "refined": "validatePlanOutput() returns a passing validation result and the output acceptance criteria retain verifiedBy and intent fields with unchanged values; contextFiles entries in the output retain factId fields with unchanged values",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "validatePlanOutput() rejects invalid verifiedBy.kind values outside \"test\" | \"symbol\" | \"file\"",
+    "refined": "validatePlanOutput() returns a validation error when a PRD's acceptance criterion contains verifiedBy.kind set to any value not in the set ['test', 'symbol', 'file']; validation succeeds when verifiedBy.kind is one of the three allowed values",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "extractClaims(output) marks claims as cited when citations are provided either as inline factId markers (for example [F-001]) or as structured JSON claims[].factIds parsed via parseLLMJson, and marks uncited prose claims with cited === false instead of throwing",
+    "refined": "extractClaims() returns ParsedClaim[] where each claim has `text: string`, `factIds: string[]`, and `cited: boolean`. Claims with inline factId markers matching /\\[([A-Z]-\\d+)\\]/ or structured JSON claims[].factIds are marked `cited: true`; claims without citations are marked `cited: false`. Function does not throw on unparseable input; returns empty array or partial results gracefully.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "citationRate(claims) returns 0 for an empty claim set and otherwise returns the fraction of claims where cited === true",
+    "refined": "citationRate([]) returns 0. For non-empty claims array, returns `claims.filter(c => c.cited).length / claims.length`, which is a number in range [0, 1].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "citationDistribution(claims, manifest) returns { verifiedFacts, specSpans, uncited } with verifiedFacts counting only citations whose manifest verification.status === \"verified\"",
+    "refined": "citationDistribution() returns object with keys `verifiedFacts: number`, `specSpans: number`, `uncited: number`. `verifiedFacts` is the count of claims citing factIds where `manifest.facts[factId]?.verification?.status === \"verified\"`; `specSpans` counts citations to `verification.status === \"spec_span\"`; `uncited` is the count of claims where `cited === false`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "DebateProposeInput includes manifestSection?: string, and both runPanelOneShot() and runner-plan.ts pass preDebatePhaseResult.manifestSection into every proposer call when it is available",
+    "refined": "DebateProposeInput type defines optional field `manifestSection?: string`. In runPanelOneShot() and runner-plan.ts, when calling proposer methods, if `preDebatePhaseResult.manifestSection` is defined (not null/undefined), it is passed as part of the proposer input object.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When stageConfig.proposers?.citationsRequired === true, DebatePromptBuilder.proposeSlot(i) includes a citations-required instruction; when the flag is false or omitted, the proposal prompt remains byte-equivalent to current behavior",
+    "refined": "DebatePromptBuilder.proposeSlot(i): When `stageConfig.proposers?.citationsRequired === true`, the returned prompt includes instruction text requiring proposers to cite factIds. When `citationsRequired` is false, undefined, or omitted, the prompt output is byte-for-byte identical to baseline (current main branch) behavior without citation instruction.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When stageConfig.proposers?.fileReadAccess === true, PlanPromptBuilder.build() removes the \"file names and structure only\" restriction, adds a file-read permission instruction, and includes \"up to <N> file reads\" when fileReadBudget is set; when the flag is false or omitted, the output remains byte-equivalent to current behavior",
+    "refined": "PlanPromptBuilder.build(): When `stageConfig.proposers?.fileReadAccess === true`, the prompt removes the existing \"file names and structure only / do NOT assert specific line numbers\" instruction, and adds instruction permitting file-read tools with citation requirement. When `fileReadBudget > 0`, the instruction includes substring \"up to <N> file reads\" where N is the budget value. When `fileReadAccess` is false, undefined, or omitted, the prompt output is byte-for-byte identical to baseline behavior.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "grounderStrategy is registered under \"grounder\" and, when ctx.specContent is present, invokes callOp(ctx.ctx, groundOp, { specContent, codebaseContext, workdir }) without passing model / agent fields on the input, writes the resulting manifest to .nax/runs/<runId>/plan/<storyId>/facts-manifest.json, and returns renderManifestSection(result)",
+    "refined": "grounderStrategy is exported from src/debate/pre-phase/grounder.ts and registered in pre-phase registry with key \"grounder\". When ctx.specContent is truthy, function calls callOp(ctx.ctx, groundOp, {specContent, codebaseContext, workdir}) with exactly those three input fields and no model/agent fields. Manifest JSON is written to filesystem at path constructed from ctx.projectDir, runId, storyId. Return value is object {manifestSection: string, costUsd: 0} where manifestSection is non-empty rendered output.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "grounderStrategy returns { manifestSection: \"\", costUsd: 0 } when ctx.specContent is empty and does not read nonexistent ctx.stageConfig.preDebatePhase.model or .agent fields",
+    "refined": "When ctx.specContent is falsy (null, undefined, empty string, or 0 length), grounderStrategy returns object with manifestSection property exactly equal to empty string and costUsd property exactly equal to 0. Code audit shows no references to ctx.stageConfig.preDebatePhase.model, ctx.stageConfig.preDebatePhase.agent, or ctx.stageConfig.preDebatePhase accessed anywhere in function body.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "verifierPickSelector is registered under \"verifier-pick\" and ranks proposals with a documented linear combination of citationRate, citationDistributionScore, failureModesCovered, and contextFilesValidRate before returning the highest-scoring proposal output",
+    "refined": "verifierPickSelector is exported from src/debate/selectors/verifier-pick.ts and registered in selector registry with key \"verifier-pick\". Function implements computeScore(proposal, manifest) that returns object with fields {citationRate, citationDistributionScore, failureModesCovered, contextFilesValidRate, total}. Score computation uses documented constant weights (named PROPOSAL_SCORE_WEIGHTS or similar) that sum to 1.0. Proposals array is scored and sorted by descending total score. Returned output is the output field of highest-scored proposal.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When selector.patch.enabled is false or omitted, or when AC overlap between the top two proposals is at or above overlapThreshold, verifierPickSelector skips patching and returns the unpatched winner",
+    "refined": "When ctx.stageConfig.selector.patch is falsy/undefined OR when acOverlap(scoredProposals[0], scoredProposals[1]) >= (patchConfig.overlapThreshold ?? 0.8), runPatchStep function is not invoked. Return value is {outcome: \"passed\", output: winner.proposal.output, resolverCostUsd: 0} where output is the unmodified output property of highest-scored proposal.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When selector.patch.enabled === true and AC overlap is below overlapThreshold (default 0.8), verifierPickSelector invokes the patch step exactly once and returns the patched output",
+    "refined": "When ctx.stageConfig.selector.patch.enabled === true AND acOverlap(winner, runnerUp) < (patchConfig.overlapThreshold ?? 0.8), runPatchStep is called exactly once with parameters (ctx, winner, runnerUp, patchConfig.maxDeltas ?? 5). Function call stack depth shows runPatchStep appears once. Return value is {outcome: \"passed\", output: patchedResult.output, resolverCostUsd: patchedResult.cost} where output differs from unpatched winner.proposal.output.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "runPatchStep continues inside the winner's existing session by calling ctx.agentManager.runAsSession(winner.proposal.agentName, winner.proposal.handle, prompt, { storyId: ctx.storyId, pipelineStage: \"plan\" }) exactly once and returns the resulting output and estimatedCostUsd without reopening a fresh proposal session",
+    "refined": "runPatchStep calls ctx.agentManager.runAsSession exactly once with parameters (winner.proposal.agentName, winner.proposal.handle, prompt, {storyId: ctx.storyId, pipelineStage: \"plan\"}). Code audit shows no calls to ctx.agentManager.getAgent, ctx.agentManager.openSession, ctx.agentManager.planAs, or ctx.agentManager.decomposeAs. Return value is {output: string, cost: number} where cost defaults to result.estimatedCostUsd ?? 0.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When the patch step throws, verifierPickSelector returns the unpatched winner and logs a warning when patch.onFailure is \"use-unpatched\" or omitted, and returns outcome === \"failed\" when patch.onFailure === \"block\"",
+    "refined": "runPatchStep call is wrapped in try-catch. On caught error: if patchConfig.onFailure is \"use-unpatched\" or undefined, logger.warn is called with error context and function returns {outcome: \"passed\", output: winner.proposal.output, resolverCostUsd: 0}. If patchConfig.onFailure === \"block\", function returns {outcome: \"failed\", resolverCostUsd: 0}. Execution does not re-throw or propagate the error outside the selector.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "planChecklistVerifier is registered under \"plan-checklist\" and returns outcome === \"failed\" when ctx.selectorResult.output cannot be parsed as a valid PRD",
+    "refined": "planChecklistVerifier is registered in the verifier registry with key 'plan-checklist' and returns { outcome: 'failed', costUsd: 0 } when ctx.selectorResult.output fails PRD schema validation or is not valid JSON",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "planChecklistVerifier performs the five mechanical checks (files-exist, ac-anchored, claims-cited, no-contradictions, spec-coverage) and emits findings with the documented checklistItem / severity pairings, including blocker findings for missing contextFiles on disk and contradicted factIds in the manifest",
+    "refined": "planChecklistVerifier returns findings array where: (a) 'files-exist' findings have severity 'blocker' for any contextFiles path not found on disk under ctx.workdir; (b) 'ac-anchored' findings have severity 'major' for acceptance criteria with neither verifiedBy nor intent: true; (c) 'claims-cited' findings have severity 'major' when overall citation rate < configured threshold; (d) 'no-contradictions' findings have severity 'blocker' for any PRD claim referencing a factId with verification.status === 'contradicted' in the loaded manifest; (e) 'spec-coverage' findings have severity 'major' for unverified factual spec claims not addressed in the PRD",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "planChecklistVerifier returns outcome === \"failed\" when blocker findings are present and outcome === \"passed\" otherwise, subject to the postDebateVerifier.onBlocker policy override",
+    "refined": "planChecklistVerifier returns { outcome: 'failed' } when findings includes severity 'blocker' items and ctx.stageConfig.postDebateVerifier?.onBlocker is not 'tag-expert'; returns { outcome: 'passed' } when no blocker findings exist or when onBlocker === 'tag-expert'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "formatSpecDeltas(blockers, manifest) returns markdown sections for contradicted spec claims, unverified factual spec claims, and spec gaps surfaced by the codebase",
+    "refined": "formatSpecDeltas(blockers, manifest) returns markdown string containing: (a) '## Contradicted spec claims' section with entries listing fact ID, spec excerpt, verified evidence path, and 'reroll or rewrite spec' action; (b) '## Unverified spec claims' section with entries listing fact ID, claim text, 'no matching evidence' note, and 'confirm or rewrite' action; (c) '## Spec gaps surfaced by codebase' section with entries listing gap ID, module/path, and 'address in revised spec' action",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When blocker findings are produced, planChecklistVerifier writes spec-deltas markdown to .nax/runs/<runId>/plan/<storyId>/spec-deltas.md and includes that artifact path in its returned output field",
+    "refined": "When findings array contains any item with severity === 'blocker', planChecklistVerifier: (a) calls formatSpecDeltas(blockers, manifest) where blockers are filtered findings; (b) writes result string to file at path '.nax/runs/{ctx.runId}/plan/{ctx.story.id}/spec-deltas.md' using Bun.write(); (c) includes that file path in returned object's output field, e.g., { outcome: 'failed', output: '.nax/runs/...spec-deltas.md', findings }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When postDebateVerifier.onBlocker is \"block\" or omitted, blocker findings cause outcome === \"failed\"; when it is \"tag-expert\", the verifier returns outcome === \"passed\" and emits a downstream-consumable signal that the resulting PRD must be retagged to routing.complexity = \"expert\" for every story",
+    "refined": "When ctx.stageConfig.postDebateVerifier?.onBlocker is 'block', undefined, or null, and findings includes severity 'blocker' items, return { outcome: 'failed' }. When onBlocker === 'tag-expert' and blockers exist, return { outcome: 'passed', findings, tagAsExpertOverride: true } where the tagAsExpertOverride field signals downstream that every story in the PRD must have routing.complexity set to 'expert'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "buildPlanComposition() leaves the plan stage unchanged when evidenceMode === \"current\" and, when evidenceMode === \"asymmetric\", injects the asymmetric defaults for preDebatePhase, proposers, sessionMode, selector.patch, and postDebateVerifier",
+    "refined": "buildPlanComposition() returns input config unmodified when evidenceMode === 'current'; when evidenceMode === 'asymmetric' and user has not explicitly set each field, returns config with preDebatePhase={kind:'grounder'}, proposers.citationsRequired=true, proposers.fileReadAccess=true, proposers.fileReadBudget=10, sessionMode='stateful', selector.kind='verifier-pick', selector.patch.enabled=true, selector.patch.overlapThreshold=0.8, selector.patch.maxDeltas=5, postDebateVerifier.kind='plan-checklist'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-27",
+    "original": "buildPlanComposition() preserves explicit user overrides over the asymmetric macro, including user-specified selector and preDebatePhase values, and is invoked before createDebateRunner() is constructed in src/cli/plan.ts",
+    "refined": "buildPlanComposition() is invoked in src/cli/plan.ts before createDebateRunner() instantiation; when evidenceMode === 'asymmetric', any user-provided value for preDebatePhase, proposers, sessionMode, selector, or postDebateVerifier overrides the corresponding asymmetric default; user-provided null/undefined values are treated as 'not set' and defaults apply",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When stageConfig.preDebatePhase is configured, runner-plan.ts invokes resolvePreDebatePhase(...) before proposer fan-out, prepends manifestSection to the proposal taskContext when present, and routes pre-phase exceptions according to onFailure: degrade continues with an empty manifestSection and a warning, while block returns outcome === \"failed\" before any proposer, selector, or verifier work runs",
+    "refined": "When stageConfig.preDebatePhase is present, runPlan() calls resolvePreDebatePhase() before proposer iteration; if successful and manifestSection is non-empty, manifestSection is prepended to each proposal's taskContext; if resolvePreDebatePhase() throws and onFailure === 'degrade' (or omitted), a logger.warn() entry with storyId and error message is written, manifestSection defaults to empty string, and proposer phase proceeds; if onFailure === 'block', DebateResult with outcome='failed' is returned immediately without invoking proposers, selector, or verifier",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When runPlan() uses sessionMode === \"stateful\", runner-plan.ts pre-opens one session per resolved debater, uses those handles for the proposal turn, preserves SuccessfulProposal.handle through selector resolution, and closes internally-opened handles only after selector / patch / verifier completion",
+    "refined": "When sessionMode === 'stateful', runPlan() opens one SessionHandle per resolved debater before proposer phase; each proposal turn uses its corresponding SessionHandle; SuccessfulProposal.handle is populated with the SessionHandle; the handle is carried through selector invocation and patch step; all internally-opened handles are closed after post-debate verifier invocation completes or upon DebateResult failure return",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When stageConfig.postDebateVerifier is configured, runner-plan.ts invokes resolvePostDebateVerifier(...) after selector resolution, propagates the verifier outcome to DebateResult, and rewrites every userStory.routing.complexity in debateResult.output to \"expert\" before plan.ts writes the PRD when the verifier signals tag-expert",
+    "refined": "When stageConfig.postDebateVerifier is present, runPlan() invokes resolvePostDebateVerifier() after selector resolution; DebateResult.postDebateVerifierOutcome is set to the verifier outcome; plan.ts receives the DebateResult, checks postDebateVerifierOutcome === 'tag-expert', and if true, rewrites every userStory in debateResult.output.userStories[*].routing.complexity to 'expert' before PRD validation and write",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
