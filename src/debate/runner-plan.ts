@@ -9,6 +9,7 @@ import { resolveDefaultAgent } from "../agents";
 import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { NaxError } from "../errors";
+import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { allSettledBounded } from "./concurrency";
@@ -44,6 +45,7 @@ interface PlanCtx extends DispatchContext {
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
+  readonly callContext: CallContext;
 }
 
 export async function runPlan(

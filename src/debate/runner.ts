@@ -356,6 +356,7 @@ export class DebateRunner {
       stage: this.stage,
       stageConfig: this.stageConfig,
       config: this.config,
+      callContext: this.ctx,
       agentManager: this.ctx.runtime.agentManager,
       sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
       runtime: this.ctx.runtime,

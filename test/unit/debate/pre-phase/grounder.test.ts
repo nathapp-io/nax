@@ -198,13 +198,13 @@ describe("grounderStrategy", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-15: grounderStrategy uses scanCodebase (not scanSourceRoots)
+  // AC-15: grounderStrategy uses scanSourceRoots
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-15: grounderStrategy invokes _grounderDeps.scanCodebase (not scanSourceRoots)", async () => {
+  test("AC-15: grounderStrategy invokes _grounderDeps.scanSourceRoots(workdir)", async () => {
     runtime = await makeTestRuntime();
     const { _grounderDeps } = require("@/debate/pre-phase/grounder");
-    const originalScanCodebase = _grounderDeps.scanCodebase;
+    const originalScanSourceRoots = _grounderDeps.scanSourceRoots;
 
     const ctx: PreDebatePhaseContext = {
       ctx: {
@@ -228,22 +228,22 @@ describe("grounderStrategy", () => {
       specContent: "Test spec content",
     };
 
-    // Force a sentinel error at scanCodebase call site to prove invocation.
-    _grounderDeps.scanCodebase = async () => {
-      throw new Error("scanCodebase sentinel");
+    // Force a sentinel error at scanSourceRoots call site to prove invocation.
+    _grounderDeps.scanSourceRoots = async () => {
+      throw new Error("scanSourceRoots sentinel");
     };
 
     try {
-      await expect(grounderStrategy(ctx)).rejects.toThrow("scanCodebase sentinel");
+      await expect(grounderStrategy(ctx)).rejects.toThrow("scanSourceRoots sentinel");
     } finally {
-      _grounderDeps.scanCodebase = originalScanCodebase;
+      _grounderDeps.scanSourceRoots = originalScanSourceRoots;
     }
   });
 
-  test("AC-15: _grounderDeps exports scanCodebase function", () => {
-    // Verify the grounder has access to scanCodebase via its deps
+  test("AC-15: _grounderDeps exports scanSourceRoots function", () => {
+    // Verify the grounder has access to scanSourceRoots via its deps
     const { _grounderDeps } = require("@/debate/pre-phase/grounder");
-    expect(_grounderDeps).toHaveProperty("scanCodebase");
-    expect(typeof _grounderDeps.scanCodebase).toBe("function");
+    expect(_grounderDeps).toHaveProperty("scanSourceRoots");
+    expect(typeof _grounderDeps.scanSourceRoots).toBe("function");
   });
 });

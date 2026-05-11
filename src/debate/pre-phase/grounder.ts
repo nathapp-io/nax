@@ -6,36 +6,29 @@
  */
 
 import { join } from "node:path";
-import { scanCodebase } from "@/analyze";
+import { type SourceRoot, scanSourceRoots } from "@/analyze";
 import { callOp } from "@/operations";
 import { groundOp } from "@/operations";
+import { buildSourceRootsSection } from "@/prompts";
 import type { FactsManifest } from "../facts-manifest";
 import { renderManifestSection } from "../facts-manifest";
 import type { PreDebatePhase, PreDebatePhaseContext } from "./types";
 
 export const _grounderDeps = {
-  scanCodebase,
+  scanSourceRoots,
   write: (path: string, data: string) => Bun.write(path, data),
 };
 
 async function buildCodebaseContext(workdir: string): Promise<string> {
-  const scan = await _grounderDeps.scanCodebase(workdir);
-  const sections: string[] = [];
+  const roots = await _grounderDeps.scanSourceRoots(workdir);
+  return buildSourceRootsSection(normalizeRoots(workdir, roots));
+}
 
-  if (scan.fileTree) {
-    sections.push(`## Codebase Structure\n\`\`\`\n${scan.fileTree}\n\`\`\``);
-  }
-
-  const allDeps = { ...scan.dependencies, ...scan.devDependencies };
-  const depList = Object.entries(allDeps)
-    .map(([name, version]) => `- ${name}@${version}`)
-    .join("\n");
-
-  if (depList) {
-    sections.push(`## Dependencies\n${depList}`);
-  }
-
-  return sections.join("\n\n");
+function normalizeRoots(workdir: string, roots: SourceRoot[]): SourceRoot[] {
+  return roots.map((root) => ({
+    ...root,
+    path: root.path.startsWith("/") ? root.path.replace(`${workdir}/`, "") : root.path,
+  }));
 }
 
 async function writeManifestArtifact(ctx: PreDebatePhaseContext, manifest: FactsManifest): Promise<void> {

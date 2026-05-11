@@ -10,7 +10,7 @@ const DebaterPersonaEnum = z.enum(["challenger", "pragmatist", "completionist", 
 
 const GrounderConfigSchema = z.object({
   model: ConfiguredModelSchema.default("fast"),
-  timeoutSeconds: z.number().int().positive().default(300),
+  timeoutSeconds: z.number().int().positive().default(1800),
 });
 
 const DebaterSchema = z.object({

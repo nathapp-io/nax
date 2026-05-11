@@ -120,16 +120,16 @@ describe("DebateStageConfigSchema — preDebatePhase field", () => {
 // ─── AC 5: DebateConfigSchema grounder block ─────────────────────────────────
 
 describe("DebateConfigSchema — grounder block", () => {
-  it("parse({}) returns grounder.model === 'fast' and grounder.timeoutSeconds === 300", () => {
+  it("parse({}) returns grounder.model === 'fast' and grounder.timeoutSeconds === 1800", () => {
     const result = DebateConfigSchema.parse({});
     expect(result.grounder.model).toBe("fast");
-    expect(result.grounder.timeoutSeconds).toBe(300);
+    expect(result.grounder.timeoutSeconds).toBe(1800);
   });
 
   it("parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'", () => {
     const result = DebateConfigSchema.parse({ grounder: { model: "balanced" } });
     expect(result.grounder.model).toBe("balanced");
-    expect(result.grounder.timeoutSeconds).toBe(300);
+    expect(result.grounder.timeoutSeconds).toBe(1800);
   });
 
   it("parse with object model returns grounder.model.agent === 'claude'", () => {

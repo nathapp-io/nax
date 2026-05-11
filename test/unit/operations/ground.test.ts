@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { ParseValidationError } from "@/agents";
+import type { RetryStrategy } from "@/agents";
 import { NaxError } from "@/errors";
 import { groundOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -20,8 +22,8 @@ function makeBuildCtx(grounderOverrides?: { model?: unknown; timeoutSeconds?: nu
 }
 
 describe("groundOp — identity", () => {
-  test("kind is complete", () => {
-    expect(groundOp.kind).toBe("complete");
+  test("kind is run", () => {
+    expect(groundOp.kind).toBe("run");
   });
 
   test("name is ground", () => {
@@ -32,8 +34,16 @@ describe("groundOp — identity", () => {
     expect(groundOp.stage).toBe("plan");
   });
 
-  test("jsonMode is true", () => {
-    expect(groundOp.jsonMode).toBe(true);
+  test("session role is grounder", () => {
+    expect(groundOp.session.role).toBe("grounder");
+  });
+
+  test("session lifetime is fresh", () => {
+    expect(groundOp.session.lifetime).toBe("fresh");
+  });
+
+  test("noFallback is true", () => {
+    expect(groundOp.noFallback).toBe(true);
   });
 });
 
@@ -79,10 +89,10 @@ describe("groundOp — timeoutMs", () => {
     expect(result).toBe(120_000);
   });
 
-  test("timeoutMs uses default timeoutSeconds (300) from DEFAULT_CONFIG", () => {
+  test("timeoutMs uses default timeoutSeconds (1800) from DEFAULT_CONFIG", () => {
     const ctx = makeBuildCtx();
     const result = groundOp.timeoutMs?.(input, ctx);
-    expect(result).toBe(300_000);
+    expect(result).toBe(1_800_000);
   });
 });
 
@@ -177,6 +187,72 @@ describe("groundOp — parse", () => {
     if (caught instanceof NaxError) {
       expect(caught.code).toBe("GROUNDER_PARSE_FAILED");
     }
+  });
+});
+
+describe("groundOp — retry", () => {
+  const input = { specContent: "spec", codebaseContext: "ctx", workdir: "/tmp" };
+
+  test("retry resolves to a RetryStrategy-like object with shouldRetry method", () => {
+    const ctx = makeBuildCtx();
+    const retryResult = typeof groundOp.retry === "function" ? groundOp.retry(input, ctx) : groundOp.retry;
+    expect(retryResult).toBeDefined();
+    if (retryResult && typeof retryResult === "object" && "shouldRetry" in retryResult) {
+      expect(typeof retryResult.shouldRetry).toBe("function");
+    }
+  });
+
+  test("retry requests another turn for invalid JSON output", () => {
+    const ctx = makeBuildCtx();
+    const retryResult = (typeof groundOp.retry === "function" ? groundOp.retry(input, ctx) : groundOp.retry) as
+      | RetryStrategy
+      | undefined;
+    expect(retryResult).toBeDefined();
+    const decision = retryResult?.shouldRetry(new ParseValidationError("probe"), 0, {
+      site: "run",
+      agentName: "claude",
+      stage: "plan",
+      storyId: "US-001",
+      lastOutput: "not json",
+    });
+    expect(decision).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: expect.stringContaining("Response was not valid JSON"),
+    });
+  });
+
+  test("retry requests another turn for schema-invalid JSON and explains null optional fields", () => {
+    const ctx = makeBuildCtx();
+    const retryResult = (typeof groundOp.retry === "function" ? groundOp.retry(input, ctx) : groundOp.retry) as
+      | RetryStrategy
+      | undefined;
+    expect(retryResult).toBeDefined();
+    const invalidManifest = JSON.stringify({
+      repoFacts: [{ id: "F-001", kind: "file", evidence: "src/x.ts:1", summary: "summary" }],
+      specClaims: [
+        {
+          id: "S-001",
+          specSpan: "span",
+          claim: "claim",
+          kind: "factual",
+          verification: { status: "verified", factId: null, evidence: null },
+        },
+      ],
+      gaps: [{ id: "G-001", kind: "missing-context", note: "note", evidence: null }],
+    });
+    const decision = retryResult?.shouldRetry(new ParseValidationError("probe"), 0, {
+      site: "run",
+      agentName: "claude",
+      stage: "plan",
+      storyId: "US-001",
+      lastOutput: invalidManifest,
+    });
+    expect(decision).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: expect.stringContaining("Do NOT use null"),
+    });
   });
 });
 
