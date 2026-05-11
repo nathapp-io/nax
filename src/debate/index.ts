@@ -12,6 +12,7 @@ export type {
   SuccessfulProposal,
 } from "./session-helpers";
 export { parseFactsManifest, renderManifestSection } from "./facts-manifest";
+export type { FactsManifest } from "./facts-manifest";
 export {
   registerSelector,
   resolveSelector,
