@@ -3,7 +3,7 @@ import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import { _runPlanDeps } from "../../../src/debate/runner-plan";
+import { _runPlanDeps } from "@/debate";
 import type { CallContext } from "../../../src/operations/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";

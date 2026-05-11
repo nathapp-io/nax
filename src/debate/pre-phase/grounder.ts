@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { scanCodebase } from "@/analyze";
 import { callOp } from "@/operations";
-import { groundOp } from "@/operations/ground";
+import { groundOp } from "@/operations";
 import type { FactsManifest } from "../facts-manifest";
 import { renderManifestSection } from "../facts-manifest";
 import type { PreDebatePhase, PreDebatePhaseContext } from "./types";

@@ -13,6 +13,9 @@ export type {
 } from "./session-helpers";
 export { parseFactsManifest, renderManifestSection } from "./facts-manifest";
 export type { FactsManifest } from "./facts-manifest";
+export { citationDistribution, citationRate, extractClaims } from "./citations";
+export type { ParsedClaim } from "./citations";
+export { _runPlanDeps } from "./runner-plan";
 export {
   registerSelector,
   resolveSelector,

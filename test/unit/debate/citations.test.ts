@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type ParsedClaim, citationDistribution, citationRate, extractClaims } from "../../../src/debate/citations";
-import type { FactsManifest } from "../../../src/debate/facts-manifest";
+import { type ParsedClaim, citationDistribution, citationRate, extractClaims } from "@/debate";
+import type { FactsManifest } from "@/debate";
 
 // ─── extractClaims ────────────────────────────────────────────────────────────
 
