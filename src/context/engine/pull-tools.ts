@@ -18,11 +18,11 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */
 
-import type { ContextToolRuntimeConfig } from "../../config/selectors";
-import type { NaxConfig } from "../../config/types";
-import { NaxError } from "../../errors";
-import { getLogger } from "../../logger";
-import type { UserStory } from "../../prd";
+import type { ContextToolRuntimeConfig } from "@/config/selectors";
+import type { NaxConfig } from "@/config/types";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import type { UserStory } from "@/prd";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
 import { FeatureContextProviderV2 } from "./providers/feature-context";
 import type { ContextRequest, ToolDescriptor } from "./types";
@@ -213,7 +213,7 @@ export async function handleQueryNeighbor(
   repoRoot: string,
   budget: PullToolBudget,
   maxTokensPerCall: number = DEFAULT_MAX_TOKENS_PER_CALL,
-  resolvedTestPatterns?: import("../../test-runners/resolver").ResolvedTestPatterns,
+  resolvedTestPatterns?: import("@/test-runners").ResolvedTestPatterns,
   storyId?: string,
   providerOptions?: { sourceGlob?: string; maxGlobFiles?: number },
 ): Promise<string> {

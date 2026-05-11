@@ -21,8 +21,8 @@
  */
 
 import { basename, join } from "node:path";
-import { NaxError } from "../../errors";
-import { getLogger } from "../../logger";
+import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
 
 // storyId omission note: canonical-rules loading is a project-level operation
 // that runs outside any story context (project-conventions.md §Logging scopes

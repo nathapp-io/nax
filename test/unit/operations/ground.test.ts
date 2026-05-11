@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { NaxError } from "../../../src/errors";
-import { groundOp } from "../../../src/operations/ground";
-import type { NaxRuntime } from "../../../src/runtime";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
+import { NaxError } from "@/errors";
+import { groundOp } from "@/operations";
+import type { NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -200,7 +200,7 @@ describe("groundOp — build", () => {
 
 describe("groundOp — export from operations barrel", () => {
   test("groundOp is exported from src/operations/index.ts", async () => {
-    const ops = await import("../../../src/operations");
+    const ops = await import("@/operations");
     expect(ops.groundOp).toBeDefined();
     expect(ops.groundOp.name).toBe("ground");
   });

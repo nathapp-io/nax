@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DebateStageConfig, ResolverType } from "../../../../src/debate/types";
-import type { ResolverContextInput } from "../../../../src/debate/session-helpers";
-import { pickSelectorKind } from "../../../../src/debate/selectors";
-import type { ReviewerSession } from "../../../../src/review/dialogue";
+import type { DebateStageConfig, ResolverType } from "@/debate/types";
+import type { ResolverContextInput } from "@/debate/session-helpers";
+import { pickSelectorKind } from "@/debate";
+import type { ReviewerSession } from "@/review/dialogue";
 
 describe("pickSelectorKind dispatcher (US-003 AC4-5)", () => {
   const makeStageConfig = (overrides?: Partial<DebateStageConfig>): DebateStageConfig => ({

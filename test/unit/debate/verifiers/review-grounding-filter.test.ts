@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PostDebateVerifierContext, PostDebateVerifierResult } from "../../../../src/debate/verifiers/types";
-import type { SelectorResult } from "../../../../src/debate/selectors/types";
-import type { DebateStageConfig } from "../../../../src/debate/types";
-import type { CallContext } from "../../../../src/operations/types";
+import type { PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
+import type { SelectorResult } from "@/debate/selectors/types";
+import type { DebateStageConfig } from "@/debate/types";
+import type { CallContext } from "@/operations/types";
 
 // Stub implementation placeholder
 export const reviewGroundingFilterVerifier = async (

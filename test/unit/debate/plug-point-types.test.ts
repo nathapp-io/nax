@@ -9,7 +9,7 @@ import { describe, expect, it } from "bun:test";
 // but the module itself must exist and be importable without runtime errors).
 describe("pre-phase/types.ts exports", () => {
   it("can import the module without errors", async () => {
-    const mod = await import("../../../src/debate/pre-phase/types");
+    const mod = await import("@/debate");
     // The module exists; TypeScript types are erased at runtime so we only
     // verify the module loads cleanly.
     expect(mod).toBeDefined();
@@ -18,14 +18,14 @@ describe("pre-phase/types.ts exports", () => {
 
 describe("selectors/types.ts exports", () => {
   it("can import the module without errors", async () => {
-    const mod = await import("../../../src/debate/selectors/types");
+    const mod = await import("@/debate");
     expect(mod).toBeDefined();
   });
 });
 
 describe("verifiers/types.ts exports", () => {
   it("can import the module without errors", async () => {
-    const mod = await import("../../../src/debate/verifiers/types");
+    const mod = await import("@/debate");
     expect(mod).toBeDefined();
   });
 });

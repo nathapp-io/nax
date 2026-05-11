@@ -5,8 +5,8 @@
  * Callers should import createDefaultOrchestrator from the barrel (index.ts).
  */
 
-import type { NaxConfig } from "../../config/types";
-import type { UserStory } from "../../prd";
+import type { NaxConfig } from "@/config";
+import type { UserStory } from "@/prd";
 import { DEFAULT_CANONICAL_RULES_BUDGET_TOKENS } from "../rules/canonical-loader";
 import { ContextOrchestrator } from "./orchestrator";
 import { CodeNeighborProvider } from "./providers/code-neighbor";
