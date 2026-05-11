@@ -4,7 +4,7 @@ import {
   resolveSuggestedPackageFeatureTestPath,
   resolveSuggestedTestFile,
   suggestedTestFilename,
-} from "@/acceptance/test-path";
+} from "@/acceptance";
 import type { PRD, UserStory } from "@/prd";
 
 // ─── helpers ────────────────────────────────────────────────────────────────

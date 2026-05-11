@@ -8,7 +8,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExecutionConfig, NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd/types";
-import { makeTempDir } from "@test/helpers/temp";
+import { makeTempDir } from "@test/helpers";
 import {
   checkClaudeMdExists,
   checkDiskSpace,
@@ -18,7 +18,7 @@ import {
   checkPendingStories,
   checkTestCommand,
   checkTypecheckCommand,
-} from "@/precheck/checks";
+} from "@/precheck";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

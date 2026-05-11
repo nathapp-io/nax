@@ -28,21 +28,20 @@
  * ```
  */
 
-import { buildAcceptanceRunCommand } from "@/acceptance/generator";
-import type { HardeningContext } from "@/acceptance/hardening";
-import { resolveAcceptanceFeatureTestPath } from "@/acceptance/test-path";
+import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
+import type { HardeningContext } from "@/acceptance";
 import { acFailureToFinding, acSentinelToFinding } from "@/findings";
 import type { Finding } from "@/findings";
 import { getLogger } from "@/logger";
 import { countStories } from "@/prd";
-import { parseTestFailures as _parseTestFailures } from "@/test-runners/ac-parser";
+import { parseTestFailures as _parseTestFailures } from "@/test-runners";
 import { logTestOutput } from "@/utils/log-test-output";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /** Injectable deps for testability */
 export const _acceptanceStageDeps = {
   runHardeningPass: async (ctx: HardeningContext) => {
-    const { runHardeningPass } = await import("@/acceptance/hardening");
+    const { runHardeningPass } = await import("@/acceptance");
     return runHardeningPass(ctx);
   },
 };

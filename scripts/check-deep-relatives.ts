@@ -37,6 +37,9 @@ export interface DeepRelativeViolation {
 interface Baseline {
   count: number;
   updatedAt: string;
+  /** Per-file violation counts. Present in baselines saved after this field was added.
+   *  Used to pinpoint which files introduced new violations on failure. */
+  byFile?: Record<string, number>;
 }
 
 function suggestAlias(spec: string, fileRelative: string): string {
@@ -129,13 +132,17 @@ function loadBaseline(): Baseline | null {
   }
 }
 
-function saveBaseline(count: number): void {
+function saveBaseline(violations: readonly DeepRelativeViolation[]): void {
+  const byFile: Record<string, number> = {};
+  for (const v of violations) {
+    byFile[v.file] = (byFile[v.file] ?? 0) + 1;
+  }
   mkdirSync(dirname(BASELINE_FILE), { recursive: true });
   writeFileSync(
     BASELINE_FILE,
-    JSON.stringify({ count, updatedAt: new Date().toISOString() }, null, 2) + "\n",
+    JSON.stringify({ count: violations.length, updatedAt: new Date().toISOString(), byFile }, null, 2) + "\n",
   );
-  console.log(`[OK] Baseline saved: ${count} deep-relative imports.`);
+  console.log(`[OK] Baseline saved: ${violations.length} deep-relative imports across ${Object.keys(byFile).length} files.`);
 }
 
 export function formatReport(
@@ -164,13 +171,35 @@ export function formatReport(
 
   const lines = [
     `[FAIL] ${delta} new deep-relative import(s) added (${count} total, baseline: ${baseline.count}).`,
-    "Replace with path aliases: @/ for src/, @test/ for test/.",
+    "Refactor the imports in your changed files to use path aliases (@/ for src/, @test/ for test/).",
+    "Run `git diff --name-only` to identify your changed files, then convert their 2+ level relative imports.",
     "",
   ];
-  for (const v of violations.slice(0, 20)) {
-    lines.push(`  ${v.file}:${v.line}  "${v.importPath}"  →  "${v.suggestion}"`);
+
+  if (baseline.byFile) {
+    // Identify violations from files that exceeded their per-file baseline count.
+    const currentByFile: Record<string, number> = {};
+    for (const v of violations) currentByFile[v.file] = (currentByFile[v.file] ?? 0) + 1;
+
+    const newViolations = violations.filter((v) => {
+      const baseCount = baseline.byFile![v.file] ?? 0;
+      return (currentByFile[v.file] ?? 0) > baseCount;
+    });
+
+    lines.push(`New violations (${newViolations.length}):`);
+    for (const v of newViolations.slice(0, delta)) {
+      lines.push(`  ${v.file}:${v.line}  "${v.importPath}"  →  "${v.suggestion}"`);
+    }
+    if (newViolations.length > delta) lines.push(`  ... and ${newViolations.length - delta} more`);
+  } else {
+    lines.push("Re-run `--update-baseline` to enable per-file violation tracking for more precise output.");
+    lines.push(`All current violations (first 20 shown — includes pre-existing baseline violations):`);
+    for (const v of violations.slice(0, 20)) {
+      lines.push(`  ${v.file}:${v.line}  "${v.importPath}"  →  "${v.suggestion}"`);
+    }
+    if (count > 20) lines.push(`  ... and ${count - 20} more`);
   }
-  if (count > 20) lines.push(`  ... and ${count - 20} more`);
+
   return { ok: false, message: lines.join("\n") };
 }
 
@@ -180,7 +209,7 @@ function main(): void {
   const violations = scanForDeepRelatives(ROOT);
 
   if (args.includes("--update-baseline")) {
-    saveBaseline(violations.length);
+    saveBaseline(violations);
     return;
   }
 
