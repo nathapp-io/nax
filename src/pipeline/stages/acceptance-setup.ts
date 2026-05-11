@@ -28,7 +28,7 @@ import type { NaxConfig } from "@/config";
 import { loadConfigForWorkdir } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { acceptanceGenerateOp, acceptanceRefineOp, callOp as _callOp } from "@/operations";
+import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
 import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
