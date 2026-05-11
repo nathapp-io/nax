@@ -34,6 +34,7 @@ interface PlanPhaseOpts {
   feature: string;
   storyId: string;
   timeoutSeconds?: number;
+  specContent?: string;
 }
 
 interface PlanCtxMinimal {
@@ -60,6 +61,7 @@ export async function runPrePhase(
     workdir: opts.workdir,
     featureName: opts.feature,
     storyId: opts.storyId,
+    specContent: opts.specContent,
   };
   try {
     const result = await _runPlanDeps.resolvePreDebatePhase(config.preDebatePhase?.kind ?? "")(prePhaseCtx);

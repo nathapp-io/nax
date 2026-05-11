@@ -102,7 +102,8 @@ const makeDebateStageSchema = (
       .optional(),
   });
 
-  const extended = extensions ? base.extend(extensions.shape) : base;
+  // Non-plan stages explicitly reject evidenceMode so Zod throws if it is provided.
+  const extended = extensions ? base.extend(extensions.shape) : base.extend({ evidenceMode: z.undefined() });
   return z.preprocess(toObject, extended);
 };
 

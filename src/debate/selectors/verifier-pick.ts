@@ -5,6 +5,7 @@
  * and optionally applies a patch step if enabled and AC overlap is below threshold.
  */
 
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import { PatchPromptBuilder } from "@/prompts";
 import { citationDistribution, citationRate, extractClaims } from "../citations";
@@ -133,7 +134,11 @@ export async function runPatchStep(
   const prompt = new PatchPromptBuilder().build(winner.proposal.output, deltas);
   const handle = winner.proposal.handle;
   if (!handle) {
-    throw new Error("[verifier-pick] Winner proposal has no session handle — cannot continue session for patch step");
+    throw new NaxError(
+      "[verifier-pick] Winner proposal has no session handle — cannot continue session for patch step",
+      "VERIFIER_PICK_NO_HANDLE",
+      { stage: "plan", storyId: ctx.storyId },
+    );
   }
   const result = await ctx.agentManager.runAsSession(winner.proposal.agentName, handle, prompt, {
     storyId: ctx.storyId,

@@ -146,12 +146,24 @@ export class DebateRunner {
         featureName: this.featureName,
         storyId: this.ctx.storyId ?? "",
       };
-      const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
-      if (prePhaseResult.manifestSection) {
-        preDebateManifestSection = prePhaseResult.manifestSection;
-        taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
+      try {
+        const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
+        if (prePhaseResult.manifestSection) {
+          preDebateManifestSection = prePhaseResult.manifestSection;
+          taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
+        }
+        totalCostUsd += prePhaseResult.costUsd;
+      } catch (err) {
+        const onFailure = config.preDebatePhase.onFailure ?? "degrade";
+        if (onFailure === "block") {
+          return buildFailedResult(this.ctx.storyId ?? "", this.stage, config, totalCostUsd);
+        }
+        logger?.warn("debate", "pre-phase failed — degrading to no manifest", {
+          storyId: this.ctx.storyId ?? "",
+          stage: this.stage,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-      totalCostUsd += prePhaseResult.costUsd;
     }
 
     const proposalSettled = await allSettledBounded(

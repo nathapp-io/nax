@@ -74,7 +74,11 @@ export async function runPlan(
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
     if (!agentManager.getAgent(debater.agent)) {
-      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`, {
+        storyId: ctx.storyId,
+        stage: ctx.stage,
+        agent: debater.agent,
+      });
       continue;
     }
     resolved.push({ debater, agentName: debater.agent });
@@ -88,6 +92,7 @@ export async function runPlan(
       feature: opts.feature,
       storyId: ctx.storyId,
       timeoutSeconds: opts.timeoutSeconds,
+      specContent: opts.specContent,
     };
     const preResult = await runPrePhase(ctx, config, phaseOpts);
     if (preResult.block) return buildFailedResult(ctx.storyId, ctx.stage, config, totalCostUsd);
