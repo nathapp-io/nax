@@ -6,9 +6,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExecutionConfig, NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { makeTempDir } from "../../helpers/temp";
+import type { ExecutionConfig, NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd/types";
+import { makeTempDir } from "@test/helpers/temp";
 import {
   checkClaudeMdExists,
   checkDiskSpace,
@@ -18,7 +18,7 @@ import {
   checkPendingStories,
   checkTestCommand,
   checkTypecheckCommand,
-} from "../../../src/precheck/checks";
+} from "@/precheck/checks";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures

@@ -21,18 +21,18 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand, generateSkeletonTests } from "../../acceptance/generator";
-import { groupStoriesByPackage } from "../../acceptance/test-path";
-import type { AcceptanceCriterion, RefinedCriterion } from "../../acceptance/types";
-import type { AgentAdapter } from "../../agents/types";
-import type { NaxConfig } from "../../config";
-import { loadConfigForWorkdir } from "../../config/loader";
-import { NaxError } from "../../errors";
-import { getSafeLogger } from "../../logger";
-import { acceptanceGenerateOp } from "../../operations/acceptance-generate";
-import { acceptanceRefineOp } from "../../operations/acceptance-refine";
-import { callOp as _callOp } from "../../operations/call";
-import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
+import { buildAcceptanceRunCommand, generateSkeletonTests } from "@/acceptance/generator";
+import { groupStoriesByPackage } from "@/acceptance/test-path";
+import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance/types";
+import type { AgentAdapter } from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import { loadConfigForWorkdir } from "@/config/loader";
+import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
+import { acceptanceGenerateOp } from "@/operations/acceptance-generate";
+import { acceptanceRefineOp } from "@/operations/acceptance-refine";
+import { callOp as _callOp } from "@/operations/call";
+import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────

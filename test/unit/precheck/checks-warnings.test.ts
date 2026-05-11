@@ -9,9 +9,9 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config/types";
-import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "../../../src/precheck/checks-warnings";
-import { makeTempDir } from "../../helpers/temp";
+import type { NaxConfig } from "@/config/types";
+import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck/checks-warnings";
+import { makeTempDir } from "@test/helpers/temp";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
@@ -165,7 +165,7 @@ describe("checkGitignoreCoversNax", () => {
 // BUG-092: build command configured but not in review.checks
 // ---------------------------------------------------------------------------
 
-import { checkBuildCommandInReviewChecks } from "../../../src/precheck/checks-warnings";
+import { checkBuildCommandInReviewChecks } from "@/precheck/checks-warnings";
 
 function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {

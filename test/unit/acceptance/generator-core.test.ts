@@ -12,7 +12,7 @@ import {
   acceptanceTestFilename,
   buildAcceptanceRunCommand,
   parseAcceptanceCriteria,
-} from "../../../src/acceptance/generator";
+} from "@/acceptance/generator";
 
 describe("acceptanceTestFilename", () => {
   test("returns .nax-acceptance.test.ts when no language is given", () => {
