@@ -723,12 +723,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     capturedWrites993 = [];
     await mkdir(join(tmpDir993, ".nax"), { recursive: true });
 
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/\n    └── index.ts",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});

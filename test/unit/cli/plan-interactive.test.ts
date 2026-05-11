@@ -75,7 +75,7 @@ const SAMPLE_PRD: PRD = {
 
 const origReadFile = _deps.readFile;
 const origWriteFile = _deps.writeFile;
-const origScanCodebase = _deps.scanCodebase;
+const origScanSourceRoots = _deps.scanSourceRoots;
 const origCreateRuntime = _deps.createRuntime;
 const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
@@ -133,7 +133,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       capturedWriteArgs.push([path, content]);
     });
 
-    _deps.scanCodebase = mock(async (_workdir: string) => makeFakeScan());
+    _deps.scanSourceRoots = mock(async (_workdir: string) => []);
 
     _deps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-project" }));
 
@@ -151,7 +151,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     mock.restore();
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
-    _deps.scanCodebase = origScanCodebase;
+    _deps.scanSourceRoots = origScanSourceRoots;
     _deps.createRuntime = origCreateRuntime;
     _deps.readPackageJson = origReadPackageJson;
     _deps.spawnSync = origSpawnSync;

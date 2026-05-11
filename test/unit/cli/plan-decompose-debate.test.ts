@@ -162,7 +162,7 @@ function makeConfigWithDebate(debateDecomposeEnabled: boolean) {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origExistsSync = _planDeps.existsSync;
 const origCreateDebateRunner = _planDeps.createDebateRunner;
@@ -191,12 +191,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     _planDeps.writeFile = mock(async (p: string, content: string) => {
       capturedWriteArgs.push([p, content]);
     });
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/\n    └── index.ts",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -217,7 +212,7 @@ describe("planDecomposeCommand — debate integration (US-004)", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.existsSync = origExistsSync;
     _planDeps.createDebateRunner = origCreateDebateRunner;

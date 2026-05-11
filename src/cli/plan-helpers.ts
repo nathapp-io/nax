@@ -5,7 +5,6 @@
  */
 
 import { createInterface } from "node:readline";
-import type { CodebaseScan } from "../analyze/types";
 import type { PackageSummary } from "../prompts";
 
 /**
@@ -94,37 +93,6 @@ export function buildPackageSummary(rel: string, pkg: Record<string, unknown> | 
   const keyDeps = KEY_DEP_PATTERNS.filter(([re]) => re.test(depNames)).map(([, label]) => label);
 
   return { path: rel, name, runtime, framework, testRunner, keyDeps };
-}
-
-/**
- * Build codebase context markdown from scan results.
- */
-export function buildCodebaseContext(scan: CodebaseScan): string {
-  const sections: string[] = [];
-
-  sections.push("## Codebase Structure\n");
-  sections.push("```");
-  sections.push(scan.fileTree);
-  sections.push("```\n");
-
-  const allDeps = { ...scan.dependencies, ...scan.devDependencies };
-  const depList = Object.entries(allDeps)
-    .map(([name, version]) => `- ${name}@${version}`)
-    .join("\n");
-
-  if (depList) {
-    sections.push("## Dependencies\n");
-    sections.push(depList);
-    sections.push("");
-  }
-
-  if (scan.testPatterns.length > 0) {
-    sections.push("## Test Setup\n");
-    sections.push(scan.testPatterns.map((p) => `- ${p}`).join("\n"));
-    sections.push("");
-  }
-
-  return sections.join("\n");
 }
 
 /**

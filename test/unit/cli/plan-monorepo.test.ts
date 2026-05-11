@@ -72,7 +72,7 @@ const SAMPLE_PRD: PRD = {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
@@ -102,12 +102,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
       return "# Spec\nDo something.";
     });
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
@@ -122,7 +117,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.readPackageJsonAt = origReadPackageJsonAt;
@@ -235,12 +230,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
 
     _planDeps.existsSync = mock(() => true);
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "monorepo-root" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
@@ -284,7 +274,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;

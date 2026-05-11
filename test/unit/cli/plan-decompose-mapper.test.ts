@@ -95,7 +95,7 @@ function makeFakeScan() {
 const origExistsSync = _planDeps.existsSync;
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
 const origReadPackageJson = _planDeps.readPackageJson;
@@ -125,7 +125,7 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
     });
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => null);
     _planDeps.readPackageJsonAt = mock(async () => null);
@@ -149,7 +149,7 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     _planDeps.existsSync = origExistsSync;
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _planDeps.readPackageJson = origReadPackageJson;

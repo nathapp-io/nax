@@ -182,7 +182,7 @@ const DEBATE_FAILED_RESULT: DebateResult = {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
 const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
@@ -219,12 +219,7 @@ describe("planCommand — debate integration (US-004)", () => {
 
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
     _planDeps.readPackageJsonAt = mock(async () => null);
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
@@ -240,7 +235,7 @@ describe("planCommand — debate integration (US-004)", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
     _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
