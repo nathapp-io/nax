@@ -103,10 +103,14 @@ export async function scanSourceRoots(workdir: string): Promise<SourceRoot[]> {
     deps.logger()?.warn("analyze", "discoverWorkspacePackages failed, using single-package fallback", {
       error: errMsg,
     });
-    const language = await deps.detectLanguage(workdir);
-    const pkg = await deps.readPackageJson(join(workdir, "package.json"));
-    const { framework, testRunner } = resolveFrameworkAndRunner(language, pkg);
-    return [{ path: ".", language, framework, testRunner }];
+    try {
+      const language = await deps.detectLanguage(workdir);
+      const pkg = await deps.readPackageJson(join(workdir, "package.json"));
+      const { framework, testRunner } = resolveFrameworkAndRunner(language, pkg);
+      return [{ path: ".", language, framework, testRunner }];
+    } catch {
+      return [{ path: ".", language: undefined, framework: "", testRunner: "" }];
+    }
   }
 
   if (packages.length === 0) {
