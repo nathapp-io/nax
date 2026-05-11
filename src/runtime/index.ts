@@ -211,7 +211,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     middleware,
     runId,
     sendPrompt: (handle, prompt, sendOpts) => sessionManager.sendPrompt(handle, prompt, sendOpts),
-    runHop: createSessionRunHop(sessionManager),
+    runHop: createSessionRunHop(sessionManager, () => agentManager),
     dispatchEvents,
   };
   if (opts?.agentManager instanceof AgentManager) {

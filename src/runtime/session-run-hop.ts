@@ -1,4 +1,5 @@
 import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter";
+import type { IAgentManager } from "../agents/manager-types";
 import { SessionFailureError } from "../agents/types";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import type { ISessionManager } from "../session";
@@ -10,7 +11,10 @@ export interface SessionRunHopResult {
 
 export type SessionRunHopFn = (agentName: string, options: AgentRunOptions) => Promise<SessionRunHopResult>;
 
-export function createSessionRunHop(sessionManager: ISessionManager): SessionRunHopFn {
+export function createSessionRunHop(
+  sessionManager: ISessionManager,
+  getAgentManager?: () => IAgentManager | undefined,
+): SessionRunHopFn {
   return async (agentName: string, options: AgentRunOptions): Promise<SessionRunHopResult> => {
     const startMs = Date.now();
     const prompt = buildContextToolPreamble(options);
@@ -44,11 +48,28 @@ export function createSessionRunHop(sessionManager: ISessionManager): SessionRun
           ? (options.maxInteractionTurns ?? 10)
           : (options.maxInteractionTurns ?? 1);
 
-      const turnResult = await sessionManager.sendPrompt(handle, prompt, {
-        interactionHandler: buildRunInteractionHandler(options),
-        signal: options.abortSignal,
-        maxTurns,
-      });
+      const interactionHandler = buildRunInteractionHandler(options);
+      const am = getAgentManager?.();
+      // Route through agentManager.runAsSession when available so dispatch
+      // events are emitted and captured by the prompt auditor. Falls back to
+      // sessionManager.sendPrompt for callers without an agentManager (tests).
+      const turnResult = am
+        ? await am.runAsSession(agentName, handle, prompt, {
+            storyId: options.storyId,
+            featureName: options.featureName,
+            workdir: options.workdir,
+            projectDir: options.projectDir,
+            pipelineStage: options.pipelineStage ?? "run",
+            sessionRole: options.sessionRole,
+            signal: options.abortSignal,
+            interactionHandler,
+            maxTurns,
+          })
+        : await sessionManager.sendPrompt(handle, prompt, {
+            interactionHandler,
+            signal: options.abortSignal,
+            maxTurns,
+          });
 
       return {
         prompt,
