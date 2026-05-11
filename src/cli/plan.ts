@@ -216,7 +216,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
           logger?.info("plan", "[OK] PRD written via debate", { outputPath });
           return outputPath;
         }
-        logger?.warn("debate", "All plan debaters failed — falling back to single agent", {
+        logger?.warn("debate", "Plan debate returned failed outcome — falling back to single agent", {
           stage: "plan",
           event: "fallback",
         });

@@ -768,6 +768,51 @@ describe("runner-plan — preDebatePhase invocation", () => {
     expect(prePhaseCalled).toEqual(["grounder"]);
   });
 
+  test("AC-3: threads packageView through the plan pre-phase context", async () => {
+    const packageView = {
+      config: DEFAULT_CONFIG,
+      select: mock((_sel: unknown) => DEFAULT_CONFIG),
+    } as any;
+    let receivedPackageView: unknown;
+
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
+      async (preCtx) => {
+        receivedPackageView = preCtx.ctx.packageView;
+        preCtx.ctx.packageView.select(() => DEFAULT_CONFIG);
+        return { manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 };
+      },
+    ) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+    const ctx = makeCallCtxWithIds("package-view-test", agentManager, sm, config);
+    ctx.packageView = packageView;
+
+    const runner = new DebateRunner({
+      ctx,
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ preDebatePhase: { kind: "grounder" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "package-view-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(receivedPackageView).toBe(packageView);
+    expect(packageView.select).toHaveBeenCalled();
+  });
+
   test("AC-3: prepends prePhase manifestSection to proposal taskContext", async () => {
     _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
       async () => ({ manifestSection: "## Grounded Facts\n- F-001: critical fact", costUsd: 0 }),

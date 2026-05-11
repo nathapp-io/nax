@@ -53,6 +53,7 @@ export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builde
 
 // Grounder prompt builder — facts manifest grounding prompt construction.
 export { GrounderPromptBuilder } from "./builders/grounder-builder";
+export { buildSourceRootsSection } from "./builders/source-roots-builder";
 
 // Patch prompt builder — patch step prompt construction for verifier-pick selector.
 export { PatchPromptBuilder } from "./builders/patch-builder";

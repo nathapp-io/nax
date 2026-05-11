@@ -9,6 +9,7 @@ import { resolveDefaultAgent } from "../agents";
 import type { SessionHandle } from "../agents/types";
 import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
+import type { CallContext } from "../operations/types";
 import type { SessionRole } from "../runtime/session-role";
 import type { ISessionManager } from "../session/types";
 import type { PreDebatePhaseContext } from "./pre-phase";
@@ -42,9 +43,9 @@ interface PlanCtxMinimal {
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
+  readonly callContext: CallContext;
   readonly abortSignal?: AbortSignal;
   readonly sessionManager?: ISessionManager;
-  readonly ctx?: unknown;
 }
 
 /** Run the pre-debate phase, returning the manifest section and accumulated cost. */
@@ -55,7 +56,7 @@ export async function runPrePhase(
 ): Promise<{ manifestSection: string; costUsd: number; block: boolean }> {
   const logger = _debateSessionDeps.getSafeLogger();
   const prePhaseCtx: PreDebatePhaseContext = {
-    ctx: ctx as unknown as import("../operations/types").CallContext,
+    ctx: ctx.callContext,
     stage: ctx.stage,
     stageConfig: config,
     workdir: opts.workdir,

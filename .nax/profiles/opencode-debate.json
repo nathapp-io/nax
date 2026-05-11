@@ -21,6 +21,9 @@
     "debate": {
         "enabled": true,
         "agents": 2,
+        "grounder": {
+            "timeoutSeconds":1800
+        },
         "stages": {
             "plan": {
                 "enabled": true,
@@ -28,8 +31,10 @@
                 "sessionMode": "stateful",
                 "resolver": {
                     "type": "synthesis",
-                    "agent": "claude"
+                    "agent": "opencode"
                 },
+                "autoPersona": true,
+                "evidenceMode": "asymmetric",
                 "debaters": [
                     {
                         "agent": "opencode",
@@ -39,7 +44,11 @@
                         "agent": "opencode",
                         "model": "fast"
                     }
-                ]
+                ],
+                "preDebatePhase": {
+                    "kind": "grounder"
+                },
+                "timeoutSeconds": 1800
             },
             "review": {
                 "enabled": true,

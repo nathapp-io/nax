@@ -16,6 +16,7 @@ export type CanonicalSessionRole =
   | "test-fix"
   | "reviewer-semantic"
   | "reviewer-adversarial"
+  | "grounder"
   | "plan"
   | "decompose"
   | "acceptance-gen"
@@ -37,6 +38,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "test-fix",
   "reviewer-semantic",
   "reviewer-adversarial",
+  "grounder",
   "plan",
   "decompose",
   "acceptance-gen",

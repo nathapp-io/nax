@@ -337,7 +337,7 @@ export const NaxConfigSchema = z
       enabled: false,
       agents: 3,
       maxConcurrentDebaters: 2,
-      grounder: { model: "fast" as const, timeoutSeconds: 300 },
+      grounder: { model: "fast" as const, timeoutSeconds: 1800 },
       stages: {
         plan: {
           enabled: true,
