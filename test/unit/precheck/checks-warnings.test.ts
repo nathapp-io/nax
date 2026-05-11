@@ -132,6 +132,8 @@ describe("checkGitignoreCoversNax", () => {
       ".nax-pids",
       ".nax-wt/",
       "**/.nax-acceptance*",
+      "**/_nax_acceptance_test.py",
+      "**/_nax_suggested_test.py",
       "**/.nax/features/*/",
     ].join("\n");
     writeFileSync(join(workdir, ".gitignore"), gitignoreContent);
@@ -149,6 +151,8 @@ describe("checkGitignoreCoversNax", () => {
       ".nax-pids",
       ".nax-wt/",
       "**/.nax-acceptance*",
+      "**/_nax_acceptance_test.py",
+      "**/_nax_suggested_test.py",
       "**/.nax/features/*/",
     ].join("\n");
     writeFileSync(join(workdir, ".gitignore"), gitignoreContent);

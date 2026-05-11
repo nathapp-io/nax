@@ -54,6 +54,8 @@ export const NAX_RUNTIME_PATTERNS = [
   /^.{2} \.nax-pids$/,
   /^.{2} \.nax-wt\//,
   /^.{2} .*\.nax-acceptance[^/]*$/,
+  /^.{2} .*_nax_acceptance_test\.py$/,
+  /^.{2} .*_nax_suggested_test\.py$/,
 ];
 
 /** Check if working tree is clean. Uses: git status --porcelain */

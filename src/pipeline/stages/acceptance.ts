@@ -172,7 +172,7 @@ export const acceptanceStage: PipelineStage = {
       // resolved by acceptance-setup. In fallback (single-package) mode they fall back to ctx.config.
       const resolvedFramework = testFramework ?? ctx.config.project?.testFramework;
       const resolvedCommand = commandOverride ?? ctx.config.acceptance.command;
-      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand);
+      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand, packageDir);
       logger.info("acceptance", "Running acceptance command", {
         storyId: ctx.story.id,
         cmd: testCmdParts.join(" "),

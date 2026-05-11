@@ -293,6 +293,8 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     /\.nax-pids$/,
     /\.nax-wt\//,
     /\.nax-acceptance[^/]*$/,
+    /_nax_acceptance_test\.py$/,
+    /_nax_suggested_test\.py$/,
     // Test-output artifacts — transient files leaked by tests, not agent changes.
     // 2B migrated logging.test.ts to a temp dir; these guard against future leak patterns.
     // Patterns match both repo-root paths (test/...) and monorepo-prefixed paths (.../test/...).

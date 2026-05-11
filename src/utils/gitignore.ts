@@ -19,6 +19,8 @@ export const NAX_GITIGNORE_ENTRIES = [
   ".nax-pids",
   ".nax-wt/",
   "**/.nax-acceptance*",
+  "**/_nax_acceptance_test.py",
+  "**/_nax_suggested_test.py",
   "**/.nax/features/*/",
   ".nax/prompt-audit/",
 ];

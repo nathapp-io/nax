@@ -435,7 +435,7 @@ export const acceptanceSetupStage: PipelineStage = {
     // Use per-package testFramework/commandOverride resolved above.
     let redFailCount = 0;
     for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
-      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride);
+      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
       getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
         cmd: runCmd.join(" "),
         packageDir,

@@ -124,8 +124,8 @@ describe("suggestedTestFilename()", () => {
     expect(suggestedTestFilename("go")).toBe(".nax-suggested_test.go");
   });
 
-  test("returns .nax-suggested.test.py for Python", () => {
-    expect(suggestedTestFilename("python")).toBe(".nax-suggested.test.py");
+  test("returns _nax_suggested_test.py for Python", () => {
+    expect(suggestedTestFilename("python")).toBe("_nax_suggested_test.py");
   });
 
   test("returns .nax-suggested.rs for Rust", () => {

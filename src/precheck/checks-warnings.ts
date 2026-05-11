@@ -161,6 +161,8 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     ".nax-pids",
     ".nax-wt/",
     "**/.nax-acceptance*",
+    "**/_nax_acceptance_test.py",
+    "**/_nax_suggested_test.py",
     "**/.nax/features/*/",
   ];
   const missing = patterns.filter((pattern) => !content.includes(pattern));
