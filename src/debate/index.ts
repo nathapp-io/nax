@@ -19,8 +19,10 @@ export {
   majorityFailClosedSelector,
   majorityFailOpenSelector,
   computeMajority,
+  verifierPickSelector,
 } from "./selectors";
 export { registerPreDebatePhase, resolvePreDebatePhase } from "./pre-phase";
+export { grounderStrategy } from "./pre-phase/grounder";
 export { registerPostDebateVerifier, resolvePostDebateVerifier, reviewGroundingFilterVerifier } from "./verifiers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
 export { DebatePromptBuilder } from "../prompts";

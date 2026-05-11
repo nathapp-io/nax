@@ -54,6 +54,9 @@ export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builde
 // Grounder prompt builder — facts manifest grounding prompt construction.
 export { GrounderPromptBuilder } from "./builders/grounder-builder";
 
+// Patch prompt builder — patch step prompt construction for verifier-pick selector.
+export { PatchPromptBuilder } from "./builders/patch-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions, SectionSlot } from "./core/types";
 export { SLOT_ORDER } from "./core/types";

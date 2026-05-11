@@ -8,6 +8,7 @@ import { judgeSelector } from "./judge";
 import { majorityFailClosedSelector, majorityFailOpenSelector } from "./majority";
 import { synthesisSelector } from "./synthesis";
 import type { Selector } from "./types";
+import { verifierPickSelector } from "./verifier-pick";
 
 const STRATEGIES: Record<string, Selector> = {};
 
@@ -29,3 +30,4 @@ registerSelector("majority-fail-closed", majorityFailClosedSelector);
 registerSelector("majority-fail-open", majorityFailOpenSelector);
 registerSelector("judge", judgeSelector);
 registerSelector("dialogue-verdict", dialogueVerdictSelector);
+registerSelector("verifier-pick", verifierPickSelector);

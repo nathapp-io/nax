@@ -3,7 +3,7 @@
   "feature": "enhanced-debate-phase-2",
   "branchName": "feat/enhanced-debate-phase-2",
   "createdAt": "2026-05-11T00:00:00.000Z",
-  "updatedAt": "2026-05-11T03:40:06.515Z",
+  "updatedAt": "2026-05-11T04:12:38.006Z",
   "userStories": [
     {
       "id": "US-001",
@@ -69,8 +69,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -127,7 +127,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/pre-phase/types.ts",
@@ -147,7 +149,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "859d9da338454eaab854dddb0aa5ec6fcf123714"
     },
     {
       "id": "US-004",

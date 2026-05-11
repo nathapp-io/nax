@@ -4,5 +4,6 @@ export { majorityFailClosedSelector, majorityFailOpenSelector, computeMajority }
 export { synthesisSelector, callSynthesisComplete } from "./synthesis";
 export { judgeSelector, callJudgeComplete } from "./judge";
 export { dialogueVerdictSelector } from "./dialogue-verdict";
+export { verifierPickSelector, runPatchStep } from "./verifier-pick";
 export { pickBaseSelectorKind, pickSelectorKind } from "./pick";
 export type { PickSelectorKindContext } from "./pick";
