@@ -68,7 +68,7 @@ export interface DebateStageConfig {
   /** When true, auto-assign personas to debaters that have no explicit persona. Default: false. */
   autoPersona?: boolean;
   /** Optional pre-debate phase to run before proposers */
-  preDebatePhase?: { kind: "grounder" | "custom" };
+  preDebatePhase?: { kind: "grounder" | "custom"; onFailure?: "degrade" | "block" };
   /** Optional proposer constraints */
   proposers?: {
     citationsRequired?: boolean;
@@ -81,9 +81,23 @@ export interface DebateStageConfig {
     | { kind: "majority-fail-closed" }
     | { kind: "majority-fail-open" }
     | { kind: "judge" }
-    | { kind: "dialogue-verdict" };
+    | { kind: "dialogue-verdict" }
+    | {
+        kind: "verifier-pick";
+        patch?: {
+          enabled: boolean;
+          overlapThreshold?: number;
+          maxDeltas?: number;
+          onFailure?: "use-unpatched" | "block";
+        };
+      };
   /** Optional post-debate verifier */
-  postDebateVerifier?: { kind: "plan-checklist" | "review-grounding-filter" | "custom" };
+  postDebateVerifier?: {
+    kind: "plan-checklist" | "review-grounding-filter" | "custom";
+    onBlocker?: "block" | "tag-expert";
+  };
+  /** Evidence mode for plan stage only (Phase 2) */
+  evidenceMode?: "current" | "asymmetric";
 }
 
 /** Top-level debate configuration */

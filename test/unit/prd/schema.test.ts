@@ -594,3 +594,68 @@ describe("suggestedCriteria", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 citation fields: verifiedBy, intent, contextFiles[].factId
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
+  test("AC4: accepts legacy PRD without verifiedBy, intent, or contextFiles factId", () => {
+    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
+    const story = prd.userStories[0]!;
+    expect(story.verifiedBy).toBeUndefined();
+    expect(story.intent).toBeUndefined();
+    expect(story.contextFiles).toBeUndefined();
+  });
+
+  test("AC5: preserves verifiedBy when present", () => {
+    const story = makeStory({
+      verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] },
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0]!.verifiedBy).toEqual({
+      kind: "test",
+      anchor: "src/foo.test.ts#should work",
+      factIds: ["fact-001"],
+    });
+  });
+
+  test("AC5: preserves intent when present", () => {
+    const story = makeStory({ intent: true });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0]!.intent).toBe(true);
+  });
+
+  test("AC5: preserves contextFiles[].factId when present", () => {
+    const story = makeStory({
+      contextFiles: [
+        { path: "src/auth.ts", factId: "fact-001" },
+        { path: "src/utils.ts" },
+        "src/plain.ts",
+      ],
+    });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    const files = prd.userStories[0]!.contextFiles!;
+    expect(files).toHaveLength(3);
+    expect(files[0]).toEqual({ path: "src/auth.ts", factId: "fact-001" });
+    expect(files[1]).toEqual({ path: "src/utils.ts" });
+    expect(files[2]).toBe("src/plain.ts");
+  });
+
+  test("AC6: rejects invalid verifiedBy.kind with an error", () => {
+    const story = makeStory({
+      verifiedBy: { kind: "invalid-kind", anchor: "something", factIds: [] },
+    });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(/verifiedBy.*kind/i);
+  });
+
+  test("AC5: omits verifiedBy when not present (no pollution of existing stories)", () => {
+    const stories = [
+      makeStory({ id: "ST-001" }),
+      makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
+    ];
+    const prd = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
+    expect(prd.userStories[0]!.verifiedBy).toBeUndefined();
+    expect(prd.userStories[1]!.verifiedBy?.kind).toBe("file");
+  });
+});
