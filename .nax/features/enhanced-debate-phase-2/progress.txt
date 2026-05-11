@@ -1,3 +1,4 @@
 [2026-05-11T03:40:03.756Z] US-001 — PASSED — Schema extensions for Phase 2 plug-points + PRD citations — Cost: $2.2934
 [2026-05-11T04:12:35.246Z] US-002 — PASSED — Citation parser + manifest threading + file-read flag — Cost: $3.1929
 [2026-05-11T04:44:27.508Z] US-003 — PASSED — grounder pre-phase strategy + verifier-pick selector + patch step — Cost: $3.6078
+[2026-05-11T05:30:06.879Z] US-004 — PASSED — plan-checklist verifier + spec-deltas.md formatter — Cost: $2.3712
