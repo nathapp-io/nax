@@ -3,16 +3,18 @@
  */
 
 import type { IAgentManager } from "@/agents";
-import type { ReviewerSession } from "../../review/dialogue";
-import type { ResolverContextInput, SuccessfulProposal } from "../session-helpers";
-import type { DebateConfig, DebateStageConfig, Debater } from "../types";
+import type { DebateConfig as DebateSelectorConfig } from "@/config/selectors";
+import type { ReviewDialogueResult, ReviewerSession } from "@/review/dialogue";
+import type { ResolverContext, ResolverContextInput, SuccessfulProposal } from "../session-helpers";
+import type { DebateStageConfig, Debater } from "../types";
 
 export interface SelectorContext {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: DebateConfig;
+  readonly config: DebateSelectorConfig;
   readonly proposals: SuccessfulProposal[];
+  readonly labeledProposals?: ResolverContext["labeledProposals"];
   readonly critiques: string[];
   readonly workdir: string;
   readonly featureName: string;
@@ -30,6 +32,8 @@ export interface SelectorResult {
   readonly resolverCostUsd: number;
   /** Optional findings from the selector — consumed by post-debate verifiers (e.g. review-grounding-filter). */
   readonly findings?: unknown[];
+  /** Structured dialogue result from ReviewerSession resolver (debate+dialogue mode only). */
+  readonly dialogueResult?: ReviewDialogueResult;
 }
 
 export type Selector = (ctx: SelectorContext) => Promise<SelectorResult>;

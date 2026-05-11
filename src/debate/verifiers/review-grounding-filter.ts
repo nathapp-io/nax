@@ -14,13 +14,16 @@ export const reviewGroundingFilterVerifier: PostDebateVerifier = async (
 ): Promise<PostDebateVerifierResult> => {
   const rawFindings = (ctx.selectorResult.findings ?? []) as AcQuotable[];
   const acceptanceCriteria = (ctx.acceptanceCriteria ?? []) as string[];
+  const threshold = ctx.blockingThreshold ?? "error";
 
   const { accepted } = filterByAcGroundingMinimal(rawFindings, acceptanceCriteria);
 
-  const hasBlocking = accepted.some((f) => isBlockingSeverity(f.severity));
+  const hasBlocking = accepted.some((f) => isBlockingSeverity(f.severity, threshold));
+  const outcome =
+    hasBlocking || (ctx.selectorResult.outcome === "failed" && rawFindings.length === 0) ? "failed" : "passed";
 
   return {
-    outcome: hasBlocking ? "failed" : "passed",
+    outcome,
     findings: accepted,
     costUsd: 0,
   };

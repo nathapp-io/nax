@@ -130,6 +130,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat, productionExcludePatterns } : { diff }),
           story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
           semanticConfig,
+          blockingThreshold,
           resolverType: reviewStageConfig.resolver.type,
           isReReview,
         }

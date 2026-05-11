@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { majorityFailClosedSelector, majorityFailOpenSelector } from "../../../../src/debate/selectors/majority";
-import type { SelectorContext } from "../../../../src/debate/selectors/types";
-import type { SuccessfulProposal } from "../../../../src/debate/session-helpers";
-import { makeMockAgentManager } from "../../../helpers";
+import { majorityFailClosedSelector, majorityFailOpenSelector } from "@/debate";
+import type { SelectorContext } from "@/debate/selectors/types";
+import type { SuccessfulProposal } from "@/debate/session-helpers";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({
@@ -16,6 +16,24 @@ function makeProposals(outputs: string[]): SuccessfulProposal[] {
     cost: 0,
   }));
 }
+
+const DEFAULT_SELECTOR_CONFIG: SelectorContext["config"] = {
+  debate: {
+    enabled: true,
+    grounder: { model: "fast", timeoutSeconds: 60 },
+    agents: 2,
+    maxConcurrentDebaters: 2,
+    stages: {
+      plan: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
+      review: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
+      acceptance: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
+      rectification: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
+      escalation: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
+    },
+  },
+  models: {},
+  agent: { default: "claude" },
+};
 
 function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
   return {
@@ -27,19 +45,7 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
       sessionMode: "one-shot",
       rounds: 1,
     },
-    config: {
-      enabled: true,
-      grounder: { model: "fast", timeoutSeconds: 60 },
-      agents: 2,
-      maxConcurrentDebaters: 2,
-      stages: {
-        plan: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
-        review: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
-        acceptance: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
-        rectification: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
-        escalation: { enabled: false, resolver: { type: "majority-fail-closed" }, sessionMode: "one-shot", rounds: 1 },
-      },
-    },
+    config: DEFAULT_SELECTOR_CONFIG,
     proposals: makeProposals([]),
     critiques: [],
     workdir: "/tmp/test",

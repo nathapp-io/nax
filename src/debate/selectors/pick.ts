@@ -5,7 +5,7 @@
  * auto-elevation heuristics (dialogue mode), and resolver fallbacks.
  */
 
-import type { ReviewerSession } from "../../review/dialogue";
+import type { ReviewerSession } from "@/review/dialogue";
 import type { ResolverContextInput } from "../session-helpers";
 import type { DebateStageConfig } from "../types";
 
@@ -33,7 +33,10 @@ export function pickSelectorKind(stageConfig: DebateStageConfig, ctx: PickSelect
     return "dialogue-verdict";
   }
 
-  // Map existing resolver.type to selector kind (backward compat)
+  return pickBaseSelectorKind(stageConfig);
+}
+
+export function pickBaseSelectorKind(stageConfig: DebateStageConfig): string {
   switch (stageConfig.resolver.type) {
     case "synthesis":
       return "synthesis";

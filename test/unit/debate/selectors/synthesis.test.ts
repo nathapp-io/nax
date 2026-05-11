@@ -3,11 +3,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { synthesisSelector } from "../../../../src/debate/selectors/synthesis";
-import type { SelectorContext } from "../../../../src/debate/selectors/types";
-import type { SuccessfulProposal } from "../../../../src/debate/session-helpers";
-import { DebatePromptBuilder } from "../../../../src/prompts";
-import { makeMockAgentManager } from "../../../helpers";
+import { synthesisSelector } from "@/debate";
+import type { SelectorContext } from "@/debate/selectors/types";
+import type { SuccessfulProposal } from "@/debate/session-helpers";
+import { DebatePromptBuilder } from "@/prompts";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({
@@ -17,6 +17,24 @@ function makeProposals(outputs: string[]): SuccessfulProposal[] {
     cost: 0,
   }));
 }
+
+const DEFAULT_SELECTOR_CONFIG: SelectorContext["config"] = {
+  debate: {
+    enabled: true,
+    grounder: { model: "fast", timeoutSeconds: 60 },
+    agents: 2,
+    maxConcurrentDebaters: 2,
+    stages: {
+      plan: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
+      review: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
+      acceptance: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
+      rectification: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
+      escalation: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
+    },
+  },
+  models: {},
+  agent: { default: "claude" },
+};
 
 function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
   return {
@@ -28,19 +46,7 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
       sessionMode: "one-shot",
       rounds: 1,
     },
-    config: {
-      enabled: true,
-      grounder: { model: "fast", timeoutSeconds: 60 },
-      agents: 2,
-      maxConcurrentDebaters: 2,
-      stages: {
-        plan: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
-        review: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
-        acceptance: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
-        rectification: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
-        escalation: { enabled: false, resolver: { type: "synthesis" }, sessionMode: "one-shot", rounds: 1 },
-      },
-    },
+    config: DEFAULT_SELECTOR_CONFIG,
     proposals: makeProposals([]),
     critiques: [],
     workdir: "/tmp/test",
@@ -174,6 +180,38 @@ describe("synthesisSelector", () => {
     await synthesisSelector(ctx);
 
     expect(usedAgent).toBe("custom-synth-agent");
+  });
+
+  test("resolves modelDef from ctx.config.models for the resolver agent", async () => {
+    let capturedModel = "";
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, _prompt, opts) => {
+        capturedModel = opts?.modelDef?.model ?? "";
+        return { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+      },
+    });
+
+    const ctx = makeCtx({
+      proposals: makeProposals(["p1"]),
+      agentManager,
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "synthesis", agent: "custom-synth-agent", model: "balanced" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      config: {
+        debate: DEFAULT_SELECTOR_CONFIG.debate,
+        agent: { default: "claude" },
+        models: {
+          claude: { balanced: "claude-default-balanced" },
+          "custom-synth-agent": { balanced: "custom-balanced-model" },
+        },
+      },
+    });
+    await synthesisSelector(ctx);
+
+    expect(capturedModel).toBe("custom-balanced-model");
   });
 
   test("falls back to RESOLVER_FALLBACK_AGENT when resolver.agent is unset", async () => {

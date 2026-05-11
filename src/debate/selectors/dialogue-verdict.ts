@@ -6,9 +6,11 @@
  * with majority-vote pre-computation for majority-fail-closed/fail-open resolvers.
  */
 
+import type { ReviewDialogueResult } from "@/review/dialogue";
+import type { DiffContext } from "@/review/types";
 import { tryParseLLMJson } from "@/utils/llm-json";
 import { majorityResolver } from "../resolvers";
-import { pickSelectorKind } from "./pick";
+import { pickBaseSelectorKind } from "./pick";
 import { resolveSelector } from "./registry";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
 
@@ -55,7 +57,7 @@ export const dialogueVerdictSelector: Selector = async (ctx: SelectorContext): P
 
       // Build diffContext from resolverContext — discriminated on diffMode
       const rcRecord = ctx.resolverContextInput as Record<string, unknown>;
-      const diffContext: import("../../review/types").DiffContext =
+      const diffContext: DiffContext =
         ctx.resolverContextInput.diffMode === "ref"
           ? {
               mode: "ref",
@@ -65,12 +67,14 @@ export const dialogueVerdictSelector: Selector = async (ctx: SelectorContext): P
             }
           : { mode: "embedded", diff: (rcRecord.diff as string) ?? "" };
 
-      const labeledProposals = ctx.proposals.map((p) => ({
-        debater: p.debater.agent,
-        output: p.output,
-      }));
+      const labeledProposals =
+        ctx.labeledProposals ??
+        ctx.proposals.map((p) => ({
+          debater: p.debater.agent,
+          output: p.output,
+        }));
 
-      let dialogueResult: import("../../review/dialogue").ReviewDialogueResult;
+      let dialogueResult: ReviewDialogueResult;
       if (ctx.resolverContextInput.isReReview) {
         dialogueResult = await ctx.reviewerSession.reReviewDebate(
           labeledProposals,
@@ -93,6 +97,8 @@ export const dialogueVerdictSelector: Selector = async (ctx: SelectorContext): P
       return {
         outcome,
         resolverCostUsd: dialogueResult.cost ?? 0,
+        findings: dialogueResult.checkResult.findings,
+        dialogueResult,
       };
     } catch {
       // Fall through to stateless resolver
@@ -100,10 +106,7 @@ export const dialogueVerdictSelector: Selector = async (ctx: SelectorContext): P
   }
 
   // When session or context is undefined, fall back to base selector
-  const baseKind = pickSelectorKind(ctx.stageConfig, {
-    reviewerSession: ctx.reviewerSession,
-    resolverContextInput: ctx.resolverContextInput,
-  });
+  const baseKind = pickBaseSelectorKind(ctx.stageConfig);
 
   // Invoke the base selector
   const baseSelector = resolveSelector(baseKind);

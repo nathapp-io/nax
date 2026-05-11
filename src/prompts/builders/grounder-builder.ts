@@ -28,7 +28,7 @@ Analyze the specification and codebase context above. Produce a JSON object conf
 {
   "repoFacts": [
     {
-      "id": "F-001",           // matches /^F-\\d{3}$/
+      "id": "F-001",           // matches /^F-\\d{3,}$/
       "kind": "file | symbol | schema | contract | convention",
       "evidence": "string — concrete evidence from the codebase (non-empty)",
       "summary": "string — one-line description (non-empty)"
@@ -36,7 +36,7 @@ Analyze the specification and codebase context above. Produce a JSON object conf
   ],
   "specClaims": [
     {
-      "id": "S-001",           // matches /^S-\\d{3}$/
+      "id": "S-001",           // matches /^S-\\d{3,}$/
       "specSpan": "string — verbatim excerpt from the spec",
       "claim": "string — the claim made in the spec",
       "kind": "factual | intent",
@@ -49,7 +49,7 @@ Analyze the specification and codebase context above. Produce a JSON object conf
   ],
   "gaps": [
     {
-      "id": "G-001",           // matches /^G-\\d{3}$/
+      "id": "G-001",           // matches /^G-\\d{3,}$/
       "kind": "missing-context | ignored-convention | boundary-not-considered",
       "note": "string — description of the gap (non-empty)",
       "evidence": "string — optional supporting evidence"

@@ -8,12 +8,11 @@
  */
 
 import { describe, expect, test, mock } from "bun:test";
-import type { SelectorContext, SelectorResult } from "../../../../src/debate/selectors/types";
-import type { DebateStageConfig, ResolverType } from "../../../../src/debate/types";
-import type { ResolverContextInput, SuccessfulProposal } from "../../../../src/debate/session-helpers";
-import type { ReviewerSession } from "../../../../src/review/dialogue";
-import type { ReviewDialogueResult } from "../../../../src/review/dialogue";
-import { makeMockAgentManager } from "../../../helpers";
+import type { SelectorContext, SelectorResult } from "@/debate/selectors/types";
+import type { DebateStageConfig, ResolverType } from "@/debate/types";
+import type { ResolverContextInput, SuccessfulProposal } from "@/debate/session-helpers";
+import type { ReviewerSession, ReviewDialogueResult } from "@/review/dialogue";
+import { makeMockAgentManager } from "@test/helpers";
 
 // This is a stub to ensure imports work
 export const dialogueVerdictSelector = async (_ctx: SelectorContext): Promise<SelectorResult> => {
@@ -21,17 +20,8 @@ export const dialogueVerdictSelector = async (_ctx: SelectorContext): Promise<Se
 };
 
 describe("dialogueVerdictSelector (US-003 AC1-3)", () => {
-  const makeSelectorContext = (overrides?: Partial<SelectorContext>): SelectorContext => ({
-    storyId: "story-1",
-    stage: "review",
-    stageConfig: {
-      enabled: true,
-      sessionMode: "one-shot",
-      rounds: 2,
-      resolver: { type: "synthesis" as ResolverType },
-      ...overrides?.stageConfig,
-    } as DebateStageConfig,
-    config: {
+  const defaultSelectorConfig: SelectorContext["config"] = {
+    debate: {
       enabled: true,
       agents: 2,
       maxConcurrentDebaters: 2,
@@ -44,6 +34,21 @@ describe("dialogueVerdictSelector (US-003 AC1-3)", () => {
         escalation: { enabled: false, sessionMode: "one-shot", rounds: 0, resolver: { type: "synthesis" } },
       },
     },
+    models: {},
+    agent: { default: "claude" },
+  };
+
+  const makeSelectorContext = (overrides?: Partial<SelectorContext>): SelectorContext => ({
+    storyId: "story-1",
+    stage: "review",
+    stageConfig: {
+      enabled: true,
+      sessionMode: "one-shot",
+      rounds: 2,
+      resolver: { type: "synthesis" as ResolverType },
+      ...overrides?.stageConfig,
+    } as DebateStageConfig,
+    config: defaultSelectorConfig,
     proposals: [
       {
         debater: { agent: "claude" },

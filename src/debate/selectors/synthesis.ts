@@ -5,14 +5,16 @@
  * resolvers.ts delegates to callSynthesisComplete for the compat wrapper.
  */
 
-import type { IAgentManager } from "@/agents";
+import { type IAgentManager, resolveDefaultAgent } from "@/agents";
 import type { CompleteOptions, CompleteResult } from "@/agents/types";
-import { DEFAULT_CONFIG, resolveModelForAgent } from "@/config";
+import { DEFAULT_CONFIG, resolveConfiguredModel } from "@/config";
+import type { ModelDef } from "@/config/schema-types";
 import { DebatePromptBuilder } from "@/prompts";
-import { formatSessionName } from "../../session/naming";
-import { RESOLVER_FALLBACK_AGENT } from "../session-helpers";
+import { formatSessionName } from "@/runtime";
 import type { Debater } from "../types";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
+
+const RESOLVER_FALLBACK_AGENT = "synthesis";
 
 export async function callSynthesisComplete(
   proposals: string[],
@@ -34,14 +36,12 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
 
   let modelDef: CompleteOptions["modelDef"];
   try {
-    modelDef = resolveModelForAgent(
-      DEFAULT_CONFIG.models,
-      agentName,
-      ctx.stageConfig.resolver.model ?? "fast",
-      agentName,
-    );
+    const configModels = ctx.config.models ?? DEFAULT_CONFIG.models;
+    const configDefaultAgent = resolveDefaultAgent(ctx.config);
+    const resolverSelection = { agent: agentName, model: ctx.stageConfig.resolver.model ?? "fast" };
+    modelDef = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent).modelDef;
   } catch {
-    modelDef = { provider: "unknown", model: ctx.stageConfig.resolver.model ?? "fast" };
+    modelDef = { provider: "unknown", model: ctx.stageConfig.resolver.model ?? "fast" } as ModelDef;
   }
 
   const sessionName =

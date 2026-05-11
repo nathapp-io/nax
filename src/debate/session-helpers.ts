@@ -9,9 +9,9 @@ import type { ModelDef } from "../config/schema-types";
 import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { DispatchContext } from "../runtime/dispatch-context";
-import { pickSelectorKind, resolveSelector } from "./selectors";
+import { pickBaseSelectorKind, pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
-import type { DebateConfig as DebateInnerConfig, DebateResult, DebateStageConfig, Debater } from "./types";
+import type { DebateResult, DebateStageConfig, Debater } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 export const RESOLVER_FALLBACK_AGENT = "synthesis";
@@ -43,6 +43,8 @@ export interface ResolveOutcome {
   output?: string;
   /** Structured dialogue result from ReviewerSession resolver (debate+dialogue mode only) */
   dialogueResult?: import("../review/dialogue").ReviewDialogueResult;
+  /** Optional findings from selector output. */
+  findings?: unknown[];
 }
 
 /** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
@@ -62,6 +64,8 @@ export interface ResolverContext {
   productionExcludePatterns?: readonly string[];
   story: { id: string; title: string; acceptanceCriteria: string[] };
   semanticConfig: import("../review/types").SemanticReviewConfig;
+  /** Blocking threshold used by semantic review post-processing. */
+  blockingThreshold?: "error" | "warning" | "info";
   labeledProposals: Array<{ debater: string; output: string }>;
   resolverType: import("./types").ResolverType;
   /** True when this is a re-review after autofix (calls reReviewDebate instead of resolveDebate) */
@@ -241,9 +245,13 @@ export async function resolveOutcome(
     storyId,
     stage: "",
     stageConfig,
-    // `config` is the debate config slice (Pick<NaxConfig,...>); SelectorContext.config uses the inner debate field
-    config: ((config as Record<string, unknown> | undefined)?.debate ?? DEFAULT_CONFIG.debate) as DebateInnerConfig,
+    config: config ?? {
+      debate: DEFAULT_CONFIG.debate,
+      models: DEFAULT_CONFIG.models,
+      agent: DEFAULT_CONFIG.agent,
+    },
     proposals: proposalList,
+    labeledProposals: resolverContext?.labeledProposals,
     critiques: critiqueOutputs,
     workdir: workdir ?? "",
     featureName: featureName ?? "",
@@ -256,24 +264,20 @@ export async function resolveOutcome(
   };
 
   // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)
-  const resolverTypeMappedKind = (() => {
-    switch (stageConfig.resolver.type) {
-      case "synthesis":
-        return "synthesis";
-      case "majority-fail-closed":
-        return "majority-fail-closed";
-      case "majority-fail-open":
-        return "majority-fail-open";
-      case "custom":
-        return "judge";
-    }
-  })();
+  const resolverTypeMappedKind = pickBaseSelectorKind(stageConfig);
 
-  // When the selected kind differs from the base resolver.type mapping, apply try/catch fallback
-  if (resolverTypeMappedKind !== kind) {
+  // Preserve the legacy dialogue fallback only for dialogue selection. Explicit
+  // non-dialogue selector failures should surface to the caller.
+  if (kind === "dialogue-verdict") {
     try {
       const result = await resolveSelector(kind)(selectorCtx);
-      return { outcome: result.outcome, resolverCostUsd: result.resolverCostUsd, output: result.output };
+      return {
+        outcome: result.outcome,
+        resolverCostUsd: result.resolverCostUsd,
+        output: result.output,
+        findings: result.findings,
+        dialogueResult: result.dialogueResult,
+      };
     } catch (err) {
       logger?.warn("debate", "dialogue-verdict selector failed, falling back to stateless", {
         storyId,
@@ -284,10 +288,18 @@ export async function resolveOutcome(
         outcome: fallbackResult.outcome,
         resolverCostUsd: fallbackResult.resolverCostUsd,
         output: fallbackResult.output,
+        findings: fallbackResult.findings,
+        dialogueResult: fallbackResult.dialogueResult,
       };
     }
   }
 
   const result = await resolveSelector(kind)(selectorCtx);
-  return { outcome: result.outcome, resolverCostUsd: result.resolverCostUsd, output: result.output };
+  return {
+    outcome: result.outcome,
+    resolverCostUsd: result.resolverCostUsd,
+    output: result.output,
+    findings: result.findings,
+    dialogueResult: result.dialogueResult,
+  };
 }

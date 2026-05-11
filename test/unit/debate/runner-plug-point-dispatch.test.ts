@@ -10,32 +10,24 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { CallContext } from "../../../src/operations/types";
-import type { DebateStageConfig } from "../../../src/debate/types";
-import type { ReviewerSession } from "../../../src/review/dialogue";
-import { DEFAULT_CONFIG, debateConfigSelector } from "../../../src/config";
-import { resolveOutcome, _debateSessionDeps } from "../../../src/debate/session-helpers";
-import { DebateRunner } from "../../../src/debate/runner";
+import type { CallContext } from "@/operations/types";
+import type { DebateStageConfig } from "@/debate/types";
+import type { ReviewerSession } from "@/review/dialogue";
+import { DEFAULT_CONFIG, debateConfigSelector } from "@/config";
 import {
+  DebateRunner,
+  _debateSessionDeps,
+  resolveOutcome,
   registerSelector,
-  type Selector,
+  resolveSelector,
   pickSelectorKind,
-  type SelectorContext,
-  type SelectorResult,
-} from "../../../src/debate/selectors";
-import {
   registerPreDebatePhase,
-  type PreDebatePhase,
-  type PreDebatePhaseContext,
-  type PreDebatePhaseResult,
-} from "../../../src/debate/pre-phase";
-import {
   registerPostDebateVerifier,
-  type PostDebateVerifier,
-  type PostDebateVerifierContext,
-  type PostDebateVerifierResult,
-} from "../../../src/debate/verifiers";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
+} from "@/debate";
+import type { Selector, SelectorContext, SelectorResult } from "@/debate/selectors/types";
+import type { PreDebatePhase, PreDebatePhaseContext, PreDebatePhaseResult } from "@/debate/pre-phase/types";
+import type { PostDebateVerifier, PostDebateVerifierContext, PostDebateVerifierResult } from "@/debate/verifiers/types";
+import { makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
@@ -188,12 +180,36 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
 
     expect(kind).toBe("majority-fail-closed");
   });
+
+  test("explicit dialogue-verdict without a session falls back to the base resolver without recursion", async () => {
+    const result = await resolveOutcome(
+      ['{"passed": false}'],
+      [],
+      makeStageConfig({
+        resolver: { type: "majority-fail-closed" },
+        selector: { kind: "dialogue-verdict" },
+      }),
+      DEFAULT_DEBATE_CONFIG,
+      "US-004",
+      30_000,
+      "/tmp/work",
+      "test-feature",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      makeMockAgentManager(),
+    );
+
+    expect(result.outcome).toBe("failed");
+  });
 });
 
 // ─── AC2: dialogueVerdictSelector fallback behavior ────────────────────────────
 
 describe("resolveOutcome() — dialogue-verdict selector fallback (US-004 AC2)", () => {
   let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
+  let originalDialogueSelector: Selector;
   let warnCalls: Array<{ message: string; context: any }> = [];
   const mockLogger = {
     info: mock((): any => {}),
@@ -214,20 +230,22 @@ describe("resolveOutcome() — dialogue-verdict selector fallback (US-004 AC2)",
 
   beforeEach(() => {
     origGetSafeLogger = _debateSessionDeps.getSafeLogger;
+    originalDialogueSelector = resolveSelector("dialogue-verdict");
     _debateSessionDeps.getSafeLogger = mock(() => mockLogger as any);
     warnCalls = [];
-    registerSelector("test-dialogue-verdict", throwingSelector);
+    registerSelector("dialogue-verdict", throwingSelector);
     registerSelector("test-fallback", fallbackSelector);
   });
 
   afterEach(() => {
+    registerSelector("dialogue-verdict", originalDialogueSelector);
     _debateSessionDeps.getSafeLogger = origGetSafeLogger;
     mock.restore();
   });
 
   test("when dialogue-verdict selector throws, logs a warning and falls back to stateless path", async () => {
     const stageConfig = makeStageConfig({
-      selector: { kind: "test-dialogue-verdict" } as any,
+      selector: { kind: "dialogue-verdict" },
       resolver: { type: "synthesis" },
     });
 
@@ -256,7 +274,7 @@ describe("resolveOutcome() — dialogue-verdict selector fallback (US-004 AC2)",
 
   test("when dialogue-verdict throws and falls back, the outcome is still valid", async () => {
     const stageConfig = makeStageConfig({
-      selector: { kind: "test-dialogue-verdict" } as any,
+      selector: { kind: "dialogue-verdict" },
     });
 
     const outcomeResult = await resolveOutcome(
@@ -277,6 +295,34 @@ describe("resolveOutcome() — dialogue-verdict selector fallback (US-004 AC2)",
 
     expect(outcomeResult.outcome).toBeDefined();
     expect(["passed", "failed", "skipped"]).toContain(outcomeResult.outcome);
+  });
+
+  test("explicit non-dialogue selector failures are not swallowed by stateless fallback", async () => {
+    const stageConfig = makeStageConfig({
+      selector: { kind: "test-throws-explicit" } as any,
+      resolver: { type: "majority-fail-open" },
+    });
+    registerSelector("test-throws-explicit", async () => {
+      throw new Error("explicit selector failed");
+    });
+
+    await expect(
+      resolveOutcome(
+        ["proposal-a"],
+        ["critique-a"],
+        stageConfig,
+        DEFAULT_DEBATE_CONFIG,
+        "US-004",
+        30_000,
+        "/tmp/work",
+        "test-feature",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        makeMockAgentManager(),
+      ),
+    ).rejects.toThrow("explicit selector failed");
   });
 });
 
@@ -403,6 +449,38 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
     // Verifier should have been invoked (if selector dispatch is wired)
     // Note: test will fail until implementation adds the verifier dispatch
     expect(result.storyId).toBe("US-004");
+  });
+
+  test("review-grounding-filter does not turn a failed selector with no findings into pass", async () => {
+    registerSelector("test-failed-empty-selector", async () => ({
+      outcome: "failed",
+      resolverCostUsd: 0,
+      findings: [],
+    }));
+    const ctx = makeCallCtx();
+    const stageConfig = makeStageConfig({
+      selector: { kind: "test-failed-empty-selector" } as any,
+      postDebateVerifier: { kind: "review-grounding-filter" },
+    });
+
+    const runner = new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig,
+      config: DEFAULT_DEBATE_CONFIG,
+      workdir: "/tmp/work",
+      resolverContextInput: {
+        diffMode: "embedded",
+        diff: "",
+        story: { id: "US-004", title: "test", acceptanceCriteria: ["AC1"] },
+        semanticConfig: {} as any,
+        resolverType: "synthesis",
+      },
+    });
+
+    const result = await runner.run("test prompt");
+
+    expect(result.outcome).toBe("failed");
   });
 
   test("when stageConfig.postDebateVerifier is unset, returns selector outcome directly", async () => {

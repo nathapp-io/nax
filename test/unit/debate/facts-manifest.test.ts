@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseFactsManifest, renderManifestSection } from "../../../src/debate/facts-manifest";
+import { parseFactsManifest, renderManifestSection } from "@/debate";
 
 describe("parseFactsManifest", () => {
   test("returns ok:true for empty arrays (all defaults)", () => {
@@ -28,6 +28,24 @@ describe("parseFactsManifest", () => {
       expect(result.manifest.repoFacts).toHaveLength(1);
       expect(result.manifest.repoFacts[0]?.id).toBe("F-001");
     }
+  });
+
+  test("accepts manifest IDs with more than three digits", () => {
+    const result = parseFactsManifest({
+      repoFacts: [{ id: "F-1000", kind: "file", evidence: "src/x.ts", summary: "Large manifest fact" }],
+      specClaims: [
+        {
+          id: "S-1000",
+          specSpan: "span",
+          claim: "claim",
+          kind: "factual",
+          verification: { status: "verified", factId: "F-1000" },
+        },
+      ],
+      gaps: [{ id: "G-1000", kind: "missing-context", note: "note" }],
+    });
+
+    expect(result.ok).toBe(true);
   });
 
   test("returns ok:true for well-formed specClaim entry with optional fields absent", () => {

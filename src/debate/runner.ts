@@ -290,6 +290,8 @@ export class DebateRunner {
         selectorResult: selectorOutcome,
         workdir: this.workdir,
         ctx: this.ctx,
+        acceptanceCriteria: this.resolverContextInput?.story.acceptanceCriteria,
+        blockingThreshold: this.resolverContextInput?.blockingThreshold,
       };
       const verifierResult = await resolvePostDebateVerifier(config.postDebateVerifier.kind)(verifierCtx);
       totalCostUsd += verifierResult.costUsd;

@@ -4,7 +4,7 @@ export const FactsManifestSchema = z.object({
   repoFacts: z
     .array(
       z.object({
-        id: z.string().regex(/^F-\d{3}$/),
+        id: z.string().regex(/^F-\d{3,}$/),
         kind: z.enum(["file", "symbol", "schema", "contract", "convention"]),
         evidence: z.string().min(1),
         summary: z.string().min(1),
@@ -14,7 +14,7 @@ export const FactsManifestSchema = z.object({
   specClaims: z
     .array(
       z.object({
-        id: z.string().regex(/^S-\d{3}$/),
+        id: z.string().regex(/^S-\d{3,}$/),
         specSpan: z.string().min(1),
         claim: z.string().min(1),
         kind: z.enum(["factual", "intent"]),
@@ -23,7 +23,7 @@ export const FactsManifestSchema = z.object({
           evidence: z.string().optional(),
           factId: z
             .string()
-            .regex(/^F-\d{3}$/)
+            .regex(/^F-\d{3,}$/)
             .optional(),
         }),
       }),
@@ -32,7 +32,7 @@ export const FactsManifestSchema = z.object({
   gaps: z
     .array(
       z.object({
-        id: z.string().regex(/^G-\d{3}$/),
+        id: z.string().regex(/^G-\d{3,}$/),
         kind: z.enum(["missing-context", "ignored-convention", "boundary-not-considered"]),
         note: z.string().min(1),
         evidence: z.string().optional(),
