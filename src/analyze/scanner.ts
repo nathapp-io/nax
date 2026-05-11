@@ -8,32 +8,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { discoverWorkspacePackages } from "../context/generator";
 import { getSafeLogger } from "../logger";
-import { detectLanguage } from "../project";
+import { detectLanguage, inferFrameworkAndTestRunner } from "../project";
 import type { CodebaseScan, SourceRoot } from "./types";
-
-// ── Framework / test-runner patterns (inlined to avoid src/cli/ import) ──────
-
-const FRAMEWORK_PATTERNS: [RegExp, string][] = [
-  [/\bnext\b/, "Next.js"],
-  [/\bnuxt\b/, "Nuxt"],
-  [/\bremix\b/, "Remix"],
-  [/\bexpress\b/, "Express"],
-  [/\bfastify\b/, "Fastify"],
-  [/\bhono\b/, "Hono"],
-  [/\bnestjs|@nestjs\b/, "NestJS"],
-  [/\breact\b/, "React"],
-  [/\bvue\b/, "Vue"],
-  [/\bsvelte\b/, "Svelte"],
-  [/\bastro\b/, "Astro"],
-  [/\belectron\b/, "Electron"],
-];
-
-const TEST_RUNNER_PATTERNS: [RegExp, string][] = [
-  [/\bvitest\b/, "vitest"],
-  [/\bjest\b/, "jest"],
-  [/\bmocha\b/, "mocha"],
-  [/\bava\b/, "ava"],
-];
 
 const MAX_SOURCE_ROOTS = 30;
 
@@ -65,21 +41,7 @@ function resolveFrameworkAndRunner(
   if (language === "python") return { framework: "", testRunner: "pytest" };
   if (language === "rust") return { framework: "", testRunner: "cargo-test" };
 
-  if (!pkg) return { framework: "", testRunner: "" };
-
-  const allDeps = {
-    ...(pkg.dependencies as Record<string, unknown> | undefined),
-    ...(pkg.devDependencies as Record<string, unknown> | undefined),
-  };
-  const depNames = Object.keys(allDeps).join(" ");
-  const scripts = (pkg.scripts ?? {}) as Record<string, string>;
-  const testScript = scripts.test ?? "";
-
-  const framework = FRAMEWORK_PATTERNS.find(([re]) => re.test(depNames))?.[1] ?? "";
-  const testRunner =
-    TEST_RUNNER_PATTERNS.find(([re]) => re.test(depNames))?.[1] ?? (testScript.includes("bun test") ? "bun:test" : "");
-
-  return { framework, testRunner };
+  return inferFrameworkAndTestRunner(pkg);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

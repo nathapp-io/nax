@@ -22,7 +22,7 @@ export {
 } from "./conventions";
 export { createTestFileClassifier } from "./classifier";
 export type { DetectionResult, DetectionSource } from "./detect";
-export { detectTestFilePatterns } from "./detect";
+export { detectManifestFrameworksFromPackageJson, detectTestFilePatterns } from "./detect";
 export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
 export type { Framework } from "./detector";
 export {
