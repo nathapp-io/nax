@@ -107,15 +107,54 @@ describe("formatReport", () => {
     expect(message).toContain("1 new deep-relative");
   });
 
+  test("FAIL message instructs to refactor changed files", () => {
+    const { message } = formatReport([violation, violation], { count: 1, updatedAt: "" });
+    expect(message).toContain("Refactor the imports in your changed files");
+    expect(message).toContain("git diff --name-only");
+  });
+
+  test("FAIL with byFile baseline shows only new violations, not pre-existing ones", () => {
+    const existing = { ...violation, file: "src/old/file.ts", line: 5 };
+    const newV = { ...violation, file: "src/new/feature.ts", line: 1 };
+    const baseline = { count: 1, updatedAt: "", byFile: { "src/old/file.ts": 1 } };
+    const { ok, message } = formatReport([existing, newV], baseline);
+    expect(ok).toBe(false);
+    expect(message).toContain("src/new/feature.ts");
+    expect(message).not.toContain("src/old/file.ts");
+  });
+
+  test("FAIL with byFile baseline shows violations from files with increased count", () => {
+    const v1 = { ...violation, file: "src/a/b.ts", line: 1 };
+    const v2 = { ...violation, file: "src/a/b.ts", line: 2 };
+    const baseline = { count: 1, updatedAt: "", byFile: { "src/a/b.ts": 1 } };
+    const { ok, message } = formatReport([v1, v2], baseline);
+    expect(ok).toBe(false);
+    expect(message).toContain("src/a/b.ts");
+  });
+
+  test("FAIL without byFile falls back to listing all violations with caveat", () => {
+    const { message } = formatReport([violation, violation], { count: 1, updatedAt: "" });
+    expect(message).toContain("pre-existing baseline violations");
+    expect(message).toContain("--update-baseline");
+  });
+
   test("returns FAIL with instructions when no baseline file", () => {
     const { ok, message } = formatReport([violation], null);
     expect(ok).toBe(false);
     expect(message).toContain("--update-baseline");
   });
 
-  test("truncates long violation lists to 20 entries", () => {
+  test("truncates long violation lists to 20 entries (legacy no-byFile path)", () => {
     const many = Array.from({ length: 25 }, (_, i) => ({ ...violation, line: i + 1 }));
     const { message } = formatReport(many, { count: 0, updatedAt: "" });
     expect(message).toContain("... and 5 more");
+  });
+
+  test("truncates new violations to delta count (byFile path)", () => {
+    const file = "src/new/file.ts";
+    const many = Array.from({ length: 25 }, (_, i) => ({ ...violation, file, line: i + 1 }));
+    const baseline = { count: 22, updatedAt: "", byFile: {} };
+    const { message } = formatReport(many, baseline);
+    expect(message).toContain(`... and ${25 - 3} more`);
   });
 });

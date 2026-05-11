@@ -14,9 +14,11 @@ export type {
 export { parseRefinementResponse } from "./refinement";
 
 export {
-  parseAcceptanceCriteria,
+  acceptanceTestFilename,
+  buildAcceptanceRunCommand,
   buildAcceptanceTestPrompt,
   generateSkeletonTests,
+  parseAcceptanceCriteria,
 } from "./generator";
 
 export type { FixStory } from "./fix-generator";
@@ -34,4 +36,9 @@ export {
   findExistingAcceptanceTestPath,
   groupStoriesByPackage,
   resolveAcceptanceFeatureTestPath,
+  resolveSuggestedPackageFeatureTestPath,
+  resolveSuggestedTestFile,
+  suggestedTestFilename,
 } from "./test-path";
+export { runHardeningPass } from "./hardening";
+export type { HardeningContext, HardeningResult } from "./hardening";

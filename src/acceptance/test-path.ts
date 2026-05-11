@@ -22,7 +22,7 @@ export function acceptanceTestFilename(language?: string): string {
     case "go":
       return ".nax-acceptance_test.go";
     case "python":
-      return ".nax-acceptance.test.py";
+      return "_nax_acceptance_test.py";
     case "rust":
       return ".nax-acceptance.rs";
     default:
@@ -150,7 +150,7 @@ export function suggestedTestFilename(language?: string): string {
     case "go":
       return ".nax-suggested_test.go";
     case "python":
-      return ".nax-suggested.test.py";
+      return "_nax_suggested_test.py";
     case "rust":
       return ".nax-suggested.rs";
     default:

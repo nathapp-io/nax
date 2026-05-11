@@ -21,18 +21,15 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand, generateSkeletonTests } from "../../acceptance/generator";
-import { groupStoriesByPackage } from "../../acceptance/test-path";
-import type { AcceptanceCriterion, RefinedCriterion } from "../../acceptance/types";
-import type { AgentAdapter } from "../../agents/types";
-import type { NaxConfig } from "../../config";
-import { loadConfigForWorkdir } from "../../config/loader";
-import { NaxError } from "../../errors";
-import { getSafeLogger } from "../../logger";
-import { acceptanceGenerateOp } from "../../operations/acceptance-generate";
-import { acceptanceRefineOp } from "../../operations/acceptance-refine";
-import { callOp as _callOp } from "../../operations/call";
-import { autoCommitIfDirty as _autoCommitIfDirty } from "../../utils/git";
+import { buildAcceptanceRunCommand, generateSkeletonTests, groupStoriesByPackage } from "@/acceptance";
+import type { AcceptanceCriterion, RefinedCriterion } from "@/acceptance";
+import type { AgentAdapter } from "@/agents/types";
+import type { NaxConfig } from "@/config";
+import { loadConfigForWorkdir } from "@/config";
+import { NaxError } from "@/errors";
+import { getSafeLogger } from "@/logger";
+import { callOp as _callOp, acceptanceGenerateOp, acceptanceRefineOp } from "@/operations";
+import { autoCommitIfDirty as _autoCommitIfDirty } from "@/utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // ─── Local helpers ──────────────────────────────────────────────────────────
@@ -435,7 +432,7 @@ export const acceptanceSetupStage: PipelineStage = {
     // Use per-package testFramework/commandOverride resolved above.
     let redFailCount = 0;
     for (const { testPath, packageDir, testFramework, commandOverride } of acceptanceTestPaths) {
-      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride);
+      const runCmd = buildAcceptanceRunCommand(testPath, testFramework, commandOverride, packageDir);
       getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
         cmd: runCmd.join(" "),
         packageDir,

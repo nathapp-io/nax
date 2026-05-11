@@ -28,21 +28,20 @@
  * ```
  */
 
-import { buildAcceptanceRunCommand } from "../../acceptance/generator";
-import type { HardeningContext } from "../../acceptance/hardening";
-import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
-import { acFailureToFinding, acSentinelToFinding } from "../../findings";
-import type { Finding } from "../../findings";
-import { getLogger } from "../../logger";
-import { countStories } from "../../prd";
-import { parseTestFailures as _parseTestFailures } from "../../test-runners/ac-parser";
-import { logTestOutput } from "../../utils/log-test-output";
+import { buildAcceptanceRunCommand, resolveAcceptanceFeatureTestPath } from "@/acceptance";
+import type { HardeningContext } from "@/acceptance";
+import { acFailureToFinding, acSentinelToFinding } from "@/findings";
+import type { Finding } from "@/findings";
+import { getLogger } from "@/logger";
+import { countStories } from "@/prd";
+import { parseTestFailures as _parseTestFailures } from "@/test-runners";
+import { logTestOutput } from "@/utils/log-test-output";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /** Injectable deps for testability */
 export const _acceptanceStageDeps = {
   runHardeningPass: async (ctx: HardeningContext) => {
-    const { runHardeningPass } = await import("../../acceptance/hardening");
+    const { runHardeningPass } = await import("@/acceptance");
     return runHardeningPass(ctx);
   },
 };
@@ -172,7 +171,7 @@ export const acceptanceStage: PipelineStage = {
       // resolved by acceptance-setup. In fallback (single-package) mode they fall back to ctx.config.
       const resolvedFramework = testFramework ?? ctx.config.project?.testFramework;
       const resolvedCommand = commandOverride ?? ctx.config.acceptance.command;
-      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand);
+      const testCmdParts = buildAcceptanceRunCommand(testPath, resolvedFramework, resolvedCommand, packageDir);
       logger.info("acceptance", "Running acceptance command", {
         storyId: ctx.story.id,
         cmd: testCmdParts.join(" "),

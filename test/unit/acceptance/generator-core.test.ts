@@ -12,7 +12,7 @@ import {
   acceptanceTestFilename,
   buildAcceptanceRunCommand,
   parseAcceptanceCriteria,
-} from "../../../src/acceptance/generator";
+} from "@/acceptance";
 
 describe("acceptanceTestFilename", () => {
   test("returns .nax-acceptance.test.ts when no language is given", () => {
@@ -27,8 +27,8 @@ describe("acceptanceTestFilename", () => {
     expect(acceptanceTestFilename("go")).toBe(".nax-acceptance_test.go");
   });
 
-  test("returns .nax-acceptance.test.py for python", () => {
-    expect(acceptanceTestFilename("python")).toBe(".nax-acceptance.test.py");
+  test("returns _nax_acceptance_test.py for python", () => {
+    expect(acceptanceTestFilename("python")).toBe("_nax_acceptance_test.py");
   });
 
   test("returns .nax-acceptance.rs for rust", () => {
@@ -37,7 +37,7 @@ describe("acceptanceTestFilename", () => {
 
   test("is case-insensitive for language", () => {
     expect(acceptanceTestFilename("GO")).toBe(".nax-acceptance_test.go");
-    expect(acceptanceTestFilename("Python")).toBe(".nax-acceptance.test.py");
+    expect(acceptanceTestFilename("Python")).toBe("_nax_acceptance_test.py");
   });
 
   test("returns .nax-acceptance.test.ts for unknown language", () => {

@@ -5,6 +5,8 @@
  * via LLM call to the agent adapter.
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { AcceptancePromptBuilder } from "../prompts/builders/acceptance-builder";
 import {
   acceptanceTestFilename as defaultAcceptanceTestFilename,
@@ -28,10 +30,22 @@ export const resolveAcceptanceTestFile = defaultResolveAcceptanceTestFile;
  * This is shared by both acceptance-setup (RED gate) and acceptance (post-run)
  * to ensure consistent behavior across both stages.
  */
+/** Resolve the pytest executable, preferring a local venv over the global PATH entry. */
+function resolvePytestBin(packageDir?: string): string {
+  if (packageDir) {
+    for (const venvDir of [".venv", "venv", "env"]) {
+      const candidate = join(packageDir, venvDir, "bin", "pytest");
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return "pytest";
+}
+
 export function buildAcceptanceRunCommand(
   testPath: string,
   testFramework?: string,
   commandOverride?: string,
+  packageDir?: string,
 ): string[] {
   if (commandOverride) {
     // Support {{files}}, {{file}}, {{FILE}} — all resolve to the single acceptance test path
@@ -48,7 +62,7 @@ export function buildAcceptanceRunCommand(
     case "jest":
       return ["npx", "jest", testPath];
     case "pytest":
-      return ["pytest", testPath];
+      return [resolvePytestBin(packageDir), testPath];
     case "go-test":
       return ["go", "test", testPath];
     case "cargo-test":

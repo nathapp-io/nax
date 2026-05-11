@@ -12,6 +12,31 @@
 
 import type { PrecheckConfig } from "../config/selectors";
 import type { PRD } from "../prd/types";
+
+export {
+  checkAgentCLI,
+  checkBuildCommandInReviewChecks,
+  checkCanonicalRulesLint,
+  checkClaudeCLI,
+  checkClaudeMdExists,
+  checkDependenciesInstalled,
+  checkDiskSpace,
+  checkGitRepoExists,
+  checkGitUserConfigured,
+  checkGitignoreCoversNax,
+  checkHomeEnvValid,
+  checkLanguageTools,
+  checkLintCommand,
+  checkMultiAgentHealth,
+  checkOptionalCommands,
+  checkPRDValid,
+  checkPendingStories,
+  checkPromptOverrideFiles,
+  checkStaleLock,
+  checkTestCommand,
+  checkTypecheckCommand,
+  checkWorkingTreeClean,
+} from "./checks";
 import {
   checkAgentCLI,
   checkBuildCommandInReviewChecks,

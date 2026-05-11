@@ -145,6 +145,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
       suggestedTestPath,
       ctx.config.project?.testFramework,
       ctx.config.acceptance?.command,
+      ctx.workdir,
     );
     const proc = _hardeningDeps.spawn(testCmd, {
       cwd: ctx.workdir,

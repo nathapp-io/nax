@@ -9,9 +9,9 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config/types";
-import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "../../../src/precheck/checks-warnings";
-import { makeTempDir } from "../../helpers/temp";
+import type { NaxConfig } from "@/config/types";
+import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "@/precheck";
+import { makeTempDir } from "@test/helpers";
 
 function makeTmpDir(): string {
   return makeTempDir("nax-test-");
@@ -132,6 +132,8 @@ describe("checkGitignoreCoversNax", () => {
       ".nax-pids",
       ".nax-wt/",
       "**/.nax-acceptance*",
+      "**/_nax_acceptance_test.py",
+      "**/_nax_suggested_test.py",
       "**/.nax/features/*/",
     ].join("\n");
     writeFileSync(join(workdir, ".gitignore"), gitignoreContent);
@@ -149,6 +151,8 @@ describe("checkGitignoreCoversNax", () => {
       ".nax-pids",
       ".nax-wt/",
       "**/.nax-acceptance*",
+      "**/_nax_acceptance_test.py",
+      "**/_nax_suggested_test.py",
       "**/.nax/features/*/",
     ].join("\n");
     writeFileSync(join(workdir, ".gitignore"), gitignoreContent);
@@ -161,7 +165,7 @@ describe("checkGitignoreCoversNax", () => {
 // BUG-092: build command configured but not in review.checks
 // ---------------------------------------------------------------------------
 
-import { checkBuildCommandInReviewChecks } from "../../../src/precheck/checks-warnings";
+import { checkBuildCommandInReviewChecks } from "@/precheck";
 
 function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {
