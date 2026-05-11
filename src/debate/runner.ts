@@ -214,11 +214,13 @@ export class DebateRunner {
         try {
           const fallbackCtx: CallContext = { ...this.ctx, agentName: fallbackAgentName };
           const fallbackOutput = await callOp(fallbackCtx, debateProposeOp, {
-            taskContext: prompt,
+            taskContext,
             outputFormat: "",
             stage: this.stage,
             debaterIndex: 0,
             debaters: [fallbackDebater],
+            manifestSection: preDebateManifestSection,
+            stageConfig: config,
           });
           logger?.info("debate", "debate:result", { storyId: this.ctx.storyId, stage: this.stage, outcome: "passed" });
           return {
