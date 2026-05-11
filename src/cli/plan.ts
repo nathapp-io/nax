@@ -40,6 +40,32 @@ export interface PlanCommandOptions {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Evidence mode composition
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Apply evidenceMode macro expansion to a plan stage config.
+ * "current" (or absent): returns the config unchanged.
+ * "asymmetric": injects grounding defaults; explicit user values take precedence per field.
+ */
+export function buildPlanComposition(
+  userStageConfig: import("../debate").DebateStageConfig & { evidenceMode?: "current" | "asymmetric" },
+): import("../debate").DebateStageConfig {
+  if (userStageConfig.evidenceMode !== "asymmetric") return userStageConfig;
+  return {
+    ...userStageConfig,
+    preDebatePhase: userStageConfig.preDebatePhase ?? { kind: "grounder" },
+    proposers: userStageConfig.proposers ?? { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 },
+    sessionMode: userStageConfig.sessionMode ?? "stateful",
+    selector: userStageConfig.selector ?? {
+      kind: "verifier-pick",
+      patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 },
+    },
+    postDebateVerifier: userStageConfig.postDebateVerifier ?? { kind: "plan-checklist" },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -132,8 +158,13 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         packageDetails,
         config?.project,
       );
-      // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
-      const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
+      // Safe: debateEnabled guard confirms config.debate.stages.plan is defined.
+      // buildPlanComposition applies evidenceMode macro (no-op for "current").
+      const planStageConfig = buildPlanComposition(
+        config?.debate?.stages.plan as import("../debate").DebateStageConfig & {
+          evidenceMode?: "current" | "asymmetric";
+        },
+      );
       const debateRt = createPlanRuntime(config, workdir, options.feature);
       const debateAgentManager = debateRt.agentManager;
       const debateCallCtx = {

@@ -2,7 +2,7 @@
  * CLI Utilities
  */
 
-export { planCommand, _planDeps } from "./plan";
+export { planCommand, buildPlanComposition, _planDeps } from "./plan";
 export type { PlanCommandOptions } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
 export { acceptCommand, type AcceptOptions } from "./accept";

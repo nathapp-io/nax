@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { _planDeps, planCommand } from "@/cli";
+import { _planDeps, buildPlanComposition, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
@@ -786,5 +786,94 @@ describe("assertIsValidPrd guard (#993)", () => {
     // routing.reasoning, so compare ids rather than the full object.
     const writtenIds = (written.userStories as Array<{ id: string }>).map((s) => s.id);
     expect(writtenIds).toEqual(SAMPLE_PRD.userStories.map((s) => s.id));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildPlanComposition (AC-1, AC-2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPlanComposition()", () => {
+  // Base without any plug-point fields so asymmetric defaults can be injected cleanly.
+  const baseConfig = {
+    enabled: true,
+    resolver: { type: "majority-fail-closed" as const },
+    mode: "panel" as const,
+    rounds: 1,
+    debaters: [{ agent: "claude" }, { agent: "opencode" }],
+  };
+
+  test("AC-1: returns config unchanged when evidenceMode is 'current'", () => {
+    const input = { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const };
+    const result = buildPlanComposition(input);
+    expect(result).toBe(input);
+  });
+
+  test("AC-1: returns config unchanged when evidenceMode is absent", () => {
+    const input = { ...baseConfig, sessionMode: "one-shot" as const };
+    const result = buildPlanComposition(input as any);
+    expect(result).toBe(input);
+  });
+
+  test("AC-1: injects preDebatePhase grounder when evidenceMode is 'asymmetric'", () => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+    expect(result.preDebatePhase).toEqual({ kind: "grounder" });
+  });
+
+  test("AC-1: injects proposers constraints when evidenceMode is 'asymmetric'", () => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+    expect(result.proposers).toEqual({ citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 });
+  });
+
+  test("AC-1: sets sessionMode to stateful when evidenceMode is 'asymmetric'", () => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+    expect(result.sessionMode).toBe("stateful");
+  });
+
+  test("AC-1: sets verifier-pick selector with patch when evidenceMode is 'asymmetric'", () => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+    expect(result.selector).toEqual({ kind: "verifier-pick", patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 } });
+  });
+
+  test("AC-1: injects plan-checklist postDebateVerifier when evidenceMode is 'asymmetric'", () => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
+    expect(result.postDebateVerifier).toEqual({ kind: "plan-checklist" });
+  });
+
+  test("AC-2: user-specified preDebatePhase overrides asymmetric default", () => {
+    const result = buildPlanComposition({
+      ...baseConfig,
+      evidenceMode: "asymmetric" as const,
+      preDebatePhase: { kind: "custom" as const, onFailure: "block" as const },
+    });
+    expect(result.preDebatePhase).toEqual({ kind: "custom", onFailure: "block" });
+  });
+
+  test("AC-2: user-specified selector overrides asymmetric default", () => {
+    const result = buildPlanComposition({
+      ...baseConfig,
+      evidenceMode: "asymmetric" as const,
+      selector: { kind: "synthesis" as const },
+    });
+    expect(result.selector).toEqual({ kind: "synthesis" });
+  });
+
+  test("AC-2: user-specified sessionMode overrides asymmetric default", () => {
+    // User explicitly sets one-shot — should not be replaced with stateful default.
+    const result = buildPlanComposition({
+      ...baseConfig,
+      sessionMode: "one-shot" as const,
+      evidenceMode: "asymmetric" as const,
+    });
+    expect(result.sessionMode).toBe("one-shot");
+  });
+
+  test("AC-2: user-specified proposers override asymmetric default", () => {
+    const result = buildPlanComposition({
+      ...baseConfig,
+      evidenceMode: "asymmetric" as const,
+      proposers: { citationsRequired: false },
+    });
+    expect(result.proposers).toEqual({ citationsRequired: false });
   });
 });

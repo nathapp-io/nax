@@ -31,7 +31,14 @@ export type { SelectorContext } from "./selectors";
 export { registerPreDebatePhase, resolvePreDebatePhase } from "./pre-phase";
 export type { PreDebatePhaseContext } from "./pre-phase";
 export { grounderStrategy } from "./pre-phase/grounder";
-export { registerPostDebateVerifier, resolvePostDebateVerifier, reviewGroundingFilterVerifier } from "./verifiers";
+export {
+  registerPostDebateVerifier,
+  resolvePostDebateVerifier,
+  reviewGroundingFilterVerifier,
+  planChecklistVerifier,
+  _planChecklistDeps,
+} from "./verifiers";
+export type { PostDebateVerifierContext, PostDebateVerifier, PostDebateVerifierResult } from "./verifiers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
 export { DebatePromptBuilder } from "../prompts";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "../prompts";

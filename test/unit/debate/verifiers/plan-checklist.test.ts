@@ -10,9 +10,8 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { planChecklistVerifier, _planChecklistDeps } from "@/debate/verifiers/plan-checklist";
-import { resolvePostDebateVerifier } from "@/debate/verifiers";
-import type { PostDebateVerifierContext } from "@/debate/verifiers/types";
+import { planChecklistVerifier, _planChecklistDeps, resolvePostDebateVerifier } from "@/debate";
+import type { PostDebateVerifierContext } from "@/debate";
 import type { SelectorResult } from "@/debate/selectors/types";
 import type { DebateStageConfig } from "@/debate/types";
 import type { CallContext } from "@/operations/types";
