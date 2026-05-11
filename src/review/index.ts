@@ -4,6 +4,7 @@
  * Post-implementation quality verification
  */
 
+export * from "./ac-quote-validator";
 export * from "./ac-structural-counterfactual";
 export * from "./adversarial";
 export * from "./semantic-evidence";

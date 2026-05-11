@@ -51,6 +51,9 @@ export type { SchemaDescriptor } from "./core/sections/json-schema";
 export { PlanPromptBuilder } from "./builders/plan-builder";
 export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builder";
 
+// Grounder prompt builder — facts manifest grounding prompt construction.
+export { GrounderPromptBuilder } from "./builders/grounder-builder";
+
 // Core types — re-exported for callsites that need them
 export type { PromptRole, PromptSection, PromptOptions, SectionSlot } from "./core/types";
 export { SLOT_ORDER } from "./core/types";

@@ -1,0 +1,252 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "enhanced-debate-phase-1",
+  "branchName": "feat/enhanced-debate-phase-1",
+  "createdAt": "2026-05-10T00:00:00.000Z",
+  "updatedAt": "2026-05-10T17:08:33.467Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Plug-point schema + contracts + registries",
+      "description": "**Goal** — Extend `DebateStageConfig` and `DebateConfigSchema` with optional plug-point fields, define three strategy contracts, and build three static built-in registries.\n\n**Motivation** — Plan-stage debate today has no composable extension surface; adding grounder/selector/verifier mechanics requires per-stage forks which would regress the single-SSOT `DebateRunner` architecture.\n\n**Approach** — Three new optional fields added to `DebateStageConfig` (TypeScript) and `DebateStageConfigSchema` (Zod). All default off (`undefined`); existing configs continue working unchanged. Top-level `grounder` block added to `DebateConfig` and `DebateConfigSchema` with defaults `model: 'fast'` and `timeoutSeconds: 300`.\n\n**Schema extensions:**\n```typescript\n// src/config/schemas-debate.ts (additive on DebateStageConfigSchema factory inner object)\nimport { ConfiguredModelSchema } from \"@/config\";\n\nconst GrounderConfigSchema = z.object({\n  model: ConfiguredModelSchema.default(\"fast\"),\n  timeoutSeconds: z.number().int().positive().default(300),\n});\n\n// DebateStageConfigSchema additions (optional fields):\npreDebatePhase: z.object({ kind: z.enum([\"grounder\", \"custom\"]) }).optional(),\nproposers: z.object({\n  citationsRequired: z.boolean().optional(),\n  fileReadAccess: z.boolean().optional(),\n  fileReadBudget: z.number().int().positive().optional(),\n}).optional(),\nselector: z.discriminatedUnion(\"kind\", [\n  z.object({ kind: z.literal(\"synthesis\") }),\n  z.object({ kind: z.literal(\"majority-fail-closed\") }),\n  z.object({ kind: z.literal(\"majority-fail-open\") }),\n  z.object({ kind: z.literal(\"judge\") }),\n  z.object({ kind: z.literal(\"dialogue-verdict\") }),\n]).optional(),\npostDebateVerifier: z.object({\n  kind: z.enum([\"plan-checklist\", \"review-grounding-filter\", \"custom\"]),\n}).optional(),\n\n// DebateConfigSchema top-level addition:\ngrounder: GrounderConfigSchema.default({}),\n```\n\n**TypeScript types (src/debate/types.ts additive):**\n```typescript\nimport type { ConfiguredModel } from \"@/config/schema-types\";\n\nexport interface GrounderConfig {\n  model: ConfiguredModel;\n  timeoutSeconds: number;\n}\n\n// Additions to DebateStageConfig:\npreDebatePhase?: { kind: \"grounder\" | \"custom\" };\nproposers?: { citationsRequired?: boolean; fileReadAccess?: boolean; fileReadBudget?: number; };\nselector?:\n  | { kind: \"synthesis\" } | { kind: \"majority-fail-closed\" } | { kind: \"majority-fail-open\" }\n  | { kind: \"judge\" } | { kind: \"dialogue-verdict\" };\npostDebateVerifier?: { kind: \"plan-checklist\" | \"review-grounding-filter\" | \"custom\" };\n\n// Addition to DebateConfig:\ngrounder: GrounderConfig; // defaulted by Zod, always present after parse\n```\n\n**Strategy contracts (3 new files):**\n```typescript\n// src/debate/pre-phase/types.ts\nexport interface PreDebatePhaseContext {\n  readonly ctx: CallContext; readonly stage: string;\n  readonly stageConfig: DebateStageConfig; readonly workdir: string;\n  readonly featureName: string; readonly storyId: string;\n  readonly specContent?: string;\n}\nexport interface PreDebatePhaseResult {\n  readonly manifestSection: string; readonly costUsd: number;\n}\nexport type PreDebatePhase = (ctx: PreDebatePhaseContext) => Promise<PreDebatePhaseResult>;\n\n// src/debate/selectors/types.ts\nexport interface SelectorContext {\n  readonly storyId: string; readonly stage: string;\n  readonly stageConfig: DebateStageConfig; readonly config: DebateConfig;\n  readonly proposals: SuccessfulProposal[]; readonly critiques: string[];\n  readonly workdir: string; readonly featureName: string;\n  readonly timeoutMs: number; readonly agentManager: IAgentManager;\n  readonly reviewerSession?: ReviewerSession;\n  readonly resolverContextInput?: ResolverContextInput;\n  readonly promptSuffix?: string; readonly debaters: Debater[];\n}\nexport interface SelectorResult {\n  readonly outcome: \"passed\" | \"failed\" | \"skipped\";\n  readonly output?: string; readonly resolverCostUsd: number;\n}\nexport type Selector = (ctx: SelectorContext) => Promise<SelectorResult>;\n\n// src/debate/verifiers/types.ts\nexport interface PostDebateVerifierContext {\n  readonly storyId: string; readonly stage: string;\n  readonly stageConfig: DebateStageConfig;\n  readonly selectorResult: SelectorResult;\n  readonly workdir: string; readonly ctx: CallContext;\n}\nexport interface PostDebateVerifierResult {\n  readonly outcome: \"passed\" | \"failed\" | \"skipped\";\n  readonly findings?: unknown[];\n  readonly output?: string; readonly costUsd: number;\n}\nexport type PostDebateVerifier = (ctx: PostDebateVerifierContext) => Promise<PostDebateVerifierResult>;\n```\n\n**Static registries (3 new files):**\n```typescript\n// src/debate/selectors/registry.ts\nconst STRATEGIES: Record<string, Selector> = {};\nexport function resolveSelector(kind: string): Selector {\n  const strategy = STRATEGIES[kind];\n  if (!strategy) throw new NaxError(`Unknown selector kind: ${kind}`, \"SELECTOR_UNKNOWN\", { kind });\n  return strategy;\n}\nexport function registerSelector(kind: string, strategy: Selector): void { STRATEGIES[kind] = strategy; }\n\n// src/debate/pre-phase/registry.ts — same pattern; error code: \"PRE_DEBATE_PHASE_UNKNOWN\"\n// src/debate/verifiers/registry.ts — same pattern; error code: \"POST_DEBATE_VERIFIER_UNKNOWN\"\n```\n\n**Scope** — In: schema extensions, TypeScript type extensions, 3 contract files, 3 registry files, 3 barrel index files. Out: no strategy implementations registered (US-002/003 do that), no runner wiring (US-004), no groundOp (US-005).",
+      "acceptanceCriteria": [
+        "DebateStageConfigSchema.parse({}) produces an object where all new optional fields (preDebatePhase, proposers, selector, postDebateVerifier) are undefined and existing fields (enabled, resolver, sessionMode, rounds, mode, timeoutSeconds, autoPersona) retain their current defaults",
+        "DebateStageConfigSchema.parse({ selector: { kind } }) returns result.selector.kind matching the input for each of the five valid kinds ('synthesis', 'majority-fail-closed', 'majority-fail-open', 'judge', 'dialogue-verdict'); parsing { kind: 'verifier-pick' } or { kind: 'unknown-kind' } throws ZodError",
+        "DebateStageConfigSchema.parse({ proposers: { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 } }) returns the proposers object with all three fields preserved",
+        "DebateStageConfigSchema.parse({ preDebatePhase: { kind: 'grounder' } }) returns preDebatePhase.kind === 'grounder'; parse({ preDebatePhase: { kind: 'grounder', model: 'balanced' } }) throws ZodError because model is not a valid preDebatePhase field",
+        "DebateConfigSchema.parse({}) returns grounder.model === 'fast' and grounder.timeoutSeconds === 300; parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'; parse({ grounder: { model: { agent: 'claude', model: 'claude-opus-4-7' } } }) returns grounder.model.agent === 'claude'; parse({ grounder: { timeoutSeconds: 600 } }) returns timeoutSeconds === 600 with model defaulting to 'fast'",
+        "resolveSelector(kind), resolvePreDebatePhase(kind), and resolvePostDebateVerifier(kind) each throw NaxError with codes 'SELECTOR_UNKNOWN', 'PRE_DEBATE_PHASE_UNKNOWN', and 'POST_DEBATE_VERIFIER_UNKNOWN' respectively when no strategy is registered for the given kind",
+        "src/debate/pre-phase/types.ts, src/debate/selectors/types.ts, and src/debate/verifiers/types.ts each export their respective Context, Result, and Strategy types (PreDebatePhase, Selector, PostDebateVerifier)",
+        "registerSelector(kind, strategy) followed by resolveSelector(kind) returns the registered strategy function",
+        "DebateStageConfigSchema.parse({ postDebateVerifier: { kind: 'review-grounding-filter' } }) returns an object where postDebateVerifier.kind === 'review-grounding-filter'",
+        "DebateConfigSchema.parse({}) preserves all existing stage defaults unchanged (plan: enabled=true, resolver.type='synthesis'; review: enabled=true, resolver.type='majority-fail-closed')"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/types.ts",
+        "src/config/schemas-debate.ts",
+        "src/plugins/registry.ts",
+        "src/errors.ts",
+        "src/config/schema-types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4530170d7f01c2c163e4783e7d639b2a78caa219"
+    },
+    {
+      "id": "US-002",
+      "title": "Extract synthesis, majority-fail-closed, majority-fail-open, judge selector strategies",
+      "description": "**Goal** — Extract the four resolver function bodies from `src/debate/resolvers.ts` into typed selector strategies under `src/debate/selectors/`, keep compat wrappers in `resolvers.ts`, and register all four in the selector registry.\n\n**Motivation** — The existing `resolvers.ts` functions are the correct implementations; wrapping them as `Selector` strategies gives the plug-point framework named, dispatchable units without forking behavior.\n\n**Approach** — Each strategy wraps the existing resolver body, adapting its call signature to `SelectorContext → Promise<SelectorResult>`. Source `resolvers.ts` exports become thin compat wrappers that delegate to the new strategies.\n\n**Extraction targets:**\n- `majorityResolver` (line ~47 in `resolvers.ts`) → `src/debate/selectors/majority.ts` exporting `majorityFailClosedSelector` (calls `majorityResolver(proposals, false)`) and `majorityFailOpenSelector` (calls `majorityResolver(proposals, true)`). Both return `resolverCostUsd: 0`.\n- `synthesisResolver` (line ~66) → `src/debate/selectors/synthesis.ts` exporting `synthesisSelector`. Calls `agentManager.completeAs` with `DebatePromptBuilder.resolverSynthesisPrompt(proposals, critiques, debaters)`. Returns `resolverCostUsd` from `completeAs` cost.\n- `judgeResolver` (line ~87) → `src/debate/selectors/judge.ts` exporting `judgeSelector`. Calls `agentManager.completeAs` using agent from `ctx.stageConfig.resolver.agent` (or `RESOLVER_FALLBACK_AGENT` when unset). Returns `resolverCostUsd` from `completeAs` cost.\n\n**Registry population (src/debate/selectors/registry.ts):**\nAll four strategy kinds registered at module load:\n```typescript\nregisterSelector(\"synthesis\", synthesisSelector);\nregisterSelector(\"majority-fail-closed\", majorityFailClosedSelector);\nregisterSelector(\"majority-fail-open\", majorityFailOpenSelector);\nregisterSelector(\"judge\", judgeSelector);\n```\n\n**Compat wrappers (resolvers.ts must retain):**\n```typescript\n// synthesisResolver, majorityResolver, judgeResolver remain exported\n// bodies now delegate to the new strategies via appropriate adapter calls\n```\n\n**Scope** — In: `src/debate/selectors/synthesis.ts`, `src/debate/selectors/majority.ts`, `src/debate/selectors/judge.ts`, `src/debate/selectors/registry.ts` updated with registrations, `src/debate/resolvers.ts` bodies updated to delegate. Out: `dialogue-verdict` strategy (US-003), runner wiring (US-004), `src/review/` changes (US-003).",
+      "acceptanceCriteria": [
+        "synthesisSelector calls agentManager.completeAs exactly once with the prompt produced by DebatePromptBuilder.resolverSynthesisPrompt(ctx.proposals.map(p => p.output), ctx.critiques, ctx.debaters), returns outcome === 'passed' when output is non-empty, and resolverCostUsd equal to the cost reported by completeAs",
+        "majorityFailClosedSelector and majorityFailOpenSelector each return a SelectorResult where outcome is mapped from majorityResolver(proposalOutputs, false) and majorityResolver(proposalOutputs, true) respectively; both always return resolverCostUsd === 0",
+        "judgeSelector calls agentManager.completeAs exactly once using the agent name from ctx.stageConfig.resolver.agent (or RESOLVER_FALLBACK_AGENT when unset) with the prompt produced by DebatePromptBuilder.resolverJudgePrompt(ctx.proposals.map(p => p.output), ctx.critiques, ctx.debaters)",
+        "After registry registration, resolveSelector('synthesis'), resolveSelector('majority-fail-closed'), resolveSelector('majority-fail-open'), and resolveSelector('judge') each return their respective strategy functions",
+        "The compat wrappers at src/debate/resolvers.ts (synthesisResolver, majorityResolver, judgeResolver) continue to exist with their current signatures and their bodies delegate to the new strategies",
+        "All existing tests in test/unit/debate/resolvers.test.ts pass unchanged",
+        "judgeSelector returns resolverCostUsd === 0 when agentManager.completeAs returns zero cost",
+        "majorityFailClosedSelector and majorityFailOpenSelector differ only in the failOpen parameter passed to majorityResolver"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/resolvers.ts",
+        "src/debate/session-helpers.ts",
+        "src/debate/types.ts",
+        "src/prompts/builders/debate-builder.ts",
+        "test/unit/debate/resolvers.test.ts"
+      ],
+      "suggestedCriteria": [
+        "synthesisSelector returns outcome === 'failed' when the synthesizer produces an empty string output"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4cf56548a063917dbd74d14aebe071f80c6891bf"
+    },
+    {
+      "id": "US-003",
+      "title": "Extract dialogue-verdict selector + review-grounding-filter verifier + pickSelectorKind dispatcher",
+      "description": "**Goal** — Extract the dialogue-path branch from `session-helpers.ts` into `selectors/dialogue-verdict.ts`, extract the grounding-filter block from `semantic-debate.ts` into `verifiers/review-grounding-filter.ts`, implement `pickSelectorKind()`, and update `semantic-debate.ts` to use explicit composition.\n\n**Motivation** — The dialogue path and grounding filter are inline in their respective files; extracting them into named strategies makes them composable and testable in isolation without forking behavior.\n\n**Approach:**\n\n**`dialogueVerdictSelector` (src/debate/selectors/dialogue-verdict.ts):**\nExtracts the `if (reviewerSession && resolverContext)` block from `session-helpers.ts` (the `resolveDebate()`/`reReviewDebate()` dispatch including `majorityVote` pre-computation and `diffContext` build). Strategy reads `ctx.reviewerSession` and `ctx.resolverContextInput` from `SelectorContext`. Branches on `ctx.stageConfig.resolver.type` for majority-vote pre-computation step (preserves today's `tryParseLLMJson` per-proposal parse). When `ctx.reviewerSession` or `ctx.resolverContextInput` is undefined, falls back to invoking the base selector via `resolveSelector(pickSelectorKind(ctx.stageConfig, {}))` (forces stateless path).\n\n**`pickSelectorKind` (src/debate/selectors/pick.ts):**\n```typescript\nexport function pickSelectorKind(\n  stageConfig: DebateStageConfig,\n  ctx: { reviewerSession?: ReviewerSession; resolverContextInput?: ResolverContextInput },\n): string {\n  // 1. Explicit selector field wins\n  if (stageConfig.selector) return stageConfig.selector.kind;\n\n  // 2. Auto-elevate to dialogue-verdict when session+context present (today's behavior)\n  if (ctx.reviewerSession && ctx.resolverContextInput) return \"dialogue-verdict\";\n\n  // 3. Map existing resolver.type to selector kind (backward compat)\n  switch (stageConfig.resolver.type) {\n    case \"synthesis\":            return \"synthesis\";\n    case \"majority-fail-closed\": return \"majority-fail-closed\";\n    case \"majority-fail-open\":   return \"majority-fail-open\";\n    case \"custom\":               return \"judge\";\n  }\n}\n```\n\n**`reviewGroundingFilterVerifier` (src/debate/verifiers/review-grounding-filter.ts):**\nExtracts the `filterByAcGroundingMinimal` + `sanitizeRefModeFindings` + `isBlockingSeverity` invocation block from `src/review/semantic-debate.ts`. Source helper functions in `src/review/` stay where they are; strategy imports them. Returns `PostDebateVerifierResult` with `findings` = filtered subset and `outcome` = `'failed'` when any filtered finding has blocking severity, `'passed'` otherwise.\n\n**`semantic-debate.ts` update:**\nRemove the force-override block. Replace with explicit composition by building a `DebateStageConfig` with `selector: { kind: 'dialogue-verdict' }` and `postDebateVerifier: { kind: 'review-grounding-filter' }` before instantiating `DebateRunner`. Behavior must be byte-equivalent.\n\n**Registry registrations:**\n- `registerSelector('dialogue-verdict', dialogueVerdictSelector)` in `src/debate/selectors/registry.ts`\n- `registerPostDebateVerifier('review-grounding-filter', reviewGroundingFilterVerifier)` in `src/debate/verifiers/registry.ts`\n\n**Scope** — In: `dialogue-verdict.ts`, `pick.ts`, `review-grounding-filter.ts`, registry updates, `semantic-debate.ts` update. Out: runner wiring (US-004), `session-helpers.ts::resolveOutcome()` refactor (US-004).",
+      "acceptanceCriteria": [
+        "dialogueVerdictSelector invokes ctx.reviewerSession.resolveDebate(...) when ctx.resolverContextInput.isReReview === false and reReviewDebate(...) when isReReview === true, with arguments derived from ctx.resolverContextInput exactly as session-helpers.ts does today",
+        "When ctx.stageConfig.resolver.type is 'majority-fail-closed' or 'majority-fail-open', dialogueVerdictSelector pre-computes majorityVote using tryParseLLMJson for each proposal (matching existing session-helpers.ts behavior) and passes it as debateCtx.majorityVote to resolveDebate / reReviewDebate",
+        "dialogueVerdictSelector returns outcome === 'passed' when dialogueResult.checkResult.success === true and 'failed' otherwise; resolverCostUsd === dialogueResult.cost ?? 0; when ctx.reviewerSession or ctx.resolverContextInput is undefined, falls back to the base selector indicated by ctx.stageConfig.resolver.type",
+        "pickSelectorKind(stageConfig, ctx) returns stageConfig.selector.kind when stageConfig.selector is defined; returns 'dialogue-verdict' when selector is absent AND both ctx.reviewerSession and ctx.resolverContextInput are present",
+        "pickSelectorKind maps resolver.type to selector kind ('synthesis'→'synthesis', 'majority-fail-closed'→'majority-fail-closed', 'majority-fail-open'→'majority-fail-open', 'custom'→'judge') when no selector field is set and auto-elevation does not apply",
+        "reviewGroundingFilterVerifier invokes filterByAcGroundingMinimal(ctx.selectorResult.findings, ...) and returns a PostDebateVerifierResult where findings is the filtered subset; outcome === 'failed' when any filtered finding has blocking severity per isBlockingSeverity, 'passed' otherwise",
+        "semantic-debate.ts no longer contains the force-override block; its runSemanticDebate() builds a DebateStageConfig with selector: { kind: 'dialogue-verdict' } and postDebateVerifier: { kind: 'review-grounding-filter' } before instantiating DebateRunner, yielding byte-equivalent behavior",
+        "dialogueVerdictSelector is registered under 'dialogue-verdict' in the selector registry; reviewGroundingFilterVerifier is registered under 'review-grounding-filter' in the post-debate-verifier registry",
+        "All tests in test/integration/review/review.test.ts, test/unit/review/, and test/unit/debate/session-helpers.test.ts pass unchanged",
+        "pickSelectorKind with stageConfig.selector = { kind: 'dialogue-verdict' } explicitly set returns 'dialogue-verdict' even when reviewerSession and resolverContextInput are both absent (explicit selector bypasses auto-elevation)",
+        "reviewGroundingFilterVerifier returns costUsd === 0 (verifier is mechanical, no LLM calls)",
+        "dialogueVerdictSelector registered under 'dialogue-verdict' key in selector registry"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "refactor",
+        "review"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/session-helpers.ts",
+        "src/review/semantic-debate.ts",
+        "src/review/dialogue.ts",
+        "src/review/semantic-helpers.ts",
+        "src/debate/selectors/pick.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "488091e844597a32d5af96356cf5f345945a205f"
+    },
+    {
+      "id": "US-004",
+      "title": "Wire selector dispatch in main runner and runner-plan.ts",
+      "description": "**Goal** — Refactor `session-helpers.ts::resolveOutcome()` to delegate through the strategy registry and wire pre-phase/post-verifier dispatch hooks into all debate runner entry points.\n\n**Motivation** — `DebateRunner` must remain a single SSOT consumed by every stage; the plug-point fields added in US-001/002/003 are inert until the runner routes through them.\n\n**Approach:**\n\n**`resolveOutcome()` refactor (session-helpers.ts):**\nReplace the inlined per-type if/else dispatch with a thin dispatcher:\n```typescript\nexport async function resolveOutcome(\n  stageConfig: DebateStageConfig,\n  proposals: SuccessfulProposal[],\n  critiques: string[],\n  // ... existing params ...\n  reviewerSession?: ReviewerSession,\n  resolverContextInput?: ResolverContextInput,\n): Promise<SelectorResult> {\n  const kind = pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput });\n  const selector = resolveSelector(kind);\n  const selectorCtx: SelectorContext = { stageConfig, proposals, critiques, /* ... */ reviewerSession, resolverContextInput };\n\n  // Preserve today's try/catch fallback: if dialogue-verdict throws, fall back to stateless\n  if (kind === \"dialogue-verdict\") {\n    try {\n      return await selector(selectorCtx);\n    } catch (err) {\n      logger.warn(\"debate\", \"dialogue-verdict selector failed, falling back to stateless\", { storyId, error: errorMessage(err) });\n      const fallbackKind = pickSelectorKind(stageConfig, {});\n      return await resolveSelector(fallbackKind)(selectorCtx);\n    }\n  }\n  return selector(selectorCtx);\n}\n```\n\n**Pre-phase dispatch in `runPanelOneShot()` (runner.ts):**\n```typescript\n// Before parallel proposer fan-out:\nlet prePhaseSection = \"\";\nif (stageConfig.preDebatePhase) {\n  const result = await resolvePreDebatePhase(stageConfig.preDebatePhase.kind)(preDebateCtx);\n  prePhaseSection = result.manifestSection;\n  totalCost += result.costUsd;\n}\n// Pre-pend prePhaseSection to proposer prompt taskContext\n```\n\n**Post-verifier dispatch in `runPanelOneShot()` (runner.ts):**\n```typescript\n// After selector emits result:\nif (stageConfig.postDebateVerifier) {\n  const verifierResult = await resolvePostDebateVerifier(stageConfig.postDebateVerifier.kind)(verifierCtx);\n  return { ...selectorResult, outcome: verifierResult.outcome, costUsd: selectorResult.resolverCostUsd + verifierResult.costUsd };\n}\nreturn selectorResult;\n```\n\n**Runner wiring rules:**\n- If `stageConfig.selector` is set → use `resolveSelector(stageConfig.selector.kind)` instead of inlined `resolveOutcome()` synthesis call\n- If `stageConfig.preDebatePhase` is set → run via `resolvePreDebatePhase()` before parallel proposer fan-out; prepend `manifestSection` to `taskContext`\n- If `stageConfig.postDebateVerifier` is set → run via `resolvePostDebateVerifier()` after selector emits result\n- If any field is **unset**, dispatch follows current behavior (synthesis + no pre-phase + no post-verifier)\n\n**Both runner entry points must be wired:**\n1. `runner.ts::runPanelOneShot()` — used by semantic review and most future stages\n2. `runner-plan.ts::runPlan()` — separate file used by `nax plan` debate path\n3. `runner-hybrid.ts` and `runner-stateful.ts` — also route through `resolveOutcome`\n\n**New test (`test/unit/debate/runner-plug-point-dispatch.test.ts`):**\nAsserts: (1) when `stageConfig.selector = { kind: 'synthesis' }`, `pickSelectorKind` returns `'synthesis'` and `resolveSelector('synthesis')` is invoked exactly once per debate; (2) when `stageConfig.selector` is unset and `reviewerSession + resolverContextInput` are present, `pickSelectorKind` returns `'dialogue-verdict'`; (3) when neither applies, `pickSelectorKind` falls back to `resolver.type` mapping.\n\n**Scope** — In: `session-helpers.ts::resolveOutcome()`, `runner.ts::runPanelOneShot()`, `runner-plan.ts::runPlan()`, `runner-hybrid.ts`, `runner-stateful.ts`, new test file. Out: no new strategy implementations (US-002/003 do that), no `groundOp` wiring (Phase 2).",
+      "acceptanceCriteria": [
+        "session-helpers.ts::resolveOutcome() body delegates to resolveSelector(pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput }))(selectorContext) and returns its result, replacing the inlined per-type if/else dispatch",
+        "When dialogueVerdictSelector throws, resolveOutcome logs a warning at warn level and re-dispatches via pickSelectorKind with reviewerSession: undefined to force the stateless path (preserving today's try/catch fallback behavior)",
+        "DebateRunner.runPanelOneShot() continues calling resolveOutcome(...) at the same call site — behavior is byte-equivalent",
+        "When stageConfig.preDebatePhase is set, runPanelOneShot() invokes resolvePreDebatePhase(stageConfig.preDebatePhase.kind)(preDebateCtx) before the parallel proposer fan-out and pre-pends result.manifestSection to the proposer prompt's taskContext; when unset, proposer prompt is unchanged",
+        "When stageConfig.postDebateVerifier is set, runPanelOneShot() invokes resolvePostDebateVerifier(stageConfig.postDebateVerifier.kind)(verifierCtx) after the selector emits its result and returns the verifier's outcome with merged cost; when unset, returns the selector's outcome directly",
+        "runner-plan.ts::runPlan(), runner-hybrid.ts, and runner-stateful.ts all continue calling resolveOutcome(...) (refactored); behavior is byte-equivalent",
+        "All tests in test/unit/debate/runner-mode-routing.test.ts, test/unit/debate/runner-rounds-and-cost.test.ts, test/unit/debate/runner-plan.test.ts, test/unit/debate/runner-hybrid.test.ts, test/unit/debate/runner-stateful.test.ts, and test/unit/debate/session-helpers.test.ts pass unchanged",
+        "A new unit test test/unit/debate/runner-plug-point-dispatch.test.ts asserts: when stageConfig.selector = { kind: 'synthesis' }, pickSelectorKind returns 'synthesis' and resolveSelector('synthesis') is invoked exactly once; when stageConfig.selector is unset with reviewerSession + resolverContextInput present, pickSelectorKind returns 'dialogue-verdict'; when neither applies, pickSelectorKind falls back to resolver.type mapping",
+        "When preDebatePhase is set and resolvePreDebatePhase throws, runPanelOneShot propagates the error (no silent swallow)",
+        "When postDebateVerifier returns outcome === 'skipped', runPanelOneShot returns the selector's original outcome unchanged",
+        "totalCost in runPanelOneShot accumulates pre-phase costUsd + selector resolverCostUsd + post-verifier costUsd"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "wiring"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/debate/session-helpers.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-plan.ts",
+        "src/debate/runner-hybrid.ts",
+        "src/debate/runner-stateful.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b1b9221a6cf95a9c16d02bdb138ab04b57b333e6"
+    },
+    {
+      "id": "US-005",
+      "title": "Facts manifest schema + groundOp standalone",
+      "description": "**Goal** — Implement the facts manifest Zod schema with parse/render helpers, `groundOp` as a standalone `CompleteOperation`, and `GrounderPromptBuilder`; extend `DebateConfigSchema` with the top-level `grounder` block.\n\n**Motivation** — The grounder operation produces structured evidence (facts manifest) that Phase 2 injects into debate proposer prompts to prevent spec hallucination from reaching PRD stories.\n\n**Approach — Facts manifest schema (src/debate/facts-manifest.ts):**\n```typescript\nimport { z } from \"zod\";\n\nexport const FactsManifestSchema = z.object({\n  repoFacts: z.array(z.object({\n    id: z.string().regex(/^F-\\d{3}$/),\n    kind: z.enum([\"file\", \"symbol\", \"schema\", \"contract\", \"convention\"]),\n    evidence: z.string().min(1),\n    summary: z.string().min(1),\n  })).default([]),\n  specClaims: z.array(z.object({\n    id: z.string().regex(/^S-\\d{3}$/),\n    specSpan: z.string().min(1),\n    claim: z.string().min(1),\n    kind: z.enum([\"factual\", \"intent\"]),\n    verification: z.object({\n      status: z.enum([\"verified\", \"unverified\", \"partial\", \"contradicted\"]),\n      evidence: z.string().optional(),\n      factId: z.string().regex(/^F-\\d{3}$/).optional(),\n    }),\n  })).default([]),\n  gaps: z.array(z.object({\n    id: z.string().regex(/^G-\\d{3}$/),\n    kind: z.enum([\"missing-context\", \"ignored-convention\", \"boundary-not-considered\"]),\n    note: z.string().min(1),\n    evidence: z.string().optional(),\n  })).default([]),\n});\nexport type FactsManifest = z.infer<typeof FactsManifestSchema>;\n\nexport function parseFactsManifest(raw: unknown): { ok: true; manifest: FactsManifest } | { ok: false; error: string };\nexport function renderManifestSection(manifest: FactsManifest): string;\n```\n\n**`groundOp` (src/operations/ground.ts) — Pattern A, config-driven:**\n```typescript\nexport interface GrounderInput {\n  readonly specContent: string;\n  readonly codebaseContext: string;\n  readonly workdir: string;\n  // Note: NO model field. The grounder model is config-driven via DebateConfig.grounder.model\n}\n\nexport const groundOp: CompleteOperation<GrounderInput, FactsManifest, DebateConfig> = {\n  kind: \"complete\",\n  name: \"ground\",\n  stage: \"plan\",  // hardcoded: plan is Phase 2's only consumer; mirrors debateProposeOp precedent\n  jsonMode: true,\n  config: debateConfigSelector,\n  model: (_input, ctx) => ctx.config.debate.grounder.model,\n  timeoutMs: (_input, ctx) => ctx.config.debate.grounder.timeoutSeconds * 1000,\n  build(input, _ctx) {\n    return new GrounderPromptBuilder().build(input.specContent, input.codebaseContext, input.workdir);\n  },\n  parse(output, _input, _ctx) {\n    const result = parseFactsManifest(parseLLMJson(output));\n    if (!result.ok) {\n      throw new NaxError(`Grounder output failed schema validation: ${result.error}`, \"GROUNDER_PARSE_FAILED\", {});\n    }\n    return result.manifest;\n  },\n};\n```\n\n**Model resolution rationale (why top-level grounder block):**\n1. Matches dominant config-driven Pattern A — `model: (_input, ctx) => ctx.config.<slice>.model` — reading from stable config path via selector\n2. Avoids op-stage coupling — `groundOp` is generic; per-stage model would require knowing calling stage\n3. Uses `ConfiguredModel` correctly — same `ConfiguredModelSchema` and `.default('fast')` semantics as every other configurable op\n4. Per-stage flexibility deferred — additive override field can be added later without breaking changes\n\n**Stage hardcode rationale:**\n`groundOp.stage = 'plan'` because `PipelineStage` is a static literal (not a function). Mirrors `debateProposeOp` which hardcodes `stage: 'review'` despite being consumed by both plan-stage and review-stage debate. Future acceptance/rectification debate should add a sibling op (e.g. `groundAcceptanceOp` with `stage: 'acceptance'`).\n\n**GrounderPromptBuilder (src/prompts/builders/grounder-builder.ts):**\nFollows the same pattern as `PlanPromptBuilder` and other builder classes. Implements `build(specContent: string, codebaseContext: string, workdir: string): ComposeInput` that produces a prompt instructing the LLM to output a `FactsManifest` JSON object.\n\n**Note:** `groundOp` is NOT wired into any runner path in Phase 1. Phase 2 wires it via the `grounder` pre-phase strategy gated by `evidenceMode = 'asymmetric'`.\n\n**Scope** — In: `src/debate/facts-manifest.ts`, `src/operations/ground.ts`, `src/prompts/builders/grounder-builder.ts`, `src/operations/index.ts` (export `groundOp`), `src/prompts/index.ts` (export `GrounderPromptBuilder`). Out: pre-phase strategy registration (Phase 2), runner wiring (Phase 2).",
+      "acceptanceCriteria": [
+        "parseFactsManifest returns { ok: true, manifest } for valid inputs including empty arrays and well-formed entries with all required fields (ids matching /^F-\\d{3}$/, /^S-\\d{3}$/, /^G-\\d{3}$/ respectively); optional fields (verification.factId, gap.evidence) may be absent",
+        "parseFactsManifest returns { ok: false, error } when any required field fails validation: id not matching its pattern (e.g. 'X-001' for a repoFact), required string field is empty (e.g. evidence === ''), or invalid enum value",
+        "renderManifestSection(manifest) returns a non-empty string containing every repoFact.id, specClaim.id, and gap.id present in the manifest",
+        "groundOp.kind === 'complete', groundOp.name === 'ground', and groundOp.stage === 'plan'",
+        "groundOp does NOT expose a model field on its GrounderInput interface; model is entirely config-driven via groundOp.model(_input, ctx) === ctx.config.debate.grounder.model regardless of input",
+        "groundOp.parse(validJsonString) returns a FactsManifest when given valid JSON matching the schema; throws NaxError with code 'GROUNDER_PARSE_FAILED' when given invalid JSON or schema-violating input",
+        "groundOp.model(input, ctx) returns ctx.config.debate.grounder.model verbatim — whether it is a ModelTier string (e.g. 'balanced') or a ConfiguredModelObject (e.g. { agent: 'claude', model: 'claude-opus-4-7' })",
+        "groundOp.timeoutMs(input, ctx) === ctx.config.debate.grounder.timeoutSeconds * 1000; groundOp is exported from src/operations/index.ts",
+        "parseFactsManifest with a valid specClaims entry where verification.factId is undefined (optional field) returns { ok: true }",
+        "parseFactsManifest with a gap entry where evidence is undefined (optional field) returns { ok: true }",
+        "renderManifestSection returns a string containing 'verified'/'unverified'/'partial'/'contradicted' status for each specClaim",
+        "groundOp.stage === 'plan'",
+        "groundOp is exported from src/operations/index.ts"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "operations",
+        "manifest"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/plan.ts",
+        "src/operations/types.ts",
+        "src/config/schemas-infra.ts",
+        "src/config/selectors.ts",
+        "src/prompts/builders/plan-builder.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a91b895c29565d10593a59e0a2290494dcf486f9"
+    }
+  ],
+  "analysis": "This is a pure internal refactor + foundation phase — no production LLM behavior changes for any existing user. All new plug-point fields default off; existing call sites remain byte-equivalent after the extractions.\n\n**Key existing files to modify:**\n- `src/debate/types.ts` — add optional plug-point fields to `DebateStageConfig` and new `GrounderConfig` + `grounder` field to `DebateConfig`\n- `src/config/schemas-debate.ts` — add optional plug-point fields to the `DebateStageConfigSchema` factory inner object and add top-level `grounder` block to `DebateConfigSchema`. IMPORTANT: `DebateStageConfigSchema` is currently a factory function `(defaults) => z.preprocess(...)` — the spec ACs reference `DebateStageConfigSchema.parse({})` directly. Implementer must either (a) export a canonical named `DebateStageConfigSchema` at module level (e.g. with plan-stage defaults) alongside the factory, or (b) ensure tests call one of the concrete stage schemas. The cleanest approach matching the ACs is to export a single canonical schema instance.\n- `src/debate/resolvers.ts` — bodies of `synthesisResolver`, `majorityResolver`, `judgeResolver` should delegate to the new strategies; exports remain for compat\n- `src/debate/session-helpers.ts` — `resolveOutcome()` body replaced with thin dispatcher; dialogue-path branch extracted to strategy\n- `src/debate/runner.ts` — `runPanelOneShot()` gains pre/post plug-point dispatch hooks\n- `src/debate/runner-plan.ts` — separate 273-line file; also calls `resolveOutcome` and must be wired\n- `src/debate/runner-hybrid.ts` and `src/debate/runner-stateful.ts` — also call `resolveOutcome`\n- `src/review/semantic-debate.ts` — force-override block at the location around lines 97-105 removed; replaced with explicit composition (`selector: { kind: 'dialogue-verdict' }` + `postDebateVerifier: { kind: 'review-grounding-filter' }`); grounding-filter extraction block around lines 245-290\n\n**New files to create:**\n- `src/debate/pre-phase/types.ts`, `src/debate/pre-phase/registry.ts`, `src/debate/pre-phase/index.ts` (barrel)\n- `src/debate/selectors/types.ts`, `src/debate/selectors/registry.ts`, `src/debate/selectors/synthesis.ts`, `src/debate/selectors/majority.ts`, `src/debate/selectors/judge.ts`, `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/pick.ts`, `src/debate/selectors/index.ts` (barrel)\n- `src/debate/verifiers/types.ts`, `src/debate/verifiers/registry.ts`, `src/debate/verifiers/review-grounding-filter.ts`, `src/debate/verifiers/index.ts` (barrel)\n- `src/debate/facts-manifest.ts`\n- `src/operations/ground.ts`\n- `src/prompts/builders/grounder-builder.ts`\n\n**Pattern references:**\n- Selector strategy shape: `(ctx: SelectorContext) => Promise<SelectorResult>` — wrap existing resolver bodies\n- Pattern A op: `model: (_input, ctx) => ctx.config.grounder.model` — same as `planInteractiveOp` and `acceptanceGenerateOp`\n- `ConfiguredModelSchema` is imported from `@/config` barrel (see `src/config/schemas-infra.ts`)\n- `debateConfigSelector` already exists in `src/config/selectors.ts`\n- Static registry: function map + `resolve*(kind)` that throws `NaxError` on unknown kind\n\n**Critical risks:**\n1. `resolveOutcome()` refactor in `session-helpers.ts` — highest risk. Must be byte-equivalent. Existing tests in `test/unit/debate/session-helpers.test.ts` cover all resolver types and the dialogue path.\n2. The `try/catch` fallback wrapping the dialogue path today must be preserved at dispatcher level — when `dialogueVerdictSelector` throws, fall back to stateless selector.\n3. `runner-plan.ts` is a separate file from `runner.ts` — both entry points must independently route through the refactored `resolveOutcome`.\n4. Compat wrappers in `resolvers.ts` must remain intact — downstream callers may import them directly.\n5. `semantic-debate.ts` force-override removal must result in byte-equivalent behavior via explicit composition.\n\n**Dependency order:** US-001 → US-002 → US-003 → US-004. US-005 is independent and can be developed in parallel with US-001/2/3/4.\n\n**Barrel exports:** Each new `src/debate/*/index.ts` must be added to `src/debate/index.ts` if not already re-exported; `src/operations/ground.ts` must be added to `src/operations/index.ts`; `src/prompts/builders/grounder-builder.ts` must be added to `src/prompts/index.ts`.\n\n**`DebateConfig` selector note:** `debateConfigSelector = pickSelector('debate', 'debate', 'models', 'agent')` — `groundOp.config = debateConfigSelector` gives access to `ctx.config.debate.grounder.model` and `ctx.config.debate.grounder.timeoutSeconds`. Inside the op, the slice is the full `DebateConfig` (including `grounder`), so `ctx.config.grounder` is the correct path."
+}

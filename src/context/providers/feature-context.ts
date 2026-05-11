@@ -6,9 +6,9 @@ import type { ContextConfig } from "@/config/selectors";
  * v1 scope: read path only. Returns full (unfiltered) context.md content.
  * Role filtering and budget enforcement happen in the prompt builders.
  */
-import { getLogger } from "../../logger";
-import type { UserStory } from "../../prd";
-import { errorMessage } from "../../utils/errors";
+import { getLogger } from "@/logger";
+import type { UserStory } from "@/prd";
+import { errorMessage } from "@/utils/errors";
 import { resolveFeatureId } from "../feature-resolver";
 
 /** Injectable deps for testing */

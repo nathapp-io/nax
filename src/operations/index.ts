@@ -45,3 +45,5 @@ export { implementTddOp } from "./implement";
 export { verifyTddOp } from "./verify";
 export { autoApproveOp } from "./auto-approve";
 export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";
+export { groundOp } from "./ground";
+export type { GrounderInput } from "./ground";

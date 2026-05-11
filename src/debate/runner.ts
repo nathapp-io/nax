@@ -8,6 +8,8 @@ import type { CallContext } from "../operations/types";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
+import { resolvePreDebatePhase } from "./pre-phase";
+import type { PreDebatePhaseContext } from "./pre-phase";
 import { runHybrid } from "./runner-hybrid";
 import { runPlan } from "./runner-plan";
 import { runStateful } from "./runner-stateful";
@@ -21,6 +23,8 @@ import {
   resolveOutcome,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal } from "./types";
+import { resolvePostDebateVerifier } from "./verifiers";
+import type { PostDebateVerifierContext } from "./verifiers";
 
 const DEFAULT_TIMEOUT_SECONDS = 600;
 
@@ -128,11 +132,29 @@ export class DebateRunner {
     const concurrencyLimit =
       (this.config?.debate as { maxConcurrentDebaters?: number } | undefined)?.maxConcurrentDebaters ?? 2;
 
+    // Pre-debate phase: run before parallel proposer fan-out
+    let taskContext = prompt;
+    if (config.preDebatePhase) {
+      const prePhaseCtx: PreDebatePhaseContext = {
+        ctx: this.ctx,
+        stage: this.stage,
+        stageConfig: config,
+        workdir: this.workdir,
+        featureName: this.featureName,
+        storyId: this.ctx.storyId ?? "",
+      };
+      const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
+      if (prePhaseResult.manifestSection) {
+        taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
+      }
+      totalCostUsd += prePhaseResult.costUsd;
+    }
+
     const proposalSettled = await allSettledBounded(
       resolved.map(({ debater, agentName }, i) => () => {
         const debaterCtx: CallContext = { ...this.ctx, agentName };
         return callOp(debaterCtx, debateProposeOp, {
-          taskContext: prompt,
+          taskContext,
           outputFormat: "",
           stage: this.stage,
           debaterIndex: i,
@@ -242,7 +264,7 @@ export class DebateRunner {
           })),
         }
       : undefined;
-    const outcome: ResolveOutcome = await resolveOutcome(
+    const selectorOutcome: ResolveOutcome = await resolveOutcome(
       proposalOutputs,
       critiqueOutputs,
       this.stageConfig,
@@ -257,14 +279,31 @@ export class DebateRunner {
       successful.map((s) => s.debater),
       agentManager,
     );
-    totalCostUsd += outcome.resolverCostUsd;
+    totalCostUsd += selectorOutcome.resolverCostUsd;
+
+    let finalOutcome = selectorOutcome.outcome;
+    if (config.postDebateVerifier) {
+      const verifierCtx: PostDebateVerifierContext = {
+        storyId: this.ctx.storyId ?? "",
+        stage: this.stage,
+        stageConfig: config,
+        selectorResult: selectorOutcome,
+        workdir: this.workdir,
+        ctx: this.ctx,
+        acceptanceCriteria: this.resolverContextInput?.story.acceptanceCriteria,
+        blockingThreshold: this.resolverContextInput?.blockingThreshold,
+      };
+      const verifierResult = await resolvePostDebateVerifier(config.postDebateVerifier.kind)(verifierCtx);
+      totalCostUsd += verifierResult.costUsd;
+      finalOutcome = verifierResult.outcome;
+    }
 
     const proposals: Proposal[] = successful.map((p) => ({ debater: p.debater, output: p.output }));
-    logger?.info("debate", "debate:result", { storyId: this.ctx.storyId, stage: this.stage, outcome: outcome.outcome });
+    logger?.info("debate", "debate:result", { storyId: this.ctx.storyId, stage: this.stage, outcome: finalOutcome });
     return {
       storyId: this.ctx.storyId ?? "",
       stage: this.stage,
-      outcome: outcome.outcome,
+      outcome: finalOutcome,
       rounds: config.rounds,
       debaters: successful.map((s) => s.debater.agent),
       resolverType: config.resolver.type,

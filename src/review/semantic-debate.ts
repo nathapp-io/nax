@@ -7,7 +7,6 @@
  */
 
 import type { IAgentManager } from "../agents";
-import type { NaxConfig } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { DebateRunner, DebateRunnerOptions } from "../debate";
 import { getSafeLogger } from "../logger";
@@ -94,22 +93,15 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   const logger = getSafeLogger();
   // Safe: reviewDebateEnabled guard (in caller) confirms naxConfig.debate.stages.review is defined
   const configuredStageConfig = naxConfig.debate?.stages.review as import("../debate").DebateStageConfig;
-  const reviewStageConfig =
-    configuredStageConfig.sessionMode === "one-shot" && (configuredStageConfig.mode ?? "panel") === "panel"
-      ? configuredStageConfig
-      : {
-          ...configuredStageConfig,
-          // Review debate currently supports panel one-shot only.
-          sessionMode: "one-shot" as const,
-          mode: "panel" as const,
-        };
-  if (reviewStageConfig !== configuredStageConfig) {
-    logger?.warn("review", "Review debate requires sessionMode=one-shot and mode=panel — forcing safe defaults", {
-      storyId: story.id,
-      configuredSessionMode: configuredStageConfig.sessionMode,
-      configuredMode: configuredStageConfig.mode ?? "panel",
-    });
-  }
+  // Explicit composition: review debate is always panel one-shot with dialogue-verdict selector
+  // and review-grounding-filter verifier (supersedes auto-elevation via pickSelectorKind).
+  const reviewStageConfig: import("../debate").DebateStageConfig = {
+    ...configuredStageConfig,
+    sessionMode: "one-shot" as const,
+    mode: "panel" as const,
+    selector: { kind: "dialogue-verdict" },
+    postDebateVerifier: { kind: "review-grounding-filter" },
+  };
   const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
   const semanticAgentName =
     agentManager && typeof (agentManager as IAgentManager).getDefault === "function"
@@ -138,6 +130,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
           ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat, productionExcludePatterns } : { diff }),
           story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
           semanticConfig,
+          blockingThreshold,
           resolverType: reviewStageConfig.resolver.type,
           isReReview,
         }
