@@ -35,50 +35,77 @@ const makeResolverSchema = (defaultType: (typeof RESOLVER_TYPES)[number]) =>
     }),
   );
 
-const DebateStageConfigSchema = (defaults: {
-  enabled: boolean;
-  resolverType: (typeof RESOLVER_TYPES)[number];
-  sessionMode: "one-shot" | "stateful";
-  rounds: number;
-}) =>
-  z.preprocess(
-    toObject,
+// Selector discriminated union — Phase 2 adds verifier-pick with optional patch
+const SelectorSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("synthesis") }),
+    z.object({ kind: z.literal("majority-fail-closed") }),
+    z.object({ kind: z.literal("majority-fail-open") }),
+    z.object({ kind: z.literal("judge") }),
+    z.object({ kind: z.literal("dialogue-verdict") }),
     z.object({
-      enabled: z.boolean().default(defaults.enabled),
-      resolver: makeResolverSchema(defaults.resolverType),
-      sessionMode: z.enum(["one-shot", "stateful"]).default(defaults.sessionMode),
-      rounds: z.number().int().min(1).default(defaults.rounds),
-      mode: z.enum(["panel", "hybrid"]).default("panel"),
-      debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
-      timeoutSeconds: z.number().int().positive().default(600),
-      autoPersona: z.boolean().default(false),
-      preDebatePhase: z
-        .object({ kind: z.enum(["grounder", "custom"]) })
-        .strict()
-        .optional(),
-      proposers: z
+      kind: z.literal("verifier-pick"),
+      patch: z
         .object({
-          citationsRequired: z.boolean().optional(),
-          fileReadAccess: z.boolean().optional(),
-          fileReadBudget: z.number().int().positive().optional(),
-        })
-        .optional(),
-      selector: z
-        .discriminatedUnion("kind", [
-          z.object({ kind: z.literal("synthesis") }),
-          z.object({ kind: z.literal("majority-fail-closed") }),
-          z.object({ kind: z.literal("majority-fail-open") }),
-          z.object({ kind: z.literal("judge") }),
-          z.object({ kind: z.literal("dialogue-verdict") }),
-        ])
-        .optional(),
-      postDebateVerifier: z
-        .object({
-          kind: z.enum(["plan-checklist", "review-grounding-filter", "custom"]),
+          enabled: z.boolean(),
+          overlapThreshold: z.number().optional(),
+          maxDeltas: z.number().int().positive().optional(),
+          onFailure: z.enum(["use-unpatched", "block"]).optional(),
         })
         .optional(),
     }),
-  );
+  ])
+  .optional();
+
+// Plan-stage-only extensions (Phase 2 AC3)
+const PlanStageExtensions = z.object({
+  evidenceMode: z.enum(["current", "asymmetric"]).default("current"),
+});
+
+const makeDebateStageSchema = (
+  defaults: {
+    enabled: boolean;
+    resolverType: (typeof RESOLVER_TYPES)[number];
+    sessionMode: "one-shot" | "stateful";
+    rounds: number;
+  },
+  extensions?: z.ZodObject<z.ZodRawShape>,
+) => {
+  const base = z.object({
+    enabled: z.boolean().default(defaults.enabled),
+    resolver: makeResolverSchema(defaults.resolverType),
+    sessionMode: z.enum(["one-shot", "stateful"]).default(defaults.sessionMode),
+    rounds: z.number().int().min(1).default(defaults.rounds),
+    mode: z.enum(["panel", "hybrid"]).default("panel"),
+    debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
+    timeoutSeconds: z.number().int().positive().default(600),
+    autoPersona: z.boolean().default(false),
+    preDebatePhase: z
+      .object({
+        kind: z.enum(["grounder", "custom"]),
+        onFailure: z.enum(["degrade", "block"]).optional(),
+      })
+      .optional(),
+    proposers: z
+      .object({
+        citationsRequired: z.boolean().optional(),
+        fileReadAccess: z.boolean().optional(),
+        fileReadBudget: z.number().int().positive().optional(),
+      })
+      .optional(),
+    selector: SelectorSchema,
+    postDebateVerifier: z
+      .object({
+        kind: z.enum(["plan-checklist", "review-grounding-filter", "custom"]),
+        onBlocker: z.enum(["block", "tag-expert"]).optional(),
+      })
+      .optional(),
+  });
+
+  // Non-plan stages explicitly reject evidenceMode so Zod throws if it is provided.
+  const extended = extensions ? base.extend(extensions.shape) : base.extend({ evidenceMode: z.undefined() });
+  return z.preprocess(toObject, extended);
+};
 
 export const DebateConfigSchema = z.preprocess(
   toObject,
@@ -90,26 +117,29 @@ export const DebateConfigSchema = z.preprocess(
     stages: z.preprocess(
       toObject,
       z.object({
-        plan: DebateStageConfigSchema({ enabled: true, resolverType: "synthesis", sessionMode: "stateful", rounds: 3 }),
-        review: DebateStageConfigSchema({
+        plan: makeDebateStageSchema(
+          { enabled: true, resolverType: "synthesis", sessionMode: "stateful", rounds: 3 },
+          PlanStageExtensions,
+        ),
+        review: makeDebateStageSchema({
           enabled: true,
           resolverType: "majority-fail-closed",
           sessionMode: "one-shot",
           rounds: 2,
         }),
-        acceptance: DebateStageConfigSchema({
+        acceptance: makeDebateStageSchema({
           enabled: false,
           resolverType: "majority-fail-closed",
           sessionMode: "one-shot",
           rounds: 1,
         }),
-        rectification: DebateStageConfigSchema({
+        rectification: makeDebateStageSchema({
           enabled: false,
           resolverType: "synthesis",
           sessionMode: "one-shot",
           rounds: 1,
         }),
-        escalation: DebateStageConfigSchema({
+        escalation: makeDebateStageSchema({
           enabled: false,
           resolverType: "majority-fail-closed",
           sessionMode: "one-shot",

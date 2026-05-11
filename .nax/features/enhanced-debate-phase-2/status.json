@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-10T14-28-43-520Z",
-    "feature": "enhanced-debate-phase-1",
-    "startedAt": "2026-05-10T14:28:43.520Z",
+    "id": "run-2026-05-11T03-12-25-355Z",
+    "feature": "enhanced-debate-phase-2",
+    "startedAt": "2026-05-11T03:12:25.355Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 69216
+    "pid": 10956
   },
   "progress": {
     "total": 5,
@@ -17,21 +17,21 @@
     "pending": 0
   },
   "cost": {
-    "spent": 13.40695063,
+    "spent": 16.2750093,
     "limit": 50
   },
   "current": null,
   "iterations": 6,
-  "updatedAt": "2026-05-10T17:09:02.666Z",
-  "durationMs": 9619146,
+  "updatedAt": "2026-05-11T06:27:35.511Z",
+  "durationMs": 11710156,
   "postRun": {
     "acceptance": {
       "status": "passed",
-      "lastRunAt": "2026-05-10T17:08:33.468Z"
+      "lastRunAt": "2026-05-11T06:27:06.254Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-10T17:09:01.710Z"
+      "lastRunAt": "2026-05-11T06:27:34.758Z"
     }
   }
 }

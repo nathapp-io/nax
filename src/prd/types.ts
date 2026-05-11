@@ -8,6 +8,12 @@ import type { Complexity, TestStrategy } from "../config";
 import type { ModelTier } from "../config";
 import type { FailureCategory } from "../tdd/types";
 
+/** A contextFiles entry — may be a plain path string or an object carrying citation metadata */
+export interface ContextFileEntry {
+  path: string;
+  factId?: string;
+}
+
 /** User story status */
 export type StoryStatus =
   | "pending"
@@ -119,8 +125,17 @@ export interface UserStory {
   storyPoints?: number;
   /** @deprecated Use contextFiles instead. Relevant source files for context injection */
   relevantFiles?: string[];
-  /** Files loaded into agent prompt before execution */
-  contextFiles?: string[];
+  /** Files loaded into agent prompt before execution. Entries may be plain path strings or
+   *  ContextFileEntry objects carrying citation metadata (factId). */
+  contextFiles?: Array<string | ContextFileEntry>;
+  /** Verification anchor for this story's acceptance criteria (Phase 2 citation field) */
+  verifiedBy?: {
+    kind: "test" | "symbol" | "file";
+    anchor: string;
+    factIds: string[];
+  };
+  /** Whether this story captures authorial intent (Phase 2 citation field) */
+  intent?: boolean;
   /** Files that must exist after execution (pre-flight gate) */
   expectedFiles?: string[];
   /** Prior error messages from failed attempts */
@@ -165,10 +180,12 @@ export interface UserStory {
 
 /**
  * Get files to load into agent prompt before execution.
+ * Normalizes mixed string/ContextFileEntry arrays to plain path strings.
  * Falls back to relevantFiles for backward compatibility.
  */
 export function getContextFiles(story: UserStory): string[] {
-  return story.contextFiles ?? story.relevantFiles ?? [];
+  const files = story.contextFiles ?? story.relevantFiles ?? [];
+  return files.map((f) => (typeof f === "string" ? f : f.path));
 }
 
 /**

@@ -5,8 +5,17 @@
 export { DebateRunner } from "./runner";
 export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "./session-helpers";
-export type { DebateSessionOptions, ResolverContextInput, ResolveOutcome } from "./session-helpers";
+export type {
+  DebateSessionOptions,
+  ResolverContextInput,
+  ResolveOutcome,
+  SuccessfulProposal,
+} from "./session-helpers";
 export { parseFactsManifest, renderManifestSection } from "./facts-manifest";
+export type { FactsManifest } from "./facts-manifest";
+export { citationDistribution, citationRate, extractClaims } from "./citations";
+export type { ParsedClaim } from "./citations";
+export { _runPlanDeps } from "./runner-plan";
 export {
   registerSelector,
   resolveSelector,
@@ -19,9 +28,20 @@ export {
   majorityFailClosedSelector,
   majorityFailOpenSelector,
   computeMajority,
+  verifierPickSelector,
 } from "./selectors";
+export type { SelectorContext } from "./selectors";
 export { registerPreDebatePhase, resolvePreDebatePhase } from "./pre-phase";
-export { registerPostDebateVerifier, resolvePostDebateVerifier, reviewGroundingFilterVerifier } from "./verifiers";
+export type { PreDebatePhaseContext } from "./pre-phase";
+export { grounderStrategy } from "./pre-phase/grounder";
+export {
+  registerPostDebateVerifier,
+  resolvePostDebateVerifier,
+  reviewGroundingFilterVerifier,
+  planChecklistVerifier,
+  _planChecklistDeps,
+} from "./verifiers";
+export type { PostDebateVerifierContext, PostDebateVerifier, PostDebateVerifierResult } from "./verifiers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
 export { DebatePromptBuilder } from "../prompts";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "../prompts";

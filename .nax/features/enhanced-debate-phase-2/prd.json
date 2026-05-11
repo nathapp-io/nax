@@ -1,0 +1,258 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "enhanced-debate-phase-2",
+  "branchName": "feat/enhanced-debate-phase-2",
+  "createdAt": "2026-05-11T00:00:00.000Z",
+  "updatedAt": "2026-05-11T06:20:45.519Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Schema extensions for Phase 2 plug-points + PRD citations",
+      "description": "**Goal** — Extend Phase 1's plug-point schemas with verifier-pick selector kind, plan-checklist verifier kind, onFailure/onBlocker policy fields, plan-stage-only evidenceMode, and additive citation fields on PRD types.\n\n**Motivation** — Phase 1 built the framework; Phase 2 needs schema foundations before any strategy can be implemented or tested.\n\n**Approach**\n\nAll additions are additive-optional with defaults — existing configs and PRDs continue validating.\n\n```typescript\n// src/config/schemas-debate.ts (Phase 2 additions)\n\n// 1. Extend selector discriminated union with verifier-pick\nselector?: ... | {\n  kind: \"verifier-pick\";\n  patch?: {\n    enabled: boolean;\n    overlapThreshold?: number;   // default applied by strategy, NOT at parse\n    maxDeltas?: number;          // default applied by strategy, NOT at parse\n    onFailure?: \"use-unpatched\" | \"block\";\n  };\n};\n\n// 2. Add onBlocker to postDebateVerifier (already has kind field)\npostDebateVerifier?: {\n  kind: \"plan-checklist\" | \"review-grounding-filter\" | \"custom\";\n  onBlocker?: \"block\" | \"tag-expert\";  // NEW; no default at parse\n};\n\n// 3. Add onFailure to preDebatePhase (MUST remove .strict() first)\npreDebatePhase?: {\n  kind: \"grounder\" | \"custom\";\n  onFailure?: \"degrade\" | \"block\";  // NEW; no default at parse\n};\n\n// 4. Plan-stage-only evidenceMode via Zod merge\nconst PlanStageExtensions = z.object({\n  evidenceMode: z.enum([\"current\", \"asymmetric\"]).default(\"current\"),\n});\n// In DebateConfigSchema.stages.plan:\n//   z.preprocess(toObject, DebateStageConfigInner.merge(PlanStageExtensions))\n// Other stages (review, acceptance, rectification, escalation) use bare DebateStageConfigInner.\n```\n\nFor PRD types (`src/prd/types.ts` and `src/prd/schema.ts`):\n```typescript\n// Additive optional fields on AcceptanceCriterion\nverifiedBy?: {\n  kind: \"test\" | \"symbol\" | \"file\";\n  anchor: string;          // min 1 char\n  factIds: string[];\n};\nintent?: boolean;\n\n// Additive optional field on ContextFile\nfactId?: string;\n```\n\nNote: `src/prd/schema.ts` is a custom validator (not top-level Zod). These fields must be handled in `validateStory()` with optional passthrough — omitting them still validates.\n\n**Scope** — In: schemas-debate.ts, debate/types.ts, prd/types.ts, prd/schema.ts. Out: strategy implementations (US-002+), runtime behavior.",
+      "acceptanceCriteria": [
+        "DebateStageConfigSchema({ enabled: false, resolverType: \"synthesis\", sessionMode: \"one-shot\", rounds: 1 }).parse(...) accepts selector.kind === \"verifier-pick\", preserves selector.patch fields when provided, and leaves patch.overlapThreshold / patch.maxDeltas undefined when omitted so defaults are applied at strategy time rather than parse time",
+        "DebateStageConfigSchema({ enabled: false, resolverType: \"synthesis\", sessionMode: \"one-shot\", rounds: 1 }).parse(...) accepts postDebateVerifier.kind === \"plan-checklist\" and preDebatePhase.kind === \"grounder\" with onBlocker / onFailure values from the allowed enums, and rejects invalid enum values with a ZodError",
+        "DebateConfigSchema.parse(...) accepts stages.plan.evidenceMode === \"asymmetric\", defaults stages.plan.evidenceMode to \"current\" when omitted, rejects unknown evidenceMode values, and rejects evidenceMode outside the plan stage",
+        "validatePlanOutput() accepts legacy PRD output that omits verifiedBy, intent, and contextFiles[].factId fields without changing existing stories",
+        "validatePlanOutput() preserves verifiedBy, intent, and contextFiles[].factId when those additive citation fields are present in a PRD",
+        "validatePlanOutput() rejects invalid verifiedBy.kind values outside \"test\" | \"symbol\" | \"file\""
+      ],
+      "tags": [
+        "feature",
+        "schema"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-debate.ts",
+        "src/debate/types.ts",
+        "src/prd/schema.ts",
+        "src/prd/types.ts",
+        "src/config/schemas-model.ts"
+      ],
+      "suggestedCriteria": [
+        "DebateStageConfigSchema parse returns selector.patch.onFailure === \"use-unpatched\" when patch.onFailure is explicitly set to \"use-unpatched\"",
+        "DebateStageConfigSchema parse rejects selector: { kind: \"verifier-pick\" } with an unknown extra field when the verifier-pick variant schema uses strict validation",
+        "DebateConfigSchema.parse({}) returns result.stages.plan.evidenceMode === \"current\" (default applied when stages.plan is entirely absent)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "afe749dc4003810015a0a51b59767bd4b662068b"
+    },
+    {
+      "id": "US-002",
+      "title": "Citation parser + manifest threading + file-read flag",
+      "description": "**Goal** — Implement the citation parsing utility, thread the facts manifest into proposer inputs, and gate the file-read instruction in plan-builder on the fileReadAccess flag.\n\n**Motivation** — Proposers must see the grounding manifest and be prompted to cite factIds; the citation parser enables mechanical scoring in the verifier-pick selector.\n\n**Approach**\n\n`src/debate/citations.ts` exports:\n```typescript\nexport interface ParsedClaim {\n  text: string;\n  factIds: string[];   // e.g. [\"F-014\", \"S-001\"]\n  cited: boolean;\n}\n\nexport function extractClaims(proposalOutput: string): ParsedClaim[];\nexport function citationRate(claims: ParsedClaim[]): number;  // fraction cited\nexport function citationDistribution(claims: ParsedClaim[], manifest: FactsManifest): {\n  verifiedFacts: number; specSpans: number; uncited: number;\n};\n```\n\nParser priority order:\n1. **Structured-output mode** — if proposal contains a JSON `claims` array per the citation prompt, use `parseLLMJson` (SSOT from `src/utils/llm-json`) to extract.\n2. **Regex fallback** — extract `factId` references inline (`[F-001]`, `(F-001, S-002)`).\n3. **Tolerance** — proposers that emit no citations return zero-rate; downstream verifier flags this. Parser does NOT throw.\n\n`citationRate(claims)` returns 0 when claims is empty; otherwise returns `claims.filter(c => c.cited).length / claims.length`.\n\n`citationDistribution(claims, manifest)` returns `{ verifiedFacts: N, specSpans: M, uncited: K }` where `verifiedFacts` counts citations to factIds whose `verification.status === \"verified\"` in the manifest.\n\n**Manifest threading:**\n- Add `manifestSection?: string` to `DebateProposeInput` in `src/operations/debate-propose.ts`.\n- In `src/debate/runner.ts` (runPanelOneShot) and `src/debate/runner-plan.ts`, pass `preDebatePhaseResult.manifestSection` (when present) into the proposer prompt context.\n- In `src/prompts/builders/debate-builder.ts`, `proposeSlot()` gates the citation requirement section on `stageConfig.proposers?.citationsRequired === true`. When false/undefined, output is byte-equivalent to current behavior.\n\n**File-read flag:**\n- In `src/prompts/builders/plan-builder.ts`, gate the existing \"file names and structure only\" / \"do NOT assert specific line numbers\" instruction on `proposers.fileReadAccess !== true`.\n- When `fileReadAccess === true`, remove that constraint and add: *\"You may use file-read tools to verify spec claims against actual code. Cite the resulting factId from the manifest, or include a verbatim: excerpt with path:line-range for any claim derived from a file you read directly.\"*\n- When `fileReadBudget` is set, include the substring `\"up to <N> file reads\"` in the file-read instruction.\n\n**Scope** — In: src/debate/citations.ts (new), src/operations/debate-propose.ts, src/debate/runner.ts, src/debate/runner-plan.ts, src/prompts/builders/debate-builder.ts, src/prompts/builders/plan-builder.ts. Out: selector scoring (US-003), grounder strategy (US-003).",
+      "acceptanceCriteria": [
+        "extractClaims(output) marks claims as cited when citations are provided either as inline factId markers (for example [F-001]) or as structured JSON claims[].factIds parsed via parseLLMJson, and marks uncited prose claims with cited === false instead of throwing",
+        "citationRate(claims) returns 0 for an empty claim set and otherwise returns the fraction of claims where cited === true",
+        "citationDistribution(claims, manifest) returns { verifiedFacts, specSpans, uncited } with verifiedFacts counting only citations whose manifest verification.status === \"verified\"",
+        "DebateProposeInput includes manifestSection?: string, and both runPanelOneShot() and runner-plan.ts pass preDebatePhaseResult.manifestSection into every proposer call when it is available",
+        "When stageConfig.proposers?.citationsRequired === true, DebatePromptBuilder.proposeSlot(i) includes a citations-required instruction; when the flag is false or omitted, the proposal prompt remains byte-equivalent to current behavior",
+        "When stageConfig.proposers?.fileReadAccess === true, PlanPromptBuilder.build() removes the \"file names and structure only\" restriction, adds a file-read permission instruction, and includes \"up to <N> file reads\" when fileReadBudget is set; when the flag is false or omitted, the output remains byte-equivalent to current behavior"
+      ],
+      "tags": [
+        "feature",
+        "debate"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/utils/llm-json.ts",
+        "src/operations/debate-propose.ts",
+        "src/prompts/builders/debate-builder.ts",
+        "src/prompts/builders/plan-builder.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-plan.ts"
+      ],
+      "suggestedCriteria": [
+        "extractClaims returns an empty array when proposalOutput is an empty string",
+        "citationDistribution returns { verifiedFacts: 0, specSpans: 0, uncited: 0 } when claims is empty",
+        "citationDistribution correctly categorizes citations to specClaims (S-NNN factIds) as specSpans rather than verifiedFacts",
+        "extractClaims handles multiple factIds in a single citation (e.g. [F-001, F-002]) by adding both to the claim's factIds array"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0b2b7ebeac3c30f47bcdfa04fbe21ce07e932dd5"
+    },
+    {
+      "id": "US-003",
+      "title": "grounder pre-phase strategy + verifier-pick selector + patch step",
+      "description": "**Goal** — Implement and register the grounder pre-phase strategy, the verifier-pick selector with mechanical ranking, and the optional patch step.\n\n**Motivation** — Instead of LLM synthesis merging proposals, a verifier-pick selector ranks proposals by citation rate and other mechanical signals, eliminating LLM laundering of shared hallucinations. In the current codebase, `runPlan()` is a separate orchestration path, so the selector-side patch step must be implemented to consume a preserved `SuccessfulProposal.handle` once runner-plan wiring adds it.\n\n**Approach**\n\n**grounder strategy** (`src/debate/pre-phase/grounder.ts`):\n```typescript\nexport const grounderStrategy: PreDebatePhase = async (ctx) => {\n  if (!ctx.specContent) {\n    return { manifestSection: \"\", costUsd: 0 };\n  }\n  const codebaseContext = await buildCodebaseContext(ctx.workdir);\n  // groundOp reads model/timeout from ctx.config.grounder (Pattern A — config-driven, not input-threaded).\n  // Strategy only passes data the op consumes; configuration is the op's responsibility.\n  const result = await callOp(ctx.ctx, groundOp, {\n    specContent: ctx.specContent,\n    codebaseContext,\n    workdir: ctx.workdir,\n  });\n  await writeManifestArtifact(ctx, result);\n  return {\n    manifestSection: renderManifestSection(result),\n    costUsd: 0, // cost flows through middleware audit\n  };\n};\n```\nManifest is written to `.nax/runs/<runId>/plan/<storyId>/facts-manifest.json`.\nStrategy does NOT read `ctx.stageConfig.preDebatePhase.model` or `.agent` — those fields do not exist on preDebatePhase; model lives on top-level `DebateConfig.grounder.model` read by the op.\n\n**verifier-pick selector** (`src/debate/selectors/verifier-pick.ts`):\n```typescript\nexport const verifierPickSelector: Selector = async (ctx) => {\n  const manifest = extractManifestFromContext(ctx); // reads from disk at known artifact path\n  const scored = ctx.proposals.map((p) => ({\n    proposal: p,\n    score: computeScore(p, manifest),\n  }));\n  scored.sort((a, b) => b.score.total - a.score.total);\n  const winner = scored[0];\n  const patchConfig = ctx.stageConfig.selector?.kind === \"verifier-pick\"\n    ? ctx.stageConfig.selector.patch : undefined;\n\n  if (patchConfig?.enabled) {\n    const runnerUp = scored[1];\n    if (runnerUp && acOverlap(winner, runnerUp) < (patchConfig.overlapThreshold ?? 0.8)) {\n      try {\n        const patched = await runPatchStep(ctx, winner, runnerUp, patchConfig.maxDeltas ?? 5);\n        return { outcome: \"passed\", output: patched.output, resolverCostUsd: patched.cost };\n      } catch (err) {\n        if ((patchConfig.onFailure ?? \"use-unpatched\") === \"block\") {\n          return { outcome: \"failed\", resolverCostUsd: 0 };\n        }\n        // Fall through to un-patched winner\n      }\n    }\n  }\n  return { outcome: \"passed\", output: winner.proposal.output, resolverCostUsd: 0 };\n};\n```\n\nScore signals (mechanical, no LLM):\n- `citationRate` (weight ~0.4) — fraction of concrete claims with factId\n- `citationDistributionScore` (weight ~0.3) — verified facts > spec spans > uncited\n- `failureModesCovered` (weight ~0.15) — count of negative-path ACs\n- `contextFilesValidRate` (weight ~0.15) — fraction of contextFiles paths that exist on disk\nExact weights must be documented as a named constant in the strategy file.\n\n**Patch step:**\n```typescript\nasync function runPatchStep(\n  ctx: SelectorContext,\n  winner: ScoredProposal,\n  runnerUp: ScoredProposal,\n  maxDeltas: number,\n): Promise<PatchResult> {\n  const deltas = extractDistinctACs(winner.proposal, runnerUp.proposal, maxDeltas);\n  const prompt = new PatchPromptBuilder().build(winner.proposal.output, deltas);\n  // Layer 3 sanctioned: continuation of an already-open session\n  // runPlan() wiring preserves the winner's open SessionHandle until selector resolution completes.\n  const result = await ctx.agentManager.runAsSession(\n    winner.proposal.agentName,\n    winner.proposal.handle,\n    prompt,\n    { storyId: ctx.storyId, pipelineStage: \"plan\" },\n  );\n  return { output: result.output, cost: result.estimatedCostUsd ?? 0 };\n}\n```\n\n`PatchPromptBuilder` goes in `src/prompts/builders/patch-builder.ts` (required by forbidden-patterns.md Prompt Builder Convention).\n\n**Scope** — In: src/debate/pre-phase/grounder.ts (new), src/debate/pre-phase/registry.ts (register), src/debate/selectors/verifier-pick.ts (new), src/debate/selectors/registry.ts (register), src/prompts/builders/patch-builder.ts (new). Coordination point: runner-plan.ts preserves proposal session handles and closes them only after selector / patch completion (wired in US-005). Out: plan-checklist verifier (US-004), evidenceMode and plan-runner orchestration wiring (US-005).",
+      "acceptanceCriteria": [
+        "grounderStrategy is registered under \"grounder\" and, when ctx.specContent is present, invokes callOp(ctx.ctx, groundOp, { specContent, codebaseContext, workdir }) without passing model / agent fields on the input, writes the resulting manifest to .nax/runs/<runId>/plan/<storyId>/facts-manifest.json, and returns renderManifestSection(result)",
+        "grounderStrategy returns { manifestSection: \"\", costUsd: 0 } when ctx.specContent is empty and does not read nonexistent ctx.stageConfig.preDebatePhase.model or .agent fields",
+        "verifierPickSelector is registered under \"verifier-pick\" and ranks proposals with a documented linear combination of citationRate, citationDistributionScore, failureModesCovered, and contextFilesValidRate before returning the highest-scoring proposal output",
+        "When selector.patch.enabled is false or omitted, or when AC overlap between the top two proposals is at or above overlapThreshold, verifierPickSelector skips patching and returns the unpatched winner",
+        "When selector.patch.enabled === true and AC overlap is below overlapThreshold (default 0.8), verifierPickSelector invokes the patch step exactly once and returns the patched output",
+        "runPatchStep continues inside the winner's existing session by calling ctx.agentManager.runAsSession(winner.proposal.agentName, winner.proposal.handle, prompt, { storyId, pipelineStage: \"plan\" }) exactly once and returns the resulting output and estimatedCostUsd without reopening a fresh proposal session",
+        "When the patch step throws, verifierPickSelector returns the unpatched winner and logs a warning when patch.onFailure is \"use-unpatched\" or omitted, and returns outcome === \"failed\" when patch.onFailure === \"block\""
+      ],
+      "tags": [
+        "feature",
+        "debate"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/pre-phase/types.ts",
+        "src/debate/pre-phase/registry.ts",
+        "src/debate/selectors/types.ts",
+        "src/debate/selectors/registry.ts",
+        "src/operations/ground.ts",
+        "src/operations/call.ts",
+        "src/debate/session-helpers.ts",
+        "src/agents/manager.ts"
+      ],
+      "suggestedCriteria": [
+        "verifierPickSelector returns outcome === \"failed\" when ctx.proposals is empty",
+        "grounderStrategy logs a warning with storyId when groundOp invocation fails before re-throwing or degrading",
+        "verifierPickSelector(ctx) returns the sole proposal's output directly when ctx.proposals has exactly one entry (no scoring needed)",
+        "computeScore returns contextFilesValidRate === 1.0 when the proposal has no contextFiles entries (vacuously valid)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "859d9da338454eaab854dddb0aa5ec6fcf123714"
+    },
+    {
+      "id": "US-004",
+      "title": "plan-checklist verifier + spec-deltas.md formatter",
+      "description": "**Goal** — Implement the plan-checklist post-debate verifier with five mechanical checks and the spec-deltas.md artifact formatter.\n\n**Motivation** — A mechanical check between synthesis and downstream consumers (TDD, review, acceptance) prevents hallucinated spec claims from propagating into PRDs.\n\n**Approach**\n\n**plan-checklist verifier** (`src/debate/verifiers/plan-checklist.ts`):\n```typescript\nexport const planChecklistVerifier: PostDebateVerifier = async (ctx) => {\n  const prd = parsePrd(ctx.selectorResult.output);\n  if (!prd) return { outcome: \"failed\", costUsd: 0 };\n\n  // Load manifest from disk (grounder wrote it there)\n  const manifest = await loadManifestFromArtifact(ctx);\n\n  const findings: VerifierFinding[] = [];\n  findings.push(...checkFilesExist(prd, ctx.workdir));\n  findings.push(...checkAcAnchored(prd));\n  findings.push(...checkClaimsCited(prd));\n  findings.push(...checkNoContradictions(prd, manifest));\n  findings.push(...checkSpecCoverage(prd, ctx.stageConfig));\n\n  const blockers = findings.filter((f) => f.severity === \"blocker\");\n  if (blockers.length > 0) {\n    await emitSpecDeltas(ctx, blockers, manifest);\n    const onBlocker = ctx.stageConfig.postDebateVerifier?.onBlocker ?? \"block\";\n    if (onBlocker === \"tag-expert\") {\n      return { outcome: \"passed\", findings, costUsd: 0 };\n    }\n    return { outcome: \"failed\", findings, costUsd: 0 };\n  }\n  return { outcome: \"passed\", findings, costUsd: 0 };\n};\n```\n\nAll checks are mechanical (file I/O, structural). No LLM calls.\n\nChecklist items and their VerifierFinding fields:\n- `files-exist` — severity `\"blocker\"` — any `contextFiles` path in the PRD does not exist on disk under `ctx.workdir`\n- `ac-anchored` — severity `\"major\"` — any acceptance criterion has neither `verifiedBy` nor `intent: true`\n- `claims-cited` — severity `\"major\"` — citation rate below threshold\n- `no-contradictions` — severity `\"blocker\"` — PRD claim references a factId whose `verification.status === \"contradicted\"` in the manifest\n- `spec-coverage` — severity `\"major\"` — unverified factual spec claims not addressed\n\n**spec-deltas.md formatter** (`src/plan/spec-deltas.ts`):\n```typescript\nexport function formatSpecDeltas(blockers: VerifierFinding[], manifest: FactsManifest): string;\n```\n\nOutput format:\n```markdown\n# Spec Deltas — <feature>\n\n## Contradicted spec claims\n- **S-001** (spec: lines 23-25): \"extends User schema with email field\"\n  - Verified evidence: `src/models/user.ts:8` — User has only `{id, name}`\n  - Recommended action: re-roll spec OR rewrite spec claim\n\n## Unverified spec claims (factual, not intent)\n- **S-014**: \"uses existing retry middleware\"\n  - No matching evidence found\n  - Recommended action: confirm or rewrite\n\n## Spec gaps surfaced by codebase\n- **G-003**: spec ignores existing `src/agents/retry/` module\n  - Recommended action: address in revised spec\n```\n\nArtifact persisted to `.nax/runs/<runId>/plan/<storyId>/spec-deltas.md`. Path included in the verifier's returned `output` field. File written with Bun.write().\n\n**onBlocker policy:**\n- `\"block\"` (default when omitted) — verifier returns `outcome === \"failed\"`\n- `\"tag-expert\"` — verifier returns `outcome === \"passed\"` but downstream wiring sets every story's `routing.complexity = \"expert\"` in the resulting PRD\n\n**Scope** — In: src/debate/verifiers/plan-checklist.ts (new), src/debate/verifiers/registry.ts (register), src/plan/spec-deltas.ts (new, new directory). Out: evidenceMode wiring (US-005).",
+      "acceptanceCriteria": [
+        "planChecklistVerifier is registered under \"plan-checklist\" and returns outcome === \"failed\" when ctx.selectorResult.output cannot be parsed as a valid PRD",
+        "planChecklistVerifier performs the five mechanical checks (files-exist, ac-anchored, claims-cited, no-contradictions, spec-coverage) and emits findings with the documented checklistItem / severity pairings, including blocker findings for missing contextFiles on disk and contradicted factIds in the manifest",
+        "planChecklistVerifier returns outcome === \"failed\" when blocker findings are present and outcome === \"passed\" otherwise, subject to the postDebateVerifier.onBlocker policy override",
+        "formatSpecDeltas(blockers, manifest) returns markdown sections for contradicted spec claims, unverified factual spec claims, and spec gaps surfaced by the codebase",
+        "When blocker findings are produced, planChecklistVerifier writes spec-deltas markdown to .nax/runs/<runId>/plan/<storyId>/spec-deltas.md and includes that artifact path in its returned output field",
+        "When postDebateVerifier.onBlocker is \"block\" or omitted, blocker findings cause outcome === \"failed\"; when it is \"tag-expert\", the verifier returns outcome === \"passed\" and emits a downstream-consumable signal that the resulting PRD must be retagged to routing.complexity = \"expert\" for every story"
+      ],
+      "tags": [
+        "feature",
+        "debate"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/verifiers/types.ts",
+        "src/debate/verifiers/registry.ts",
+        "src/debate/facts-manifest.ts",
+        "src/debate/citations.ts",
+        "src/prd/schema.ts"
+      ],
+      "suggestedCriteria": [
+        "planChecklistVerifier returns outcome === \"passed\" with an empty findings array when the PRD has no contextFiles, all ACs have verifiedBy or intent: true, and the manifest has no contradicted claims",
+        "formatSpecDeltas returns a non-empty string even when manifest.gaps is empty (sections with no entries are omitted rather than showing empty headers)",
+        "planChecklistVerifier does not throw when the manifest artifact file does not exist on disk (treats all claims as uncited/unverified)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4e755b7987dce8bdf4bc8ecbf8568f2c0ebfde8f"
+    },
+    {
+      "id": "US-005",
+      "title": "evidenceMode preset + plan-runner orchestration wiring",
+      "description": "**Goal** — Implement the evidenceMode composition builder in src/cli/plan.ts and complete the plan-specific orchestration wiring in runner-plan.ts: preDebatePhase invocation, manifest threading, stateful proposal-handle retention for the patch step, post-debate verifier dispatch, onFailure policy routing, and tag-expert PRD rewriting.\n\n**Motivation** — Users opt into grounding with a single config field; default \"current\" preserves existing behavior bit-for-bit. In the current codebase, `DebateRunner.runPlan()` is a separate path from `runPanelOneShot()`: it does not invoke pre-debate phases or post-debate verifiers today, and it uses the prompt-form `sessionManager.runInSession(...)`, which closes each proposal session immediately and leaves no surviving `SessionHandle` for the verifier-pick patch step.\n\n**Approach**\n\n`evidenceMode` is consumed at composition build time in `src/cli/plan.ts`:\n\n```typescript\n// src/cli/plan.ts (sketch)\nfunction buildPlanComposition(\n  userStageConfig: DebateStageConfig & { evidenceMode: \"current\" | \"asymmetric\" }\n): DebateStageConfig {\n  if (userStageConfig.evidenceMode === \"current\") return userStageConfig;\n  // Asymmetric: macro defaults, user overrides\n  return {\n    ...userStageConfig,\n    preDebatePhase: userStageConfig.preDebatePhase ?? { kind: \"grounder\" },\n    proposers: userStageConfig.proposers ?? {\n      citationsRequired: true,\n      fileReadAccess: true,\n      fileReadBudget: 10\n    },\n    sessionMode: userStageConfig.sessionMode ?? \"stateful\",\n    selector: userStageConfig.selector ?? {\n      kind: \"verifier-pick\",\n      patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 }\n    },\n    postDebateVerifier: userStageConfig.postDebateVerifier ?? { kind: \"plan-checklist\" },\n  };\n}\n```\n\nExplicit user-set plug-point fields override the macro expansion — user's explicit choice wins per field.\n\n`buildPlanComposition()` is invoked before constructing `DebateStageConfig` for `createDebateRunner()` so the composition is applied at runner instantiation time.\n\n**Plan-runner orchestration in runner-plan.ts:**\n\n1. Invoke `resolvePreDebatePhase(...)` before proposer fan-out when `stageConfig.preDebatePhase` is configured.\n2. Thread `preDebatePhaseResult.manifestSection` into the proposal prompt context for every debater.\n3. Route pre-phase exceptions by `stageConfig.preDebatePhase.onFailure`:\n   - `\"degrade\"` (default when omitted) — proceed with `manifestSection: \"\"`, log a warning containing storyId and the grounder error message, and continue to the proposer phase\n   - `\"block\"` — return a `DebateResult` with `outcome === \"failed\"` and do not invoke any subsequent strategies\n4. When `sessionMode === \"stateful\"`, pre-open one session per resolved debater and preserve each returned `SessionHandle` on `SuccessfulProposal.handle` through selector resolution so `verifier-pick` can continue in the winner session.\n5. Close internally-opened handles only after selector / patch / verifier work completes.\n6. After selector resolution, invoke `resolvePostDebateVerifier(...)` when `stageConfig.postDebateVerifier` is configured and propagate the verifier outcome to `DebateResult`.\n7. When the verifier signals `tag-expert`, rewrite the PRD output so every `userStory.routing.complexity` becomes `\"expert\"` before `plan.ts` validates and writes the final PRD.\n\n**Scope** — In: src/cli/plan.ts (buildPlanComposition function + invocation before createDebateRunner), src/debate/runner-plan.ts (pre-phase invocation, manifest threading, stateful proposal session lifecycle, selector/verifier orchestration, tag-expert rewrite). Out: strategy implementations (covered in US-003/US-004).",
+      "acceptanceCriteria": [
+        "buildPlanComposition() leaves the plan stage unchanged when evidenceMode === \"current\" and, when evidenceMode === \"asymmetric\", injects the asymmetric defaults for preDebatePhase, proposers, sessionMode, selector.patch, and postDebateVerifier",
+        "buildPlanComposition() preserves explicit user overrides over the asymmetric macro, including user-specified selector and preDebatePhase values, and is invoked before createDebateRunner() is constructed in src/cli/plan.ts",
+        "When stageConfig.preDebatePhase is configured, runner-plan.ts invokes resolvePreDebatePhase(...) before proposer fan-out, prepends manifestSection to the proposal taskContext when present, and routes pre-phase exceptions according to onFailure: degrade continues with an empty manifestSection and a warning, while block returns outcome === \"failed\" before any proposer, selector, or verifier work runs",
+        "When runPlan() uses sessionMode === \"stateful\", runner-plan.ts pre-opens one session per resolved debater, uses those handles for the proposal turn, preserves SuccessfulProposal.handle through selector resolution, and closes internally-opened handles only after selector / patch / verifier completion",
+        "When stageConfig.postDebateVerifier is configured, runner-plan.ts invokes resolvePostDebateVerifier(...) after selector resolution, propagates the verifier outcome to DebateResult, and rewrites every userStory.routing.complexity in debateResult.output to \"expert\" before plan.ts writes the PRD when the verifier signals tag-expert"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "cli"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/cli/plan-runtime.ts",
+        "src/debate/runner-plan.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-stateful.ts",
+        "src/debate/session-helpers.ts",
+        "src/debate/pre-phase/grounder.ts",
+        "src/debate/verifiers/types.ts",
+        "src/session/manager.ts"
+      ],
+      "suggestedCriteria": [
+        "buildPlanComposition() with evidenceMode === \"asymmetric\" preserves non-plug-point fields from the input stageConfig (e.g. enabled, rounds, timeoutSeconds) unchanged",
+        "When stageConfig.evidenceMode === \"asymmetric\" AND user explicitly sets proposers: { citationsRequired: false }, the returned composition has proposers.citationsRequired === false (user override wins for the entire proposers object)",
+        "runner-plan.ts warning log for degrade policy includes the grounder error message as a string (not just the storyId)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0dd833f77913147f37c86ebc4ab38c6a0140b86c"
+    }
+  ],
+  "analysis": "Phase 2 builds on Phase 1's plug-point infrastructure. Verified against the current codebase on 2026-05-11: src/debate/runner.ts already invokes resolvePreDebatePhase(...) before one-shot proposer fan-out and resolvePostDebateVerifier(...) after selector resolution, but src/debate/runner-plan.ts is still a separate orchestration path that bypasses both hooks and goes straight from proposal fan-out to resolveOutcome(). That means plan-mode Phase 2 wiring is not just policy handling; US-005 must add actual pre-phase dispatch, manifest threading, post-verifier dispatch, and result propagation in runPlan(). The schemas-debate.ts already has postDebateVerifier with plan-checklist in the kind enum, proposers object, preDebatePhase {kind: grounder|custom}, and the selector discriminated union with 5 kinds. CRITICAL: preDebatePhase uses .strict() which blocks adding onFailure — Phase 2 US-001 must remove .strict() when adding the onFailure field. DebateStageConfigSchema is a FACTORY FUNCTION taking defaults, not a plain schema — tests must call it with defaults before parsing. src/prd/schema.ts is a custom validator (not Zod-based at the PRD object level) and currently treats acceptanceCriteria as string[] plus contextFiles as string[]; adding verifiedBy/intent/factId means extending validateStory() with optional field handling, not introducing a separate top-level Zod parse path. DebateProposeInput (src/operations/debate-propose.ts) needs manifestSection?: string added, but plan mode also builds prompts directly via DebatePromptBuilder, so runner-plan.ts needs its own manifest threading. SuccessfulProposal in session-helpers.ts already has handle?: SessionHandle, but current runPlan() uses the prompt-form sessionManager.runInSession(...), which opens and closes the session within a single call and does not preserve a live handle for the selector patch step. To make verifier-pick patching real, runPlan() must follow the stateful/hybrid pattern: pre-open per-debater sessions, use those handles for proposal turns, retain them through selector resolution, then close them in finally after patch/verifier work completes. PostDebateVerifierContext lacks manifest — plan-checklist verifier must read it from disk at .nax/runs/<runId>/plan/<storyId>/facts-manifest.json (consistent with grounder writing it there). The patch step uses agentManager.runAsSession (Layer 3 sanctioned continuation per adapter-wiring.md Rule 3). PatchPromptBuilder goes in src/prompts/builders/patch-builder.ts (forbidden-patterns.md Prompt Builder Convention). New files: src/debate/citations.ts, src/debate/pre-phase/grounder.ts, src/debate/selectors/verifier-pick.ts, src/debate/verifiers/plan-checklist.ts, src/plan/spec-deltas.ts, src/prompts/builders/patch-builder.ts. src/plan/ directory does not yet exist. evidenceMode is plan-stage-only and is added via Zod merge (PlanStageExtensions merged into plan-stage schema); other stages must reject it. All logger calls must include storyId as first key per project-conventions.md. All glob scans must pass cwd explicitly per monorepo-awareness.md. No process.cwd() outside CLI entry points. File writes use Bun.write(), reads use Bun.file().text()."
+}

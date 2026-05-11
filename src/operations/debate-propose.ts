@@ -11,7 +11,7 @@
 
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { Debater } from "../debate/types";
+import type { DebateStageConfig, Debater } from "../debate/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -26,6 +26,10 @@ export interface DebateProposeInput {
   readonly debaterIndex: number;
   /** Debaters participating in this debate (with personas already resolved). */
   readonly debaters: Debater[];
+  /** Grounding manifest section from the pre-debate phase, when available. */
+  readonly manifestSection?: string;
+  /** Stage configuration — used to gate citation and file-read instructions. */
+  readonly stageConfig?: Pick<DebateStageConfig, "proposers">;
 }
 
 /**
@@ -48,7 +52,7 @@ export const debateProposeOp: CompleteOperation<DebateProposeInput, string, Deba
   build(input, _ctx) {
     const builder = new DebatePromptBuilder(
       { taskContext: input.taskContext, outputFormat: input.outputFormat, stage: input.stage },
-      { debaters: input.debaters, sessionMode: "one-shot" },
+      { debaters: input.debaters, sessionMode: "one-shot", proposers: input.stageConfig?.proposers },
     );
     return builder.proposeSlot(input.debaterIndex);
   },

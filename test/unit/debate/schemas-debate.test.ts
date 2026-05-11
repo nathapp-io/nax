@@ -52,12 +52,11 @@ describe("DebateStageConfigSchema — selector field", () => {
     });
   }
 
-  it("throws ZodError for kind = 'verifier-pick'", () => {
-    expect(() =>
-      DebateConfigSchema.parse({
-        stages: { plan: { selector: { kind: "verifier-pick" } } },
-      }),
-    ).toThrow(z.ZodError);
+  it("accepts selector.kind = 'verifier-pick'", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { selector: { kind: "verifier-pick" } } },
+    });
+    expect(result.stages.plan.selector?.kind).toBe("verifier-pick");
   });
 
   it("throws ZodError for kind = 'unknown-kind'", () => {
@@ -108,14 +107,13 @@ describe("DebateStageConfigSchema — preDebatePhase field", () => {
     expect(result.stages.plan.preDebatePhase?.kind).toBe("custom");
   });
 
-  it("throws ZodError when extra field 'model' is present in preDebatePhase (strict schema)", () => {
-    expect(() =>
-      DebateConfigSchema.parse({
-        stages: {
-          plan: { preDebatePhase: { kind: "grounder", model: "balanced" } },
-        },
-      }),
-    ).toThrow(z.ZodError);
+  it("strips extra unknown fields from preDebatePhase (no longer strict)", () => {
+    const result = DebateConfigSchema.parse({
+      stages: {
+        plan: { preDebatePhase: { kind: "grounder", model: "balanced" } },
+      },
+    });
+    expect(result.stages.plan.preDebatePhase?.kind).toBe("grounder");
   });
 });
 
@@ -147,5 +145,134 @@ describe("DebateConfigSchema — grounder block", () => {
     const result = DebateConfigSchema.parse({ grounder: { timeoutSeconds: 600 } });
     expect(result.grounder.timeoutSeconds).toBe(600);
     expect(result.grounder.model).toBe("fast");
+  });
+});
+
+// ─── AC 1 (Phase 2): verifier-pick selector ──────────────────────────────────
+
+describe("DebateStageConfigSchema — verifier-pick selector (Phase 2 AC1)", () => {
+  it("preserves selector.patch fields when provided", () => {
+    const result = DebateConfigSchema.parse({
+      stages: {
+        plan: {
+          selector: {
+            kind: "verifier-pick",
+            patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5, onFailure: "use-unpatched" },
+          },
+        },
+      },
+    });
+    const selector = result.stages.plan.selector as { kind: string; patch?: Record<string, unknown> };
+    expect(selector.kind).toBe("verifier-pick");
+    expect(selector.patch?.enabled).toBe(true);
+    expect(selector.patch?.overlapThreshold).toBe(0.8);
+    expect(selector.patch?.maxDeltas).toBe(5);
+    expect(selector.patch?.onFailure).toBe("use-unpatched");
+  });
+
+  it("leaves patch.overlapThreshold and patch.maxDeltas undefined when omitted", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { selector: { kind: "verifier-pick", patch: { enabled: false } } } },
+    });
+    const selector = result.stages.plan.selector as { kind: string; patch?: Record<string, unknown> };
+    expect(selector.patch?.overlapThreshold).toBeUndefined();
+    expect(selector.patch?.maxDeltas).toBeUndefined();
+  });
+
+  it("accepts verifier-pick with no patch field", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { selector: { kind: "verifier-pick" } } },
+    });
+    const selector = result.stages.plan.selector as { kind: string; patch?: unknown };
+    expect(selector.kind).toBe("verifier-pick");
+    expect(selector.patch).toBeUndefined();
+  });
+
+  it("rejects invalid patch.onFailure value with ZodError", () => {
+    expect(() =>
+      DebateConfigSchema.parse({
+        stages: {
+          plan: {
+            selector: { kind: "verifier-pick", patch: { enabled: true, onFailure: "invalid-value" } },
+          },
+        },
+      }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── AC 2 (Phase 2): onBlocker / onFailure ───────────────────────────────────
+
+describe("DebateStageConfigSchema — onBlocker / onFailure (Phase 2 AC2)", () => {
+  it("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker 'block'", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker: "block" } } },
+    });
+    expect(result.stages.plan.postDebateVerifier?.kind).toBe("plan-checklist");
+    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe("block");
+  });
+
+  it("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker 'tag-expert'", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker: "tag-expert" } } },
+    });
+    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe("tag-expert");
+  });
+
+  it("rejects invalid postDebateVerifier.onBlocker value with ZodError", () => {
+    expect(() =>
+      DebateConfigSchema.parse({
+        stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker: "do-nothing" } } },
+      }),
+    ).toThrow(z.ZodError);
+  });
+
+  it("accepts preDebatePhase.kind 'grounder' with onFailure 'degrade'", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { preDebatePhase: { kind: "grounder", onFailure: "degrade" } } },
+    });
+    expect((result.stages.plan.preDebatePhase as { onFailure?: string })?.onFailure).toBe("degrade");
+  });
+
+  it("accepts preDebatePhase.kind 'grounder' with onFailure 'block'", () => {
+    const result = DebateConfigSchema.parse({
+      stages: { plan: { preDebatePhase: { kind: "grounder", onFailure: "block" } } },
+    });
+    expect((result.stages.plan.preDebatePhase as { onFailure?: string })?.onFailure).toBe("block");
+  });
+
+  it("rejects invalid preDebatePhase.onFailure value with ZodError", () => {
+    expect(() =>
+      DebateConfigSchema.parse({
+        stages: { plan: { preDebatePhase: { kind: "grounder", onFailure: "ignore" } } },
+      }),
+    ).toThrow(z.ZodError);
+  });
+});
+
+// ─── AC 3 (Phase 2): evidenceMode plan-only ──────────────────────────────────
+
+describe("DebateConfigSchema — evidenceMode (Phase 2 AC3)", () => {
+  it("accepts stages.plan.evidenceMode === 'asymmetric'", () => {
+    const result = DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "asymmetric" } } });
+    expect((result.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("asymmetric");
+  });
+
+  it("defaults stages.plan.evidenceMode to 'current' when omitted", () => {
+    const result = DebateConfigSchema.parse({});
+    expect((result.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("current");
+  });
+
+  it("rejects unknown evidenceMode value with ZodError", () => {
+    expect(() =>
+      DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "backwards" } } }),
+    ).toThrow(z.ZodError);
+  });
+
+  it("throws when evidenceMode is set on non-plan stage (plan-stage-only field)", () => {
+    // evidenceMode is plan-stage-only — review/acceptance/etc. must reject it
+    expect(() =>
+      DebateConfigSchema.parse({ stages: { review: { evidenceMode: "asymmetric" } } }),
+    ).toThrow(z.ZodError);
   });
 });

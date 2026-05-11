@@ -3,6 +3,7 @@ import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import { _runPlanDeps } from "@/debate";
 import type { CallContext } from "../../../src/operations/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
@@ -392,8 +393,10 @@ describe("DebateRunner.runPlan()", () => {
     });
 
     expect(rebuttalCalls).toHaveLength(2);
-    expect(rebuttalCalls[0]?.handleId).toBe("debate-plan-hybrid-0");
-    expect(rebuttalCalls[1]?.handleId).toBe("debate-plan-hybrid-1");
+    // Stateful mode: pre-opened proposal handles ("debate-plan-N") are reused for rebuttals.
+    // The hybrid loop uses proposal.handle directly and does not open fresh "debate-plan-hybrid-N" handles.
+    expect(rebuttalCalls[0]?.handleId).toBe("debate-plan-0");
+    expect(rebuttalCalls[1]?.handleId).toBe("debate-plan-1");
     expect(closedHandleIds).toHaveLength(2);
     expect(result.rebuttals).toBeDefined();
     expect(result.rebuttals).toHaveLength(2);
@@ -636,5 +639,561 @@ describe("DebateRunner.runPlan()", () => {
     resolvers[0]?.();
     resolvers[1]?.();
     await runPromise;
+  });
+
+  test("prepends manifestSection to each debater prompt when provided", async () => {
+    const capturedPrompts: string[] = [];
+
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string, _opts: unknown) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("manifest-thread-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig(),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "manifest-thread-test",
+      outputDir: "/tmp/out",
+      manifestSection: "## Facts Manifest\n- F-001: some fact",
+    });
+
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    for (const prompt of capturedPrompts) {
+      expect(prompt).toContain("## Facts Manifest");
+      expect(prompt).toContain("F-001: some fact");
+    }
+  });
+
+  test("does not prepend manifest section when manifestSection is not provided", async () => {
+    const capturedPrompts: string[] = [];
+
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string, _opts: unknown) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("no-manifest-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig(),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "no-manifest-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    for (const prompt of capturedPrompts) {
+      expect(prompt).not.toContain("## Facts Manifest");
+    }
+  });
+});
+
+// ─── AC-3: preDebatePhase invocation + onFailure routing ─────────────────────
+
+describe("runner-plan — preDebatePhase invocation", () => {
+  let origResolvePreDebatePhase: typeof _runPlanDeps.resolvePreDebatePhase;
+  let origResolvePostDebateVerifier: typeof _runPlanDeps.resolvePostDebateVerifier;
+
+  beforeEach(() => {
+    origResolvePreDebatePhase = _runPlanDeps.resolvePreDebatePhase;
+    origResolvePostDebateVerifier = _runPlanDeps.resolvePostDebateVerifier;
+  });
+
+  afterEach(() => {
+    _runPlanDeps.resolvePreDebatePhase = origResolvePreDebatePhase;
+    _runPlanDeps.resolvePostDebateVerifier = origResolvePostDebateVerifier;
+  });
+
+  test("AC-3: invokes resolvePreDebatePhase before proposer fan-out when preDebatePhase is configured", async () => {
+    const prePhaseCalled: string[] = [];
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) => {
+      prePhaseCalled.push(_kind);
+      return async () => ({ manifestSection: "## Grounded Facts\n- F-001", costUsd: 0 });
+    }) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("pre-phase-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ preDebatePhase: { kind: "grounder" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "pre-phase-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(prePhaseCalled).toEqual(["grounder"]);
+  });
+
+  test("AC-3: prepends prePhase manifestSection to proposal taskContext", async () => {
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
+      async () => ({ manifestSection: "## Grounded Facts\n- F-001: critical fact", costUsd: 0 }),
+    ) as any;
+
+    const capturedPrompts: string[] = [];
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("manifest-prepend-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ preDebatePhase: { kind: "grounder" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "manifest-prepend-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    for (const p of capturedPrompts) {
+      expect(p).toContain("F-001: critical fact");
+    }
+  });
+
+  test("AC-3: onFailure degrade — continues with empty manifestSection and logs warning when prePhase throws", async () => {
+    const warnings: string[] = [];
+    _debateSessionDeps.getSafeLogger = mock(() => ({
+      warn: (_stage: string, msg: string) => warnings.push(msg),
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    })) as unknown as typeof _debateSessionDeps.getSafeLogger;
+
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
+      async () => { throw new Error("grounder failed"); },
+    ) as any;
+
+    const capturedPrompts: string[] = [];
+    const sm = makeSessionManager({
+      runInSession: mock(async (_name: string, prompt: string) => {
+        capturedPrompts.push(prompt);
+        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("degrade-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ preDebatePhase: { kind: "grounder", onFailure: "degrade" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    const result = await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "degrade-test",
+      outputDir: "/tmp/out",
+    });
+
+    // Proposers should still run despite pre-phase failure
+    expect(capturedPrompts.length).toBeGreaterThan(0);
+    // Warning logged about the pre-phase failure
+    expect(warnings.some((w) => w.includes("grounder") || w.includes("pre-phase") || w.includes("degrade") || w.includes("failed"))).toBe(true);
+    // A result was returned (not an exception), regardless of selector outcome
+    expect(result).toBeDefined();
+    expect(result.storyId).toBe("degrade-test");
+  });
+
+  test("AC-3: onFailure block — returns failed before any proposer runs when prePhase throws", async () => {
+    _runPlanDeps.resolvePreDebatePhase = mock((_kind: string) =>
+      async () => { throw new Error("grounder blocked"); },
+    ) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("block-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ preDebatePhase: { kind: "grounder", onFailure: "block" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    const result = await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "block-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(result.outcome).toBe("failed");
+    // runInSession not called (no proposers ran)
+    expect(sm.runInSession).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AC-4: stateful session lifecycle in runPlan ─────────────────────────────
+
+describe("runner-plan — stateful session lifecycle", () => {
+  let origResolvePreDebatePhase: typeof _runPlanDeps.resolvePreDebatePhase;
+  let origResolvePostDebateVerifier: typeof _runPlanDeps.resolvePostDebateVerifier;
+
+  beforeEach(() => {
+    origResolvePreDebatePhase = _runPlanDeps.resolvePreDebatePhase;
+    origResolvePostDebateVerifier = _runPlanDeps.resolvePostDebateVerifier;
+    _runPlanDeps.resolvePostDebateVerifier = mock(() => async () => ({ outcome: "passed" as const, costUsd: 0 })) as any;
+  });
+
+  afterEach(() => {
+    _runPlanDeps.resolvePreDebatePhase = origResolvePreDebatePhase;
+    _runPlanDeps.resolvePostDebateVerifier = origResolvePostDebateVerifier;
+  });
+
+  test("AC-4: pre-opens one session per resolved debater when sessionMode is stateful", async () => {
+    const openedHandleIds: string[] = [];
+    const sm = makeSessionManager({
+      openSession: mock(async (name: string) => {
+        openedHandleIds.push(name);
+        return { id: name, agentName: "claude" };
+      }),
+      closeSession: mock(async () => {}),
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "session-run-output",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    });
+    _debateSessionDeps.readFile = mock(async () => '{"output": "ok"}');
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("stateful-open-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({
+        sessionMode: "stateful",
+        debaters: [{ agent: "claude" }, { agent: "opencode" }],
+      }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "stateful-open-test",
+      outputDir: "/tmp/out",
+    });
+
+    // One openSession per debater
+    expect(openedHandleIds).toHaveLength(2);
+  });
+
+  test("AC-4: uses agentManager.runAsSession instead of runInSession when sessionMode is stateful", async () => {
+    const runAsSessionCalls: string[] = [];
+    const sm = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async (_agentName, handle) => {
+        runAsSessionCalls.push(handle.id);
+        return { output: "from-handle", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      },
+    });
+    _debateSessionDeps.readFile = mock(async () => '{"output": "ok"}');
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("stateful-runAsSession-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({
+        sessionMode: "stateful",
+        debaters: [{ agent: "claude" }, { agent: "opencode" }],
+      }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "stateful-runAsSession-test",
+      outputDir: "/tmp/out",
+    });
+
+    // runAsSession called, runInSession not
+    expect(runAsSessionCalls).toHaveLength(2);
+    expect(sm.runInSession).not.toHaveBeenCalled();
+  });
+
+  test("AC-4: closes all internally-opened handles after selector/verifier completion", async () => {
+    const closedIds: string[] = [];
+    let handleCounter = 0;
+    const sm = makeSessionManager({
+      openSession: mock(async () => ({ id: `h-${handleCounter++}`, agentName: "claude" })),
+      closeSession: mock(async (handle: any) => { closedIds.push(handle.id); }),
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 }),
+    });
+    _debateSessionDeps.readFile = mock(async () => '{"output": "ok"}');
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("stateful-close-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({
+        sessionMode: "stateful",
+        debaters: [{ agent: "claude" }, { agent: "opencode" }],
+      }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "stateful-close-test",
+      outputDir: "/tmp/out",
+    });
+
+    // Both handles closed
+    expect(closedIds).toHaveLength(2);
+  });
+});
+
+// ─── AC-5: postDebateVerifier + tag-expert rewrite ────────────────────────────
+
+describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
+  let origResolvePreDebatePhase: typeof _runPlanDeps.resolvePreDebatePhase;
+  let origResolvePostDebateVerifier: typeof _runPlanDeps.resolvePostDebateVerifier;
+
+  beforeEach(() => {
+    origResolvePreDebatePhase = _runPlanDeps.resolvePreDebatePhase;
+    origResolvePostDebateVerifier = _runPlanDeps.resolvePostDebateVerifier;
+  });
+
+  afterEach(() => {
+    _runPlanDeps.resolvePreDebatePhase = origResolvePreDebatePhase;
+    _runPlanDeps.resolvePostDebateVerifier = origResolvePostDebateVerifier;
+  });
+
+  function makeRunWithVerifier(verifierFn: () => Promise<{ outcome: string; costUsd: number }>) {
+    const verifierCalled: string[] = [];
+    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) => {
+      verifierCalled.push(_kind);
+      return verifierFn;
+    }) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+
+    const prdOutput = JSON.stringify({
+      userStories: [
+        { id: "US-001", routing: { complexity: "simple" } },
+        { id: "US-002", routing: { complexity: "medium" } },
+      ],
+    });
+    _debateSessionDeps.readFile = mock(async () => prdOutput);
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("verifier-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ postDebateVerifier: { kind: "plan-checklist" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    return { runner, sm, verifierCalled };
+  }
+
+  test("AC-5: invokes resolvePostDebateVerifier after selector resolution when configured", async () => {
+    const { runner, verifierCalled } = makeRunWithVerifier(async () => ({ outcome: "passed", costUsd: 0 }));
+
+    await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "verifier-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(verifierCalled).toEqual(["plan-checklist"]);
+  });
+
+  test("AC-5: propagates verifier outcome to DebateResult", async () => {
+    const { runner } = makeRunWithVerifier(async () => ({ outcome: "failed", costUsd: 0 }));
+
+    const result = await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "verifier-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(result.outcome).toBe("failed");
+  });
+
+  test("AC-5: rewrites all routing.complexity to expert when onBlocker=tag-expert and verifier finds blockers", async () => {
+    const prdOutput = JSON.stringify({
+      userStories: [
+        { id: "US-001", routing: { complexity: "simple" } },
+        { id: "US-002", routing: { complexity: "medium" } },
+      ],
+    });
+
+    // Verifier returns passed + blocker findings — this is the plan-checklist tag-expert signal
+    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) =>
+      async () => ({
+        outcome: "passed" as const,
+        findings: [{ checklistItem: "files-exist", severity: "blocker", message: "file missing" }],
+        costUsd: 0,
+      }),
+    ) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => prdOutput);
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("tag-expert-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ postDebateVerifier: { kind: "plan-checklist", onBlocker: "tag-expert" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    const result = await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "tag-expert-test",
+      outputDir: "/tmp/out",
+    });
+
+    expect(result.outcome).toBe("passed");
+    const parsedOutput = JSON.parse(result.output ?? "{}");
+    for (const story of parsedOutput.userStories) {
+      expect(story.routing.complexity).toBe("expert");
+    }
+  });
+
+  test("AC-5: does not rewrite complexities when verifier passes with no blockers", async () => {
+    const prdOutput = JSON.stringify({
+      userStories: [{ id: "US-001", routing: { complexity: "simple" } }],
+    });
+
+    _runPlanDeps.resolvePostDebateVerifier = mock((_kind: string) =>
+      async () => ({ outcome: "passed" as const, findings: [], costUsd: 0 }),
+    ) as any;
+
+    const sm = makeSessionManager({
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
+      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
+    });
+    _debateSessionDeps.readFile = mock(async () => prdOutput);
+
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
+    const agentManager = makeMockAgentManager();
+
+    const runner = new DebateRunner({
+      ctx: makeCallCtxWithIds("no-rewrite-test", agentManager, sm, config),
+      stage: "plan",
+      stageConfig: makePlanStageConfig({ postDebateVerifier: { kind: "plan-checklist", onBlocker: "tag-expert" } }),
+      config,
+      workdir: "/tmp/workdir",
+      sessionManager: sm,
+    });
+
+    const result = await runner.runPlan("task context", "output format", {
+      workdir: "/tmp/workdir",
+      feature: "no-rewrite-test",
+      outputDir: "/tmp/out",
+    });
+
+    // outcome stays passed, but no rewrite
+    expect(result.outcome).toBe("passed");
+    const parsedOutput = JSON.parse(result.output ?? "{}");
+    for (const story of parsedOutput.userStories) {
+      expect(story.routing.complexity).toBe("simple"); // unchanged
+    }
   });
 });

@@ -99,6 +99,8 @@ export class DebateRunner {
       timeoutSeconds?: number;
       maxInteractionTurns?: number;
       specContent?: string;
+      /** Grounding manifest section from a pre-debate phase, when available. */
+      manifestSection?: string;
     },
   ): Promise<DebateResult> {
     return runPlan(this.toPlanCtx(), taskContext, outputFormat, opts);
@@ -134,6 +136,7 @@ export class DebateRunner {
 
     // Pre-debate phase: run before parallel proposer fan-out
     let taskContext = prompt;
+    let preDebateManifestSection: string | undefined;
     if (config.preDebatePhase) {
       const prePhaseCtx: PreDebatePhaseContext = {
         ctx: this.ctx,
@@ -143,11 +146,24 @@ export class DebateRunner {
         featureName: this.featureName,
         storyId: this.ctx.storyId ?? "",
       };
-      const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
-      if (prePhaseResult.manifestSection) {
-        taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
+      try {
+        const prePhaseResult = await resolvePreDebatePhase(config.preDebatePhase.kind)(prePhaseCtx);
+        if (prePhaseResult.manifestSection) {
+          preDebateManifestSection = prePhaseResult.manifestSection;
+          taskContext = `${prePhaseResult.manifestSection}\n\n${prompt}`;
+        }
+        totalCostUsd += prePhaseResult.costUsd;
+      } catch (err) {
+        const onFailure = config.preDebatePhase.onFailure ?? "degrade";
+        if (onFailure === "block") {
+          return buildFailedResult(this.ctx.storyId ?? "", this.stage, config, totalCostUsd);
+        }
+        logger?.warn("debate", "pre-phase failed — degrading to no manifest", {
+          storyId: this.ctx.storyId ?? "",
+          stage: this.stage,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-      totalCostUsd += prePhaseResult.costUsd;
     }
 
     const proposalSettled = await allSettledBounded(
@@ -159,6 +175,8 @@ export class DebateRunner {
           stage: this.stage,
           debaterIndex: i,
           debaters: resolved.map((r) => r.debater),
+          manifestSection: preDebateManifestSection,
+          stageConfig: config,
         }).then((output) => ({ debater, agentName, output, cost: 0 }) as SuccessfulProposal);
       }),
       concurrencyLimit,
@@ -208,11 +226,13 @@ export class DebateRunner {
         try {
           const fallbackCtx: CallContext = { ...this.ctx, agentName: fallbackAgentName };
           const fallbackOutput = await callOp(fallbackCtx, debateProposeOp, {
-            taskContext: prompt,
+            taskContext,
             outputFormat: "",
             stage: this.stage,
             debaterIndex: 0,
             debaters: [fallbackDebater],
+            manifestSection: preDebateManifestSection,
+            stageConfig: config,
           });
           logger?.info("debate", "debate:result", { storyId: this.ctx.storyId, stage: this.stage, outcome: "passed" });
           return {

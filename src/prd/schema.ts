@@ -8,7 +8,7 @@ import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
-import type { PRD, UserStory } from "./types";
+import type { ContextFileEntry, PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
 
 // ---------------------------------------------------------------------------
@@ -197,21 +197,62 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     workdir = rawWorkdir;
   }
 
-  // contextFiles — optional array of relative file paths from LLM analysis
+  // contextFiles — optional array of relative file paths (string or {path, factId?} objects)
   const rawContextFiles = s.contextFiles;
-  const contextFiles: string[] = [];
+  const contextFiles: Array<string | ContextFileEntry> = [];
   if (Array.isArray(rawContextFiles)) {
     for (const f of rawContextFiles as unknown[]) {
-      if (typeof f !== "string" || f.trim() === "") continue;
-      if (f.startsWith("/")) {
-        throw new Error(`[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${f}"`);
+      if (typeof f === "string") {
+        if (f.trim() === "") continue;
+        if (f.startsWith("/")) {
+          throw new Error(`[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${f}"`);
+        }
+        if (f.includes("..")) {
+          throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${f}"`);
+        }
+        contextFiles.push(f);
+      } else if (typeof f === "object" && f !== null && typeof (f as Record<string, unknown>).path === "string") {
+        const obj = f as Record<string, unknown>;
+        const path = (obj.path as string).trim();
+        if (path === "") continue;
+        if (path.startsWith("/")) {
+          throw new Error(
+            `[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${path}"`,
+          );
+        }
+        if (path.includes("..")) {
+          throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${path}"`);
+        }
+        const entry: ContextFileEntry = { path };
+        if (typeof obj.factId === "string" && obj.factId.length > 0) {
+          entry.factId = obj.factId;
+        }
+        contextFiles.push(entry);
       }
-      if (f.includes("..")) {
-        throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${f}"`);
-      }
-      contextFiles.push(f);
+      // Non-string, non-object entries are silently filtered (42, null, etc.)
     }
   }
+
+  // verifiedBy — optional citation anchor (Phase 2)
+  const VALID_VERIFIED_BY_KINDS = ["test", "symbol", "file"] as const;
+  type VerifiedByKind = (typeof VALID_VERIFIED_BY_KINDS)[number];
+  let verifiedBy: UserStory["verifiedBy"];
+  if (s.verifiedBy !== undefined && s.verifiedBy !== null) {
+    const vb = s.verifiedBy as Record<string, unknown>;
+    if (typeof vb.kind !== "string" || !(VALID_VERIFIED_BY_KINDS as readonly string[]).includes(vb.kind)) {
+      throw new Error(
+        `[schema] story[${index}].verifiedBy.kind "${vb.kind}" is invalid. Valid values: ${VALID_VERIFIED_BY_KINDS.join(", ")}`,
+      );
+    }
+    verifiedBy = {
+      kind: vb.kind as VerifiedByKind,
+      anchor: typeof vb.anchor === "string" ? vb.anchor : "",
+      factIds: Array.isArray(vb.factIds) ? (vb.factIds as string[]).filter((id) => typeof id === "string") : [],
+    };
+  }
+
+  // intent — optional boolean (Phase 2)
+  const intent: boolean | undefined = typeof s.intent === "boolean" ? s.intent : undefined;
 
   return {
     id,
@@ -234,6 +275,8 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
     ...(suggestedCriteria !== undefined ? { suggestedCriteria } : {}),
+    ...(verifiedBy !== undefined ? { verifiedBy } : {}),
+    ...(intent !== undefined ? { intent } : {}),
   };
 }
 
