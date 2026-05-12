@@ -1,8 +1,20 @@
 # Plan Stage — Asymmetric Pipeline Proposal
 
-**Date:** 2026-05-10
-**Status:** Proposal
+**Date:** 2026-05-10 (revised 2026-05-12)
+**Status:** Proposal — partially landed via enhanced-debate Phase 2; remaining work is rewiring, not new subsystems.
 **Scope:** `nax plan` — replace single-session planning with a 3-phase asymmetric pipeline to eliminate spec→codebase hallucination and produce stronger acceptance criteria.
+
+**Revision note (2026-05-12):** Enhanced-debate Phase 2 (branch `feat/enhanced-debate-phase-2`, merged) shipped all of the shared primitives this proposal anticipated — facts manifest, grounder strategy + prompts, citation parser, plan-checklist verifier, and `spec-deltas.md` artifact. Per [`docs/reports/enhanced-debate-phase-2-gap-analysis.md`](../reports/enhanced-debate-phase-2-gap-analysis.md) the grounder runs correctly end-to-end now, but in practice the manifest gets diluted by the N-debater synthesis resolver (the structural failure mode predicted in §2). The remaining pipeline work is orchestration: route the existing grounder + drafter + critic ops sequentially in `src/cli/plan.ts` instead of feeding them through the debate runner.
+
+**Codebase reconciliation (2026-05-12):** A read of [`src/prd/schema.ts`](../../src/prd/schema.ts), [`src/prd/types.ts`](../../src/prd/types.ts), [`src/debate/verifiers/plan-checklist.ts`](../../src/debate/verifiers/plan-checklist.ts), [`src/debate/citations.ts`](../../src/debate/citations.ts), and [`src/operations/ground.ts`](../../src/operations/ground.ts) surfaced several drifts between the original proposal text and the current code. Corrections are inlined throughout; the key drifts:
+
+1. **`verifiedBy` is a story-level field, not per-AC.** `acceptanceCriteria` is `string[]`. The original §3 Phase 2 example showed per-AC structured objects with embedded `verifiedBy` — that shape would require breaking-schema changes. The on-disk shape is story-level only. Spec example below revised.
+2. **Schema citation fields already exist.** `verifiedBy`, `intent`, and `contextFiles[].factId` (via `ContextFileEntry`) are already in the schema and flow through to disk via `validatePlanOutput`. The original §5 "MODIFY (additive)" entry on `src/prd/schema.ts` is removed.
+3. **`plan-checklist.ts` checklist items differ.** Implemented: `files-exist`, `ac-anchored`, `claims-cited`, `no-contradictions`, `spec-coverage` (5 items). The proposal originally named `ac-testable`, `contracts-respected`, `failure-modes-considered`. The checklist table below now reflects reality.
+4. **`claims-cited` measures the wrong thing for Phase 2.** The implemented check measures **manifest specClaim verification rate** (verified+partial / total), not **PRD claim citation rate**. `citations.ts` (`extractClaims`, `citationRate`) is the PRD-claim parser the proposal needs, but it is not currently invoked by the verifier. Wiring `citations.ts` into the Phase 2 drafter's `parse()` is a real new piece of work.
+5. **`plan-checklist.ts` is `PostDebateVerifier`-shaped, not op-shaped.** It reads `selectorResult.output` and a debate `stageConfig`. Pipeline reuse requires extracting the pure check functions (`checkFilesExist`, `checkAcAnchored`, etc.) into a library module called from both paths — not a "thin wrapper."
+6. **Manifest path is per-story:** `.nax/runs/<runId>/plan/<storyId>/facts-manifest.json` (not `…/plan/facts-manifest.json` as originally stated).
+7. **`groundOp` is bound to `debateConfigSelector`.** It reads `config.debate.grounder.{model, timeoutSeconds}`. Pipeline mode inherits this — even with `plan.mode = "pipeline"` and `debate.enabled = false`, the grounder still resolves its tuning knobs from the `debate.grounder` slice. Acceptable and documented below; do not duplicate the keys under `config.plan`.
 
 ---
 
@@ -106,7 +118,7 @@ Replace the single planner call with three sequential phases, each with a distin
 
 **Inputs:** spec content, facts manifest from Phase 1, file-read access.
 
-**Output:** PRD JSON conforming to existing `src/prd/schema.ts`, plus per-claim citation fields:
+**Output:** PRD JSON conforming to existing `src/prd/schema.ts` — citation metadata lives at the **story level** (the schema does not support per-AC structured objects; `acceptanceCriteria` is `string[]`):
 
 ```jsonc
 {
@@ -115,15 +127,14 @@ Replace the single planner call with three sequential phases, each with a distin
       "id": "US-001",
       "description": "...",
       "acceptanceCriteria": [
-        {
-          "text": "When validateUser() rejects an empty email, returns ValidationError",
-          "verifiedBy": {
-            "kind": "test" | "symbol" | "file",
-            "anchor": "test/unit/validate.test.ts::rejects empty email",
-            "factIds": ["F-014", "S-001"]      // grounded in verified facts
-          }
-        }
+        "When validateUser() rejects an empty email, returns ValidationError"
       ],
+      "verifiedBy": {
+        "kind": "test",                            // "test" | "symbol" | "file"
+        "anchor": "test/unit/validate.test.ts::rejects empty email",
+        "factIds": ["F-014", "S-001"]              // grounded in verified facts
+      },
+      "intent": false,                             // true → no citation required (design intent)
       "contextFiles": [
         { "path": "src/models/user.ts", "factId": "F-012" }
       ]
@@ -132,7 +143,11 @@ Replace the single planner call with three sequential phases, each with a distin
 }
 ```
 
-**Hallucination gate:** uncited concrete claims (file paths, function names, existing behaviors) are rejected mechanically — no LLM judgment required. Design-intent claims must be tagged `kind: "intent"` and don't require citation.
+Anchoring is per-story rather than per-AC. The trade-off: weaker AC-level granularity (one anchor covers all ACs in a story) in exchange for staying within the existing schema. If per-AC anchoring proves necessary in practice, that requires a separate schema migration RFC — out of scope here.
+
+**Hallucination gate (two layers):**
+- **Schema-level (already enforced):** [`validatePlanOutput`](../../src/prd/schema.ts) rejects `verifiedBy.kind` outside the `"test" | "symbol" | "file"` set; `contextFiles` paths must be relative and free of `..`; story IDs are normalized.
+- **Citation-level (new in pipeline mode):** the Phase 2 op's `parse()` runs [`extractClaims`](../../src/debate/citations.ts) + [`citationRate`](../../src/debate/citations.ts) over the drafter's structured output and rejects when the rate falls below a configurable threshold. Stories with `intent: true` are exempt. **This wiring does not exist today** — `citations.ts` ships, but it is not invoked anywhere in the verifier path; pipeline mode is the first consumer.
 
 **This is the implementation-axis grounding** the recent adversarial review work added downstream ([commits 39a6a13a, a4d458bd](../../)) — pulled forward so review has anchors instead of intent statements.
 
@@ -142,41 +157,41 @@ Replace the single planner call with three sequential phases, each with a distin
 
 **Inputs:** facts manifest, PRD draft, file-read access.
 
-**Output:** `critic-findings.json`:
+**Output:** `critic-findings.json`. The shape mirrors [`VerifierFinding`](../../src/plan/spec-deltas.ts) already used by `plan-checklist.ts`:
 
 ```jsonc
 {
   "findings": [
     {
-      "id": "FIND-001",
-      "severity": "blocker" | "major" | "minor",
-      "checklistItem": "ac-testable",
-      "storyId": "US-003",
-      "issue": "AC 'handles errors gracefully' has no observable assertion",
-      "suggestedFix": "rephrase as 'When agent throws X, run completes with status=failed'"
+      "checklistItem": "ac-anchored",
+      "severity": "blocker" | "major",
+      "message": "Story US-003 has no verifiedBy anchor and intent is not true",
+      "storyId": "US-003"
     }
-  ],
-  "checklistResults": {
-    "spec-coverage": "pass",
-    "ac-testable": "fail",
-    "claims-cited": "pass",
-    "files-exist": "pass",
-    "failure-modes-considered": "partial",
-    "contracts-respected": "pass"
-  }
+  ]
 }
 ```
 
-**Fixed checklist (closed set, no LLM creativity):**
+**Fixed checklist (closed set, no LLM creativity) — matches [`src/debate/verifiers/plan-checklist.ts`](../../src/debate/verifiers/plan-checklist.ts):**
 
-| Item | Check |
+| Item | Severity | Check | Source |
+|:---|:---|:---|:---|
+| `files-exist` | blocker | Every `contextFiles[].path` exists on disk | `checkFilesExist` |
+| `ac-anchored` | major | Each story has `verifiedBy` OR `intent === true` | `checkAcAnchored` |
+| `claims-cited` | major | Manifest verification rate ≥ threshold (default 0.5) | `checkClaimsCited` |
+| `no-contradictions` | blocker | No `contextFiles[].factId` references a `contradicted` spec claim | `checkNoContradictions` |
+| `spec-coverage` | major | No unverified factual spec claims; no unresolved gaps | `checkSpecCoverage` |
+
+**Two gaps from the original §3 proposal that the implementation does NOT cover:**
+
+| Original proposal | Status |
 |:---|:---|
-| `spec-coverage` | Every spec AC appears in the PRD or in a documented gap |
-| `ac-testable` | Each AC names an observable signal (file/symbol/test) |
-| `claims-cited` | Every concrete claim has `factIds` or is tagged intent |
-| `files-exist` | Every cited file path exists on disk (mechanical) |
-| `failure-modes-considered` | Each story has at least one negative-path AC or documented "no failure modes" |
-| `contracts-respected` | No PRD claim contradicts a `contradicted` `specClaim` from the manifest |
+| `ac-testable` — each AC names an observable signal | Partially covered by `ac-anchored` (story-level). True AC-level testability check would require LLM judgment — see `critic-builder.ts` work item below |
+| `failure-modes-considered` — negative-path AC per story | Not implemented. Add either as a sixth mechanical check (heuristic: AC string contains negative keywords) or as part of the LLM testability judgment |
+
+**Phase 2 claim-citation check (NEW work, not in `plan-checklist.ts`):** measure PRD-claim citation rate via [`citations.ts`](../../src/debate/citations.ts) on the drafter's structured output. This is distinct from `claims-cited` (which measures the manifest, not the draft) and is the actual hallucination gate.
+
+**Revision loop:** author addresses findings; critic re-checks only the deltas (one round, not arbitrary back-and-forth). Blocker-severity findings unresolved after one round emit `spec-deltas.md` and surface to the user — the spec needs a re-roll, not more planning. `plan-checklist.ts` already supports `onBlocker: "block" | "tag-expert"`; pipeline mode reuses that knob.
 
 **Revision loop:** author addresses findings; critic re-checks only the deltas (one round, not arbitrary back-and-forth). Blocker-severity findings unresolved after one round emit `spec-deltas.md` and surface to the user — the spec needs a re-roll, not more planning.
 
@@ -184,54 +199,136 @@ Replace the single planner call with three sequential phases, each with a distin
 
 ## 4. Artifacts
 
-| Artifact | Phase | Purpose | Persistence |
-|:---|:---|:---|:---|
-| `facts-manifest.json` | 1 | Grounded evidence inventory | Saved to `.nax/runs/<runId>/plan/` |
-| `prd-draft.json` | 2 | Citation-bearing draft PRD | Intermediate, kept for audit |
-| `critic-findings.json` | 3 | Audit results with severity | Saved alongside manifest |
-| `prd.json` | 3 (post-revision) | Final PRD, schema-conformant | Replaces current `nax plan` output |
-| `spec-deltas.md` | 3 (on blocker) | Spec→codebase contradictions for user re-roll | Surfaced to terminal |
+All run-scoped artifacts live under `.nax/runs/<runId>/plan/<storyId>/` (per-story subdirectory — matches the path `plan-checklist.ts` already reads from).
 
-`prd.json` retains the existing schema in `src/prd/schema.ts`. Citation metadata lives in additional fields the schema must accept (additive change, no breaking changes for downstream consumers).
+| Artifact | Phase | Purpose | Path |
+|:---|:---|:---|:---|
+| `facts-manifest.json` | 1 | Grounded evidence inventory | `.nax/runs/<runId>/plan/<storyId>/facts-manifest.json` |
+| `prd-draft.json` | 2 | Citation-bearing draft PRD | `.nax/runs/<runId>/plan/<storyId>/prd-draft.json` |
+| `critic-findings.json` | 3 | Audit results with severity | `.nax/runs/<runId>/plan/<storyId>/critic-findings.json` |
+| `prd.json` | 3 (post-revision) | Final PRD, schema-conformant | `.nax/features/<feature>/prd.json` (existing location) |
+| `spec-deltas.md` | 3 (on blocker) | Spec→codebase contradictions for user re-roll | `.nax/runs/<runId>/plan/<storyId>/spec-deltas.md` (already emitted here) |
+
+`prd.json` uses the existing schema in [`src/prd/schema.ts`](../../src/prd/schema.ts) — `verifiedBy`, `intent`, `contextFiles[].factId` are all already accepted. No schema migration required.
 
 ## 5. Implementation Surface
 
-The pipeline is plan-stage-only and does not modify the debate runner. However, **components are placed for reuse with the enhanced-debate proposal** if both progress, so the same code serves both paths.
+The pipeline is plan-stage-only and does not modify the debate runner. Enhanced-debate Phase 2 has already landed all of the shared primitives; the remaining work is a new drafter op and the orchestration wiring.
 
-### New code (shared with debate proposal)
+### Already shipped (enhanced-debate Phase 2 — reusable)
 
-| File | Purpose | Also used by |
+| File | Status | Role in pipeline | Notes |
+|:---|:---|:---|:---|
+| [`src/debate/facts-manifest.ts`](../../src/debate/facts-manifest.ts) | DONE | Phase 1 output schema + parser | — |
+| [`src/debate/pre-phase/grounder.ts`](../../src/debate/pre-phase/grounder.ts) | DONE | Phase 1 strategy | — |
+| [`src/prompts/builders/grounder-builder.ts`](../../src/prompts/builders/grounder-builder.ts) | DONE | Phase 1 prompts | — |
+| [`src/operations/ground.ts`](../../src/operations/ground.ts) | DONE | Phase 1 `callOp`-shaped op | Uses `debateConfigSelector`; tuning lives at `config.debate.grounder.*` even in pipeline mode |
+| [`src/debate/citations.ts`](../../src/debate/citations.ts) | DONE (UNWIRED) | Phase 2 PRD-claim citation parser | `extractClaims` / `citationRate` exist but no caller — pipeline drafter is the first consumer |
+| [`src/debate/verifiers/plan-checklist.ts`](../../src/debate/verifiers/plan-checklist.ts) | DONE (DEBATE-SHAPED) | Phase 3 mechanical checks | Signature is `PostDebateVerifier(ctx)` reading `selectorResult.output` + `stageConfig`. Needs refactor to expose pure check functions |
+| [`src/plan/spec-deltas.ts`](../../src/plan/spec-deltas.ts) | DONE | Phase 3 artifact emitter | — |
+| [`src/prd/schema.ts`](../../src/prd/schema.ts) + [`src/prd/types.ts`](../../src/prd/types.ts) | DONE | Citation fields | `verifiedBy`, `intent`, `contextFiles[].factId` already accepted by `validatePlanOutput`. No schema work required. |
+| [`src/runtime/session-role.ts`](../../src/runtime/session-role.ts) | DONE | `"grounder"` already a canonical session role | — |
+
+### Remaining work (pipeline-specific)
+
+| File | Status | Purpose |
 |:---|:---|:---|
-| `src/debate/facts-manifest.ts` | Manifest Zod schema + parser | Enhanced-debate `grounder` strategy |
-| `src/prompts/builders/grounder-builder.ts` | Grounder prompts | Enhanced-debate `grounder` strategy |
-| `src/debate/verifiers/plan-checklist.ts` | Closed checklist + mechanical checks | Enhanced-debate `postDebateVerifier` strategy |
-| `src/plan/spec-deltas.ts` | `spec-deltas.md` artifact format | Enhanced-debate verifier output |
-
-(File locations match the enhanced-debate proposal so neither path duplicates.)
-
-### New code (pipeline-specific)
-
-- `src/operations/plan-grounding.ts` — Phase 1 op (`CompleteOperation`) — wraps the grounder strategy in an op
-- `src/operations/plan-draft.ts` — Phase 2 op (`RunOperation` with citation-validating `parse()`)
-- `src/operations/plan-critic.ts` — Phase 3 op — wraps the verifier strategy in an op
-- `src/prompts/builders/critic-builder.ts` — Phase 3 prompts (LLM-judgment portion)
-
-### Changed code
-
-- `src/cli/plan.ts` — orchestrate the three ops sequentially via `callOp` (Layer 4 per [adapter-wiring.md](../../.claude/rules/adapter-wiring.md))
-- `src/prompts/builders/plan-builder.ts` — split current `build()` into draft-only variant; remove three-step prompt structure
-- `src/prd/schema.ts` — additive: `verifiedBy`, `factIds`, `contextFiles[].factId` (same SSOT as enhanced-debate)
+| `src/debate/verifiers/checks.ts` *(or `src/plan/checks.ts`)* | NEW | Refactor — extract the five pure check functions (`checkFilesExist`, `checkAcAnchored`, `checkClaimsCited`, `checkNoContradictions`, `checkSpecCoverage`) out of [`plan-checklist.ts`](../../src/debate/verifiers/plan-checklist.ts) into a library. `plan-checklist.ts` becomes a `PostDebateVerifier` adapter that calls them; pipeline op calls them directly. No semantic change |
+| `src/operations/plan-draft.ts` | NEW | Phase 2 op — `RunOperation` whose `parse()` runs `validatePlanOutput` then `citationRate(extractClaims(output)) >= threshold`. Must declare `retry` + `exhaustedFallback` (or `recover`) per [retry-strategy.md](../../.claude/rules/retry-strategy.md) so a low citation rate triggers a retry-with-prompt rather than throwing |
+| `src/operations/plan-critic.ts` | NEW | Phase 3 op — invokes the extracted check functions on the validated draft, threads `manifest` from disk, applies revision loop (one round; blocker → emit `spec-deltas.md` and surface). Does NOT need an LLM call for the mechanical portion |
+| `src/prompts/builders/critic-builder.ts` | NEW | Phase 3 LLM-judgment prompts — **closes the two gaps from §3**: (a) per-AC testability (currently covered only at story level by `ac-anchored`); (b) failure-modes-considered. Called from `plan-critic.ts` after mechanical checks pass |
+| `src/prompts/builders/plan-builder.ts` | MODIFY | Split current `build()` into a draft-only variant that consumes the manifest text (via `renderManifestSection`) and the spec; drop the three-step prompt structure |
+| `src/cli/plan.ts` | MODIFY | Add a third branch (after the existing debate / single branches) that calls `groundOp → planDraftOp → planCriticOp` sequentially via `callOp`. Reuse `createPlanRuntime` so packages/agentManager/sessionManager match the debate path |
+| `src/config/schemas.ts` | MODIFY (additive) | Add `config.plan.mode = "single" | "debate" | "pipeline"` (see §5a) |
 
 ### Untouched
 
-- `src/debate/` — debate stays available as a separate code path; pipeline is the new default for plan stage. Debate retained for review/acceptance/rectification stages where divergence is the point.
-- Pipeline stages downstream of plan — they consume the same `prd.json` shape.
+- `src/debate/` — debate stays as-is. `evidenceMode: "asymmetric"` keeps working for users who want the debate-shaped path. Pipeline is a parallel, simpler shape that bypasses the synthesis resolver.
+- Downstream pipeline stages (TDD, review, acceptance) — they consume the same `prd.json` shape; citation fields are additive.
 
-Per [adapter-wiring.md](../../.claude/rules/adapter-wiring.md): all three phases use `callOp` (Layer 4). No direct adapter calls.
+Per [adapter-wiring.md](../../.claude/rules/adapter-wiring.md): all three phases use `callOp` (Layer 4). Phase 1 already does; Phases 2 and 3 will. No direct adapter calls.
 
 ### Relationship to debate plug-points
 
-If both proposals ship, `src/debate/{pre-phase,verifiers}/` (introduced by enhanced-debate) becomes the canonical home for grounder + checklist; pipeline ops are thin wrappers around those strategies. The pipeline gets framework-level reuse without forking — the only difference is the orchestration shape (sequential ops vs. composable debate stage).
+`src/debate/{pre-phase,verifiers}/` is now the canonical home for grounder + checklist. The pipeline ops are thin wrappers around those strategies — no forking, no duplication. The only difference between debate-asymmetric and pipeline modes is the orchestration shape: debate-asymmetric routes the manifest into N parallel proposers + synthesis resolver; pipeline routes it into one drafter + one critic.
+
+## 5a. Config Resolution
+
+Enhanced-debate Phase 2 already added two relevant keys; pipeline mode must compose with them, not duplicate them. The current shape (see [`src/config/schemas-debate.ts`](../../src/config/schemas-debate.ts)):
+
+```jsonc
+{
+  "debate": {
+    "enabled": false,                       // master switch for the debate runner
+    "stages": {
+      "plan": {
+        "enabled": true,                    // gates debate for the plan stage (only fires if master is on)
+        "evidenceMode": "current" | "asymmetric"   // in-debate composition: adds grounder + verifier-pick selector
+      }
+    }
+  }
+}
+```
+
+And in [`src/cli/plan.ts`](../../src/cli/plan.ts) the existing branch is:
+
+```typescript
+const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+if (debateEnabled) { /* debate runner */ } else { /* single planInteractiveOp */ }
+```
+
+Pipeline mode is a **third orchestration shape**, not a debate variant. Pick the SSOT key cleanly:
+
+### Recommended: new `config.plan.mode` SSOT
+
+Introduce a single, explicit selector on `config.plan` rather than overloading `evidenceMode` (which already has a well-defined meaning inside the debate runner):
+
+```jsonc
+{
+  "plan": {
+    "mode": "single" | "debate" | "pipeline"   // default: derived (see resolution order below)
+  }
+}
+```
+
+**Resolution order** (in `cli/plan.ts`, replaces the current `debateEnabled` line):
+
+1. If `config.plan.mode` is set explicitly → use it.
+2. Else if `config.debate.enabled && config.debate.stages.plan.enabled` → `"debate"` (preserves current behavior — no behavior change for existing users).
+3. Else → `"single"`.
+
+This keeps the three settings orthogonal:
+
+| User intent | Set |
+|:---|:---|
+| Keep today's single-call planner | nothing (default) |
+| Run debate, current evidence | `debate.enabled = true` (already works) |
+| Run debate with grounder + verifier composition | `debate.enabled = true` + `debate.stages.plan.evidenceMode = "asymmetric"` (already works) |
+| **Run the asymmetric pipeline (no debate)** | `plan.mode = "pipeline"` |
+
+### Why not extend `evidenceMode` to `"pipeline"`?
+
+`evidenceMode` lives under `debate.stages.plan` — semantically "how the debate runner composes itself for the plan stage." Adding `"pipeline"` there means "evidence mode = no debate at all," which is contradictory and forces every reader of the debate schema to know about a non-debate code path. Keep debate config debate-only; introduce a plan-stage selector at `config.plan` where it belongs.
+
+### Interaction with `debate.stages.plan.enabled`
+
+When `plan.mode = "pipeline"`:
+- The pipeline runs regardless of `debate.stages.plan.enabled` (it bypasses the debate runner entirely).
+- Emit a one-time warning at plan startup if both `plan.mode = "pipeline"` and `debate.enabled = true` — the user has likely configured both paths by accident; pipeline wins. This is the "explicit beats inherited" rule from [`config-patterns.md`](../../.claude/rules/config-patterns.md).
+- No legacy-key rejection needed (per [`config-patterns.md`](../../.claude/rules/config-patterns.md) §"Migrating Deprecated Keys"): this is an additive change, not a rename. Existing users see zero behavior change.
+
+### Schema additions
+
+Append to `NaxConfigSchema` (in `src/config/schemas.ts`, not `schemas-debate.ts` — pipeline is not debate):
+
+```typescript
+plan: z.preprocess(toObject, z.object({
+  // existing keys (timeoutSeconds, etc.)
+  mode: z.enum(["single", "debate", "pipeline"]).optional(),
+}))
+```
+
+`.optional()` not `.default("single")` — the resolution order above derives the default at runtime from existing debate keys for backward compatibility.
 
 ## 6. Tradeoffs
 
@@ -274,11 +371,20 @@ Pick the pipeline if hallucination dominates. Pick enhanced debate if AC complet
 
 ## 9. Next Steps
 
-If accepted:
-1. Spike Phase 1 (grounder) standalone — measure manifest quality on 3–5 representative specs.
-2. Define the citation schema additions to `src/prd/schema.ts` and verify downstream consumers tolerate the additive fields.
-3. Implement `plan-grounding.ts` op + builder + manifest schema.
-4. Implement Phase 2 with citation validation in `parse()`.
-5. Implement Phase 3 critic with mechanical checks first (file existence, citation presence), then LLM-judgment checks (testability).
-6. Integration: `src/cli/plan.ts` orchestration; gate behind `config.plan.pipeline = "asymmetric" | "single" | "debate"`.
-7. Measure: hallucination rate (manifest contradictions), AC quality (downstream test pass rate), cost delta vs. baseline.
+Phase 1 (grounder + manifest), the citation parser, the mechanical checklist, and the PRD schema's citation fields are all already in main. The PRD schema needs **no migration**. Remaining work, in order:
+
+1. **Add `config.plan.mode`** to `src/config/schemas.ts` + the resolution order in `src/cli/plan.ts` (see §5a). Land this commit alone so subsequent work is gated behind the flag with no behavior change for existing users.
+2. **Refactor `plan-checklist.ts`** — extract the five pure check functions into a library (e.g. `src/debate/verifiers/checks.ts`). The current `planChecklistVerifier` becomes a thin `PostDebateVerifier` adapter that calls the library. Pure functions are unit-testable in isolation and callable from the pipeline op. No semantic change to the debate path.
+3. **Wire `citations.ts` into a draft validator** — write a `validateDraftCitations(output, threshold)` helper that runs `extractClaims` + `citationRate` and returns a structured pass/fail. This is the new hallucination gate the original §3 described but never landed.
+4. **Implement `src/operations/plan-draft.ts`** — `RunOperation<{manifest, spec, codebase}, PRD, DebateConfig>` whose `parse()` runs `validatePlanOutput` then `validateDraftCitations`. Declare `retry` + `exhaustedFallback` per [retry-strategy.md](../../.claude/rules/retry-strategy.md). Session role: reuse `"plan"` from the canonical registry.
+5. **Implement `src/operations/plan-critic.ts`** — calls the extracted check functions directly (no `PostDebateVerifier` shim needed in pipeline mode). Implements the one-round revision loop. Blocker findings unresolved after one revision emit `spec-deltas.md` (via `formatSpecDeltas`) and abort.
+6. **Add `src/prompts/builders/critic-builder.ts`** — LLM-judgment prompts for per-AC testability + failure-modes coverage. These are the two checks the mechanical checklist explicitly does NOT cover (see §3 gap table).
+7. **Split `src/prompts/builders/plan-builder.ts`** — extract a draft-only variant that consumes `renderManifestSection(manifest)` instead of the raw codebase scan.
+8. **Rewire `src/cli/plan.ts`** — third branch: `groundOp → planDraftOp → planCriticOp`, all via `callOp`. Reuse `createPlanRuntime` so packages/agentManager/sessionManager match the debate path. Manifest path follows the per-story layout `plan-checklist.ts` already uses.
+9. **Measure** — on 3–5 representative specs, compare across modes (`single`, `debate`, `debate+asymmetric`, `pipeline`):
+   - Hallucination rate: count `contradicted` specClaims in the manifest that survive into final PRD's `contextFiles[].factId`.
+   - PRD-claim citation rate: from `citationRate(extractClaims(prd))`.
+   - AC quality: downstream test pass rate on PRDs run through TDD.
+   - Cost delta: tokens + wall-clock vs. baseline.
+
+Out of scope for this proposal (parking lot): cross-story consistency phase, manifest reuse by downstream stages (TDD/review consuming the same facts manifest), hybrid mode with parallel proposers between Phase 1 and Phase 2, per-AC structured `verifiedBy` (would require schema migration).
