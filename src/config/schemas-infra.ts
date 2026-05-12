@@ -13,6 +13,12 @@ export const PlanConfigSchema = z.object({
   timeoutSeconds: z.number().int().positive().default(600),
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
   decomposeTimeoutSeconds: z.number().int().min(30).max(1_800).optional(),
+  /** Orchestration mode. Resolved at runtime when absent; see resolvePlanMode(). */
+  mode: z.enum(["single", "debate", "pipeline"]).optional(),
+  /** Minimum citation overlap threshold for the pipeline drafter gate [0, 1]. */
+  citationThreshold: z.number().min(0).max(1).default(0.5),
+  /** Model tier for the pipeline LLM critic. */
+  criticModel: ConfiguredModelSchema.default("fast"),
 });
 
 const AcceptanceFixConfigSchema = z.object({

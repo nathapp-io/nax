@@ -281,6 +281,12 @@ export interface PlanConfig {
   timeoutSeconds?: number;
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
   decomposeTimeoutSeconds?: number;
+  /** Orchestration mode. Resolved at runtime when absent; see resolvePlanMode(). */
+  mode?: "single" | "debate" | "pipeline";
+  /** Minimum citation overlap threshold for the pipeline drafter gate [0, 1]. Default: 0.5 */
+  citationThreshold: number;
+  /** Model tier for the pipeline LLM critic. Default: "fast" */
+  criticModel: ConfiguredModel;
 }
 
 /** Valid test strategy values for acceptance testing */

@@ -35,7 +35,7 @@ import { ModelMapSchema } from "./schemas-model";
 import { ReviewConfigSchema } from "./schemas-review";
 
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
-export { AcceptanceConfigSchema } from "./schemas-infra";
+export { AcceptanceConfigSchema, PlanConfigSchema } from "./schemas-infra";
 export { AdversarialReviewConfigSchema, ReviewDialogueConfigSchema } from "./schemas-review";
 export { ContextV2ConfigSchema } from "./schemas-context";
 export { PromptsConfigSchema } from "./schemas-infra";
@@ -250,6 +250,8 @@ export const NaxConfigSchema = z
       model: "balanced",
       outputPath: "spec.md",
       timeoutSeconds: 600,
+      citationThreshold: 0.5,
+      criticModel: "fast",
     }),
     acceptance: AcceptanceConfigSchema.default({
       enabled: true,

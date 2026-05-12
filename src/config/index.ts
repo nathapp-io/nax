@@ -40,6 +40,7 @@ export {
   resolveModelForAgent,
   NaxConfigSchema,
   AcceptanceConfigSchema,
+  PlanConfigSchema,
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
 export { DebateConfigSchema } from "./schemas-debate";

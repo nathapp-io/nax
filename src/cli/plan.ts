@@ -25,6 +25,25 @@ import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-ru
 export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mode resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve which orchestration mode to use for the plan command.
+ *
+ * Resolution order:
+ * 1. config.plan.mode (explicit user override)
+ * 2. debate (both debate.enabled and stages.plan.enabled must be true)
+ * 3. single (default)
+ */
+export function resolvePlanMode(config: NaxConfig): "single" | "debate" | "pipeline" {
+  const explicit = config?.plan?.mode;
+  if (explicit) return explicit;
+  if (config?.debate?.enabled && config?.debate?.stages?.plan?.enabled) return "debate";
+  return "single";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plan options
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,8 +157,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
-  // Debate fires whenever config.debate.enabled + stages.plan.enabled.
-  const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+  // Resolve orchestration mode.
+  const planMode = resolvePlanMode(config);
 
   // Initialize interaction chain before debate/op dispatch so destroy() always runs in finally.
   const headless = !process.stdin.isTTY;
@@ -156,6 +175,13 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       } catch {}
     }
     const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
+
+    if (planMode === "pipeline") {
+      return await runPlanPipeline(workdir, config, options);
+    }
+
+    // Derive debateEnabled from resolved mode so the two-branch check below is consistent.
+    const debateEnabled = planMode === "debate";
 
     if (debateEnabled) {
       // Debate path: run N agents in parallel via DebateRunner.runPlan().
@@ -319,6 +345,28 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   } finally {
     if (interactionChain) await interactionChain.destroy().catch(() => {});
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline mode stub — replaced by US-005
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Stub for the asymmetric pipeline plan mode.
+ * Warns when debate is also enabled (pipeline wins), then throws NOT_IMPLEMENTED.
+ * Full implementation lands in US-005.
+ */
+async function runPlanPipeline(_workdir: string, config: NaxConfig, _options: PlanCommandOptions): Promise<never> {
+  const debateEnabled = config?.debate?.enabled === true;
+  if (debateEnabled) {
+    _planDeps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
+      mode: "pipeline",
+      debateEnabled: true,
+    });
+  }
+  throw new NaxError("plan pipeline mode is not yet implemented", "PLAN_PIPELINE_NOT_IMPLEMENTED", {
+    stage: "plan",
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
