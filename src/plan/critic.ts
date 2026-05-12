@@ -100,9 +100,9 @@ export async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticV
     return { outcome: "passed", prd, findings: allFindings };
   }
 
-  // 3. Revision via planDraftOp
+  // 3. Revision via planDraftOp (session named "plan-revise" to distinguish from initial draft)
   try {
-    const revisedDraft = await callOp(callCtx, planDraftOp, {
+    const revisedDraft = await callOp({ ...callCtx, sessionOverride: { role: "plan-revise" } }, planDraftOp, {
       ...draftCtx,
       revisionFindings: allBlockers,
     });

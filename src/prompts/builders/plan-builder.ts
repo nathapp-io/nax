@@ -101,9 +101,9 @@ Write the complete PRD JSON to the output file path specified in your instructio
 
 Schema error: ${message}
 
-Please re-write the complete PRD JSON from scratch, ensuring it conforms to the required schema. The PRD must be valid and complete — do not truncate it.
+Required field names (do not rename): \`userStories\` (array), each story must have \`description\` (not "story"), \`acceptanceCriteria\` (string array, not "ac"), and \`routing.complexity\` ("simple" | "medium" | "complex" | "expert").
 
-Output ONLY the JSON object. Do not include markdown fences or explanation.`;
+Please re-write the complete PRD JSON from scratch conforming to the required schema. Output ONLY the JSON object. Do not include markdown fences or explanation.`;
   }
 
   /**
@@ -280,9 +280,33 @@ ${input.manifestSection}
 
 Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from the manifest. The required citation rate is ${input.citationThreshold}. Uncited factual claims will cause rejection.${revisionSection}
 
-## Output
+## Output Schema
 
-Produce a complete PRD JSON object. Do not include markdown fences or explanation.`,
+Produce a JSON object with this exact structure. Field names are mandatory — do not rename them.
+
+{
+  "project": "string — project name",
+  "feature": "string — feature name (copy from above)",
+  "branchName": "string — git branch name",
+  "userStories": [
+    {
+      "id": "string — e.g. US-001",
+      "title": "string — concise story title",
+      "description": "string — detailed description of what to implement",
+      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],
+      "contextFiles": ["string — relative paths the implementer should read (max 5)"],
+      "tags": ["string"],
+      "dependencies": ["string — story IDs this story depends on"],
+      "routing": {
+        "complexity": "simple | medium | complex | expert",
+        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+        "reasoning": "string — brief classification rationale"
+      }
+    }
+  ]
+}
+
+Output ONLY the JSON object. Do not include markdown fences or explanation.`,
       overridable: false,
     };
 

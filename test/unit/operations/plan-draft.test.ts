@@ -83,8 +83,8 @@ describe("planDraftOp — AC-5: identity properties", () => {
     expect(planDraftOp.stage).toBe("plan");
   });
 
-  test("session.role === 'plan'", () => {
-    expect(planDraftOp.session.role).toBe("plan");
+  test("session.role === 'plan-draft'", () => {
+    expect(planDraftOp.session.role).toBe("plan-draft");
   });
 
   test("session.lifetime === 'fresh'", () => {
@@ -95,9 +95,9 @@ describe("planDraftOp — AC-5: identity properties", () => {
     expect(planDraftOp.noFallback).toBe(true);
   });
 
-  test("retry strategy is set", () => {
+  test("retry is a function factory (returns strategy per input)", () => {
     expect(planDraftOp.retry).toBeDefined();
-    expect(typeof (planDraftOp.retry as any).shouldRetry).toBe("function");
+    expect(typeof planDraftOp.retry).toBe("function");
   });
 });
 
@@ -270,7 +270,8 @@ describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
 // ─── AC-17: retry strategy wiring ────────────────────────────────────────────
 
 describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
-  const retry = planDraftOp.retry as { shouldRetry: Function };
+  // retry is now a factory function; call it with a default input to get the strategy
+  const retry = (planDraftOp.retry as Function)(makeDraftInput()) as { shouldRetry: Function };
 
   test("returns { retry: false } when failure is not ParseValidationError", () => {
     const decision = retry.shouldRetry(new Error("network"), 0, { lastOutput: "{}", storyId: "s1" });

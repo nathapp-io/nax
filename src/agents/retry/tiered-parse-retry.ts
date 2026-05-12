@@ -30,6 +30,9 @@ export function makeTieredParseRetryStrategy<TOutput, TKind extends string, TPar
 
       const inspection = opts.inspect(ctx.lastOutput);
 
+      // Output is valid — no retry needed. Let op.parse() handle it.
+      if (inspection.ok) return { retry: false };
+
       if (attempt >= opts.maxAttempts - 1) {
         return { retry: false, fallback: opts.exhaustedFallback(inspection, ctx.lastOutput) };
       }
