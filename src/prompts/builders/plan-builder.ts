@@ -262,7 +262,7 @@ ${outputDirective}`;
 
     const task: ComposeInput["task"] = {
       id: "task",
-      content: `You are drafting a PRD for the following feature: **${input.feature}** (branch: ${input.branchName}).
+      content: `You are drafting a PRD for the following feature: **${input.feature}** (branch: ${input.branchName}). Your intent is to produce a thorough, evidence-grounded implementation plan.
 
 ## Spec
 
