@@ -119,7 +119,7 @@ export const autofixStage: PipelineStage = {
           });
         }
         logger.info("autofix", "Mechanical autofix succeeded — retrying review", { storyId: ctx.story.id });
-        return { action: "retry", fromStage: "review" };
+        return { action: "retry", fromStage: "review", resetRetryCount: true };
       }
 
       logger.info("autofix", "Mechanical autofix did not resolve all failures — proceeding to agent rectification", {
@@ -212,7 +212,7 @@ export const autofixStage: PipelineStage = {
         });
       }
       logger.info("autofix", "Agent rectification succeeded — retrying review", { storyId: ctx.story.id });
-      return { action: "retry", fromStage: "review", cost: agentCost };
+      return { action: "retry", fromStage: "review", resetRetryCount: true, cost: agentCost };
     }
 
     // Partial-progress retry: if the agent cleared at least one check this cycle but not all,

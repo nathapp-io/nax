@@ -76,7 +76,7 @@ describe("rectifyStage", () => {
 
   test("returns retry when rectification succeeds", async () => {
     const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0 });
+    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0, durationMs: 0 });
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
@@ -91,7 +91,7 @@ describe("rectifyStage", () => {
 
   test("returns escalate when rectification exhausted", async () => {
     const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: false, cost: 0 });
+    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: false, cost: 0, durationMs: 0 });
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
@@ -99,5 +99,44 @@ describe("rectifyStage", () => {
     Object.assign(_rectifyDeps, saved);
 
     expect(result.action).toBe("escalate");
+  });
+
+  test("escalates immediately when failCount is 0 (environmental failure — nothing for agent to fix)", async () => {
+    const saved = { ..._rectifyDeps };
+    // Ensure runRectificationLoop is never called for this path
+    let loopCalled = false;
+    _rectifyDeps.runRectificationLoop = async () => { loopCalled = true; return { succeeded: false, cost: 0, durationMs: 0 }; };
+
+    const envVerifyResult = {
+      ...makeVerifyResult(false),
+      failCount: 0,
+      status: "TEST_FAILURE" as const,
+    };
+    const ctx = makeCtx({ verifyResult: envVerifyResult });
+    const result = await rectifyStage.execute(ctx);
+
+    Object.assign(_rectifyDeps, saved);
+
+    expect(result.action).toBe("escalate");
+    expect(loopCalled).toBe(false);
+    if (result.action === "escalate") {
+      expect(result.reason).toContain("0 test failures");
+    }
+  });
+
+  test("returns retry with resetRetryCount:true when rectification succeeds", async () => {
+    const saved = { ..._rectifyDeps };
+    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0, durationMs: 0 });
+
+    const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
+    const result = await rectifyStage.execute(ctx);
+
+    Object.assign(_rectifyDeps, saved);
+
+    expect(result.action).toBe("retry");
+    if (result.action === "retry") {
+      expect(result.fromStage).toBe("verify");
+      expect(result.resetRetryCount).toBe(true);
+    }
   });
 });

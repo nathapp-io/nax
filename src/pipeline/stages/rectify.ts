@@ -43,6 +43,22 @@ export const rectifyStage: PipelineStage = {
       return { action: "continue" };
     }
 
+    // If failCount is 0 but verify still failed, the process exited non-zero due
+    // to an environmental issue (e.g. resource warnings, open handles, infra crash)
+    // rather than test assertion failures. The agent cannot fix environmental issues
+    // by changing code, so skip rectification and escalate immediately.
+    if ((verifyResult.failCount ?? 0) === 0) {
+      logger.warn("rectify", "Verify failed with 0 test failures — escalating without rectification", {
+        storyId: ctx.story.id,
+        failCount: verifyResult.failCount,
+        verifyStatus: verifyResult.status,
+      });
+      return {
+        action: "escalate",
+        reason: `Verify failed with 0 test failures (status: ${verifyResult.status} — not fixable by code changes)`,
+      };
+    }
+
     const testOutput = verifyResult.rawOutput ?? "";
     const maxRetries = ctx.config.execution.rectification?.maxRetries ?? 3;
 
@@ -106,7 +122,7 @@ export const rectifyStage: PipelineStage = {
       logger.info("rectify", "Rectification succeeded — retrying verify", { storyId: ctx.story.id });
       // Clear verifyResult so verify stage re-runs fresh
       ctx.verifyResult = undefined;
-      return { action: "retry", fromStage: "verify", cost };
+      return { action: "retry", fromStage: "verify", resetRetryCount: true, cost };
     }
 
     logger.warn("rectify", "Rectification exhausted — escalating", { storyId: ctx.story.id });
