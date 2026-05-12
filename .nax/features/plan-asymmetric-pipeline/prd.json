@@ -3,7 +3,7 @@
   "feature": "plan-asymmetric-pipeline",
   "branchName": "feat/plan-asymmetric-pipeline",
   "createdAt": "2026-05-12T00:00:00.000Z",
-  "updatedAt": "2026-05-12T06:10:15.820Z",
+  "updatedAt": "2026-05-12T06:43:45.257Z",
   "userStories": [
     {
       "id": "US-001",
@@ -211,8 +211,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -277,7 +277,9 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/cli/plan.ts",
@@ -294,7 +296,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d4749cb2941642086f77566de347065cac7181ec"
     }
   ],
   "analysis": "## Codebase Analysis\n\n### Key findings from exploration\n\n**Config schema (`src/config/schemas-infra.ts:10-16`):**\n`PlanConfigSchema` currently has four fields: `model`, `outputPath`, `timeoutSeconds`, `decomposeTimeoutSeconds`. The new `mode`, `citationThreshold`, and `criticModel` fields must be added here (not in `schemas.ts`, which only references this schema). The `planConfigSelector` and `PlanConfig` type alias in `src/config/selectors.ts:24,117` use `ReturnType` inference, so new fields auto-propagate once the schema is extended — no manual type edits needed.\n\n**Plan CLI (`src/cli/plan.ts:140-160`):**\nThe current dispatch is a single `debateEnabled` boolean derived from `config?.debate?.enabled && config?.debate?.stages?.plan?.enabled` (line 142). The new `resolvePlanMode()` function replaces this with a three-way resolution and slots before the existing `if (debateEnabled)` branch. The function is already exported from `./plan-runtime` for backward compat (re-export pattern at line 25).\n\n**Check functions (`src/debate/verifiers/plan-checklist.ts`):**\nAll five check functions (`checkFilesExist`, `checkAcAnchored`, `checkClaimsCited`, `checkNoContradictions`, `checkSpecCoverage`) are already implemented as module-private functions. The refactor is to move them to a new `src/debate/verifiers/checks.ts` and export them; `plan-checklist.ts` becomes a thin adapter. The `_planChecklistDeps` injection pattern for `existsSync` must be preserved (or the `CheckDeps` parameter approach from the spec must be used). Critical: `checkFilesExist` currently uses `_planChecklistDeps.existsSync` — the new `CheckDeps` injection in the extracted function must replicate this testability.\n\n**Retry infrastructure (`src/agents/retry/parse-retry.ts`, `src/agents/retry/types.ts`):**\n`makeParseRetryStrategy` supports only two prompt kinds (`invalid`/`truncated`). The new `makeTieredParseRetryStrategy` needs three kinds (per op: `not-json`, `prd-invalid`, `citation-low` for drafter; `not-json`, `schema-invalid` for critic). The helper must be added at `src/agents/retry/tiered-parse-retry.ts` and exported from `src/agents/retry/index.ts`.\n\nIMPORTANT: The retry-strategy.md rule states run-kind ops using `sendWithParseRetry` receive a synthetic `ParseValidationError` probe — the strategy must re-parse `ctx.lastOutput` to determine validity. The tiered helper's `inspect` function is the per-op re-parser. The `inspectDraftOutput` / `inspectCriticOutput` helpers are the output-only inspectors — they must NOT reference `input` (the `RetryContext` doesn't carry op input).\n\n**Session roles (`src/runtime/session-role.ts`):**\n`CanonicalSessionRole` is a union type at line 9-27; `KNOWN_SESSION_ROLES` is an array at line 31-50. Both need `\"plan-critic\"` added. The `\"grounder\"` role (Phase 2) is the precedent. The `\"plan\"` role (line 21/42) already exists — `planDraftOp` reuses it.\n\n**Operations pattern (`src/operations/ground.ts`):**\nThe grounder op uses `inspectGrounderOutput` (output-only, no `input` param) + per-kind repair prompt builder. The `parse()` throws `NaxError` (NOT `ParseValidationError`) — the strategy discriminates on `instanceof ParseValidationError` so they're distinct. The spec's `planDraftOp.parse()` throws `ParseValidationError` — this is intentional and required for the retry strategy to fire.\n\n**Prompt builder (`src/prompts/builders/plan-builder.ts`):**\nExisting `PlanPromptBuilder.build()` returns `{ taskContext, outputFormat }` (a `PlanningPromptParts` object). The new `buildDraft()` method returns `ComposeInput` — a different shape. This is consistent with the spec's design and the distinction between debate-mode (needs separable parts) and pipeline-mode (single unified prompt).\n\n### Risk areas\n\n1. **`checkFilesExist` deps injection**: The current implementation uses module-level `_planChecklistDeps.existsSync`. The new `CheckDeps` parameter approach must maintain testability without breaking the debate path's injection.\n2. **`planDraftOp.parse()` throws `ParseValidationError`**: Unlike `groundOp` which throws `NaxError`, the drafter must throw `ParseValidationError` for the retry strategy to fire. Both throw on failure but the type differs.\n3. **`makeTieredParseRetryStrategy` `inspect` output-only contract**: The `inspect` function signature is `(output: string) => TieredInspection<TKind, TPartial>` — no `input` parameter. `inspectDraftOutput` uses `DEFAULT_CITATION_THRESHOLD = 0.5` for kind classification (not the configured threshold); `parse()` uses the configured threshold authoritatively. This dual-threshold design must be documented at the call site.\n4. **`runPlanCritic` LLM fail-open**: When `planCriticLlmOp` throws, `runPlanCritic` must catch and log a warning, then proceed with mechanical findings only. This is explicitly NOT surfaced as an error to the pipeline.\n5. **One-round revision budget**: After the revision, mechanical checks re-run but LLM critic does NOT. This asymmetry must be clearly encoded in `runPlanCritic`."
