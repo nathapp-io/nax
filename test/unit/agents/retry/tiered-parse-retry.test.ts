@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { ParseValidationError } from "@/agents";
+import { makeTieredParseRetryStrategy, ParseValidationError } from "@/agents";
 import type { RetryContext, RetryStrategy } from "@/agents";
 
 // AC-1 & AC-2: Non-ParseValidationError and missing lastOutput should return { retry: false }
@@ -207,6 +207,69 @@ describe("makeTieredParseRetryStrategy — AC-4: exhaustion with fallback", () =
     expect(exhaustedCalls.length).toBe(1);
     expect((exhaustedCalls[0]?.inspection as any)?.kind).toBe("citation-low");
     expect(exhaustedCalls[0]?.lastOutput).toBe("bad output");
+  });
+});
+
+// Regression: inspection.ok === true must short-circuit retry (over-retry bug)
+describe("makeTieredParseRetryStrategy — real impl: ok:true short-circuits retry", () => {
+  test("returns { retry: false } immediately when inspect returns ok: true", () => {
+    const buildRetryPromptCalls: unknown[] = [];
+    const strategy = makeTieredParseRetryStrategy({
+      reviewerKind: "test-reviewer",
+      maxAttempts: 2,
+      inspect: (_output: string) => ({ ok: true }),
+      buildRetryPrompt: (inspection: unknown, isTruncated: boolean) => {
+        buildRetryPromptCalls.push({ inspection, isTruncated });
+        return "should not be called";
+      },
+      exhaustedFallback: () => ({ findings: [] }),
+    });
+
+    const result = strategy.shouldRetry(
+      new ParseValidationError("probe"),
+      0,
+      makeCtx({ lastOutput: '{"findings": []}' }),
+    );
+
+    expect(result).toEqual({ retry: false });
+    expect(buildRetryPromptCalls.length).toBe(0);
+  });
+
+  test("does not call exhaustedFallback when inspect returns ok: true", () => {
+    const exhaustedCalls: unknown[] = [];
+    const strategy = makeTieredParseRetryStrategy({
+      reviewerKind: "test-reviewer",
+      maxAttempts: 2,
+      inspect: (_output: string) => ({ ok: true }),
+      buildRetryPrompt: () => "prompt",
+      exhaustedFallback: (...args: unknown[]) => {
+        exhaustedCalls.push(args);
+        return { findings: [] };
+      },
+    });
+
+    strategy.shouldRetry(new ParseValidationError("probe"), 0, makeCtx({ lastOutput: "valid" }));
+
+    expect(exhaustedCalls.length).toBe(0);
+  });
+
+  test("ok: true at attempt >= maxAttempts-1 still returns { retry: false } without fallback", () => {
+    const strategy = makeTieredParseRetryStrategy({
+      reviewerKind: "test-reviewer",
+      maxAttempts: 2,
+      inspect: (_output: string) => ({ ok: true }),
+      buildRetryPrompt: () => "prompt",
+      exhaustedFallback: () => ({ findings: ["should-not-appear"] }),
+    });
+
+    const result = strategy.shouldRetry(
+      new ParseValidationError("probe"),
+      1,
+      makeCtx({ lastOutput: "valid" }),
+    );
+
+    expect(result).toEqual({ retry: false });
+    expect("fallback" in result && result.fallback).toBeFalsy();
   });
 });
 

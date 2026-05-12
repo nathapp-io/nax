@@ -52,7 +52,12 @@ interface DraftInspection extends TieredInspection<DraftFailureKind, PRD> {
 
 // ─── Inspection ───────────────────────────────────────────────────────────────
 
-export function inspectDraftOutput(output: string, feature = "", branch = ""): DraftInspection {
+export function inspectDraftOutput(
+  output: string,
+  feature = "",
+  branch = "",
+  citationThreshold = DEFAULT_CITATION_THRESHOLD,
+): DraftInspection {
   let raw: unknown;
   try {
     raw = parseLLMJson(output);
@@ -73,12 +78,12 @@ export function inspectDraftOutput(output: string, feature = "", branch = ""): D
 
   const claims = extractClaims(output);
   const rate = citationRate(claims);
-  if (rate < DEFAULT_CITATION_THRESHOLD) {
+  if (citationThreshold > 0 && rate < citationThreshold) {
     const uncited = claims.filter((c) => !c.cited).length;
     return {
       ok: false,
       kind: "citation-low",
-      message: `Citation rate ${rate.toFixed(2)} below default ${DEFAULT_CITATION_THRESHOLD} (${uncited} uncited claims).`,
+      message: `Citation rate ${rate.toFixed(2)} below threshold ${citationThreshold} (${uncited} uncited claims).`,
       partial: prd,
       citationRate: rate,
     };
@@ -135,13 +140,13 @@ function buildDraftRetryPrompt(inspection: DraftInspection, isTruncated: boolean
   return PlanPromptBuilder.citationRepair(message);
 }
 
-function createDraftRetryStrategy(): ReturnType<
-  typeof makeTieredParseRetryStrategy<PlanDraftOutput, DraftFailureKind, PRD>
-> {
+function createDraftRetryStrategy(
+  citationThreshold = DEFAULT_CITATION_THRESHOLD,
+): ReturnType<typeof makeTieredParseRetryStrategy<PlanDraftOutput, DraftFailureKind, PRD>> {
   return makeTieredParseRetryStrategy<PlanDraftOutput, DraftFailureKind, PRD>({
     reviewerKind: "plan-draft",
     maxAttempts: 2,
-    inspect: inspectDraftOutput,
+    inspect: (output) => inspectDraftOutput(output, "", "", citationThreshold),
     buildRetryPrompt: buildDraftRetryPrompt,
     exhaustedFallback(inspection, _lastOutput) {
       if (inspection.partial) {
@@ -162,12 +167,12 @@ export const planDraftOp: RunOperation<PlanDraftInput, PlanDraftOutput, PlanConf
   kind: "run",
   name: "plan-draft",
   stage: "plan",
-  session: { role: "plan", lifetime: "fresh" },
+  session: { role: "plan-draft", lifetime: "fresh" },
   noFallback: true,
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan?.model ?? "fast",
   timeoutMs: (_input, ctx) => (ctx.config.plan?.timeoutSeconds ?? 600) * 1000,
-  retry: createDraftRetryStrategy(),
+  retry: (input: PlanDraftInput) => createDraftRetryStrategy(input.citationThreshold),
   build(input, _ctx) {
     return new PlanPromptBuilder().buildDraft(input);
   },
