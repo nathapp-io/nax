@@ -1,0 +1,298 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-asymmetric-pipeline",
+  "branchName": "feat/plan-asymmetric-pipeline",
+  "createdAt": "2026-05-12T00:00:00.000Z",
+  "updatedAt": "2026-05-12T08:36:50.869Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "config.plan.mode schema + pipeline branch stub",
+      "description": "**Goal** — Extend `PlanConfigSchema` with `mode`, `citationThreshold`, and `criticModel`; implement `resolvePlanMode()` in `src/cli/plan.ts`; add a stub pipeline branch that throws `PLAN_PIPELINE_NOT_IMPLEMENTED` and emits a dual-mode warning.\n\n**Motivation** — Pipeline mode must be gated behind a config flag so default `debate`/`single` behavior is bit-for-bit unchanged until the full implementation lands in US-005.\n\n**Approach** — Add three fields to the existing `PlanConfigSchema` in `src/config/schemas-infra.ts` (the schema lives there, not in `schemas.ts`). Pipeline is NOT a debate variant — it bypasses the debate runner — so the selector lives at `config.plan`, not under `config.debate.stages.plan`.\n\n```typescript\n// src/config/schemas-infra.ts — PlanConfigSchema (additive)\nexport const PlanConfigSchema = z.object({\n  model: ConfiguredModelSchema,                                  // existing\n  outputPath: z.string().min(1, \"plan.outputPath must be non-empty\"),  // existing\n  timeoutSeconds: z.number().int().positive().default(600),     // existing\n  decomposeTimeoutSeconds: z.number().int().min(30).max(1_800).optional(),  // existing\n\n  // NEW in this spec:\n  mode: z.enum([\"single\", \"debate\", \"pipeline\"]).optional(),\n  citationThreshold: z.number().min(0).max(1).default(0.5),     // pipeline-mode drafter gate\n  criticModel: ConfiguredModelSchema.default(\"fast\"),           // pipeline-mode LLM critic model\n});\n```\n\n`.optional()` on `mode` — the resolution order derives the mode at runtime so backward compatibility holds. `criticModel` defaults to `\"fast\"` (matches the grounder's `fast`-tier choice; the critic is a structured-extraction task, not a creative draft) and the drafter model defaults to `\"fast\"` via the resolver below; both can be overridden by the user.\n\nThe existing `planConfigSelector` and `PlanConfig` type alias in `src/config/selectors.ts:24,117` already select the right slice (`plan` + `debate`); the new fields automatically appear on `PlanConfig` once the schema is extended.\n\n**Resolution order** — `src/cli/plan.ts` selects the orchestration mode using this precedence:\n\n```typescript\nfunction resolvePlanMode(config: NaxConfig): \"single\" | \"debate\" | \"pipeline\" {\n  const explicit = config?.plan?.mode;\n  if (explicit) return explicit;\n  if (config?.debate?.enabled && config?.debate?.stages?.plan?.enabled) return \"debate\";\n  return \"single\";\n}\n```\n\nWhen `plan.mode === \"pipeline\"` and `debate.enabled === true`, emit a one-time warning at startup (`storyId: undefined, mode: \"pipeline\", debateEnabled: true`) and pipeline wins.\n\n`src/cli/plan.ts` adds a third branch alongside the existing `debateEnabled ? debate : single` dispatch:\n\n```typescript\nconst mode = resolvePlanMode(config);\nif (mode === \"pipeline\") {\n  return runPlanPipeline(workdir, config, options);\n} else if (mode === \"debate\") {\n  /* existing debate branch */\n} else {\n  /* existing single branch */\n}\n```\n\nThe `runPlanPipeline` function in US-001 throws `NaxError` with code `PLAN_PIPELINE_NOT_IMPLEMENTED` and is replaced by US-005.\n\n**Scope** — In: `src/config/schemas-infra.ts` (PlanConfigSchema extension), `src/cli/plan.ts` (`resolvePlanMode` + stub branch), tests for schema parsing and mode resolution. Out: actual pipeline execution (US-005), prompt builders (US-003), ops (US-003, US-004).",
+      "acceptanceCriteria": [
+        "NaxConfigSchema.parse({}) returns defaults where plan.mode is undefined, plan.citationThreshold is 0.5, and plan.criticModel is \"fast\"",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"single\" }).mode returns \"single\"",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"debate\" }).mode returns \"debate\"",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"pipeline\" }).mode returns \"pipeline\"",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"unknown\" }) throws a ZodError",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 1.5 }) throws a ZodError",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 0.7, criticModel: \"balanced\" }) preserves citationThreshold and criticModel overrides",
+        "resolvePlanMode({ plan: { mode: \"pipeline\" } }) returns \"pipeline\"",
+        "resolvePlanMode({ plan: { mode: \"single\" }, debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"single\" (explicit plan.mode wins over debate.enabled)",
+        "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"debate\" (legacy precedence preserved)",
+        "resolvePlanMode({}) returns \"single\"",
+        "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: false } } } }) returns \"single\" (both debate.enabled and stages.plan.enabled required for \"debate\")",
+        "When resolvePlanMode() returns \"pipeline\", planCommand() throws NaxError with code === \"PLAN_PIPELINE_NOT_IMPLEMENTED\" and context.stage === \"plan\"",
+        "When resolvePlanMode() returns \"pipeline\" AND config.debate?.enabled === true, planCommand() calls logger.warn(\"plan\", ...) exactly once with { mode: \"pipeline\", debateEnabled: true } before throwing the not-implemented error",
+        "resolvePlanMode({ plan: { mode: \"debate\" }, debate: { enabled: false } }) returns \"debate\" (explicit mode wins even when debate.enabled is false)",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 0 }) succeeds and returns citationThreshold === 0 (boundary)",
+        "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 1 }) succeeds and returns citationThreshold === 1 (boundary)"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "plan"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-infra.ts",
+        "src/config/selectors.ts",
+        "src/cli/plan.ts",
+        "src/config/schemas-debate.ts",
+        "src/errors.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "38992b5df47625891ff68101cdfc83ca6abaee6c"
+    },
+    {
+      "id": "US-002",
+      "title": "Extract pure check functions + draft citation validator",
+      "description": "**Goal** — Extract the five mechanical check functions from `src/debate/verifiers/plan-checklist.ts` into a new `src/debate/verifiers/checks.ts` module; implement `validateDraftCitations` in `src/plan/draft-citations.ts` wiring `citations.ts`.\n\n**Motivation** — The pipeline critic must call the same mechanical check functions as the debate verifier to avoid logic duplication; `citations.ts` is already used by `verifier-pick`, and wiring it through `validateDraftCitations` adds a plan-draft citation gate caller that is testable in isolation.\n\n**Approach** — Refactor `src/debate/verifiers/plan-checklist.ts` to export `checkFilesExist`, `checkAcAnchored`, `checkClaimsCited`, `checkNoContradictions`, `checkSpecCoverage` from a new `src/debate/verifiers/checks.ts` module; `planChecklistVerifier` becomes a thin adapter that calls them (debate behavior unchanged).\n\n```typescript\n// src/debate/verifiers/checks.ts (NEW)\nimport type { PRD } from \"@/prd/types\";\nimport type { VerifierFinding } from \"@/plan/spec-deltas\";\nimport type { FactsManifest } from \"../facts-manifest\";\n\nexport interface CheckDeps {\n  existsSync: (path: string) => boolean;\n}\n\nexport function checkFilesExist(prd: PRD, workdir: string, deps?: CheckDeps): VerifierFinding[];\nexport function checkAcAnchored(prd: PRD): VerifierFinding[];\nexport function checkClaimsCited(manifest: FactsManifest | null, threshold: number): VerifierFinding[];\nexport function checkNoContradictions(prd: PRD, manifest: FactsManifest | null): VerifierFinding[];\nexport function checkSpecCoverage(manifest: FactsManifest | null): VerifierFinding[];\n```\n\n`plan-checklist.ts` becomes a thin adapter that imports from `checks.ts` and adapts to the debate `PostDebateVerifier` contract. Pipeline mode imports from `checks.ts` directly. No semantic change to debate behavior.\n\nFor `validateDraftCitations`:\n\n```typescript\n// src/plan/draft-citations.ts\nimport type { FactsManifest } from \"../debate/facts-manifest\";\nimport { extractClaims, citationRate } from \"../debate/citations\";\n\nexport interface DraftCitationResult {\n  readonly ok: boolean;\n  readonly rate: number;\n  readonly threshold: number;\n  readonly uncitedCount: number;\n}\n\nexport function validateDraftCitations(\n  output: string,\n  _manifest: FactsManifest,\n  threshold: number,\n): DraftCitationResult {\n  const claims = extractClaims(output);\n  const rate = citationRate(claims);\n  const uncitedCount = claims.filter((c) => !c.cited).length;\n  return { ok: rate >= threshold, rate, threshold, uncitedCount };\n}\n```\n\nThe `_manifest` parameter is reserved for a future enhancement (rejecting citations to non-existent `factId`s); current implementation only measures rate.\n\n**Scope** — In: new `src/debate/verifiers/checks.ts`, refactored `src/debate/verifiers/plan-checklist.ts` (thin adapter), new `src/plan/draft-citations.ts`. Out: pipeline orchestration (US-005), `planDraftOp` (US-003).",
+      "acceptanceCriteria": [
+        "src/debate/verifiers/checks.ts exports checkFilesExist, checkAcAnchored, checkClaimsCited, checkNoContradictions, checkSpecCoverage as named functions",
+        "checkFilesExist(prd, workdir, { existsSync: () => false }) returns one VerifierFinding per contextFiles entry with severity === \"blocker\" and checklistItem === \"files-exist\"",
+        "checkAcAnchored(prdWithNoVerifiedByAndIntentFalse) returns one finding with severity === \"major\" and checklistItem === \"ac-anchored\" per story",
+        "checkClaimsCited(null, 0.5) returns [] when manifest is null",
+        "checkClaimsCited({ specClaims: [verified, verified, unverified], ... }, 0.5) returns [] because rate 0.666 >= 0.5",
+        "checkClaimsCited({ specClaims: [verified, unverified, unverified], ... }, 0.5) returns one finding because rate 0.333 < 0.5",
+        "checkNoContradictions(prd, manifest) returns a finding with severity === \"blocker\" for each PRD contextFiles[].factId that references a manifest specClaim with verification.status === \"contradicted\"",
+        "checkSpecCoverage(manifest) returns one finding per specClaims entry where kind === \"factual\" AND verification.status === \"unverified\"",
+        "planChecklistVerifier(ctx) invokes the five exported check functions and produces findings that are deep-equal to those produced before the refactor when given the same prd and manifest (no behavior change for debate path)",
+        "validateDraftCitations(output, manifest, 0.5) exported from src/plan/draft-citations.ts returns { ok: true, rate, threshold: 0.5, uncitedCount } when citationRate(extractClaims(output)) >= 0.5",
+        "validateDraftCitations(output, manifest, 0.5) returns { ok: false, ... } when citation rate is below threshold",
+        "validateDraftCitations(\"\", manifest, 0.5) returns { ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 } (empty input)",
+        "checkFilesExist(prd, workdir, { existsSync: () => true }) returns [] (all files exist)",
+        "checkFilesExist(prd, workdir) with no deps parameter uses node:fs existsSync by default (verifies the default deps injection path works)",
+        "checkAcAnchored(prdWithIntent: true) returns [] (intent exempts the story from the ac-anchored check)",
+        "checkClaimsCited({ specClaims: [], ... }, 0.5) returns [] (no claims — nothing to rate)",
+        "checkNoContradictions(prd, null) returns [] when manifest is null",
+        "checkSpecCoverage(null) returns [] when manifest is null",
+        "validateDraftCitations(output, manifest, 0) returns { ok: true, ... } (zero threshold always passes)"
+      ],
+      "tags": [
+        "feature",
+        "refactor",
+        "plan"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/debate/verifiers/plan-checklist.ts",
+        "src/debate/verifiers/types.ts",
+        "src/debate/citations.ts",
+        "src/debate/facts-manifest.ts",
+        "src/plan/spec-deltas.ts"
+      ],
+      "suggestedCriteria": [
+        "checkAcAnchored(prdWithVerifiedBy) returns [] (verifiedBy satisfies the anchor requirement)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "30296b3750eadb5d2df44e215a70e26228e483fe"
+    },
+    {
+      "id": "US-003",
+      "title": "planDraftOp + PlanPromptBuilder.buildDraft + makeTieredParseRetryStrategy helper",
+      "description": "**Goal** — Land the shared `makeTieredParseRetryStrategy` helper; implement the `planDraftOp` run-kind operation with three-tier parse diagnosis; add `buildDraft` and three repair-prompt static methods to `PlanPromptBuilder`.\n\n**Motivation** — The drafter's `parse()` must reject outputs below the citation threshold, adding a plan-draft citation gate caller for `citations.ts` (already used by `verifier-pick`); the tiered retry helper generalises the pattern across ops without duplicating the `ParseValidationError` discrimination, truncation check, and structured warn-log.\n\n**Approach** — Land the shared abstraction at `src/agents/retry/tiered-parse-retry.ts`:\n\n```typescript\n// src/agents/retry/tiered-parse-retry.ts\nimport { ParseValidationError } from \"./types\";\nimport { looksLikeTruncatedJson } from \"@/review/truncation\";\nimport { getSafeLogger } from \"@/logger\";\nimport type { RetryStrategy } from \"./types\";\n\nexport interface TieredInspection<TKind extends string, TPartial = unknown> {\n  readonly ok: boolean;\n  readonly kind?: TKind;\n  readonly message?: string;\n  readonly partial?: TPartial;\n}\n\nexport interface TieredParseRetryOpts<TOutput, TKind extends string, TPartial = unknown> {\n  readonly reviewerKind: string;\n  readonly maxAttempts: number;\n  readonly inspect: (output: string) => TieredInspection<TKind, TPartial>;\n  readonly buildRetryPrompt: (inspection: TieredInspection<TKind, TPartial>, isTruncated: boolean) => string;\n  readonly exhaustedFallback: (inspection: TieredInspection<TKind, TPartial>, lastOutput: string) => TOutput;\n}\n\nexport function makeTieredParseRetryStrategy<TOutput, TKind extends string, TPartial = unknown>(\n  opts: TieredParseRetryOpts<TOutput, TKind, TPartial>,\n): RetryStrategy {\n  return {\n    shouldRetry(failure, attempt, ctx) {\n      if (!(failure instanceof ParseValidationError)) return { retry: false };\n      if (!ctx.lastOutput) return { retry: false };\n      const inspection = opts.inspect(ctx.lastOutput);\n\n      if (attempt >= opts.maxAttempts - 1) {\n        return { retry: false, fallback: opts.exhaustedFallback(inspection, ctx.lastOutput) };\n      }\n\n      const isTruncated = looksLikeTruncatedJson(ctx.lastOutput);\n      getSafeLogger()?.warn(opts.reviewerKind, `Parse retry — ${inspection.kind ?? \"unknown\"}`, {\n        storyId: ctx.storyId,\n        kind: inspection.kind,\n        isTruncated,\n        originalByteSize: ctx.lastOutput.length,\n      });\n      return { retry: true, delayMs: 0, nextPrompt: opts.buildRetryPrompt(inspection, isTruncated) };\n    },\n  };\n}\n```\n\nImport paths verified:\n- `ParseValidationError` from `src/agents/retry/types.ts:46` (re-exported via `src/agents/retry/index.ts`)\n- `RetryStrategy` from `src/agents/retry/types.ts:18`\n- `looksLikeTruncatedJson` from `src/review/truncation.ts:23`\n- `getSafeLogger` from `src/logger/index.ts`\n\nFor `planDraftOp`:\n\n```typescript\n// src/operations/plan-draft.ts\nimport type { FactsManifest } from \"../debate/facts-manifest\";\nimport type { PRD } from \"../prd/types\";\n\nexport interface PlanDraftInput {\n  readonly manifestSection: string;\n  readonly manifest: FactsManifest;\n  readonly specContent: string;\n  readonly codebaseContext: string;\n  readonly feature: string;\n  readonly branchName: string;\n  readonly citationThreshold: number;\n  readonly revisionFindings?: readonly VerifierFinding[];\n}\n\nexport interface PlanDraftOutput {\n  readonly prd: PRD;\n  readonly citationRate: number;\n  readonly advisory: boolean;\n}\n\nconst FAIL_OPEN_DRAFT: PlanDraftOutput = {\n  prd: { feature: \"\", project: \"\", branchName: \"\", createdAt: \"\", updatedAt: \"\", userStories: [] },\n  citationRate: 0,\n  advisory: true,\n};\n\nexport const planDraftOp: RunOperation<PlanDraftInput, PlanDraftOutput, PlanConfig> = {\n  kind: \"run\",\n  name: \"plan-draft\",\n  stage: \"plan\",\n  session: { role: \"plan\", lifetime: \"fresh\" },\n  noFallback: true,\n  config: planConfigSelector,\n  model: (_input, ctx) => ctx.config.plan?.model ?? \"fast\",\n  timeoutMs: (_input, ctx) => (ctx.config.plan?.timeoutSeconds ?? 600) * 1000,\n  retry: createDraftRetryStrategy(),\n  build(input, _ctx) {\n    return new PlanPromptBuilder().buildDraft(input);\n  },\n  parse(output, input, _ctx) {\n    return parsePlanDraft(output, input);\n  },\n};\n```\n\nThe three failure kinds and their inspectors:\n\n```typescript\ntype DraftFailureKind = \"not-json\" | \"prd-invalid\" | \"citation-low\";\nconst DEFAULT_CITATION_THRESHOLD = 0.5;\n\nfunction inspectDraftOutput(output: string): DraftInspection {\n  // Tier 1: JSON (parseLLMJson — SSOT per forbidden-patterns.md)\n  let raw: unknown;\n  try { raw = parseLLMJson(output); } catch {\n    return { ok: false, kind: \"not-json\", message: \"Response was not valid JSON...\" };\n  }\n  // Tier 2: PRD schema\n  let prd: PRD;\n  try { prd = validatePlanOutput(raw, \"\", \"\"); } catch (err) {\n    return { ok: false, kind: \"prd-invalid\", message: `...${errorMessage(err)}` };\n  }\n  // Tier 3: citation gate (against DEFAULT for diagnostic only)\n  const claims = extractClaims(output);\n  const rate = citationRate(claims);\n  if (rate < DEFAULT_CITATION_THRESHOLD) {\n    const uncited = claims.filter((c) => !c.cited).length;\n    return { ok: false, kind: \"citation-low\", message: `Citation rate ${rate.toFixed(2)} below default ${DEFAULT_CITATION_THRESHOLD} (${uncited} uncited claims).`, partial: prd, citationRate: rate };\n  }\n  return { ok: true, partial: prd, citationRate: rate };\n}\n```\n\n`parsePlanDraft` enforces the CONFIGURED threshold (from `input.citationThreshold`), while `inspectDraftOutput` uses `DEFAULT_CITATION_THRESHOLD = 0.5` for kind classification only.\n\n`PlanPromptBuilder.buildDraft(input)` includes: spec content, rendered manifest, citation requirement (\"Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from the manifest\"), existing PRD schema instructions, and if `input.revisionFindings` is set, a \"Previous draft rejected for the following issues\" section. Returns a `ComposeInput` (aligned with `RunOperation.build` contract). The builder also gains three repair-prompt static methods: `jsonRepair(isTruncated, message)`, `schemaRepair(message)`, `citationRepair(message)`.\n\n**Scope** — In: new `src/agents/retry/tiered-parse-retry.ts`, `src/agents/retry/index.ts` (re-export), new `src/operations/plan-draft.ts`, `src/prompts/builders/plan-builder.ts` (new methods). Out: critic op (US-004), orchestrator (US-005).",
+      "acceptanceCriteria": [
+        "makeTieredParseRetryStrategy exported from src/agents/retry/tiered-parse-retry.ts (and re-exported from src/agents/retry/index.ts) returns a RetryStrategy whose shouldRetry returns { retry: false } when failure is not a ParseValidationError",
+        "makeTieredParseRetryStrategy returns a RetryStrategy whose shouldRetry returns { retry: false } when ctx.lastOutput is missing",
+        "When shouldRetry(parseValidationError, attempt < maxAttempts - 1, ctx) fires, the strategy calls opts.inspect(ctx.lastOutput) exactly once, then opts.buildRetryPrompt(inspection, isTruncated) exactly once, then getSafeLogger()?.warn(opts.reviewerKind, \"Parse retry — <kind>\", { storyId, kind, isTruncated, originalByteSize }) exactly once, then returns { retry: true, delayMs: 0, nextPrompt: <buildRetryPrompt result> }",
+        "When shouldRetry(parseValidationError, attempt >= maxAttempts - 1, ctx) fires, the strategy returns { retry: false, fallback: <opts.exhaustedFallback(inspection, lastOutput) result> }",
+        "planDraftOp exported from src/operations/plan-draft.ts has kind === \"run\", name === \"plan-draft\", stage === \"plan\", session.role === \"plan\", session.lifetime === \"fresh\", noFallback === true",
+        "planDraftOp.build({ manifestSection, ..., revisionFindings: undefined }) returns a ComposeInput where task.content contains manifestSection and \"intent\", and does not contain \"Previous draft rejected\"",
+        "planDraftOp.build({ ..., revisionFindings: [{ checklistItem: \"ac-testable\", severity: \"blocker\", message: \"some finding\" }] }) returns a ComposeInput where task.content contains \"Previous draft rejected\" and the finding message",
+        "planDraftOp.model({}, { config: { plan: {} } }) returns \"fast\" (default tier)",
+        "planDraftOp.model({}, { config: { plan: { model: \"balanced\" } } }) returns \"balanced\"",
+        "planDraftOp.parse(output, input, ctx) returns { prd, citationRate, advisory: false } when output is structurally valid JSON, valid PRD, AND citation rate >= input.citationThreshold",
+        "inspectDraftOutput(\"not json\") returns { ok: false, kind: \"not-json\" }",
+        "inspectDraftOutput(validJsonInvalidPrd) returns { ok: false, kind: \"prd-invalid\", message } where message references the underlying validatePlanOutput error",
+        "inspectDraftOutput(validPrdLowCitationDefault) returns { ok: false, kind: \"citation-low\", partial, citationRate } where partial is the validated PRD and citationRate < DEFAULT_CITATION_THRESHOLD = 0.5",
+        "planDraftOp.parse(notJsonFixture, input, ctx) throws ParseValidationError",
+        "planDraftOp.parse(validJsonInvalidPrdFixture, input, ctx) throws ParseValidationError",
+        "planDraftOp.parse(validPrdLowCitationFixture, input, ctx) throws ParseValidationError with a message containing the substring \"citation rate\"; the configured input.citationThreshold (not the default) determines whether parse() throws for citation-low",
+        "createDraftRetryStrategy() returns the result of makeTieredParseRetryStrategy<PlanDraftOutput, DraftFailureKind, PRD>({ reviewerKind: \"plan-draft\", maxAttempts: 2, inspect: inspectDraftOutput, buildRetryPrompt: buildDraftRetryPrompt, exhaustedFallback })",
+        "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.jsonRepair(isTruncated, message) when kind === \"not-json\"",
+        "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.schemaRepair(message) when kind === \"prd-invalid\"",
+        "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.citationRepair(message) when kind === \"citation-low\"",
+        "The exhaustedFallback callback returns { prd: inspection.partial, citationRate: inspection.citationRate ?? 0, advisory: true } when inspection.partial is populated",
+        "The exhaustedFallback callback returns FAIL_OPEN_DRAFT when inspection.partial is undefined",
+        "makeTieredParseRetryStrategy exhaustion gate is idempotent — multiple calls with attempt >= maxAttempts - 1 all return { retry: false, fallback: ... }",
+        "planDraftOp.timeoutMs({}, { config: { plan: { timeoutSeconds: 120 } } }) returns 120000"
+      ],
+      "tags": [
+        "feature",
+        "plan",
+        "retry"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/agents/retry/parse-retry.ts",
+        "src/agents/retry/types.ts",
+        "src/operations/ground.ts",
+        "src/prompts/builders/plan-builder.ts",
+        "src/prompts/builders/grounder-builder.ts"
+      ],
+      "suggestedCriteria": [
+        "planDraftOp.parse(validPrdWithCitationAboveConfiguredThreshold, { citationThreshold: 0.3 }, ctx) returns { advisory: false } when rate 0.4 >= 0.3 even though rate < DEFAULT 0.5"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "66093c42cae6b7bdcd0c59754560f4eff19797ca"
+    },
+    {
+      "id": "US-004",
+      "title": "planCriticLlmOp + CriticPromptBuilder + \"plan-critic\" session role",
+      "description": "**Goal** — Register `\"plan-critic\"` as a canonical session role; implement the run-kind `planCriticLlmOp` for LLM judgment on `ac-testable` and `failure-modes-considered` checks; implement `CriticPromptBuilder`.\n\n**Motivation** — The LLM critic covers the two gaps mechanical checks cannot handle (per-AC testability, failure-mode coverage) with a closed checklist that cannot drift into agreement.\n\n**Approach** — Add `\"plan-critic\"` to `KNOWN_SESSION_ROLES` in `src/runtime/session-role.ts` (same pattern Phase 2 used to add `\"grounder\"`). `planDraftOp.session.role = \"plan\"` reuses the role already used by the legacy single-mode planner — no new registration needed for the drafter.\n\n**Why run-kind, not complete-kind:** every other single-turn LLM op in the codebase is run-kind (`groundOp`, `planInteractiveOp`, `semanticReviewOp`, `adversarialReviewOp`). Run-kind's exhaustion semantics also fit better: when retry exhausts, `callOp` returns the strategy's `fallback` value directly. Complete-kind throws `CALL_OP_MAX_RETRIES` at the ceiling regardless of strategy. The critic must fail open on parse exhaustion — run-kind makes that the natural path.\n\n```typescript\n// src/operations/plan-critic-llm.ts\nexport interface PlanCriticLlmInput {\n  readonly prd: PRD;\n  readonly manifest: FactsManifest;\n}\n\nexport interface PlanCriticLlmOutput {\n  readonly findings: VerifierFinding[];\n}\n\ntype CriticFailureKind = \"not-json\" | \"schema-invalid\";\n\nfunction inspectCriticOutput(output: string): CriticInspection {\n  let raw: unknown;\n  try {\n    raw = parseLLMJson(output);   // SSOT — never bare JSON.parse per forbidden-patterns.md\n  } catch {\n    return { ok: false, kind: \"not-json\", message: \"Response was not valid JSON or could not be extracted.\" };\n  }\n  if (!raw || typeof raw !== \"object\" || !Array.isArray((raw as { findings?: unknown }).findings)) {\n    return { ok: false, kind: \"schema-invalid\", message: \"Response was valid JSON but did not have a `findings` array at the root.\" };\n  }\n  const findings = ((raw as { findings: unknown[] }).findings).filter(isValidVerifierFinding);\n  return { ok: true, findings };\n}\n\nexport const planCriticLlmOp: RunOperation<PlanCriticLlmInput, PlanCriticLlmOutput, PlanConfig> = {\n  kind: \"run\",\n  name: \"plan-critic-llm\",\n  stage: \"plan\",\n  session: { role: \"plan-critic\", lifetime: \"fresh\" },\n  noFallback: true,\n  config: planConfigSelector,\n  model: (_input, ctx) => ctx.config.plan?.criticModel ?? \"fast\",\n  timeoutMs: (_input, ctx) => (ctx.config.plan?.timeoutSeconds ?? 600) * 1000,\n  build(input, _ctx) { return new CriticPromptBuilder().build(input.prd, input.manifest); },\n  parse(output, _input, _ctx) {\n    const inspection = inspectCriticOutput(output);\n    if (!inspection.ok) throw new ParseValidationError(inspection.message ?? \"critic output invalid\");\n    return { findings: inspection.findings ?? [] };\n  },\n  retry: makeTieredParseRetryStrategy<PlanCriticLlmOutput, CriticFailureKind, VerifierFinding[]>({\n    reviewerKind: \"plan-critic-llm\",\n    maxAttempts: 2,\n    inspect: inspectCriticOutput,\n    buildRetryPrompt: buildCriticRetryPrompt,\n    exhaustedFallback: () => ({ findings: [] }),\n  }),\n};\n\nfunction buildCriticRetryPrompt(inspection: CriticInspection, isTruncated: boolean): string {\n  switch (inspection.kind) {\n    case \"not-json\":       return CriticPromptBuilder.jsonRepair(isTruncated, inspection.message);\n    case \"schema-invalid\": return CriticPromptBuilder.schemaRepair(inspection.message);\n    default:               return CriticPromptBuilder.jsonRepair(false, \"Re-emit JSON of shape `{ findings: [...] }`.\");\n  }\n}\n```\n\n`CriticPromptBuilder.build(prd, manifest)` returns a prompt asking the LLM to audit: (1) for each AC, is the assertion observable (file/symbol/test reference)? emit `ac-testable` findings; (2) for each story, is there at least one negative-path AC? emit `failure-modes-considered` findings. Output: JSON `{ findings: [{ checklistItem, severity, message, storyId }] }`. Lives in `src/prompts/builders/critic-builder.ts`.\n\n**Scope** — In: `src/runtime/session-role.ts` (new role), new `src/operations/plan-critic-llm.ts`, new `src/prompts/builders/critic-builder.ts`. Out: critic orchestration + revision loop (US-005).",
+      "acceptanceCriteria": [
+        "KNOWN_SESSION_ROLES exported from src/runtime/session-role.ts includes \"plan-critic\" as a CanonicalSessionRole member",
+        "planCriticLlmOp exported from src/operations/plan-critic-llm.ts has kind === \"run\", name === \"plan-critic-llm\", stage === \"plan\", session.role === \"plan-critic\", noFallback === true",
+        "planCriticLlmOp.build({ prd, manifest }, _ctx) returns a ComposeInput with non-empty role.content and task.content (RunOperation contract)",
+        "planCriticLlmOp.model({}, { config: { plan: {} } }) returns \"fast\" (schema default)",
+        "planCriticLlmOp.model({}, { config: { plan: { criticModel: \"balanced\" } } }) returns \"balanced\"",
+        "inspectCriticOutput returns { ok: true, findings } for the input '```json\\n{\"findings\":[]}\\n```' (markdown-fenced JSON parses successfully — verifies parseLLMJson is used; bare JSON.parse would have thrown here)",
+        "inspectCriticOutput(\"not json\") returns { ok: false, kind: \"not-json\" }",
+        "inspectCriticOutput('{\"other\":\"x\"}') returns { ok: false, kind: \"schema-invalid\" }",
+        "planCriticLlmOp.parse('{\"findings\":[]}', _, _) returns { findings: [] }",
+        "planCriticLlmOp.parse(\"not json\", _, _) throws ParseValidationError",
+        "planCriticLlmOp.parse('{\"other\":\"x\"}', _, _) throws ParseValidationError",
+        "planCriticLlmOp.retry is the value returned by makeTieredParseRetryStrategy({ reviewerKind: \"plan-critic-llm\", maxAttempts: 2, inspect: inspectCriticOutput, buildRetryPrompt: buildCriticRetryPrompt, exhaustedFallback: () => ({ findings: [] }) })",
+        "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.jsonRepair(isTruncated, message) when kind === \"not-json\"",
+        "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.schemaRepair(message) when kind === \"schema-invalid\"",
+        "new CriticPromptBuilder().build(prd, manifest) returns a string containing the substrings \"ac-testable\", \"failure-modes-considered\", AND the literal prd.feature value",
+        "planCriticLlmOp.parse output with findings array containing mixed valid/invalid entries returns only the valid entries (per-finding validation drops bad entries silently)",
+        "CanonicalSessionRole type in src/runtime/session-role.ts includes \"plan-critic\" (compile-time union membership)",
+        "planCriticLlmOp.timeoutMs({}, { config: { plan: { timeoutSeconds: 300 } } }) returns 300000"
+      ],
+      "tags": [
+        "feature",
+        "plan",
+        "llm"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/runtime/session-role.ts",
+        "src/operations/ground.ts",
+        "src/operations/semantic-review.ts",
+        "src/prompts/builders/grounder-builder.ts",
+        "src/plan/spec-deltas.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ae2e8c10be6c2f5307c0c60c48f2bc3a6bc16afe"
+    },
+    {
+      "id": "US-005",
+      "title": "runPlanPipeline orchestrator + runPlanCritic helper",
+      "description": "**Goal** — Implement `runPlanCritic` composing mechanical checks → optional LLM judgment → one-round revision; implement `runPlanPipeline` sequencing `groundOp → planDraftOp → runPlanCritic`; replace the US-001 stub.\n\n**Motivation** — The orchestrator is the final integration layer that sequences all pipeline ops and emits the verified PRD; replacing the stub completes the feature.\n\n**Approach** — `runPlanCritic` is a helper in `src/plan/critic.ts` (NOT an op — it orchestrates ops + pure functions):\n\n```typescript\n// src/plan/critic.ts\nexport interface PlanCriticInput {\n  readonly prd: PRD;\n  readonly manifest: FactsManifest;\n  readonly workdir: string;\n  readonly runId: string;\n  readonly storyId: string;\n  readonly config: NaxConfig;\n  readonly callCtx: CallContext;\n  readonly draftCtx: PlanDraftInput;         // for one-round revision\n}\n\nexport interface PlanCriticVerdict {\n  readonly outcome: \"passed\" | \"failed\";\n  readonly prd: PRD;\n  readonly findings: VerifierFinding[];\n  readonly specDeltasPath?: string;\n}\n\nexport async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticVerdict> {\n  // 1. Run mechanical checks (extracted functions from US-002)\n  const threshold = input.config.plan?.citationThreshold ?? 0.5;\n  const mechFindings = [\n    ...checkFilesExist(input.prd, input.workdir),\n    ...checkAcAnchored(input.prd),\n    ...checkClaimsCited(input.manifest, threshold),\n    ...checkNoContradictions(input.prd, input.manifest),\n    ...checkSpecCoverage(input.manifest),\n  ];\n\n  // 2. Mechanical blockers → emit spec-deltas, abort (no LLM call)\n  const mechBlockers = mechFindings.filter((f) => f.severity === \"blocker\");\n  if (mechBlockers.length > 0) {\n    const path = await emitSpecDeltas(input, mechBlockers);\n    return { outcome: \"failed\", prd: input.prd, findings: mechFindings, specDeltasPath: path };\n  }\n\n  // 3. Run LLM judgment (ac-testable, failure-modes-considered)\n  let llmFindings: VerifierFinding[] = [];\n  try {\n    const llmResult = await callOp(input.callCtx, planCriticLlmOp, { prd: input.prd, manifest: input.manifest });\n    llmFindings = llmResult.findings;\n  } catch (err) {\n    logger.warn(\"plan-critic\", \"LLM critic failed — proceeding with mechanical findings only\", { storyId: input.storyId, error: errorMessage(err) });\n  }\n  const allFindings = [...mechFindings, ...llmFindings];\n\n  // 4. Apply one-round revision if any blocker findings from LLM\n  const allBlockers = allFindings.filter((f) => f.severity === \"blocker\");\n  if (allBlockers.length === 0) return { outcome: \"passed\", prd: input.prd, findings: allFindings };\n\n  const revisedDraft = await callOp(input.callCtx, planDraftOp, {\n    ...input.draftCtx,\n    revisionFindings: allBlockers,\n  });\n\n  // Re-run mechanical checks on revision (LLM checks NOT re-run — one round budget)\n  const revFindings = [\n    ...checkFilesExist(revisedDraft.prd, input.workdir),\n    ...checkAcAnchored(revisedDraft.prd),\n    ...checkClaimsCited(input.manifest, threshold),\n    ...checkNoContradictions(revisedDraft.prd, input.manifest),\n    ...checkSpecCoverage(input.manifest),\n  ];\n  const revBlockers = revFindings.filter((f) => f.severity === \"blocker\");\n  if (revBlockers.length === 0) return { outcome: \"passed\", prd: revisedDraft.prd, findings: revFindings };\n\n  const path = await emitSpecDeltas(input, revBlockers);\n  return { outcome: \"failed\", prd: revisedDraft.prd, findings: revFindings, specDeltasPath: path };\n}\n```\n\n`emitSpecDeltas` reuses `formatSpecDeltas` from `src/plan/spec-deltas.ts` and writes to `.nax/runs/<runId>/plan/<storyId>/spec-deltas.md`.\n\n`runPlanPipeline` sequences three ops:\n\n```typescript\nasync function runPlanPipeline(workdir, config, options) {\n  const rt = createPlanRuntime(config, workdir, options.feature);\n  try {\n    // Phase 1 — ground\n    const manifest = await callOp(callCtx, groundOp, { specContent, codebaseContext, workdir });\n\n    // Phase 2 — draft (citation-gated parse)\n    const prd = await callOp(callCtx, planDraftOp, {\n      manifestSection: renderManifestSection(manifest),\n      manifest,\n      specContent,\n      codebaseContext,\n      feature: options.feature,\n      branchName,\n      citationThreshold: config.plan?.citationThreshold ?? 0.5,\n    });\n\n    // Phase 3 — critic + optional revision\n    const verdict = await runPlanCritic({ prd: prd.prd, manifest, workdir, runId: rt.runId, storyId, config, callCtx, draftCtx });\n    if (verdict.outcome === \"failed\") {\n      throw new NaxError(`Plan rejected by critic: see ${verdict.specDeltasPath}`, \"PLAN_CRITIC_BLOCKED\", {\n        stage: \"plan\", storyId, specDeltasPath: verdict.specDeltasPath,\n      });\n    }\n    await Bun.write(outputPath, JSON.stringify(verdict.prd, null, 2));\n    return outputPath;\n  } finally {\n    await rt.close().catch(() => {});\n  }\n}\n```\n\nWhen `groundOp` throws, propagate wrapped as `NaxError` with code `PLAN_PIPELINE_GROUND_FAILED`. The pipeline runs per-feature (single-story dispatch, matching debate behavior). `storyId` for run-scoped artifacts is the feature name — same convention `plan-checklist.ts` already uses.\n\n**Scope** — In: new `src/plan/critic.ts`, `src/cli/plan.ts` (`runPlanPipeline` replacing the stub, `resolvePlanMode` call), tests. Out: nothing — this story completes the feature.",
+      "acceptanceCriteria": [
+        "runPlanCritic(input) exported from src/plan/critic.ts returns { outcome: \"failed\", prd, findings, specDeltasPath } when mechanical checks produce at least one severity === \"blocker\" finding; the returned specDeltasPath points to .nax/runs/<runId>/plan/<storyId>/spec-deltas.md and the file has been written at that path",
+        "When mechanical checks produce blockers, runPlanCritic does NOT invoke planCriticLlmOp (verified by spy/mock — the LLM op is called zero times)",
+        "When mechanical checks pass and planCriticLlmOp returns zero blockers, runPlanCritic returns { outcome: \"passed\", prd: input.prd, findings: [...mechFindings, ...llmFindings] } with no specDeltasPath",
+        "When mechanical checks pass and planCriticLlmOp returns at least one severity === \"blocker\" finding, runPlanCritic invokes callOp(callCtx, planDraftOp, { ...draftCtx, revisionFindings }) exactly once with the blockers passed as revisionFindings",
+        "After the revision draft passes mechanical checks, runPlanCritic returns { outcome: \"passed\", prd: revisedDraft.prd, ... }",
+        "After the revision draft still has mechanical blockers, runPlanCritic returns { outcome: \"failed\", prd: revisedDraft.prd, ..., specDeltasPath } and does NOT re-invoke planCriticLlmOp",
+        "When planCriticLlmOp throws (LLM failure), runPlanCritic logs a warning with storyId and proceeds as if zero LLM findings were produced (fail-open)",
+        "runPlanPipeline(workdir, config, options) exported from src/cli/plan.ts calls callOp(callCtx, groundOp, ...) exactly once before any other op",
+        "runPlanPipeline calls callOp(callCtx, planDraftOp, ...) with manifest set to the result of the groundOp call and citationThreshold set to config.plan?.citationThreshold ?? 0.5",
+        "runPlanPipeline calls runPlanCritic after planDraftOp returns",
+        "When runPlanCritic returns outcome === \"passed\", runPlanPipeline writes the verdict's prd to .nax/features/<feature>/prd.json and returns that path",
+        "When runPlanCritic returns outcome === \"failed\", runPlanPipeline throws NaxError with code === \"PLAN_CRITIC_BLOCKED\" and context.specDeltasPath equal to the verdict's specDeltasPath",
+        "When groundOp throws, runPlanPipeline propagates the error wrapped as NaxError with code === \"PLAN_PIPELINE_GROUND_FAILED\" and context.cause set to the original error",
+        "runPlanPipeline closes its createPlanRuntime runtime via rt.close() in a finally block regardless of success or failure",
+        "After US-005 lands, planCommand() with resolvePlanMode() === \"pipeline\" no longer throws PLAN_PIPELINE_NOT_IMPLEMENTED — it returns the path written by runPlanPipeline",
+        "runPlanCritic re-runs all five mechanical checks on the revised draft (not only the checks that originally failed)",
+        "runPlanPipeline with config.plan.mode === \"pipeline\" and debate.enabled === true does not invoke the debate runner (verified by mock — DebateRunner is called zero times)",
+        "When planDraftOp returns advisory: true (exhausted fallback), runPlanPipeline still proceeds to runPlanCritic (does not abort on advisory flag)",
+        "runPlanPipeline uses the feature name as the storyId for all artifact paths (matching plan-checklist.ts convention)"
+      ],
+      "tags": [
+        "feature",
+        "plan",
+        "orchestration"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/cli/plan-runtime.ts",
+        "src/operations/call.ts",
+        "src/plan/spec-deltas.ts",
+        "src/debate/facts-manifest.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d4749cb2941642086f77566de347065cac7181ec"
+    }
+  ],
+  "analysis": "## Codebase Analysis\n\n### Key findings from exploration\n\n**Config schema (`src/config/schemas-infra.ts:10-16`):**\n`PlanConfigSchema` currently has four fields: `model`, `outputPath`, `timeoutSeconds`, `decomposeTimeoutSeconds`. The new `mode`, `citationThreshold`, and `criticModel` fields must be added here (not in `schemas.ts`, which only references this schema). The `planConfigSelector` and `PlanConfig` type alias in `src/config/selectors.ts:24,117` use `ReturnType` inference, so new fields auto-propagate once the schema is extended — no manual type edits needed.\n\n**Plan CLI (`src/cli/plan.ts:140-160`):**\nThe current dispatch is a single `debateEnabled` boolean derived from `config?.debate?.enabled && config?.debate?.stages?.plan?.enabled` (line 142). The new `resolvePlanMode()` function replaces this with a three-way resolution and slots before the existing `if (debateEnabled)` branch. The function is already exported from `./plan-runtime` for backward compat (re-export pattern at line 25).\n\n**Check functions (`src/debate/verifiers/plan-checklist.ts`):**\nAll five check functions (`checkFilesExist`, `checkAcAnchored`, `checkClaimsCited`, `checkNoContradictions`, `checkSpecCoverage`) are already implemented as module-private functions. The refactor is to move them to a new `src/debate/verifiers/checks.ts` and export them; `plan-checklist.ts` becomes a thin adapter. The `_planChecklistDeps` injection pattern for `existsSync` must be preserved (or the `CheckDeps` parameter approach from the spec must be used). Critical: `checkFilesExist` currently uses `_planChecklistDeps.existsSync` — the new `CheckDeps` injection in the extracted function must replicate this testability.\n\n**Retry infrastructure (`src/agents/retry/parse-retry.ts`, `src/agents/retry/types.ts`):**\n`makeParseRetryStrategy` supports only two prompt kinds (`invalid`/`truncated`). The new `makeTieredParseRetryStrategy` needs three kinds (per op: `not-json`, `prd-invalid`, `citation-low` for drafter; `not-json`, `schema-invalid` for critic). The helper must be added at `src/agents/retry/tiered-parse-retry.ts` and exported from `src/agents/retry/index.ts`.\n\nIMPORTANT: The retry-strategy.md rule states run-kind ops using `sendWithParseRetry` receive a synthetic `ParseValidationError` probe — the strategy must re-parse `ctx.lastOutput` to determine validity. The tiered helper's `inspect` function is the per-op re-parser. The `inspectDraftOutput` / `inspectCriticOutput` helpers are the output-only inspectors — they must NOT reference `input` (the `RetryContext` doesn't carry op input).\n\n**Session roles (`src/runtime/session-role.ts`):**\n`CanonicalSessionRole` is a union type at line 9-27; `KNOWN_SESSION_ROLES` is an array at line 31-50. Both need `\"plan-critic\"` added. The `\"grounder\"` role (Phase 2) is the precedent. The `\"plan\"` role (line 21/42) already exists — `planDraftOp` reuses it.\n\n**Operations pattern (`src/operations/ground.ts`):**\nThe grounder op uses `inspectGrounderOutput` (output-only, no `input` param) + per-kind repair prompt builder. The `parse()` throws `NaxError` (NOT `ParseValidationError`) — the strategy discriminates on `instanceof ParseValidationError` so they're distinct. The spec's `planDraftOp.parse()` throws `ParseValidationError` — this is intentional and required for the retry strategy to fire.\n\n**Prompt builder (`src/prompts/builders/plan-builder.ts`):**\nExisting `PlanPromptBuilder.build()` returns `{ taskContext, outputFormat }` (a `PlanningPromptParts` object). The new `buildDraft()` method returns `ComposeInput` — a different shape. This is consistent with the spec's design and the distinction between debate-mode (needs separable parts) and pipeline-mode (single unified prompt).\n\n### Risk areas\n\n1. **`checkFilesExist` deps injection**: The current implementation uses module-level `_planChecklistDeps.existsSync`. The new `CheckDeps` parameter approach must maintain testability without breaking the debate path's injection.\n2. **`planDraftOp.parse()` throws `ParseValidationError`**: Unlike `groundOp` which throws `NaxError`, the drafter must throw `ParseValidationError` for the retry strategy to fire. Both throw on failure but the type differs.\n3. **`makeTieredParseRetryStrategy` `inspect` output-only contract**: The `inspect` function signature is `(output: string) => TieredInspection<TKind, TPartial>` — no `input` parameter. `inspectDraftOutput` uses `DEFAULT_CITATION_THRESHOLD = 0.5` for kind classification (not the configured threshold); `parse()` uses the configured threshold authoritatively. This dual-threshold design must be documented at the call site.\n4. **`runPlanCritic` LLM fail-open**: When `planCriticLlmOp` throws, `runPlanCritic` must catch and log a warning, then proceed with mechanical findings only. This is explicitly NOT surfaced as an error to the pipeline.\n5. **One-round revision budget**: After the revision, mechanical checks re-run but LLM critic does NOT. This asymmetry must be clearly encoded in `runPlanCritic`."
+}

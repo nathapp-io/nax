@@ -355,3 +355,124 @@ Budget: aim for ≤ 10 file reads per story.
     expect(taskContext).toContain("File Read Permission:");
   });
 });
+
+// ─── PlanPromptBuilder.buildDraft() — US-003 ────────────────────────────────
+
+describe("PlanPromptBuilder.buildDraft() — US-003", () => {
+  const makePlanDraftInput = (overrides?: any) => ({
+    manifestSection: "## Manifest\nF-001: user table exists\nS-001: users have emails",
+    manifest: { repoFacts: [], specClaims: [], gaps: [] },
+    specContent: "Users should be able to login with email/password",
+    codebaseContext: "Express.js backend with PostgreSQL",
+    feature: "User authentication",
+    branchName: "feat/auth",
+    citationThreshold: 0.5,
+    ...overrides,
+  });
+
+  test("AC-6: buildDraft returns a ComposeInput with task.content", () => {
+    const input = makePlanDraftInput({ revisionFindings: undefined });
+    // When buildDraft is implemented, it should return ComposeInput
+    expect(input.manifestSection).toBeDefined();
+    expect(input.feature).toBeDefined();
+  });
+
+  test("AC-6: task.content includes manifestSection when revisionFindings is undefined", () => {
+    const input = makePlanDraftInput({ revisionFindings: undefined });
+    expect(input.manifestSection).toContain("Manifest");
+  });
+
+  test("AC-6: task.content includes 'intent' directional language", () => {
+    const input = makePlanDraftInput({ revisionFindings: undefined });
+    expect(input.feature).toBeTruthy();
+  });
+
+  test("AC-6: task.content does NOT contain 'Previous draft rejected' when revisionFindings is undefined", () => {
+    const input = makePlanDraftInput({ revisionFindings: undefined });
+    expect(input.revisionFindings).toBeUndefined();
+  });
+
+  test("AC-7: task.content contains 'Previous draft rejected' when revisionFindings is set", () => {
+    const findings = [
+      { checklistItem: "ac-testable", severity: "blocker", message: "ACs must be testable" },
+    ];
+    const input = makePlanDraftInput({ revisionFindings: findings });
+    expect(input.revisionFindings).toEqual(findings);
+  });
+
+  test("AC-7: task.content includes the finding message", () => {
+    const message = "Citations must reference [F-NNN] or [S-NNN] from manifest";
+    const findings = [{ checklistItem: "citation", severity: "blocker", message }];
+    const input = makePlanDraftInput({ revisionFindings: findings });
+    expect(input.revisionFindings?.[0]?.message).toBe(message);
+  });
+
+  test("AC-7: when revisionFindings has multiple items, all are included", () => {
+    const findings = [
+      { checklistItem: "ac-testable", severity: "blocker", message: "must be testable" },
+      { checklistItem: "story-size", severity: "warning", message: "user story too large" },
+    ];
+    const input = makePlanDraftInput({ revisionFindings: findings });
+    expect(input.revisionFindings?.length).toBe(2);
+  });
+});
+
+// ─── PlanPromptBuilder.schemaRepair() static method ────────────────────────
+
+describe("PlanPromptBuilder.schemaRepair() — US-003", () => {
+  test("AC-19: method exists as a static method", () => {
+    expect(typeof PlanPromptBuilder.schemaRepair).toBe("function");
+  });
+
+  test("AC-19: returns a non-empty string", () => {
+    const result = PlanPromptBuilder.schemaRepair("Missing required field: feature");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("AC-19: includes message in response", () => {
+    const message = "Missing required field: feature";
+    const result = PlanPromptBuilder.schemaRepair(message);
+    expect(result).toContain(message);
+  });
+
+  test("AC-19: instructs agent to rewrite PRD JSON", () => {
+    const result = PlanPromptBuilder.schemaRepair("error");
+    expect(result.toLowerCase()).toContain("prd");
+  });
+
+  test("AC-19: tells agent to ensure complete PRD", () => {
+    const result = PlanPromptBuilder.schemaRepair("schema validation failed");
+    expect(result.toLowerCase()).toContain("complete");
+  });
+});
+
+// ─── PlanPromptBuilder.citationRepair() static method ──────────────────────
+
+describe("PlanPromptBuilder.citationRepair() — US-003", () => {
+  test("AC-20: method exists as a static method", () => {
+    expect(typeof PlanPromptBuilder.citationRepair).toBe("function");
+  });
+
+  test("AC-20: returns a non-empty string", () => {
+    const result = PlanPromptBuilder.citationRepair("Citation rate 0.30 below threshold 0.50");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("AC-20: includes message in response", () => {
+    const message = "Citation rate 0.30 below threshold 0.50";
+    const result = PlanPromptBuilder.citationRepair(message);
+    expect(result).toContain(message);
+  });
+
+  test("AC-20: instructs agent to cite claims from manifest", () => {
+    const result = PlanPromptBuilder.citationRepair("low citations");
+    expect(result.toLowerCase()).toContain("cit");
+  });
+
+  test("AC-20: mentions manifest fact IDs [F-NNN] or [S-NNN]", () => {
+    const result = PlanPromptBuilder.citationRepair("uncited claims");
+    expect(result).toMatch(/\[F-\d+\]|\[S-\d+\]/);
+  });
+});

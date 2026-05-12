@@ -8,7 +8,7 @@ Add a third `nax plan` orchestration mode — `pipeline` — that runs `ground �
 
 Enhanced-debate Phase 2 added the grounder and a `verifier-pick` selector that ranks proposals by citation rate, but the structural failure persists: N debaters consume the manifest in parallel, then a synthesis resolver merges them with LLM judgment. The manifest's grounding gets diluted by convergence pressure — same-model proposers agree on the same hallucinations the manifest flagged. The gap analysis in [`docs/reports/enhanced-debate-phase-2-gap-analysis.md`](../reports/enhanced-debate-phase-2-gap-analysis.md) confirms the grounder runs correctly end-to-end but does not measurably improve final PRD quality.
 
-The pipeline addresses this by removing the N-proposer fan-out entirely. One drafter consumes the manifest, emits a citation-bearing PRD; one critic runs the mechanical checklist plus targeted LLM judgment on AC testability. The drafter's `parse()` rejects outputs whose PRD-claim citation rate falls below threshold — wiring [`src/debate/citations.ts`](../../src/debate/citations.ts), which currently has no caller. The critic's closed checklist cannot drift into agreement: it isn't proposing alternatives, it's checking against rules.
+The pipeline addresses this by removing the N-proposer fan-out entirely. One drafter consumes the manifest, emits a citation-bearing PRD; one critic runs the mechanical checklist plus targeted LLM judgment on AC testability. The drafter's `parse()` rejects outputs whose PRD-claim citation rate falls below threshold — adding a plan-draft citation gate caller for [`src/debate/citations.ts`](../../src/debate/citations.ts) in addition to the existing verifier-pick caller. The critic's closed checklist cannot drift into agreement: it isn't proposing alternatives, it's checking against rules.
 
 Pipeline mode is opt-in. Users on `debate` continue to get debate-asymmetric composition; users on `single` continue to get today's single-call planner. Pipeline is a third orchestration shape behind a config flag for safe rollout and measurement.
 
@@ -199,7 +199,7 @@ Land the shared abstraction at `src/agents/retry/tiered-parse-retry.ts`:
 
 ```typescript
 // src/agents/retry/tiered-parse-retry.ts
-import { ParseValidationError } from "./errors";
+import { ParseValidationError } from "./types";
 import { looksLikeTruncatedJson } from "@/review/truncation";
 import { getSafeLogger } from "@/logger";
 import type { RetryStrategy } from "./types";
@@ -566,8 +566,8 @@ export async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticV
 
 ```typescript
 export class PlanPromptBuilder {
-  build(input: PlanInput): { prompt: string };               // existing — single mode
-  buildDraft(input: PlanDraftInput): { prompt: string };     // NEW — pipeline mode draft
+  build(input: PlanInput): ComposeInput;                      // existing — single mode
+  buildDraft(input: PlanDraftInput): ComposeInput;            // NEW — pipeline mode draft
 }
 ```
 
@@ -675,10 +675,11 @@ Pipeline runs single-story per feature, matching `nax plan` semantics today. `st
 
 ### US-001: `config.plan.mode` schema + pipeline branch stub
 
-- `NaxConfigSchema.parse({ plan: { mode } })` returns `result.plan.mode === mode` for each of `mode ∈ { "single", "debate", "pipeline" }`
-- `NaxConfigSchema.parse({ plan: { mode: "unknown" } })` and `NaxConfigSchema.parse({ plan: { citationThreshold: 1.5 } })` each throw a `ZodError`
-- `NaxConfigSchema.parse({ plan: {} })` returns `{ mode: undefined, citationThreshold: 0.5, criticModel: "fast" }` (`mode` has no default; threshold and criticModel apply schema defaults)
-- `NaxConfigSchema.parse({ plan: { citationThreshold: 0.7, criticModel: "balanced" } })` returns those values verbatim (user overrides preserved)
+- `NaxConfigSchema.parse({})` returns defaults where `result.plan.mode === undefined`, `result.plan.citationThreshold === 0.5`, and `result.plan.criticModel === "fast"` (default-driven contract)
+- `PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: "single" }).mode === "single"` (same assertion for `"debate"` and `"pipeline"`)
+- `PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: "unknown" })` throws a `ZodError`
+- `PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 1.5 })` throws a `ZodError`
+- `PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 0.7, criticModel: "balanced" })` preserves user overrides
 - `resolvePlanMode({ plan: { mode: "pipeline" } })` returns `"pipeline"`
 - `resolvePlanMode({ plan: { mode: "single" }, debate: { enabled: true, stages: { plan: { enabled: true } } } })` returns `"single"` (explicit `plan.mode` wins over `debate.enabled`)
 - `resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } })` returns `"debate"` (legacy precedence preserved)
@@ -726,7 +727,7 @@ Pipeline runs single-story per feature, matching `nax plan` semantics today. `st
 
 - `KNOWN_SESSION_ROLES` exported from `src/runtime/session-role.ts` includes `"plan-critic"` as a `CanonicalSessionRole` member
 - `planCriticLlmOp` exported from `src/operations/plan-critic-llm.ts` has `kind === "run"`, `name === "plan-critic-llm"`, `stage === "plan"`, `session.role === "plan-critic"`, `noFallback === true`
-- `planCriticLlmOp.build({ prd, manifest }, _ctx)` returns a non-empty `string` (RunOperation contract — not the `{ prompt }` shape used by CompleteOperation)
+- `planCriticLlmOp.build({ prd, manifest }, _ctx)` returns a `ComposeInput` with non-empty `role.content` and `task.content` (RunOperation contract)
 - `planCriticLlmOp.model({}, { config: { plan: {} } })` returns `"fast"` (schema default); `planCriticLlmOp.model({}, { config: { plan: { criticModel: "balanced" } } })` returns `"balanced"`
 - `inspectCriticOutput` returns `{ ok: true, findings }` for valid input shapes, including markdown-fenced JSON (`'```json\n{"findings":[]}\n```'` parses successfully — verifies `parseLLMJson` is used; bare `JSON.parse` would have thrown here)
 - `inspectCriticOutput("not json")` returns `{ ok: false, kind: "not-json" }`; `inspectCriticOutput('{"other":"x"}')` returns `{ ok: false, kind: "schema-invalid" }`

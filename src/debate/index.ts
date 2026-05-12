@@ -40,8 +40,13 @@ export {
   reviewGroundingFilterVerifier,
   planChecklistVerifier,
   _planChecklistDeps,
+  checkFilesExist,
+  checkAcAnchored,
+  checkClaimsCited,
+  checkNoContradictions,
+  checkSpecCoverage,
 } from "./verifiers";
-export type { PostDebateVerifierContext, PostDebateVerifier, PostDebateVerifierResult } from "./verifiers";
+export type { PostDebateVerifierContext, PostDebateVerifier, PostDebateVerifierResult, CheckDeps } from "./verifiers";
 export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
 export { DebatePromptBuilder } from "../prompts";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "../prompts";

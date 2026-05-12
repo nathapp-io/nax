@@ -90,6 +90,7 @@ export const _planDeps = {
     const { runPrecheck } = await import("../precheck");
     return runPrecheck(config, prd, opts);
   },
+  getLogger: () => getLogger(),
   processExit: (code: number): never => process.exit(code),
   planDecompose: (
     workdir: string,

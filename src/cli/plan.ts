@@ -11,10 +11,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
-import { callOp, planInteractiveOp } from "../operations";
+import { callOp, groundOp, planDraftOp, planInteractiveOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
@@ -23,6 +24,25 @@ import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-ru
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
 export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mode resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve which orchestration mode to use for the plan command.
+ *
+ * Resolution order:
+ * 1. config.plan.mode (explicit user override)
+ * 2. debate (both debate.enabled and stages.plan.enabled must be true)
+ * 3. single (default)
+ */
+export function resolvePlanMode(config: NaxConfig): "single" | "debate" | "pipeline" {
+  const explicit = config?.plan?.mode;
+  if (explicit) return explicit;
+  if (config?.debate?.enabled && config?.debate?.stages?.plan?.enabled) return "debate";
+  return "single";
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plan options
@@ -138,8 +158,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
-  // Debate fires whenever config.debate.enabled + stages.plan.enabled.
-  const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+  // Resolve orchestration mode.
+  const planMode = resolvePlanMode(config);
 
   // Initialize interaction chain before debate/op dispatch so destroy() always runs in finally.
   const headless = !process.stdin.isTTY;
@@ -156,6 +176,13 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       } catch {}
     }
     const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
+
+    if (planMode === "pipeline") {
+      return await runPlanPipeline(workdir, config, options);
+    }
+
+    // Derive debateEnabled from resolved mode so the two-branch check below is consistent.
+    const debateEnabled = planMode === "debate";
 
     if (debateEnabled) {
       // Debate path: run N agents in parallel via DebateRunner.runPlan().
@@ -318,6 +345,115 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     }
   } finally {
     if (interactionChain) await interactionChain.destroy().catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline mode — US-005
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Asymmetric pipeline plan mode.
+ * Runs mechanical checks + LLM judgment (runPlanCritic) to produce a validated PRD.
+ */
+export async function runPlanPipeline(
+  workdir: string,
+  config: NaxConfig,
+  options: PlanCommandOptions,
+): Promise<string> {
+  const debateEnabled = config?.debate?.enabled === true;
+  if (debateEnabled) {
+    _planDeps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
+      mode: "pipeline",
+      debateEnabled: true,
+    });
+  }
+
+  const { runPlanCritic } = await import("../plan/critic");
+  const logger = _planDeps.getLogger();
+
+  const specContent = await _planDeps.readFile(options.from);
+  const [sourceRoots, pkg] = await Promise.all([
+    _planDeps.scanSourceRoots(workdir),
+    _planDeps.readPackageJson(workdir),
+  ]);
+  const normalizedRoots = sourceRoots.map((root) => ({
+    ...root,
+    path: root.path.startsWith("/") ? root.path.replace(`${workdir}/`, "") : root.path,
+  }));
+  const codebaseContext = buildSourceRootsSection(normalizedRoots);
+
+  const branchName = options.branch ?? `feat/${options.feature}`;
+  const naxDir = join(workdir, ".nax");
+  const outputDir = join(naxDir, "features", options.feature);
+  const outputPath = join(outputDir, "prd.json");
+  await _planDeps.mkdirp(outputDir);
+
+  const projectName = pkg?.name && typeof pkg.name === "string" ? pkg.name : options.feature;
+
+  const rt = createPlanRuntime(config, workdir, options.feature);
+  try {
+    const callCtx = {
+      runtime: rt,
+      packageView: rt.packages.resolve(),
+      packageDir: workdir,
+      agentName: rt.agentManager.getDefault(),
+      storyId: options.feature,
+      featureName: options.feature,
+    } satisfies import("../operations/types").CallContext;
+
+    // Phase 1 — ground
+    let manifest: import("../debate/facts-manifest").FactsManifest;
+    try {
+      manifest = await callOp(callCtx, groundOp, { specContent, codebaseContext, workdir });
+    } catch (err) {
+      throw new NaxError("Plan pipeline: grounder failed", "PLAN_PIPELINE_GROUND_FAILED", {
+        stage: "plan",
+        cause: err,
+      });
+    }
+
+    // Phase 2 — draft
+    const citationThreshold = config?.plan?.citationThreshold ?? 0.5;
+    const manifestSection = renderManifestSection(manifest);
+    const draftCtx = {
+      manifestSection,
+      manifest,
+      specContent,
+      codebaseContext,
+      feature: options.feature,
+      branchName,
+      citationThreshold,
+    };
+    const draft = await callOp(callCtx, planDraftOp, draftCtx);
+
+    // Phase 3 — critic
+    const verdict = await runPlanCritic({
+      prd: draft.prd,
+      manifest,
+      workdir,
+      runId: rt.runId,
+      storyId: options.feature,
+      config,
+      callCtx,
+      draftCtx,
+    });
+
+    if (verdict.outcome === "passed") {
+      await _planDeps.writeFile(outputPath, JSON.stringify({ ...verdict.prd, project: projectName }, null, 2));
+      logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
+      return outputPath;
+    }
+
+    throw new NaxError(
+      verdict.specDeltasPath
+        ? `Plan pipeline failed; see ${verdict.specDeltasPath}`
+        : "Plan pipeline failed with no spec-deltas path",
+      "PLAN_CRITIC_BLOCKED",
+      { stage: "plan", specDeltasPath: verdict.specDeltasPath },
+    );
+  } finally {
+    await rt.close().catch(() => {});
   }
 }
 

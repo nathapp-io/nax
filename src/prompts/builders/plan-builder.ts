@@ -20,8 +20,28 @@ import {
   TEST_STRATEGY_GUIDE,
   getAcQualityRules,
 } from "@/config";
+import type { ComposeInput } from "../compose";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Revision finding from a verifier — passed to buildDraft when revising a rejected draft. */
+export interface PlanDraftVerifierFinding {
+  readonly checklistItem: string;
+  readonly severity: string;
+  readonly message?: string;
+  [key: string]: unknown;
+}
+
+/** Input for PlanPromptBuilder.buildDraft(). */
+export interface PlanDraftBuildInput {
+  readonly manifestSection: string;
+  readonly specContent: string;
+  readonly codebaseContext: string;
+  readonly feature: string;
+  readonly branchName: string;
+  readonly citationThreshold: number;
+  readonly revisionFindings?: readonly PlanDraftVerifierFinding[];
+}
 
 /** Compact per-package summary for the planning prompt. */
 export interface PackageSummary {
@@ -71,6 +91,34 @@ Parse error: ${parseError}
 Please re-write the complete PRD JSON from scratch. The JSON must be valid and complete — do not truncate it.
 
 Write the complete PRD JSON to the output file path specified in your instructions, then reply with a brief confirmation.`;
+  }
+
+  /**
+   * Schema repair prompt — instructs the agent to fix a PRD that failed schema validation.
+   */
+  static schemaRepair(message: string): string {
+    return `Your previous response was valid JSON but failed PRD schema validation.
+
+Schema error: ${message}
+
+Please re-write the complete PRD JSON from scratch, ensuring it conforms to the required schema. The PRD must be valid and complete — do not truncate it.
+
+Output ONLY the JSON object. Do not include markdown fences or explanation.`;
+  }
+
+  /**
+   * Citation repair prompt — instructs the agent to add citations from the manifest.
+   */
+  static citationRepair(message: string): string {
+    return `Your previous response did not meet the citation requirement.
+
+Citation issue: ${message}
+
+Every concrete claim referencing existing code must cite a fact ID from the manifest using [F-NNN] or [S-NNN] notation. For example: "The authentication module [F-001] implements..." or "Users have email addresses [S-002]."
+
+Please re-write the complete PRD JSON, ensuring every factual claim is cited with the appropriate manifest fact ID. Uncited claims will cause rejection.
+
+Output ONLY the JSON object. Do not include markdown fences or explanation.`;
   }
 
   build(
@@ -190,6 +238,55 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
 ${outputDirective}`;
 
     return { taskContext, outputFormat };
+  }
+
+  /**
+   * Build the draft planning prompt for plan-draft op.
+   * Includes spec content, manifest section, citation requirements, and
+   * optional revision findings from a prior rejected draft.
+   */
+  buildDraft(input: PlanDraftBuildInput): ComposeInput {
+    const role: ComposeInput["role"] = {
+      id: "role",
+      content:
+        "You are a senior software architect generating a product requirements document (PRD) as JSON. Your intent is to produce a thorough, evidence-grounded plan.",
+      overridable: false,
+    };
+
+    const revisionSection =
+      input.revisionFindings && input.revisionFindings.length > 0
+        ? `\n\n## Previous draft rejected for the following issues\n\n${input.revisionFindings
+            .map((f) => `- [${f.severity.toUpperCase()}] ${f.checklistItem}: ${f.message ?? "(no detail)"}`)
+            .join("\n")}\n\nFix all issues above before submitting the revised PRD.`
+        : "";
+
+    const task: ComposeInput["task"] = {
+      id: "task",
+      content: `You are drafting a PRD for the following feature: **${input.feature}** (branch: ${input.branchName}). Your intent is to produce a thorough, evidence-grounded implementation plan.
+
+## Spec
+
+${input.specContent}
+
+## Codebase Context
+
+${input.codebaseContext}
+
+## Manifest
+
+${input.manifestSection}
+
+## Citation Requirement
+
+Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from the manifest. The required citation rate is ${input.citationThreshold}. Uncited factual claims will cause rejection.${revisionSection}
+
+## Output
+
+Produce a complete PRD JSON object. Do not include markdown fences or explanation.`,
+      overridable: false,
+    };
+
+    return { role, task };
   }
 }
 
