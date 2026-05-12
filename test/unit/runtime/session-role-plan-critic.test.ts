@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime/session-role";
+import { KNOWN_SESSION_ROLES, isSessionRole } from "@/runtime";
 
 /**
  * Session role registration tests for "plan-critic" — US-003 AC1

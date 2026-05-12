@@ -20,7 +20,7 @@ import {
   checkClaimsCited,
   checkNoContradictions,
   checkSpecCoverage,
-} from "@/debate/verifiers/checks";
+} from "@/debate";
 import type { PRD } from "@/prd/types";
 import type { FactsManifest } from "@/debate/facts-manifest";
 
