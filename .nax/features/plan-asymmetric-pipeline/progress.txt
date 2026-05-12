@@ -2,3 +2,4 @@
 [2026-05-12T05:37:24.545Z] US-002 — PASSED — Extract pure check functions + draft citation validator — Cost: $1.0612
 [2026-05-12T06:10:13.075Z] US-003 — PASSED — planDraftOp + PlanPromptBuilder.buildDraft + makeTieredParseRetryStrategy helper — Cost: $2.6112
 [2026-05-12T06:43:42.436Z] US-004 — PASSED — planCriticLlmOp + CriticPromptBuilder + "plan-critic" session role — Cost: $1.7432
+[2026-05-12T08:25:06.087Z] US-005 — PASSED — runPlanPipeline orchestrator + runPlanCritic helper — Cost: $7.2432
