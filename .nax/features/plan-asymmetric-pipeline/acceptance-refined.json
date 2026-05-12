@@ -1,0 +1,548 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "NaxConfigSchema.parse({}) returns defaults where plan.mode is undefined, plan.citationThreshold is 0.5, and plan.criticModel is \"fast\"",
+    "refined": "Parsing NaxConfigSchema with empty object returns config.plan.mode === undefined, config.plan.citationThreshold === 0.5, and config.plan.criticModel === \"fast\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"single\" }).mode returns \"single\"",
+    "refined": "Parsing PlanConfigSchema with mode: \"single\" returns parsed.mode === \"single\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"debate\" }).mode returns \"debate\"",
+    "refined": "Parsing PlanConfigSchema with mode: \"debate\" returns parsed.mode === \"debate\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"pipeline\" }).mode returns \"pipeline\"",
+    "refined": "Parsing PlanConfigSchema with mode: \"pipeline\" returns parsed.mode === \"pipeline\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, mode: \"unknown\" }) throws a ZodError",
+    "refined": "Parsing PlanConfigSchema with mode: \"unknown\" throws ZodError",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 1.5 }) throws a ZodError",
+    "refined": "Parsing PlanConfigSchema with citationThreshold: 1.5 throws ZodError (exceeds maximum value of 1)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "PlanConfigSchema.parse({ ...NaxConfigSchema.parse({}).plan, citationThreshold: 0.7, criticModel: \"balanced\" }) preserves citationThreshold and criticModel overrides",
+    "refined": "Parsing PlanConfigSchema with citationThreshold: 0.7 and criticModel: \"balanced\" returns parsed.citationThreshold === 0.7 and parsed.criticModel === \"balanced\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "resolvePlanMode({ plan: { mode: \"pipeline\" } }) returns \"pipeline\"",
+    "refined": "Calling resolvePlanMode() with config.plan.mode === \"pipeline\" returns \"pipeline\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "resolvePlanMode({ plan: { mode: \"single\" }, debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"single\" (explicit plan.mode wins over debate.enabled)",
+    "refined": "Calling resolvePlanMode() with explicit config.plan.mode === \"single\" and debate.enabled === true returns \"single\" (explicit mode takes precedence)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"debate\" (legacy precedence preserved)",
+    "refined": "Calling resolvePlanMode() with debate.enabled === true, stages.plan.enabled === true, and no explicit plan.mode returns \"debate\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "resolvePlanMode({}) returns \"single\"",
+    "refined": "Calling resolvePlanMode() with empty config returns \"single\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: false } } } }) returns \"single\" (both debate.enabled and stages.plan.enabled required for \"debate\")",
+    "refined": "Calling resolvePlanMode() with debate.enabled === true but stages.plan.enabled === false returns \"single\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When resolvePlanMode() returns \"pipeline\", planCommand() throws NaxError with code === \"PLAN_PIPELINE_NOT_IMPLEMENTED\" and context.stage === \"plan\"",
+    "refined": "Calling planCommand() when resolvePlanMode() returns \"pipeline\" throws NaxError with error.code === \"PLAN_PIPELINE_NOT_IMPLEMENTED\" and error.context.stage === \"plan\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When resolvePlanMode() returns \"pipeline\" AND config.debate?.enabled === true, planCommand() calls logger.warn(\"plan\", ...) exactly once with { mode: \"pipeline\", debateEnabled: true } before throwing the not-implemented error",
+    "refined": "Calling planCommand() when resolvePlanMode() returns \"pipeline\" and config.debate.enabled === true calls logger.warn(\"plan\", ...) exactly once with data object containing mode: \"pipeline\" and debateEnabled: true, before throwing PLAN_PIPELINE_NOT_IMPLEMENTED error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "src/debate/verifiers/checks.ts exports checkFilesExist, checkAcAnchored, checkClaimsCited, checkNoContradictions, checkSpecCoverage as named functions",
+    "refined": "Module src/debate/verifiers/checks.ts exports exactly the five functions as named exports: checkFilesExist, checkAcAnchored, checkClaimsCited, checkNoContradictions, checkSpecCoverage",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "checkFilesExist(prd, workdir, { existsSync: () => false }) returns one VerifierFinding per contextFiles entry with severity === \"blocker\" and checklistItem === \"files-exist\"",
+    "refined": "When called with prd containing N contextFiles entries and a mock existsSync that always returns false, checkFilesExist returns an array of exactly N VerifierFinding objects, each with severity === 'blocker' and checklistItem === 'files-exist'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "checkAcAnchored(prdWithNoVerifiedByAndIntentFalse) returns one finding with severity === \"major\" and checklistItem === \"ac-anchored\" per story",
+    "refined": "When prd.stories contains M stories where each lacks verifiedBy field and has intent === false, checkAcAnchored returns an array of exactly M VerifierFinding objects, each with severity === 'major' and checklistItem === 'ac-anchored'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "checkClaimsCited(null, 0.5) returns [] when manifest is null",
+    "refined": "checkClaimsCited(null, 0.5) returns an empty array []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "checkClaimsCited({ specClaims: [verified, verified, unverified], ... }, 0.5) returns [] because rate 0.666 >= 0.5",
+    "refined": "When manifest.specClaims has 3 claims with 2 cited and 1 uncited (citation rate = 0.666), checkClaimsCited(manifest, 0.5) returns an empty array []",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "checkClaimsCited({ specClaims: [verified, unverified, unverified], ... }, 0.5) returns one finding because rate 0.333 < 0.5",
+    "refined": "When manifest.specClaims has 3 claims with 1 cited and 2 uncited (citation rate = 0.333), checkClaimsCited(manifest, 0.5) returns an array containing exactly one VerifierFinding object",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "checkNoContradictions(prd, manifest) returns a finding with severity === \"blocker\" for each PRD contextFiles[].factId that references a manifest specClaim with verification.status === \"contradicted\"",
+    "refined": "For each prd.contextFiles entry whose factId matches a manifest.specClaim with verification.status === 'contradicted', checkNoContradictions returns one VerifierFinding with severity === 'blocker' and checklistItem === 'no-contradictions'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "checkSpecCoverage(manifest) returns one finding per specClaims entry where kind === \"factual\" AND verification.status === \"unverified\"",
+    "refined": "For each manifest.specClaim where kind === 'factual' AND verification.status === 'unverified', checkSpecCoverage returns one VerifierFinding with severity === 'major' and checklistItem === 'spec-coverage'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "planChecklistVerifier(ctx) invokes the five exported check functions and produces findings that are deep-equal to those produced before the refactor when given the same prd and manifest (no behavior change for debate path)",
+    "refined": "planChecklistVerifier(ctx) produces findings array with identical content (same length, order, and field values) when compared to output of pre-refactor implementation given the same prd, manifest, and workdir",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "validateDraftCitations(output, manifest, 0.5) exported from src/plan/draft-citations.ts returns { ok: true, rate, threshold: 0.5, uncitedCount } when citationRate(extractClaims(output)) >= 0.5",
+    "refined": "When citationRate(extractClaims(output)) >= 0.5, validateDraftCitations(output, manifest, 0.5) returns an object with ok === true, threshold === 0.5, rate >= 0.5, and uncitedCount === number",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "validateDraftCitations(output, manifest, 0.5) returns { ok: false, ... } when citation rate is below threshold",
+    "refined": "When citationRate(extractClaims(output)) < 0.5, validateDraftCitations(output, manifest, 0.5) returns an object with ok === false and threshold === 0.5",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "validateDraftCitations(\"\", manifest, 0.5) returns { ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 } (empty input)",
+    "refined": "validateDraftCitations('', manifest, 0.5) returns { ok: false, rate: 0, threshold: 0.5, uncitedCount: 0 }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "makeTieredParseRetryStrategy exported from src/agents/retry/tiered-parse-retry.ts (and re-exported from src/agents/retry/index.ts) returns a RetryStrategy whose shouldRetry returns { retry: false } when failure is not a ParseValidationError",
+    "refined": "makeTieredParseRetryStrategy is exported from src/agents/retry/tiered-parse-retry.ts and re-exported from src/agents/retry/index.ts; when invoked with valid options, it returns a RetryStrategy object; calling shouldRetry(nonParseValidationError, 0, { lastOutput: 'text', storyId: 'x' }) returns { retry: false }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "makeTieredParseRetryStrategy returns a RetryStrategy whose shouldRetry returns { retry: false } when ctx.lastOutput is missing",
+    "refined": "RetryStrategy.shouldRetry(new ParseValidationError(...), 0, { lastOutput: undefined, storyId: 'x' }) returns { retry: false }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When shouldRetry(parseValidationError, attempt < maxAttempts - 1, ctx) fires, the strategy calls opts.inspect(ctx.lastOutput) exactly once, then opts.buildRetryPrompt(inspection, isTruncated) exactly once, then getSafeLogger()?.warn(opts.reviewerKind, \"Parse retry — <kind>\", { storyId, kind, isTruncated, originalByteSize }) exactly once, then returns { retry: true, delayMs: 0, nextPrompt: <buildRetryPrompt result> }",
+    "refined": "When shouldRetry(parseValidationError, 0, { lastOutput: 'output', storyId: 'x' }) is called with maxAttempts = 2: inspect callback invoked exactly once; buildRetryPrompt callback invoked exactly once with inspection result; logger.warn invoked exactly once with keys storyId, kind, isTruncated, originalByteSize; return value is { retry: true, delayMs: 0, nextPrompt: <string> }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When shouldRetry(parseValidationError, attempt >= maxAttempts - 1, ctx) fires, the strategy returns { retry: false, fallback: <opts.exhaustedFallback(inspection, lastOutput) result> }",
+    "refined": "When shouldRetry(parseValidationError, 1, { lastOutput: 'output', storyId: 'x' }) is called with maxAttempts = 2: return value is { retry: false, fallback: <object returned by exhaustedFallback> }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "planDraftOp exported from src/operations/plan-draft.ts has kind === \"run\", name === \"plan-draft\", stage === \"plan\", session.role === \"plan\", session.lifetime === \"fresh\", noFallback === true",
+    "refined": "planDraftOp is exported from src/operations/plan-draft.ts with properties: kind === 'run' AND name === 'plan-draft' AND stage === 'plan' AND session.role === 'plan' AND session.lifetime === 'fresh' AND noFallback === true",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-32",
+    "original": "planDraftOp.build({ manifestSection, ..., revisionFindings: undefined }) returns a ComposeInput where task.content contains manifestSection and \"intent\", and does not contain \"Previous draft rejected\"",
+    "refined": "planDraftOp.build(input with revisionFindings: undefined) returns ComposeInput where task.content string includes both the manifestSection value and substring 'intent', and does not include substring 'Previous draft rejected'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-33",
+    "original": "planDraftOp.build({ ..., revisionFindings: [{ checklistItem: \"ac-testable\", severity: \"blocker\", message: \"some finding\" }] }) returns a ComposeInput where task.content contains \"Previous draft rejected\" and the finding message",
+    "refined": "planDraftOp.build(input with revisionFindings: [{ checklistItem: 'ac-testable', severity: 'blocker', message: 'some finding' }]) returns ComposeInput where task.content string includes both substring 'Previous draft rejected' and substring 'some finding'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-34",
+    "original": "planDraftOp.model({}, { config: { plan: {} } }) returns \"fast\" (default tier)",
+    "refined": "planDraftOp.model({}, { config: { plan: {} } }) === 'fast'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-35",
+    "original": "planDraftOp.model({}, { config: { plan: { model: \"balanced\" } } }) returns \"balanced\"",
+    "refined": "planDraftOp.model({}, { config: { plan: { model: 'balanced' } } }) === 'balanced'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "planDraftOp.parse(output, input, ctx) returns { prd, citationRate, advisory: false } when output is structurally valid JSON, valid PRD, AND citation rate >= input.citationThreshold",
+    "refined": "When parse is called with valid JSON PRD output where citationRate >= input.citationThreshold, it returns object with prd field of type PRD, citationRate field of type number, and advisory field === false",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "inspectDraftOutput(\"not json\") returns { ok: false, kind: \"not-json\" }",
+    "refined": "inspectDraftOutput('not json') returns object with ok === false AND kind === 'not-json'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "inspectDraftOutput(validJsonInvalidPrd) returns { ok: false, kind: \"prd-invalid\", message } where message references the underlying validatePlanOutput error",
+    "refined": "inspectDraftOutput(validJsonStringThatFailsPrdValidation) returns { ok: false, kind: 'prd-invalid', message: <string> } where message contains error details from validatePlanOutput",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "inspectDraftOutput(validPrdLowCitationDefault) returns { ok: false, kind: \"citation-low\", partial, citationRate } where partial is the validated PRD and citationRate < DEFAULT_CITATION_THRESHOLD = 0.5",
+    "refined": "inspectDraftOutput(validPrdWithCitationRate < 0.5) returns { ok: false, kind: 'citation-low', partial: <PRD object>, citationRate: <number < 0.5> }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "planDraftOp.parse(notJsonFixture, input, ctx) throws ParseValidationError",
+    "refined": "parse(invalidJsonString, input, ctx) throws instance of ParseValidationError",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "planDraftOp.parse(validJsonInvalidPrdFixture, input, ctx) throws ParseValidationError",
+    "refined": "parse(validJsonThatFailsPrdValidation, input, ctx) throws instance of ParseValidationError",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-42",
+    "original": "planDraftOp.parse(validPrdLowCitationFixture, input, ctx) throws ParseValidationError with a message containing the substring \"citation rate\"; the configured input.citationThreshold (not the default) determines whether parse() throws for citation-low",
+    "refined": "parse(validPrd, input with citationThreshold: 0.7, ctx) throws ParseValidationError with message containing 'citation rate'; parse same fixture with input citationThreshold: 0.3 returns success without throwing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-43",
+    "original": "createDraftRetryStrategy() returns the result of makeTieredParseRetryStrategy<PlanDraftOutput, DraftFailureKind, PRD>({ reviewerKind: \"plan-draft\", maxAttempts: 2, inspect: inspectDraftOutput, buildRetryPrompt: buildDraftRetryPrompt, exhaustedFallback })",
+    "refined": "createDraftRetryStrategy() returns RetryStrategy that is result of makeTieredParseRetryStrategy with opts.reviewerKind === 'plan-draft', opts.maxAttempts === 2, opts.inspect === inspectDraftOutput function, opts.buildRetryPrompt === buildDraftRetryPrompt function, opts.exhaustedFallback is a function",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-44",
+    "original": "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.jsonRepair(isTruncated, message) when kind === \"not-json\"",
+    "refined": "buildDraftRetryPrompt({ kind: 'not-json', message: 'error' }, true) returns the string result of PlanPromptBuilder.jsonRepair(true, 'error')",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-45",
+    "original": "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.schemaRepair(message) when kind === \"prd-invalid\"",
+    "refined": "buildDraftRetryPrompt({ kind: 'prd-invalid', message: 'schema error' }, false) returns the string result of PlanPromptBuilder.schemaRepair('schema error')",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-46",
+    "original": "buildDraftRetryPrompt(inspection, isTruncated) returns PlanDraftPromptBuilder.citationRepair(message) when kind === \"citation-low\"",
+    "refined": "buildDraftRetryPrompt({ kind: 'citation-low', message: 'citation error' }, false) returns the string result of PlanPromptBuilder.citationRepair('citation error')",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-47",
+    "original": "The exhaustedFallback callback returns { prd: inspection.partial, citationRate: inspection.citationRate ?? 0, advisory: true } when inspection.partial is populated",
+    "refined": "exhaustedFallback({ partial: <PRD>, citationRate: 0.3, ok: false, kind: 'any' }, 'output') returns { prd: <PRD>, citationRate: 0.3, advisory: true }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-48",
+    "original": "The exhaustedFallback callback returns FAIL_OPEN_DRAFT when inspection.partial is undefined",
+    "refined": "exhaustedFallback({ partial: undefined, citationRate: 0, ok: false, kind: 'any' }, 'output') returns { prd: { feature: '', project: '', branchName: '', createdAt: '', updatedAt: '', userStories: [] }, citationRate: 0, advisory: true }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-49",
+    "original": "KNOWN_SESSION_ROLES exported from src/runtime/session-role.ts includes \"plan-critic\" as a CanonicalSessionRole member",
+    "refined": "KNOWN_SESSION_ROLES exported from src/runtime/session-role.ts includes \"plan-critic\" as a CanonicalSessionRole member",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "planCriticLlmOp exported from src/operations/plan-critic-llm.ts has kind === \"run\", name === \"plan-critic-llm\", stage === \"plan\", session.role === \"plan-critic\", noFallback === true",
+    "refined": "planCriticLlmOp exported from src/operations/plan-critic-llm.ts has kind === \"run\", name === \"plan-critic-llm\", stage === \"plan\", session.role === \"plan-critic\", noFallback === true",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "planCriticLlmOp.build({ prd, manifest }, _ctx) returns a ComposeInput with non-empty role.content and task.content (RunOperation contract)",
+    "refined": "planCriticLlmOp.build({ prd, manifest }, _ctx) returns a ComposeInput with non-empty role.content and task.content (RunOperation contract)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-52",
+    "original": "planCriticLlmOp.model({}, { config: { plan: {} } }) returns \"fast\" (schema default)",
+    "refined": "planCriticLlmOp.model({}, { config: { plan: {} } }) returns \"fast\" (schema default)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-53",
+    "original": "planCriticLlmOp.model({}, { config: { plan: { criticModel: \"balanced\" } } }) returns \"balanced\"",
+    "refined": "planCriticLlmOp.model({}, { config: { plan: { criticModel: \"balanced\" } } }) returns \"balanced\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-54",
+    "original": "inspectCriticOutput returns { ok: true, findings } for the input '```json\\n{\"findings\":[]}\\n```' (markdown-fenced JSON parses successfully — verifies parseLLMJson is used; bare JSON.parse would have thrown here)",
+    "refined": "inspectCriticOutput returns { ok: true, findings } for the input '```json\\n{\"findings\":[]}\\n```' (markdown-fenced JSON parses successfully — verifies parseLLMJson is used; bare JSON.parse would have thrown here)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-55",
+    "original": "inspectCriticOutput(\"not json\") returns { ok: false, kind: \"not-json\" }",
+    "refined": "inspectCriticOutput(\"not json\") returns { ok: false, kind: \"not-json\" }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-56",
+    "original": "inspectCriticOutput('{\"other\":\"x\"}') returns { ok: false, kind: \"schema-invalid\" }",
+    "refined": "inspectCriticOutput('{\"other\":\"x\"}') returns { ok: false, kind: \"schema-invalid\" }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-57",
+    "original": "planCriticLlmOp.parse('{\"findings\":[]}', _, _) returns { findings: [] }",
+    "refined": "planCriticLlmOp.parse('{\"findings\":[]}', _, _) returns { findings: [] }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-58",
+    "original": "planCriticLlmOp.parse(\"not json\", _, _) throws ParseValidationError",
+    "refined": "planCriticLlmOp.parse(\"not json\", _, _) throws ParseValidationError",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-59",
+    "original": "planCriticLlmOp.parse('{\"other\":\"x\"}', _, _) throws ParseValidationError",
+    "refined": "planCriticLlmOp.parse('{\"other\":\"x\"}', _, _) throws ParseValidationError",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-60",
+    "original": "planCriticLlmOp.retry is the value returned by makeTieredParseRetryStrategy({ reviewerKind: \"plan-critic-llm\", maxAttempts: 2, inspect: inspectCriticOutput, buildRetryPrompt: buildCriticRetryPrompt, exhaustedFallback: () => ({ findings: [] }) })",
+    "refined": "planCriticLlmOp.retry is the value returned by makeTieredParseRetryStrategy({ reviewerKind: \"plan-critic-llm\", maxAttempts: 2, inspect: inspectCriticOutput, buildRetryPrompt: buildCriticRetryPrompt, exhaustedFallback: () => ({ findings: [] }) })",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-61",
+    "original": "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.jsonRepair(isTruncated, message) when kind === \"not-json\"",
+    "refined": "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.jsonRepair(isTruncated, message) when kind === \"not-json\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-62",
+    "original": "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.schemaRepair(message) when kind === \"schema-invalid\"",
+    "refined": "buildCriticRetryPrompt(inspection, isTruncated) returns CriticPromptBuilder.schemaRepair(message) when kind === \"schema-invalid\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-63",
+    "original": "new CriticPromptBuilder().build(prd, manifest) returns a string containing the substrings \"ac-testable\", \"failure-modes-considered\", AND the literal prd.feature value",
+    "refined": "new CriticPromptBuilder().build(prd, manifest) returns a string containing the substrings \"ac-testable\", \"failure-modes-considered\", AND the literal prd.feature value",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-64",
+    "original": "runPlanCritic(input) exported from src/plan/critic.ts returns { outcome: \"failed\", prd, findings, specDeltasPath } when mechanical checks produce at least one severity === \"blocker\" finding; the returned specDeltasPath points to .nax/runs/<runId>/plan/<storyId>/spec-deltas.md and the file has been written at that path",
+    "refined": "runPlanCritic returns an object with properties: outcome === \"failed\", prd (PRD object), findings (VerifierFinding[]), specDeltasPath (string). The specDeltasPath matches pattern .nax/runs/[runId]/plan/[storyId]/spec-deltas.md and the file exists at that path on disk.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-65",
+    "original": "When mechanical checks produce blockers, runPlanCritic does NOT invoke planCriticLlmOp (verified by spy/mock — the LLM op is called zero times)",
+    "refined": "When mechanical checks return at least one finding with severity === \"blocker\", the planCriticLlmOp call count is 0 (verified via mock/spy).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-66",
+    "original": "When mechanical checks pass and planCriticLlmOp returns zero blockers, runPlanCritic returns { outcome: \"passed\", prd: input.prd, findings: [...mechFindings, ...llmFindings] } with no specDeltasPath",
+    "refined": "When all mechanical checks pass (no severity === \"blocker\" findings) and planCriticLlmOp returns findings with no blockers, the returned object has: outcome === \"passed\", prd === input.prd, findings array contains both mechanical and LLM findings, specDeltasPath === undefined.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-67",
+    "original": "When mechanical checks pass and planCriticLlmOp returns at least one severity === \"blocker\" finding, runPlanCritic invokes callOp(callCtx, planDraftOp, { ...draftCtx, revisionFindings }) exactly once with the blockers passed as revisionFindings",
+    "refined": "When mechanical checks pass and planCriticLlmOp returns at least one finding with severity === \"blocker\", callOp is invoked exactly once (call count === 1) with arguments: (callCtx, planDraftOp, { ...draftCtx, revisionFindings: [blocker findings] }).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-68",
+    "original": "After the revision draft passes mechanical checks, runPlanCritic returns { outcome: \"passed\", prd: revisedDraft.prd, ... }",
+    "refined": "When the revised draft from planDraftOp passes all mechanical checks with no severity === \"blocker\" findings, runPlanCritic returns an object with outcome === \"passed\" and prd === revisedDraft.prd.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-69",
+    "original": "After the revision draft still has mechanical blockers, runPlanCritic returns { outcome: \"failed\", prd: revisedDraft.prd, ..., specDeltasPath } and does NOT re-invoke planCriticLlmOp",
+    "refined": "When the revised draft has mechanical blockers after revision, runPlanCritic returns: outcome === \"failed\", prd === revisedDraft.prd, specDeltasPath (defined and written to disk), and planCriticLlmOp call count === 1 (not re-invoked).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-70",
+    "original": "When planCriticLlmOp throws (LLM failure), runPlanCritic logs a warning with storyId and proceeds as if zero LLM findings were produced (fail-open)",
+    "refined": "When planCriticLlmOp throws an error, logger.warn is called with storyId in the log data, and execution continues with llmFindings === [] (empty array).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-71",
+    "original": "runPlanPipeline(workdir, config, options) exported from src/cli/plan.ts calls callOp(callCtx, groundOp, ...) exactly once before any other op",
+    "refined": "runPlanPipeline invokes callOp with groundOp exactly once (call count === 1) before any invocation of callOp with other ops (planDraftOp, etc.).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-72",
+    "original": "runPlanPipeline calls callOp(callCtx, planDraftOp, ...) with manifest set to the result of the groundOp call and citationThreshold set to config.plan?.citationThreshold ?? 0.5",
+    "refined": "When invoking planDraftOp via callOp, the passed object has: manifest === groundOp result, citationThreshold === (config.plan?.citationThreshold ?? 0.5).",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-73",
+    "original": "runPlanPipeline calls runPlanCritic after planDraftOp returns",
+    "refined": "runPlanCritic is invoked after planDraftOp has returned a result and before runPlanPipeline completes or throws.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-74",
+    "original": "When runPlanCritic returns outcome === \"passed\", runPlanPipeline writes the verdict's prd to .nax/features/<feature>/prd.json and returns that path",
+    "refined": "When runPlanCritic returns with outcome === \"passed\", runPlanPipeline writes verdict.prd as JSON to .nax/features/<feature>/prd.json and returns the path string.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-75",
+    "original": "When runPlanCritic returns outcome === \"failed\", runPlanPipeline throws NaxError with code === \"PLAN_CRITIC_BLOCKED\" and context.specDeltasPath equal to the verdict's specDeltasPath",
+    "refined": "When runPlanCritic returns with outcome === \"failed\", runPlanPipeline throws a NaxError with code === \"PLAN_CRITIC_BLOCKED\" and context.specDeltasPath === verdict.specDeltasPath.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-76",
+    "original": "When groundOp throws, runPlanPipeline propagates the error wrapped as NaxError with code === \"PLAN_PIPELINE_GROUND_FAILED\" and context.cause set to the original error",
+    "refined": "When groundOp throws an error, runPlanPipeline throws a NaxError with code === \"PLAN_PIPELINE_GROUND_FAILED\" and context.cause === the original error object.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-77",
+    "original": "runPlanPipeline closes its createPlanRuntime runtime via rt.close() in a finally block regardless of success or failure",
+    "refined": "runPlanPipeline invokes rt.close() in a finally block that executes whether the function completes successfully or throws an error.",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-78",
+    "original": "After US-005 lands, planCommand() with resolvePlanMode() === \"pipeline\" no longer throws PLAN_PIPELINE_NOT_IMPLEMENTED — it returns the path written by runPlanPipeline",
+    "refined": "When planCommand() is called and resolvePlanMode() returns \"pipeline\", the function returns a string path (not throwing PLAN_PIPELINE_NOT_IMPLEMENTED error).",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
