@@ -1,8 +1,8 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { MAX_STAGE_RETRIES, runPipeline } from "../../../src/pipeline/runner";
-import type { PipelineContext, PipelineStage } from "../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
+import { MAX_STAGE_RETRIES, runPipeline } from "@/pipeline";
+import type { PipelineContext, PipelineStage } from "@/pipeline";
+import { DEFAULT_CONFIG } from "@/config";
 
 function makeCtx(): PipelineContext {
   return {
