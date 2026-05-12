@@ -12,7 +12,7 @@ export type {
   RoutingResult,
 } from "./types";
 
-export { runPipeline } from "./runner";
+export { runPipeline, MAX_STAGE_RETRIES } from "./runner";
 export type { PipelineRunResult } from "./runner";
 
 export { PipelineEventEmitter } from "./events";

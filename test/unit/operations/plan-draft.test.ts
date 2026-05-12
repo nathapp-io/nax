@@ -1,12 +1,13 @@
 /**
  * Unit tests for src/operations/plan-draft.ts
  *
- * Verifies planDraftOp, inspectDraftOutput, createDraftRetryStrategy,
- * buildDraftRetryPrompt, and the exhaustedFallback logic.
+ * Verifies planDraftOp, inspectDraftOutput, and the retry strategy wiring.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
+import { inspectDraftOutput, planDraftOp } from "@/operations";
+import type { PlanDraftInput } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
@@ -16,409 +17,301 @@ afterEach(async () => {
   createdRuntimes.length = 0;
 });
 
-// ─── Helper to create operation context ──────────────────────────────────────
+// ─── Fixtures ────────────────────────────────────────────────────────────────
 
-function makeBuildCtx(planOverrides?: { model?: unknown; timeoutSeconds?: number }) {
-  const base = planOverrides ? ({ plan: planOverrides } as any) : {};
-  const config = makeNaxConfig(base);
+const MINIMAL_STORY = {
+  id: "US-001",
+  title: "Login",
+  description: "User can log in",
+  acceptanceCriteria: ["AC-1: form submits"],
+  complexity: "simple",
+};
+
+/** Valid PRD JSON with an inline [F-001] citation — ensures citation rate = 1.0 >= DEFAULT 0.5 */
+const VALID_PRD_WITH_CITATION = JSON.stringify({
+  feature: "UserAuth [F-001]",
+  project: "auth-service",
+  branchName: "feat/auth",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  userStories: [MINIMAL_STORY],
+});
+
+/** Valid PRD JSON with NO citations — citation rate = 0 < DEFAULT 0.5 */
+const VALID_PRD_NO_CITATION = JSON.stringify({
+  feature: "UserAuth",
+  project: "auth-service",
+  branchName: "feat/auth",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  userStories: [MINIMAL_STORY],
+});
+
+function makeDraftInput(overrides?: Partial<PlanDraftInput>): PlanDraftInput {
+  return {
+    manifestSection: "## Manifest\nF-001: user table exists",
+    manifest: { repoFacts: [], specClaims: [], gaps: [] } as any,
+    specContent: "Build a login feature",
+    codebaseContext: "Express.js backend",
+    feature: "UserAuth",
+    branchName: "feat/auth",
+    citationThreshold: 0.5,
+    ...overrides,
+  };
+}
+
+function makeBuildCtx(planOverrides?: { model?: string; timeoutSeconds?: number }) {
+  const base = planOverrides ? { plan: planOverrides } : {};
+  const config = makeNaxConfig(base as any);
   const runtime = makeTestRuntime({ config });
   createdRuntimes.push(runtime);
-  const view = runtime.packages.repo();
-  // planDraftOp.config will be defined in the source; for now we use a mock
-  return {
-    packageView: view,
-    config,
-    stage: "plan",
-    agentName: "claude",
-    storyId: "US-001",
-  };
+  return { config, stage: "plan" as const, agentName: "claude", storyId: "US-001" };
 }
 
 // ─── AC-5: planDraftOp identity ────────────────────────────────────────────
 
 describe("planDraftOp — AC-5: identity properties", () => {
-  test("AC-5: kind === 'run'", () => {
-    // planDraftOp will be imported from src/operations once implemented
-    // For now, verify that the op definition will match
-    expect("run").toBe("run");
+  test("kind === 'run'", () => {
+    expect(planDraftOp.kind).toBe("run");
   });
 
-  test("AC-5: name === 'plan-draft'", () => {
-    expect("plan-draft").toBe("plan-draft");
+  test("name === 'plan-draft'", () => {
+    expect(planDraftOp.name).toBe("plan-draft");
   });
 
-  test("AC-5: stage === 'plan'", () => {
-    expect("plan").toBe("plan");
+  test("stage === 'plan'", () => {
+    expect(planDraftOp.stage).toBe("plan");
   });
 
-  test("AC-5: session.role === 'plan'", () => {
-    expect("plan").toBe("plan");
+  test("session.role === 'plan'", () => {
+    expect(planDraftOp.session.role).toBe("plan");
   });
 
-  test("AC-5: session.lifetime === 'fresh'", () => {
-    expect("fresh").toBe("fresh");
+  test("session.lifetime === 'fresh'", () => {
+    expect(planDraftOp.session.lifetime).toBe("fresh");
   });
 
-  test("AC-5: noFallback === true", () => {
-    expect(true).toBe(true);
+  test("noFallback === true", () => {
+    expect(planDraftOp.noFallback).toBe(true);
+  });
+
+  test("retry strategy is set", () => {
+    expect(planDraftOp.retry).toBeDefined();
+    expect(typeof (planDraftOp.retry as any).shouldRetry).toBe("function");
   });
 });
 
-// ─── AC-6 & AC-7: planDraftOp.build ────────────────────────────────────────
+// ─── AC-6 & AC-7: planDraftOp.build ─────────────────────────────────────────
 
 describe("planDraftOp.build — AC-6 & AC-7: draft prompt construction", () => {
-  const makePlanDraftInput = (overrides?: Partial<PlanDraftInput>): PlanDraftInput => ({
-    manifestSection: "## Manifest\nF-001: existing fact",
-    manifest: { repoFacts: [], specClaims: [], gaps: [] } as any,
-    specContent: "Build a login feature",
-    codebaseContext: "Express.js backend",
-    feature: "User authentication",
-    branchName: "feat/user-auth",
-    citationThreshold: 0.5,
-    ...overrides,
+  test("AC-6: build without revisionFindings returns ComposeInput with role and task", () => {
+    const ctx = makeBuildCtx();
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: undefined }), ctx as any);
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("object");
+    expect(result.role).toBeDefined();
+    expect(result.task).toBeDefined();
   });
 
-  test("AC-6: build without revisionFindings includes manifestSection", () => {
-    // When planDraftOp.build is implemented, it should include manifestSection
-    const input = makePlanDraftInput({ revisionFindings: undefined });
-    // Verification will happen when the implementation exists
-    expect(input.manifestSection).toContain("Manifest");
+  test("AC-6: task.content contains the manifestSection", () => {
+    const ctx = makeBuildCtx();
+    const input = makeDraftInput({ manifestSection: "UNIQUE_MANIFEST_MARKER", revisionFindings: undefined });
+    const result = planDraftOp.build(input, ctx as any);
+    const content = JSON.stringify(result);
+    expect(content).toContain("UNIQUE_MANIFEST_MARKER");
   });
 
-  test("AC-6: build without revisionFindings includes 'intent'", () => {
-    const input = makePlanDraftInput({ revisionFindings: undefined });
-    // The prompt should contain 'intent' or similar directional language
-    expect(input.feature).toBeDefined();
+  test("AC-6: task.content contains 'intent' (citation exemption)", () => {
+    const ctx = makeBuildCtx();
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: undefined }), ctx as any);
+    const content = JSON.stringify(result);
+    expect(content).toContain("intent");
   });
 
   test("AC-6: build without revisionFindings does NOT contain 'Previous draft rejected'", () => {
-    // When the prompt is built, it should not contain revision feedback
-    const input = makePlanDraftInput({ revisionFindings: undefined });
-    expect(input.revisionFindings).toBeUndefined();
+    const ctx = makeBuildCtx();
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: undefined }), ctx as any);
+    const content = JSON.stringify(result);
+    expect(content).not.toContain("Previous draft rejected");
   });
 
-  test("AC-7: build with revisionFindings includes 'Previous draft rejected' section", () => {
-    const findings = [
-      { checklistItem: "ac-testable", severity: "blocker", message: "ACs must be testable" },
-    ];
-    const input = makePlanDraftInput({ revisionFindings: findings });
-    expect(input.revisionFindings).toEqual(findings);
+  test("AC-7: build with revisionFindings contains 'Previous draft rejected'", () => {
+    const ctx = makeBuildCtx();
+    const findings = [{ checklistItem: "ac-testable", severity: "blocker" as const, message: "ACs must be testable" }];
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: findings }), ctx as any);
+    const content = JSON.stringify(result);
+    expect(content).toContain("Previous draft rejected");
   });
 
   test("AC-7: build with revisionFindings includes the finding message", () => {
-    const message = "User stories must reference the manifest";
-    const findings = [{ checklistItem: "citation", severity: "blocker", message }];
-    const input = makePlanDraftInput({ revisionFindings: findings });
-    expect(input.revisionFindings?.[0]?.message).toBe(message);
+    const ctx = makeBuildCtx();
+    const msg = "User stories must reference the manifest";
+    const findings = [{ checklistItem: "citation", severity: "blocker" as const, message: msg }];
+    const result = planDraftOp.build(makeDraftInput({ revisionFindings: findings }), ctx as any);
+    const content = JSON.stringify(result);
+    expect(content).toContain(msg);
   });
 });
 
-// ─── AC-8 & AC-9: planDraftOp.model ────────────────────────────────────────
+// ─── AC-8 & AC-9: planDraftOp.model ─────────────────────────────────────────
 
 describe("planDraftOp.model — AC-8 & AC-9: model tier resolution", () => {
   test("AC-8: returns 'fast' when config.plan.model is not set", () => {
-    const ctx = makeBuildCtx();
-    // planDraftOp.model should default to "fast"
-    expect("fast").toBe("fast");
+    // Pass empty plan object so deepMerge replaces DEFAULT_CONFIG.plan (model: "balanced") with {}
+    const ctx = makeBuildCtx({});
+    const result = (planDraftOp.model as Function)({}, ctx);
+    expect(result).toBe("fast");
   });
 
-  test("AC-9: returns configured model tier from config.plan.model", () => {
+  test("AC-9: returns configured model when config.plan.model is 'balanced'", () => {
     const ctx = makeBuildCtx({ model: "balanced" });
-    // planDraftOp.model should return the configured value
-    expect("balanced").toBe("balanced");
-  });
-
-  test("planDraftOp.model ignores input fields — config-driven only", () => {
-    const input: PlanDraftInput = {
-      manifestSection: "",
-      manifest: {} as any,
-      specContent: "",
-      codebaseContext: "",
-      feature: "",
-      branchName: "",
-      citationThreshold: 0.5,
-    };
-    expect("model" in input).toBe(false);
+    const result = (planDraftOp.model as Function)({}, ctx);
+    expect(result).toBe("balanced");
   });
 });
 
-// ─── AC-10: planDraftOp.parse (success path) ──────────────────────────────
+// ─── AC-10: planDraftOp.parse (success path) ─────────────────────────────────
 
 describe("planDraftOp.parse — AC-10: success path", () => {
-  const validPrdJson = {
-    feature: "User login",
-    project: "auth-service",
-    branchName: "feat/auth",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    userStories: [],
-  };
-
   test("AC-10: returns { prd, citationRate, advisory: false } for valid output above threshold", () => {
-    // When parse succeeds with citations >= threshold, advisory should be false
-    const output = JSON.stringify(validPrdJson) + "\n[F-001] confirms user table exists.";
-    const input: PlanDraftInput = {
-      manifestSection: "",
-      manifest: {} as any,
-      specContent: "",
-      codebaseContext: "",
-      feature: "",
-      branchName: "",
-      citationThreshold: 0.3,
-    };
-    // Result structure: { prd: PRD, citationRate: number, advisory: false }
-    expect({
-      prd: validPrdJson,
-      citationRate: 0.5,
-      advisory: false,
-    }).toMatchObject({ advisory: false });
+    const input = makeDraftInput({ citationThreshold: 0.5 });
+    const result = planDraftOp.parse(VALID_PRD_WITH_CITATION, input, {} as any);
+    expect(result.advisory).toBe(false);
+    expect(typeof result.citationRate).toBe("number");
+    expect(result.prd.feature).toContain("UserAuth");
   });
 
-  test("AC-10: citationRate is calculated from claims in output", () => {
-    // Citation rate should be derived from extractClaims(output)
-    const output = JSON.stringify(validPrdJson);
-    // Placeholder: when extractClaims is called, it returns claims array
-    // citationRate = (cited claims) / (total claims)
-    expect(typeof 0.5).toBe("number");
+  test("AC-10: advisory is false on the success path", () => {
+    const input = makeDraftInput({ citationThreshold: 0 });
+    const result = planDraftOp.parse(VALID_PRD_NO_CITATION, input, {} as any);
+    expect(result.advisory).toBe(false);
   });
 });
 
-// ─── AC-11, AC-12, AC-13: inspectDraftOutput ───────────────────────────────
+// ─── AC-11, AC-12, AC-13: inspectDraftOutput ─────────────────────────────────
 
 describe("inspectDraftOutput — AC-11, AC-12, AC-13: tiered inspection", () => {
   test("AC-11: returns { ok: false, kind: 'not-json' } for non-JSON input", () => {
-    // inspectDraftOutput should detect invalid JSON
-    const inspection = {
-      ok: false,
-      kind: "not-json",
-      message: "Response was not valid JSON.",
-    };
-    expect(inspection.kind).toBe("not-json");
+    const result = inspectDraftOutput("not valid json at all");
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("not-json");
+    expect(result.message).toBeTruthy();
   });
 
-  test("AC-12: returns { ok: false, kind: 'prd-invalid' } for valid JSON, invalid PRD schema", () => {
-    // When JSON is valid but schema is wrong
-    const inspection = {
-      ok: false,
-      kind: "prd-invalid",
-      message: "Missing required field: feature",
-    };
-    expect(inspection.kind).toBe("prd-invalid");
-    expect(inspection.message).toBeTruthy();
+  test("AC-12: returns { ok: false, kind: 'prd-invalid' } for valid JSON, invalid PRD", () => {
+    const result = inspectDraftOutput('{"foo":"bar"}');
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("prd-invalid");
+    expect(result.message).toContain("PRD");
   });
 
-  test("AC-12: message references underlying validatePlanOutput error", () => {
-    const inspection = {
-      ok: false,
-      kind: "prd-invalid",
-      message: "Response was valid JSON but failed PRD schema validation: feature is required",
-    };
-    expect(inspection.message).toContain("feature");
+  test("AC-12: message references the underlying validatePlanOutput error", () => {
+    const result = inspectDraftOutput('{"foo":"bar"}');
+    expect(result.message).toBeTruthy();
+    expect((result.message ?? "").length).toBeGreaterThan(10);
   });
 
-  test("AC-13: returns { ok: false, kind: 'citation-low' } when citations below DEFAULT threshold", () => {
-    // DEFAULT_CITATION_THRESHOLD = 0.5
-    const inspection = {
-      ok: false,
-      kind: "citation-low",
-      message: "Citation rate 0.30 below default 0.50 (2 uncited claims).",
-      partial: { feature: "test" },
-      citationRate: 0.3,
-    };
-    expect(inspection.kind).toBe("citation-low");
-    expect(inspection.citationRate).toBeLessThan(0.5);
+  test("AC-13: returns { ok: false, kind: 'citation-low' } when rate < DEFAULT 0.5", () => {
+    const result = inspectDraftOutput(VALID_PRD_NO_CITATION);
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("citation-low");
+    expect(result.citationRate).toBeDefined();
+    expect(result.citationRate!).toBeLessThan(0.5);
   });
 
   test("AC-13: partial is the validated PRD when citation is low", () => {
-    const partial = { feature: "F", project: "P", branchName: "B", createdAt: "", updatedAt: "", userStories: [] };
-    const inspection = {
-      ok: false,
-      kind: "citation-low",
-      partial,
-      citationRate: 0.4,
-    };
-    expect(inspection.partial).toEqual(partial);
+    const result = inspectDraftOutput(VALID_PRD_NO_CITATION);
+    expect(result.partial).toBeDefined();
+    // inspectDraftOutput is called without feature arg so feature is ""; check project from JSON
+    expect(result.partial!.project).toBe("auth-service");
   });
 
-  test("AC-13: citationRate is included for citation-low inspection", () => {
-    const inspection = {
-      ok: false,
-      kind: "citation-low",
-      citationRate: 0.45,
-    };
-    expect(inspection.citationRate).toBe(0.45);
+  test("AC-13: ok is true when rate >= DEFAULT 0.5", () => {
+    const result = inspectDraftOutput(VALID_PRD_WITH_CITATION);
+    expect(result.ok).toBe(true);
+    expect(result.partial).toBeDefined();
   });
 });
 
-// ─── AC-14, AC-15, AC-16: planDraftOp.parse (failure paths) ────────────────
+// ─── AC-14, AC-15, AC-16: planDraftOp.parse (failure paths) ──────────────────
 
 describe("planDraftOp.parse — AC-14, AC-15, AC-16: failure paths", () => {
-  const makeInput = (threshold = 0.5): PlanDraftInput => ({
-    manifestSection: "",
-    manifest: {} as any,
-    specContent: "",
-    codebaseContext: "",
-    feature: "",
-    branchName: "",
-    citationThreshold: threshold,
+  test("AC-14: throws ParseValidationError for non-JSON output", () => {
+    expect(() =>
+      planDraftOp.parse("not valid json", makeDraftInput(), {} as any)
+    ).toThrow(ParseValidationError);
   });
 
-  test("AC-14: throws ParseValidationError when output is not JSON", () => {
-    // parse should throw ParseValidationError for not-json inspection
-    expect(() => {
-      throw new ParseValidationError("Output was not valid JSON");
-    }).toThrow(ParseValidationError);
+  test("AC-15: throws ParseValidationError for valid JSON that fails PRD schema", () => {
+    expect(() =>
+      planDraftOp.parse('{"foo":"bar"}', makeDraftInput(), {} as any)
+    ).toThrow(ParseValidationError);
   });
 
-  test("AC-15: throws ParseValidationError when JSON is not valid PRD schema", () => {
-    // parse should throw ParseValidationError for prd-invalid inspection
-    expect(() => {
-      throw new ParseValidationError("PRD schema validation failed");
-    }).toThrow(ParseValidationError);
-  });
-
-  test("AC-16: throws ParseValidationError with 'citation rate' in message for low citations", () => {
-    expect(() => {
-      throw new ParseValidationError("citation rate 0.30 below configured threshold 0.50");
-    }).toThrow(ParseValidationError);
-
+  test("AC-16: throws ParseValidationError with 'citation rate' in message when rate < configured threshold", () => {
+    let caught: unknown;
     try {
-      throw new ParseValidationError("citation rate 0.30 below configured threshold 0.50");
+      planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0.5 }), {} as any);
     } catch (err) {
-      if (err instanceof ParseValidationError) {
-        expect(err.message).toContain("citation rate");
-      }
+      caught = err;
     }
+    expect(caught).toBeInstanceOf(ParseValidationError);
+    expect((caught as ParseValidationError).message).toContain("citation rate");
   });
 
-  test("AC-16: uses configured citationThreshold, not DEFAULT, to decide if parse throws", () => {
-    const input = makeInput(0.8); // higher threshold
-    // When citations are below the configured threshold (0.8), parse should throw
-    expect(input.citationThreshold).toBe(0.8);
-  });
-});
-
-// ─── AC-17: createDraftRetryStrategy ────────────────────────────────────────
-
-describe("createDraftRetryStrategy — AC-17: retry strategy construction", () => {
-  test("AC-17: returns RetryStrategy result of makeTieredParseRetryStrategy", () => {
-    // createDraftRetryStrategy should call makeTieredParseRetryStrategy with correct args
-    // and return the result
-    const hasStrategy = typeof { shouldRetry: () => ({ retry: false }) } === "object";
-    expect(hasStrategy).toBe(true);
-  });
-
-  test("AC-17: sets reviewerKind to 'plan-draft'", () => {
-    // The strategy should log with reviewerKind: "plan-draft"
-    expect("plan-draft").toBe("plan-draft");
-  });
-
-  test("AC-17: sets maxAttempts to 2", () => {
-    // maxAttempts: 2 means 1 retry
-    expect(2).toBe(2);
-  });
-
-  test("AC-17: uses inspectDraftOutput as the inspect function", () => {
-    // Strategy should call inspectDraftOutput(output) to get inspection
-    const kind = "not-json";
-    expect(kind).toBeDefined();
-  });
-
-  test("AC-17: uses buildDraftRetryPrompt as the buildRetryPrompt function", () => {
-    // Strategy should call buildDraftRetryPrompt(inspection, isTruncated)
-    expect("buildDraftRetryPrompt").toBeDefined();
-  });
-
-  test("AC-17: uses appropriate exhaustedFallback", () => {
-    // When retries exhaust, fallback should return advisory: true
-    expect(true).toBe(true);
+  test("AC-16: uses the configured citationThreshold, not the default 0.5", () => {
+    // VALID_PRD_WITH_CITATION has rate = 1.0, so threshold 0.5 succeeds but threshold 1.5 is impossible
+    // Use threshold 0 to confirm parse succeeds on a no-citation output
+    const result = planDraftOp.parse(VALID_PRD_NO_CITATION, makeDraftInput({ citationThreshold: 0 }), {} as any);
+    expect(result.advisory).toBe(false);
   });
 });
 
-// ─── AC-18, AC-19, AC-20: buildDraftRetryPrompt ────────────────────────────
+// ─── AC-17: retry strategy wiring ────────────────────────────────────────────
 
-describe("buildDraftRetryPrompt — AC-18, AC-19, AC-20: repair prompt selection", () => {
-  test("AC-18: returns PlanPromptBuilder.jsonRepair when kind === 'not-json'", () => {
-    const inspection = { ok: false, kind: "not-json", message: "Not valid JSON." };
-    // buildDraftRetryPrompt(inspection, isTruncated) should call jsonRepair(isTruncated, message)
-    expect(inspection.kind).toBe("not-json");
+describe("planDraftOp.retry — AC-17: retry strategy wiring", () => {
+  const retry = planDraftOp.retry as { shouldRetry: Function };
+
+  test("returns { retry: false } when failure is not ParseValidationError", () => {
+    const decision = retry.shouldRetry(new Error("network"), 0, { lastOutput: "{}", storyId: "s1" });
+    expect(decision.retry).toBe(false);
   });
 
-  test("AC-19: returns PlanPromptBuilder.schemaRepair when kind === 'prd-invalid'", () => {
-    const inspection = { ok: false, kind: "prd-invalid", message: "field required" };
-    // buildDraftRetryPrompt(inspection, isTruncated) should call schemaRepair(message)
-    expect(inspection.kind).toBe("prd-invalid");
+  test("returns { retry: false } when lastOutput is missing", () => {
+    const decision = retry.shouldRetry(new ParseValidationError("bad"), 0, { storyId: "s1" });
+    expect(decision.retry).toBe(false);
   });
 
-  test("AC-20: returns PlanPromptBuilder.citationRepair when kind === 'citation-low'", () => {
-    const inspection = {
-      ok: false,
-      kind: "citation-low",
-      message: "Citation rate 0.30 below 0.50",
-    };
-    // buildDraftRetryPrompt(inspection, isTruncated) should call citationRepair(message)
-    expect(inspection.kind).toBe("citation-low");
+  test("returns { retry: true, nextPrompt } on first failure with not-json output", () => {
+    const decision = retry.shouldRetry(
+      new ParseValidationError("not json"),
+      0,
+      { lastOutput: "not valid json", storyId: "s1" },
+    );
+    expect(decision.retry).toBe(true);
+    expect(typeof decision.nextPrompt).toBe("string");
+    expect(decision.nextPrompt.length).toBeGreaterThan(0);
   });
 
-  test("jsonRepair includes isTruncated hint when output was truncated", () => {
-    // PlanPromptBuilder.jsonRepair(isTruncated, message) should mention truncation
-    // when isTruncated === true
-    expect(true).toBe(true);
-  });
-});
-
-// ─── AC-21 & AC-22: exhaustedFallback behavior ──────────────────────────────
-
-describe("exhaustedFallback callback — AC-21 & AC-22: degradation on exhaustion", () => {
-  test("AC-21: returns { prd: partial, citationRate, advisory: true } when partial is populated", () => {
-    const inspection = {
-      ok: false,
-      kind: "citation-low",
-      partial: { feature: "F", project: "P", branchName: "B", createdAt: "", updatedAt: "", userStories: [] },
-      citationRate: 0.45,
-    };
-    // exhaustedFallback(inspection, lastOutput) should return
-    // { prd: partial, citationRate, advisory: true }
-    expect({
-      prd: inspection.partial,
-      citationRate: inspection.citationRate,
-      advisory: true,
-    }).toMatchObject({ advisory: true });
+  test("returns fallback on exhaustion (attempt >= maxAttempts-1)", () => {
+    const decision = retry.shouldRetry(
+      new ParseValidationError("bad"),
+      1, // maxAttempts=2, so attempt 1 >= 1 triggers exhaustion
+      { lastOutput: VALID_PRD_NO_CITATION, storyId: "s1" },
+    );
+    expect(decision.retry).toBe(false);
+    expect(decision.fallback).toBeDefined();
+    expect((decision.fallback as any).advisory).toBe(true);
   });
 
-  test("AC-21: citationRate defaults to 0 if not in inspection", () => {
-    const inspection = { ok: false, kind: "not-json" };
-    // If inspection.citationRate is undefined, use 0
-    const rate = (inspection as any).citationRate ?? 0;
-    expect(rate).toBe(0);
-  });
-
-  test("AC-22: returns FAIL_OPEN_DRAFT when inspection.partial is undefined", () => {
-    // FAIL_OPEN_DRAFT = { prd: empty PRD, citationRate: 0, advisory: true }
-    const FAIL_OPEN_DRAFT = {
-      prd: { feature: "", project: "", branchName: "", createdAt: "", updatedAt: "", userStories: [] },
-      citationRate: 0,
-      advisory: true,
-    };
-    expect(FAIL_OPEN_DRAFT.advisory).toBe(true);
+  test("exhaustedFallback returns FAIL_OPEN_DRAFT when partial is absent (not-json output)", () => {
+    const decision = retry.shouldRetry(
+      new ParseValidationError("bad"),
+      1,
+      { lastOutput: "not valid json", storyId: "s1" },
+    );
+    expect(decision.retry).toBe(false);
+    expect((decision.fallback as any).advisory).toBe(true);
+    expect((decision.fallback as any).citationRate).toBe(0);
   });
 });
-
-// ─── Helper Types ─────────────────────────────────────────────────────────
-
-interface PlanDraftInput {
-  readonly manifestSection: string;
-  readonly manifest: any;
-  readonly specContent: string;
-  readonly codebaseContext: string;
-  readonly feature: string;
-  readonly branchName: string;
-  readonly citationThreshold: number;
-  readonly revisionFindings?: readonly VerifierFinding[];
-}
-
-interface VerifierFinding {
-  readonly checklistItem: string;
-  readonly severity: string;
-  readonly message: string;
-}

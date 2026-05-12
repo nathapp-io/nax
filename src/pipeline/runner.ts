@@ -38,6 +38,14 @@ export interface PipelineRunResult {
 export const MAX_STAGE_RETRIES = 5;
 
 /**
+ * Maximum number of times a fixer stage (rectify/autofix) may reset the retry
+ * counter for a target stage via `resetRetryCount: true`. Capped at 1 so that
+ * a divergence between the fixer's internal verify and the outer pipeline verify
+ * cannot produce an infinite reset loop.
+ */
+export const MAX_STAGE_RESETS = 1;
+
+/**
  * Run a pipeline of stages against a context.
  *
  * Supports a `retry` action that jumps back to a named stage (used by
@@ -53,6 +61,10 @@ export async function runPipeline(
 ): Promise<PipelineRunResult> {
   const logger = getLogger();
   const retryCountMap = new Map<string, number>();
+  // Tracks how many times each stage's counter has been reset via resetRetryCount.
+  // Capped at MAX_STAGE_RESETS to prevent infinite loops when the fixer's internal
+  // verify diverges from the outer pipeline verify (e.g. different timeout/command).
+  const retryResetCountMap = new Map<string, number>();
   let i = 0;
   let stageCostAccum = 0;
 
@@ -137,12 +149,21 @@ export async function runPipeline(
         };
 
       case "retry": {
+        if (result.resetRetryCount) {
+          const resets = (retryResetCountMap.get(result.fromStage) ?? 0) + 1;
+          if (resets <= MAX_STAGE_RESETS) {
+            retryResetCountMap.set(result.fromStage, resets);
+            retryCountMap.delete(result.fromStage);
+          }
+          // If reset cap is exceeded, fall through — counter continues incrementing
+          // normally and the stage will escalate once MAX_STAGE_RETRIES is reached.
+        }
         const retries = (retryCountMap.get(result.fromStage) ?? 0) + 1;
         if (retries > MAX_STAGE_RETRIES) {
           logger.warn("pipeline", `Stage retry limit reached for "${result.fromStage}" (max ${MAX_STAGE_RETRIES})`);
           return {
             success: false,
-            finalAction: "fail",
+            finalAction: "escalate",
             reason: `Stage "${stage.name}" exceeded max retries (${MAX_STAGE_RETRIES}) for "${result.fromStage}"`,
             stoppedAtStage: stage.name,
             context,

@@ -168,12 +168,12 @@ describe("runPlanCritic (US-005)", () => {
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
-      // Mock agent manager and spy on completeAs calls
-      const callSpy = mock();
+      // planCriticLlmOp is kind:"run" — goes through runWithFallback, not completeAs
+      const runWithFallbackSpy = mock();
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => {
-          callSpy();
-          return { output: "[]", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+        runWithFallbackFn: async (req) => {
+          runWithFallbackSpy(req.runOptions.sessionRole);
+          return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: [] }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
         },
       });
       runtime = makeTestRuntime({ agentManager });
@@ -207,8 +207,8 @@ describe("runPlanCritic (US-005)", () => {
 
       await runPlanCritic(input);
 
-      // LLM call count should be 0 when mechanical checks block
-      expect(callSpy).toHaveBeenCalledTimes(0);
+      // LLM runWithFallback should NOT be called when mechanical checks already block
+      expect(runWithFallbackSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -220,12 +220,13 @@ describe("runPlanCritic (US-005)", () => {
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
+      // planCriticLlmOp is kind:"run" — goes through runWithFallback, not completeAs
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify({ findings: [] }),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-        }),
+        runWithFallbackFn: async (req) => {
+          const role = req.runOptions.sessionRole;
+          const output = role === "plan-critic" ? JSON.stringify({ findings: [] }) : "";
+          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+        },
       });
       runtime = makeTestRuntime({ agentManager });
 
@@ -271,12 +272,13 @@ describe("runPlanCritic (US-005)", () => {
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
+      // planCriticLlmOp is kind:"run" — goes through runWithFallback, not completeAs
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify({ findings: [makeMajorFinding()] }),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-        }),
+        runWithFallbackFn: async (req) => {
+          const role = req.runOptions.sessionRole;
+          const output = role === "plan-critic" ? JSON.stringify({ findings: [makeMajorFinding()] }) : "";
+          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+        },
       });
       runtime = makeTestRuntime({ agentManager });
 
@@ -323,17 +325,20 @@ describe("runPlanCritic (US-005)", () => {
 
       const llmBlockers = [makeBlockerFinding({ specId: "S-001" }), makeBlockerFinding({ specId: "S-002" })];
 
+      // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback
+      let draftCallCount = 0;
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify({ findings: llmBlockers }),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-        }),
+        runWithFallbackFn: async (req) => {
+          const role = req.runOptions.sessionRole;
+          if (role === "plan-critic") {
+            return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: llmBlockers }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          }
+          // Draft revision call
+          draftCallCount++;
+          return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+        },
       });
       runtime = makeTestRuntime({ agentManager });
-
-      // This test expects the implementation to call callOp(planDraftOp) with revisionFindings
-      // and to track whether it was called with the correct parameters
 
       const callCtx = {
         runtime,
@@ -364,8 +369,8 @@ describe("runPlanCritic (US-005)", () => {
 
       const result = await runPlanCritic(input);
 
-      // After revision, if checks pass, outcome should be "passed"
-      // If checks still have blockers, outcome should be "failed"
+      // planDraftOp should be invoked once for revision
+      expect(draftCallCount).toBe(1);
       expect(result.outcome).toBeDefined();
       expect(["passed", "failed"]).toContain(result.outcome);
     });
@@ -376,23 +381,30 @@ describe("runPlanCritic (US-005)", () => {
       const { runPlanCritic } = await import("@/plan/critic");
 
       const prd = makePRD();
-      const revisedPrd = makePRD({ feature: "test-feature-revised" });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
       const llmBlockers = [makeBlockerFinding()];
 
+      // Revision PRD: valid schema, no contextFiles blockers, citation-exempt (threshold=0)
+      const validRevisionPrd = JSON.stringify({
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple" }],
+      });
+
+      // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => ({
-          output: JSON.stringify({ findings: llmBlockers }),
-          tokenUsage: { inputTokens: 0, outputTokens: 0 },
-          estimatedCostUsd: 0,
-        }),
-        runAsFn: async () => ({
-          success: true,
-          output: JSON.stringify({ prd: revisedPrd, citationRate: 0.8, advisory: false }),
-          exitCode: 0,
-        }),
+        runWithFallbackFn: async (req) => {
+          const role = req.runOptions.sessionRole;
+          const output = role === "plan-critic"
+            ? JSON.stringify({ findings: llmBlockers })
+            : validRevisionPrd;
+          return { result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+        },
       });
       runtime = makeTestRuntime({ agentManager });
 
@@ -419,18 +431,15 @@ describe("runPlanCritic (US-005)", () => {
           codebaseContext: "# Codebase",
           feature: "test-feature",
           branchName: "feat/test",
-          citationThreshold: 0.5,
+          citationThreshold: 0, // exempt citation check so revision parses cleanly
         },
       };
 
       const result = await runPlanCritic(input);
 
-      // If the revision passes, outcome should be "passed"
-      // and the prd should be from the revised draft
-      if (result.outcome === "passed") {
-        expect(result.prd).toBeDefined();
-        expect(result.specDeltasPath).toBeUndefined();
-      }
+      expect(result.outcome).toBe("passed");
+      expect(result.prd).toBeDefined();
+      expect(result.specDeltasPath).toBeUndefined();
     });
   });
 
@@ -439,27 +448,33 @@ describe("runPlanCritic (US-005)", () => {
       const { runPlanCritic } = await import("@/plan/critic");
 
       const prd = makePRD();
-      const revisedPrd = makePRD({ feature: "test-feature-revised" });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
       const llmBlockers = [makeBlockerFinding()];
 
-      let completeCallCount = 0;
+      // Revision PRD: valid schema but contextFiles has nonexistent file → mechanical blocker
+      const revisionWithBlockers = JSON.stringify({
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple", contextFiles: ["nonexistent-revised.ts"] }],
+      });
+
+      // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback
+      let criticCallCount = 0;
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => {
-          completeCallCount++;
-          return {
-            output: JSON.stringify({ findings: llmBlockers }),
-            tokenUsage: { inputTokens: 0, outputTokens: 0 },
-            estimatedCostUsd: 0,
-          };
+        runWithFallbackFn: async (req) => {
+          const role = req.runOptions.sessionRole;
+          if (role === "plan-critic") {
+            criticCallCount++;
+            return { result: { success: true, exitCode: 0, output: JSON.stringify({ findings: llmBlockers }), rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
+          }
+          // Draft revision: returns PRD that still has mechanical blockers
+          return { result: { success: true, exitCode: 0, output: revisionWithBlockers, rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
         },
-        runAsFn: async () => ({
-          success: true,
-          output: JSON.stringify({ prd: revisedPrd, citationRate: 0.8, advisory: false }),
-          exitCode: 0,
-        }),
       });
       runtime = makeTestRuntime({ agentManager });
 
@@ -486,7 +501,7 @@ describe("runPlanCritic (US-005)", () => {
           codebaseContext: "# Codebase",
           feature: "test-feature",
           branchName: "feat/test",
-          citationThreshold: 0.5,
+          citationThreshold: 0, // exempt citation check so revision PRD parses cleanly
         },
       };
 
@@ -494,9 +509,8 @@ describe("runPlanCritic (US-005)", () => {
 
       expect(result.outcome).toBe("failed");
       expect(result.specDeltasPath).toBeDefined();
-      // LLM should be called once (for initial judgment)
-      // NOT called again for the revision check
-      expect(completeCallCount).toBe(1);
+      // LLM critic called once; NOT called again for the revision mechanical check
+      expect(criticCallCount).toBe(1);
     });
   });
 
@@ -508,9 +522,13 @@ describe("runPlanCritic (US-005)", () => {
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
+      // planCriticLlmOp is kind:"run" — goes through runWithFallback, not completeAs
       const agentManager = makeMockAgentManager({
-        completeAsFn: async () => {
-          throw new Error("LLM service unavailable");
+        runWithFallbackFn: async (req) => {
+          if (req.runOptions.sessionRole === "plan-critic") {
+            throw new Error("LLM service unavailable");
+          }
+          return { result: { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCostUsd: 0, agentFallbacks: [] }, fallbacks: [] };
         },
       });
       runtime = makeTestRuntime({ agentManager });

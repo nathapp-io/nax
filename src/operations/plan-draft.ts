@@ -1,10 +1,10 @@
-import { ParseValidationError } from "../agents/retry";
-import { makeTieredParseRetryStrategy } from "../agents/retry/tiered-parse-retry";
-import type { TieredInspection } from "../agents/retry/tiered-parse-retry";
+import { ParseValidationError, makeTieredParseRetryStrategy } from "../agents/retry";
+import type { TieredInspection } from "../agents/retry";
 import { planConfigSelector } from "../config";
 import type { PlanConfig } from "../config/selectors";
 import { citationRate, extractClaims } from "../debate/citations";
 import type { FactsManifest } from "../debate/facts-manifest";
+import { validateDraftCitations } from "../plan/draft-citations";
 import type { VerifierFinding } from "../plan/spec-deltas";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
@@ -52,7 +52,7 @@ interface DraftInspection extends TieredInspection<DraftFailureKind, PRD> {
 
 // ─── Inspection ───────────────────────────────────────────────────────────────
 
-function inspectDraftOutput(output: string): DraftInspection {
+export function inspectDraftOutput(output: string, feature = "", branch = ""): DraftInspection {
   let raw: unknown;
   try {
     raw = parseLLMJson(output);
@@ -62,7 +62,7 @@ function inspectDraftOutput(output: string): DraftInspection {
 
   let prd: PRD;
   try {
-    prd = validatePlanOutput(raw, "", "");
+    prd = validatePlanOutput(raw, feature, branch);
   } catch (err) {
     return {
       ok: false,
@@ -90,26 +90,28 @@ function inspectDraftOutput(output: string): DraftInspection {
 // ─── Parse ────────────────────────────────────────────────────────────────────
 
 function parsePlanDraft(output: string, input: PlanDraftInput): PlanDraftOutput {
-  const inspection = inspectDraftOutput(output);
+  const inspection = inspectDraftOutput(output, input.feature, input.branchName);
 
-  if (!inspection.ok || !inspection.partial) {
-    if (inspection.kind === "not-json") {
-      throw new ParseValidationError(inspection.message ?? "Output was not valid JSON");
-    }
-    if (inspection.kind === "prd-invalid") {
-      throw new ParseValidationError(inspection.message ?? "PRD schema validation failed");
-    }
+  if (inspection.kind === "not-json") {
+    throw new ParseValidationError(inspection.message ?? "Output was not valid JSON");
+  }
+  if (inspection.kind === "prd-invalid") {
+    throw new ParseValidationError(inspection.message ?? "PRD schema validation failed");
+  }
+  if (!inspection.partial) {
     throw new ParseValidationError(inspection.message ?? "Draft parse failed");
   }
+  // citation-low with partial: fall through to validateDraftCitations (configured threshold)
 
   const prd = inspection.partial;
   const rate = inspection.citationRate ?? 0;
 
-  if (rate < input.citationThreshold) {
-    const claims = extractClaims(output);
-    const uncited = claims.filter((c) => !c.cited).length;
+  // Enforce the configured threshold (may differ from DEFAULT_CITATION_THRESHOLD used by inspectDraftOutput).
+  // Use validateDraftCitations as the SSOT instead of re-running extractClaims/citationRate inline.
+  const citation = validateDraftCitations(output, input.manifest, input.citationThreshold);
+  if (!citation.ok) {
     throw new ParseValidationError(
-      `citation rate ${rate.toFixed(2)} below configured threshold ${input.citationThreshold} (${uncited} uncited claims)`,
+      `citation rate ${citation.rate.toFixed(2)} below configured threshold ${citation.threshold} (${citation.uncitedCount} uncited claims)`,
     );
   }
 
@@ -119,13 +121,17 @@ function parsePlanDraft(output: string, input: PlanDraftInput): PlanDraftOutput 
 // ─── Retry strategy ───────────────────────────────────────────────────────────
 
 function buildDraftRetryPrompt(inspection: DraftInspection, isTruncated: boolean): string {
-  const message = inspection.message ?? "Unknown error";
   if (inspection.kind === "not-json") {
-    return PlanPromptBuilder.jsonRepair(isTruncated ? 1 : 0, message);
+    return PlanPromptBuilder.jsonRepair(isTruncated ? 1 : 0, inspection.message ?? "Unknown error");
   }
   if (inspection.kind === "prd-invalid") {
-    return PlanPromptBuilder.schemaRepair(message);
+    return PlanPromptBuilder.schemaRepair(inspection.message ?? "Unknown error");
   }
+  // Handles "citation-low" and the edge case where inspectDraftOutput returned ok: true
+  // (rate >= DEFAULT 0.5) but parsePlanDraft still rejected because configured threshold > 0.5.
+  const message =
+    inspection.message ??
+    "The citation rate in your response is below the required threshold. Add [F-NNN] or [S-NNN] citations to all concrete claims.";
   return PlanPromptBuilder.citationRepair(message);
 }
 

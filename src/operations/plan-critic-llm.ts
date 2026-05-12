@@ -1,8 +1,8 @@
-import { ParseValidationError } from "@/agents/retry";
-import { makeTieredParseRetryStrategy } from "@/agents/retry/tiered-parse-retry";
-import type { TieredInspection } from "@/agents/retry/tiered-parse-retry";
+import { ParseValidationError, makeTieredParseRetryStrategy } from "@/agents/retry";
+import type { TieredInspection } from "@/agents/retry";
 import { planConfigSelector } from "@/config";
 import type { FactsManifest } from "@/debate/facts-manifest";
+import type { VerifierFinding } from "@/plan/spec-deltas";
 import type { PRD } from "@/prd";
 import { CriticPromptBuilder } from "@/prompts";
 import { parseLLMJson } from "@/utils/llm-json";
@@ -15,16 +15,6 @@ export interface PlanCriticLlmInput {
 
 export interface PlanCriticLlmOutput {
   readonly findings: VerifierFinding[];
-}
-
-export interface VerifierFinding {
-  checklistItem: string;
-  severity: "blocker" | "major" | "minor";
-  message?: string;
-  specId?: string;
-  gapId?: string;
-  storyId?: string;
-  [key: string]: unknown;
 }
 
 type CriticFailureKind = "not-json" | "schema-invalid";

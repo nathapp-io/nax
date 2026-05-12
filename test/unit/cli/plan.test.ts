@@ -1113,20 +1113,20 @@ describe("runPlanPipeline (US-005)", () => {
         if (opts.capturedPrompts && req.runOptions?.prompt) {
           opts.capturedPrompts.push(req.runOptions.prompt);
         }
-        const output =
-          idx === 0
-            ? makeGroundOpOutput(opts.groundManifestOverride ? { repoFacts: (opts.groundManifestOverride as { repoFacts: object[] }).repoFacts } : {})
-            : makeDraftOpOutput(draftPrd);
+        let output: string;
+        if (idx === 0) {
+          output = makeGroundOpOutput(opts.groundManifestOverride ? { repoFacts: (opts.groundManifestOverride as { repoFacts: object[] }).repoFacts } : {});
+        } else if (idx === 1) {
+          output = makeDraftOpOutput(draftPrd);
+        } else {
+          // idx >= 2: planCriticLlmOp (run-kind) or revision planDraftOp calls
+          output = idx === 2 ? JSON.stringify({ findings: llmFindings }) : makeDraftOpOutput(draftPrd);
+        }
         return {
           result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
           fallbacks: [],
         };
       },
-      completeAsFn: async () => ({
-        output: JSON.stringify({ findings: llmFindings }),
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0,
-      }),
     });
   }
 
@@ -1198,21 +1198,23 @@ describe("runPlanPipeline (US-005)", () => {
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async () => {
           const idx = runCallCount++;
-          const output = idx === 0 ? makeGroundOpOutput() : makeDraftOpOutput(makePRD({ feature: "test-feature" }));
+          let output: string;
+          if (idx === 0) output = makeGroundOpOutput();
+          else if (idx === 1) output = makeDraftOpOutput(makePRD({ feature: "test-feature" }));
+          else output = JSON.stringify({ findings: [] }); // planCriticLlmOp (run-kind, idx=2)
           return {
             result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
             fallbacks: [],
           };
         },
-        completeAsFn: async () => ({ output: JSON.stringify({ findings: [] }), tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
       });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
       const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
 
-      // All three phases executed: groundOp → planDraftOp → critic (passed) → prd.json written
+      // All three phases executed: groundOp → planDraftOp → planCriticLlmOp (run-kind) → prd.json written
       expect(result).toContain("prd.json");
-      expect(runCallCount).toBe(2);
+      expect(runCallCount).toBe(3);
     });
   });
 

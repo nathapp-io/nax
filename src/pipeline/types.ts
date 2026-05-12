@@ -280,7 +280,18 @@ export type StageAction =
   /** Pause execution (user intervention required via queue command) */
   | { action: "pause"; reason: string; cost?: number }
   /** Retry from a specific stage (used by rectify/autofix stages) */
-  | { action: "retry"; fromStage: string; cost?: number };
+  | {
+      action: "retry";
+      fromStage: string;
+      cost?: number;
+      /**
+       * When true, the retry counter for `fromStage` is reset to zero before
+       * this retry is counted. Use when the fixing stage (e.g. rectify/autofix)
+       * has genuinely resolved the problem and the target stage should get a
+       * fresh attempt budget.
+       */
+      resetRetryCount?: boolean;
+    };
 
 /**
  * Result returned by a pipeline stage after execution.

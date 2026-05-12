@@ -3,22 +3,19 @@
  *
  * Orchestrates the plan review pipeline:
  * 1. Mechanical checks (file existence, citation, contradiction, coverage)
- * 2. LLM judgment via agentManager.completeAs
+ * 2. LLM judgment via planCriticLlmOp (fail-open)
  * 3. Revision via planDraftOp when blockers are found
  */
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { resolveConfiguredModel } from "@/config";
 import type { NaxConfig } from "@/config";
-import type { ModelDef } from "@/config/schema-types";
 import type { FactsManifest } from "@/debate";
 import { checkAcAnchored, checkClaimsCited, checkFilesExist, checkNoContradictions, checkSpecCoverage } from "@/debate";
 import { getLogger } from "@/logger";
-import { callOp, inspectCriticOutput, planDraftOp } from "@/operations";
+import { callOp, planCriticLlmOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
 import type { PRD } from "@/prd";
-import { CriticPromptBuilder, composeSections, join as joinSections } from "@/prompts";
 import { formatSpecDeltas } from "./spec-deltas";
 import type { VerifierFinding } from "./spec-deltas";
 
@@ -87,35 +84,11 @@ export async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticV
     return { outcome: "failed", prd, findings: mechFindings, specDeltasPath };
   }
 
-  // 2. LLM judgment via agentManager.completeAs
-  const agentManager = callCtx.runtime.agentManager;
-  const config = callCtx.runtime.configLoader.current();
-  const agentName = callCtx.agentName ?? agentManager.getDefault();
-  const criticModel = config.plan?.criticModel ?? "fast";
-
-  let modelDef: ModelDef;
-  try {
-    modelDef = resolveConfiguredModel(config.models, agentName, criticModel, agentManager.getDefault()).modelDef;
-  } catch {
-    modelDef = { provider: "unknown", model: String(criticModel) } as ModelDef;
-  }
-
-  const composeInput = new CriticPromptBuilder().build(prd, manifest);
-  const prompt = joinSections(composeSections(composeInput));
-
+  // 2. LLM judgment via planCriticLlmOp (fail-open: exhaustion returns { findings: [] })
   let llmFindings: VerifierFinding[] = [];
   try {
-    const completeResult = await agentManager.completeAs(agentName, prompt, {
-      modelDef,
-      workdir: callCtx.packageDir,
-      pipelineStage: "plan",
-      storyId,
-      featureName: callCtx.featureName,
-    });
-    const inspection = inspectCriticOutput(completeResult.output);
-    if (inspection.ok) {
-      llmFindings = (inspection.findings ?? []) as VerifierFinding[];
-    }
+    const llmResult = await callOp(callCtx, planCriticLlmOp, { prd, manifest });
+    llmFindings = llmResult.findings as VerifierFinding[];
   } catch {
     logger?.warn("plan-critic", "LLM judgment failed; proceeding with zero LLM findings", { storyId });
   }
