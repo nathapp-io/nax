@@ -102,11 +102,10 @@ export async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticV
 
   // 3. Revision via planDraftOp (session named "plan-revise" to distinguish from initial draft)
   try {
-    const revisedDraft = await callOp(
-      { ...callCtx, sessionOverride: { role: "plan-revise" } },
-      planDraftOp,
-      { ...draftCtx, revisionFindings: allBlockers },
-    );
+    const revisedDraft = await callOp({ ...callCtx, sessionOverride: { role: "plan-revise" } }, planDraftOp, {
+      ...draftCtx,
+      revisionFindings: allBlockers,
+    });
 
     const revisedMechFindings = runMechanicalChecks(revisedDraft.prd, workdir, manifest, draftCtx.citationThreshold);
     const revisedMechBlockers = revisedMechFindings.filter((f) => f.severity === "blocker");
