@@ -348,15 +348,18 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pipeline mode stub — replaced by US-005
+// Pipeline mode — US-005
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Stub for the asymmetric pipeline plan mode.
- * Warns when debate is also enabled (pipeline wins), then throws NOT_IMPLEMENTED.
- * Full implementation lands in US-005.
+ * Asymmetric pipeline plan mode.
+ * Runs mechanical checks + LLM judgment (runPlanCritic) to produce a validated PRD.
  */
-async function runPlanPipeline(_workdir: string, config: NaxConfig, _options: PlanCommandOptions): Promise<never> {
+export async function runPlanPipeline(
+  workdir: string,
+  config: NaxConfig,
+  options: PlanCommandOptions,
+): Promise<string> {
   const debateEnabled = config?.debate?.enabled === true;
   if (debateEnabled) {
     _planDeps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
@@ -364,9 +367,93 @@ async function runPlanPipeline(_workdir: string, config: NaxConfig, _options: Pl
       debateEnabled: true,
     });
   }
-  throw new NaxError("plan pipeline mode is not yet implemented", "PLAN_PIPELINE_NOT_IMPLEMENTED", {
-    stage: "plan",
-  });
+
+  const { runPlanCritic } = await import("../plan/critic");
+  const logger = _planDeps.getLogger();
+
+  const specContent = await _planDeps.readFile(options.from);
+  const [sourceRoots, pkg] = await Promise.all([
+    _planDeps.scanSourceRoots(workdir),
+    _planDeps.readPackageJson(workdir),
+  ]);
+  const normalizedRoots = sourceRoots.map((root) => ({
+    ...root,
+    path: root.path.startsWith("/") ? root.path.replace(`${workdir}/`, "") : root.path,
+  }));
+  const codebaseContext = buildSourceRootsSection(normalizedRoots);
+
+  const branchName = options.branch ?? `feat/${options.feature}`;
+  const naxDir = join(workdir, ".nax");
+  const outputDir = join(naxDir, "features", options.feature);
+  const outputPath = join(outputDir, "prd.json");
+  await _planDeps.mkdirp(outputDir);
+
+  const projectName = pkg?.name && typeof pkg.name === "string" ? pkg.name : options.feature;
+  const runId = `pipeline-${Date.now()}`;
+
+  const rt = createPlanRuntime(config, workdir, options.feature);
+  try {
+    const callCtx = {
+      runtime: rt,
+      packageView: rt.packages.resolve(),
+      packageDir: workdir,
+      agentName: rt.agentManager.getDefault(),
+      storyId: options.feature,
+      featureName: options.feature,
+    } satisfies import("../operations/types").CallContext;
+
+    const manifest: import("../debate/facts-manifest").FactsManifest = {
+      repoFacts: [],
+      specClaims: [],
+      gaps: [],
+    };
+
+    const verdict = await runPlanCritic({
+      prd: {
+        feature: options.feature,
+        project: projectName,
+        branchName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [],
+      },
+      manifest,
+      workdir,
+      runId,
+      storyId: options.feature,
+      config,
+      callCtx,
+      draftCtx: {
+        manifestSection: "",
+        manifest,
+        specContent,
+        codebaseContext,
+        feature: options.feature,
+        branchName,
+        citationThreshold: config?.plan?.citationThreshold ?? 0.5,
+      },
+    });
+
+    if (verdict.outcome === "passed") {
+      await _planDeps.writeFile(outputPath, JSON.stringify({ ...verdict.prd, project: projectName }, null, 2));
+      logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
+      return outputPath;
+    }
+
+    logger?.warn("plan", "Pipeline plan critic returned failed outcome", {
+      specDeltasPath: verdict.specDeltasPath,
+      findings: verdict.findings.length,
+    });
+    if (verdict.specDeltasPath) {
+      throw new NaxError(`Plan pipeline failed; see ${verdict.specDeltasPath}`, "PLAN_PIPELINE_FAILED", {
+        stage: "plan",
+        specDeltasPath: verdict.specDeltasPath,
+      });
+    }
+    throw new NaxError("Plan pipeline failed with no spec-deltas path", "PLAN_PIPELINE_FAILED", { stage: "plan" });
+  } finally {
+    await rt.close().catch(() => {});
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

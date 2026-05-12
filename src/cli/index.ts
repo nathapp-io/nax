@@ -2,7 +2,7 @@
  * CLI Utilities
  */
 
-export { planCommand, buildPlanComposition, resolvePlanMode, _planDeps } from "./plan";
+export { planCommand, buildPlanComposition, resolvePlanMode, runPlanPipeline, _planDeps } from "./plan";
 export type { PlanCommandOptions } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
 export { buildSourceRootsSection } from "./plan-helpers";
