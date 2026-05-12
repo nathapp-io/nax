@@ -78,7 +78,7 @@ export { promptStage } from "./prompt";
 export { optimizerStage } from "./optimizer";
 export { executionStage, _executionDeps } from "./execution";
 export { verifyStage } from "./verify";
-export { rectifyStage } from "./rectify";
+export { rectifyStage, _rectifyDeps } from "./rectify";
 export { reviewStage } from "./review";
 export { autofixStage } from "./autofix";
 export { regressionStage } from "./regression";

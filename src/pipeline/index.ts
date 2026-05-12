@@ -12,9 +12,9 @@ export type {
   RoutingResult,
 } from "./types";
 
-export { runPipeline, MAX_STAGE_RETRIES } from "./runner";
+export { runPipeline, MAX_STAGE_RETRIES, MAX_STAGE_RESETS } from "./runner";
 export type { PipelineRunResult } from "./runner";
 
 export { PipelineEventEmitter } from "./events";
 export type { PipelineEvents, RunSummary } from "./events";
-export { executionStage, _executionDeps } from "./stages";
+export { executionStage, _executionDeps, rectifyStage, _rectifyDeps } from "./stages";

@@ -1,8 +1,8 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { rectifyStage, _rectifyDeps } from "../../../../src/pipeline/stages/rectify";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
+import { rectifyStage, _rectifyDeps } from "@/pipeline";
+import type { PipelineContext } from "@/pipeline";
+import { DEFAULT_CONFIG } from "@/config";
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
@@ -103,13 +103,15 @@ describe("rectifyStage", () => {
 
   test("escalates immediately when failCount is 0 (environmental failure — nothing for agent to fix)", async () => {
     const saved = { ..._rectifyDeps };
+    // Ensure runRectificationLoop is never called for this path
     let loopCalled = false;
-    _rectifyDeps.runRectificationLoop = async () => {
-      loopCalled = true;
-      return { succeeded: false, cost: 0, durationMs: 0 };
-    };
+    _rectifyDeps.runRectificationLoop = async () => { loopCalled = true; return { succeeded: false, cost: 0, durationMs: 0 }; };
 
-    const envVerifyResult = { ...makeVerifyResult(false), failCount: 0, status: "TEST_FAILURE" as const };
+    const envVerifyResult = {
+      ...makeVerifyResult(false),
+      failCount: 0,
+      status: "TEST_FAILURE" as const,
+    };
     const ctx = makeCtx({ verifyResult: envVerifyResult });
     const result = await rectifyStage.execute(ctx);
 
