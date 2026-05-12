@@ -21,6 +21,7 @@ import {
   makeMockAgentManager,
   makeNaxConfig,
   makePRD,
+  makeStory,
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
@@ -66,7 +67,7 @@ describe("runPlanCritic (US-005)", () => {
       // It imports the function and expects it to handle mechanical checks.
       const { runPlanCritic } = await import("@/plan/critic");
 
-      const prd = makePRD();
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -118,7 +119,7 @@ describe("runPlanCritic (US-005)", () => {
     test("emits spec-deltas.md to correct path", async () => {
       const { runPlanCritic } = await import("@/plan/critic");
 
-      const prd = makePRD();
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -163,7 +164,7 @@ describe("runPlanCritic (US-005)", () => {
       // The implementation should skip the LLM judgment stage.
 
       const { runPlanCritic } = await import("@/plan/critic");
-      const prd = makePRD();
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 

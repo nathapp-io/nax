@@ -11,10 +11,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
-import { callOp, planInteractiveOp } from "../operations";
+import { callOp, groundOp, planDraftOp, planInteractiveOp } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
@@ -389,7 +390,6 @@ export async function runPlanPipeline(
   await _planDeps.mkdirp(outputDir);
 
   const projectName = pkg?.name && typeof pkg.name === "string" ? pkg.name : options.feature;
-  const runId = `pipeline-${Date.now()}`;
 
   const rt = createPlanRuntime(config, workdir, options.feature);
   try {
@@ -402,36 +402,41 @@ export async function runPlanPipeline(
       featureName: options.feature,
     } satisfies import("../operations/types").CallContext;
 
-    const manifest: import("../debate/facts-manifest").FactsManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
+    // Phase 1 — ground
+    let manifest: import("../debate/facts-manifest").FactsManifest;
+    try {
+      manifest = await callOp(callCtx, groundOp, { specContent, codebaseContext, workdir });
+    } catch (err) {
+      throw new NaxError("Plan pipeline: grounder failed", "PLAN_PIPELINE_GROUND_FAILED", {
+        stage: "plan",
+        cause: err,
+      });
+    }
 
+    // Phase 2 — draft
+    const citationThreshold = config?.plan?.citationThreshold ?? 0.5;
+    const manifestSection = renderManifestSection(manifest);
+    const draftCtx = {
+      manifestSection,
+      manifest,
+      specContent,
+      codebaseContext,
+      feature: options.feature,
+      branchName,
+      citationThreshold,
+    };
+    const draft = await callOp(callCtx, planDraftOp, draftCtx);
+
+    // Phase 3 — critic
     const verdict = await runPlanCritic({
-      prd: {
-        feature: options.feature,
-        project: projectName,
-        branchName,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userStories: [],
-      },
+      prd: draft.prd,
       manifest,
       workdir,
-      runId,
+      runId: rt.runId,
       storyId: options.feature,
       config,
       callCtx,
-      draftCtx: {
-        manifestSection: "",
-        manifest,
-        specContent,
-        codebaseContext,
-        feature: options.feature,
-        branchName,
-        citationThreshold: config?.plan?.citationThreshold ?? 0.5,
-      },
+      draftCtx,
     });
 
     if (verdict.outcome === "passed") {
@@ -440,17 +445,13 @@ export async function runPlanPipeline(
       return outputPath;
     }
 
-    logger?.warn("plan", "Pipeline plan critic returned failed outcome", {
-      specDeltasPath: verdict.specDeltasPath,
-      findings: verdict.findings.length,
-    });
-    if (verdict.specDeltasPath) {
-      throw new NaxError(`Plan pipeline failed; see ${verdict.specDeltasPath}`, "PLAN_PIPELINE_FAILED", {
-        stage: "plan",
-        specDeltasPath: verdict.specDeltasPath,
-      });
-    }
-    throw new NaxError("Plan pipeline failed with no spec-deltas path", "PLAN_PIPELINE_FAILED", { stage: "plan" });
+    throw new NaxError(
+      verdict.specDeltasPath
+        ? `Plan pipeline failed; see ${verdict.specDeltasPath}`
+        : "Plan pipeline failed with no spec-deltas path",
+      "PLAN_CRITIC_BLOCKED",
+      { stage: "plan", specDeltasPath: verdict.specDeltasPath },
+    );
   } finally {
     await rt.close().catch(() => {});
   }

@@ -122,8 +122,8 @@ describe("planCommand — pipeline branch stub", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // AC13: pipeline mode throws PLAN_PIPELINE_NOT_IMPLEMENTED
-  test("AC13: pipeline mode throws NaxError PLAN_PIPELINE_NOT_IMPLEMENTED", async () => {
+  // AC13: pipeline mode throws PLAN_PIPELINE_GROUND_FAILED (grounder fails with mock runtime)
+  test("AC13: pipeline mode throws NaxError PLAN_PIPELINE_GROUND_FAILED", async () => {
     const config = makeMinimalConfig({ plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" } });
 
     let thrown: unknown;
@@ -134,7 +134,7 @@ describe("planCommand — pipeline branch stub", () => {
     }
 
     expect(thrown).toBeInstanceOf(NaxError);
-    expect((thrown as NaxError).code).toBe("PLAN_PIPELINE_NOT_IMPLEMENTED");
+    expect((thrown as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
     expect((thrown as NaxError).context?.stage).toBe("plan");
   });
 
