@@ -3,7 +3,7 @@
   "feature": "plan-asymmetric-pipeline",
   "branchName": "feat/plan-asymmetric-pipeline",
   "createdAt": "2026-05-12T00:00:00.000Z",
-  "updatedAt": "2026-05-12T05:37:27.360Z",
+  "updatedAt": "2026-05-12T06:10:15.820Z",
   "userStories": [
     {
       "id": "US-001",
@@ -154,8 +154,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -218,7 +218,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/runtime/session-role.ts",
@@ -234,7 +236,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ae2e8c10be6c2f5307c0c60c48f2bc3a6bc16afe"
     },
     {
       "id": "US-005",

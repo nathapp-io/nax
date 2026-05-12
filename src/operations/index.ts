@@ -49,3 +49,5 @@ export { groundOp } from "./ground";
 export type { GrounderInput } from "./ground";
 export { planDraftOp } from "./plan-draft";
 export type { PlanDraftInput, PlanDraftOutput } from "./plan-draft";
+export { planCriticLlmOp } from "./plan-critic-llm";
+export type { PlanCriticLlmInput, PlanCriticLlmOutput, VerifierFinding } from "./plan-critic-llm";

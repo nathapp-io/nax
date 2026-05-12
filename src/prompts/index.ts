@@ -55,6 +55,9 @@ export type { PlanningPromptParts, PackageSummary } from "./builders/plan-builde
 export { GrounderPromptBuilder } from "./builders/grounder-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";
 
+// Critic prompt builder — plan audit prompt construction for ac-testability and failure-mode coverage.
+export { CriticPromptBuilder } from "./builders/critic-builder";
+
 // Patch prompt builder — patch step prompt construction for verifier-pick selector.
 export { PatchPromptBuilder } from "./builders/patch-builder";
 
