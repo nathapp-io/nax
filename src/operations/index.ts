@@ -47,3 +47,5 @@ export { autoApproveOp } from "./auto-approve";
 export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";
 export { groundOp } from "./ground";
 export type { GrounderInput } from "./ground";
+export { planDraftOp } from "./plan-draft";
+export type { PlanDraftInput, PlanDraftOutput } from "./plan-draft";
