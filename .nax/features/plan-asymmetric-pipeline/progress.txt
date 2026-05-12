@@ -1,1 +1,2 @@
 [2026-05-12T05:22:44.873Z] US-001 — PASSED — config.plan.mode schema + pipeline branch stub — Cost: $2.9293
+[2026-05-12T05:37:24.545Z] US-002 — PASSED — Extract pure check functions + draft citation validator — Cost: $1.0612
