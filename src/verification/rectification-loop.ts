@@ -455,7 +455,15 @@ export async function runRectificationLoop(
         // either the runner exited clean (status SUCCESS) or it saw passing
         // tests (passed > 0). If both are 0, the parser couldn't read the
         // output format — treat it as unresolved to avoid false-positives.
-        if (newTestSummary.failed === 0 && (retryVerification.status === "SUCCESS" || newTestSummary.passed > 0)) {
+        // Exclude ENVIRONMENTAL_FAILURE: the process exited non-zero due to an
+        // infrastructure issue (resource warnings, open handles) that is not
+        // fixable by code changes. Even with 0 failures and passing tests, the
+        // outer verify stage will still fail — do not declare success here.
+        if (
+          newTestSummary.failed === 0 &&
+          retryVerification.status !== "ENVIRONMENTAL_FAILURE" &&
+          (retryVerification.status === "SUCCESS" || newTestSummary.passed > 0)
+        ) {
           logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
             storyId: story.id,
             attempt: currentAttempt,
