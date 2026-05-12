@@ -3,7 +3,7 @@
   "feature": "plan-asymmetric-pipeline",
   "branchName": "feat/plan-asymmetric-pipeline",
   "createdAt": "2026-05-12T00:00:00.000Z",
-  "updatedAt": "2026-05-12T05:01:47.804Z",
+  "updatedAt": "2026-05-12T05:22:47.652Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,8 +31,8 @@
         "plan"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -92,7 +92,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/verifiers/plan-checklist.ts",
@@ -113,7 +115,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "30296b3750eadb5d2df44e215a70e26228e483fe"
     },
     {
       "id": "US-003",
