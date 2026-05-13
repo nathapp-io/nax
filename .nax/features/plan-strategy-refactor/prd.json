@@ -3,7 +3,7 @@
   "feature": "plan-strategy-refactor",
   "branchName": "feat/plan-strategy-refactor",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-13T09:01:19.579Z",
+  "updatedAt": "2026-05-13T10:00:55.797Z",
   "userStories": [
     {
       "id": "US-001",
@@ -226,7 +226,7 @@
         "US-003",
         "US-004"
       ],
-      "status": "paused",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],
