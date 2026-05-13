@@ -225,7 +225,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
     _planDeps.discoverWorkspacePackages = mock(async () => []);
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.initInteractionChain = mock(async () => null);
     _planDeps.createRuntime = mock(() => makeMockPlanManager());
     _planDeps.createDebateRunner = origCreateDebateSession;

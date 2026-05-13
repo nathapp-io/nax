@@ -16,7 +16,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "@/cli";
 import { DEFAULT_CONFIG } from "@/config";
-import { makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -29,9 +29,49 @@ Test problem.
 - AC-1: Test criterion
 `;
 
-// Note: SAMPLE_PRD structure — used by the agent's planInteractiveOp.parse()
-// when generating the PRD from LLM output. This test doesn't mock the full
-// LLM interaction, so we expect failures at the callOp level (agent not actually running).
+const SAMPLE_PRD = {
+  project: "test",
+  feature: "test-feature",
+  branchName: "feat/test-feature",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  userStories: [
+    {
+      id: "US-001",
+      title: "Test story",
+      description: "A test story",
+      acceptanceCriteria: ["AC-1: test criterion"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "Simple single-function change",
+      },
+    },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Saved originals (restored in afterEach)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const origReadFile = _planDeps.readFile;
+const origWriteFile = _planDeps.writeFile;
+const origScanSourceRoots = _planDeps.scanSourceRoots;
+const origCreateRuntime = _planDeps.createRuntime;
+const origReadPackageJson = _planDeps.readPackageJson;
+const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
+const origSpawnSync = _planDeps.spawnSync;
+const origMkdirp = _planDeps.mkdirp;
+const origExistsSync = _planDeps.existsSync;
+const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
+const origCreateInteractionBridge = _planDeps.createInteractionBridge;
+const origInitInteractionChain = _planDeps.initInteractionChain;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -44,7 +84,6 @@ describe("planCommand callOp migration (US-003)", () => {
     tmpDir = makeTempDir("nax-plan-int-");
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
-    // Setup basic mocks for file I/O
     const filesOnDisk: Record<string, string> = {};
 
     _planDeps.readFile = mock(async (path: string) => {
@@ -59,23 +98,33 @@ describe("planCommand callOp migration (US-003)", () => {
       filesOnDisk[path] = content;
     });
 
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "src/",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
-
+    _planDeps.scanSourceRoots = mock(async () => []);
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.readPackageJson = mock(async () => ({ name: "test" }));
     _planDeps.readPackageJsonAt = mock(async () => ({ name: "test" }));
     _planDeps.spawnSync = mock(() => ({ exitCode: 0, stdout: Buffer.from("") }));
     _planDeps.mkdirp = mock(async () => {});
 
-    _planDeps.existsSync = mock((path: string) => {
-      if (path.includes(".nax")) return true;
-      return filesOnDisk[path] !== undefined;
-    });
+    _planDeps.existsSync = mock((path: string) => path === join(tmpDir, ".nax"));
+
+    _planDeps.createRuntime = mock(() =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({
+            result: {
+              success: true,
+              exitCode: 0,
+              output: JSON.stringify(SAMPLE_PRD),
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          }),
+        }),
+      }),
+    );
 
     _planDeps.createInteractionBridge = mock(() => ({
       detectQuestion: async () => false,
@@ -86,19 +135,30 @@ describe("planCommand callOp migration (US-003)", () => {
   });
 
   afterEach(() => {
-    // Cleanup by temp dir helper
+    mock.restore();
+    _planDeps.readFile = origReadFile;
+    _planDeps.writeFile = origWriteFile;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
+    _planDeps.createRuntime = origCreateRuntime;
+    _planDeps.readPackageJson = origReadPackageJson;
+    _planDeps.readPackageJsonAt = origReadPackageJsonAt;
+    _planDeps.spawnSync = origSpawnSync;
+    _planDeps.mkdirp = origMkdirp;
+    _planDeps.existsSync = origExistsSync;
+    _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+    _planDeps.createInteractionBridge = origCreateInteractionBridge;
+    _planDeps.initInteractionChain = origInitInteractionChain;
   });
 
   // Test that basic parameters are accepted
   test("planCommand accepts feature name and spec path", async () => {
-    // This test validates that the function signature works with new behavior
-    expect(async () => {
-      await planCommand(tmpDir, DEFAULT_CONFIG, {
-        from: join(tmpDir, "spec.md"),
-        feature: "test-feature",
-        // Note: no 'auto' property
-      });
-    }).not.toThrow();
+    const result = await planCommand(tmpDir, DEFAULT_CONFIG, {
+      from: join(tmpDir, "spec.md"),
+      feature: "test-feature",
+    });
+
+    expect(result).toContain("prd.json");
+    expect(result).toContain("test-feature");
   });
 
   // Test that spec is read correctly
@@ -113,7 +173,6 @@ describe("planCommand callOp migration (US-003)", () => {
     });
 
     try {
-      // This will fail at callOp, but we can verify spec was read
       try {
         await planCommand(tmpDir, DEFAULT_CONFIG, {
           from: join(tmpDir, "spec.md"),
@@ -142,16 +201,11 @@ describe("planCommand callOp migration (US-003)", () => {
     });
 
     try {
-      try {
-        await planCommand(tmpDir, DEFAULT_CONFIG, {
-          from: join(tmpDir, "spec.md"),
-          feature: "test-feature",
-        });
-      } catch {
-        // Expected to fail at callOp — we're checking file path structure
-      }
-      // Verify mkdirp was called for the output directory
-      expect(writeWasCalledWithPath || true).toBe(true);
+      await planCommand(tmpDir, DEFAULT_CONFIG, {
+        from: join(tmpDir, "spec.md"),
+        feature: "test-feature",
+      });
+      expect(writeWasCalledWithPath).toBe(true);
     } finally {
       _planDeps.writeFile = origWrite;
     }

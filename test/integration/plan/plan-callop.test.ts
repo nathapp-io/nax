@@ -10,8 +10,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "@/cli";
 import type { PRD } from "@/prd/types";
-import { makeNaxConfig } from "@test/helpers";
-import { makeTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeTempDir } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -69,15 +68,6 @@ const SAMPLE_PRD: PRD = {
   ],
 };
 
-function makeFakeScan() {
-  return {
-    fileTree: "├── src/\n│   ├── auth/\n│   │   └── login.ts\n│   └── index.ts\n└── test/",
-    dependencies: { express: "^4.18.0", jsonwebtoken: "^9.0.0" },
-    devDependencies: { jest: "^29.0.0" },
-    testPatterns: ["Test framework: jest"],
-  };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +78,8 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
   const origReadFile = _planDeps.readFile;
   const origWriteFile = _planDeps.writeFile;
-  const origScanCodebase = _planDeps.scanCodebase;
+  const origScanSourceRoots = _planDeps.scanSourceRoots;
+  const origCreateRuntime = _planDeps.createRuntime;
   const origReadPackageJson = _planDeps.readPackageJson;
   const origSpawnSync = _planDeps.spawnSync;
   const origMkdirp = _planDeps.mkdirp;
@@ -119,11 +110,29 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
     });
 
     _planDeps.existsSync = mock((path: string) => {
-      // Start by saying PRD doesn't exist; writeFile will create it
-      return path === outputPath;
+      return path === join(tmpDir, ".nax") || path === outputPath;
     });
 
-    _planDeps.scanCodebase = mock(async () => makeFakeScan());
+    _planDeps.scanSourceRoots = mock(async () => []);
+
+    _planDeps.createRuntime = mock(() =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({
+            result: {
+              success: true,
+              exitCode: 0,
+              output: JSON.stringify(SAMPLE_PRD),
+              rateLimited: false,
+              durationMs: 1,
+              estimatedCostUsd: 0,
+              agentFallbacks: [],
+            },
+            fallbacks: [],
+          }),
+        }),
+      }),
+    );
 
     _planDeps.readPackageJson = mock(async () => ({ name: "auth-system" }));
 
@@ -152,7 +161,8 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.scanSourceRoots = origScanSourceRoots;
+    _planDeps.createRuntime = origCreateRuntime;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;
@@ -297,8 +307,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
     });
 
     _planDeps.existsSync = mock((path: string) => {
-      // PRD exists after writeFile
-      return path === outputPath;
+      return path === join(tmpDir, ".nax") || path === outputPath;
     });
 
     const specPath = join(tmpDir, "spec.md");
@@ -317,7 +326,7 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
   });
 
   test("throws error when callOp fails and outputPath doesn't exist on disk", async () => {
-    _planDeps.existsSync = mock(() => false); // PRD never written to disk
+    _planDeps.existsSync = mock((path: string) => path === join(tmpDir, ".nax")); // PRD never written to disk
 
     const specPath = join(tmpDir, "spec.md");
     await writeFile(specPath, SAMPLE_SPEC, "utf-8");
@@ -352,7 +361,6 @@ describe("planCommand integration — callOp + planInteractiveOp", () => {
 
     // Mock createDebateRunner to verify it's called
     const origCreateDebateRunner = _planDeps.createDebateRunner;
-    // @ts-expect-error - mock return type mismatch for testing
     _planDeps.createDebateRunner = mock(() => ({
       runPlan: mock(async () => ({
         outcome: "failed" as const,

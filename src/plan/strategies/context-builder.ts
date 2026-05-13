@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildPackageSummary, buildSourceRootsSection } from "../../cli/plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, createPlanRuntime, detectProjectName } from "../../cli/plan-runtime";
@@ -15,7 +14,7 @@ export async function buildPlanModeContext(
   deps: PlanDeps,
 ): Promise<PlanModeContext> {
   const naxDir = join(workdir, ".nax");
-  if (!existsSync(naxDir)) {
+  if (!deps.existsSync(naxDir)) {
     throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
   }
   validateFeatureName(options.feature);

@@ -13,9 +13,21 @@ function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   } as unknown as NaxRuntime;
 }
 
+const VALID_PRD_JSON = JSON.stringify({
+  userStories: [
+    {
+      id: "US-001",
+      title: "Recovered story",
+      description: "A recovered story for disk-recovery testing",
+      acceptanceCriteria: ["AC1: should pass"],
+      complexity: "simple",
+    },
+  ],
+});
+
 function makeDeps(exists = false): PlanDeps {
   return {
-    readFile: async () => "",
+    readFile: async () => (exists ? VALID_PRD_JSON : ""),
     writeFile: async () => {},
     mkdirp: async () => {},
     existsSync: () => exists,

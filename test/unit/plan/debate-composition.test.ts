@@ -8,10 +8,9 @@ function makeBaseStageConfig(
   return {
     enabled: true,
     resolver: { type: "majority-fail-closed" },
-    sessionMode: "one-shot",
     rounds: 1,
     ...overrides,
-  };
+  } as DebateStageConfig & { evidenceMode?: "current" | "asymmetric" };
 }
 
 describe("buildPlanComposition", () => {

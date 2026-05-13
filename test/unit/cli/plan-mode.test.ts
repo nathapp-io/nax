@@ -102,7 +102,7 @@ describe("planCommand — pipeline branch stub", () => {
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.createRuntime = mock(() =>
       makeMockRuntime({ agentManager: makeMockAgentManager() }),
     );

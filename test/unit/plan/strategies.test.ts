@@ -214,7 +214,8 @@ describe("writeOrRecoverPrd", () => {
 
   test("rethrows the original error when no recovered file exists", async () => {
     const deps = makeDeps({
-      readFile: mock(async () => {
+      readFile: mock(async (path: string) => {
+        if (path === SAMPLE_SPEC_PATH) return "# Spec";
         throw new Error("ENOENT");
       }),
     });

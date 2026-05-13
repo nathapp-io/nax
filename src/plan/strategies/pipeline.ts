@@ -18,6 +18,7 @@ export class PipelinePlanStrategy implements IPlanStrategy {
   async execute(ctx: PlanModeContext): Promise<string> {
     if (ctx.fullConfig?.debate?.enabled === true) {
       ctx.deps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
+        storyId: ctx.options.feature,
         mode: "pipeline",
         debateEnabled: true,
       });

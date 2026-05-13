@@ -12,12 +12,12 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { renderManifestSection } from "../debate";
 import { NaxError } from "../errors";
-import { callOp, groundOp, planDraftOp, planInteractiveOp } from "../operations";
+import { callOp, groundOp, planDraftOp } from "../operations";
 import type { PlanDraftInput } from "../operations";
 import { buildPlanModeContext, createPlanStrategy } from "../plan/strategies";
-export { buildPlanComposition } from "../plan/strategies/debate-composition";
+export { assertIsValidPrd, buildPlanComposition } from "../plan/strategies";
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
-import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, detectProjectName } from "./plan-runtime";
+import { _planDeps, createPlanRuntime } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
 export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
@@ -212,29 +212,6 @@ export async function runPlanPipeline(
     );
   } finally {
     await rt.close().catch(() => {});
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Private helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Constant-time envelope check: confirms callOp returned a PRD, not a TurnResult.
- * Does NOT call validatePlanOutput to avoid re-stamping updatedAt (timestamp drift).
- * Defence-in-depth for issue #993 — the primary fix lives in callOp's catch path.
- */
-function assertIsValidPrd(prd: unknown): asserts prd is import("../prd/types").PRD {
-  if (typeof prd !== "object" || prd === null || Array.isArray(prd)) {
-    throw new NaxError("plan: callOp returned a non-PRD value", "PLAN_INVALID_RESULT", { stage: "plan" });
-  }
-  const obj = prd as Record<string, unknown>;
-  if (!Array.isArray(obj.userStories) || obj.userStories.length === 0) {
-    throw new NaxError(
-      "plan: callOp returned an envelope-shaped object (no userStories) — likely retry exhaustion (#993)",
-      "PLAN_ENVELOPE_LEAK",
-      { stage: "plan", keys: Object.keys(obj).join(",") },
-    );
   }
 }
 
