@@ -1,8 +1,11 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildPackageSummary, buildSourceRootsSection } from "../../cli/plan-helpers";
 import { DEFAULT_TIMEOUT_SECONDS, createPlanRuntime, detectProjectName } from "../../cli/plan-runtime";
 import type { NaxConfig } from "../../config";
 import { planConfigSelector } from "../../config/selectors";
+import { buildInteractionBridge } from "../../interaction/bridge-builder";
+import { validateFeatureName } from "../../utils/feature-name";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
 
 export async function buildPlanModeContext(
@@ -12,11 +15,15 @@ export async function buildPlanModeContext(
   deps: PlanDeps,
 ): Promise<PlanModeContext> {
   const naxDir = join(workdir, ".nax");
+  if (!existsSync(naxDir)) {
+    throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
+  }
+  validateFeatureName(options.feature);
   const outputDir = join(naxDir, "features", options.feature);
   const outputPath = join(outputDir, "prd.json");
 
   const [specContent, sourceRoots, pkg] = await Promise.all([
-    deps.readFile(options.from).catch(() => ""),
+    deps.readFile(options.from),
     deps.scanSourceRoots(workdir),
     deps.readPackageJson(workdir),
   ]);
@@ -52,7 +59,16 @@ export async function buildPlanModeContext(
   const config = planConfigSelector.select(fullConfig);
   const runtime = createPlanRuntime(fullConfig, workdir, options.feature);
   const interactionChain = fullConfig ? await deps.initInteractionChain(fullConfig, !process.stdin.isTTY) : null;
-  const interactionBridge = deps.createInteractionBridge();
+  let configuredBridge: ReturnType<typeof buildInteractionBridge> | undefined;
+  if (interactionChain) {
+    try {
+      configuredBridge = buildInteractionBridge(interactionChain, {
+        featureName: options.feature,
+        stage: "pre-flight",
+      });
+    } catch {}
+  }
+  const interactionBridge = configuredBridge ?? deps.createInteractionBridge();
 
   await deps.mkdirp(outputDir);
 

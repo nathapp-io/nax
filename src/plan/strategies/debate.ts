@@ -4,6 +4,7 @@ import type { PlanInteractiveInput } from "../../operations/plan";
 import { validatePlanOutput } from "../../prd/schema";
 import type { PRD } from "../../prd/types";
 import { PlanPromptBuilder } from "../../prompts";
+import { assertIsValidPrd } from "./assert";
 import { buildPlanComposition } from "./debate-composition";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 import { writeOrRecoverPrd } from "./write-prd";
@@ -98,7 +99,8 @@ export class DebatePlanStrategy implements IPlanStrategy {
           projectProfile: ctx.fullConfig.project,
         } satisfies PlanInteractiveInput,
       );
-      const withProject = { ...(prd as PRD), project: ctx.projectName } satisfies PRD;
+      assertIsValidPrd(prd);
+      const withProject = { ...prd, project: ctx.projectName } satisfies PRD;
       return writeOrRecoverPrd(ctx, withProject);
     } catch (err) {
       return writeOrRecoverPrd(ctx, null, err);

@@ -1,4 +1,5 @@
 import { NaxError } from "../../errors";
+import { validatePlanOutput } from "../../prd/schema";
 import type { PRD } from "../../prd/types";
 import type { PlanModeContext } from "./types";
 
@@ -15,7 +16,9 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
   }
 
   try {
-    await ctx.deps.readFile(ctx.outputPath);
+    const rawContent = await ctx.deps.readFile(ctx.outputPath);
+    const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
+    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...recoveredPrd, project: ctx.projectName }, null, 2));
     return ctx.outputPath;
   } catch {
     throw err;

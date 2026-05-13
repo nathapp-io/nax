@@ -16,6 +16,13 @@ export class PipelinePlanStrategy implements IPlanStrategy {
   readonly mode = "pipeline" as const;
 
   async execute(ctx: PlanModeContext): Promise<string> {
+    if (ctx.fullConfig?.debate?.enabled === true) {
+      ctx.deps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
+        mode: "pipeline",
+        debateEnabled: true,
+      });
+    }
+
     try {
       const callCtx = {
         runtime: ctx.runtime,
@@ -26,11 +33,19 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         featureName: ctx.options.feature,
       } satisfies import("../../operations/types").CallContext;
 
-      const manifest = await _pipelinePlanDeps.callOp(callCtx, _pipelinePlanDeps.groundOp, {
-        specContent: ctx.specContent,
-        codebaseContext: ctx.codebaseContext,
-        workdir: ctx.workdir,
-      });
+      let manifest: import("../../debate/facts-manifest").FactsManifest;
+      try {
+        manifest = await _pipelinePlanDeps.callOp(callCtx, _pipelinePlanDeps.groundOp, {
+          specContent: ctx.specContent,
+          codebaseContext: ctx.codebaseContext,
+          workdir: ctx.workdir,
+        });
+      } catch (err) {
+        throw new NaxError("Plan pipeline: grounder failed", "PLAN_PIPELINE_GROUND_FAILED", {
+          stage: "plan",
+          cause: err,
+        });
+      }
 
       const draftCtx: PlanDraftInput = {
         manifestSection: renderManifestSection(manifest),

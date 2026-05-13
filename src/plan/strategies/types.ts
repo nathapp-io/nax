@@ -26,6 +26,7 @@ export interface PlanDeps {
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => Promise<InteractionChain | null>;
   createInteractionBridge: () => InteractionBridge;
   createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
+  getLogger: () => ReturnType<typeof import("../../logger").getLogger>;
 }
 
 export interface PlanModeContext {
