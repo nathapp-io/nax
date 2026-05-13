@@ -15,6 +15,7 @@ import { DEFAULT_CONFIG, resolveConfiguredModel } from "../config";
 import { discoverWorkspacePackages } from "../context/generator";
 import { DebateRunner } from "../debate";
 import type { DebateRunnerOptions } from "../debate";
+import { NaxError } from "../errors";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
 import type { PRD } from "../prd/types";
@@ -50,6 +51,14 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
     });
     return resolveConfiguredModel(DEFAULT_CONFIG.models, preferredAgent, "balanced", defaultAgent);
   }
+}
+
+export function detectProjectName(workdir: string, pkg: Record<string, unknown> | null): string {
+  void workdir;
+  void pkg;
+  throw new NaxError("detectProjectName is not implemented yet", "PLAN_DETECT_PROJECT_NAME_UNIMPLEMENTED", {
+    stage: "plan",
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
