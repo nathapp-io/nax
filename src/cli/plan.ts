@@ -4,7 +4,9 @@ export {
   buildPlanComposition,
   planCommand,
   planDecomposeCommand,
+  type PlanCommandOptions,
   resolvePlanMode,
   resolvePlanModelSelection,
+  runPlanPipeline,
   runReplanLoop,
 } from "./plan-command";

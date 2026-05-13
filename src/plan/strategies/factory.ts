@@ -1,8 +1,8 @@
 import { NaxError } from "../../errors";
-import type { IPlanStrategy } from "./types";
 import { DebatePlanStrategy } from "./debate";
 import { PipelinePlanStrategy } from "./pipeline";
 import { SinglePlanStrategy } from "./single";
+import type { IPlanStrategy } from "./types";
 
 export function createPlanStrategy(mode: IPlanStrategy["mode"]): IPlanStrategy {
   switch (mode) {
