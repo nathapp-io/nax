@@ -1,0 +1,230 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-strategy-refactor",
+  "branchName": "feat/plan-strategy-refactor",
+  "createdAt": "2026-05-13T00:00:00.000Z",
+  "updatedAt": "2026-05-13T07:37:35.150Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Strategy contract, context builder, and shared helpers",
+      "description": "**Goal** — Create the shared foundation for the Strategy pattern: type interfaces (`IPlanStrategy`, `PlanModeContext`, `PlanDeps`), the `buildPlanModeContext()` context builder, `writeOrRecoverPrd()` shared write helper, and `assertIsValidPrd()` guard — plus move `detectProjectName` to `plan-runtime.ts` to break the circular dependency.\n\n**Motivation** — `src/cli/plan.ts` has three inlined dispatch paths with two near-identical setup blocks; extracting them into a shared context builder eliminates the duplication and makes each mode testable in isolation.\n\n**Prerequisite** — Before `context-builder.ts` can be written, `detectProjectName` must be moved from `src/cli/plan.ts` (currently private, line 510) to `src/cli/plan-runtime.ts` and exported. `context-builder.ts` lives under `src/plan/strategies/`; importing `detectProjectName` from `src/cli/plan.ts` would create a circular dependency once `plan.ts` starts importing from `src/plan/strategies/`. Moving it to `plan-runtime.ts` — which neither `plan.ts` nor the strategies directory imports circularly — breaks the cycle. Update `plan.ts` to import `detectProjectName` from `./plan-runtime` instead.\n\n**Approach** — Create `src/plan/strategies/types.ts`, `src/plan/strategies/context-builder.ts`, `src/plan/strategies/write-prd.ts`, and `src/plan/strategies/assert.ts`. `planCommand()` is NOT changed yet. No other dependencies.\n\n**Interface**\n```typescript\n// src/plan/strategies/types.ts\n\nexport interface IPlanStrategy {\n  readonly mode: \"single\" | \"pipeline\" | \"debate\";\n  execute(ctx: PlanModeContext): Promise<string>; // returns outputPath\n}\n\nexport interface PlanModeContext {\n  // paths\n  workdir: string;\n  naxDir: string;\n  outputDir: string;\n  outputPath: string;\n\n  // content\n  specContent: string;\n  codebaseContext: string;\n  normalizedRoots: SourceRoot[];\n  relativePackages: string[];\n  packageDetails: PackageSummary[];\n\n  // metadata\n  projectName: string;\n  branchName: string;\n  timeoutSeconds: number;\n\n  // config slice — plan + debate keys only, via planConfigSelector\n  // import type { PlanConfig } from \"@/config/selectors\"\n  config: PlanConfig;\n  // full NaxConfig — strategies that call subsystems requiring it read this\n  fullConfig: NaxConfig;\n  options: PlanCommandOptions; // { feature, from, branch? }\n\n  // runtime — built once in buildPlanModeContext, shared across strategy\n  runtime: NaxRuntime;\n\n  // runtime (interaction chain always built; pipeline ignores it)\n  interactionChain: InteractionChain | null;\n  interactionBridge: InteractionBridge;\n\n  // DI — strategies do not import the _planDeps singleton directly\n  deps: PlanDeps;\n}\n\n/**\n * Subset of _planDeps methods required by context-builder and strategies.\n * Declare as a structural interface so tests can supply a minimal fake.\n */\nexport interface PlanDeps {\n  readFile: (path: string) => Promise<string>;\n  writeFile: (path: string, content: string) => Promise<void>;\n  mkdirp: (path: string) => Promise<void>;\n  existsSync: (path: string) => boolean;\n  readPackageJson: (workdir: string) => Promise<Record<string, unknown> | null>;\n  readPackageJsonAt: (path: string) => Promise<Record<string, unknown> | null>;\n  scanSourceRoots: (workdir: string) => Promise<SourceRoot[]>;\n  spawnSync: (cmd: string[], opts?: { cwd?: string }) => { stdout: Buffer; exitCode: number | null };\n  initInteractionChain: (cfg: NaxConfig, headless: boolean) => Promise<InteractionChain | null>;\n  createInteractionBridge: () => InteractionBridge;\n  createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;\n}\n```\n\n**Scope** — In: `src/plan/strategies/types.ts`, `src/plan/strategies/context-builder.ts`, `src/plan/strategies/write-prd.ts`, `src/plan/strategies/assert.ts`, `src/plan/strategies/index.ts` (barrel exporting types + factory stub), `src/cli/plan-runtime.ts` (add `detectProjectName` export), `src/cli/plan.ts` (update import of `detectProjectName`). Out: no changes to `planCommand()` dispatch logic, no strategy implementations.",
+      "acceptanceCriteria": [
+        "buildPlanModeContext(workdir, config, options, deps) returns a PlanModeContext where specContent equals the file content read from options.from via deps.readFile",
+        "buildPlanModeContext returns relativePackages containing only non-root paths (filtered p !== \".\") relative to workdir with no leading /",
+        "buildPlanModeContext returns packageDetails with one PackageSummary entry per entry in relativePackages, built via buildPackageSummary",
+        "buildPlanModeContext returns projectName equal to detectProjectName(workdir, pkg) — same derivation for all modes",
+        "buildPlanModeContext returns outputPath equal to join(naxDir, \"features\", options.feature, \"prd.json\")",
+        "buildPlanModeContext calls deps.mkdirp(outputDir) before returning",
+        "buildPlanModeContext returns null for interactionChain when config is null; when config is provided it returns the result of deps.initInteractionChain(config, !process.stdin.isTTY), which may itself be null if no interaction plugins are configured",
+        "buildPlanModeContext returns config equal to planConfigSelector.select(fullConfig) — a PlanConfig slice, not the full NaxConfig",
+        "buildPlanModeContext returns fullConfig equal to the NaxConfig argument passed in, un-sliced",
+        "buildPlanModeContext returns runtime built via createPlanRuntime(fullConfig, workdir, feature) — strategies never call createPlanRuntime themselves",
+        "IPlanStrategy and PlanModeContext are both exported from src/plan/strategies/index.ts",
+        "writeOrRecoverPrd(ctx, prd) writes JSON.stringify(prd, null, 2) to ctx.outputPath via ctx.deps.writeFile and returns ctx.outputPath",
+        "writeOrRecoverPrd(ctx, null, err) reads ctx.outputPath from disk via ctx.deps.readFile and returns ctx.outputPath when the file exists; re-throws err when the file does not exist"
+      ],
+      "tags": [
+        "refactor",
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/cli/plan-runtime.ts",
+        "src/cli/plan-helpers.ts",
+        "src/config/selectors.ts",
+        "test/unit/cli/plan-monorepo.test.ts"
+      ],
+      "suggestedCriteria": [
+        "detectProjectName exported from src/cli/plan-runtime.ts returns the package name when pkg.name is a non-empty string",
+        "detectProjectName exported from src/cli/plan-runtime.ts falls back to git remote URL basename when pkg.name is absent",
+        "detectProjectName exported from src/cli/plan-runtime.ts returns \"unknown\" when both pkg.name and git remote are unavailable",
+        "src/cli/plan.ts imports detectProjectName from ./plan-runtime (not defined locally) after this story",
+        "buildPlanModeContext returns branchName equal to options.branch when provided, otherwise \"feat/\" + options.feature",
+        "buildPlanModeContext returns timeoutSeconds equal to config?.plan?.timeoutSeconds when set, otherwise DEFAULT_TIMEOUT_SECONDS"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "SinglePlanStrategy",
+      "description": "**Goal** — Create `src/plan/strategies/single.ts` containing `SinglePlanStrategy`, moving the single-mode dispatch from `planCommand()` lines 300–346 into `execute(ctx)`.\n\n**Motivation** — Inlined mode logic in `planCommand()` prevents testing each mode in isolation and makes adding modes require touching unrelated paths.\n\n**Approach** — `SinglePlanStrategy.execute(ctx)` absorbs lines 300–346 of the current `planCommand()`. It calls `callOp` with `planInteractiveOp` and input fields derived from `ctx`. Disk-recovery catch path is preserved verbatim: when `callOp` throws (including after `planInteractiveOp`'s `op.recover` returned null) and `ctx.outputPath` still exists on disk, returns that path without re-throwing. Calls `rt.close()` in a finally block. `planCommand()` is NOT changed yet — the strategy exists but is not wired in.\n\n**Scope** — In: `src/plan/strategies/single.ts` (new file). Out: no changes to `src/cli/plan.ts` dispatch logic; `src/plan/strategies/index.ts` may export `SinglePlanStrategy` but factory is not wired to `planCommand()` yet.\n\n**Interface**\n```typescript\nexport class SinglePlanStrategy implements IPlanStrategy {\n  readonly mode = \"single\" as const;\n  async execute(ctx: PlanModeContext): Promise<string>;\n}\n```",
+      "acceptanceCriteria": [
+        "SinglePlanStrategy.execute(ctx) calls callOp with planInteractiveOp and input fields specContent, codebaseContext, featureName, branchName, outputPath, packages, packageDetails, and projectProfile derived from ctx",
+        "SinglePlanStrategy.execute(ctx) returns ctx.outputPath on success",
+        "When callOp throws and ctx.outputPath exists on disk (ctx.deps.existsSync returns true), SinglePlanStrategy.execute returns ctx.outputPath without re-throwing",
+        "SinglePlanStrategy.mode equals \"single\"",
+        "SinglePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+      ],
+      "tags": [
+        "refactor",
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/operations/plan.ts",
+        "test/unit/cli/plan.test.ts",
+        "test/unit/cli/plan-callop.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When callOp throws and ctx.outputPath does not exist on disk, SinglePlanStrategy.execute re-throws the error",
+        "SinglePlanStrategy.execute calls assertIsValidPrd on the PRD returned by callOp before writing",
+        "SinglePlanStrategy.execute writes JSON.stringify({ ...prd, project: ctx.projectName }, null, 2) to ctx.outputPath via ctx.deps.writeFile on success"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "PipelinePlanStrategy",
+      "description": "**Goal** — Create `src/plan/strategies/pipeline.ts` containing `PipelinePlanStrategy`, moving `runPlanPipeline()` (lines 360–482 of `plan.ts`) into `execute(ctx)`.\n\n**Motivation** — The pipeline setup block (lines 376–411) is a verbatim copy of the single/debate setup block (lines 112–157), and `runPlanPipeline()` as a top-level export cannot be tested in isolation from the CLI entry point.\n\n**Approach** — `PipelinePlanStrategy.execute(ctx)` absorbs the body of `runPlanPipeline()`. The setup block (lines 376–411) is replaced by reading from `ctx`. Calls `callOp` with `groundOp`, then `planDraftOp`, then `runPlanCritic` in that order. Passes `ctx.fullConfig?.project` as `projectProfile` to the draft op input. Passes `ctx.relativePackages` and `ctx.packageDetails` to the draft op input. Throws `NaxError` with code `\"PLAN_CRITIC_BLOCKED\"` when `runPlanCritic` returns a verdict with blockers. Calls `rt.close()` in a finally block. `planCommand()` is NOT changed yet.\n\n**Scope** — In: `src/plan/strategies/pipeline.ts` (new file). Out: `runPlanPipeline` remains defined in `src/cli/plan.ts` until US-005.\n\n**Interface**\n```typescript\nexport class PipelinePlanStrategy implements IPlanStrategy {\n  readonly mode = \"pipeline\" as const;\n  async execute(ctx: PlanModeContext): Promise<string>;\n}\n```",
+      "acceptanceCriteria": [
+        "PipelinePlanStrategy.execute(ctx) calls callOp with groundOp, then callOp with planDraftOp, then runPlanCritic — in that order",
+        "PipelinePlanStrategy.execute(ctx) throws NaxError with code \"PLAN_CRITIC_BLOCKED\" when runPlanCritic returns a verdict with outcome !== \"passed\"",
+        "PipelinePlanStrategy.execute(ctx) passes ctx.fullConfig?.project as projectProfile in the planDraftOp input",
+        "PipelinePlanStrategy.execute(ctx) passes ctx.relativePackages as packages and ctx.packageDetails as packageDetails in the planDraftOp input",
+        "PipelinePlanStrategy.mode equals \"pipeline\"",
+        "PipelinePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+      ],
+      "tags": [
+        "refactor",
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/plan/critic.ts",
+        "src/operations/plan-draft.ts",
+        "src/operations/ground.ts",
+        "test/unit/cli/plan-callop.test.ts"
+      ],
+      "suggestedCriteria": [
+        "PipelinePlanStrategy.execute throws NaxError with code \"PLAN_PIPELINE_GROUND_FAILED\" when callOp with groundOp throws",
+        "PipelinePlanStrategy.execute writes JSON.stringify({ ...verdict.prd, project: ctx.projectName }, null, 2) to ctx.outputPath via ctx.deps.writeFile when critic returns outcome \"passed\"",
+        "PipelinePlanStrategy.execute returns ctx.outputPath when critic returns outcome \"passed\"",
+        "PipelinePlanStrategy.execute passes ctx.config.plan.citationThreshold (or 0.5 fallback) as citationThreshold in the planDraftOp input"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "DebatePlanStrategy and debate-composition extraction",
+      "description": "**Goal** — Create `src/plan/strategies/debate.ts` containing `DebatePlanStrategy` and `src/plan/strategies/debate-composition.ts` containing `buildPlanComposition()`, moving debate dispatch (lines 188–298) from `planCommand()` and `buildPlanComposition()` (lines 72–87) from `plan.ts`.\n\n**Motivation** — The debate dispatch path is the most complex inlined block and the one most likely to grow; extracting it makes the fallback logic and composition macro testable in isolation.\n\n**Approach** — `DebatePlanStrategy.execute(ctx)` absorbs lines 188–298 of the current `planCommand()`. `debate-composition.ts` receives `buildPlanComposition()` (moved verbatim from lines 72–87 of `plan.ts`). `planCommand()` is NOT changed yet.\n\n**Interface**\n```typescript\nexport class DebatePlanStrategy implements IPlanStrategy {\n  readonly mode = \"debate\" as const;\n  async execute(ctx: PlanModeContext): Promise<string>;\n}\n```\n\n**Key wiring for execute(ctx):**\n- `taskContext` and `outputFormat` from `new PlanPromptBuilder().build(ctx.specContent, ctx.codebaseContext, undefined, ctx.relativePackages, ctx.packageDetails, ctx.fullConfig?.project)`\n- `opts` for runPlan: `workdir: ctx.workdir`, `feature: ctx.options.feature`, `outputDir: ctx.outputDir`, `timeoutSeconds: ctx.timeoutSeconds`, `specContent: ctx.specContent`, and optionally `maxInteractionTurns: ctx.fullConfig?.agent?.maxInteractionTurns`\n- `createDebateRunner` receives: `ctx: callCtx` (built from `ctx.runtime`), `stage: \"plan\"`, `stageConfig: buildPlanComposition(ctx.config.debate.stages.plan)`, `config: ctx.fullConfig`, `workdir: ctx.workdir`, `featureName: ctx.options.feature`, `timeoutSeconds: ctx.timeoutSeconds`, `sessionManager: ctx.runtime.sessionManager`\n- When `runner.runPlan()` returns `outcome: \"failed\"`, falls back to `callOp(planInteractiveOp, ...)` using `writeOrRecoverPrd`\n- Calls `rt.close()` (via `ctx.runtime.close()`) in a finally block\n\n**Scope** — In: `src/plan/strategies/debate.ts` (new file), `src/plan/strategies/debate-composition.ts` (new file). Out: `buildPlanComposition` remains exported from `src/cli/plan.ts` (re-export from debate-composition.ts) after US-005.",
+      "acceptanceCriteria": [
+        "DebatePlanStrategy.execute(ctx) calls ctx.deps.createDebateRunner with stage: \"plan\" and stageConfig built from buildPlanComposition(ctx.config.debate.stages.plan)",
+        "DebatePlanStrategy.execute(ctx) calls runner.runPlan with taskContext and outputFormat obtained from new PlanPromptBuilder().build(ctx.specContent, ctx.codebaseContext, undefined, ctx.relativePackages, ctx.packageDetails, ctx.fullConfig?.project)",
+        "DebatePlanStrategy.execute(ctx) passes workdir: ctx.workdir, feature: ctx.options.feature, outputDir: ctx.outputDir, timeoutSeconds: ctx.timeoutSeconds, specContent: ctx.specContent to runner.runPlan opts",
+        "When runner.runPlan() returns outcome: \"failed\", DebatePlanStrategy.execute falls back to callOp with planInteractiveOp and uses writeOrRecoverPrd to persist the result",
+        "DebatePlanStrategy.mode equals \"debate\"",
+        "buildPlanComposition is exported from src/plan/strategies/debate-composition.ts",
+        "DebatePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+      ],
+      "tags": [
+        "refactor",
+        "feature"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-plan.ts",
+        "test/unit/cli/plan-debate.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When debate outcome is not \"failed\" and debateResult.output is truthy, DebatePlanStrategy.execute writes the validated PRD to ctx.outputPath and returns ctx.outputPath without falling back to callOp",
+        "DebatePlanStrategy.execute passes maxInteractionTurns: ctx.fullConfig?.agent?.maxInteractionTurns to runner.runPlan opts when the value is defined",
+        "buildPlanComposition returns userStageConfig unchanged when evidenceMode is not \"asymmetric\"",
+        "buildPlanComposition injects preDebatePhase: { kind: \"grounder\" } when evidenceMode is \"asymmetric\" and preDebatePhase is not already set",
+        "DebatePlanStrategy.execute passes config: ctx.fullConfig (not ctx.config) to createDebateRunner"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Strategy factory, barrel, and planCommand() cut-over",
+      "description": "**Goal** — Create `src/plan/strategies/index.ts` with the `createPlanStrategy` factory, reduce `planCommand()` to ~30 lines, delete `runPlanPipeline` from `src/cli/plan.ts`, add back-compat re-exports, and add `src/plan/index.ts` barrel.\n\n**Motivation** — This is the final wiring step that realises the Strategy pattern; without it the three strategy classes exist but `planCommand()` still uses inline dispatch.\n\n**Approach** — Create `createPlanStrategy` factory in `src/plan/strategies/index.ts`. Reduce `planCommand()` to context-build → dispatch → teardown (~30 lines). Delete `runPlanPipeline` body from `src/cli/plan.ts`. Re-export `buildPlanComposition` and `assertIsValidPrd` from `src/cli/plan.ts` for back-compat. Add `src/plan/index.ts` re-exporting the strategies barrel.\n\n**Reduced planCommand():**\n```typescript\nexport async function planCommand(\n  workdir: string,\n  config: NaxConfig,\n  options: PlanCommandOptions,\n): Promise<string> {\n  const ctx = await buildPlanModeContext(workdir, config, options, _planDeps);\n  try {\n    const mode = resolvePlanMode(config);\n    const strategy = createPlanStrategy(mode);\n    return await strategy.execute(ctx);\n  } finally {\n    if (ctx.interactionChain) await ctx.interactionChain.destroy().catch(() => {});\n  }\n}\n```\n\n**Factory:**\n```typescript\n// src/plan/strategies/index.ts\nexport function createPlanStrategy(\n  mode: \"single\" | \"pipeline\" | \"debate\"\n): IPlanStrategy {\n  switch (mode) {\n    case \"single\":   return new SinglePlanStrategy();\n    case \"pipeline\": return new PipelinePlanStrategy();\n    case \"debate\":   return new DebatePlanStrategy();\n    default:\n      throw new NaxError(`Unknown plan mode: ${mode}`, \"PLAN_MODE_UNKNOWN\", {\n        stage: \"plan\", mode,\n      });\n  }\n}\n```\n\n**Scope** — In: `src/plan/strategies/index.ts` (factory), `src/cli/plan.ts` (cut-over + re-exports), `src/plan/index.ts` (new barrel). Out: test files are not modified.",
+      "acceptanceCriteria": [
+        "createPlanStrategy(\"single\") returns an instance of SinglePlanStrategy",
+        "createPlanStrategy(\"pipeline\") returns an instance of PipelinePlanStrategy",
+        "createPlanStrategy(\"debate\") returns an instance of DebatePlanStrategy",
+        "createPlanStrategy throws NaxError with code \"PLAN_MODE_UNKNOWN\" for an unrecognised mode string",
+        "planCommand() body contains no inline mode dispatch — it calls only buildPlanModeContext, resolvePlanMode, createPlanStrategy, strategy.execute, and interactionChain.destroy in the finally block",
+        "src/cli/plan.ts is under 150 lines after the cut-over",
+        "buildPlanComposition remains importable from src/cli/plan.ts (re-exported via debate-composition.ts)",
+        "runPlanPipeline is no longer defined in src/cli/plan.ts after the cut-over",
+        "All existing tests in test/unit/cli/plan.test.ts, test/unit/cli/plan-callop.test.ts, test/unit/cli/plan-debate.test.ts, and test/unit/cli/plan-mode.test.ts pass without modification"
+      ],
+      "tags": [
+        "refactor",
+        "feature"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "test/unit/cli/plan-mode.test.ts",
+        "test/unit/cli/plan-debate.test.ts",
+        "test/unit/cli/plan.test.ts",
+        "test/unit/cli/plan-callop.test.ts"
+      ],
+      "suggestedCriteria": [
+        "assertIsValidPrd remains importable from src/cli/plan.ts (re-exported via assert.ts)",
+        "src/plan/index.ts re-exports everything from src/plan/strategies/index.ts",
+        "planCommand() still calls validateFeatureName(options.feature) before buildPlanModeContext",
+        "planCommand() still throws when .nax directory does not exist before buildPlanModeContext"
+      ]
+    }
+  ],
+  "analysis": "## Codebase Analysis\n\n### Current State\n\n`src/cli/plan.ts` is 527 lines with three inlined dispatch paths and two nearly-identical setup blocks:\n- Lines 112–157: single/debate setup (spec read, source root scan, package details, output path)\n- Lines 376–411: pipeline setup (verbatim copy of lines 112–157 minus projectName)\n- Lines 188–298: debate dispatch (DebateRunner + fallback to callOp)\n- Lines 300–346: single dispatch (callOp + planInteractiveOp + disk recovery)\n- Lines 360–482: `runPlanPipeline()` (ground → draft → critic)\n\n### Functions to Move\n\n1. `detectProjectName` (line 510) — currently private. Must move to `src/cli/plan-runtime.ts` and be exported BEFORE US-001 starts, to avoid a circular import: `context-builder.ts` lives under `src/plan/strategies/` and importing from `src/cli/plan.ts` would create a cycle once `plan.ts` imports from `src/plan/strategies/`.\n\n2. `buildPlanComposition` (lines 72–87) — moves to `src/plan/strategies/debate-composition.ts`; re-exported from `src/cli/plan.ts` for back-compat.\n\n3. `assertIsValidPrd` (lines 493–505) — moves to `src/plan/strategies/assert.ts`; re-exported from `src/cli/plan.ts` for back-compat.\n\n4. `runPlanPipeline` (lines 360–482) — absorbed entirely into `PipelinePlanStrategy.execute()`; NOT re-exported.\n\n### Projectname Inconsistency (intentional fix)\n\nPipeline currently uses `pkg?.name && typeof pkg.name === \"string\" ? pkg.name : options.feature` (line 413), while single/debate use `detectProjectName()` which includes the same check plus a git-remote fallback. The spec standardises all modes on `detectProjectName()` via `ctx.projectName`. This is a deliberate behavioural change (pipeline gets the richer git-remote fallback).\n\n### InteractionChain in Pipeline\n\n`buildPlanModeContext()` always initialises `interactionChain` (Option A from spec). Pipeline strategy reads `ctx.config` and `ctx.deps` only; it never reads `ctx.interactionChain`. The `planCommand()` finally block disposes the chain unconditionally — `destroy()` on a headless/no-op chain is safe.\n\n### Dependency Injection\n\n`_planDeps` in `plan-runtime.ts` (lines 59–101) provides 14 injectable methods. The spec's `PlanDeps` interface declares a subset of these (the methods required by context-builder and strategies). `buildPlanModeContext()` receives `_planDeps` as its `deps` parameter; strategies access it via `ctx.deps`.\n\n### Config Selectors\n\n`src/config/selectors.ts` exists. `planConfigSelector` must be used to produce `ctx.config: PlanConfig`. The full `NaxConfig` is stored un-sliced as `ctx.fullConfig` for subsystems (DebateRunner, callOp interaction opts) that require keys outside PlanConfig.\n\n### New Directory\n\n`src/plan/strategies/` does not exist yet. `src/plan/index.ts` does not exist yet. All 5 stories build toward these being the final output.\n\n### Test Coverage\n\nKey test files that must continue passing after US-005:\n- `test/unit/cli/plan.test.ts` — core single-mode tests\n- `test/unit/cli/plan-callop.test.ts` — callOp invocation tests  \n- `test/unit/cli/plan-debate.test.ts` — debate path tests\n- `test/unit/cli/plan-mode.test.ts` — resolvePlanMode + pipeline stub tests\n- `test/unit/cli/plan-monorepo.test.ts` — relativePackages derivation tests\n\n### Key Risks\n\n1. Circular import: `detectProjectName` must move to `plan-runtime.ts` first (US-001 prerequisite)\n2. Back-compat: `buildPlanComposition` and `assertIsValidPrd` must remain importable from `src/cli/plan.ts`\n3. `runPlanPipeline` must NOT be re-exported after US-005 (any callers should use PipelinePlanStrategy or be updated)\n4. All existing tests must pass without modification after US-005 cut-over\n5. `rt.close()` must be called in finally blocks in all strategies — missing this leaks runtime watchdog timers"
+}
