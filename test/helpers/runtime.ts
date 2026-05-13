@@ -1,3 +1,4 @@
+import { afterEach } from "bun:test";
 import type { IAgentManager } from "../../src/agents";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { NaxConfig } from "../../src/config";
@@ -7,16 +8,36 @@ import type { ISessionManager } from "../../src/session/types";
 import { makeMockAgentManager } from "./mock-agent-manager";
 import { makeSessionManager } from "./mock-session-manager";
 
+const createdRuntimes = new Set<NaxRuntime>();
+
+afterEach(async () => {
+  const runtimes = Array.from(createdRuntimes);
+  createdRuntimes.clear();
+  await Promise.allSettled(runtimes.map((runtime) => runtime.close()));
+});
+
+function trackRuntime(runtime: NaxRuntime): NaxRuntime {
+  createdRuntimes.add(runtime);
+
+  const close = runtime.close.bind(runtime);
+  runtime.close = async () => {
+    createdRuntimes.delete(runtime);
+    await close();
+  };
+
+  return runtime;
+}
+
 export interface TestRuntimeOptions extends CreateRuntimeOptions {
   config?: NaxConfig;
   workdir?: string;
 }
 
 export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
-  return createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", {
+  return trackRuntime(createRuntime(opts?.config ?? DEFAULT_CONFIG, opts?.workdir ?? "/tmp/test", {
     ...opts,
     featureName: opts?.featureName ?? "_test",
-  });
+  }));
 }
 
 /**
@@ -54,10 +75,10 @@ export interface MockRuntimeOptions {
 }
 
 export function makeMockRuntime(opts: MockRuntimeOptions = {}): NaxRuntime {
-  return createRuntime(opts.config ?? DEFAULT_CONFIG, opts.workdir ?? "/tmp/test", {
+  return trackRuntime(createRuntime(opts.config ?? DEFAULT_CONFIG, opts.workdir ?? "/tmp/test", {
     agentManager: opts.agentManager ?? makeMockAgentManager(),
     sessionManager: opts.sessionManager ?? makeSessionManager(),
     reviewAuditor: opts.reviewAuditor,
     featureName: "_test",
-  });
+  }));
 }

@@ -1,34 +1,39 @@
 #!/bin/bash
-# CI gate: ensure test files that create NaxRuntime instances clean them up.
+# CI gate: ensure test-created NaxRuntime instances are torn down.
 #
-# Files that call makeTestRuntime() or makeMockRuntime() must have an
-# afterEach (or afterAll) that calls .close() on the runtimes they create.
-# Without this, the idle-watchdog setTimeout inside each runtime fires
-# indefinitely, leaking ~40GB RAM across a full bun test test/unit/ run.
+# Helper-created runtimes are centrally cleaned up in test/helpers/runtime.ts.
+# Tests that call createRuntime() directly must still close those runtimes
+# themselves, otherwise the idle-watchdog setTimeout leaks across the suite.
 #
 # Usage: ./scripts/check-runtime-cleanup.sh
 # Exit 0 if clean, exit 1 if any violating files found.
 
 set -euo pipefail
 
+HELPER_FILE="test/helpers/runtime.ts"
 VIOLATIONS=()
 
+if ! grep -q "afterEach" "$HELPER_FILE" || ! grep -qE "runtime\.close\(|Promise\.allSettled" "$HELPER_FILE"; then
+  echo "ERROR: $HELPER_FILE no longer provides centralized runtime cleanup"
+  echo "Restore the helper-owned afterEach teardown before merging."
+  exit 1
+fi
+
 while IFS= read -r file; do
-  # File imports or uses makeTestRuntime / makeMockRuntime → it creates runtimes
-  if ! grep -qE "afterEach|afterAll" "$file"; then
+  if ! grep -qE "\.close\(" "$file"; then
     VIOLATIONS+=("$file")
   fi
-done < <(grep -rln "makeTestRuntime\|makeMockRuntime" test/ --include="*.test.ts" 2>/dev/null)
+done < <(grep -rln "createRuntime\(" test/ --include="*.test.ts" 2>/dev/null)
 
 if [ ${#VIOLATIONS[@]} -gt 0 ]; then
-  echo "ERROR: the following test files create NaxRuntime instances without afterEach/afterAll cleanup:"
+  echo "ERROR: the following test files call createRuntime() without local cleanup:"
   for f in "${VIOLATIONS[@]}"; do
     echo "  $f"
   done
   echo ""
-  echo "Add afterEach(async () => { await runtime.close(); }) or use the createdRuntimes"
-  echo "tracking-array pattern — see test/unit/operations/semantic-review.test.ts for an example."
+  echo "Add afterEach(async () => { await runtime.close(); }) or track runtimes in the file"
+  echo "and close them with Promise.allSettled in teardown."
   exit 1
 fi
 
-echo "OK: all test files with runtime creation have afterEach/afterAll cleanup"
+echo "OK: helper-managed runtimes have centralized cleanup and direct createRuntime() tests close locally"
