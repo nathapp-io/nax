@@ -3,7 +3,7 @@
   "feature": "plan-strategy-refactor",
   "branchName": "feat/plan-strategy-refactor",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-13T10:06:05.944Z",
+  "updatedAt": "2026-05-13T10:33:30.261Z",
   "userStories": [
     {
       "id": "US-001",
@@ -22,7 +22,11 @@
         "buildPlanModeContext returns runtime built via createPlanRuntime(fullConfig, workdir, feature) — strategies never call createPlanRuntime themselves",
         "IPlanStrategy and PlanModeContext are both exported from src/plan/strategies/index.ts",
         "writeOrRecoverPrd(ctx, prd) writes JSON.stringify(prd, null, 2) to ctx.outputPath via ctx.deps.writeFile and returns ctx.outputPath",
-        "writeOrRecoverPrd(ctx, null, err) reads ctx.outputPath from disk via ctx.deps.readFile and returns ctx.outputPath when the file exists; re-throws err when the file does not exist"
+        "writeOrRecoverPrd(ctx, null, err) reads ctx.outputPath from disk via ctx.deps.readFile and returns ctx.outputPath when the file exists; re-throws err when the file does not exist",
+        "detectProjectName exported from src/cli/plan-runtime.ts returns the package name when pkg.name is a non-empty string",
+        "detectProjectName exported from src/cli/plan-runtime.ts falls back to git remote URL basename when pkg.name is absent",
+        "detectProjectName exported from src/cli/plan-runtime.ts returns \"unknown\" when both pkg.name and git remote are unavailable",
+        "buildPlanModeContext returns timeoutSeconds equal to config?.plan?.timeoutSeconds when set, otherwise DEFAULT_TIMEOUT_SECONDS"
       ],
       "tags": [
         "refactor",
@@ -48,12 +52,8 @@
         "test/unit/cli/plan-monorepo.test.ts"
       ],
       "suggestedCriteria": [
-        "detectProjectName exported from src/cli/plan-runtime.ts returns the package name when pkg.name is a non-empty string",
-        "detectProjectName exported from src/cli/plan-runtime.ts falls back to git remote URL basename when pkg.name is absent",
-        "detectProjectName exported from src/cli/plan-runtime.ts returns \"unknown\" when both pkg.name and git remote are unavailable",
         "src/cli/plan.ts imports detectProjectName from ./plan-runtime (not defined locally) after this story",
-        "buildPlanModeContext returns branchName equal to options.branch when provided, otherwise \"feat/\" + options.feature",
-        "buildPlanModeContext returns timeoutSeconds equal to config?.plan?.timeoutSeconds when set, otherwise DEFAULT_TIMEOUT_SECONDS"
+        "buildPlanModeContext returns branchName equal to options.branch when provided, otherwise \"feat/\" + options.feature"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -69,7 +69,10 @@
         "SinglePlanStrategy.execute(ctx) returns ctx.outputPath on success",
         "When callOp throws and ctx.outputPath exists on disk (ctx.deps.existsSync returns true), SinglePlanStrategy.execute returns ctx.outputPath without re-throwing",
         "SinglePlanStrategy.mode equals \"single\"",
-        "SinglePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+        "SinglePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+        "When callOp throws and ctx.outputPath does not exist on disk, SinglePlanStrategy.execute re-throws the error",
+        "SinglePlanStrategy.execute calls assertIsValidPrd on the PRD returned by callOp before writing",
+        "SinglePlanStrategy.execute writes JSON.stringify({ ...prd, project: ctx.projectName }, null, 2) to ctx.outputPath via ctx.deps.writeFile on success"
       ],
       "tags": [
         "refactor",
@@ -95,11 +98,6 @@
         "test/unit/cli/plan.test.ts",
         "test/unit/cli/plan-callop.test.ts"
       ],
-      "suggestedCriteria": [
-        "When callOp throws and ctx.outputPath does not exist on disk, SinglePlanStrategy.execute re-throws the error",
-        "SinglePlanStrategy.execute calls assertIsValidPrd on the PRD returned by callOp before writing",
-        "SinglePlanStrategy.execute writes JSON.stringify({ ...prd, project: ctx.projectName }, null, 2) to ctx.outputPath via ctx.deps.writeFile on success"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -115,7 +113,8 @@
         "PipelinePlanStrategy.execute(ctx) passes ctx.fullConfig?.project as projectProfile in the planDraftOp input",
         "PipelinePlanStrategy.execute(ctx) passes ctx.relativePackages as packages and ctx.packageDetails as packageDetails in the planDraftOp input",
         "PipelinePlanStrategy.mode equals \"pipeline\"",
-        "PipelinePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+        "PipelinePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+        "PipelinePlanStrategy.execute throws NaxError with code \"PLAN_PIPELINE_GROUND_FAILED\" when callOp with groundOp throws"
       ],
       "tags": [
         "refactor",
@@ -143,7 +142,6 @@
         "test/unit/cli/plan-callop.test.ts"
       ],
       "suggestedCriteria": [
-        "PipelinePlanStrategy.execute throws NaxError with code \"PLAN_PIPELINE_GROUND_FAILED\" when callOp with groundOp throws",
         "PipelinePlanStrategy.execute writes JSON.stringify({ ...verdict.prd, project: ctx.projectName }, null, 2) to ctx.outputPath via ctx.deps.writeFile when critic returns outcome \"passed\"",
         "PipelinePlanStrategy.execute returns ctx.outputPath when critic returns outcome \"passed\"",
         "PipelinePlanStrategy.execute passes ctx.config.plan.citationThreshold (or 0.5 fallback) as citationThreshold in the planDraftOp input"
@@ -164,7 +162,8 @@
         "When runner.runPlan() returns outcome: \"failed\", DebatePlanStrategy.execute falls back to callOp with planInteractiveOp and uses writeOrRecoverPrd to persist the result",
         "DebatePlanStrategy.mode equals \"debate\"",
         "buildPlanComposition is exported from src/plan/strategies/debate-composition.ts",
-        "DebatePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure"
+        "DebatePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+        "buildPlanComposition returns userStageConfig unchanged when evidenceMode is not \"asymmetric\""
       ],
       "tags": [
         "refactor",
@@ -193,7 +192,6 @@
       "suggestedCriteria": [
         "When debate outcome is not \"failed\" and debateResult.output is truthy, DebatePlanStrategy.execute writes the validated PRD to ctx.outputPath and returns ctx.outputPath without falling back to callOp",
         "DebatePlanStrategy.execute passes maxInteractionTurns: ctx.fullConfig?.agent?.maxInteractionTurns to runner.runPlan opts when the value is defined",
-        "buildPlanComposition returns userStageConfig unchanged when evidenceMode is not \"asymmetric\"",
         "buildPlanComposition injects preDebatePhase: { kind: \"grounder\" } when evidenceMode is \"asymmetric\" and preDebatePhase is not already set",
         "DebatePlanStrategy.execute passes config: ctx.fullConfig (not ctx.config) to createDebateRunner"
       ],
@@ -215,7 +213,10 @@
         "src/cli/plan.ts is under 150 lines after the cut-over",
         "buildPlanComposition remains importable from src/cli/plan.ts (re-exported via debate-composition.ts)",
         "runPlanPipeline is no longer defined in src/cli/plan.ts after the cut-over",
-        "All existing tests in test/unit/cli/plan.test.ts, test/unit/cli/plan-callop.test.ts, test/unit/cli/plan-debate.test.ts, and test/unit/cli/plan-mode.test.ts pass without modification"
+        "All existing tests in test/unit/cli/plan.test.ts, test/unit/cli/plan-callop.test.ts, test/unit/cli/plan-debate.test.ts, and test/unit/cli/plan-mode.test.ts pass without modification",
+        "src/plan/index.ts re-exports everything from src/plan/strategies/index.ts",
+        "planCommand() still calls validateFeatureName(options.feature) before buildPlanModeContext",
+        "planCommand() still throws when .nax directory does not exist before buildPlanModeContext"
       ],
       "tags": [
         "refactor",
@@ -226,8 +227,8 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 2,
       "escalations": [],
       "routing": {
@@ -245,10 +246,7 @@
         "test/unit/cli/plan-callop.test.ts"
       ],
       "suggestedCriteria": [
-        "assertIsValidPrd remains importable from src/cli/plan.ts (re-exported via assert.ts)",
-        "src/plan/index.ts re-exports everything from src/plan/strategies/index.ts",
-        "planCommand() still calls validateFeatureName(options.feature) before buildPlanModeContext",
-        "planCommand() still throws when .nax directory does not exist before buildPlanModeContext"
+        "assertIsValidPrd remains importable from src/cli/plan.ts (re-exported via assert.ts)"
       ],
       "priorErrors": [],
       "priorFailures": [],

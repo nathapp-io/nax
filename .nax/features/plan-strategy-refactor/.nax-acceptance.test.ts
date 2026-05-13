@@ -320,10 +320,12 @@ describe("AC-10: runtime created by createPlanRuntime not caller", () => {
 
 describe("AC-11: Interface exports from strategies barrel", () => {
   test("IPlanStrategy and PlanModeContext are named exports from strategies barrel", async () => {
-    // Once src/plan/strategies/index.ts is created, these should be importable:
-    // import { IPlanStrategy, PlanModeContext } from "../../../src/plan/strategies";
-    expect(IPlanStrategy).toBeDefined();
-    expect(PlanModeContext).toBeDefined();
+    const barrelPath = join(process.cwd(), "src/plan/strategies/index.ts");
+    const barrelSource = await Bun.file(barrelPath).text();
+
+    expect(barrelSource).toContain("export type {");
+    expect(barrelSource).toContain("IPlanStrategy");
+    expect(barrelSource).toContain("PlanModeContext");
   });
 });
 

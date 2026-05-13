@@ -1,20 +1,18 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-13T10-05-10-775Z",
+    "id": "run-2026-05-13T10-06-05-754Z",
     "feature": "plan-strategy-refactor",
-    "startedAt": "2026-05-13T10:05:10.775Z",
-    "status": "crashed",
+    "startedAt": "2026-05-13T10:06:05.754Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 13903,
-    "crashedAt": "2026-05-13T10:05:20.980Z",
-    "crashSignal": "SIGINT"
+    "pid": 14739
   },
   "progress": {
     "total": 5,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
     "pending": 0
   },
@@ -23,7 +21,18 @@
     "limit": 50
   },
   "current": null,
-  "iterations": 0,
-  "updatedAt": "2026-05-13T10:05:20.980Z",
-  "durationMs": 10205
+  "iterations": 2,
+  "updatedAt": "2026-05-13T10:33:31.003Z",
+  "durationMs": 1645249,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-05-13T10:33:30.262Z"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-13T10:33:30.263Z"
+    }
+  }
 }
