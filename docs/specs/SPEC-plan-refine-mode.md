@@ -1,7 +1,7 @@
 # SPEC: Plan Refine Mode
 
 **Branch:** `feat/plan-refine-mode`  
-**Scope:** `src/plan/strategies/refine.ts`, `src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`, `src/config/`  
+**Scope:** `src/plan/strategies/refine.ts`, `src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`, `src/config/`, `src/runtime/session-role.ts`  
 **Depends on:** `SPEC-plan-strategy-refactor.md` (strategy pattern must land first)
 
 ---
@@ -172,18 +172,30 @@ export class RefinePlanStrategy implements IPlanStrategy {
     // Nearly identical to SinglePlanStrategy but uses planRefineOp.
     // ctx.runtime is built once in buildPlanModeContext and closed by
     // planCommand()'s finally block — this strategy does not close it.
-    const callCtx = buildCallCtx(ctx.runtime, ctx);
     try {
-      const prd = await callOp(callCtx, planRefineOp, {
-        specContent: ctx.specContent,
-        codebaseContext: ctx.codebaseContext,
-        featureName: ctx.options.feature,
-        branchName: ctx.branchName,
-        outputPath: ctx.outputPath,
-        packages: ctx.relativePackages,
-        packageDetails: ctx.packageDetails,
-        projectProfile: ctx.config.plan.projectProfile,
-      });
+      const prd = await callOp(
+        {
+          runtime: ctx.runtime,
+          packageView: ctx.runtime.packages.resolve(),
+          packageDir: ctx.workdir,
+          agentName: ctx.runtime.agentManager.getDefault(),
+          storyId: ctx.options.feature,
+          featureName: ctx.options.feature,
+          interactionBridge: ctx.interactionBridge,
+          maxInteractionTurns: ctx.fullConfig.agent?.maxInteractionTurns,
+        },
+        planRefineOp,
+        {
+          specContent: ctx.specContent,
+          codebaseContext: ctx.codebaseContext,
+          featureName: ctx.options.feature,
+          branchName: ctx.branchName,
+          outputPath: ctx.outputPath,
+          packages: ctx.relativePackages,
+          packageDetails: ctx.packageDetails,
+          projectProfile: ctx.fullConfig.project,
+        },
+      );
       return writeOrRecoverPrd(ctx, prd);
     } catch (err) {
       return writeOrRecoverPrd(ctx, null, err);
@@ -217,7 +229,7 @@ export function resolvePlanMode(
 
 ### Session role registry
 
-`adapter-wiring.md` role registry table — add `plan-refine` to the `callOp` run-kind row alongside `plan`, `plan-draft`, `plan-revise`, `plan-critic`.
+`src/runtime/session-role.ts` is the source of truth for session roles — add `plan-refine` to `CanonicalSessionRole` and `KNOWN_SESSION_ROLES`. Also update `.claude/rules/adapter-wiring.md` so the role registry table lists `plan-refine` in the `callOp` run-kind row alongside `plan`, `plan-draft`, `plan-revise`, `plan-critic`.
 
 ### Failure handling
 
@@ -239,7 +251,7 @@ Extend the config schema to accept `"refine"` as a valid `plan.mode` value and u
 #### Context Files
 - `src/config/schemas-infra.ts` — `mode` enum (line ~17)
 - `src/config/runtime-types.ts` — `PlanConfig.mode` type (line ~285)
-- `src/cli/plan.ts` — `resolvePlanMode()` function
+- `src/cli/plan-command.ts` — `resolvePlanMode()` function
 - `test/unit/cli/plan-mode.test.ts` — existing mode resolution tests
 
 ### US-002: Refine continuation prompt
@@ -264,7 +276,7 @@ Create `src/operations/plan-refine.ts` implementing the 2-turn `hopBody` flow.
 - `src/operations/types.ts` — `RunOperation` interface
 - `src/prompts/builders/plan-builder.ts` — `PlanPromptBuilder.buildRefineContinuation`
 - `src/operations/index.ts` — barrel to add export to
-- `test/unit/operations/plan.test.ts` — existing op tests (pattern to follow)
+- `test/unit/operations/plan-interactive.test.ts` — existing op tests (pattern to follow)
 
 ### US-004: `RefinePlanStrategy` and factory wiring
 
@@ -276,8 +288,9 @@ Create `RefinePlanStrategy`, add `"refine"` to `createPlanStrategy` factory, reg
 - `src/plan/strategies/single.ts` — `SinglePlanStrategy` to mirror
 - `src/plan/strategies/write-prd.ts` — `writeOrRecoverPrd` shared helper
 - `src/plan/strategies/index.ts` — factory to extend
+- `src/runtime/session-role.ts` — canonical session role registry to extend
 - `.claude/rules/adapter-wiring.md` — session role registry to update
-- `test/unit/plan/strategies/single.test.ts` — test patterns to mirror
+- `test/unit/plan/single-strategy.test.ts` — test patterns to mirror
 
 ---
 
@@ -347,7 +360,7 @@ Create `RefinePlanStrategy`, add `"refine"` to `createPlanStrategy` factory, reg
 
 **AC5:** When `callOp` throws and `ctx.outputPath` exists on disk, `RefinePlanStrategy.execute` reads and returns the disk-recovered path via `writeOrRecoverPrd`.
 
-**AC6:** `adapter-wiring.md` session role registry includes `plan-refine` in the `callOp` run-kind row.
+**AC6:** `src/runtime/session-role.ts` includes `plan-refine` in `CanonicalSessionRole` and `KNOWN_SESSION_ROLES`, and `adapter-wiring.md` includes `plan-refine` in the `callOp` run-kind row.
 
 ---
 
@@ -374,7 +387,7 @@ Create `RefinePlanStrategy`, add `"refine"` to `createPlanStrategy` factory, reg
 - `recover` returns PRD from disk when file exists; returns `null` when absent (AC8)
 - `planRefineOp` is exported from the operations barrel (AC9)
 
-### `test/unit/plan/strategies/refine.test.ts`
+### `test/unit/plan/refine-strategy.test.ts`
 
 - `execute` calls `callOp` with `planRefineOp` and returns `ctx.outputPath` (AC3, AC4)
 - Disk recovery when `callOp` throws (AC5)
