@@ -4,7 +4,7 @@ import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   return {

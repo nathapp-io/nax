@@ -8,7 +8,7 @@ import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { NaxRuntime } from "@/runtime";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager } from "@test/helpers";
 
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
   return {
