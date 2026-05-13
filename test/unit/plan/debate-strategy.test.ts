@@ -8,6 +8,7 @@ import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { NaxRuntime } from "@/runtime";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
+import { makeMockAgentManager } from "../../helpers";
 
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
   return {
@@ -19,7 +20,7 @@ function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
     globalDir: "/tmp/global",
     curatorRollupPath: "/tmp/global/curator/rollup.jsonl",
     projectKey: "project-key",
-    agentManager: { getDefault: () => "claude" } as never,
+    agentManager: makeMockAgentManager({ getDefaultAgent: "claude" }),
     sessionManager: { nameFor: () => "session" } as never,
     costAggregator: {} as never,
     promptAuditor: {} as never,

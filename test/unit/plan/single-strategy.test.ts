@@ -4,11 +4,12 @@ import { SinglePlanStrategy, _singlePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockAgentManager } from "../../helpers";
 
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   return {
     packages: { resolve: () => ({}) },
-    agentManager: { getDefault: () => "agent-single" },
+    agentManager: makeMockAgentManager({ getDefaultAgent: "agent-single" }),
     close: closeImpl ?? (async () => {}),
   } as unknown as NaxRuntime;
 }
