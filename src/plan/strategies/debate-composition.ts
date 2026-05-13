@@ -1,4 +1,4 @@
-import type { DebateStageConfig } from "../../debate/types";
+import type { DebateStageConfig } from "@/debate/types";
 
 export function buildPlanComposition(
   userStageConfig: DebateStageConfig & { evidenceMode?: "current" | "asymmetric" },

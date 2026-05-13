@@ -1,12 +1,11 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { _planDeps, detectProjectName } from "@/cli/plan-runtime";
+import { _planDeps, detectProjectName } from "@/cli";
 import { DEFAULT_CONFIG, planConfigSelector } from "@/config";
 import type { NaxConfig } from "@/config";
 import type { SourceRoot } from "@/analyze";
-import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan/strategies";
+import { assertIsValidPrd, buildPlanModeContext, writeOrRecoverPrd } from "@/plan";
 import type { IPlanStrategy, PlanDeps, PlanModeContext } from "@/plan/strategies";
-import * as planRuntimeModule from "@/cli/plan-runtime";
 import type { PRD } from "@/prd/types";
 import { makeNaxConfig } from "@test/helpers";
 
@@ -142,35 +141,37 @@ describe("buildPlanModeContext", () => {
       debate: { ...DEFAULT_CONFIG.debate },
     });
     const deps = makeDeps();
-    const expectedRuntime = {
-      runtime: "sentinel",
-    } as unknown as ReturnType<typeof planRuntimeModule.createPlanRuntime>;
+    // Must have agentManager so createPlanRuntime's isRuntimeWithAgentManager check passes
+    const expectedRuntime = { agentManager: {}, close: async () => {} } as unknown as import("@/runtime").NaxRuntime;
 
-    const createRuntimeSpy = spyOn(planRuntimeModule, "createPlanRuntime").mockReturnValue(expectedRuntime);
-    const detectNameSpy = spyOn(planRuntimeModule, "detectProjectName").mockReturnValue("pkg-from-json");
+    const origCreateRuntime = _planDeps.createRuntime;
+    _planDeps.createRuntime = mock(() => expectedRuntime as never);
 
-    const ctx = await buildPlanModeContext(
-      SAMPLE_WORKDIR,
-      fullConfig as NaxConfig,
-      { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE, branch: "feat/custom" },
-      deps,
-    );
+    try {
+      const ctx = await buildPlanModeContext(
+        SAMPLE_WORKDIR,
+        fullConfig as NaxConfig,
+        { from: SAMPLE_SPEC_PATH, feature: SAMPLE_FEATURE, branch: "feat/custom" },
+        deps,
+      );
 
-    expect(ctx.specContent).toBe("# Spec\nDo the thing.");
-    expect(ctx.relativePackages).toEqual(["packages/api", "apps/web"]);
-    expect(ctx.relativePackages.every((pkg) => !pkg.startsWith("/"))).toBe(true);
-    expect(ctx.packageDetails).toHaveLength(2);
-    expect(ctx.packageDetails.map((pkg) => pkg.path)).toEqual(["packages/api", "apps/web"]);
-    expect(ctx.projectName).toBe("pkg-from-json");
-    expect(ctx.outputPath).toBe(join(SAMPLE_NAX_DIR, "features", SAMPLE_FEATURE, "prd.json"));
-    expect(ctx.outputDir).toBe(join(SAMPLE_NAX_DIR, "features", SAMPLE_FEATURE));
-    expect(deps.mkdirp).toHaveBeenCalledWith(ctx.outputDir);
-    expect(ctx.config).toEqual(planConfigSelector.select(fullConfig));
-    expect(ctx.config).not.toBe(fullConfig);
-    expect(ctx.fullConfig).toBe(fullConfig);
-    expect(ctx.runtime).toBe(expectedRuntime);
-    expect(createRuntimeSpy).toHaveBeenCalledWith(fullConfig, SAMPLE_WORKDIR, SAMPLE_FEATURE);
-    expect(detectNameSpy).toHaveBeenCalledWith(SAMPLE_WORKDIR, { name: "pkg-from-json" });
+      expect(ctx.specContent).toBe("# Spec\nDo the thing.");
+      expect(ctx.relativePackages).toEqual(["packages/api", "apps/web"]);
+      expect(ctx.relativePackages.every((pkg) => !pkg.startsWith("/"))).toBe(true);
+      expect(ctx.packageDetails).toHaveLength(2);
+      expect(ctx.packageDetails.map((pkg) => pkg.path)).toEqual(["packages/api", "apps/web"]);
+      expect(ctx.projectName).toBe("pkg-from-json");
+      expect(ctx.outputPath).toBe(join(SAMPLE_NAX_DIR, "features", SAMPLE_FEATURE, "prd.json"));
+      expect(ctx.outputDir).toBe(join(SAMPLE_NAX_DIR, "features", SAMPLE_FEATURE));
+      expect(deps.mkdirp).toHaveBeenCalledWith(ctx.outputDir);
+      expect(ctx.config).toEqual(planConfigSelector.select(fullConfig));
+      expect(ctx.config).not.toBe(fullConfig);
+      expect(ctx.fullConfig).toBe(fullConfig);
+      expect(ctx.runtime).toBe(expectedRuntime);
+      expect(_planDeps.createRuntime).toHaveBeenCalledWith(fullConfig, SAMPLE_WORKDIR, SAMPLE_FEATURE);
+    } finally {
+      _planDeps.createRuntime = origCreateRuntime;
+    }
   });
 
   test("returns a null interaction chain when initInteractionChain resolves null", async () => {

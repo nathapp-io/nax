@@ -2,9 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { NaxError } from "@/errors";
-import { DebatePlanStrategy } from "@/plan/strategies/debate";
-import { PipelinePlanStrategy } from "@/plan/strategies/pipeline";
-import { SinglePlanStrategy } from "@/plan/strategies/single";
+import { DebatePlanStrategy, PipelinePlanStrategy, SinglePlanStrategy } from "@/plan";
 
 const PLAN_TS_PATH = join(import.meta.dir, "../../../src/cli/plan.ts");
 
@@ -63,7 +61,7 @@ describe("plan command cut-over", () => {
   });
 
   test("src/cli/plan.ts keeps buildPlanComposition importable", async () => {
-    const planModule = await import("@/cli/plan");
+    const planModule = await import("@/cli");
 
     expect(planModule.buildPlanComposition).toBeDefined();
   });

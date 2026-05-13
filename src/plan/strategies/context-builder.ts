@@ -1,10 +1,15 @@
 import { join } from "node:path";
-import { buildPackageSummary, buildSourceRootsSection } from "../../cli/plan-helpers";
-import { DEFAULT_TIMEOUT_SECONDS, createPlanRuntime, detectProjectName } from "../../cli/plan-runtime";
-import type { NaxConfig } from "../../config";
-import { planConfigSelector } from "../../config/selectors";
-import { buildInteractionBridge } from "../../interaction/bridge-builder";
-import { validateFeatureName } from "../../utils/feature-name";
+import {
+  DEFAULT_TIMEOUT_SECONDS,
+  buildPackageSummary,
+  buildSourceRootsSection,
+  createPlanRuntime,
+  detectProjectName,
+} from "@/cli";
+import type { NaxConfig } from "@/config";
+import { planConfigSelector } from "@/config";
+import { buildInteractionBridge } from "@/interaction";
+import { validateFeatureName } from "@/utils/feature-name";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
 
 export async function buildPlanModeContext(

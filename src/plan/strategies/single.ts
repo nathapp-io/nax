@@ -1,6 +1,6 @@
-import { callOp, planInteractiveOp } from "../../operations";
-import type { PlanInteractiveInput } from "../../operations/plan";
-import { validatePlanOutput } from "../../prd/schema";
+import { callOp, planInteractiveOp } from "@/operations";
+import type { PlanInteractiveInput } from "@/operations";
+import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 

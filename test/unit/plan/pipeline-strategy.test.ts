@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { NaxError } from "@/errors";
-import { PipelinePlanStrategy, _pipelinePlanDeps } from "@/plan/strategies/pipeline";
+import { PipelinePlanStrategy, _pipelinePlanDeps } from "@/plan";
 import type { PlanModeContext } from "@/plan/strategies/types";
 import type { PackageSummary } from "@/prompts";
 import type { NaxRuntime } from "@/runtime";

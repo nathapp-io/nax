@@ -1,6 +1,6 @@
-import { NaxError } from "../../errors";
-import { validatePlanOutput } from "../../prd/schema";
-import type { PRD } from "../../prd/types";
+import { NaxError } from "@/errors";
+import { validatePlanOutput } from "@/prd";
+import type { PRD } from "@/prd/types";
 import type { PlanModeContext } from "./types";
 
 export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {

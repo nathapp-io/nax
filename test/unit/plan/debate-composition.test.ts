@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPlanComposition } from "@/plan/strategies/debate-composition";
+import { buildPlanComposition } from "@/plan";
 import type { DebateStageConfig } from "@/debate/types";
 
 function makeBaseStageConfig(

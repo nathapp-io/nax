@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { planInteractiveOp } from "@/operations";
 import * as operationsModule from "@/operations";
-import { DebatePlanStrategy } from "@/plan/strategies/debate";
-import * as debateCompositionModule from "@/plan/strategies/debate-composition";
-import * as writePrdModule from "@/plan/strategies/write-prd";
-import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
+import { DebatePlanStrategy, _debatePlanDeps } from "@/plan";
+import type { PlanDeps, PlanModeContext } from "@/plan/strategies";
 import type { DebateStageConfig } from "@/debate/types";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { NaxRuntime } from "@/runtime";
@@ -125,14 +123,15 @@ const SAMPLE_PRD: PRD = {
 
 describe("DebatePlanStrategy", () => {
   let buildPromptSpy: ReturnType<typeof spyOn>;
-  let buildCompositionSpy: ReturnType<typeof spyOn>;
+  let origBuildPlanComposition: typeof _debatePlanDeps.buildPlanComposition;
 
   beforeEach(() => {
     buildPromptSpy = spyOn(PlanPromptBuilder.prototype, "build").mockReturnValue({
       taskContext: "TASK_CONTEXT",
       outputFormat: "OUTPUT_FORMAT",
     });
-    buildCompositionSpy = spyOn(debateCompositionModule, "buildPlanComposition").mockImplementation((stageConfig) => ({
+    origBuildPlanComposition = _debatePlanDeps.buildPlanComposition;
+    _debatePlanDeps.buildPlanComposition = mock((stageConfig) => ({
       ...stageConfig,
       rounds: stageConfig.rounds,
     }));
@@ -140,6 +139,7 @@ describe("DebatePlanStrategy", () => {
 
   afterEach(() => {
     mock.restore();
+    _debatePlanDeps.buildPlanComposition = origBuildPlanComposition;
   });
 
   test("mode is debate", () => {
@@ -164,10 +164,10 @@ describe("DebatePlanStrategy", () => {
       ctx.packageDetails,
       ctx.fullConfig.project,
     );
-    expect(buildCompositionSpy).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
+    expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
 
-    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as [{ stage: string; stageConfig: DebateStageConfig; config: typeof ctx.fullConfig; workdir: string; featureName: string; timeoutSeconds: number; sessionManager: unknown }];
+    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [{ stage: string; stageConfig: DebateStageConfig; config: typeof ctx.fullConfig; workdir: string; featureName: string; timeoutSeconds: number; sessionManager: unknown }];
     expect(runnerOptions.stage).toBe("plan");
     expect(runnerOptions.stageConfig).toEqual({
       enabled: true,
@@ -182,7 +182,7 @@ describe("DebatePlanStrategy", () => {
     expect(runnerOptions.sessionManager).toBe(ctx.runtime.sessionManager);
 
     expect(runPlanMock).toHaveBeenCalledTimes(1);
-    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0] as [string, string, Record<string, unknown>];
+    const [taskContext, outputFormat, runOpts] = runPlanMock.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
     expect(taskContext).toBe("TASK_CONTEXT");
     expect(outputFormat).toBe("OUTPUT_FORMAT");
     expect(runOpts).toEqual({
@@ -204,9 +204,8 @@ describe("DebatePlanStrategy", () => {
     }));
     const createDebateRunnerMock = mock(() => ({ runPlan: runPlanMock }));
     const callOpSpy = spyOn(operationsModule, "callOp").mockResolvedValue(fallbackPrd as never);
-    const writeOrRecoverPrdSpy = spyOn(writePrdModule, "writeOrRecoverPrd").mockResolvedValue(
-      "/tmp/workdir/.nax/features/feat-debate/prd.json",
-    );
+    const origWriteOrRecoverPrd = _debatePlanDeps.writeOrRecoverPrd;
+    _debatePlanDeps.writeOrRecoverPrd = mock(async () => "/tmp/workdir/.nax/features/feat-debate/prd.json");
     const ctx = makeContext({
       deps: makeDeps({ createDebateRunner: createDebateRunnerMock }),
     });
@@ -232,9 +231,10 @@ describe("DebatePlanStrategy", () => {
         packageDetails: ctx.packageDetails,
         projectProfile: ctx.fullConfig.project,
       });
-      expect(writeOrRecoverPrdSpy).toHaveBeenCalledWith(ctx, fallbackPrd);
+      expect(_debatePlanDeps.writeOrRecoverPrd).toHaveBeenCalledWith(ctx, fallbackPrd);
       expect(ctx.runtime.close).toHaveBeenCalledTimes(1);
     } finally {
+      _debatePlanDeps.writeOrRecoverPrd = origWriteOrRecoverPrd;
       mock.restore();
     }
   });

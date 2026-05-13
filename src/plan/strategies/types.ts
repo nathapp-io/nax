@@ -1,11 +1,11 @@
-import type { SourceRoot } from "../../analyze";
-import type { NaxConfig } from "../../config";
-import type { PlanConfig } from "../../config/selectors";
-import type { DebateRunner, DebateRunnerOptions } from "../../debate";
-import type { InteractionBridge } from "../../interaction/bridge-builder";
-import type { InteractionChain } from "../../interaction/chain";
-import type { PackageSummary } from "../../prompts";
-import type { NaxRuntime } from "../../runtime";
+import type { SourceRoot } from "@/analyze";
+import type { NaxConfig } from "@/config";
+import type { PlanConfig } from "@/config/selectors";
+import type { DebateRunner, DebateRunnerOptions } from "@/debate";
+import type { InteractionBridge } from "@/interaction/bridge-builder";
+import type { InteractionChain } from "@/interaction/chain";
+import type { PackageSummary } from "@/prompts";
+import type { NaxRuntime } from "@/runtime";
 
 export interface PlanCommandOptions {
   readonly from: string;
@@ -26,7 +26,7 @@ export interface PlanDeps {
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => Promise<InteractionChain | null>;
   createInteractionBridge: () => InteractionBridge;
   createDebateRunner: (opts: DebateRunnerOptions) => DebateRunner;
-  getLogger: () => ReturnType<typeof import("../../logger").getLogger>;
+  getLogger: () => ReturnType<typeof import("@/logger").getLogger>;
 }
 
 export interface PlanModeContext {

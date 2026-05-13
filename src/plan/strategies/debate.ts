@@ -1,9 +1,10 @@
-import { NaxError } from "../../errors";
-import { callOp, planInteractiveOp } from "../../operations";
-import type { PlanInteractiveInput } from "../../operations/plan";
-import { validatePlanOutput } from "../../prd/schema";
-import type { PRD } from "../../prd/types";
-import { PlanPromptBuilder } from "../../prompts";
+import type { DebateStageConfig } from "@/debate/types";
+import { NaxError } from "@/errors";
+import { callOp, planInteractiveOp } from "@/operations";
+import type { CallContext, PlanInteractiveInput } from "@/operations";
+import { validatePlanOutput } from "@/prd";
+import type { PRD } from "@/prd/types";
+import { PlanPromptBuilder } from "@/prompts";
 import { assertIsValidPrd } from "./assert";
 import { buildPlanComposition } from "./debate-composition";
 import type { IPlanStrategy, PlanModeContext } from "./types";
@@ -39,10 +40,8 @@ export class DebatePlanStrategy implements IPlanStrategy {
         },
       );
     }
-    const stageConfig = buildPlanComposition(
-      planStage as import("../../debate/types").DebateStageConfig & {
-        evidenceMode?: "current" | "asymmetric";
-      },
+    const stageConfig = _debatePlanDeps.buildPlanComposition(
+      planStage as DebateStageConfig & { evidenceMode?: "current" | "asymmetric" },
     );
 
     const callCtx = {
@@ -52,7 +51,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
       agentName: ctx.runtime.agentManager.getDefault(),
       storyId: ctx.options.feature,
       featureName: ctx.options.feature,
-    } satisfies import("../../operations/types").CallContext;
+    } satisfies CallContext;
 
     const runner = ctx.deps.createDebateRunner({
       ctx: callCtx,
@@ -78,7 +77,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
       if (debateResult.outcome !== "failed" && debateResult.output) {
         const prd = validatePlanOutput(debateResult.output, ctx.options.feature, ctx.branchName);
         const withProject = { ...prd, project: ctx.projectName } satisfies PRD;
-        return writeOrRecoverPrd(ctx, withProject);
+        return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
       }
 
       const prd = await callOp(
@@ -101,9 +100,9 @@ export class DebatePlanStrategy implements IPlanStrategy {
       );
       assertIsValidPrd(prd);
       const withProject = { ...prd, project: ctx.projectName } satisfies PRD;
-      return writeOrRecoverPrd(ctx, withProject);
+      return _debatePlanDeps.writeOrRecoverPrd(ctx, withProject);
     } catch (err) {
-      return writeOrRecoverPrd(ctx, null, err);
+      return _debatePlanDeps.writeOrRecoverPrd(ctx, null, err);
     } finally {
       await ctx.runtime.close().catch(() => {});
     }

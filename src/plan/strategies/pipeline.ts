@@ -1,7 +1,8 @@
-import { renderManifestSection } from "../../debate";
-import { NaxError } from "../../errors";
-import { callOp, groundOp, planDraftOp } from "../../operations";
-import type { PlanDraftInput } from "../../operations";
+import { renderManifestSection } from "@/debate";
+import type { FactsManifest } from "@/debate/facts-manifest";
+import { NaxError } from "@/errors";
+import { callOp, groundOp, planDraftOp } from "@/operations";
+import type { CallContext, PlanDraftInput } from "@/operations";
 import { runPlanCritic } from "../critic";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 
@@ -32,9 +33,9 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         agentName: ctx.runtime.agentManager.getDefault(),
         storyId: ctx.options.feature,
         featureName: ctx.options.feature,
-      } satisfies import("../../operations/types").CallContext;
+      } satisfies CallContext;
 
-      let manifest: import("../../debate/facts-manifest").FactsManifest;
+      let manifest: FactsManifest;
       try {
         manifest = await _pipelinePlanDeps.callOp(callCtx, _pipelinePlanDeps.groundOp, {
           specContent: ctx.specContent,
