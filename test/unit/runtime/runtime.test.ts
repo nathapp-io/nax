@@ -1,10 +1,8 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import path from "node:path";
-import { createRuntime } from "../../../src/runtime";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
-import { globalConfigDir } from "../../../src/config/paths";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { DEFAULT_CONFIG, globalConfigDir, NaxConfigSchema } from "@/config";
+import { createRuntime, type NaxRuntime } from "@/runtime";
+import { makeNaxConfig, makeTestRuntime } from "@test/helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 
