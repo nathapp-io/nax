@@ -1,6 +1,7 @@
 import { ParseValidationError, makeTieredParseRetryStrategy } from "../agents/retry";
 import type { TieredInspection } from "../agents/retry";
 import { planConfigSelector } from "../config";
+import type { ProjectProfile } from "../config";
 import type { PlanConfig } from "../config/selectors";
 import { citationRate, extractClaims } from "../debate/citations";
 import type { FactsManifest } from "../debate/facts-manifest";
@@ -9,6 +10,7 @@ import type { VerifierFinding } from "../plan/spec-deltas";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
+import type { PackageSummary } from "../prompts";
 import { errorMessage } from "../utils/errors";
 import { parseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -24,6 +26,12 @@ export interface PlanDraftInput {
   readonly branchName: string;
   readonly citationThreshold: number;
   readonly revisionFindings?: readonly VerifierFinding[];
+  /** Optional monorepo packages — propagated to the draft prompt for parity with single-mode build(). */
+  readonly packages?: readonly string[];
+  /** Optional per-package tech-stack summaries (only used when packages is non-empty). */
+  readonly packageDetails?: readonly PackageSummary[];
+  /** Optional project profile for language/type-aware AC examples. */
+  readonly projectProfile?: ProjectProfile;
 }
 
 export interface PlanDraftOutput {

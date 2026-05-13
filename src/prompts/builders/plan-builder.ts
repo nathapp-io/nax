@@ -22,6 +22,30 @@ import {
 } from "@/config";
 import type { ComposeInput } from "../compose";
 
+// ─── Shared rule injection ────────────────────────────────────────────────────
+
+/**
+ * Build the shared quality-rule block used by both `build()` (single mode)
+ * and `buildDraft()` (pipeline mode). Centralizing prevents drift where one
+ * prompt gets a new rule and the other doesn't.
+ *
+ * `specContent` controls whether SPEC_ANCHOR_RULES is injected — empty spec =
+ * no anchor rules. `projectProfile` lets AC quality rules emit language- and
+ * project-type-specific examples.
+ */
+function buildSharedQualityRules(specContent: string, projectProfile?: ProjectProfile): string {
+  const specAnchorSection = specContent.trim() ? `\n\n${SPEC_ANCHOR_RULES}` : "";
+  return `${GROUPING_RULES}
+
+${DESCRIPTION_QUALITY_RULES}
+
+${getAcQualityRules(projectProfile)}${specAnchorSection}
+
+${COMPLEXITY_GUIDE}
+
+${TEST_STRATEGY_GUIDE}`;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Revision finding from a verifier — passed to buildDraft when revising a rejected draft. */
@@ -41,6 +65,12 @@ export interface PlanDraftBuildInput {
   readonly branchName: string;
   readonly citationThreshold: number;
   readonly revisionFindings?: readonly PlanDraftVerifierFinding[];
+  /** Optional monorepo packages — when present, draft prompt injects monorepo hint + workdir field. */
+  readonly packages?: readonly string[];
+  /** Optional per-package tech-stack summaries (only used when packages is non-empty). */
+  readonly packageDetails?: readonly PackageSummary[];
+  /** Optional project profile for language- and project-type-aware AC examples. */
+  readonly projectProfile?: ProjectProfile;
 }
 
 /** Compact per-package summary for the planning prompt. */
@@ -141,8 +171,6 @@ Output ONLY the JSON object. Do not include markdown fences or explanation.`;
       ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
       : "";
 
-    const specAnchorSection = specContent.trim() ? `\n\n${SPEC_ANCHOR_RULES}` : "";
-
     const taskContext = `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
 ## Step 1: Understand the Spec
@@ -181,17 +209,11 @@ ${codebaseContext}${monorepoHint}
 
 Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
-${GROUPING_RULES}
-
-${DESCRIPTION_QUALITY_RULES}
-
-${getAcQualityRules(projectProfile)}${specAnchorSection}
+${buildSharedQualityRules(specContent, projectProfile)}
 
 For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
 
-${COMPLEXITY_GUIDE}
-
-${TEST_STRATEGY_GUIDE}`;
+**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today. Files the story will CREATE belong in the description (under "Files touched" or "Approach"), never in contextFiles. The pipeline verifies every contextFiles entry against the filesystem; new-file paths placed here are treated as missing-context warnings and may block the plan.`;
 
     const suggestedCriteriaField = specContent.trim()
       ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],`
@@ -260,6 +282,27 @@ ${outputDirective}`;
             .join("\n")}\n\nFix all issues above before submitting the revised PRD.`
         : "";
 
+    // Monorepo handling — mirror build() so cheap-pipeline gets the same context single mode has.
+    const isMonorepo = input.packages && input.packages.length > 0;
+    const packageDetailsArr = input.packageDetails && input.packageDetails.length > 0 ? [...input.packageDetails] : [];
+    const packageDetailsSection = packageDetailsArr.length > 0 ? buildPackageDetailsSection(packageDetailsArr) : "";
+    const monorepoHint =
+      isMonorepo && input.packages
+        ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${input.packages
+            .map((p) => `- ${p}`)
+            .join(
+              "\n",
+            )}\n${packageDetailsSection}\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
+        : "";
+
+    const workdirField = isMonorepo
+      ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
+      : "";
+
+    const suggestedCriteriaField = input.specContent.trim()
+      ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],`
+      : "";
+
     const task: ComposeInput["task"] = {
       id: "task",
       content: `You are drafting a PRD for the following feature: **${input.feature}** (branch: ${input.branchName}). Your intent is to produce a thorough, evidence-grounded implementation plan.
@@ -270,7 +313,7 @@ ${input.specContent}
 
 ## Codebase Context
 
-${input.codebaseContext}
+${input.codebaseContext}${monorepoHint}
 
 ## Manifest
 
@@ -279,6 +322,14 @@ ${input.manifestSection}
 ## Citation Requirement
 
 Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from the manifest. The required citation rate is ${input.citationThreshold}. Uncited factual claims will cause rejection.${revisionSection}
+
+## Story Generation Rules
+
+${buildSharedQualityRules(input.specContent, input.projectProfile)}
+
+For each story, set "contextFiles" to the key source files the implementer should read before starting (max 5 per story). Cite manifest factIds where relevant.
+
+**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today (cited via manifest factIds where possible). Files the story will CREATE belong in the description (under "Files touched" or "Approach"), never in contextFiles. Uncited paths that do not exist on disk are flagged by the pipeline.
 
 ## Output Schema
 
@@ -293,10 +344,10 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "id": "string — e.g. US-001",
       "title": "string — concise story title",
       "description": "string — detailed description of what to implement",
-      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],
+      "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],${suggestedCriteriaField}
       "contextFiles": ["string — relative paths the implementer should read (max 5)"],
       "tags": ["string"],
-      "dependencies": ["string — story IDs this story depends on"],
+      "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "routing": {
         "complexity": "simple | medium | complex | expert",
         "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",

@@ -87,7 +87,11 @@ export async function runPlanCritic(input: PlanCriticInput): Promise<PlanCriticV
   // 2. LLM judgment via planCriticLlmOp (fail-open: exhaustion returns { findings: [] })
   let llmFindings: VerifierFinding[] = [];
   try {
-    const llmResult = await callOp(callCtx, planCriticLlmOp, { prd, manifest });
+    const llmResult = await callOp(callCtx, planCriticLlmOp, {
+      prd,
+      manifest,
+      specContent: draftCtx.specContent,
+    });
     llmFindings = llmResult.findings as VerifierFinding[];
   } catch {
     logger?.warn("plan-critic", "LLM judgment failed; proceeding with zero LLM findings", { storyId });

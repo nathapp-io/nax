@@ -187,7 +187,9 @@ When a spec is provided, these rules govern acceptance criteria generation:
 1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`, verbatim or lightly rephrased for testability. Never silently drop a spec AC.
 2. **Do not invent spec ACs.** If you identify useful behavioral edge cases or negative paths that the spec did not explicitly list, place them in \`suggestedCriteria\` (a string array on the same story object) — never in \`acceptanceCriteria\`. These go through a separate hardening pass.
 3. **Respect story scope.** Each story's criteria must only cover what the spec says for that story. Do not assign criteria that belong to a different story's scope (wrong feature area, wrong file, wrong dependency chain).
-4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.`;
+4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.
+5. **Enumerate failure-mode tables.** If the spec contains a "Failure handling", "Error handling", "Failure modes", or equivalent table/section enumerating error/exception scenarios, every row MUST produce at least one acceptance criterion in the matching story. Walk the table row by row; do not skip rows because they look minor. A failure-mode row without an AC is treated as a missing AC and will cause rejection.
+6. **Resolve internal spec contradictions toward the AC.** If the spec's prose, design table, or interface block contradicts a stated acceptance criterion (e.g. design table says \`lookback or strategy_lookback\` but the AC says \`lookback=None\`), the AC is authoritative. Implement the AC; do NOT echo the contradicting prose into the description.`;
 
 export const DESCRIPTION_QUALITY_RULES = `## Description Quality Rules
 
@@ -208,6 +210,7 @@ When a spec contains a design subsection for a story (e.g. \`### N. <Topic>\` un
 1. Do NOT paraphrase spec design sections — embed them verbatim.
 2. A one-sentence description is almost always too short for implementation stories that have spec design content.
 3. The implementer receives only this description — no access to the spec. Design decisions lost here are permanently invisible to the implementer.
+4. **Self-check before emitting.** After drafting each description, re-read it against the story's \`acceptanceCriteria\`. If any sentence in the description contradicts an AC (e.g. description says behaviour X, AC says behaviour not-X), the description is wrong — rewrite the offending sentence to match the AC, or delete it. The AC is authoritative. Embedding contradicting spec prose verbatim still counts as a contradiction; resolve it.
 
 ### Examples
 

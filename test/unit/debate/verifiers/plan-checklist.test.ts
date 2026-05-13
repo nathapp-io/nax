@@ -163,7 +163,7 @@ describe("planChecklistVerifier (US-004)", () => {
             outcome: "passed",
             resolverCostUsd: 0.001,
             output: makeValidPRDJson([
-              makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+              makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
             ]),
           } as SelectorResult,
         });
@@ -473,7 +473,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
         stageConfig: {
@@ -497,7 +497,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
         stageConfig: {
@@ -541,7 +541,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
       });
@@ -559,7 +559,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
       });
@@ -595,7 +595,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
         stageConfig: {
@@ -619,7 +619,7 @@ describe("planChecklistVerifier (US-004)", () => {
           outcome: "passed",
           resolverCostUsd: 0.001,
           output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts" }] }),
+            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
         stageConfig: {

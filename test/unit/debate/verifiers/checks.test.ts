@@ -117,7 +117,7 @@ describe("checks.ts exports (AC1)", () => {
 // ---------------------------------------------------------------------------
 
 describe("checkFilesExist (AC2)", () => {
-  test("returns one blocker finding per contextFiles entry when existsSync returns false", () => {
+  test("uncited contextFiles entries that don't exist are flagged as `major` (may be new files)", () => {
     const prd = makePrd([
       makeStory({
         contextFiles: [{ path: "src/foo.ts" }, { path: "src/bar.ts" }],
@@ -127,9 +127,22 @@ describe("checkFilesExist (AC2)", () => {
 
     expect(findings).toHaveLength(2);
     for (const f of findings) {
-      expect(f.severity).toBe("blocker");
+      expect(f.severity).toBe("major");
       expect(f.checklistItem).toBe("files-exist");
     }
+  });
+
+  test("contextFiles entry with manifest factId that does not exist on disk is a `blocker` (grounding broken)", () => {
+    const prd = makePrd([
+      makeStory({
+        contextFiles: [{ path: "src/cited.ts", factId: "F-001" }],
+      }),
+    ]);
+    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toBe("blocker");
+    expect((findings[0] as Record<string, unknown>).message).toContain("F-001");
   });
 
   test("returns finding with path matching the contextFiles entry path", () => {
@@ -155,12 +168,28 @@ describe("checkFilesExist (AC2)", () => {
     expect(findings).toHaveLength(0);
   });
 
-  test("handles string contextFiles entries", () => {
+  test("handles string contextFiles entries (treated as uncited, severity `major`)", () => {
     const prd = makePrd([makeStory({ contextFiles: ["src/plain.ts"] })]);
     const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
 
     expect(findings).toHaveLength(1);
     expect((findings[0] as Record<string, unknown>).path).toBe("src/plain.ts");
+    expect(findings[0]?.severity).toBe("major");
+  });
+
+  test("mixed: cited-and-missing + uncited-and-missing yields one blocker + one major", () => {
+    const prd = makePrd([
+      makeStory({
+        contextFiles: [{ path: "src/cited.ts", factId: "F-001" }, { path: "src/new.ts" }, "src/plain.ts"],
+      }),
+    ]);
+    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
+
+    expect(findings).toHaveLength(3);
+    const blockers = findings.filter((f) => f.severity === "blocker");
+    const majors = findings.filter((f) => f.severity === "major");
+    expect(blockers).toHaveLength(1);
+    expect(majors).toHaveLength(2);
   });
 });
 
