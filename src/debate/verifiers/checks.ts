@@ -22,16 +22,33 @@ export function checkFilesExist(prd: PRD, workdir: string, deps?: CheckDeps): Ve
     if (!story.contextFiles) continue;
     for (const entry of story.contextFiles) {
       const filePath = typeof entry === "string" ? entry : entry.path;
+      const factId = typeof entry === "string" ? undefined : entry.factId;
       const absPath = join(workdir, filePath);
-      if (!existsSync(absPath)) {
+      if (existsSync(absPath)) continue;
+
+      // An entry citing a manifest factId claims to be grounded in existing repo state.
+      // If the path doesn't exist, grounding is broken — that's a blocker.
+      if (factId) {
         findings.push({
           checklistItem: "files-exist",
           severity: "blocker",
-          message: `Context file does not exist on disk: ${filePath}`,
+          message: `Context file cites manifest fact ${factId} but path does not exist on disk: ${filePath}`,
           path: filePath,
           storyId: story.id,
         });
+        continue;
       }
+
+      // Uncited entry: legitimately may be a file the story will CREATE. Demote to
+      // `major` so hallucinated paths are still surfaced without blocking valid new-file
+      // plans. (Planners should put new files in the description, but cheap models leak.)
+      findings.push({
+        checklistItem: "files-exist",
+        severity: "major",
+        message: `Context file not on disk — if this is a new file the story creates, move it from "contextFiles" to the description's "Files touched" section: ${filePath}`,
+        path: filePath,
+        storyId: story.id,
+      });
     }
   }
   return findings;

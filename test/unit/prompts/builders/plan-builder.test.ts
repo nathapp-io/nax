@@ -356,6 +356,147 @@ Budget: aim for ≤ 10 file reads per story.
   });
 });
 
+// ─── buildSharedQualityRules content propagation (Step 2A) ────────────────────
+
+describe("PlanPromptBuilder — shared quality rules", () => {
+  test("build() includes failure-handling enumeration rule when spec is provided", () => {
+    const { taskContext } = new PlanPromptBuilder().build("Some spec with failure handling", "ctx");
+    expect(taskContext).toContain("Enumerate failure-mode tables");
+  });
+
+  test("build() includes description self-check rule", () => {
+    const prompt = fullPrompt(SPEC, CTX);
+    expect(prompt).toContain("Self-check before emitting");
+  });
+
+  test("build() includes contradiction-resolution rule when spec provided", () => {
+    const { taskContext } = new PlanPromptBuilder().build("spec body", "ctx");
+    expect(taskContext).toContain("Resolve internal spec contradictions toward the AC");
+  });
+
+  test("buildDraft() injects shared quality rules (COMPLEXITY_GUIDE)", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).toContain("Complexity Classification Guide");
+  });
+
+  test("buildDraft() injects TEST_STRATEGY_GUIDE", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).toContain("Test Strategy Guide");
+  });
+
+  test("buildDraft() injects DESCRIPTION_QUALITY_RULES with self-check", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).toContain("Description Quality Rules");
+    expect(task.content).toContain("Self-check before emitting");
+  });
+
+  test("buildDraft() injects SPEC_ANCHOR_RULES with failure-table rule when spec is non-empty", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some non-empty spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).toContain("Enumerate failure-mode tables");
+  });
+
+  test("buildDraft() omits SPEC_ANCHOR_RULES when spec is empty", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).not.toContain("Enumerate failure-mode tables");
+  });
+
+  test("buildDraft() injects monorepo hint when packages provided", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+      packages: ["packages/api"],
+    });
+    expect(task.content).toContain("Monorepo Context");
+    expect(task.content).toContain("packages/api");
+    expect(task.content).toContain('"workdir"');
+  });
+
+  test("buildDraft() omits monorepo hint when no packages provided", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).not.toContain("Monorepo Context");
+    expect(task.content).not.toContain('"workdir"');
+  });
+
+  test("buildDraft() includes suggestedCriteria schema field when spec is non-empty", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "Some spec",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).toContain("suggestedCriteria");
+  });
+
+  test("buildDraft() omits suggestedCriteria when spec is empty", () => {
+    const builder = new PlanPromptBuilder();
+    const { task } = builder.buildDraft({
+      manifestSection: "## Manifest\n",
+      specContent: "",
+      codebaseContext: "ctx",
+      feature: "feat",
+      branchName: "feat/x",
+      citationThreshold: 0.5,
+    });
+    expect(task.content).not.toContain("suggestedCriteria");
+  });
+});
+
 // ─── PlanPromptBuilder.buildDraft() — US-003 ────────────────────────────────
 
 describe("PlanPromptBuilder.buildDraft() — US-003", () => {

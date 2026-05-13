@@ -11,6 +11,8 @@ import type { RunOperation } from "./types";
 export interface PlanCriticLlmInput {
   readonly prd: PRD;
   readonly manifest: FactsManifest;
+  /** Optional spec content — when present, enables failure-table enumeration audit. */
+  readonly specContent?: string;
 }
 
 export interface PlanCriticLlmOutput {
@@ -82,7 +84,7 @@ export const planCriticLlmOp: RunOperation<PlanCriticLlmInput, PlanCriticLlmOutp
   model: (_input, ctx) => ctx.config.plan?.criticModel ?? "fast",
   timeoutMs: (_input, ctx) => (ctx.config.plan?.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
-    return new CriticPromptBuilder().build(input.prd, input.manifest);
+    return new CriticPromptBuilder().build(input.prd, input.manifest, input.specContent ?? "");
   },
   parse(output, _input, _ctx) {
     const inspection = inspectCriticOutput(output);

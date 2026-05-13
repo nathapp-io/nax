@@ -67,7 +67,7 @@ describe("runPlanCritic (US-005)", () => {
       // It imports the function and expects it to handle mechanical checks.
       const { runPlanCritic } = await import("@/plan/critic");
 
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -119,7 +119,7 @@ describe("runPlanCritic (US-005)", () => {
     test("emits spec-deltas.md to correct path", async () => {
       const { runPlanCritic } = await import("@/plan/critic");
 
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
       runtime = makeTestRuntime();
@@ -164,7 +164,7 @@ describe("runPlanCritic (US-005)", () => {
       // The implementation should skip the LLM judgment stage.
 
       const { runPlanCritic } = await import("@/plan/critic");
-      const prd = makePRD({ userStories: [makeStory({ contextFiles: ["nonexistent-file.ts"] })] });
+      const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
 
@@ -460,7 +460,7 @@ describe("runPlanCritic (US-005)", () => {
         branchName: "feat/test",
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
-        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple", contextFiles: ["nonexistent-revised.ts"] }],
+        userStories: [{ id: "US-001", title: "Test story", description: "A test story", acceptanceCriteria: ["AC-1: works"], complexity: "simple", contextFiles: [{ path: "nonexistent-revised.ts", factId: "F-001" }] }],
       });
 
       // planCriticLlmOp and planDraftOp are both kind:"run" — go through runWithFallback

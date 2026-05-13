@@ -1245,7 +1245,7 @@ describe("runPlanPipeline (US-005)", () => {
       // planDraftOp returns a PRD with a nonexistent contextFile → checkFilesExist produces a blocker
       const blockerPrd = makePRD({
         feature: "test-feature",
-        userStories: [makeStory({ contextFiles: ["absolutely-nonexistent-file-ac12.ts"] })],
+        userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
       });
       const agentManager = makePipelineAgentManager({ draftPrd: blockerPrd });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
@@ -1259,7 +1259,7 @@ describe("runPlanPipeline (US-005)", () => {
     test("NaxError context contains specDeltasPath equal to the verdict's specDeltasPath", async () => {
       const blockerPrd = makePRD({
         feature: "test-feature",
-        userStories: [makeStory({ contextFiles: ["absolutely-nonexistent-file-ac12.ts"] })],
+        userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
       });
       const agentManager = makePipelineAgentManager({ draftPrd: blockerPrd });
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));

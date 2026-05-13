@@ -16,6 +16,7 @@ import { NaxError } from "../errors";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import { callOp, groundOp, planDraftOp, planInteractiveOp } from "../operations";
+import type { PlanDraftInput } from "../operations";
 import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
@@ -383,6 +384,26 @@ export async function runPlanPipeline(
   }));
   const codebaseContext = buildSourceRootsSection(normalizedRoots);
 
+  // Mirror non-pipeline path: derive relative package list + per-package tech stacks
+  // so the draft prompt receives the same monorepo context single mode has.
+  const relativePackages = [
+    ...new Set(
+      sourceRoots
+        .map((root) => root.path)
+        .filter((p) => p !== ".")
+        .map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p)),
+    ),
+  ];
+  const packageDetails =
+    relativePackages.length > 0
+      ? await Promise.all(
+          relativePackages.map(async (rel) => {
+            const pkgJson = await _planDeps.readPackageJsonAt(join(workdir, rel, "package.json"));
+            return buildPackageSummary(rel, pkgJson);
+          }),
+        )
+      : [];
+
   const branchName = options.branch ?? `feat/${options.feature}`;
   const naxDir = join(workdir, ".nax");
   const outputDir = join(naxDir, "features", options.feature);
@@ -416,7 +437,7 @@ export async function runPlanPipeline(
     // Phase 2 — draft
     const citationThreshold = config?.plan?.citationThreshold ?? 0.5;
     const manifestSection = renderManifestSection(manifest);
-    const draftCtx = {
+    const draftCtx: PlanDraftInput = {
       manifestSection,
       manifest,
       specContent,
@@ -424,6 +445,9 @@ export async function runPlanPipeline(
       feature: options.feature,
       branchName,
       citationThreshold,
+      packages: relativePackages,
+      packageDetails,
+      projectProfile: config?.project,
     };
     const draft = await callOp(callCtx, planDraftOp, draftCtx);
 

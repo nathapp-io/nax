@@ -263,6 +263,100 @@ describe("CriticPromptBuilder", () => {
     });
   });
 
+  describe("Step 2B — PRD serialization and new audit items", () => {
+    const baseManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };
+
+    test("build() serializes user story IDs into the prompt", () => {
+      const prd: any = {
+        feature: "feat-x",
+        userStories: [
+          {
+            id: "US-001",
+            title: "first story",
+            description: "do thing",
+            acceptanceCriteria: ["When X, then Y"],
+          },
+          {
+            id: "US-002",
+            title: "second story",
+            description: "do other thing",
+            acceptanceCriteria: ["When A, then B"],
+          },
+        ],
+        branchName: "feat/x",
+      };
+      const result = new CriticPromptBuilder().build(prd, baseManifest);
+      expect(result.task.content).toContain("US-001");
+      expect(result.task.content).toContain("US-002");
+      expect(result.task.content).toContain("first story");
+      expect(result.task.content).toContain("When X, then Y");
+    });
+
+    test("build() emits a placeholder when PRD has no user stories", () => {
+      const prd: any = { feature: "feat-empty", userStories: [], branchName: "main" };
+      const result = new CriticPromptBuilder().build(prd, baseManifest);
+      expect(result.task.content).toContain("no user stories");
+    });
+
+    test("build() includes failure-table-enumerated checklist item when specContent provided", () => {
+      const prd: any = {
+        feature: "f",
+        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
+        branchName: "main",
+      };
+      const result = new CriticPromptBuilder().build(prd, baseManifest, "## Failure handling\n| row | behaviour |");
+      expect(result.task.content).toContain("failure-table-enumerated");
+      expect(result.task.content).toContain("walk it row by row");
+    });
+
+    test("build() omits failure-table-enumerated checklist item when specContent is empty", () => {
+      const prd: any = {
+        feature: "f",
+        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
+        branchName: "main",
+      };
+      const result = new CriticPromptBuilder().build(prd, baseManifest, "");
+      // The "#### failure-table-enumerated" heading (and its body) must not appear when
+      // there's no spec to enumerate. The literal string may still appear in the output
+      // schema enum — that's intentional, so consumers know it's a valid checklistItem.
+      expect(result.task.content).not.toContain("#### failure-table-enumerated");
+      expect(result.task.content).not.toContain("walk it row by row");
+    });
+
+    test("build() includes description-ac-contradiction checklist item", () => {
+      const prd: any = {
+        feature: "f",
+        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
+        branchName: "main",
+      };
+      const result = new CriticPromptBuilder().build(prd, baseManifest);
+      expect(result.task.content).toContain("description-ac-contradiction");
+    });
+
+    test("build() includes ALL manifest spec claims (not capped at 5)", () => {
+      const prd: any = {
+        feature: "f",
+        userStories: [{ id: "US-001", title: "t", description: "d", acceptanceCriteria: ["When X, then Y"] }],
+        branchName: "main",
+      };
+      const specClaims = Array.from({ length: 8 }, (_, i) => ({
+        id: `S-${String(i + 1).padStart(3, "0")}`,
+        specSpan: `span ${i + 1}`,
+        claim: `claim ${i + 1}`,
+        kind: "factual" as const,
+        verification: { status: "verified" as const },
+      }));
+      const manifest: FactsManifest = { repoFacts: [], specClaims, gaps: [] };
+      const result = new CriticPromptBuilder().build(prd, manifest);
+      // Pre-fix the critic only included the first 5; we now expect all 8.
+      // Check the manifest format prefix `- S-NNN:` to avoid false-matching against
+      // "US-001" in the output-schema example block.
+      for (let i = 1; i <= 8; i++) {
+        expect(result.task.content).toContain(`- S-${String(i).padStart(3, "0")}: claim ${i}`);
+      }
+    });
+  });
+
   describe("prompt quality", () => {
     test("build() prompt is substantial (>200 chars) to guide LLM effectively", () => {
       const prd: Partial<PRD> = {
