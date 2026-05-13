@@ -54,11 +54,16 @@ export function resolvePlanModelSelection(config: NaxConfig, preferredAgent: str
 }
 
 export function detectProjectName(workdir: string, pkg: Record<string, unknown> | null): string {
-  void workdir;
-  void pkg;
-  throw new NaxError("detectProjectName is not implemented yet", "PLAN_DETECT_PROJECT_NAME_UNIMPLEMENTED", {
-    stage: "plan",
-  });
+  if (pkg?.name && typeof pkg.name === "string") return pkg.name;
+
+  const result = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+  if (result.exitCode === 0) {
+    const url = result.stdout.toString().trim();
+    const match = url.match(/\/([^/]+?)(?:\.git)?$/);
+    if (match?.[1]) return match[1];
+  }
+
+  return "unknown";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

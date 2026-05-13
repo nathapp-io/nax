@@ -21,7 +21,7 @@ import { validatePlanOutput } from "../prd/schema";
 import { PlanPromptBuilder } from "../prompts";
 import { validateFeatureName } from "../utils/feature-name";
 import { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
-import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime } from "./plan-runtime";
+import { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, detectProjectName } from "./plan-runtime";
 
 // Re-exported for backward compatibility — callers that import from "./plan" still work.
 export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModelSelection } from "./plan-runtime";
@@ -502,24 +502,6 @@ function assertIsValidPrd(prd: unknown): asserts prd is import("../prd/types").P
       { stage: "plan", keys: Object.keys(obj).join(",") },
     );
   }
-}
-
-/**
- * Detect project name from package.json or git remote.
- */
-function detectProjectName(workdir: string, pkg: Record<string, unknown> | null): string {
-  if (pkg?.name && typeof pkg.name === "string") {
-    return pkg.name;
-  }
-
-  const result = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
-  if (result.exitCode === 0) {
-    const url = result.stdout.toString().trim();
-    const match = url.match(/\/([^/]+?)(?:\.git)?$/);
-    if (match?.[1]) return match[1];
-  }
-
-  return "unknown";
 }
 
 // Re-exports for backward compatibility — planDecomposeCommand and runReplanLoop
