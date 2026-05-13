@@ -3,7 +3,7 @@
   "feature": "plan-strategy-refactor",
   "branchName": "feat/plan-strategy-refactor",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-13T08:23:41.822Z",
+  "updatedAt": "2026-05-13T08:39:06.509Z",
   "userStories": [
     {
       "id": "US-001",
@@ -124,8 +124,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -180,7 +180,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/cli/plan.ts",
@@ -197,7 +199,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0c42bd42b467c9904c4f03e031189e9af18c8d9d"
     },
     {
       "id": "US-005",
