@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-13T07-41-32-269Z",
+    "feature": "plan-strategy-refactor",
+    "startedAt": "2026-05-13T07:41:32.269Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 72466
+  },
+  "progress": {
+    "total": 5,
+    "passed": 3,
+    "failed": 0,
+    "paused": 1,
+    "blocked": 0,
+    "pending": 1
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-05-13T09:10:57.719Z",
+  "durationMs": 5365450,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "failed",
+      "failedTests": [
+        "test/unit/plan/strategies-factory.test.ts",
+        "test/unit/prompts/core/sections/prior-failures.test.ts"
+      ],
+      "affectedStories": [
+        "US-004"
+      ],
+      "lastRunAt": "2026-05-13T09:10:56.731Z"
+    }
+  }
+}

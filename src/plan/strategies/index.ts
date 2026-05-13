@@ -1,5 +1,6 @@
 export type { IPlanStrategy, PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
 export { buildPlanModeContext } from "./context-builder";
+export { createPlanStrategy } from "./factory";
 export { writeOrRecoverPrd } from "./write-prd";
 export { assertIsValidPrd } from "./assert";
 export { SinglePlanStrategy, _singlePlanDeps } from "./single";
