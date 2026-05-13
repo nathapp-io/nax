@@ -1,0 +1,5 @@
+[2026-05-13T08:05:17.057Z] US-001 — PASSED — Strategy contract, context builder, and shared helpers — Cost: $0.0000
+[2026-05-13T08:23:39.065Z] US-002 — PASSED — SinglePlanStrategy — Cost: $0.0000
+[2026-05-13T08:39:03.727Z] US-003 — PASSED — PipelinePlanStrategy — Cost: $0.0000
+[2026-05-13T08:58:41.975Z] US-004 — PASSED — DebatePlanStrategy and debate-composition extraction — Cost: $0.0000
+[2026-05-13T10:30:09.026Z] US-005 — PASSED — Strategy factory, barrel, and planCommand() cut-over — Cost: $0.0000

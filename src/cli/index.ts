@@ -3,9 +3,10 @@
  */
 
 export { planCommand, buildPlanComposition, resolvePlanMode, runPlanPipeline, _planDeps } from "./plan";
+export { detectProjectName, DEFAULT_TIMEOUT_SECONDS, createPlanRuntime } from "./plan-runtime";
 export type { PlanCommandOptions } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
-export { buildSourceRootsSection } from "./plan-helpers";
+export { buildSourceRootsSection, buildPackageSummary } from "./plan-helpers";
 export { acceptCommand, type AcceptOptions } from "./accept";
 export {
   displayCostMetrics,

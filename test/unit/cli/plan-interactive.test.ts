@@ -269,7 +269,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
         }),
       }),
     );
-    _deps.existsSync = mock((_path: string) => false);
+    _deps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {
@@ -410,7 +410,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
         },
       ),
     );
-    _deps.existsSync = mock((path: string) => path.endsWith("prd.json"));
+    _deps.existsSync = mock((path: string) => path.endsWith(".nax") || path.endsWith("prd.json"));
     _deps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
 
     const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
@@ -426,7 +426,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.createRuntime = mock(() =>
       makeMockPlanManager(async () => { throw new Error("missing end_turn"); }),
     );
-    _deps.existsSync = mock((_path: string) => false);
+    _deps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { validateDraftCitations } from "@/plan/draft-citations";
+import { validateDraftCitations } from "@/plan";
 import type { FactsManifest } from "@/debate/facts-manifest";
 
 const emptyManifest: FactsManifest = { repoFacts: [], specClaims: [], gaps: [] };

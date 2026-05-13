@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { formatSpecDeltas } from "@/plan/spec-deltas";
+import { formatSpecDeltas } from "@/plan";
 import type { VerifierFinding } from "@/plan/spec-deltas";
 import type { FactsManifest } from "@/debate";
 

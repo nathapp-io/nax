@@ -104,7 +104,7 @@ describe("planCommand", () => {
       capturedWriteArgs.push([path, content]);
     });
 
-    _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax") || path.endsWith("prd.json"));
 
     _planDeps.scanSourceRoots = mock(async (_workdir: string) => []);
 
@@ -343,7 +343,7 @@ describe("planCommand", () => {
         }),
       }),
     );
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {
@@ -412,7 +412,7 @@ describe("planCommand", () => {
         }),
       }),
     );
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
 
     await expect(
       planCommand(tmpDir, DEFAULT_CONFIG as never, {
@@ -569,6 +569,7 @@ describe("planCommand", () => {
   test("throws when nax directory not found", async () => {
     const emptyDir = makeTempDir("nax-plan-empty-");
     await rm(join(emptyDir, ".nax"), { recursive: true, force: true });
+    _planDeps.existsSync = origExistsSync; // use real FS — .nax doesn't exist here
 
     expect(
       planCommand(emptyDir, {} as never, {
@@ -863,7 +864,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     // callOp returns lastRetryTurn (envelope). assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
     // No prd.json → catch block re-throws.
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
 
     await expect(
@@ -880,7 +881,7 @@ describe("assertIsValidPrd guard (#993)", () => {
     // assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
     // planCommand catch: existsSync → true; _planDeps.readFile returns valid PRD → recovered.
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
-    _planDeps.existsSync = mock((p: string) => p.endsWith("prd.json"));
+    _planDeps.existsSync = mock((p: string) => p.endsWith(".nax") || p.endsWith("prd.json"));
     _planDeps.readFile = mock(async (p: string) => {
       if (p.endsWith("prd.json")) return JSON.stringify(SAMPLE_PRD);
       return SAMPLE_SPEC;
@@ -922,7 +923,7 @@ describe("assertIsValidPrd guard (#993)", () => {
         }),
       }),
     );
-    _planDeps.existsSync = mock(() => false);
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
 
     await planCommand(tmpDir993, DEFAULT_CONFIG as never, {

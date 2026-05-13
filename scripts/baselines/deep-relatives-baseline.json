@@ -1,6 +1,6 @@
 {
-  "count": 3143,
-  "updatedAt": "2026-05-13T10:33:59.595Z",
+  "count": 3145,
+  "updatedAt": "2026-05-13T12:05:20.326Z",
   "byFile": {
     "src/context/engine/effectiveness.ts": 2,
     "src/context/engine/providers/feature-context.ts": 6,
@@ -13,6 +13,7 @@
     "src/context/engine/providers/session-scratch.ts": 3,
     "src/context/engine/stage-assembler.ts": 5,
     "src/context/engine/orchestrator.ts": 3,
+    "src/debate/verifiers/plan-checklist.ts": 2,
     "src/routing/strategies/llm.ts": 3,
     "src/routing/strategies/llm-parsing.ts": 3,
     "src/findings/adapters/lint.ts": 1,

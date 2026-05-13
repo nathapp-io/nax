@@ -1,0 +1,22 @@
+{
+  "agent": {
+    "default": "codex",
+    "fallback": {
+      "enabled": true,
+      "map": {
+        "codex": ["claude"]
+      }
+    }
+  },
+  "review": {
+    "adversarial": {
+      "model": { "agent": "opencode", "model": "opencode-go/deepseek-v4-pro" }
+    },
+    "semantic": {
+      "model": { "agent": "opencode", "model": "opencode-go/deepseek-v4-flash" }
+    }
+  },
+  "acceptance": {
+    "model": { "agent": "claude", "model": "fast" }
+  }
+}

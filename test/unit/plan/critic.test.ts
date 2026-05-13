@@ -65,7 +65,7 @@ describe("runPlanCritic (US-005)", () => {
     test("returns { outcome: 'failed', prd, findings, specDeltasPath } when mechanical checks produce blockers", async () => {
       // This test will fail until runPlanCritic is implemented.
       // It imports the function and expects it to handle mechanical checks.
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
@@ -117,7 +117,7 @@ describe("runPlanCritic (US-005)", () => {
     });
 
     test("emits spec-deltas.md to correct path", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
@@ -163,7 +163,7 @@ describe("runPlanCritic (US-005)", () => {
       // when mechanical checks already fail.
       // The implementation should skip the LLM judgment stage.
 
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
       const prd = makePRD({ userStories: [makeStory({ contextFiles: [{ path: "nonexistent-file.ts", factId: "F-001" }] })] });
       const manifest = makeFactsManifest();
       const config = makeNaxConfig();
@@ -214,7 +214,7 @@ describe("runPlanCritic (US-005)", () => {
 
   describe("AC3: Mechanical pass + LLM zero blockers → passed", () => {
     test("returns { outcome: 'passed', prd, findings } with no specDeltasPath when all checks pass", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();
@@ -266,7 +266,7 @@ describe("runPlanCritic (US-005)", () => {
     });
 
     test("combines mechFindings and llmFindings in findings array", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();
@@ -317,7 +317,7 @@ describe("runPlanCritic (US-005)", () => {
 
   describe("AC4: Mechanical pass + LLM blockers → invoke revision", () => {
     test("invokes planDraftOp exactly once with revisionFindings", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();
@@ -378,7 +378,7 @@ describe("runPlanCritic (US-005)", () => {
 
   describe("AC5: Revision passes mechanical checks → passed", () => {
     test("returns { outcome: 'passed', prd: revisedDraft.prd } after revision passes", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();
@@ -445,7 +445,7 @@ describe("runPlanCritic (US-005)", () => {
 
   describe("AC6: Revision still has blockers → failed, no LLM re-call", () => {
     test("returns { outcome: 'failed', prd: revisedDraft.prd, specDeltasPath } when revision still has blockers", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();
@@ -516,7 +516,7 @@ describe("runPlanCritic (US-005)", () => {
 
   describe("AC7: planCriticLlmOp throws → fail-open", () => {
     test("logs warning and proceeds with zero LLM findings when planCriticLlmOp throws", async () => {
-      const { runPlanCritic } = await import("@/plan/critic");
+      const { runPlanCritic } = await import("@/plan");
 
       const prd = makePRD();
       const manifest = makeFactsManifest();

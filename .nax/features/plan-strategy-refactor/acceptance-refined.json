@@ -1,0 +1,282 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "buildPlanModeContext(workdir, config, options, deps) returns a PlanModeContext where specContent equals the file content read from options.from via deps.readFile",
+    "refined": "specContent property equals the string returned by await deps.readFile(options.from)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "buildPlanModeContext returns relativePackages containing only non-root paths (filtered p !== \".\") relative to workdir with no leading /",
+    "refined": "relativePackages is an array with zero entries equal to \".\"; all entries are relative paths not starting with /",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "buildPlanModeContext returns packageDetails with one PackageSummary entry per entry in relativePackages, built via buildPackageSummary",
+    "refined": "packageDetails.length equals relativePackages.length; packageDetails[i] equals buildPackageSummary(relativePackages[i], fullConfig, workdir, deps) for each i",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "buildPlanModeContext returns projectName equal to detectProjectName(workdir, pkg) — same derivation for all modes",
+    "refined": "projectName equals the return value of detectProjectName(workdir, packageJson) where packageJson is the root package.json parsed from workdir",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "buildPlanModeContext returns outputPath equal to join(naxDir, \"features\", options.feature, \"prd.json\")",
+    "refined": "outputPath equals the normalized path result of join(naxDir, \"features\", options.feature, \"prd.json\")",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "buildPlanModeContext calls deps.mkdirp(outputDir) before returning",
+    "refined": "deps.mkdirp is invoked with outputDir as argument during buildPlanModeContext execution, before the function returns",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "buildPlanModeContext returns null for interactionChain when config is null; when config is provided it returns the result of deps.initInteractionChain(config, !process.stdin.isTTY), which may itself be null if no interaction plugins are configured",
+    "refined": "When config argument is null, interactionChain equals null; when config is provided, interactionChain equals the result of await deps.initInteractionChain(config, !process.stdin.isTTY), which may be null",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "buildPlanModeContext returns config equal to planConfigSelector.select(fullConfig) — a PlanConfig slice, not the full NaxConfig",
+    "refined": "config property equals planConfigSelector.select(fullConfig); config is of type PlanConfig, not NaxConfig",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "buildPlanModeContext returns fullConfig equal to the NaxConfig argument passed in, un-sliced",
+    "refined": "fullConfig property is identical to the NaxConfig argument supplied to buildPlanModeContext, with no modifications",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "buildPlanModeContext returns runtime built via createPlanRuntime(fullConfig, workdir, feature) — strategies never call createPlanRuntime themselves",
+    "refined": "runtime property equals the return value of createPlanRuntime(fullConfig, workdir, options.feature); runtime is created by buildPlanModeContext, not by caller or strategy",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "IPlanStrategy and PlanModeContext are both exported from src/plan/strategies/index.ts",
+    "refined": "Both IPlanStrategy interface and PlanModeContext interface are exported as named exports in src/plan/strategies/index.ts barrel file",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "writeOrRecoverPrd(ctx, prd) writes JSON.stringify(prd, null, 2) to ctx.outputPath via ctx.deps.writeFile and returns ctx.outputPath",
+    "refined": "writeOrRecoverPrd calls deps.writeFile(ctx.outputPath, JSON.stringify(prd, null, 2)) and returns ctx.outputPath",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "writeOrRecoverPrd(ctx, null, err) reads ctx.outputPath from disk via ctx.deps.readFile and returns ctx.outputPath when the file exists; re-throws err when the file does not exist",
+    "refined": "When prd is null and file at outputPath exists, returns result of deps.readFile(ctx.outputPath); when file does not exist, throws the err argument",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "SinglePlanStrategy.execute(ctx) calls callOp with planInteractiveOp and input fields specContent, codebaseContext, featureName, branchName, outputPath, packages, packageDetails, and projectProfile derived from ctx",
+    "refined": "callOp is invoked with planInteractiveOp as the operation argument and an input object containing keys specContent, codebaseContext, featureName, branchName, outputPath, packages, packageDetails, and projectProfile, each with values derived from corresponding ctx properties",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "SinglePlanStrategy.execute(ctx) returns ctx.outputPath on success",
+    "refined": "When callOp completes without throwing, the return value strictly equals ctx.outputPath",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When callOp throws and ctx.outputPath exists on disk (ctx.deps.existsSync returns true), SinglePlanStrategy.execute returns ctx.outputPath without re-throwing",
+    "refined": "When callOp throws any error and ctx.deps.existsSync(ctx.outputPath) returns true, the method returns ctx.outputPath and does not throw or propagate the error",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "SinglePlanStrategy.mode equals \"single\"",
+    "refined": "The readonly mode property is a string literal with value \"single\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "SinglePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+    "refined": "ctx.runtime.close() is called within a finally block, guaranteeing execution in both success and error paths",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "PipelinePlanStrategy.execute(ctx) calls callOp with groundOp, then callOp with planDraftOp, then runPlanCritic — in that order",
+    "refined": "callOp is invoked twice sequentially: first call has groundOp as argument, second call has planDraftOp as argument; runPlanCritic is invoked after planDraftOp completes",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "PipelinePlanStrategy.execute(ctx) throws NaxError with code \"PLAN_CRITIC_BLOCKED\" when runPlanCritic returns a verdict with outcome !== \"passed\"",
+    "refined": "When runPlanCritic returns verdict object with outcome property !== 'passed', execute throws NaxError where error.code === 'PLAN_CRITIC_BLOCKED'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "PipelinePlanStrategy.execute(ctx) passes ctx.fullConfig?.project as projectProfile in the planDraftOp input",
+    "refined": "planDraftOp is called with input object where input.projectProfile === ctx.fullConfig?.project",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "PipelinePlanStrategy.execute(ctx) passes ctx.relativePackages as packages and ctx.packageDetails as packageDetails in the planDraftOp input",
+    "refined": "planDraftOp is called with input object where input.packages === ctx.relativePackages and input.packageDetails === ctx.packageDetails",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "PipelinePlanStrategy.mode equals \"pipeline\"",
+    "refined": "PipelinePlanStrategy instance property mode === 'pipeline' and is readonly",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "PipelinePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+    "refined": "ctx.runtime.close() is invoked within a finally block; the finally block executes on both successful completion and on thrown error",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "DebatePlanStrategy.execute(ctx) calls ctx.deps.createDebateRunner with stage: \"plan\" and stageConfig built from buildPlanComposition(ctx.config.debate.stages.plan)",
+    "refined": "createDebateRunner is called exactly once with stage parameter === \"plan\" and stageConfig parameter === return value of buildPlanComposition(ctx.config.debate.stages.plan)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "DebatePlanStrategy.execute(ctx) calls runner.runPlan with taskContext and outputFormat obtained from new PlanPromptBuilder().build(ctx.specContent, ctx.codebaseContext, undefined, ctx.relativePackages, ctx.packageDetails, ctx.fullConfig?.project)",
+    "refined": "runner.runPlan is called with taskContext and outputFormat extracted from PlanPromptBuilder().build() invoked with (ctx.specContent, ctx.codebaseContext, undefined, ctx.relativePackages, ctx.packageDetails, ctx.fullConfig?.project)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "DebatePlanStrategy.execute(ctx) passes workdir: ctx.workdir, feature: ctx.options.feature, outputDir: ctx.outputDir, timeoutSeconds: ctx.timeoutSeconds, specContent: ctx.specContent to runner.runPlan opts",
+    "refined": "runner.runPlan is called with opts object containing { workdir: ctx.workdir, feature: ctx.options.feature, outputDir: ctx.outputDir, timeoutSeconds: ctx.timeoutSeconds, specContent: ctx.specContent }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When runner.runPlan() returns outcome: \"failed\", DebatePlanStrategy.execute falls back to callOp with planInteractiveOp and uses writeOrRecoverPrd to persist the result",
+    "refined": "When runner.runPlan returns { outcome: \"failed\", ... }, callOp is invoked with planInteractiveOp as first argument and writeOrRecoverPrd is invoked to persist the result",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "DebatePlanStrategy.mode equals \"debate\"",
+    "refined": "DebatePlanStrategy instance property mode === \"debate\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "buildPlanComposition is exported from src/plan/strategies/debate-composition.ts",
+    "refined": "buildPlanComposition function is a named export from src/plan/strategies/debate-composition.ts and is callable with (stages: unknown) => unknown return type",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "DebatePlanStrategy.execute calls rt.close() (ctx.runtime.close()) in a finally block regardless of success or failure",
+    "refined": "ctx.runtime.close() is invoked in a finally block that executes after both success and error paths in DebatePlanStrategy.execute()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "createPlanStrategy(\"single\") returns an instance of SinglePlanStrategy",
+    "refined": "createPlanStrategy('single') returns an object satisfying instanceof SinglePlanStrategy",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "createPlanStrategy(\"pipeline\") returns an instance of PipelinePlanStrategy",
+    "refined": "createPlanStrategy('pipeline') returns an object satisfying instanceof PipelinePlanStrategy",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "createPlanStrategy(\"debate\") returns an instance of DebatePlanStrategy",
+    "refined": "createPlanStrategy('debate') returns an object satisfying instanceof DebatePlanStrategy",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "createPlanStrategy throws NaxError with code \"PLAN_MODE_UNKNOWN\" for an unrecognised mode string",
+    "refined": "createPlanStrategy('unknown_mode') throws NaxError with error.code === 'PLAN_MODE_UNKNOWN'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-36",
+    "original": "planCommand() body contains no inline mode dispatch — it calls only buildPlanModeContext, resolvePlanMode, createPlanStrategy, strategy.execute, and interactionChain.destroy in the finally block",
+    "refined": "planCommand() function body contains no switch/if-else statements matching on mode; it calls exactly: buildPlanModeContext(), resolvePlanMode(), createPlanStrategy(), strategy.execute(), and ctx.interactionChain?.destroy() in finally block",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-37",
+    "original": "src/cli/plan.ts is under 150 lines after the cut-over",
+    "refined": "src/cli/plan.ts file length is < 150 lines (excluding blank lines and comments for line-count check)",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-38",
+    "original": "buildPlanComposition remains importable from src/cli/plan.ts (re-exported via debate-composition.ts)",
+    "refined": "buildPlanComposition can be imported from 'src/cli/plan.ts' and resolves to the same function exported from src/plan/strategies/debate-composition.ts",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-39",
+    "original": "runPlanPipeline is no longer defined in src/cli/plan.ts after the cut-over",
+    "refined": "runPlanPipeline identifier is not declared in src/cli/plan.ts; attempting import { runPlanPipeline } from 'src/cli/plan.ts' throws a module resolution error",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-40",
+    "original": "All existing tests in test/unit/cli/plan.test.ts, test/unit/cli/plan-callop.test.ts, test/unit/cli/plan-debate.test.ts, and test/unit/cli/plan-mode.test.ts pass without modification",
+    "refined": "All test suites in test/unit/cli/plan.test.ts, test/unit/cli/plan-callop.test.ts, test/unit/cli/plan-debate.test.ts, and test/unit/cli/plan-mode.test.ts execute without errors and all assertions pass",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
