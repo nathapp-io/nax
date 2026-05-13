@@ -1,6 +1,6 @@
+import { NaxError } from "../../errors";
 import { callOp, planInteractiveOp } from "../../operations";
 import type { PlanInteractiveInput } from "../../operations/plan";
-import { NaxError } from "../../errors";
 import { validatePlanOutput } from "../../prd/schema";
 import type { PRD } from "../../prd/types";
 import { PlanPromptBuilder } from "../../prompts";
@@ -30,9 +30,13 @@ export class DebatePlanStrategy implements IPlanStrategy {
     );
     const planStage = ctx.config.debate?.stages?.plan;
     if (!planStage) {
-      throw new NaxError("[plan] debate strategy requires config.debate.stages.plan", "PLAN_DEBATE_STAGE_CONFIG_MISSING", {
-        stage: "plan",
-      });
+      throw new NaxError(
+        "[plan] debate strategy requires config.debate.stages.plan",
+        "PLAN_DEBATE_STAGE_CONFIG_MISSING",
+        {
+          stage: "plan",
+        },
+      );
     }
     const stageConfig = buildPlanComposition(
       planStage as import("../../debate/types").DebateStageConfig & {
