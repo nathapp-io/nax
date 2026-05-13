@@ -18,7 +18,9 @@ import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SEMANTIC_ROLE =
-  "You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.";
+  "You are a semantic code reviewer with access to the repository files. " +
+  "Your job is to walk each acceptance criterion (AC) and judge whether the production code fulfills it — fully, partially, or not at all. " +
+  "Test coverage gaps and convention/lint issues are out of scope — adversarial review and lint/typecheck handle those.";
 
 const SEMANTIC_INSTRUCTIONS = `## Instructions
 
@@ -131,9 +133,11 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${customRulesBlock}${priorIterationsBlock}${diffSection}
+${customRulesBlock}${priorIterationsBlock}
 ${SEMANTIC_INSTRUCTIONS}
-${SEMANTIC_OUTPUT_SCHEMA}`;
+${SEMANTIC_OUTPUT_SCHEMA}
+
+${diffSection}`;
 
     return wrapJsonPrompt(core);
   }

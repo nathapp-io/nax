@@ -3,7 +3,7 @@
 exports[`ReviewPromptBuilder.buildSemanticReviewPrompt() snapshot stability no custom rules — output is stable 1`] = `
 "IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.
 
-You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+You are a semantic code reviewer with access to the repository files. Your job is to walk each acceptance criterion (AC) and judge whether the production code fulfills it — fully, partially, or not at all. Test coverage gaps and convention/lint issues are out of scope — adversarial review and lint/typecheck handle those.
 
 ## Story: Add semantic review
 
@@ -13,12 +13,6 @@ Implement LLM-based semantic review for story diffs.
 ### Acceptance Criteria
 1. LLM is called with story diff
 2. Findings are returned as structured JSON
-## Git Diff (production code only — test files excluded)
-
-\`\`\`diff
-diff --git a/src/review/semantic.ts b/src/review/semantic.ts
-+export async function runSemanticReview() {}\`\`\`
-
 
 ## Instructions
 
@@ -72,13 +66,19 @@ Notes:
 - Omit both for "warning", "info", "unverifiable".
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
 
+## Git Diff (production code only — test files excluded)
+
+\`\`\`diff
+diff --git a/src/review/semantic.ts b/src/review/semantic.ts
++export async function runSemanticReview() {}\`\`\`
+
 YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
 `;
 
 exports[`ReviewPromptBuilder.buildSemanticReviewPrompt() snapshot stability with custom rules — output is stable 1`] = `
 "IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.
 
-You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+You are a semantic code reviewer with access to the repository files. Your job is to walk each acceptance criterion (AC) and judge whether the production code fulfills it — fully, partially, or not at all. Test coverage gaps and convention/lint issues are out of scope — adversarial review and lint/typecheck handle those.
 
 ## Story: Add semantic review
 
@@ -92,12 +92,6 @@ Implement LLM-based semantic review for story diffs.
 ## Additional Review Rules
 1. Do not flag style issues
 2. Verify AC 1 using GREP before flagging
-## Git Diff (production code only — test files excluded)
-
-\`\`\`diff
-diff --git a/src/review/semantic.ts b/src/review/semantic.ts
-+export async function runSemanticReview() {}\`\`\`
-
 
 ## Instructions
 
@@ -150,6 +144,12 @@ Notes:
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+
+## Git Diff (production code only — test files excluded)
+
+\`\`\`diff
+diff --git a/src/review/semantic.ts b/src/review/semantic.ts
++export async function runSemanticReview() {}\`\`\`
 
 YOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text."
 `;

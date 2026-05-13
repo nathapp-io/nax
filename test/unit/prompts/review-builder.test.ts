@@ -110,7 +110,8 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
     test("includes semantic reviewer role", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("You are a semantic code reviewer");
-      expect(result).toContain("NOT a linter or style checker");
+      // Role names the codebase's role boundary: test-gap + lint/convention are out of scope.
+      expect(result).toContain("Test coverage gaps and convention/lint issues are out of scope");
     });
   });
 
