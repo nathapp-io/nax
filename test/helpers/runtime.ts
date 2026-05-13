@@ -1,9 +1,9 @@
-import type { IAgentManager } from "../../src/agents";
-import { DEFAULT_CONFIG } from "../../src/config";
-import type { NaxConfig } from "../../src/config";
-import { createRuntime, type CreateRuntimeOptions, type NaxRuntime } from "../../src/runtime";
-import type { IReviewAuditor } from "../../src/runtime";
-import type { ISessionManager } from "../../src/session/types";
+import type { IAgentManager } from "@/agents";
+import { DEFAULT_CONFIG } from "@/config";
+import type { NaxConfig } from "@/config";
+import { createRuntime, type CreateRuntimeOptions, type NaxRuntime } from "@/runtime";
+import type { IReviewAuditor } from "@/runtime";
+import type { ISessionManager } from "@/session/types";
 import { makeMockAgentManager } from "./mock-agent-manager";
 import { makeSessionManager } from "./mock-session-manager";
 

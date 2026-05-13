@@ -1,4 +1,4 @@
-import { NaxError } from "../../errors";
+import { NaxError } from "@/errors";
 import { DebatePlanStrategy } from "./debate";
 import { PipelinePlanStrategy } from "./pipeline";
 import { SinglePlanStrategy } from "./single";

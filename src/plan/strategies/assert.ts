@@ -1,5 +1,5 @@
-import { NaxError } from "../../errors";
-import type { PRD } from "../../prd/types";
+import { NaxError } from "@/errors";
+import type { PRD } from "@/prd/types";
 
 export function assertIsValidPrd(prd: unknown): asserts prd is PRD {
   if (typeof prd !== "object" || prd === null || Array.isArray(prd)) {
