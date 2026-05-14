@@ -8,6 +8,7 @@ import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
+import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -35,6 +36,7 @@ interface StatefulCtx extends DispatchContext {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly callContext: CallContext;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
@@ -303,6 +305,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       critiqueOutputs,
       ctx.stageConfig,
       ctx.config,
+      ctx.callContext,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

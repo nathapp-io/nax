@@ -15,8 +15,10 @@ import { readdirSync } from "node:fs";
 // RED: These imports fail until session-helpers.ts is created
 import { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "../../../src/debate/session-helpers";
 import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
+import type { SelectorContext } from "../../../src/debate/selectors";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
 import type { CompleteOptions } from "../../../src/agents/types";
+import type { CallContext } from "../../../src/operations/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import { debateConfigSelector, DEFAULT_CONFIG } from "../../../src/config";
 import { makeMockAgentManager } from "../../helpers";
@@ -266,6 +268,7 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
       ["critique-a"],
       stageConfig,
       DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
       storyId,
       30_000,
       workdir,
@@ -289,6 +292,7 @@ describe("resolveOutcome() — synthesis resolver sessionHandle (US-004 AC2)", (
       ["critique-a"],
       stageConfig,
       DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
       // workdir intentionally omitted (AC7)
@@ -328,6 +332,7 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
       ["critique-a"],
       stageConfig,
       DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
       storyId,
       30_000,
       workdir,
@@ -351,6 +356,7 @@ describe("resolveOutcome() — custom/judge resolver sessionHandle (US-004 AC3)"
       ["critique-a"],
       stageConfig,
       DEFAULT_DEBATE_CONFIG,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
       // workdir intentionally omitted (AC7)
@@ -445,10 +451,112 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
       [],
       stageConfig,
       undefined,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
     );
     expect(baseResult.outcome).toBe("passed"); // 2 pass > 1 fail — majority wins
     expect(baseResult.resolverCostUsd).toBe(0);
+  });
+});
+
+// ─── callContext threading (Phase 1, #855) ────────────────────────────────────
+
+function makeMinimalCallCtx(): CallContext {
+  return {
+    runtime: {
+      agentManager: makeMockAgentManager(),
+      sessionManager: {} as any,
+      configLoader: { current: () => DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
+      signal: undefined,
+    } as any,
+    packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+    packageDir: "/tmp",
+    agentName: "claude",
+    storyId: "US-cc",
+    featureName: "feat-cc",
+  };
+}
+
+describe("SelectorContext — callContext field (AC1)", () => {
+  test("SelectorContext interface accepts readonly callContext: CallContext (compile-time check)", () => {
+    const callCtx = makeMinimalCallCtx();
+    const ctx: SelectorContext = {
+      storyId: "US-001",
+      stage: "review",
+      stageConfig: makeResolveStageConfig("synthesis"),
+      config: DEFAULT_DEBATE_CONFIG,
+      proposals: [],
+      critiques: [],
+      workdir: "/tmp",
+      featureName: "feat",
+      timeoutMs: 30_000,
+      agentManager: makeMockAgentManager(),
+      debaters: [],
+      callContext: callCtx,
+    };
+    expect(ctx.callContext).toBeDefined();
+    expect(ctx.callContext).toBe(callCtx);
+  });
+});
+
+describe("resolveOutcome() — callContext parameter (AC2)", () => {
+  let origAgentManager: typeof _debateSessionDeps.agentManager;
+
+  beforeEach(() => {
+    origAgentManager = _debateSessionDeps.agentManager;
+  });
+
+  afterEach(() => {
+    _debateSessionDeps.agentManager = origAgentManager;
+    mock.restore();
+  });
+
+  test("resolveOutcome accepts callContext as 5th parameter and returns correct result (compile-time + behavioral)", async () => {
+    const callCtx = makeMinimalCallCtx();
+    const stageConfig = makeResolveStageConfig("majority-fail-closed");
+    const result = await resolveOutcome(
+      ['{"passed": true}', '{"passed": true}'],
+      [],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      callCtx,
+      "US-ac2",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      makeMockAgentManager(),
+    );
+    expect(result.outcome).toBe("passed");
+    expect(result.resolverCostUsd).toBe(0);
+  });
+
+  test("resolveOutcome places callContext on the selectorCtx passed to selector (AC2)", async () => {
+    const callCtx = makeMinimalCallCtx();
+    const stageConfig = makeResolveStageConfig("synthesis");
+    const captured: { opts?: CompleteOptions }[] = [];
+    _debateSessionDeps.agentManager = makeCaptureManager(captured, '{"passed": true}');
+    const result = await resolveOutcome(
+      ["proposal-a"],
+      [],
+      stageConfig,
+      DEFAULT_DEBATE_CONFIG,
+      callCtx,
+      "US-ac2b",
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      _debateSessionDeps.agentManager as NonNullable<typeof _debateSessionDeps.agentManager>,
+    );
+    expect(result).toBeDefined();
   });
 });

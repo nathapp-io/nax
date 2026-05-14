@@ -160,3 +160,29 @@ describe("DebateRunner — one-shot panel mode", () => {
     expect(runner).toBeDefined();
   });
 });
+
+// ─── toStatefulCtx callContext threading (AC5) ────────────────────────────────
+
+describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
+  test("stateful mode run succeeds with callContext threaded through toStatefulCtx", async () => {
+    const ctx = makeCallCtx();
+    const sm = (ctx.runtime as any).sessionManager;
+    const runner = new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "stateful",
+        mode: "panel",
+        rounds: 1,
+        debaters: [{ agent: "claude", model: "fast" }],
+      },
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp",
+      sessionManager: sm,
+    });
+    const result = await runner.run("test prompt");
+    expect(result.outcome).toBe("passed");
+  });
+});

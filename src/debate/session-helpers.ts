@@ -8,6 +8,7 @@ import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
 import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
+import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { pickBaseSelectorKind, pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
@@ -188,6 +189,7 @@ export async function resolveOutcome(
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
   config: DebateConfig,
+  callContext: CallContext,
   storyId: string,
   timeoutMs: number,
   workdir: string | undefined,
@@ -261,6 +263,7 @@ export async function resolveOutcome(
     resolverContextInput,
     promptSuffix,
     debaters: debaters ?? [],
+    callContext,
   };
 
   // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)

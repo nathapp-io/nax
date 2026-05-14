@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import type { HybridCtx } from "../../../src/debate/runner-hybrid";
 import type { DebateRunnerOptions } from "../../../src/debate/runner";
 import type { DebateStageConfig } from "../../../src/debate/types";
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { debateConfigSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -507,5 +509,29 @@ describe("DebateRunner hybrid mode — adapter resolution via getAgent (AC6)", (
     const result = await runner.run("test prompt");
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
+  });
+});
+
+// ─── HybridCtx callContext field (AC4) ───────────────────────────────────────
+
+describe("HybridCtx — callContext field (AC4)", () => {
+  test("HybridCtx interface accepts readonly callContext: CallContext (compile-time check)", () => {
+    const callCtx = makeCallCtx();
+    const ctx: HybridCtx = {
+      storyId: "US-ac4",
+      stage: "run",
+      stageConfig: makeHybridStageConfig(),
+      config: debateConfigSelector.select(DEFAULT_CONFIG),
+      workdir: "/tmp",
+      featureName: "feat",
+      timeoutSeconds: 60,
+      callContext: callCtx,
+      agentManager: makeMockAgentManager(),
+      sessionManager: makeSessionManager(),
+      runtime: { signal: undefined } as any,
+      abortSignal: new AbortController().signal,
+    };
+    expect(ctx.callContext).toBeDefined();
+    expect(ctx.callContext).toBe(callCtx);
   });
 });

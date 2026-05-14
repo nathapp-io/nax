@@ -4,6 +4,7 @@
 
 import type { IAgentManager } from "@/agents";
 import type { DebateConfig as DebateSelectorConfig } from "@/config/selectors";
+import type { CallContext } from "@/operations/types";
 import type { ReviewDialogueResult, ReviewerSession } from "@/review/dialogue";
 import type { ResolverContext, ResolverContextInput, SuccessfulProposal } from "../session-helpers";
 import type { DebateStageConfig, Debater } from "../types";
@@ -24,6 +25,7 @@ export interface SelectorContext {
   readonly resolverContextInput?: ResolverContextInput;
   readonly promptSuffix?: string;
   readonly debaters: Debater[];
+  readonly callContext: CallContext;
 }
 
 export interface SelectorResult {
