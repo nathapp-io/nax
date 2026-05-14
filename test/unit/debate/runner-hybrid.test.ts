@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DebateRunner } from "../../../src/debate/runner";
-import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import type { HybridCtx } from "../../../src/debate/runner-hybrid";
-import type { DebateRunnerOptions } from "../../../src/debate/runner";
-import type { DebateStageConfig } from "../../../src/debate/types";
-import type { CallContext } from "../../../src/operations/types";
+import { DebateRunner, _debateSessionDeps } from "@/debate";
+import type { HybridCtx } from "@/debate/runner-hybrid";
+import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
+import type { CallContext } from "@/operations";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { debateConfigSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";

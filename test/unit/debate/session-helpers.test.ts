@@ -224,12 +224,12 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
   test("calling with workdir and featureName does not throw for majority resolver", async () => {
     // Runtime check: extra args accepted silently (TypeScript check enforces the signature)
     const stageConfig = makeResolveStageConfig("majority-fail-closed");
-    // @ts-ignore — RED: resolveOutcome does not yet accept workdir/featureName params
     const result = await resolveOutcome(
       ['{"passed": true}'],
       [],
       stageConfig,
       undefined,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
       "/tmp/workdir",
@@ -395,19 +395,18 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
 
     const stageConfig = makeResolveStageConfig("majority-fail-closed");
 
-    // @ts-ignore — RED: resolveOutcome does not yet accept workdir/featureName params
     await resolveOutcome(
       ['{"passed": true}'],
       [],
       stageConfig,
       undefined,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
       "/tmp/workdir",
       "my-feature",
     );
 
-    // RED: warn log not yet emitted — assertion will fail
     expect(warnCalls.length).toBeGreaterThan(0);
     expect(warnCalls[0].message).toContain("majority resolver does not support implementer session resumption");
   });
@@ -425,19 +424,18 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
 
     const stageConfig = makeResolveStageConfig("majority-fail-open");
 
-    // @ts-ignore — RED: resolveOutcome does not yet accept workdir/featureName params
     await resolveOutcome(
       ['{"passed": true}'],
       [],
       stageConfig,
       undefined,
+      makeMinimalCallCtx(),
       "US-004",
       30_000,
       "/tmp/workdir",
       "my-feature",
     );
 
-    // RED: warn log not yet emitted — assertion will fail
     expect(warnCalls.length).toBeGreaterThan(0);
     expect(warnCalls[0].message).toContain("majority resolver does not support implementer session resumption");
   });

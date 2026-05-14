@@ -15,7 +15,7 @@
  */
 
 import { callOp } from "@/operations";
-import { synthesisOp } from "@/operations/debate-synthesis";
+import { synthesisOp } from "@/operations";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
 
 const RESOLVER_FALLBACK_AGENT = "synthesis";

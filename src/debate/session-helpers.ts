@@ -191,53 +191,24 @@ export function resolveModelDefForDebater(
  * test mocks injected via _debateSessionDeps.agentManager are visible to callOp.
  * Sets sessionOverride.role so callOp emits sessionRole and sessionName in
  * completeOptions (matching what tests capture and the ACP adapter would derive).
- *
- * Falls back to constructing a minimal context when `provided` is not a valid
- * CallContext object (handles old callers that pass storyId at position 5).
  */
 function buildResolverCallContext(
-  provided: unknown,
+  provided: CallContext,
   agentManager: IAgentManager,
-  debateConfig: DebateConfig,
   storyId: string,
   workdir: string,
   featureName: string,
   sessionRole: "synthesis" | "judge" | undefined,
 ): CallContext {
   const sessionOverride = sessionRole !== undefined ? { role: sessionRole as SessionRole } : undefined;
-  const packageView = {
-    config: debateConfig,
-    select: (_: unknown) => debateConfig,
-  } as unknown as CallContext["packageView"];
-
-  if (typeof provided === "object" && provided !== null && "runtime" in provided) {
-    const ctx = provided as CallContext;
-    return {
-      ...ctx,
-      runtime: { ...ctx.runtime, agentManager } as typeof ctx.runtime,
-      packageDir: workdir,
-      storyId,
-      featureName,
-      ...(sessionOverride !== undefined ? { sessionOverride } : {}),
-    };
-  }
-
-  // Provided value is not a valid CallContext (e.g. old callers passing storyId here).
   return {
-    runtime: {
-      agentManager,
-      sessionManager: {} as any,
-      configLoader: { current: () => debateConfig as any } as any,
-      packages: {} as any,
-      signal: undefined,
-    } as any,
-    packageView,
+    ...provided,
+    runtime: { ...provided.runtime, agentManager } as typeof provided.runtime,
     packageDir: workdir,
-    agentName: resolveDefaultAgent(debateConfig),
     storyId,
     featureName,
     ...(sessionOverride !== undefined ? { sessionOverride } : {}),
-  } as CallContext;
+  };
 }
 
 /** Standalone resolver logic — delegates to resolveSelector(pickSelectorKind(...)). */
@@ -310,7 +281,6 @@ export async function resolveOutcome(
   const effectiveCallContext = buildResolverCallContext(
     callContext,
     effectiveAgentManager,
-    effectiveConfig,
     storyId,
     workdir ?? "",
     featureName ?? "",

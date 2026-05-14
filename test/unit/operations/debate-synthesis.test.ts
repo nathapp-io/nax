@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "@/config";
 import { debateConfigSelector } from "@/config";
 import { DebatePromptBuilder } from "@/prompts";
-import { composeSections, join } from "@/prompts/compose";
-import { synthesisOp } from "@/operations/debate-synthesis";
+import { composeSections, join } from "@/prompts";
+import { synthesisOp } from "@/operations";
 import type { DebateSynthesisInput } from "@/operations/debate-synthesis";
 import type { Debater } from "@/debate/types";
 
