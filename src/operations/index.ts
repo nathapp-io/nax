@@ -33,6 +33,8 @@ export { debateProposeOp } from "./debate-propose";
 export type { DebateProposeInput } from "./debate-propose";
 export { judgeOp } from "./debate-judge";
 export type { DebateJudgeInput } from "./debate-judge";
+export { synthesisOp } from "./debate-synthesis";
+export type { DebateSynthesisInput } from "./debate-synthesis";
 export { debateRebutOp } from "./debate-rebut";
 export type { DebateRebutInput } from "./debate-rebut";
 export type {

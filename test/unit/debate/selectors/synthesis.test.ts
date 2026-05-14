@@ -1,5 +1,5 @@
 /**
- * Tests for synthesisSelector — US-002 AC1
+ * Tests for synthesisSelector — rewired to callOp (US-003)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -7,7 +7,9 @@ import { synthesisSelector } from "@/debate";
 import type { SelectorContext } from "@/debate/selectors/types";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
 import { DebatePromptBuilder } from "@/prompts";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
+import type { CallContext } from "@/operations/types";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({
@@ -36,7 +38,19 @@ const DEFAULT_SELECTOR_CONFIG: SelectorContext["config"] = {
   agent: { default: "claude" },
 };
 
+function makeCallContext(agentManager: IAgentManager): CallContext {
+  const runtime = makeMockRuntime({ agentManager });
+  return {
+    runtime,
+    packageView: runtime.packages.repo(),
+    packageDir: "/tmp/test",
+    agentName: "claude",
+  };
+}
+
 function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
+  const agentManager = overrides.agentManager ?? makeMockAgentManager();
+  const callContext = overrides.callContext ?? makeCallContext(agentManager);
   return {
     storyId: "US-001",
     stage: "plan",
@@ -52,14 +66,15 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
     workdir: "/tmp/test",
     featureName: "test",
     timeoutMs: 30000,
-    agentManager: makeMockAgentManager(),
+    agentManager,
     debaters: [],
     ...overrides,
+    callContext,
   };
 }
 
 describe("synthesisSelector", () => {
-  test("calls agentManager.completeAs exactly once", async () => {
+  test("calls agentManager.completeAs exactly once (AC4)", async () => {
     let callCount = 0;
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => {
@@ -68,7 +83,16 @@ describe("synthesisSelector", () => {
       },
     });
 
-    const ctx = makeCtx({ proposals: makeProposals(["p1", "p2"]), agentManager });
+    const ctx = makeCtx({
+      proposals: makeProposals(["p1", "p2"]),
+      agentManager,
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "synthesis", agent: "synth-agent" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+    });
     await synthesisSelector(ctx);
 
     expect(callCount).toBe(1);
@@ -85,7 +109,17 @@ describe("synthesisSelector", () => {
 
     const proposals = makeProposals(["proposal alpha", "proposal beta"]);
     const critiques = ["critique one"];
-    const ctx = makeCtx({ proposals, critiques, agentManager });
+    const ctx = makeCtx({
+      proposals,
+      critiques,
+      agentManager,
+      stageConfig: {
+        enabled: true,
+        resolver: { type: "synthesis", agent: "synth-agent" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+    });
 
     await synthesisSelector(ctx);
 
@@ -97,7 +131,7 @@ describe("synthesisSelector", () => {
     expect(capturedPrompt).toBe(expected);
   });
 
-  test("returns outcome 'passed' when completeAs output is non-empty", async () => {
+  test("returns outcome 'passed' when completeAs output is non-empty (AC5)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "non-empty synthesis result",
@@ -112,7 +146,7 @@ describe("synthesisSelector", () => {
     expect(result.outcome).toBe("passed");
   });
 
-  test("returns outcome 'failed' when completeAs output is empty string", async () => {
+  test("returns outcome 'failed' when completeAs output is empty string (AC6)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "",
@@ -127,27 +161,27 @@ describe("synthesisSelector", () => {
     expect(result.outcome).toBe("failed");
   });
 
-  test("returns resolverCostUsd equal to estimatedCostUsd from completeAs", async () => {
+  test("returns outcome 'failed' when completeAs output is whitespace-only (AC6)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
-        output: "synthesis",
+        output: "   \n\t  ",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0.75,
+        estimatedCostUsd: 0,
       }),
     });
 
     const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
     const result = await synthesisSelector(ctx);
 
-    expect(result.resolverCostUsd).toBeCloseTo(0.75, 6);
+    expect(result.outcome).toBe("failed");
   });
 
-  test("returns resolverCostUsd equal to exactCostUsd when present", async () => {
+  test("returns resolverCostUsd: 0 (Phase 1 cost-parity regression, AC5/AC6)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "synthesis",
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0.5,
+        estimatedCostUsd: 0.75,
         exactCostUsd: 0.55,
       }),
     });
@@ -155,7 +189,7 @@ describe("synthesisSelector", () => {
     const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
     const result = await synthesisSelector(ctx);
 
-    expect(result.resolverCostUsd).toBeCloseTo(0.55, 6);
+    expect(result.resolverCostUsd).toBe(0);
   });
 
   test("uses ctx.stageConfig.resolver.agent as the agent name", async () => {
@@ -182,38 +216,6 @@ describe("synthesisSelector", () => {
     expect(usedAgent).toBe("custom-synth-agent");
   });
 
-  test("resolves modelDef from ctx.config.models for the resolver agent", async () => {
-    let capturedModel = "";
-    const agentManager = makeMockAgentManager({
-      completeAsFn: async (_name, _prompt, opts) => {
-        capturedModel = opts?.modelDef?.model ?? "";
-        return { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-      },
-    });
-
-    const ctx = makeCtx({
-      proposals: makeProposals(["p1"]),
-      agentManager,
-      stageConfig: {
-        enabled: true,
-        resolver: { type: "synthesis", agent: "custom-synth-agent", model: "balanced" },
-        sessionMode: "one-shot",
-        rounds: 1,
-      },
-      config: {
-        debate: DEFAULT_SELECTOR_CONFIG.debate,
-        agent: { default: "claude" },
-        models: {
-          claude: { balanced: "claude-default-balanced" },
-          "custom-synth-agent": { balanced: "custom-balanced-model" },
-        },
-      },
-    });
-    await synthesisSelector(ctx);
-
-    expect(capturedModel).toBe("custom-balanced-model");
-  });
-
   test("falls back to RESOLVER_FALLBACK_AGENT when resolver.agent is unset", async () => {
     let usedAgent = "";
     const agentManager = makeMockAgentManager({
@@ -229,7 +231,6 @@ describe("synthesisSelector", () => {
     });
     await synthesisSelector(ctx);
 
-    // RESOLVER_FALLBACK_AGENT = "synthesis" from session-helpers
     expect(usedAgent).toBe("synthesis");
   });
 
@@ -293,5 +294,30 @@ describe("synthesisSelector", () => {
 
     expect(capturedPrompt).toContain("challenger");
     expect(capturedPrompt).toContain("pragmatist");
+  });
+
+  test("appends ctx.promptSuffix to the synthesis prompt with double-newline separator", async () => {
+    let capturedPrompt = "";
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async (_name, prompt) => {
+        capturedPrompt = prompt;
+        return { output: "out", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
+      },
+    });
+
+    const proposals = makeProposals(["p1"]);
+    const ctx = makeCtx({
+      proposals,
+      agentManager,
+      promptSuffix: "extra instructions",
+    });
+    await synthesisSelector(ctx);
+
+    const base = DebatePromptBuilder.resolverSynthesisPrompt(
+      proposals.map((p) => p.output),
+      [],
+      [],
+    );
+    expect(capturedPrompt).toBe(`${base}\n\nextra instructions`);
   });
 });
