@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "SelectorContext in src/debate/selectors/types.ts declares a readonly callContext: CallContext field",
+    "refined": "Type definition SelectorContext in src/debate/selectors/types.ts includes property: readonly callContext: CallContext",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-2",
+    "original": "resolveOutcome() in src/debate/session-helpers.ts accepts a callContext: CallContext parameter and places it on the SelectorContext it constructs",
+    "refined": "Function signature of resolveOutcome includes parameter callContext: CallContext at position 5 (after stageConfig, config, before storyId); SelectorContext object constructed in function body includes callContext: callContext assignment",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-3",
+    "original": "StatefulCtx in src/debate/runner-stateful.ts declares a readonly callContext: CallContext field",
+    "refined": "Type definition StatefulCtx in src/debate/runner-stateful.ts at line 30 includes property: readonly callContext: CallContext",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-4",
+    "original": "HybridCtx in src/debate/runner-hybrid.ts declares a readonly callContext: CallContext field",
+    "refined": "Type definition HybridCtx in src/debate/runner-hybrid.ts at line 36 includes property: readonly callContext: CallContext",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-5",
+    "original": "DebateRunner.toStatefulCtx() in src/debate/runner.ts includes callContext: this.ctx in its return object",
+    "refined": "Method toStatefulCtx() in src/debate/runner.ts at line 335 returns object with property callContext: this.ctx",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-6",
+    "original": "src/debate/runner.ts:287 passes this.ctx to resolveOutcome",
+    "refined": "Function call to resolveOutcome at src/debate/runner.ts line 287 includes argument this.ctx in callContext parameter position (5th positional argument)",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-7",
+    "original": "src/debate/runner-stateful.ts:301 passes ctx.callContext to resolveOutcome",
+    "refined": "Function call to resolveOutcome at src/debate/runner-stateful.ts line 301 includes argument ctx.callContext in callContext parameter position (5th positional argument)",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-8",
+    "original": "src/debate/runner-hybrid.ts:329 passes ctx.callContext to resolveOutcome",
+    "refined": "Function call to resolveOutcome at src/debate/runner-hybrid.ts line 329 includes argument ctx.callContext in callContext parameter position (5th positional argument)",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-9",
+    "original": "src/debate/runner-plan.ts:295 passes ctx.callContext to resolveOutcome",
+    "refined": "Function call to resolveOutcome at src/debate/runner-plan.ts line 295 includes argument ctx.callContext in callContext parameter position (5th positional argument)",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-10",
+    "original": ".claude/rules/adapter-wiring.md session role registry: synthesis and judge are moved from the agentManager.completeAs row to the callOp complete-kind row",
+    "refined": "In .claude/rules/adapter-wiring.md, session role registry table: entries 'synthesis' and 'judge' appear in 'callOp complete-kind' row; entries 'synthesis' and 'judge' do not appear in 'agentManager.completeAs' row",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-11",
+    "original": ".claude/rules/adapter-wiring.md sanctioned-consumers prose: the src/debate/ carve-out for resolvers is removed and #855 Phase 1 is noted as landed",
+    "refined": "In .claude/rules/adapter-wiring.md sanctioned-consumers section: substring 'src/debate/' carve-out for resolvers does not appear; text contains reference to '#855 Phase 1' or equivalent indicating resolver carve-out as completed",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-12",
+    "original": "The story description explicitly records that resolver session naming regresses in Phase 1 because callOp complete-kind only forwards ctx.sessionOverride?.role, and that parity is deferred to Phase 2",
+    "refined": "Story documentation or Phase 1 spec includes text stating: resolver session naming regression accepted in Phase 1 due to callOp complete-kind limitation on ctx.sessionOverride?.role forwarding, with full parity restoration deferred to Phase 2",
+    "testable": true,
+    "storyId": "US-001a"
+  },
+  {
+    "acId": "AC-13",
+    "original": "judgeOp is exported from src/operations/index.ts with kind:\"complete\", name:\"debate-judge\", stage:\"review\", config: debateConfigSelector",
+    "refined": "src/operations/index.ts exports judgeOp object where judgeOp.kind === \"complete\" AND judgeOp.name === \"debate-judge\" AND judgeOp.stage === \"review\" AND judgeOp.config === debateConfigSelector",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-14",
+    "original": "judgeOp.model(input) returns { agent: input.resolverAgent, model: input.resolverModel } when both fields are non-empty strings",
+    "refined": "Calling judgeOp.model({ proposals: [], critiques: [], resolverAgent: \"test-agent\", resolverModel: \"test-model\" }) returns { agent: \"test-agent\", model: \"test-model\" }",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-15",
+    "original": "judgeOp.build(input, _ctx) returns the same prompt text as DebatePromptBuilder.resolverJudgePrompt(input.proposals, input.critiques, input.debaters)",
+    "refined": "For test input with proposals=[\"p1\"], critiques=[\"c1\"], debaters=[mock], judgeOp.build(input, null) returns string value identical to DebatePromptBuilder.resolverJudgePrompt([\"p1\"], [\"c1\"], [mock])",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-16",
+    "original": "judgeOp.parse(output, _input, _ctx) returns the output string unchanged",
+    "refined": "Calling judgeOp.parse(\"test output\", {}, null) returns \"test output\"; calling judgeOp.parse(\"\", {}, null) returns \"\"; calling judgeOp.parse(\"  \", {}, null) returns \"  \"",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-17",
+    "original": "judgeSelector(ctx) calls callOp(ctx.callContext, judgeOp, …) exactly once per invocation",
+    "refined": "Mock callOp to track invocations; invoke judgeSelector(ctx); assert callOp was called exactly 1 time with judgeOp as the second argument",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-18",
+    "original": "judgeSelector(ctx) returns SelectorResult { outcome: \"passed\", output, resolverCostUsd: 0 } when the op result is a non-empty trimmed string",
+    "refined": "Mock callOp to return \"non-empty result\"; invoke judgeSelector(ctx); assert returned object has outcome === \"passed\" AND resolverCostUsd === 0 AND output property is present and truthy",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-19",
+    "original": "judgeSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
+    "refined": "Mock callOp to return \"\" then \"   \"; invoke judgeSelector(ctx) twice; assert both return objects have outcome === \"failed\" AND resolverCostUsd === 0",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-20",
+    "original": "src/debate/selectors/judge.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
+    "refined": "Grep src/debate/selectors/judge.ts source code; assert zero matches for any of: \"resolveConfiguredModel\", \"resolveDefaultAgent\", \"DEFAULT_CONFIG\", \"ctx.config.models\", \"formatSessionName\"",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-21",
+    "original": "src/debate/selectors/judge.ts does not call completeAs directly",
+    "refined": "Grep src/debate/selectors/judge.ts source code (excluding comments); assert zero matches for \"completeAs\"",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-22",
+    "original": "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callJudgeComplete available with equivalent behavior or by updating the compat wrapper in the same story",
+    "refined": "Verify src/debate/resolvers.ts can import and invoke the previous compat interface without breaking; if callJudgeComplete was exported, assert it still exists in src/debate/selectors/judge.ts and returns SelectorResult with outcome property (\"passed\" or \"failed\") and resolverCostUsd property",
+    "testable": true,
+    "storyId": "US-001b"
+  },
+  {
+    "acId": "AC-23",
+    "original": "synthesisOp is exported from src/operations/index.ts with kind:\"complete\", name:\"debate-synthesis\", stage:\"review\", config: debateConfigSelector",
+    "refined": "synthesisOp is exported from src/operations/index.ts and has properties: kind === 'complete', name === 'debate-synthesis', stage === 'review', config === debateConfigSelector",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-24",
+    "original": "synthesisOp.model(input) returns { agent: input.resolverAgent, model: input.resolverModel }",
+    "refined": "Calling synthesisOp.model({ resolverAgent: 'claude', resolverModel: 'opus-4.7', proposals: [], critiques: [], debaters: undefined, promptSuffix: undefined }) returns the object { agent: 'claude', model: 'opus-4.7' }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-25",
+    "original": "synthesisOp.build(input, _ctx) returns the same prompt text the current synthesisSelector builds (including promptSuffix handling)",
+    "refined": "synthesisOp.build(input, _ctx) produces byte-identical output to the current synthesisSelector's prompt generation for identical inputs, including proper promptSuffix handling with newline prefix (newline + promptSuffix appended only when promptSuffix is non-empty)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-26",
+    "original": "synthesisSelector(ctx) calls callOp(ctx.callContext, synthesisOp, …) exactly once per invocation",
+    "refined": "The synthesisSelector function body contains exactly one call to callOp where the second argument is synthesisOp",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-27",
+    "original": "synthesisSelector(ctx) returns SelectorResult { outcome: \"passed\", output, resolverCostUsd: 0 } when the op result is a non-empty trimmed string",
+    "refined": "When callOp returns a non-empty string after trimming, synthesisSelector returns an object with properties: outcome === 'passed', output === <the returned string>, resolverCostUsd === 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-28",
+    "original": "synthesisSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
+    "refined": "When callOp returns an empty string or a string containing only whitespace, synthesisSelector returns an object with properties: outcome === 'failed', output === <the returned string>, resolverCostUsd === 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-29",
+    "original": "src/debate/selectors/synthesis.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
+    "refined": "A grep search of src/debate/selectors/synthesis.ts returns zero matches for each of the following strings: 'resolveConfiguredModel', 'resolveDefaultAgent', 'DEFAULT_CONFIG.models', 'ctx.config.models', 'formatSessionName'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-30",
+    "original": "src/debate/selectors/synthesis.ts does not call completeAs directly",
+    "refined": "A grep search of src/debate/selectors/synthesis.ts returns zero matches for '.completeAs('",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-31",
+    "original": "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callSynthesisComplete available with equivalent behavior or by updating the compat wrapper in the same story",
+    "refined": "Either (1) callSynthesisComplete is exported from src/debate/selectors/synthesis.ts and calling it with the same arguments as before produces equivalent synthesis results, OR (2) src/debate/resolvers.ts and all other callers are updated in this story to use the new synthesisSelector API, and all acceptance tests in src/debate/resolvers.ts pass",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
