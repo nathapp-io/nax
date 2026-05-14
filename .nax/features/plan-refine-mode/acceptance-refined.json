@@ -1,0 +1,205 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "NaxConfigSchema.safeParse({ plan: { mode: \"refine\" } }) returns success: true",
+    "refined": "NaxConfigSchema.safeParse({ plan: { mode: \"refine\" } }) returns an object with success === true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "NaxConfigSchema.safeParse({ plan: { mode: \"unknown-mode\" } }) returns success: false",
+    "refined": "NaxConfigSchema.safeParse({ plan: { mode: \"unknown-mode\" } }) returns an object with success === false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "resolvePlanMode({ plan: { mode: \"refine\" } }) returns \"refine\"",
+    "refined": "resolvePlanMode({ plan: { mode: \"refine\" } }) returns the string \"refine\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "resolvePlanMode({}) returns \"single\" (refine is never auto-selected)",
+    "refined": "resolvePlanMode({}) returns the string \"single\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"debate\" — debate auto-selection takes priority over the default single, but not over an explicit plan.mode",
+    "refined": "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns the string \"debate\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "resolvePlanMode({ plan: { mode: \"refine\" }, debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"refine\" — explicit mode wins over debate auto-selection",
+    "refined": "resolvePlanMode({ plan: { mode: \"refine\" }, debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns the string \"refine\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "createPlanStrategy(\"refine\") in src/plan/strategies/index.ts returns a RefinePlanStrategy instance without a TypeScript exhaustiveness error — the switch in createPlanStrategy handles all four modes",
+    "refined": "createPlanStrategy(\"refine\") returns an instance of RefinePlanStrategy, and TypeScript compilation succeeds with no exhaustiveness errors in the switch statement",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "new PlanPromptBuilder().buildRefineContinuation(\"/path/to/prd.json\") returns a string with length greater than 200 characters",
+    "refined": "buildRefineContinuation(outputFilePath: string) returns a non-empty string with character length > 200",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "The returned string contains the substring \"ac-testable\"",
+    "refined": "The returned string includes the literal substring 'ac-testable'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "The returned string contains the substring \"failure-modes-considered\"",
+    "refined": "The returned string includes the literal substring 'failure-modes-considered'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "The returned string contains the substring \"description-ac-contradiction\"",
+    "refined": "The returned string includes the literal substring 'description-ac-contradiction'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "The returned string contains the literal path passed as outputFilePath",
+    "refined": "The returned string includes the exact file path value that was passed as the outputFilePath parameter",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "The returned string contains the word \"flaws\" or \"adversarial\" (adversarial framing is present)",
+    "refined": "The returned string contains at least one of the words: 'flaws' or 'adversarial'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "The returned string does NOT contain \"```json\" (no JSON output schema — turn 2 output is plain text confirmation)",
+    "refined": "The returned string does not contain the substring '```json'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "planRefineOp.kind is \"run\" and planRefineOp.name is \"plan-refine\"",
+    "refined": "planRefineOp.kind property equals \"run\" and planRefineOp.name property equals \"plan-refine\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "planRefineOp.session.role is \"plan-refine\" and planRefineOp.session.lifetime is \"fresh\"",
+    "refined": "planRefineOp.session.role property equals \"plan-refine\" and planRefineOp.session.lifetime property equals \"fresh\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "planRefineOp.build(input, ctx) returns a ComposeInput whose task.content contains input.featureName",
+    "refined": "Calling planRefineOp.build(input, ctx) with a test input returns an object with task.content string that includes the value of input.featureName",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "planRefineOp.hopBody calls ctx.sendWithParseRetry for turn 1 (draft) and ctx.send — not ctx.sendWithParseRetry — for turn 2 (refine), so the text confirmation from turn 2 is never parse-retried",
+    "refined": "The hopBody implementation calls ctx.sendWithParseRetry once (for turn 1) with the initialPrompt, then calls ctx.send once (for turn 2) with the refine continuation prompt, without calling ctx.sendWithParseRetry a second time",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "planRefineOp.hopBody calls new PlanPromptBuilder().buildRefineContinuation(input.outputPath) as the prompt for turn 2",
+    "refined": "The hopBody implementation constructs the turn 2 prompt by calling new PlanPromptBuilder().buildRefineContinuation(ctx.input.outputPath) and passes the result to ctx.send",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "planRefineOp.hopBody returns the TurnResult from ctx.send with estimatedCostUsd overridden to the sum of turn 1 and turn 2 costs; it does NOT manually read the file (relying on callOp's fileOutput substitution to populate turn2.output)",
+    "refined": "The hopBody implementation returns an object with spread properties from turn2 where estimatedCostUsd is explicitly set to (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0), and contains no calls to ctx.readFile() or Bun.file() after ctx.send",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "planRefineOp.hopBody returns a TurnResult whose estimatedCostUsd equals turn1.estimatedCostUsd + turn2.estimatedCostUsd",
+    "refined": "When hopBody completes, the returned TurnResult.estimatedCostUsd value equals the numeric sum of turn1.estimatedCostUsd and turn2.estimatedCostUsd (treating undefined values as 0)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "planRefineOp.recover(input, ctx) returns a parsed PRD when input.outputPath exists on disk with valid PRD JSON; returns null when the file does not exist",
+    "refined": "Calling planRefineOp.recover(input, ctx) where input.outputPath contains valid PRD JSON returns a truthy PRD object; returns null when the file does not exist or contains invalid/unparseable JSON",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "planRefineOp is exported from src/operations/index.ts",
+    "refined": "Both planRefineOp and PlanRefineInput are named exports from src/operations/index.ts (the barrel)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "createPlanStrategy(\"refine\") returns an instance of RefinePlanStrategy",
+    "refined": "Calling createPlanStrategy('refine') returns an object whose constructor is RefinePlanStrategy and has a mode property equal to 'refine'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "RefinePlanStrategy.mode equals \"refine\"",
+    "refined": "A RefinePlanStrategy instance has a readonly mode property with the literal value 'refine'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "RefinePlanStrategy.execute(ctx) calls callOp with planRefineOp (not planInteractiveOp)",
+    "refined": "RefinePlanStrategy.execute() invokes callOp with planRefineOp as the second positional argument (operation parameter), verified via spy or mock on callOp",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "RefinePlanStrategy.execute(ctx) returns ctx.outputPath on success",
+    "refined": "When callOp succeeds, RefinePlanStrategy.execute() returns the string value of ctx.outputPath",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When callOp throws and ctx.outputPath exists on disk with valid PRD JSON, RefinePlanStrategy.execute reads and returns the disk-recovered path via writeOrRecoverPrd",
+    "refined": "When callOp rejects with an error and a valid PRD JSON file exists at ctx.outputPath on disk, RefinePlanStrategy.execute() catches the error, calls writeOrRecoverPrd(ctx, null, err), and returns the result",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "src/runtime/session-role.ts includes \"plan-refine\" in CanonicalSessionRole and KNOWN_SESSION_ROLES, and adapter-wiring.md includes \"plan-refine\" in the callOp run-kind row",
+    "refined": "The string literal 'plan-refine' appears as a member of CanonicalSessionRole union type in src/runtime/session-role.ts, is present in KNOWN_SESSION_ROLES constant array in the same file, and is listed in the callOp run-kind row in the session role registry table in .claude/rules/adapter-wiring.md",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
