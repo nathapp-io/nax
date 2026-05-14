@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase1-resolver-ops",
   "branchName": "feat/debate-callop-phase1-resolver-ops",
   "createdAt": "2026-05-14T00:00:00.000Z",
-  "updatedAt": "2026-05-14T09:41:30.713Z",
+  "updatedAt": "2026-05-14T10:07:24.292Z",
   "userStories": [
     {
       "id": "US-001a",
@@ -21,7 +21,9 @@
         "src/debate/runner-plan.ts:295 passes ctx.callContext to resolveOutcome",
         ".claude/rules/adapter-wiring.md session role registry: synthesis and judge are moved from the agentManager.completeAs row to the callOp complete-kind row",
         ".claude/rules/adapter-wiring.md sanctioned-consumers prose: the src/debate/ carve-out for resolvers is removed and #855 Phase 1 is noted as landed",
-        "The story description explicitly records that resolver session naming regresses in Phase 1 because callOp complete-kind only forwards ctx.sessionOverride?.role, and that parity is deferred to Phase 2"
+        "The story description explicitly records that resolver session naming regresses in Phase 1 because callOp complete-kind only forwards ctx.sessionOverride?.role, and that parity is deferred to Phase 2",
+        "When resolveOutcome is called without a callContext argument, TypeScript rejects at compile time with a missing argument error",
+        "When toStatefulCtx() is called, the returned object contains callContext field equal to this.ctx"
       ],
       "tags": [
         "feature",
@@ -47,10 +49,6 @@
         "src/debate/runner-stateful.ts",
         "src/debate/runner-hybrid.ts"
       ],
-      "suggestedCriteria": [
-        "When resolveOutcome is called without a callContext argument, TypeScript rejects at compile time with a missing argument error",
-        "When toStatefulCtx() is called, the returned object contains callContext field equal to this.ctx"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -70,7 +68,8 @@
         "judgeSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
         "src/debate/selectors/judge.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
         "src/debate/selectors/judge.ts does not call completeAs directly",
-        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callJudgeComplete available with equivalent behavior or by updating the compat wrapper in the same story"
+        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callJudgeComplete available with equivalent behavior or by updating the compat wrapper in the same story",
+        "When judgeOp.model receives an input with empty resolverAgent, it returns a valid agent string (fallback behavior should be consistent with pre-callOp behavior)"
       ],
       "tags": [
         "feature",
@@ -99,7 +98,6 @@
         "src/operations/index.ts"
       ],
       "suggestedCriteria": [
-        "When judgeOp.model receives an input with empty resolverAgent, it returns a valid agent string (fallback behavior should be consistent with pre-callOp behavior)",
         "When callOp(ctx, judgeOp, input) is invoked, the dispatch agent is input.resolverAgent as resolved by resolveConfiguredModel pin mechanism"
       ],
       "priorErrors": [],
@@ -120,7 +118,9 @@
         "synthesisSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
         "src/debate/selectors/synthesis.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
         "src/debate/selectors/synthesis.ts does not call completeAs directly",
-        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callSynthesisComplete available with equivalent behavior or by updating the compat wrapper in the same story"
+        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callSynthesisComplete available with equivalent behavior or by updating the compat wrapper in the same story",
+        "When synthesisOp.build receives an input with promptSuffix set, the returned prompt includes the suffix appended after a blank line separator",
+        "When callOp(ctx, synthesisOp, input) is invoked, the dispatch agent is input.resolverAgent"
       ],
       "tags": [
         "feature",
@@ -131,8 +131,8 @@
         "US-001a",
         "US-001b"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -147,10 +147,6 @@
         "src/debate/selectors/synthesis.ts",
         "src/prompts/builders/debate-builder.ts",
         "src/operations/index.ts"
-      ],
-      "suggestedCriteria": [
-        "When synthesisOp.build receives an input with promptSuffix set, the returned prompt includes the suffix appended after a blank line separator",
-        "When callOp(ctx, synthesisOp, input) is invoked, the dispatch agent is input.resolverAgent"
       ],
       "priorErrors": [],
       "priorFailures": [],

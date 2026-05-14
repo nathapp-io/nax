@@ -15,6 +15,7 @@ export {
   SpawnAcpClient,
   _acpAdapterDeps,
   _spawnClientDeps,
+  computeAcpHandle,
   createParseState,
   createSpawnAcpClient,
   finalizeParseState,

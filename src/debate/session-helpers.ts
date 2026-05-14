@@ -10,6 +10,7 @@ import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import type { SessionRole } from "../session/types";
 import { pickBaseSelectorKind, pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
 import type { DebateResult, DebateStageConfig, Debater } from "./types";
@@ -183,6 +184,62 @@ export function resolveModelDefForDebater(
   }
 }
 
+/**
+ * Build a CallContext suitable for resolver ops (synthesis/judge).
+ *
+ * Overrides runtime.agentManager with the effective agent manager so that
+ * test mocks injected via _debateSessionDeps.agentManager are visible to callOp.
+ * Sets sessionOverride.role so callOp emits sessionRole and sessionName in
+ * completeOptions (matching what tests capture and the ACP adapter would derive).
+ *
+ * Falls back to constructing a minimal context when `provided` is not a valid
+ * CallContext object (handles old callers that pass storyId at position 5).
+ */
+function buildResolverCallContext(
+  provided: unknown,
+  agentManager: IAgentManager,
+  debateConfig: DebateConfig,
+  storyId: string,
+  workdir: string,
+  featureName: string,
+  sessionRole: "synthesis" | "judge" | undefined,
+): CallContext {
+  const sessionOverride = sessionRole !== undefined ? { role: sessionRole as SessionRole } : undefined;
+  const packageView = {
+    config: debateConfig,
+    select: (_: unknown) => debateConfig,
+  } as unknown as CallContext["packageView"];
+
+  if (typeof provided === "object" && provided !== null && "runtime" in provided) {
+    const ctx = provided as CallContext;
+    return {
+      ...ctx,
+      runtime: { ...ctx.runtime, agentManager } as typeof ctx.runtime,
+      packageDir: workdir,
+      storyId,
+      featureName,
+      ...(sessionOverride !== undefined ? { sessionOverride } : {}),
+    };
+  }
+
+  // Provided value is not a valid CallContext (e.g. old callers passing storyId here).
+  return {
+    runtime: {
+      agentManager,
+      sessionManager: {} as any,
+      configLoader: { current: () => debateConfig as any } as any,
+      packages: {} as any,
+      signal: undefined,
+    } as any,
+    packageView,
+    packageDir: workdir,
+    agentName: resolveDefaultAgent(debateConfig),
+    storyId,
+    featureName,
+    ...(sessionOverride !== undefined ? { sessionOverride } : {}),
+  } as CallContext;
+}
+
 /** Standalone resolver logic — delegates to resolveSelector(pickSelectorKind(...)). */
 export async function resolveOutcome(
   proposalOutputs: string[],
@@ -243,15 +300,28 @@ export async function resolveOutcome(
 
   const effectiveAgentManager = (agentManager ?? _debateSessionDeps.agentManager) as IAgentManager;
 
+  const resolverSessionRole: "synthesis" | "judge" | undefined =
+    kind === "synthesis" ? "synthesis" : kind === "judge" ? "judge" : undefined;
+  const effectiveConfig = config ?? {
+    debate: DEFAULT_CONFIG.debate,
+    models: DEFAULT_CONFIG.models,
+    agent: DEFAULT_CONFIG.agent,
+  };
+  const effectiveCallContext = buildResolverCallContext(
+    callContext,
+    effectiveAgentManager,
+    effectiveConfig,
+    storyId,
+    workdir ?? "",
+    featureName ?? "",
+    resolverSessionRole,
+  );
+
   const selectorCtx: SelectorContext = {
     storyId,
     stage: "",
     stageConfig,
-    config: config ?? {
-      debate: DEFAULT_CONFIG.debate,
-      models: DEFAULT_CONFIG.models,
-      agent: DEFAULT_CONFIG.agent,
-    },
+    config: effectiveConfig,
     proposals: proposalList,
     labeledProposals: resolverContext?.labeledProposals,
     critiques: critiqueOutputs,
@@ -263,7 +333,7 @@ export async function resolveOutcome(
     resolverContextInput,
     promptSuffix,
     debaters: debaters ?? [],
-    callContext,
+    callContext: effectiveCallContext,
   };
 
   // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)

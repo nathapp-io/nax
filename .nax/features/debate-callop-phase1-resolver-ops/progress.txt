@@ -1,2 +1,3 @@
 [2026-05-14T09:28:22.467Z] US-001a — PASSED — Thread callContext through SelectorContext, resolveOutcome, and runner contexts — Cost: $3.6334
 [2026-05-14T09:41:27.926Z] US-001b — PASSED — Judge resolver as CompleteOperation — Cost: $2.1267
+[2026-05-14T09:59:06.258Z] US-002 — PASSED — Synthesis resolver as CompleteOperation — Cost: $2.5771
