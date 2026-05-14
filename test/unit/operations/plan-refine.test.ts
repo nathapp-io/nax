@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { join } from "node:path";
+import { callOp } from "@/operations";
+import type { AgentRunRequest } from "@/agents/manager-types";
 import { PlanPromptBuilder } from "@/prompts";
 import { planInteractiveOp } from "@/operations";
 import type { VerifyContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeTestRuntime } from "@test/helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime, withTempDir } from "@test/helpers";
 import type { HopBodyContext } from "@/operations/types";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -157,6 +160,126 @@ describe("planRefineOp.hopBody()", () => {
     expect(send).toHaveBeenCalledWith(refinePrompt);
     expect(result.output).toBe("refined-confirmation");
     expect(result.estimatedCostUsd).toBe(4);
+  });
+
+  test("callOp parses the rewritten PRD file after the refine turn instead of the chat confirmation", async () => {
+    await withTempDir(async (tempDir) => {
+      const outputPath = join(tempDir, "prd.json");
+      const turn1Prd = makeValidPrd("checkout-flow", "feat/checkout");
+      const turn2Prd = {
+        ...makeValidPrd("checkout-flow", "feat/checkout"),
+        analysis: "refined analysis",
+      };
+
+      const agentManager = makeMockAgentManager({
+        runWithFallbackFn: async (req: AgentRunRequest) => {
+          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        },
+        runAsSessionFn: async (_agentName, _handle, prompt) => {
+          if (prompt.includes("You are drafting a PRD")) {
+            await Bun.write(outputPath, JSON.stringify(turn1Prd));
+            return {
+              output: "draft written",
+              estimatedCostUsd: 1,
+              internalRoundTrips: 1,
+              tokenUsage: { inputTokens: 1, outputTokens: 1 },
+            };
+          }
+
+          await Bun.write(outputPath, JSON.stringify(turn2Prd));
+          return {
+            output: "refinement complete",
+            estimatedCostUsd: 2,
+            internalRoundTrips: 1,
+            tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      });
+
+      const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+      createdRuntimes.push(runtime);
+
+      const result = await callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: tempDir,
+          agentName: runtime.agentManager.getDefault(),
+          storyId: "checkout-flow",
+          featureName: "checkout-flow",
+        },
+        (await import("@/operations")).planRefineOp,
+        {
+          specContent: "Build a checkout flow",
+          codebaseContext: "Existing app context",
+          featureName: "checkout-flow",
+          branchName: "feat/checkout",
+          outputPath,
+        },
+      );
+
+      expect(result.analysis).toBe("refined analysis");
+    });
+  });
+
+  test("callOp falls back to recover when the refine turn does not rewrite the PRD file", async () => {
+    await withTempDir(async (tempDir) => {
+      const outputPath = join(tempDir, "prd.json");
+      const turn1Prd = {
+        ...makeValidPrd("checkout-flow", "feat/checkout"),
+        analysis: "draft analysis",
+      };
+
+      const agentManager = makeMockAgentManager({
+        runWithFallbackFn: async (req: AgentRunRequest) => {
+          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        },
+        runAsSessionFn: async (_agentName, _handle, prompt) => {
+          if (prompt.includes("You are drafting a PRD")) {
+            await Bun.write(outputPath, JSON.stringify(turn1Prd));
+            return {
+              output: "draft written",
+              estimatedCostUsd: 1,
+              internalRoundTrips: 1,
+              tokenUsage: { inputTokens: 1, outputTokens: 1 },
+            };
+          }
+
+          return {
+            output: "refinement complete",
+            estimatedCostUsd: 2,
+            internalRoundTrips: 1,
+            tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      });
+
+      const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+      createdRuntimes.push(runtime);
+
+      const result = await callOp(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: tempDir,
+          agentName: runtime.agentManager.getDefault(),
+          storyId: "checkout-flow",
+          featureName: "checkout-flow",
+        },
+        (await import("@/operations")).planRefineOp,
+        {
+          specContent: "Build a checkout flow",
+          codebaseContext: "Existing app context",
+          featureName: "checkout-flow",
+          branchName: "feat/checkout",
+          outputPath,
+        },
+      );
+
+      expect(result.analysis).toBe("draft analysis");
+    });
   });
 });
 

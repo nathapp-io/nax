@@ -16,6 +16,10 @@ import type { BuildContext, CallContext, CompleteOperation, Operation, RunOperat
 /** Injectable deps for testability — mirrors _agentManagerDeps pattern. */
 export const _callOpDeps = {
   sleep: (ms: number, signal?: AbortSignal) => cancellableDelay(ms, signal),
+  readFileOutput: async (path: string) =>
+    Bun.file(path)
+      .text()
+      .catch(() => null),
 };
 
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
@@ -247,6 +251,21 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   let maxRetriesExceeded = false;
   let lastRetryTurn: TurnResult | undefined;
 
+  const sendWithFileOutput = async (
+    promptText: string,
+    bodyCtx: { send: (p: string) => Promise<TurnResult> },
+  ): Promise<TurnResult> => {
+    const turn = await bodyCtx.send(promptText);
+    if (!fileOutputPath) return turn;
+
+    const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
+    if (fileContent === null) {
+      return turn;
+    }
+
+    return { ...turn, output: fileContent };
+  };
+
   // sendWithParseRetry: runs the retry loop inside one session turn.
   // The strategy's shouldRetry decides whether to retry on each turn's output
   // (using its own internal parse + validate, not op.parse()). This means the
@@ -262,21 +281,13 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     retryFallback = undefined;
     maxRetriesExceeded = false;
     lastRetryTurn = undefined;
-    if (!retryStrategy) return bodyCtx.send(initialPrompt);
+    if (!retryStrategy) return sendWithFileOutput(initialPrompt, bodyCtx);
     let currentPrompt = initialPrompt;
     let attempt = 0;
     let cumCost = 0;
     let lastTurn!: TurnResult;
     while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
-      lastTurn = await bodyCtx.send(currentPrompt);
-      // op.fileOutput: inject file content as output so the probe checks the
-      // file the agent wrote, not the text confirmation it replied with.
-      if (fileOutputPath) {
-        const fileContent = await Bun.file(fileOutputPath)
-          .text()
-          .catch(() => null);
-        if (fileContent !== null) lastTurn = { ...lastTurn, output: fileContent };
-      }
+      lastTurn = await sendWithFileOutput(currentPrompt, bodyCtx);
       cumCost += lastTurn.estimatedCostUsd ?? 0;
       const decision = retryStrategy.shouldRetry(
         new ParseValidationError(`[${op.name}] sendWithParseRetry: probe attempt ${attempt}`),
@@ -342,7 +353,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   ): Promise<TurnResult> => {
     if (runOp.hopBody) {
       return runOp.hopBody(initialPrompt, {
-        send: bodyCtx.send,
+        send: (p) => sendWithFileOutput(p, bodyCtx),
         sendWithParseRetry: (p) => sendWithParseRetry(p, bodyCtx),
         input: bodyCtx.input as I,
       });

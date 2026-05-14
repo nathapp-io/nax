@@ -79,7 +79,8 @@ describe("RefinePlanStrategy", () => {
 
   test("calls callOp with planRefineOp and returns outputPath on success", async () => {
     const strategy = new RefinePlanStrategy();
-    const ctx = makeCtx();
+    const closeSpy = mock(async () => {});
+    const ctx = makeCtx({ runtime: makeRuntime(closeSpy) });
     const callOpMock = mock(async () => ({ userStories: [{}] }));
     const originalCallOp = _refinePlanDeps.callOp;
     _refinePlanDeps.callOp = callOpMock as typeof _refinePlanDeps.callOp;
@@ -107,6 +108,7 @@ describe("RefinePlanStrategy", () => {
         packageDetails: ctx.packageDetails,
         projectProfile: ctx.fullConfig.project,
       });
+      expect(closeSpy).toHaveBeenCalledTimes(1);
     } finally {
       _refinePlanDeps.callOp = originalCallOp;
     }
@@ -114,7 +116,8 @@ describe("RefinePlanStrategy", () => {
 
   test("returns outputPath when callOp throws and output file already exists", async () => {
     const strategy = new RefinePlanStrategy();
-    const ctx = makeCtx({ deps: makeDeps(true) });
+    const closeSpy = mock(async () => {});
+    const ctx = makeCtx({ deps: makeDeps(true), runtime: makeRuntime(closeSpy) });
     const originalCallOp = _refinePlanDeps.callOp;
     _refinePlanDeps.callOp = mock(async () => {
       throw new Error("callOp failed");
@@ -122,12 +125,13 @@ describe("RefinePlanStrategy", () => {
 
     try {
       await expect(strategy.execute(ctx)).resolves.toBe(ctx.outputPath);
+      expect(closeSpy).toHaveBeenCalledTimes(1);
     } finally {
       _refinePlanDeps.callOp = originalCallOp;
     }
   });
 
-  test("does not close runtime in strategy lifecycle", async () => {
+  test("closes runtime in strategy lifecycle", async () => {
     const closeSpy = mock(async () => {});
     const strategy = new RefinePlanStrategy();
     const ctx = makeCtx({ runtime: makeRuntime(closeSpy) });
@@ -136,7 +140,7 @@ describe("RefinePlanStrategy", () => {
 
     try {
       await strategy.execute(ctx);
-      expect(closeSpy).toHaveBeenCalledTimes(0);
+      expect(closeSpy).toHaveBeenCalledTimes(1);
     } finally {
       _refinePlanDeps.callOp = originalCallOp;
     }

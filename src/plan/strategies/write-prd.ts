@@ -5,7 +5,7 @@ import type { PlanModeContext } from "./types";
 
 export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {
   if (prd !== null) {
-    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(prd, null, 2));
+    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
     return ctx.outputPath;
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createPlanStrategy, RefinePlanStrategy } from "@/plan/strategies";
+import { createPlanStrategy, RefinePlanStrategy } from "@/plan";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
 import type { NaxConfig } from "@/config";
 import { resolvePlanMode } from "@/cli";

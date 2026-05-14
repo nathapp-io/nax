@@ -12,7 +12,6 @@ export class RefinePlanStrategy implements IPlanStrategy {
   readonly mode = "refine" as const;
 
   async execute(ctx: PlanModeContext): Promise<string> {
-    // planCommand() closes the shared runtime in its finally block.
     try {
       const prd = await _refinePlanDeps.callOp(
         {
@@ -40,6 +39,8 @@ export class RefinePlanStrategy implements IPlanStrategy {
       return writeOrRecoverPrd(ctx, prd);
     } catch (err) {
       return writeOrRecoverPrd(ctx, null, err);
+    } finally {
+      await ctx.runtime.close().catch(() => {});
     }
   }
 }

@@ -25,12 +25,15 @@ const successOp: CompleteOperation<string, string, Pick<typeof DEFAULT_CONFIG, "
 
 // Save/restore _callOpDeps.sleep around each test
 let origSleep: typeof _callOpDeps.sleep;
+let origReadFileOutput: typeof _callOpDeps.readFileOutput;
 const createdRuntimes: NaxRuntime[] = [];
 beforeEach(() => {
   origSleep = _callOpDeps.sleep;
+  origReadFileOutput = _callOpDeps.readFileOutput;
 });
 afterEach(async () => {
   _callOpDeps.sleep = origSleep;
+  _callOpDeps.readFileOutput = origReadFileOutput;
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
@@ -156,6 +159,247 @@ describe("callOp retry loop (kind:complete)", () => {
 });
 
 describe("callOp retry loop (kind:run) — op.recover on parse exhaustion (#993)", () => {
+  test("re-reads file output when a later send rewrites different same-length content", async () => {
+    const outputPath = "/tmp/plan.json";
+    const firstOutput = '{"analysis":"draft-v1"}';
+    const secondOutput = '{"analysis":"final-v1"}';
+    expect(firstOutput.length).toBe(secondOutput.length);
+
+    let readCount = 0;
+    _callOpDeps.readFileOutput = async () => {
+      readCount++;
+      return readCount === 1 ? firstOutput : secondOutput;
+    };
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "prd written",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const runOp: RunOperation<string, { analysis: string }, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "file-output-refresh-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      fileOutput: () => outputPath,
+      hopBody: async (initialPrompt, ctx) => {
+        await ctx.send(initialPrompt);
+        return ctx.send("refine");
+      },
+      parse: (output) => JSON.parse(output) as { analysis: string },
+    };
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runOp,
+      "hello",
+    );
+
+    expect(result).toEqual({ analysis: "final-v1" });
+    expect(readCount).toBe(2);
+  });
+
+  test("reuses the latest file snapshot when a later send leaves the file unchanged", async () => {
+    const outputPath = "/tmp/plan.json";
+    const fileOutput = '{"analysis":"draft-v1"}';
+
+    let readCount = 0;
+    _callOpDeps.readFileOutput = async () => {
+      readCount++;
+      return fileOutput;
+    };
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "prd written",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const runOp: RunOperation<string, { analysis: string }, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "file-output-snapshot-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      fileOutput: () => outputPath,
+      hopBody: async (initialPrompt, ctx) => {
+        await ctx.send(initialPrompt);
+        return ctx.send("refine");
+      },
+      parse: (output) => JSON.parse(output) as { analysis: string },
+      recover: async () => ({ analysis: "recover-should-not-win" }),
+    };
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runOp,
+      "hello",
+    );
+
+    expect(result).toEqual({ analysis: "draft-v1" });
+    expect(readCount).toBe(2);
+  });
+
+  test("sendWithParseRetry probes substituted file output instead of the agent acknowledgement", async () => {
+    const outputPath = "/tmp/plan.json";
+    const fileOutput = '{"analysis":"draft-v1"}';
+    let readCount = 0;
+    _callOpDeps.readFileOutput = async () => {
+      readCount++;
+      return fileOutput;
+    };
+
+    let runCount = 0;
+    const shouldRetry = (failure: Error, attempt: number, ctx: { lastOutput?: string }) => {
+      expect(failure).toBeInstanceOf(Error);
+      expect(attempt).toBe(0);
+      expect(ctx.lastOutput).toBe(fileOutput);
+      return { retry: false };
+    };
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => {
+        runCount++;
+        return {
+          output: "prd written",
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const runOp: RunOperation<string, { analysis: string }, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "file-output-retry-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      retry: { shouldRetry },
+      fileOutput: () => outputPath,
+      hopBody: async (initialPrompt, ctx) => ctx.sendWithParseRetry(initialPrompt),
+      parse: (output) => JSON.parse(output) as { analysis: string },
+    };
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runOp,
+      "hello",
+    );
+
+    expect(result).toEqual({ analysis: "draft-v1" });
+    expect(readCount).toBe(1);
+    expect(runCount).toBe(1);
+  });
+
+  test("sendWithParseRetry re-reads substituted file output on retry attempts", async () => {
+    const outputPath = "/tmp/plan.json";
+    const firstOutput = '{"analysis":"draft-v1"}';
+    const secondOutput = '{"analysis":"final-v1"}';
+    expect(firstOutput.length).toBe(secondOutput.length);
+
+    let readCount = 0;
+    _callOpDeps.readFileOutput = async () => {
+      readCount++;
+      return readCount === 1 ? firstOutput : secondOutput;
+    };
+
+    let runCount = 0;
+    const shouldRetry = (failure: Error, attempt: number, ctx: { lastOutput?: string }) => {
+      expect(failure).toBeInstanceOf(Error);
+      if (attempt === 0) {
+        expect(ctx.lastOutput).toBe(firstOutput);
+        return { retry: true, delayMs: 0, nextPrompt: "retry" };
+      }
+
+      expect(attempt).toBe(1);
+      expect(ctx.lastOutput).toBe(secondOutput);
+      return { retry: false };
+    };
+
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => {
+        runCount++;
+        return {
+          output: "prd written",
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const runOp: RunOperation<string, { analysis: string }, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+      kind: "run",
+      name: "file-output-retry-loop-op",
+      stage: "plan",
+      config: testSel,
+      session: { role: "plan", lifetime: "fresh" },
+      build: (input) => ({
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input, overridable: false },
+      }),
+      retry: { shouldRetry },
+      fileOutput: () => outputPath,
+      hopBody: async (initialPrompt, ctx) => ctx.sendWithParseRetry(initialPrompt),
+      parse: (output) => JSON.parse(output) as { analysis: string },
+    };
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      runOp,
+      "hello",
+    );
+
+    expect(result).toEqual({ analysis: "final-v1" });
+    expect(readCount).toBe(2);
+    expect(runCount).toBe(2);
+  });
+
   test("op.parse throws after retry exhaustion AND op.recover returns non-null — returns recover value not TurnResult", async () => {
     _callOpDeps.sleep = async () => {};
 
