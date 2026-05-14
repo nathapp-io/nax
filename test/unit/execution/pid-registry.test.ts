@@ -3,13 +3,25 @@
  * PID Registry Tests
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { PidRegistry } from "../../../src/execution/pid-registry";
+import { PidRegistry, _pidRegistryDeps } from "@/execution";
+import { withDepsRestore } from "@test/helpers";
 
 const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
 const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;
+
+withDepsRestore(_pidRegistryDeps, ["spawn", "sleep"]);
+
+function makeStream(text = ""): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (text) controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+  });
+}
 
 describe("PidRegistry", () => {
   beforeEach(() => {
@@ -220,6 +232,120 @@ describe("PidRegistry", () => {
     await registry.register(-5);
     await registry.killAll();
 
+    expect(registry.getPids()).toEqual([]);
+  });
+
+  test("killAll() terminates tracked descendants before clearing the registry", async () => {
+    const calls: string[][] = [];
+
+    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+      calls.push(cmd);
+      if (cmd[0] === "ps" && cmd[1] === "-eo") {
+        return {
+          pid: 2000,
+          stdout: makeStream(
+            "172446 1 Thu May 15 11:52:44 2026\n172468 172446 Thu May 15 11:52:45 2026\n172469 172468 Thu May 15 11:52:46 2026\n172552 172469 Thu May 15 11:52:47 2026\n",
+          ),
+          stderr: makeStream(),
+          exited: Promise.resolve(0),
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      if (cmd[0] === "ps" && cmd[1] === "-o") {
+        const pid = cmd[4];
+        const byPid: Record<string, string> = {
+          "172446": "1 Thu May 15 11:52:44 2026\n",
+          "172468": "172446 Thu May 15 11:52:45 2026\n",
+          "172469": "172468 Thu May 15 11:52:46 2026\n",
+          "172552": "172469 Thu May 15 11:52:47 2026\n",
+        };
+        return {
+          pid: 2000,
+          stdout: makeStream(byPid[pid] ?? ""),
+          stderr: makeStream(),
+          exited: Promise.resolve(byPid[pid] ? 0 : 1),
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      return {
+        pid: 2001,
+        stdout: makeStream(),
+        stderr: makeStream(),
+        exited: Promise.resolve(0),
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    }) as typeof Bun.spawn;
+    _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
+
+    const registry = new PidRegistry(TEST_WORKDIR);
+    await registry.register(172446);
+    await registry.killAll();
+
+    expect(calls).toContainEqual(["kill", "-TERM", "172552"]);
+    expect(calls).toContainEqual(["kill", "-TERM", "172469"]);
+    expect(calls).toContainEqual(["kill", "-TERM", "172468"]);
+    expect(calls).toContainEqual(["kill", "-TERM", "172446"]);
+    expect(calls).toContainEqual(["kill", "-KILL", "172552"]);
+    expect(calls).toContainEqual(["kill", "-KILL", "172469"]);
+    expect(calls).toContainEqual(["kill", "-KILL", "172468"]);
+    expect(calls).toContainEqual(["kill", "-KILL", "172446"]);
+    expect(registry.getPids()).toEqual([]);
+  });
+
+  test("killAll() skips SIGKILL when a PID identity changes after SIGTERM", async () => {
+    const calls: string[][] = [];
+    let lookup172552 = 0;
+
+    _pidRegistryDeps.spawn = mock((cmd: string[]) => {
+      calls.push(cmd);
+      if (cmd[0] === "ps" && cmd[1] === "-eo") {
+        return {
+          pid: 2000,
+          stdout: makeStream(
+            "172446 1 Thu May 15 11:52:44 2026\n172468 172446 Thu May 15 11:52:45 2026\n172469 172468 Thu May 15 11:52:46 2026\n172552 172469 Thu May 15 11:52:47 2026\n",
+          ),
+          stderr: makeStream(),
+          exited: Promise.resolve(0),
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      if (cmd[0] === "ps" && cmd[1] === "-o") {
+        const pid = cmd[4];
+        if (pid === "172552") {
+          lookup172552 += 1;
+          const output =
+            lookup172552 < 2 ? "172469 Thu May 15 11:52:47 2026\n" : "999999 Thu May 15 11:59:59 2026\n";
+          return {
+            pid: 2000,
+            stdout: makeStream(output),
+            stderr: makeStream(),
+            exited: Promise.resolve(0),
+          } as unknown as ReturnType<typeof Bun.spawn>;
+        }
+        const byPid: Record<string, string> = {
+          "172446": "1 Thu May 15 11:52:44 2026\n",
+          "172468": "172446 Thu May 15 11:52:45 2026\n",
+          "172469": "172468 Thu May 15 11:52:46 2026\n",
+        };
+        return {
+          pid: 2000,
+          stdout: makeStream(byPid[pid] ?? ""),
+          stderr: makeStream(),
+          exited: Promise.resolve(byPid[pid] ? 0 : 1),
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      return {
+        pid: 2001,
+        stdout: makeStream(),
+        stderr: makeStream(),
+        exited: Promise.resolve(0),
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    }) as typeof Bun.spawn;
+    _pidRegistryDeps.sleep = mock(async () => {}) as typeof Bun.sleep;
+
+    const registry = new PidRegistry(TEST_WORKDIR);
+    await registry.register(172446);
+    await registry.killAll();
+
+    expect(calls).toContainEqual(["kill", "-TERM", "172552"]);
+    expect(calls).not.toContainEqual(["kill", "-KILL", "172552"]);
+    expect(calls).toContainEqual(["kill", "-KILL", "172469"]);
     expect(registry.getPids()).toEqual([]);
   });
 

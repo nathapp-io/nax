@@ -24,4 +24,4 @@ export {
   resetCrashHandlers,
   type CrashRecoveryContext,
 } from "./crash-recovery";
-export { PidRegistry } from "./pid-registry";
+export { PidRegistry, _pidRegistryDeps } from "./pid-registry";
