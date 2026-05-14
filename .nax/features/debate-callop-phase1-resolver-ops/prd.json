@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase1-resolver-ops",
   "branchName": "feat/debate-callop-phase1-resolver-ops",
   "createdAt": "2026-05-14T00:00:00.000Z",
-  "updatedAt": "2026-05-14T09:28:25.242Z",
+  "updatedAt": "2026-05-14T09:41:30.713Z",
   "userStories": [
     {
       "id": "US-001a",
@@ -80,8 +80,8 @@
       "dependencies": [
         "US-001a"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -138,7 +138,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/debate-judge.ts",
@@ -152,7 +154,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4af6ab448052f1ff3b3074b45655729156d1234c"
     }
   ],
   "analysis": "**Key files identified:**\n- `src/debate/selectors/types.ts` — SelectorContext interface; needs `callContext: CallContext` field\n- `src/debate/session-helpers.ts:186-305` — resolveOutcome() function; needs `callContext` parameter and threading\n- `src/debate/runner.ts:287` — base runner resolveOutcome call site; `this.ctx` is CallContext\n- `src/debate/runner.ts:335` — toStatefulCtx(); needs to include `callContext: this.ctx`\n- `src/debate/runner-stateful.ts:30` — StatefulCtx interface; needs `callContext: CallContext` field\n- `src/debate/runner-stateful.ts:301` — stateful runner resolveOutcome call site; passes ctx.callContext\n- `src/debate/runner-hybrid.ts:36` — HybridCtx interface; needs `callContext: CallContext` field\n- `src/debate/runner-hybrid.ts:329` — hybrid runner resolveOutcome call site; passes ctx.callContext\n- `src/debate/runner-plan.ts:295` — plan runner resolveOutcome call site; already has `callContext: ctx.callContext`\n- `src/debate/selectors/judge.ts` — judgeSelector; calls resolveConfiguredModel + completeAs; must rewrite to callOp\n- `src/debate/selectors/synthesis.ts` — synthesisSelector; same pattern as judge\n- `src/operations/debate-propose.ts` — sibling CompleteOperation; reference for model() resolver shape\n- `src/operations/index.ts` — exports all ops; judgeOp/synthesisOp must be added here\n- `src/operations/call.ts:101-178` — callOp complete-kind path; handles { agent, model } pin\n- `src/prompts/builders/debate-builder.ts:381` — resolverSynthesisPrompt; line 404 resolverJudgePrompt\n- `.claude/rules/adapter-wiring.md:45` — session role registry; synthesis+judge are in agentManager.completeAs row\n\n**Architecture decisions:**\n- callContext is threaded through SelectorContext so judgeSelector/synthesisSelector can call callOp\n- StatefulCtx and HybridCtx each get a `readonly callContext: CallContext` field; toStatefulCtx() includes it\n- Plan runner already has callContext on PlanCtx; its resolveOutcome call is unchanged except adding the parameter\n- judgeOp and synthesisOp are CompleteOperation<DebateJudgeInput, string, DebateConfig> exported from operations/index.ts\n- Op model() returns { agent, model } to override ctx.agentName via resolveConfiguredModel pin mechanism\n\n**Migration notes:**\n- 4 call sites of resolveOutcome must pass callContext: runner.ts:287 (this.ctx), runner-stateful.ts:301 (ctx.callContext), runner-hybrid.ts:329 (ctx.callContext), runner-plan.ts:295 (ctx.callContext already exists)\n- New files: src/operations/debate-judge.ts, src/operations/debate-synthesis.ts\n- selectorCtx construction in resolveOutcome at line 244 must include callContext field\n- adapter-wiring.md session role registry: synthesis+judge move from agentManager.completeAs row to callOp complete-kind row\n\n**Tests:**\n- test/unit/debate/selectors/judge.test.ts and synthesis.test.ts exist; must update for callOp path\n- fakeAgentManager helper available at test/helpers/fake-agent-manager.ts"
