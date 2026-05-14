@@ -162,7 +162,7 @@ Output ONLY the JSON object. Do not include markdown fences or explanation.`;
   buildRefineContinuation(outputFilePath: string): string {
     return `You are in the second turn of a refine pass. Assume this draft has flaws, and audit it adversarially before you trust it.
 
-Review the draft with a strict self-audit mindset. Focus only on the issues below, then rewrite the PRD if needed.
+Review the draft with a strict self-audit mindset. Re-read the codebase context and compare the PRD against it. Focus only on the issues below, then rewrite the PRD if needed.
 
 #### ac-testable
 For each acceptance criterion, ask whether the assertion is observable through a return value, exception, log output, file content, or state change. If any AC is not directly testable, rewrite it so it is observable.
@@ -172,6 +172,21 @@ For each story, confirm there is at least one negative-path acceptance criterion
 
 #### description-ac-contradiction
 Check whether any sentence in any description contradicts an acceptance criterion in the same story. If there is a contradiction, fix the description so it matches the ACs.
+
+#### codebase-fit
+For each story, verify that the proposed files, helpers, tests, dependencies, and implementation notes match the codebase context. Remove invented helpers, files, call sites, or dependencies unless the change clearly requires creating them.
+
+#### dependency-minimization
+Remove unnecessary dependencies between stories. A dependency should exist only if the downstream story truly cannot be implemented or validated first.
+
+#### routing-realism
+Re-check routing.complexity and routing.testStrategy against the current codebase shape. Prefer the lightest realistic routing. Do not mark stories as "complex" or choose a heavier test strategy unless the codebase evidence requires it.
+
+#### regression-coverage
+If a story changes existing behavior, extracts a shared helper, extends an existing function signature, or replaces a warning/stub path with real behavior, ensure there is at least one acceptance criterion protecting backward compatibility or proving the old placeholder behavior is gone.
+
+#### scope-consistency
+Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.
 
 Write the revised PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;

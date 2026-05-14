@@ -2,8 +2,10 @@ import { makeParseRetryStrategy } from "../agents/retry";
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
+import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
@@ -18,6 +20,118 @@ export interface PlanRefineInput {
   packages?: string[];
   packageDetails?: PackageSummary[];
   projectProfile?: ProjectProfile;
+}
+
+const NEGATIVE_PATH_TOKENS = [
+  "error",
+  "fail",
+  "invalid",
+  "malformed",
+  "missing",
+  "non-existent",
+  "nonexistent",
+  "not found",
+  "without",
+  "unknown",
+  "reject",
+  "raises",
+  "exception",
+  "stderr",
+  "exit_code == 2",
+  "exit code 2",
+  "exit_code == 1",
+  "exit code 1",
+];
+
+const OBSERVABLE_TOKENS = [
+  "stdout",
+  "stderr",
+  "exit_code",
+  "exit code",
+  "returns",
+  "raises",
+  "contains",
+  "equals",
+  "matches",
+  "exists",
+  "written",
+  "overwrites",
+  "renders",
+  "calls",
+  "verified",
+  "invokes",
+  "refreshes",
+  "instantiates",
+  "loads",
+  "parses",
+  "re-constructs",
+  "reconstructs",
+];
+
+function hasToken(text: string, tokens: readonly string[]): boolean {
+  const lower = text.toLowerCase();
+  return tokens.some((token) => lower.includes(token));
+}
+
+function validateRefinedStory(story: UserStory): void {
+  if (!story.acceptanceCriteria.some((ac) => hasToken(ac, NEGATIVE_PATH_TOKENS))) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} is missing a negative-path acceptance criterion`,
+      "PLAN_REFINE_VERIFY_MISSING_NEGATIVE_PATH",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+
+  if (!story.acceptanceCriteria.every((ac) => hasToken(ac, OBSERVABLE_TOKENS))) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} has at least one acceptance criterion that is not observably testable`,
+      "PLAN_REFINE_VERIFY_NON_OBSERVABLE_AC",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+
+  const deps = story.dependencies ?? [];
+  if (new Set(deps).size !== deps.length) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} has duplicate dependencies`,
+      "PLAN_REFINE_VERIFY_DUPLICATE_DEPENDENCY",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+  if (deps.includes(story.id)) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} cannot depend on itself`,
+      "PLAN_REFINE_VERIFY_SELF_DEPENDENCY",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+
+  const contextFiles = story.contextFiles ?? [];
+  if (contextFiles.length > 5) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} has ${contextFiles.length} contextFiles; maximum is 5`,
+      "PLAN_REFINE_VERIFY_CONTEXT_FILES_LIMIT",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+  const normalizedContextPaths = contextFiles.map((entry) => (typeof entry === "string" ? entry : entry.path));
+  if (new Set(normalizedContextPaths).size !== normalizedContextPaths.length) {
+    throw new NaxError(
+      `[plan-refine verify] ${story.id} has duplicate contextFiles entries`,
+      "PLAN_REFINE_VERIFY_DUPLICATE_CONTEXT_FILE",
+      { stage: "plan", storyId: story.id },
+    );
+  }
+}
+
+function validateRefinedPrd(prd: PRD): PRD {
+  if (!prd.userStories || prd.userStories.length === 0) {
+    throw new NaxError("[plan-refine verify] PRD must contain at least one story", "PLAN_REFINE_VERIFY_EMPTY_PRD", {
+      stage: "plan",
+    });
+  }
+  for (const story of prd.userStories) validateRefinedStory(story);
+  return prd;
 }
 
 export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
@@ -77,14 +191,13 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     return validatePlanOutput(output, input.featureName, input.branchName);
   },
   verify: async (parsed, _input, _ctx) => {
-    if (!parsed.userStories || parsed.userStories.length === 0) return null;
-    return parsed;
+    return validateRefinedPrd(parsed);
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);
     if (!content) return null;
     try {
-      return validatePlanOutput(content, input.featureName, input.branchName);
+      return validateRefinedPrd(validatePlanOutput(content, input.featureName, input.branchName));
     } catch {
       return null;
     }

@@ -282,6 +282,11 @@ describe("PlanPromptBuilder.buildRefineContinuation()", () => {
     expect(result).toContain("ac-testable");
     expect(result).toContain("failure-modes-considered");
     expect(result).toContain("description-ac-contradiction");
+    expect(result).toContain("codebase-fit");
+    expect(result).toContain("dependency-minimization");
+    expect(result).toContain("routing-realism");
+    expect(result).toContain("regression-coverage");
+    expect(result).toContain("scope-consistency");
     expect(result).toContain(outputFilePath);
     expect(result.toLowerCase()).toMatch(/flaws|adversarial/);
     expect(result).not.toContain("```json");
