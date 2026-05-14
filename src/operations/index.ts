@@ -1,6 +1,8 @@
 export { callOp, _callOpDeps, _runPostParseForTest } from "./call";
 export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
+export { planRefineOp } from "./plan-refine";
+export type { PlanRefineInput } from "./plan-refine";
 export { decomposeOp } from "./decompose";
 export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
 export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";
