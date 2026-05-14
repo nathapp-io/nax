@@ -5,12 +5,12 @@
  * The underlying logic now lives in src/debate/selectors/:
  * - majorityResolver → delegates to computeMajority (selectors/majority.ts)
  * - synthesisResolver → delegates to callSynthesisComplete (selectors/synthesis.ts)
- * - judgeResolver → delegates to callJudgeComplete (selectors/judge.ts)
+ * - judgeResolver / callJudgeComplete — inlined here; judge.ts now dispatches via callOp
  */
 
 import type { IAgentManager } from "../agents";
 import type { CompleteOptions, CompleteResult } from "../agents/types";
-import { callJudgeComplete } from "./selectors/judge";
+import { DebatePromptBuilder } from "../prompts";
 import { computeMajority } from "./selectors/majority";
 import { callSynthesisComplete } from "./selectors/synthesis";
 import type { Debater, ResolverConfig } from "./types";
@@ -49,6 +49,24 @@ export async function synthesisResolver(
     opts.completeOptions,
     opts.promptSuffix,
   );
+}
+
+/**
+ * Compat wrapper for judge resolution. Kept here so existing callers outside
+ * the debate barrel (e.g. integration tests) continue to work unchanged.
+ * judgeSelector (selectors/judge.ts) now dispatches via callOp instead of calling
+ * this function directly.
+ */
+export async function callJudgeComplete(
+  proposals: string[],
+  critiques: string[],
+  agentName: string,
+  agentManager: IAgentManager,
+  completeOptions: CompleteOptions,
+  debaters?: Debater[],
+): Promise<CompleteResult> {
+  const prompt = DebatePromptBuilder.resolverJudgePrompt(proposals, critiques, debaters);
+  return agentManager.completeAs(agentName, prompt, completeOptions);
 }
 
 /**

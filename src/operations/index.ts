@@ -31,6 +31,8 @@ export { testWriterRectifyOp } from "./autofix-test-writer";
 export type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 export { debateProposeOp } from "./debate-propose";
 export type { DebateProposeInput } from "./debate-propose";
+export { judgeOp } from "./debate-judge";
+export type { DebateJudgeInput } from "./debate-judge";
 export { debateRebutOp } from "./debate-rebut";
 export type { DebateRebutInput } from "./debate-rebut";
 export type {

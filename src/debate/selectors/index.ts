@@ -2,7 +2,7 @@ export type { Selector, SelectorContext, SelectorResult } from "./types";
 export { resolveSelector, registerSelector } from "./registry";
 export { majorityFailClosedSelector, majorityFailOpenSelector, computeMajority } from "./majority";
 export { synthesisSelector, callSynthesisComplete } from "./synthesis";
-export { judgeSelector, callJudgeComplete } from "./judge";
+export { judgeSelector } from "./judge";
 export { dialogueVerdictSelector } from "./dialogue-verdict";
 export { verifierPickSelector, runPatchStep } from "./verifier-pick";
 export { pickBaseSelectorKind, pickSelectorKind } from "./pick";

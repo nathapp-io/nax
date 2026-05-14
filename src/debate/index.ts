@@ -22,7 +22,6 @@ export {
   pickSelectorKind,
   pickBaseSelectorKind,
   judgeSelector,
-  callJudgeComplete,
   synthesisSelector,
   callSynthesisComplete,
   majorityFailClosedSelector,
@@ -47,7 +46,7 @@ export {
   checkSpecCoverage,
 } from "./verifiers";
 export type { PostDebateVerifierContext, PostDebateVerifier, PostDebateVerifierResult, CheckDeps } from "./verifiers";
-export { majorityResolver, synthesisResolver, judgeResolver } from "./resolvers";
+export { majorityResolver, synthesisResolver, judgeResolver, callJudgeComplete } from "./resolvers";
 export { DebatePromptBuilder } from "../prompts";
 export type { StageContext, PromptBuilderOptions, ReviewStoryContext } from "../prompts";
 export { PERSONA_FRAGMENTS, buildDebaterLabel, buildPersonaBlock, resolvePersonas } from "./personas";

@@ -1,5 +1,5 @@
 /**
- * Tests for judgeSelector — US-002 AC3
+ * Tests for judgeSelector — rewired to callOp (US-002)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -7,7 +7,9 @@ import { judgeSelector } from "@/debate";
 import type { SelectorContext } from "@/debate/selectors/types";
 import type { SuccessfulProposal } from "@/debate/session-helpers";
 import { DebatePromptBuilder } from "@/prompts";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, makeMockRuntime } from "@test/helpers";
+import type { IAgentManager } from "@/agents";
+import type { CallContext } from "@/operations/types";
 
 function makeProposals(outputs: string[]): SuccessfulProposal[] {
   return outputs.map((output) => ({
@@ -36,7 +38,21 @@ const DEFAULT_SELECTOR_CONFIG: SelectorContext["config"] = {
   agent: { default: "claude" },
 };
 
+function makeCallContext(agentManager: IAgentManager): CallContext {
+  const runtime = makeMockRuntime({ agentManager });
+  return {
+    runtime,
+    packageView: runtime.packages.repo(),
+    packageDir: "/tmp/test",
+    agentName: "claude",
+  };
+}
+
 function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
+  const agentManager = overrides.agentManager ?? makeMockAgentManager();
+  // Ensure callContext uses the same agentManager as ctx.agentManager
+  // so tests that override agentManager get consistent dispatch behavior
+  const callContext = overrides.callContext ?? makeCallContext(agentManager);
   return {
     storyId: "US-001",
     stage: "plan",
@@ -52,14 +68,15 @@ function makeCtx(overrides: Partial<SelectorContext> = {}): SelectorContext {
     workdir: "/tmp/test",
     featureName: "test",
     timeoutMs: 30000,
-    agentManager: makeMockAgentManager(),
+    agentManager,
     debaters: [],
     ...overrides,
+    callContext,
   };
 }
 
 describe("judgeSelector", () => {
-  test("calls agentManager.completeAs exactly once", async () => {
+  test("calls agentManager.completeAs exactly once (AC5)", async () => {
     let callCount = 0;
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => {
@@ -185,7 +202,7 @@ describe("judgeSelector", () => {
     expect(capturedPrompt).toContain("proposal content beta");
   });
 
-  test("returns resolverCostUsd from completeAs cost", async () => {
+  test("returns resolverCostUsd: 0 (Phase 1 cost-parity regression, AC6/AC7)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "verdict",
@@ -207,7 +224,7 @@ describe("judgeSelector", () => {
     });
     const result = await judgeSelector(ctx);
 
-    expect(result.resolverCostUsd).toBeCloseTo(0.88, 6);
+    expect(result.resolverCostUsd).toBe(0);
   });
 
   test("passes ctx.debaters to the prompt builder", async () => {
@@ -237,5 +254,53 @@ describe("judgeSelector", () => {
 
     expect(capturedPrompt).toContain("testability");
     expect(capturedPrompt).toContain("security");
+  });
+
+  test("returns outcome: passed when op result is non-empty trimmed string (AC6)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "  verdict text  ",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("passed");
+    expect(result.resolverCostUsd).toBe(0);
+  });
+
+  test("returns outcome: failed when op result is empty string (AC7)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("failed");
+    expect(result.resolverCostUsd).toBe(0);
+  });
+
+  test("returns outcome: failed when op result is whitespace-only string (AC7)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "   \n\t  ",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    expect(result.outcome).toBe("failed");
+    expect(result.resolverCostUsd).toBe(0);
   });
 });
