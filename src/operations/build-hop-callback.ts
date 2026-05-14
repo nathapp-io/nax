@@ -7,7 +7,7 @@
 
 import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
-import { SessionFailureError } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
 import { resolveModelForAgent } from "../config";
 import type { NaxConfig } from "../config";
@@ -249,6 +249,7 @@ export function buildHopCallback(
       // swap policy sees the real outcome (rate-limit, auth, quota) instead of
       // a generic "fail-adapter-error" reclassification. Mirrors session-run-hop.ts.
       const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      const turnError = err instanceof SessionTurnError ? err : undefined;
       const errMessage = err instanceof Error ? err.message : String(err);
       return {
         result: {
@@ -264,7 +265,7 @@ export function buildHopCallback(
           adapterFailure: sessionFailure ?? {
             category: "availability",
             outcome: "fail-adapter-error",
-            retriable: false,
+            retriable: turnError?.retryable ?? false,
             message: errMessage.slice(0, 500),
           },
         },

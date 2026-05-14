@@ -11,8 +11,8 @@
  * See: docs/specs/acp-session-mode.md
  */
 
-import { getSafeLogger } from "../../logger";
-import type { ProtocolIds } from "../../runtime/protocol-types";
+import { getSafeLogger } from "@/logger";
+import type { ProtocolIds } from "@/runtime/protocol-types";
 import type { TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
 import type { ITokenUsageMapper } from "../cost";
@@ -575,14 +575,17 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     if (lastResponse?.stopReason === "error") {
-      // Surface the transport fact (`cancelled`) without classifying _why_.
+      // Surface the transport facts (`cancelled`, `retryable`) without classifying _why_.
       // SessionManager catches SessionTurnError and maps `cancelled: true`
       // to the `fail-stale` policy outcome.
+      // build-hop-callback maps `retryable: true` to AdapterFailure.retriable so
+      // manager-run's retry loop can apply the higher sessionErrorRetryableMaxRetries cap.
       throw new SessionTurnError(
         lastResponse.cancelled
           ? "Agent session ended with stop reason: error (externally cancelled)"
           : "Agent session ended with stop reason: error",
         lastResponse.cancelled === true,
+        lastResponse.retryable === true,
       );
     }
 

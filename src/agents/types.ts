@@ -447,6 +447,7 @@ export class SessionTurnError extends Error {
   constructor(
     message: string,
     public readonly cancelled: boolean,
+    public readonly retryable: boolean = false,
   ) {
     super(message);
     this.name = "SessionTurnError";

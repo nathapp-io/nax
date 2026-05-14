@@ -1,6 +1,6 @@
 {
-  "count": 3145,
-  "updatedAt": "2026-05-13T12:05:20.326Z",
+  "count": 3143,
+  "updatedAt": "2026-05-14T02:39:58.295Z",
   "byFile": {
     "src/context/engine/effectiveness.ts": 2,
     "src/context/engine/providers/feature-context.ts": 6,
@@ -53,7 +53,6 @@
     "src/agents/acp/spawn-client.ts": 3,
     "src/agents/acp/adapter-lifecycle.ts": 4,
     "src/agents/acp/adapter-session-types.ts": 2,
-    "src/agents/acp/adapter.ts": 2,
     "src/agents/shared/env.ts": 1,
     "src/agents/shared/validation.ts": 1,
     "src/agents/shared/types-extended.ts": 5,

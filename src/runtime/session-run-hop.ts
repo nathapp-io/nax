@@ -1,6 +1,6 @@
 import { buildContextToolPreamble, buildRunInteractionHandler } from "../agents/acp/adapter";
 import type { IAgentManager } from "../agents/manager-types";
-import { SessionFailureError } from "../agents/types";
+import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions } from "../agents/types";
 import type { ISessionManager } from "../session";
 
@@ -88,20 +88,22 @@ export function createSessionRunHop(
       };
     } catch (err) {
       const sessionFailure = err instanceof SessionFailureError ? err.adapterFailure : undefined;
+      const turnError = err instanceof SessionTurnError ? err : undefined;
+      const errMessage = err instanceof Error ? err.message : String(err);
       return {
         prompt,
         result: {
           success: false,
           exitCode: 1,
-          output: err instanceof Error ? err.message : String(err),
+          output: errMessage,
           rateLimited: sessionFailure?.outcome === "fail-rate-limit",
           durationMs: Date.now() - startMs,
           estimatedCostUsd: 0,
           adapterFailure: sessionFailure ?? {
-            category: "quality",
-            outcome: "fail-unknown",
-            retriable: false,
-            message: String(err).slice(0, 500),
+            category: "availability",
+            outcome: "fail-adapter-error",
+            retriable: turnError?.retryable ?? false,
+            message: errMessage.slice(0, 500),
           },
         },
       };
