@@ -1,9 +1,11 @@
 export {
   DebatePlanStrategy,
   PipelinePlanStrategy,
+  RefinePlanStrategy,
   SinglePlanStrategy,
   _debatePlanDeps,
   _pipelinePlanDeps,
+  _refinePlanDeps,
   _singlePlanDeps,
   assertIsValidPrd,
   buildPlanComposition,

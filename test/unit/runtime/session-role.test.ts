@@ -25,7 +25,7 @@ describe("SessionRole", () => {
       "main", "test-writer", "implementer", "verifier",
       "diagnose", "source-fix", "test-fix",
       "reviewer-semantic", "reviewer-adversarial",
-      "plan", "decompose",
+      "plan", "plan-draft", "plan-revise", "plan-critic", "plan-refine", "decompose",
       "acceptance-gen", "refine", "fix-gen",
       "auto", "synthesis", "judge",
     ] as SessionRole[])("returns true for canonical role: %s", (role) => {

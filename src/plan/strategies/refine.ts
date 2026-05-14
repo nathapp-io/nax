@@ -1,18 +1,18 @@
-import { callOp, planInteractiveOp } from "@/operations";
-import type { PlanInteractiveInput } from "@/operations";
-import { validatePlanOutput } from "@/prd";
-import { assertIsValidPrd } from "./assert";
+import { callOp, planRefineOp } from "@/operations";
+import type { PlanRefineInput } from "@/operations";
 import type { IPlanStrategy, PlanModeContext } from "./types";
+import { writeOrRecoverPrd } from "./write-prd";
 
 export const _refinePlanDeps = {
   callOp,
-  planInteractiveOp,
+  planRefineOp,
 };
 
 export class RefinePlanStrategy implements IPlanStrategy {
   readonly mode = "refine" as const;
 
   async execute(ctx: PlanModeContext): Promise<string> {
+    // planCommand() closes the shared runtime in its finally block.
     try {
       const prd = await _refinePlanDeps.callOp(
         {
@@ -25,7 +25,7 @@ export class RefinePlanStrategy implements IPlanStrategy {
           interactionBridge: ctx.interactionBridge,
           maxInteractionTurns: ctx.fullConfig.agent?.maxInteractionTurns,
         },
-        _refinePlanDeps.planInteractiveOp,
+        _refinePlanDeps.planRefineOp,
         {
           specContent: ctx.specContent,
           codebaseContext: ctx.codebaseContext,
@@ -35,24 +35,11 @@ export class RefinePlanStrategy implements IPlanStrategy {
           packages: ctx.relativePackages,
           packageDetails: ctx.packageDetails,
           projectProfile: ctx.fullConfig.project,
-        } satisfies PlanInteractiveInput,
+        } satisfies PlanRefineInput,
       );
-      assertIsValidPrd(prd);
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
-      return ctx.outputPath;
+      return writeOrRecoverPrd(ctx, prd);
     } catch (err) {
-      if (ctx.deps.existsSync(ctx.outputPath)) {
-        const rawContent = await ctx.deps.readFile(ctx.outputPath);
-        const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-        await ctx.deps.writeFile(
-          ctx.outputPath,
-          JSON.stringify({ ...recoveredPrd, project: ctx.projectName }, null, 2),
-        );
-        return ctx.outputPath;
-      }
-      throw err;
-    } finally {
-      await ctx.runtime.close().catch(() => {});
+      return writeOrRecoverPrd(ctx, null, err);
     }
   }
 }
