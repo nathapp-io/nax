@@ -3,7 +3,7 @@
   "feature": "plan-refine-mode",
   "branchName": "feat/plan-refine-mode",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-14T02:09:46.380Z",
+  "updatedAt": "2026-05-14T02:24:35.294Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,8 +116,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 1,
       "escalations": [],
       "routing": {
@@ -174,7 +174,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/plan/strategies/single.ts",
@@ -192,7 +194,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1f468d00c43e67956f6eae23e3932c04f8160524"
     }
   ],
   "analysis": "## Codebase Analysis\n\n- Core modifications identified across config, prompt builder, operations, strategy factory, and session-role registry.\n- PRD schema enforces dependencies as in-PRD story IDs only; external spec prerequisites belong in narrative context, not dependencies arrays.\n- callOp fileOutput substitution behavior is captured for the refine op design.\n- Implementation order: US-001 and US-002 can run in parallel; US-003 depends on US-002; US-004 depends on US-001 and US-003."
