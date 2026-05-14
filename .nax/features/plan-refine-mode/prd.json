@@ -3,7 +3,7 @@
   "feature": "plan-refine-mode",
   "branchName": "feat/plan-refine-mode",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-13T15:27:23.778Z",
+  "updatedAt": "2026-05-14T01:41:21.061Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,7 +30,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/config/schemas-infra.ts",
@@ -42,7 +44,11 @@
         "resolvePlanMode({ plan: { mode: \"pipeline\" } }) returns \"pipeline\" — existing modes still resolve correctly after adding refine",
         "resolvePlanMode({ plan: { mode: \"debate\" } }) returns \"debate\" — explicit debate still wins over debate auto-selection",
         "NaxConfigSchema.safeParse({ plan: { mode: \"single\" } }) still returns success: true after the schema extension"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "85187927462533b3d500c40f4bddc88372c40044"
     },
     {
       "id": "US-002",
@@ -80,7 +86,10 @@
         "The returned string does NOT contain \"failure-table-enumerated\" (this checklist item is intentionally excluded from turn 2)",
         "Calling buildRefineContinuation with two different outputFilePath values returns two different strings (the path is embedded, not ignored)",
         "The returned string contains an instruction to write to the file before replying (write-then-confirm ordering)"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -127,7 +136,10 @@
         "planRefineOp.recover returns null when ctx.readFile returns null or undefined",
         "planRefineOp.recover returns null (not throws) when the file exists but contains invalid JSON",
         "planRefineOp.build task.content contains input.codebaseContext"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -171,7 +183,10 @@
         "createPlanStrategy(\"single\") still returns SinglePlanStrategy after the factory is extended (no regression)",
         "createPlanStrategy(\"pipeline\") still returns PipelinePlanStrategy after the factory is extended (no regression)",
         "RefinePlanStrategy.execute passes ctx.interactionBridge to callOp's context object"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "## Codebase Analysis\n\n- Core modifications identified across config, prompt builder, operations, strategy factory, and session-role registry.\n- PRD schema enforces dependencies as in-PRD story IDs only; external spec prerequisites belong in narrative context, not dependencies arrays.\n- callOp fileOutput substitution behavior is captured for the refine op design.\n- Implementation order: US-001 and US-002 can run in parallel; US-003 depends on US-002; US-004 depends on US-001 and US-003."
