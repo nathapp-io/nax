@@ -199,7 +199,10 @@ describe("writeOrRecoverPrd", () => {
     const result = await writeOrRecoverPrd(ctx, SAMPLE_PRD);
 
     expect(result).toBe(ctx.outputPath);
-    expect(deps.writeFile).toHaveBeenCalledWith(ctx.outputPath, JSON.stringify(SAMPLE_PRD, null, 2));
+    expect(deps.writeFile).toHaveBeenCalledWith(
+      ctx.outputPath,
+      JSON.stringify({ ...SAMPLE_PRD, project: ctx.projectName }, null, 2),
+    );
   });
 
   test("recovers by reading the written file when plan generation fails after write", async () => {
@@ -211,6 +214,12 @@ describe("writeOrRecoverPrd", () => {
 
     expect(result).toBe(ctx.outputPath);
     expect(deps.readFile).toHaveBeenCalledWith(ctx.outputPath);
+    const writeCall = (deps.writeFile as ReturnType<typeof mock>).mock.calls.at(-1);
+    expect(writeCall?.[0]).toBe(ctx.outputPath);
+    const writtenPrd = JSON.parse(String(writeCall?.[1])) as PRD;
+    expect(writtenPrd.project).toBe(ctx.projectName);
+    expect(writtenPrd.feature).toBe(SAMPLE_PRD.feature);
+    expect(writtenPrd.userStories).toHaveLength(SAMPLE_PRD.userStories.length);
   });
 
   test("rethrows the original error when no recovered file exists", async () => {

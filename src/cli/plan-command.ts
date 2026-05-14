@@ -34,7 +34,7 @@ export { DEFAULT_TIMEOUT_SECONDS, _planDeps, createPlanRuntime, resolvePlanModel
  * 2. debate (both debate.enabled and stages.plan.enabled must be true)
  * 3. single (default)
  */
-export function resolvePlanMode(config: NaxConfig): "single" | "debate" | "pipeline" {
+export function resolvePlanMode(config: NaxConfig): "single" | "debate" | "pipeline" | "refine" {
   const explicit = config?.plan?.mode;
   if (explicit) return explicit;
   if (config?.debate?.enabled && config?.debate?.stages?.plan?.enabled) return "debate";

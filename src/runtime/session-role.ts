@@ -21,6 +21,7 @@ export type CanonicalSessionRole =
   | "plan-draft"
   | "plan-revise"
   | "plan-critic"
+  | "plan-refine"
   | "decompose"
   | "acceptance-gen"
   | "refine"
@@ -46,6 +47,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "plan-draft",
   "plan-revise",
   "plan-critic",
+  "plan-refine",
   "decompose",
   "acceptance-gen",
   "refine",

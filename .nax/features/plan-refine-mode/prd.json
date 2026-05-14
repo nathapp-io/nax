@@ -1,0 +1,202 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plan-refine-mode",
+  "branchName": "feat/plan-refine-mode",
+  "createdAt": "2026-05-13T00:00:00.000Z",
+  "updatedAt": "2026-05-14T02:39:41.998Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Config schema and mode resolution",
+      "description": "**Goal** — Extend the config schema to accept `\"refine\"` as a valid `plan.mode` value and update `resolvePlanMode()` to return it.\n\n**Motivation** — Cheap-model one-shot drafts predictably fall short on AC quality, failure-mode coverage, and description-AC consistency; a 2-turn refine mode targets this residual gap at only 2 LLM calls.\n\n**Approach** — Three additive changes:\n\n1. `src/config/schemas-infra.ts` line ~17: extend the `mode` enum:\n```typescript\nmode: z.enum([\"single\", \"debate\", \"pipeline\", \"refine\"]).optional(),\n```\n\n2. `src/config/runtime-types.ts` line ~285: extend the `PlanConfig.mode` type union:\n```typescript\nmode?: \"single\" | \"debate\" | \"pipeline\" | \"refine\";\n```\n\n3. `src/cli/plan-command.ts`: extend `resolvePlanMode()` return type and body — refine is only returned when explicitly configured and is **never** auto-selected:\n```typescript\nexport function resolvePlanMode(\n  config: NaxConfig\n): \"single\" | \"debate\" | \"pipeline\" | \"refine\" {\n  const explicit = config?.plan?.mode;\n  if (explicit) return explicit;\n  if (config?.debate?.enabled && config?.debate?.stages?.plan?.enabled) return \"debate\";\n  return \"single\";\n}\n```\n\nNote: AC7 (`createPlanStrategy(\"refine\")` returns `RefinePlanStrategy`) is included in the test file for this story (`test/unit/config/plan-mode-refine.test.ts`) but will only pass once US-004 implements the factory wiring.\n\n**Scope** — In: `src/config/schemas-infra.ts` mode enum, `src/config/runtime-types.ts` PlanConfig type, `src/cli/plan-command.ts` resolvePlanMode return type and body. Out: strategy class, op file, session role registry (those are US-004).",
+      "acceptanceCriteria": [
+        "NaxConfigSchema.safeParse({ plan: { mode: \"refine\" } }) returns success: true",
+        "NaxConfigSchema.safeParse({ plan: { mode: \"unknown-mode\" } }) returns success: false",
+        "resolvePlanMode({ plan: { mode: \"refine\" } }) returns \"refine\"",
+        "resolvePlanMode({}) returns \"single\" (refine is never auto-selected)",
+        "resolvePlanMode({ debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"debate\" — debate auto-selection takes priority over the default single, but not over an explicit plan.mode",
+        "resolvePlanMode({ plan: { mode: \"refine\" }, debate: { enabled: true, stages: { plan: { enabled: true } } } }) returns \"refine\" — explicit mode wins over debate auto-selection",
+        "createPlanStrategy(\"refine\") in src/plan/strategies/index.ts returns a RefinePlanStrategy instance without a TypeScript exhaustiveness error — the switch in createPlanStrategy handles all four modes"
+      ],
+      "tags": [
+        "feature",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/config/schemas-infra.ts",
+        "src/config/runtime-types.ts",
+        "src/cli/plan-command.ts",
+        "test/unit/cli/plan-mode.test.ts"
+      ],
+      "suggestedCriteria": [
+        "resolvePlanMode({ plan: { mode: \"pipeline\" } }) returns \"pipeline\" — existing modes still resolve correctly after adding refine",
+        "resolvePlanMode({ plan: { mode: \"debate\" } }) returns \"debate\" — explicit debate still wins over debate auto-selection",
+        "NaxConfigSchema.safeParse({ plan: { mode: \"single\" } }) still returns success: true after the schema extension"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "85187927462533b3d500c40f4bddc88372c40044"
+    },
+    {
+      "id": "US-002",
+      "title": "Refine continuation prompt",
+      "description": "**Goal** — Add `buildRefineContinuation(outputFilePath: string): string` to `PlanPromptBuilder` for the adversarial self-audit second turn.\n\n**Motivation** — Turn 2 of refine mode forces a focused second pass on the three areas where cheap one-shot drafts predictably fall short: AC observability, negative-path coverage, and description-AC consistency.\n\n**Approach** — Add an instance method `buildRefineContinuation(outputFilePath: string): string` to `PlanPromptBuilder` in `src/prompts/builders/plan-builder.ts`. The method must:\n- Open with adversarial framing (\"assume this draft has flaws, find them\")\n- Include three checklist sections with their `#### <id>` headings matching the critic checklist item identifiers:\n  - `ac-testable` — for each AC, is the assertion observable (return value, exception, log, file content, state)? If not, rewrite it.\n  - `failure-modes-considered` — does each story have at least one negative-path AC? If not, add one.\n  - `description-ac-contradiction` — does any sentence in any description contradict an AC in the same story? If so, fix the description.\n- Instruct the model to write the revised PRD to `outputFilePath` (not output to conversation)\n- Instruct the model to reply with a brief text confirmation only after writing the file\n- NOT include a JSON output schema (turn 2 output is plain text confirmation; the file is the real output)\n\nNote: `failure-table-enumerated` (present in the pipeline critic) is intentionally omitted — turn 2 does not re-receive the original spec, so row-by-row table enumeration cannot be performed reliably.\n\n**Scope** — In: `src/prompts/builders/plan-builder.ts` (add one instance method). Out: all other files.",
+      "acceptanceCriteria": [
+        "new PlanPromptBuilder().buildRefineContinuation(\"/path/to/prd.json\") returns a string with length greater than 200 characters",
+        "The returned string contains the substring \"ac-testable\"",
+        "The returned string contains the substring \"failure-modes-considered\"",
+        "The returned string contains the substring \"description-ac-contradiction\"",
+        "The returned string contains the literal path passed as outputFilePath",
+        "The returned string contains the word \"flaws\" or \"adversarial\" (adversarial framing is present)",
+        "The returned string does NOT contain \"```json\" (no JSON output schema — turn 2 output is plain text confirmation)"
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/prompts/builders/plan-builder.ts",
+        "src/prompts/builders/critic-builder.ts",
+        "test/unit/prompts/builders/plan-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The returned string does NOT contain \"failure-table-enumerated\" (this checklist item is intentionally excluded from turn 2)",
+        "Calling buildRefineContinuation with two different outputFilePath values returns two different strings (the path is embedded, not ignored)",
+        "The returned string contains an instruction to write to the file before replying (write-then-confirm ordering)"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2e41d12ef77e8f86f832c1d8baa2f418f012df32"
+    },
+    {
+      "id": "US-003",
+      "title": "planRefineOp operation",
+      "description": "**Goal** — Create `src/operations/plan-refine.ts` implementing the 2-turn `hopBody` flow and export it from the operations barrel.\n\n**Motivation** — Pipeline mode already addresses PRD quality via a separate critic op at 3 LLM calls; refine mode achieves comparable quality improvement at 2 LLM calls within a single session where the model has full context of its own draft.\n\n**Approach** — Mirror `planInteractiveOp` in `src/operations/plan.ts` exactly for `build`, `parse`, `verify`, and `recover`. The key differences are: (1) `name: \"plan-refine\"`, (2) `session.role: \"plan-refine\"`, and (3) the addition of a `hopBody` implementing the 2-turn flow.\n\n**Interface**\n```typescript\n// src/operations/plan-refine.ts\n\n// Mirrors PlanInteractiveInput exactly — mutable arrays to match PlanPromptBuilder.build() signature\nexport interface PlanRefineInput {\n  specContent: string;\n  codebaseContext: string;\n  featureName: string;\n  branchName: string;\n  outputPath: string;\n  packages?: string[];\n  packageDetails?: PackageSummary[];\n  projectProfile?: ProjectProfile;\n}\n\nexport const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {\n  kind: \"run\",\n  name: \"plan-refine\",\n  stage: \"plan\",\n  session: { role: \"plan-refine\", lifetime: \"fresh\" },\n  config: planConfigSelector,\n  model: (_input, ctx) => ctx.config.plan.model,\n  timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,\n\n  // retry applies to turn 1 via ctx.sendWithParseRetry in hopBody.\n  // turn 2 uses ctx.send() — no retry loop on the text confirmation.\n  retry: makeParseRetryStrategy({\n    validate: (parsed) => {\n      if (parsed === null || typeof parsed !== \"object\") return false;\n      const obj = parsed as Record<string, unknown>;\n      return \"userStories\" in obj && Array.isArray(obj.userStories) && obj.userStories.length > 0;\n    },\n    reviewerKind: \"plan\",\n    maxAttempts: 3,\n    prompts: {\n      invalid: () => PlanPromptBuilder.jsonRepair(0, \"Invalid JSON — response was not parseable\"),\n      truncated: () => PlanPromptBuilder.jsonRepair(0, \"JSON appears truncated — please rewrite completely\"),\n    },\n    // No exhaustedFallback: disk recovery is handled by op.recover (same as planInteractiveOp).\n  }),\n\n  // fileOutput: callOp reads this file after every send (including plain ctx.send)\n  // and substitutes its content as TurnResult.output — so op.parse() always sees\n  // the written PRD JSON, not the model's text confirmation.\n  fileOutput: (input) => input.outputPath,\n\n  build(input, _ctx) {\n    // Mirrors planInteractiveOp.build() exactly\n    const { taskContext, outputFormat } = new PlanPromptBuilder().build(\n      input.specContent,\n      input.codebaseContext,\n      input.outputPath,\n      input.packages,\n      input.packageDetails,\n      input.projectProfile,\n    );\n    return {\n      role: { id: \"role\", content: \"\", overridable: false },\n      task: { id: \"task\", content: `${taskContext}\\n\\n${outputFormat}`, overridable: false },\n    };\n  },\n\n  async hopBody(initialPrompt, ctx) {\n    // Turn 1: draft — sendWithParseRetry applies op.retry; fileOutput substitution\n    // ensures op.parse() validates the written JSON, not the text confirmation.\n    const turn1 = await ctx.sendWithParseRetry(initialPrompt);\n\n    // Turn 2: adversarial self-audit — plain ctx.send(), NOT ctx.sendWithParseRetry.\n    // fileOutput substitution runs after ctx.send too, so turn2.output will\n    // already contain the revised file content when returned.\n    const refinePrompt = new PlanPromptBuilder().buildRefineContinuation(ctx.input.outputPath);\n    const turn2 = await ctx.send(refinePrompt);\n\n    return {\n      ...turn2,\n      estimatedCostUsd: (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0),\n    };\n  },\n\n  parse(output, input) {\n    return validatePlanOutput(output, input.featureName, input.branchName);\n  },\n\n  verify: async (parsed, _input, _ctx) => {\n    if (!parsed.userStories || parsed.userStories.length === 0) return null;\n    return parsed;\n  },\n\n  recover: async (input, ctx) => {\n    const content = await ctx.readFile(input.outputPath);\n    if (!content) return null;\n    try {\n      return validatePlanOutput(content, input.featureName, input.branchName);\n    } catch {\n      return null;\n    }\n  },\n};\n```\n\n**Critical implementation note — fileOutput substitution:** `callOp` reads the file at `input.outputPath` after every `send` call (including plain `ctx.send`) and substitutes its content as `TurnResult.output`. The `hopBody` must NOT manually call `ctx.readFile()` or `Bun.file()` to read the output — doing so is redundant and breaks the substitution contract. Trust `callOp`'s mechanism.\n\n**Scope** — In: `src/operations/plan-refine.ts` (new file), `src/operations/index.ts` (barrel export of `planRefineOp` and `PlanRefineInput`). Out: strategy class, session role registry (those are US-004).",
+      "acceptanceCriteria": [
+        "planRefineOp.kind is \"run\" and planRefineOp.name is \"plan-refine\"",
+        "planRefineOp.session.role is \"plan-refine\" and planRefineOp.session.lifetime is \"fresh\"",
+        "planRefineOp.build(input, ctx) returns a ComposeInput whose task.content contains input.featureName",
+        "planRefineOp.hopBody calls ctx.sendWithParseRetry for turn 1 (draft) and ctx.send — not ctx.sendWithParseRetry — for turn 2 (refine), so the text confirmation from turn 2 is never parse-retried",
+        "planRefineOp.hopBody calls new PlanPromptBuilder().buildRefineContinuation(input.outputPath) as the prompt for turn 2",
+        "planRefineOp.hopBody returns the TurnResult from ctx.send with estimatedCostUsd overridden to the sum of turn 1 and turn 2 costs; it does NOT manually read the file (relying on callOp's fileOutput substitution to populate turn2.output)",
+        "planRefineOp.hopBody returns a TurnResult whose estimatedCostUsd equals turn1.estimatedCostUsd + turn2.estimatedCostUsd",
+        "planRefineOp.recover(input, ctx) returns a parsed PRD when input.outputPath exists on disk with valid PRD JSON; returns null when the file does not exist",
+        "planRefineOp is exported from src/operations/index.ts"
+      ],
+      "tags": [
+        "feature",
+        "operations"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/plan.ts",
+        "src/operations/types.ts",
+        "src/prompts/builders/plan-builder.ts",
+        "src/operations/index.ts",
+        "test/unit/operations/plan-interactive.test.ts"
+      ],
+      "suggestedCriteria": [
+        "planRefineOp.retry is defined and has maxAttempts of 3 (matching planInteractiveOp)",
+        "planRefineOp.fileOutput(input) returns input.outputPath",
+        "planRefineOp.verify returns null when parsed.userStories is empty or missing",
+        "planRefineOp.recover returns null when ctx.readFile returns null or undefined",
+        "planRefineOp.recover returns null (not throws) when the file exists but contains invalid JSON",
+        "planRefineOp.build task.content contains input.codebaseContext"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "26846b6a93d4acdad9a01fe0bc530681a32b027d"
+    },
+    {
+      "id": "US-004",
+      "title": "RefinePlanStrategy and factory wiring",
+      "description": "**Goal** — Create `RefinePlanStrategy`, wire it into `createPlanStrategy`, register `plan-refine` in the session role registry, and update the adapter-wiring docs.\n\n**Motivation** — The strategy factory and session role registry are the two remaining integration points needed to activate refine mode end-to-end.\n\n**Approach** — Four changes:\n\n1. **New strategy class** `src/plan/strategies/refine.ts` — nearly identical to `SinglePlanStrategy` but uses `planRefineOp`. Runtime lifecycle is NOT closed here — `planCommand()`'s finally block owns it:\n```typescript\nexport class RefinePlanStrategy implements IPlanStrategy {\n  readonly mode = \"refine\" as const;\n\n  async execute(ctx: PlanModeContext): Promise<string> {\n    // ctx.runtime is built once in buildPlanModeContext and closed by\n    // planCommand()'s finally block — this strategy does not close it.\n    try {\n      const prd = await callOp(\n        {\n          runtime: ctx.runtime,\n          packageView: ctx.runtime.packages.resolve(),\n          packageDir: ctx.workdir,\n          agentName: ctx.runtime.agentManager.getDefault(),\n          storyId: ctx.options.feature,\n          featureName: ctx.options.feature,\n          interactionBridge: ctx.interactionBridge,\n          maxInteractionTurns: ctx.fullConfig.agent?.maxInteractionTurns,\n        },\n        planRefineOp,\n        {\n          specContent: ctx.specContent,\n          codebaseContext: ctx.codebaseContext,\n          featureName: ctx.options.feature,\n          branchName: ctx.branchName,\n          outputPath: ctx.outputPath,\n          packages: ctx.relativePackages,\n          packageDetails: ctx.packageDetails,\n          projectProfile: ctx.fullConfig.project,\n        },\n      );\n      return writeOrRecoverPrd(ctx, prd);\n    } catch (err) {\n      return writeOrRecoverPrd(ctx, null, err);\n    }\n  }\n}\n```\n\n2. **Factory wiring** `src/plan/strategies/index.ts` — add `\"refine\"` arm to `createPlanStrategy` switch (and export `RefinePlanStrategy`). The switch must be exhaustive across all four modes: `single`, `debate`, `pipeline`, `refine`.\n\n3. **Session role registry** `src/runtime/session-role.ts` — add `\"plan-refine\"` to `CanonicalSessionRole` union type and to the `KNOWN_SESSION_ROLES` constant array.\n\n4. **Adapter wiring docs** `.claude/rules/adapter-wiring.md` — add `plan-refine` to the `callOp` run-kind row in the session role registry table alongside `plan`, `plan-draft`, `plan-revise`, `plan-critic`.\n\n**Scope** — In: `src/plan/strategies/refine.ts` (new), `src/plan/strategies/index.ts` (factory + export), `src/runtime/session-role.ts` (role registry), `.claude/rules/adapter-wiring.md` (docs). Out: op file, prompt builder, config schema (those are earlier stories).",
+      "acceptanceCriteria": [
+        "createPlanStrategy(\"refine\") returns an instance of RefinePlanStrategy",
+        "RefinePlanStrategy.mode equals \"refine\"",
+        "RefinePlanStrategy.execute(ctx) calls callOp with planRefineOp (not planInteractiveOp)",
+        "RefinePlanStrategy.execute(ctx) returns ctx.outputPath on success",
+        "When callOp throws and ctx.outputPath exists on disk with valid PRD JSON, RefinePlanStrategy.execute reads and returns the disk-recovered path via writeOrRecoverPrd",
+        "src/runtime/session-role.ts includes \"plan-refine\" in CanonicalSessionRole and KNOWN_SESSION_ROLES, and adapter-wiring.md includes \"plan-refine\" in the callOp run-kind row"
+      ],
+      "tags": [
+        "feature",
+        "strategy"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/plan/strategies/single.ts",
+        "src/plan/strategies/write-prd.ts",
+        "src/plan/strategies/index.ts",
+        "src/runtime/session-role.ts",
+        "test/unit/plan/single-strategy.test.ts"
+      ],
+      "suggestedCriteria": [
+        "RefinePlanStrategy.execute does NOT call ctx.runtime.close() — runtime lifecycle is planCommand()'s responsibility",
+        "When callOp throws and no valid PRD exists on disk, RefinePlanStrategy.execute propagates the original error (fail-closed)",
+        "createPlanStrategy(\"single\") still returns SinglePlanStrategy after the factory is extended (no regression)",
+        "createPlanStrategy(\"pipeline\") still returns PipelinePlanStrategy after the factory is extended (no regression)",
+        "RefinePlanStrategy.execute passes ctx.interactionBridge to callOp's context object"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1f468d00c43e67956f6eae23e3932c04f8160524"
+    }
+  ],
+  "analysis": "## Codebase Analysis\n\n- Core modifications identified across config, prompt builder, operations, strategy factory, and session-role registry.\n- PRD schema enforces dependencies as in-PRD story IDs only; external spec prerequisites belong in narrative context, not dependencies arrays.\n- callOp fileOutput substitution behavior is captured for the refine op design.\n- Implementation order: US-001 and US-002 can run in parallel; US-003 depends on US-002; US-004 depends on US-001 and US-003."
+}

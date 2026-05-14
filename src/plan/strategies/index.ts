@@ -6,4 +6,5 @@ export { assertIsValidPrd } from "./assert";
 export { SinglePlanStrategy, _singlePlanDeps } from "./single";
 export { PipelinePlanStrategy, _pipelinePlanDeps } from "./pipeline";
 export { DebatePlanStrategy, _debatePlanDeps } from "./debate";
+export { RefinePlanStrategy, _refinePlanDeps } from "./refine";
 export { buildPlanComposition } from "./debate-composition";
