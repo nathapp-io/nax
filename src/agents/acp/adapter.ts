@@ -11,8 +11,8 @@
  * See: docs/specs/acp-session-mode.md
  */
 
-import { getSafeLogger } from "../../logger";
-import type { ProtocolIds } from "../../runtime/protocol-types";
+import { getSafeLogger } from "@/logger";
+import type { ProtocolIds } from "@/runtime/protocol-types";
 import type { TokenUsage } from "../cost";
 import { addTokenUsage, estimateCostFromTokenUsage } from "../cost";
 import type { ITokenUsageMapper } from "../cost";
