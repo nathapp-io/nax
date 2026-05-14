@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase1-resolver-ops",
   "branchName": "feat/debate-callop-phase1-resolver-ops",
   "createdAt": "2026-05-14T00:00:00.000Z",
-  "updatedAt": "2026-05-14T09:08:16.700Z",
+  "updatedAt": "2026-05-14T09:28:25.242Z",
   "userStories": [
     {
       "id": "US-001a",
@@ -29,8 +29,8 @@
         "debate"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -87,7 +87,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/debate-propose.ts",
@@ -102,7 +104,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ddd0fa877d076d11f4607868d191bd06671c6f81"
     },
     {
       "id": "US-002",
