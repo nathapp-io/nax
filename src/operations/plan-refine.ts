@@ -27,21 +27,22 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
-  retry: makeParseRetryStrategy({
-    validate: (parsed) => {
-      if (parsed === null || typeof parsed !== "object") return false;
-      const obj = parsed as Record<string, unknown>;
-      if (!("userStories" in obj)) return false;
-      if (!Array.isArray(obj.userStories)) return false;
-      return obj.userStories.length > 0;
-    },
-    reviewerKind: "plan",
-    maxAttempts: 3,
-    prompts: {
-      invalid: () => PlanPromptBuilder.jsonRepair(0, "Invalid JSON — response was not parseable"),
-      truncated: () => PlanPromptBuilder.jsonRepair(0, "JSON appears truncated — please rewrite completely"),
-    },
-  }),
+  retry: () =>
+    makeParseRetryStrategy({
+      validate: (parsed) => {
+        if (parsed === null || typeof parsed !== "object") return false;
+        const obj = parsed as Record<string, unknown>;
+        if (!("userStories" in obj)) return false;
+        if (!Array.isArray(obj.userStories)) return false;
+        return obj.userStories.length > 0;
+      },
+      reviewerKind: "plan",
+      maxAttempts: 3,
+      prompts: {
+        invalid: () => PlanPromptBuilder.jsonRepair(0, "Invalid JSON — response was not parseable"),
+        truncated: () => PlanPromptBuilder.jsonRepair(0, "JSON appears truncated — please rewrite completely"),
+      },
+    }),
   fileOutput: (input) => input.outputPath,
   build(input, _ctx) {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
@@ -54,7 +55,11 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     );
     return {
       role: { id: "role", content: "", overridable: false },
-      task: { id: "task", content: `${taskContext}\n\n${outputFormat}`, overridable: false },
+      task: {
+        id: "task",
+        content: `You are drafting a PRD for the feature: **${input.featureName}**.\n\n${taskContext}\n\n${outputFormat}`,
+        overridable: false,
+      },
     };
   },
   async hopBody(initialPrompt, ctx) {

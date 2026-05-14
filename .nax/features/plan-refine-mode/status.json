@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-14T01-38-55-978Z",
+    "feature": "plan-refine-mode",
+    "startedAt": "2026-05-14T01:38:55.978Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 95789
+  },
+  "progress": {
+    "total": 4,
+    "passed": 2,
+    "failed": 0,
+    "paused": 1,
+    "blocked": 0,
+    "pending": 1
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-05-14T02:07:50.529Z",
+  "durationMs": 1734551,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-14T02:07:49.685Z"
+    }
+  }
+}
