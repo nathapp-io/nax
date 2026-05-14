@@ -3,7 +3,7 @@
   "feature": "plan-refine-mode",
   "branchName": "feat/plan-refine-mode",
   "createdAt": "2026-05-13T00:00:00.000Z",
-  "updatedAt": "2026-05-14T02:05:17.133Z",
+  "updatedAt": "2026-05-14T02:09:46.380Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,7 +116,7 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "paused",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],

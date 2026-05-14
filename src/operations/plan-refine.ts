@@ -6,6 +6,7 @@ import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
+import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
 export interface PlanRefineInput {
@@ -23,7 +24,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   kind: "run",
   name: "plan-refine",
   stage: "plan",
-  session: { role: "plan-refine", lifetime: "fresh" },
+  session: { role: "plan-refine" as SessionRole, lifetime: "fresh" },
   config: planConfigSelector,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.timeoutSeconds ?? 600) * 1000,
