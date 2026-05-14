@@ -8,6 +8,7 @@ import {
 } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { planConfigSelector } from "@/config";
+import { NaxError } from "@/errors";
 import { buildInteractionBridge } from "@/interaction";
 import { validateFeatureName } from "@/utils/feature-name";
 import type { PlanCommandOptions, PlanDeps, PlanModeContext } from "./types";
@@ -20,7 +21,10 @@ export async function buildPlanModeContext(
 ): Promise<PlanModeContext> {
   const naxDir = join(workdir, ".nax");
   if (!deps.existsSync(naxDir)) {
-    throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
+    throw new NaxError(`.nax directory not found. Run 'nax init' first in ${workdir}`, "PLAN_CONTEXT_NO_NAX_DIR", {
+      stage: "plan",
+      workdir,
+    });
   }
   validateFeatureName(options.feature);
   const outputDir = join(naxDir, "features", options.feature);

@@ -4,9 +4,37 @@ import type { PRD } from "@/prd/types";
 import type { PlanModeContext } from "./types";
 
 export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {
+  const tryExtractPrd = (value: unknown): PRD | null => {
+    if (value === null || typeof value !== "object") return null;
+
+    try {
+      return validatePlanOutput(JSON.stringify(value), ctx.options.feature, ctx.branchName);
+    } catch {
+      // Continue — some failure paths pass through a raw TurnResult envelope whose
+      // `output` field contains the real PRD JSON string. Recover that instead of
+      // persisting the envelope as if it were a PRD.
+    }
+
+    const maybeOutput = (value as { output?: unknown }).output;
+    if (typeof maybeOutput !== "string") return null;
+    try {
+      return validatePlanOutput(maybeOutput, ctx.options.feature, ctx.branchName);
+    } catch {
+      return null;
+    }
+  };
+
   if (prd !== null) {
-    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
-    return ctx.outputPath;
+    if (Array.isArray((prd as { userStories?: unknown }).userStories)) {
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
+      return ctx.outputPath;
+    }
+
+    const normalizedPrd = tryExtractPrd(prd);
+    if (normalizedPrd !== null) {
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...normalizedPrd, project: ctx.projectName }, null, 2));
+      return ctx.outputPath;
+    }
   }
 
   if (err === undefined) {
@@ -17,7 +45,15 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
 
   try {
     const rawContent = await ctx.deps.readFile(ctx.outputPath);
-    const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
+    let recoveredPrd: PRD | null = null;
+    if (rawContent !== null) {
+      try {
+        recoveredPrd = tryExtractPrd(JSON.parse(rawContent));
+      } catch {
+        recoveredPrd = null;
+      }
+    }
+    recoveredPrd = recoveredPrd ?? validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
     await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...recoveredPrd, project: ctx.projectName }, null, 2));
     return ctx.outputPath;
   } catch {

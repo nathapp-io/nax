@@ -30,7 +30,9 @@ function makeValidPrd(feature: string, branchName: string) {
         id: "US-001",
         title: "Test story",
         description: "Test description",
-        acceptanceCriteria: ["Test AC"],
+        acceptanceCriteria: [
+          "CliRunner().invoke(app, ['test']) returns exit_code == 2 and stderr contains 'invalid config'",
+        ],
         contextFiles: [],
         tags: [],
         dependencies: [],
