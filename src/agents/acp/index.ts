@@ -27,6 +27,7 @@ export {
   parseAcpxJsonOutput,
 } from "./parser";
 export { parseAgentError } from "./parse-agent-error";
+export { computeAcpHandle } from "./adapter-lifecycle";
 export type { AgentRegistryEntry } from "./types";
 export type { SessionTokenUsage } from "./wire-types";
 export { AcpTokenUsageMapper, defaultAcpTokenUsageMapper } from "./token-mapper";

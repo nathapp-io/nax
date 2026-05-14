@@ -1,7 +1,8 @@
+import { computeAcpHandle } from "../agents";
 import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
-import { pickSelector, resolveConfiguredModel } from "../config";
+import { DEFAULT_CONFIG, pickSelector, resolveConfiguredModel } from "../config";
 import type { ConfigSelector, ConfiguredModel, NaxConfig } from "../config";
 import type { AdapterFailure } from "../context/engine";
 import { NaxError } from "../errors";
@@ -111,13 +112,22 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const opModel: ConfiguredModel = resolveOpModel(op, input, buildCtx) ?? "balanced";
   // resolved.agent honors `{ agent, model }` pin (cross-agent overrides);
   // resolved.modelTier is undefined when an explicit non-tier model is pinned.
-  const resolved = resolveConfiguredModel(config.models, ctx.agentName, opModel, defaultAgent);
+  // Fallback to DEFAULT_CONFIG.models when config.models is absent (e.g. partial test configs).
+  const effectiveModels = config.models ?? DEFAULT_CONFIG.models;
+  const resolved = resolveConfiguredModel(effectiveModels, ctx.agentName, opModel, defaultAgent);
   const dispatchAgent = resolved.agent;
   const effectiveTier = resolved.modelTier ?? "balanced";
 
   if (op.kind === "complete") {
     const completeOp = op as CompleteOperation<I, O, C>;
     const sessionRole = ctx.sessionOverride?.role;
+    // Explicitly compute sessionName so callers (e.g. mocks) see it without relying
+    // on ACP adapter's internal derivation. Only set when both sessionRole and a
+    // non-empty packageDir are available (mirrors the adapter-lifecycle logic).
+    const sessionName =
+      sessionRole && ctx.packageDir
+        ? computeAcpHandle(ctx.packageDir, ctx.featureName, ctx.storyId, sessionRole)
+        : undefined;
     const completeOptions = {
       modelDef: resolved.modelDef,
       jsonMode: completeOp.jsonMode ?? false,
@@ -126,6 +136,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
       ...(sessionRole !== undefined ? { sessionRole } : {}),
+      ...(sessionName !== undefined ? { sessionName } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     };
 
@@ -134,6 +145,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
       try {
         const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, completeOptions);
+        ctx.onCostAccumulated?.(raw.estimatedCostUsd);
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
       } catch (err) {

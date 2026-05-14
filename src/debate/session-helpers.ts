@@ -8,7 +8,9 @@ import type { ModelsConfig } from "../config/schema-types";
 import type { ModelDef } from "../config/schema-types";
 import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
+import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import type { SessionRole } from "../session/types";
 import { pickBaseSelectorKind, pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
 import type { DebateResult, DebateStageConfig, Debater } from "./types";
@@ -182,12 +184,40 @@ export function resolveModelDefForDebater(
   }
 }
 
+/**
+ * Build a CallContext suitable for resolver ops (synthesis/judge).
+ *
+ * Overrides runtime.agentManager with the effective agent manager so that
+ * test mocks injected via _debateSessionDeps.agentManager are visible to callOp.
+ * Sets sessionOverride.role so callOp emits sessionRole and sessionName in
+ * completeOptions (matching what tests capture and the ACP adapter would derive).
+ */
+function buildResolverCallContext(
+  provided: CallContext,
+  agentManager: IAgentManager,
+  storyId: string,
+  workdir: string,
+  featureName: string,
+  sessionRole: "synthesis" | "judge" | undefined,
+): CallContext {
+  const sessionOverride = sessionRole !== undefined ? { role: sessionRole as SessionRole } : undefined;
+  return {
+    ...provided,
+    runtime: { ...provided.runtime, agentManager } as typeof provided.runtime,
+    packageDir: workdir,
+    storyId,
+    featureName,
+    ...(sessionOverride !== undefined ? { sessionOverride } : {}),
+  };
+}
+
 /** Standalone resolver logic — delegates to resolveSelector(pickSelectorKind(...)). */
 export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
   config: DebateConfig,
+  callContext: CallContext,
   storyId: string,
   timeoutMs: number,
   workdir: string | undefined,
@@ -241,15 +271,27 @@ export async function resolveOutcome(
 
   const effectiveAgentManager = (agentManager ?? _debateSessionDeps.agentManager) as IAgentManager;
 
+  const resolverSessionRole: "synthesis" | "judge" | undefined =
+    kind === "synthesis" ? "synthesis" : kind === "judge" ? "judge" : undefined;
+  const effectiveConfig = config ?? {
+    debate: DEFAULT_CONFIG.debate,
+    models: DEFAULT_CONFIG.models,
+    agent: DEFAULT_CONFIG.agent,
+  };
+  const effectiveCallContext = buildResolverCallContext(
+    callContext,
+    effectiveAgentManager,
+    storyId,
+    workdir ?? "",
+    featureName ?? "",
+    resolverSessionRole,
+  );
+
   const selectorCtx: SelectorContext = {
     storyId,
     stage: "",
     stageConfig,
-    config: config ?? {
-      debate: DEFAULT_CONFIG.debate,
-      models: DEFAULT_CONFIG.models,
-      agent: DEFAULT_CONFIG.agent,
-    },
+    config: effectiveConfig,
     proposals: proposalList,
     labeledProposals: resolverContext?.labeledProposals,
     critiques: critiqueOutputs,
@@ -261,6 +303,7 @@ export async function resolveOutcome(
     resolverContextInput,
     promptSuffix,
     debaters: debaters ?? [],
+    callContext: effectiveCallContext,
   };
 
   // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)

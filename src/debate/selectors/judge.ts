@@ -1,79 +1,45 @@
 /**
  * Judge selector strategy.
  *
- * Extracted from src/debate/resolvers.ts judgeResolver body.
- * resolvers.ts delegates to callJudgeComplete for the compat wrapper.
+ * Dispatches via callOp(ctx.callContext, judgeOp, …) — audit, cost, and retry
+ * middleware fire through the standard operation layer.
+ *
+ * Compat note: callJudgeComplete has been moved to src/debate/resolvers.ts so that
+ * resolvers.ts can call agentManager.completeAs without this file doing so directly.
+ * The debate barrel (index.ts) continues to re-export callJudgeComplete from resolvers.
  */
 
-import { type IAgentManager, resolveDefaultAgent } from "@/agents";
-import type { CompleteOptions, CompleteResult } from "@/agents/types";
-import { DEFAULT_CONFIG, resolveConfiguredModel } from "@/config";
-import type { ModelDef } from "@/config/schema-types";
-import { DebatePromptBuilder } from "@/prompts";
-import { formatSessionName } from "@/runtime";
-import type { Debater } from "../types";
+import { callOp } from "@/operations";
+import { judgeOp } from "@/operations";
 import type { Selector, SelectorContext, SelectorResult } from "./types";
 
 const RESOLVER_FALLBACK_AGENT = "synthesis";
-
-export async function callJudgeComplete(
-  proposals: string[],
-  critiques: string[],
-  agentName: string,
-  agentManager: IAgentManager,
-  completeOptions: CompleteOptions,
-  debaters?: Debater[],
-): Promise<CompleteResult> {
-  const prompt = DebatePromptBuilder.resolverJudgePrompt(proposals, critiques, debaters);
-  return agentManager.completeAs(agentName, prompt, completeOptions);
-}
+const RESOLVER_FALLBACK_MODEL = "fast";
 
 export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<SelectorResult> => {
-  const agentName = ctx.stageConfig.resolver.agent ?? RESOLVER_FALLBACK_AGENT;
+  const resolverAgent = ctx.stageConfig.resolver.agent ?? RESOLVER_FALLBACK_AGENT;
+  const resolverModel = ctx.stageConfig.resolver.model ?? RESOLVER_FALLBACK_MODEL;
   const proposals = ctx.proposals.map((p) => p.output);
 
-  let modelDef: CompleteOptions["modelDef"];
-  try {
-    const configModels = ctx.config.models ?? DEFAULT_CONFIG.models;
-    const configDefaultAgent = resolveDefaultAgent(ctx.config);
-    const resolverSelection = { agent: agentName, model: ctx.stageConfig.resolver.model ?? "fast" };
-    modelDef = resolveConfiguredModel(configModels, agentName, resolverSelection, configDefaultAgent).modelDef;
-  } catch {
-    modelDef = { provider: "unknown", model: ctx.stageConfig.resolver.model ?? "fast" } as ModelDef;
-  }
-
-  const sessionName =
-    ctx.workdir.length > 0
-      ? formatSessionName({
-          workdir: ctx.workdir,
-          featureName: ctx.featureName || undefined,
-          storyId: ctx.storyId || undefined,
-          role: "judge",
-        })
-      : undefined;
-  const completeOptions: CompleteOptions = {
-    modelDef,
-    workdir: ctx.workdir,
-    storyId: ctx.storyId,
-    featureName: ctx.featureName,
-    timeoutMs: ctx.timeoutMs,
-    pipelineStage: "run",
-    sessionRole: "judge",
-    ...(sessionName !== undefined && { sessionName }),
+  let resolverCostUsd = 0;
+  const callCtx = {
+    ...ctx.callContext,
+    onCostAccumulated: (c: number) => {
+      resolverCostUsd += c;
+    },
   };
 
-  const result = await callJudgeComplete(
+  const output = await callOp(callCtx, judgeOp, {
     proposals,
-    ctx.critiques,
-    agentName,
-    ctx.agentManager,
-    completeOptions,
-    ctx.debaters,
-  );
+    critiques: ctx.critiques,
+    debaters: ctx.debaters,
+    resolverAgent,
+    resolverModel,
+  });
 
   return {
-    outcome: result.output?.trim() ? "passed" : "failed",
-    output: result.output,
-    resolverCostUsd: result.exactCostUsd ?? result.estimatedCostUsd,
+    outcome: output.trim() ? "passed" : "failed",
+    output,
+    resolverCostUsd,
   };
 };

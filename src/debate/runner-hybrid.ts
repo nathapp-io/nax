@@ -7,6 +7,7 @@
 import type { DebateConfig } from "@/config/selectors";
 import { resolveDefaultAgent } from "../agents";
 import type { ConfiguredModel } from "../config";
+import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
@@ -41,6 +42,7 @@ export interface HybridCtx extends DispatchContext {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly callContext: CallContext;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
@@ -331,6 +333,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       critiqueOutputs,
       ctx.stageConfig,
       ctx.config,
+      ctx.callContext,
       ctx.storyId,
       ctx.timeoutSeconds * 1000,
       ctx.workdir,

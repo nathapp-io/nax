@@ -142,7 +142,8 @@
   },
   "plan": {
     "model": "balanced",
-    "timeoutSeconds": 1200
+    "timeoutSeconds": 1200,
+    "mode": "refine"
   },
   "acceptance": {
     "model": "fast"

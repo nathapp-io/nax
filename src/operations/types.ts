@@ -47,6 +47,13 @@ export interface CallContext {
   };
   /** Max interaction round-trips when interactionBridge is active (default: 10). */
   readonly maxInteractionTurns?: number;
+  /**
+   * Optional callback invoked by callOp complete-kind after each successful
+   * completeAs response (before op.parse). Receives the raw costUsd from the
+   * wire (estimatedCostUsd from CompleteResult); accumulates across retry attempts. Used by callers (e.g. debate
+   * resolver selectors) that need to surface cost alongside the op result.
+   */
+  readonly onCostAccumulated?: (costUsd: number) => void;
 }
 
 interface OperationBase<I, O, C> {
