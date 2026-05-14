@@ -176,7 +176,7 @@ describe("synthesisSelector", () => {
     expect(result.outcome).toBe("failed");
   });
 
-  test("returns resolverCostUsd: 0 (Phase 1 cost-parity regression, AC5/AC6)", async () => {
+  test("returns resolverCostUsd from estimatedCostUsd reported by completeAs", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "synthesis",
@@ -189,7 +189,7 @@ describe("synthesisSelector", () => {
     const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
     const result = await synthesisSelector(ctx);
 
-    expect(result.resolverCostUsd).toBe(0);
+    expect(result.resolverCostUsd).toBe(0.75);
   });
 
   test("uses ctx.stageConfig.resolver.agent as the agent name", async () => {

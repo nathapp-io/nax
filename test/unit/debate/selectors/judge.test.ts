@@ -202,7 +202,7 @@ describe("judgeSelector", () => {
     expect(capturedPrompt).toContain("proposal content beta");
   });
 
-  test("returns resolverCostUsd: 0 (Phase 1 cost-parity regression, AC6/AC7)", async () => {
+  test("returns resolverCostUsd from estimatedCostUsd reported by completeAs", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "verdict",
@@ -224,7 +224,7 @@ describe("judgeSelector", () => {
     });
     const result = await judgeSelector(ctx);
 
-    expect(result.resolverCostUsd).toBe(0);
+    expect(result.resolverCostUsd).toBe(0.88);
   });
 
   test("passes ctx.debaters to the prompt builder", async () => {
