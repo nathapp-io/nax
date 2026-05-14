@@ -271,6 +271,23 @@ describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
   });
 });
 
+// ─── PlanPromptBuilder.buildRefineContinuation() ─────────────────────────────
+
+describe("PlanPromptBuilder.buildRefineContinuation()", () => {
+  test("returns an adversarial continuation prompt with the expected checklist sections", () => {
+    const outputFilePath = "/path/to/prd.json";
+    const result = new PlanPromptBuilder().buildRefineContinuation(outputFilePath);
+
+    expect(result.length).toBeGreaterThan(200);
+    expect(result).toContain("ac-testable");
+    expect(result).toContain("failure-modes-considered");
+    expect(result).toContain("description-ac-contradiction");
+    expect(result).toContain(outputFilePath);
+    expect(result.toLowerCase()).toMatch(/flaws|adversarial/);
+    expect(result).not.toContain("```json");
+  });
+});
+
 // ─── Source Roots section (wireSourceRoots story) ─────────────────────────────
 
 describe("PlanPromptBuilder.build — Source Roots section", () => {

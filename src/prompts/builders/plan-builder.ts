@@ -151,6 +151,32 @@ Please re-write the complete PRD JSON, ensuring every factual claim is cited wit
 Output ONLY the JSON object. Do not include markdown fences or explanation.`;
   }
 
+  /**
+   * Refine continuation prompt — second turn in refine mode.
+   *
+   * This prompt is intentionally adversarial and focuses the model on
+   * observable ACs, negative-path coverage, and description/AC consistency.
+   * The model must write the revised PRD to disk, then reply with a brief
+   * confirmation only.
+   */
+  buildRefineContinuation(outputFilePath: string): string {
+    return `You are in the second turn of a refine pass. Assume this draft has flaws, and audit it adversarially before you trust it.
+
+Review the draft with a strict self-audit mindset. Focus only on the issues below, then rewrite the PRD if needed.
+
+#### ac-testable
+For each acceptance criterion, ask whether the assertion is observable through a return value, exception, log output, file content, or state change. If any AC is not directly testable, rewrite it so it is observable.
+
+#### failure-modes-considered
+For each story, confirm there is at least one negative-path acceptance criterion. If a story has no failure case, add one.
+
+#### description-ac-contradiction
+Check whether any sentence in any description contradicts an acceptance criterion in the same story. If there is a contradiction, fix the description so it matches the ACs.
+
+Write the revised PRD to this file path: ${outputFilePath}
+Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
+  }
+
   build(
     specContent: string,
     codebaseContext: string,
