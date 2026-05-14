@@ -52,6 +52,6 @@ export interface PlanModeContext {
 }
 
 export interface IPlanStrategy {
-  readonly mode: "single" | "pipeline" | "debate";
+  readonly mode: "single" | "pipeline" | "debate" | "refine";
   execute(ctx: PlanModeContext): Promise<string>;
 }
