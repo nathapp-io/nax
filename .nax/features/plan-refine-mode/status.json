@@ -1,20 +1,20 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-14T01-38-55-978Z",
+    "id": "run-2026-05-14T02-09-46-270Z",
     "feature": "plan-refine-mode",
-    "startedAt": "2026-05-14T01:38:55.978Z",
-    "status": "failed",
+    "startedAt": "2026-05-14T02:09:46.270Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 95789
+    "pid": 17217
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 4,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
     "spent": 0,
@@ -22,15 +22,16 @@
   },
   "current": null,
   "iterations": 3,
-  "updatedAt": "2026-05-14T02:07:50.529Z",
-  "durationMs": 1734551,
+  "updatedAt": "2026-05-14T02:43:17.508Z",
+  "durationMs": 2011238,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-05-14T02:42:43.990Z"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-14T02:07:49.685Z"
+      "lastRunAt": "2026-05-14T02:43:16.743Z"
     }
   }
 }
