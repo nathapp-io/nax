@@ -1,0 +1,144 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "debate-callop-phase1-resolver-ops",
+  "branchName": "feat/debate-callop-phase1-resolver-ops",
+  "createdAt": "2026-05-14T00:00:00.000Z",
+  "updatedAt": "2026-05-14T08:13:54.249Z",
+  "userStories": [
+    {
+      "id": "US-001a",
+      "title": "Thread callContext through SelectorContext, resolveOutcome, and runner contexts",
+      "description": "**Goal** — Add `callContext: CallContext` threading through `SelectorContext`, `resolveOutcome()`, `StatefulCtx`, `HybridCtx`, and `toStatefulCtx()` so Phase 1 resolver selectors can dispatch via `callOp`, while leaving stateful/hybrid/plan runner dispatch changes for Phase 2.\n\n**Motivation** — Judge/synthesis selector ops need `callOp` dispatch. Threading `callContext` now unblocks that path while keeping stateful/hybrid/plan dispatch in Phase 2.\n\n**Approach** —\n1. Add `readonly callContext: CallContext` to `SelectorContext` in `src/debate/selectors/types.ts`\n2. Retain `agentManager: IAgentManager` on `SelectorContext`; `pick` and `majority` still use `completeAs` in Phase 1\n3. Add `callContext: CallContext` parameter to `resolveOutcome()` at the position described in the spec (not at the end — alongside other context fields)\n4. Place `callContext` on the `selectorCtx` object constructed inside `resolveOutcome()`\n5. Add `readonly callContext: CallContext` to `StatefulCtx` in `src/debate/runner-stateful.ts:30`\n6. Add `readonly callContext: CallContext` to `HybridCtx` in `src/debate/runner-hybrid.ts:36`\n7. Update `toStatefulCtx()` in `src/debate/runner.ts:335` to include `callContext: this.ctx`\n8. Update 4 resolveOutcome call sites to pass their CallContext:\n   - runner.ts:287 passes `this.ctx`\n   - runner-stateful.ts:301 passes `ctx.callContext`\n   - runner-hybrid.ts:329 passes `ctx.callContext`\n   - runner-plan.ts:295 passes `ctx.callContext` (already exists on PlanCtx)\n9. Update `.claude/rules/adapter-wiring.md` session role registry: move `synthesis` and `judge` from `agentManager.completeAs` row to `callOp` complete-kind row; update sanctioned-consumers prose to remove the src/debate/ carve-out for resolvers and note #855 Phase 1 has landed\n10. Accept the interim resolver session-role regression in Phase 1: `callOp` complete-kind only forwards `ctx.sessionOverride?.role`, so resolver turns no longer preserve `sessionRole: \"judge\" | \"synthesis\"` or custom session names until Phase 2\n\n**Interface**\n```typescript\n// src/debate/selectors/types.ts\nexport interface SelectorContext {\n  // … existing fields …\n  readonly callContext: CallContext;\n}\n\n// resolveOutcome signature change (parameter position with other context fields, not at end):\nexport async function resolveOutcome(\n  proposalOutputs: string[],\n  critiqueOutputs: string[],\n  stageConfig: DebateStageConfig,\n  config: DebateConfig,\n  callContext: CallContext,                    // ← new, required\n  storyId: string,\n  timeoutMs: number,\n  workdir: string | undefined,\n  featureName: string | undefined,\n  reviewerSession: ReviewerSession | undefined,\n  resolverContext: ResolverContext | undefined,\n  promptSuffix: string | undefined,\n  debaters: Debater[] | undefined,\n  agentManager: IAgentManager,\n): Promise<ResolveOutcome>\n```\n\n**Scope** — In: SelectorContext, resolveOutcome, StatefulCtx, HybridCtx, toStatefulCtx, 4 call sites, adapter-wiring.md, documenting accepted session-role regression. Out: judgeOp, synthesisOp, selector rewrites, cost accounting parity, resolver session-role parity.",
+      "acceptanceCriteria": [
+        "SelectorContext in src/debate/selectors/types.ts declares a readonly callContext: CallContext field",
+        "resolveOutcome() in src/debate/session-helpers.ts accepts a callContext: CallContext parameter and places it on the SelectorContext it constructs",
+        "StatefulCtx in src/debate/runner-stateful.ts declares a readonly callContext: CallContext field",
+        "HybridCtx in src/debate/runner-hybrid.ts declares a readonly callContext: CallContext field",
+        "DebateRunner.toStatefulCtx() in src/debate/runner.ts includes callContext: this.ctx in its return object",
+        "src/debate/runner.ts:287 passes this.ctx to resolveOutcome",
+        "src/debate/runner-stateful.ts:301 passes ctx.callContext to resolveOutcome",
+        "src/debate/runner-hybrid.ts:329 passes ctx.callContext to resolveOutcome",
+        "src/debate/runner-plan.ts:295 passes ctx.callContext to resolveOutcome",
+        ".claude/rules/adapter-wiring.md session role registry: synthesis and judge are moved from the agentManager.completeAs row to the callOp complete-kind row",
+        ".claude/rules/adapter-wiring.md sanctioned-consumers prose: the src/debate/ carve-out for resolvers is removed and #855 Phase 1 is noted as landed",
+        "The story description explicitly records that resolver session naming regresses in Phase 1 because callOp complete-kind only forwards ctx.sessionOverride?.role, and that parity is deferred to Phase 2"
+      ],
+      "tags": [
+        "feature",
+        "refactor",
+        "debate"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/debate/selectors/types.ts",
+        "src/debate/session-helpers.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-stateful.ts",
+        "src/debate/runner-hybrid.ts"
+      ],
+      "suggestedCriteria": [
+        "When resolveOutcome is called without a callContext argument, TypeScript rejects at compile time with a missing argument error",
+        "When toStatefulCtx() is called, the returned object contains callContext field equal to this.ctx"
+      ]
+    },
+    {
+      "id": "US-001b",
+      "title": "Judge resolver as CompleteOperation",
+      "description": "**Goal** — Define `judgeOp` as a `CompleteOperation` in `src/operations/debate-judge.ts` and rewrite `judgeSelector` to call `callOp(ctx.callContext, judgeOp, …)` instead of `agentManager.completeAs`.\n\n**Motivation** — Eliminates the hand-rolled DEFAULT_CONFIG.models fallback pattern in judge.ts and brings resolver dispatch under callOp audit/cost/retry middleware.\n\n**Approach** —\n1. Create `src/operations/debate-judge.ts` with:\n   - `DebateJudgeInput` interface (proposals, critiques, debaters, resolverAgent, resolverModel)\n   - `judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig>` — kind:\"complete\", name:\"debate-judge\", stage:\"review\", config:debateConfigSelector, model returns { agent, model }, build calls DebatePromptBuilder.resolverJudgePrompt, parse returns output unchanged\n2. Export `judgeOp` and `DebateJudgeInput` from `src/operations/index.ts`\n3. Rewrite `judgeSelector` in `src/debate/selectors/judge.ts` to call `callOp(ctx.callContext, judgeOp, …)` with input: { proposals, critiques, debaters, resolverAgent, resolverModel }\n4. judgeSelector returns outcome:\"passed\" when trimmed result is non-empty, \"failed\" otherwise, with resolverCostUsd: 0\n5. Remove all references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, formatSessionName, and completeAs from judge.ts\n6. Preserve or intentionally relocate the current compat surface used by `src/debate/resolvers.ts`: today `callJudgeComplete` is exported from selectors/judge.ts and re-exported through the debate barrel. Phase 1 must either keep that public API working or update the compat wrapper implementation in the same story\n7. Accept the interim session-role regression from callOp complete-kind: judge turns no longer preserve `sessionRole: \"judge\"` or derived session names until Phase 2\n\n**Interface**\n```typescript\n// src/operations/debate-judge.ts\nexport interface DebateJudgeInput {\n  readonly proposals: string[];\n  readonly critiques: string[];\n  readonly debaters?: Debater[];\n  readonly resolverAgent: string;\n  readonly resolverModel: string;\n}\n\nexport const judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig> = {\n  kind: \"complete\",\n  name: \"debate-judge\",\n  stage: \"review\",\n  jsonMode: false,\n  config: debateConfigSelector,\n  model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),\n  build(input, _ctx) {\n    return DebatePromptBuilder.resolverJudgePrompt(input.proposals, input.critiques, input.debaters);\n  },\n  parse(output, _input, _ctx) {\n    return output;\n  },\n};\n```\n\n**Scope** — In: new debate-judge.ts, operations/index.ts exports, judgeSelector rewrite, compat-wrapper preservation or relocation. Out: synthesisSelector, cost rollup parity, stateful/hybrid/plan runner conversion, session-role parity.",
+      "acceptanceCriteria": [
+        "judgeOp is exported from src/operations/index.ts with kind:\"complete\", name:\"debate-judge\", stage:\"review\", config: debateConfigSelector",
+        "judgeOp.model(input) returns { agent: input.resolverAgent, model: input.resolverModel } when both fields are non-empty strings",
+        "judgeOp.build(input, _ctx) returns the same prompt text as DebatePromptBuilder.resolverJudgePrompt(input.proposals, input.critiques, input.debaters)",
+        "judgeOp.parse(output, _input, _ctx) returns the output string unchanged",
+        "judgeSelector(ctx) calls callOp(ctx.callContext, judgeOp, …) exactly once per invocation",
+        "judgeSelector(ctx) returns SelectorResult { outcome: \"passed\", output, resolverCostUsd: 0 } when the op result is a non-empty trimmed string",
+        "judgeSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
+        "src/debate/selectors/judge.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
+        "src/debate/selectors/judge.ts does not call completeAs directly",
+        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callJudgeComplete available with equivalent behavior or by updating the compat wrapper in the same story"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "operations"
+      ],
+      "dependencies": [
+        "US-001a"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/debate-propose.ts",
+        "src/debate/selectors/judge.ts",
+        "src/prompts/builders/debate-builder.ts",
+        "src/operations/call.ts",
+        "src/operations/index.ts"
+      ],
+      "suggestedCriteria": [
+        "When judgeOp.model receives an input with empty resolverAgent, it returns a valid agent string (fallback behavior should be consistent with pre-callOp behavior)",
+        "When callOp(ctx, judgeOp, input) is invoked, the dispatch agent is input.resolverAgent as resolved by resolveConfiguredModel pin mechanism"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Synthesis resolver as CompleteOperation",
+      "description": "**Goal** — Define `synthesisOp` as a `CompleteOperation` in `src/operations/debate-synthesis.ts` and rewrite `synthesisSelector` to call `callOp(ctx.callContext, synthesisOp, …)` instead of `agentManager.completeAs`.\n\n**Motivation** — Same as US-001b: eliminates hand-rolled DEFAULT_CONFIG.models fallback pattern in synthesis.ts and brings synthesis resolver dispatch under callOp audit/cost/retry middleware.\n\n**Approach** —\n1. Create `src/operations/debate-synthesis.ts` with:\n   - `DebateSynthesisInput` interface (proposals, critiques, debaters, resolverAgent, resolverModel)\n   - `synthesisOp: CompleteOperation<DebateSynthesisInput, string, DebateConfig>` — kind:\"complete\", name:\"debate-synthesis\", stage:\"review\", config:debateConfigSelector, model returns { agent, model }, build calls DebatePromptBuilder.resolverSynthesisPrompt (with promptSuffix from ctx.promptSuffix), parse returns output unchanged\n2. Export `synthesisOp` and `DebateSynthesisInput` from `src/operations/index.ts`\n3. Rewrite `synthesisSelector` in `src/debate/selectors/synthesis.ts` to call `callOp(ctx.callContext, synthesisOp, …)` with input: { proposals, critiques, debaters, resolverAgent, resolverModel, promptSuffix }\n4. synthesisSelector returns outcome:\"passed\" when trimmed result is non-empty, \"failed\" otherwise, with resolverCostUsd: 0\n5. Remove all references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, formatSessionName, and completeAs from synthesis.ts\n6. Prompt text must be byte-identical to the current synthesisSelector output (promptSuffix appended with newline prefix)\n7. Preserve or intentionally relocate the current compat surface used by `src/debate/resolvers.ts`: today `callSynthesisComplete` is exported from selectors/synthesis.ts and re-exported through the debate barrel. Phase 1 must either keep that public API working or update the compat wrapper implementation in the same story\n8. Accept the interim session-role regression from callOp complete-kind: synthesis turns no longer preserve `sessionRole: \"synthesis\"` or derived session names until Phase 2\n\n**Interface**\n```typescript\n// src/operations/debate-synthesis.ts\nexport interface DebateSynthesisInput {\n  readonly proposals: string[];\n  readonly critiques: string[];\n  readonly debaters?: Debater[];\n  readonly resolverAgent: string;\n  readonly resolverModel: string;\n  readonly promptSuffix?: string;\n}\n\nexport const synthesisOp: CompleteOperation<DebateSynthesisInput, string, DebateConfig> = {\n  kind: \"complete\",\n  name: \"debate-synthesis\",\n  stage: \"review\",\n  jsonMode: false,\n  config: debateConfigSelector,\n  model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),\n  build(input, _ctx) {\n    const base = DebatePromptBuilder.resolverSynthesisPrompt(input.proposals, input.critiques, input.debaters);\n    return input.promptSuffix ? `${base}\\n\\n${input.promptSuffix}` : base;\n  },\n  parse(output, _input, _ctx) {\n    return output;\n  },\n};\n```\n\n**Scope** — In: new debate-synthesis.ts, operations/index.ts exports, synthesisSelector rewrite, compat-wrapper preservation or relocation. Out: cost rollup parity, stateful/hybrid/plan runner conversion, session-role parity.",
+      "acceptanceCriteria": [
+        "synthesisOp is exported from src/operations/index.ts with kind:\"complete\", name:\"debate-synthesis\", stage:\"review\", config: debateConfigSelector",
+        "synthesisOp.model(input) returns { agent: input.resolverAgent, model: input.resolverModel }",
+        "synthesisOp.build(input, _ctx) returns the same prompt text the current synthesisSelector builds (including promptSuffix handling)",
+        "synthesisSelector(ctx) calls callOp(ctx.callContext, synthesisOp, …) exactly once per invocation",
+        "synthesisSelector(ctx) returns SelectorResult { outcome: \"passed\", output, resolverCostUsd: 0 } when the op result is a non-empty trimmed string",
+        "synthesisSelector(ctx) returns SelectorResult { outcome: \"failed\", output, resolverCostUsd: 0 } when the op result is empty or whitespace-only",
+        "src/debate/selectors/synthesis.ts contains no references to resolveConfiguredModel, resolveDefaultAgent, DEFAULT_CONFIG.models, ctx.config.models, or formatSessionName",
+        "src/debate/selectors/synthesis.ts does not call completeAs directly",
+        "The story preserves the existing compat entrypoint used by src/debate/resolvers.ts, either by keeping callSynthesisComplete available with equivalent behavior or by updating the compat wrapper in the same story"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "operations"
+      ],
+      "dependencies": [
+        "US-001a",
+        "US-001b"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/debate-judge.ts",
+        "src/debate/selectors/synthesis.ts",
+        "src/prompts/builders/debate-builder.ts",
+        "src/operations/index.ts"
+      ],
+      "suggestedCriteria": [
+        "When synthesisOp.build receives an input with promptSuffix set, the returned prompt includes the suffix appended after a blank line separator",
+        "When callOp(ctx, synthesisOp, input) is invoked, the dispatch agent is input.resolverAgent"
+      ]
+    }
+  ],
+  "analysis": "**Key files identified:**\n- `src/debate/selectors/types.ts` — SelectorContext interface; needs `callContext: CallContext` field\n- `src/debate/session-helpers.ts:186-305` — resolveOutcome() function; needs `callContext` parameter and threading\n- `src/debate/runner.ts:287` — base runner resolveOutcome call site; `this.ctx` is CallContext\n- `src/debate/runner.ts:335` — toStatefulCtx(); needs to include `callContext: this.ctx`\n- `src/debate/runner-stateful.ts:30` — StatefulCtx interface; needs `callContext: CallContext` field\n- `src/debate/runner-stateful.ts:301` — stateful runner resolveOutcome call site; passes ctx.callContext\n- `src/debate/runner-hybrid.ts:36` — HybridCtx interface; needs `callContext: CallContext` field\n- `src/debate/runner-hybrid.ts:329` — hybrid runner resolveOutcome call site; passes ctx.callContext\n- `src/debate/runner-plan.ts:295` — plan runner resolveOutcome call site; already has `callContext: ctx.callContext`\n- `src/debate/selectors/judge.ts` — judgeSelector; calls resolveConfiguredModel + completeAs; must rewrite to callOp\n- `src/debate/selectors/synthesis.ts` — synthesisSelector; same pattern as judge\n- `src/operations/debate-propose.ts` — sibling CompleteOperation; reference for model() resolver shape\n- `src/operations/index.ts` — exports all ops; judgeOp/synthesisOp must be added here\n- `src/operations/call.ts:101-178` — callOp complete-kind path; handles { agent, model } pin\n- `src/prompts/builders/debate-builder.ts:381` — resolverSynthesisPrompt; line 404 resolverJudgePrompt\n- `.claude/rules/adapter-wiring.md:45` — session role registry; synthesis+judge are in agentManager.completeAs row\n\n**Architecture decisions:**\n- callContext is threaded through SelectorContext so judgeSelector/synthesisSelector can call callOp\n- StatefulCtx and HybridCtx each get a `readonly callContext: CallContext` field; toStatefulCtx() includes it\n- Plan runner already has callContext on PlanCtx; its resolveOutcome call is unchanged except adding the parameter\n- judgeOp and synthesisOp are CompleteOperation<DebateJudgeInput, string, DebateConfig> exported from operations/index.ts\n- Op model() returns { agent, model } to override ctx.agentName via resolveConfiguredModel pin mechanism\n\n**Migration notes:**\n- 4 call sites of resolveOutcome must pass callContext: runner.ts:287 (this.ctx), runner-stateful.ts:301 (ctx.callContext), runner-hybrid.ts:329 (ctx.callContext), runner-plan.ts:295 (ctx.callContext already exists)\n- New files: src/operations/debate-judge.ts, src/operations/debate-synthesis.ts\n- selectorCtx construction in resolveOutcome at line 244 must include callContext field\n- adapter-wiring.md session role registry: synthesis+judge move from agentManager.completeAs row to callOp complete-kind row\n\n**Tests:**\n- test/unit/debate/selectors/judge.test.ts and synthesis.test.ts exist; must update for callOp path\n- fakeAgentManager helper available at test/helpers/fake-agent-manager.ts"
+}
