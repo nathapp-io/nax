@@ -37,6 +37,8 @@ export { synthesisOp } from "./debate-synthesis";
 export type { DebateSynthesisInput } from "./debate-synthesis";
 export { debateRebutOp } from "./debate-rebut";
 export type { DebateRebutInput } from "./debate-rebut";
+export { statefulDebaterOp } from "./debate-stateful";
+export type { DebateStatefulInput, DebateStatefulOutput } from "./debate-stateful";
 export type {
   BuildContext,
   CallContext,
