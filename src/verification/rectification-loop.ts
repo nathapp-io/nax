@@ -10,6 +10,7 @@
 import type { IAgentManager } from "../agents";
 import { resolveDefaultAgent } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
+import { SessionTurnError } from "../agents/types";
 import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel, resolveModelForAgent } from "../config";
@@ -328,57 +329,75 @@ export async function runRectificationLoop(
         sessionRole: "implementer" as const,
       };
 
-      let agentResult: import("../agents").AgentResult;
+      let agentResult!: import("../agents").AgentResult;
       if (runtime) {
         // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
         // once and reuse across attempts. openSession is idempotent on a live
         // handle (session/manager.ts:354) so we attach to any session opened
         // upstream by execution.ts when one is still alive.
-        if (!heldHandle) {
-          heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
-            agentName: defaultAgent,
-            role: "implementer",
-            workdir,
-            pipelineStage: "rectification",
-            modelDef,
-            timeoutSeconds: config.execution.sessionTimeoutSeconds,
-            featureName,
-            storyId: story.id,
-            signal: runtime.signal,
-          });
-        }
-        // ADR-020 single-emission invariant: each runAsSession emits one
-        // session-turn event for audit/cost subscribers, regardless of handle
-        // reuse across attempts.
-        try {
-          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
-            storyId: story.id,
-            featureName,
-            workdir,
-            projectDir,
-            pipelineStage: "rectification",
-            sessionRole: "implementer",
-            signal: runtime.signal,
-            maxTurns: config.agent?.maxInteractionTurns,
-          });
-          agentResult = {
-            success: true,
-            exitCode: 0,
-            output: turn.output,
-            rateLimited: false,
-            durationMs: 0,
-            estimatedCostUsd: turn.estimatedCostUsd,
-            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
-            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
-            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
-          };
-        } catch (err) {
-          // Discard the held handle on error — the previous session may be in
-          // a terminal/cancelled state. Next attempt will reopen.
-          const stale = heldHandle;
-          heldHandle = undefined;
-          await runtime.sessionManager.closeSession(stale).catch(() => {});
-          throw err;
+        //
+        // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
+        // signals retryable:true). The runtime path bypasses runWithFallback so we
+        // must handle it locally — mirrors the fail-adapter-error retry in manager.ts.
+        let transportRetries = 0;
+        const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
+        while (true) {
+          if (!heldHandle) {
+            heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+              agentName: defaultAgent,
+              role: "implementer",
+              workdir,
+              pipelineStage: "rectification",
+              modelDef,
+              timeoutSeconds: config.execution.sessionTimeoutSeconds,
+              featureName,
+              storyId: story.id,
+              signal: runtime.signal,
+            });
+          }
+          // ADR-020 single-emission invariant: each runAsSession emits one
+          // session-turn event for audit/cost subscribers, regardless of handle
+          // reuse across attempts.
+          try {
+            const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+              storyId: story.id,
+              featureName,
+              workdir,
+              projectDir,
+              pipelineStage: "rectification",
+              sessionRole: "implementer",
+              signal: runtime.signal,
+              maxTurns: config.agent?.maxInteractionTurns,
+            });
+            agentResult = {
+              success: true,
+              exitCode: 0,
+              output: turn.output,
+              rateLimited: false,
+              durationMs: 0,
+              estimatedCostUsd: turn.estimatedCostUsd,
+              ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+              ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+              ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+            };
+            break;
+          } catch (err) {
+            // Discard the held handle — terminal/cancelled session. Next iteration reopens.
+            const stale = heldHandle;
+            heldHandle = undefined;
+            await runtime.sessionManager.closeSession(stale).catch(() => {});
+            if (err instanceof SessionTurnError && err.retryable && transportRetries < maxTransportRetries) {
+              transportRetries++;
+              getSafeLogger()?.warn("rectification", "fail-adapter-error: same-agent retry with fresh session", {
+                storyId: story.id,
+                attempt: transportRetries,
+                maxAttempts: maxTransportRetries,
+                retriable: true,
+              });
+              continue;
+            }
+            throw err;
+          }
         }
       } else {
         // Legacy keepOpen path — used when no runtime is available (standalone callers).
