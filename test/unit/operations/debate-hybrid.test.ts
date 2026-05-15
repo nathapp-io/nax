@@ -141,10 +141,15 @@ describe("hybridDebaterOp", () => {
     const round2Peer = defer<string>();
     const sendCalls: string[] = [];
     const settledSlots: string[] = [];
-    const originalResolve = round1Self.resolve;
+    const originalRound1Resolve = round1Self.resolve;
     round1Self.resolve = (value) => {
       settledSlots.push(String(value));
-      originalResolve(value);
+      originalRound1Resolve(value);
+    };
+    const originalRound2Resolve = round2Self.resolve;
+    round2Self.resolve = (value) => {
+      settledSlots.push(String(value));
+      originalRound2Resolve(value);
     };
 
     const input = makeInput({
@@ -172,6 +177,8 @@ describe("hybridDebaterOp", () => {
     proposalPeer.resolve("proposal-1");
 
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(sendCalls).toEqual(["round-1:proposal-0,proposal-1"]);
     expect(settledSlots).toEqual(["rebut-1"]);
 
@@ -179,6 +186,10 @@ describe("hybridDebaterOp", () => {
     expect(sendCalls).toEqual(["round-1:proposal-0,proposal-1"]);
 
     round1Peer.resolve("round-1-peer");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(sendCalls).toEqual([
@@ -227,6 +238,6 @@ describe("hybridDebaterOp", () => {
 
     await expect(hop as Promise<{ readonly output: string }>).rejects.toBeInstanceOf(NaxError);
     await expect(hop as Promise<{ readonly output: string }>).rejects.toMatchObject({ code: "CALL_OP_ABORTED" });
-    expect(sendCalls).toEqual(["round-1:proposal-0,proposal-1"]);
+    expect(sendCalls).toEqual(["round-1:proposal-0|proposal-1"]);
   });
 });

@@ -39,6 +39,8 @@ export { debateRebutOp } from "./debate-rebut";
 export type { DebateRebutInput } from "./debate-rebut";
 export { statefulDebaterOp } from "./debate-stateful";
 export type { DebateStatefulInput, DebateStatefulOutput } from "./debate-stateful";
+export { hybridDebaterOp } from "./debate-hybrid";
+export type { DebateHybridInput, DebateHybridOutput } from "./debate-hybrid";
 export type {
   BuildContext,
   CallContext,

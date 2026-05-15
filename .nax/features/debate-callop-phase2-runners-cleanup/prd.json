@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase2-runners-cleanup",
   "branchName": "feat/debate-callop-phase2-runners-cleanup",
   "createdAt": "2026-05-15T00:00:00.000Z",
-  "updatedAt": "2026-05-15T07:56:59.324Z",
+  "updatedAt": "2026-05-15T08:12:57.009Z",
   "userStories": [
     {
       "id": "US-003",
@@ -89,7 +89,7 @@
       ],
       "status": "pending",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "complex",
