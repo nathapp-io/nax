@@ -10,7 +10,7 @@ The unit suite has 627 test files that run in a single Bun process. Three known 
 2. **Naked `setTimeout` in tests** — `await new Promise(r => setTimeout(r, N))` with no `AbortController` keeps timers pending if the surrounding test throws or aborts.
 3. **`attachAgentIdleWatchdog` / `setInterval`-like APIs** — these return an `unsubscribe` callback. If a test creates one and the test then throws before `unsubscribe()` is reached, the internal tick timer keeps firing.
 
-The wrapper `scripts/run-tests.ts` time-boxes phases and kills the process group on hang, but bare `bun test <dir>` invocations bypass it.
+The wrapper `scripts/run-tests.ts` time-boxes phases and kills the process group on hang, abnormal exit (Bun panic / SIGSEGV / SIGABRT), and forwarded SIGINT/SIGTERM. Bare `bun test <dir>` invocations bypass it — a Bun panic there leaves the test-spawned descendants (acpx, agent procs) orphaned.
 
 ## Investigation Phases
 
