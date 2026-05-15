@@ -1,12 +1,9 @@
 /**
  * Verifier-pick selector strategy.
  *
- * Ranks proposals by mechanical signals (citations, distribution, coverage, context validity)
- * and optionally applies a patch step if enabled and AC overlap is below threshold.
+ * Ranks proposals by mechanical signals (citations, distribution, coverage, context validity).
  */
 
-import { NaxError } from "@/errors";
-import { getSafeLogger } from "@/logger";
 import { PatchPromptBuilder } from "@/prompts";
 import { citationDistribution, citationRate, extractClaims } from "../citations";
 import type { FactsManifest } from "../facts-manifest";
@@ -39,7 +36,7 @@ const FILE_PATH_RE = /(?:^|\s)((?:\/|\.\/|\.\.\/)[\w./\-]+\.\w+)/gm;
 /** Regex to extract AC identifiers (e.g. AC1, AC 2) from proposal output. */
 const AC_ID_RE = /\bAC\s*(\d+)\b/gi;
 
-interface Score {
+export interface Score {
   citationRate: number;
   citationDistributionScore: number;
   failureModesCovered: number;
@@ -47,25 +44,20 @@ interface Score {
   total: number;
 }
 
-interface ScoredProposal {
+export interface ScoredProposal {
   proposal: SuccessfulProposal;
   score: Score;
-}
-
-interface PatchResult {
-  output: string;
-  cost: number;
 }
 
 /**
  * Returns an empty manifest as placeholder. The manifest is threaded by the
  * runner-plan orchestrator in US-005 — for US-003, scoring uses output-only signals.
  */
-function extractManifestFromContext(_ctx: SelectorContext): FactsManifest {
+export function extractManifestFromContext(_ctx: SelectorContext): FactsManifest {
   return { repoFacts: [], specClaims: [], gaps: [] };
 }
 
-async function computeScore(proposal: SuccessfulProposal, manifest: FactsManifest): Promise<Score> {
+export async function computeScore(proposal: SuccessfulProposal, manifest: FactsManifest): Promise<Score> {
   const claims = extractClaims(proposal.output);
   const cr = citationRate(claims);
 
@@ -108,7 +100,7 @@ function extractAcIds(output: string): Set<string> {
   return new Set(matches.map((m) => `AC${m[1]}`));
 }
 
-function acOverlap(winner: ScoredProposal, runnerUp: ScoredProposal): number {
+export function acOverlap(winner: ScoredProposal, runnerUp: ScoredProposal): number {
   const winnerAcs = extractAcIds(winner.proposal.output);
   const runnerUpAcs = extractAcIds(runnerUp.proposal.output);
   if (winnerAcs.size === 0 && runnerUpAcs.size === 0) return 1.0;
@@ -125,26 +117,13 @@ function extractDistinctACs(winner: SuccessfulProposal, runnerUp: SuccessfulProp
 }
 
 export async function runPatchStep(
-  ctx: SelectorContext,
+  _ctx: SelectorContext,
   winner: ScoredProposal,
   runnerUp: ScoredProposal,
   maxDeltas: number,
-): Promise<PatchResult> {
+): Promise<string> {
   const deltas = extractDistinctACs(winner.proposal, runnerUp.proposal, maxDeltas);
-  const prompt = new PatchPromptBuilder().build(winner.proposal.output, deltas);
-  const handle = winner.proposal.handle;
-  if (!handle) {
-    throw new NaxError(
-      "[verifier-pick] Winner proposal has no session handle — cannot continue session for patch step",
-      "VERIFIER_PICK_NO_HANDLE",
-      { stage: "plan", storyId: ctx.storyId },
-    );
-  }
-  const result = await ctx.agentManager.runAsSession(winner.proposal.agentName, handle, prompt, {
-    storyId: ctx.storyId,
-    pipelineStage: "plan",
-  });
-  return { output: result.output, cost: result.estimatedCostUsd ?? 0 };
+  return new PatchPromptBuilder().build(winner.proposal.output, deltas);
 }
 
 export const verifierPickSelector: Selector = async (ctx: SelectorContext): Promise<SelectorResult> => {
@@ -157,28 +136,5 @@ export const verifierPickSelector: Selector = async (ctx: SelectorContext): Prom
     ctx.proposals.map(async (p) => ({ proposal: p, score: await computeScore(p, manifest) })),
   );
   scored.sort((a, b) => b.score.total - a.score.total);
-
-  const winner = scored[0];
-  const patchConfig = ctx.stageConfig.selector?.kind === "verifier-pick" ? ctx.stageConfig.selector.patch : undefined;
-
-  if (patchConfig?.enabled) {
-    const runnerUp = scored[1];
-    if (runnerUp && acOverlap(winner, runnerUp) < (patchConfig.overlapThreshold ?? 0.8)) {
-      try {
-        const patched = await runPatchStep(ctx, winner, runnerUp, patchConfig.maxDeltas ?? 5);
-        return { outcome: "passed", output: patched.output, resolverCostUsd: patched.cost };
-      } catch (err) {
-        const logger = getSafeLogger();
-        if ((patchConfig.onFailure ?? "use-unpatched") === "block") {
-          return { outcome: "failed", resolverCostUsd: 0 };
-        }
-        logger?.warn("verifier-pick", "Patch step failed — falling back to unpatched winner", {
-          storyId: ctx.storyId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-  }
-
-  return { outcome: "passed", output: winner.proposal.output, resolverCostUsd: 0 };
+  return { outcome: "passed", output: scored[0]?.proposal.output, resolverCostUsd: 0 };
 };

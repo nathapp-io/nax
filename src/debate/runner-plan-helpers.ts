@@ -1,29 +1,17 @@
 /**
  * runner-plan-helpers.ts
  *
- * Internal helpers for runPlan(): pre-phase invocation, stateful session lifecycle,
- * rebuttal loop, and tag-expert complexity rewrite.
+ * Internal helpers for runPlan(): pre-phase invocation and prompt shaping.
  */
 
-import { resolveDefaultAgent } from "../agents";
-import type { SessionHandle } from "../agents/types";
-import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import type { CallContext } from "../operations/types";
 import type { DebatePromptBuilder } from "../prompts";
-import type { SessionRole } from "../runtime/session-role";
-import type { ISessionManager } from "../session/types";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
-import type { HybridCtx } from "./runner-hybrid";
-import {
-  _debateSessionDeps,
-  modelTierFromDebater,
-  pipelineStageForDebate,
-  resolveModelDefForDebater,
-} from "./session-helpers";
-import type { ResolvedDebater, SuccessfulProposal } from "./session-helpers";
-import type { DebateStageConfig, Rebuttal } from "./types";
+import { type ScoredProposal, acOverlap, runPatchStep } from "./selectors/verifier-pick";
+import { _debateSessionDeps } from "./session-helpers";
+import type { DebateStageConfig } from "./types";
 import { resolvePostDebateVerifier } from "./verifiers";
 
 /** Injectable deps for testability — defined here to avoid circular imports with runner-plan. */
@@ -46,9 +34,10 @@ interface PlanCtxMinimal {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   readonly callContext: CallContext;
-  readonly abortSignal?: AbortSignal;
-  readonly sessionManager?: ISessionManager;
 }
+
+const FILE_OUTPUT_INSTRUCTION =
+  "Write the complete PRD JSON to this file path and then reply with a short confirmation:";
 
 /** Run the pre-debate phase, returning the manifest section and accumulated cost. */
 export async function runPrePhase(
@@ -80,63 +69,69 @@ export async function runPrePhase(
   }
 }
 
-/** Pre-open one session per resolved debater for stateful plan mode. */
-export async function openPlanSessions(
-  resolved: ResolvedDebater[],
-  config: DebateConfig,
-  sessionManager: ISessionManager,
-  opts: PlanPhaseOpts,
-  stage: string,
-  abortSignal?: AbortSignal,
-): Promise<Array<SessionHandle | null>> {
-  const handles: Array<SessionHandle | null> = [];
-  for (let i = 0; i < resolved.length; i++) {
-    const { debater: rd, agentName } = resolved[i];
-    const roleKey = `debate-plan-${i}` as SessionRole;
-    const modelTier = modelTierFromDebater(rd);
-    const model: ConfiguredModel = { agent: rd.agent, model: rd.model ?? modelTier };
-    const modelDef: ModelDef = resolveModelDefForDebater(rd, model, config.models, resolveDefaultAgent(config));
-    const name = sessionManager.nameFor({
-      workdir: opts.workdir,
-      featureName: opts.feature,
-      storyId: opts.storyId,
-      role: roleKey,
-    });
-    try {
-      const handle = await sessionManager.openSession(name, {
-        agentName,
-        role: roleKey,
-        workdir: opts.workdir,
-        pipelineStage: pipelineStageForDebate(stage),
-        modelDef,
-        timeoutSeconds: opts.timeoutSeconds ?? 600,
-        featureName: opts.feature,
-        storyId: opts.storyId,
-        signal: abortSignal,
-      });
-      handles.push(handle);
-    } catch {
-      handles.push(null);
-    }
-  }
-  return handles;
+function appendFileOutputInstruction(prompt: string, outputPath: string): string {
+  return `${prompt}\n\n${FILE_OUTPUT_INSTRUCTION}\n${outputPath}`;
 }
 
-/** Run a stateful proposal turn and read its output from disk. */
-export async function runStatefulPlanTurn(
-  agentManager: import("../agents").IAgentManager,
-  agentName: string,
-  handle: SessionHandle,
-  prompt: string,
-  tempOutputPath: string,
-  storyId: string,
-  stage: string,
-): Promise<string> {
-  await agentManager.runAsSession(agentName, handle, prompt, {
-    storyId,
-    pipelineStage: pipelineStageForDebate(stage),
-  });
-  return _debateSessionDeps.readFile(tempOutputPath);
+export function buildPlanProposalPrompt(
+  builder: DebatePromptBuilder,
+  debaterIndex: number,
+  outputPath: string,
+  manifestSection?: string,
+): string {
+  const prompt = builder.buildProposalPrompt(debaterIndex);
+  const basePrompt = manifestSection ? `${manifestSection}\n\n${prompt}` : prompt;
+  return appendFileOutputInstruction(basePrompt, outputPath);
+}
+
+export function buildPlanRebuttalPrompt(
+  builder: DebatePromptBuilder,
+  debaterIndex: number,
+  outputPath: string,
+  peerProposals: import("./types").Proposal[],
+): string {
+  return appendFileOutputInstruction(builder.buildRebuttalPrompt(debaterIndex, peerProposals, []), outputPath);
+}
+
+export function buildPlanPatchPrompt(patchPrompt: string, outputPath: string): string {
+  return appendFileOutputInstruction(patchPrompt, outputPath);
+}
+
+export function buildPlanSynthesisSuffix(specContent: string | undefined): string {
+  const specAnchor = specContent
+    ? `\n\n## Original Spec\n\n${specContent}\n\n## Synthesis Rules — Descriptions\n\nThe spec above is the authoritative source for story descriptions.\n- When the spec contains a design subsection for a story (e.g. \`### N. <Topic>\` under \`## Design\`), the story's \`description\` MUST embed that subsection's interface declarations, algorithms, and design notes verbatim — do NOT paraphrase or collapse to one sentence.\n- A one-sentence description is almost always too short for implementation stories that have spec design content. Prefer the structured format: Goal → Motivation → Interface → Approach.\n- The implementer receives only this description — no access to the original spec. Design decisions lost here are permanently invisible.\n\n## Synthesis Rules — Acceptance Criteria\n\nThe spec above is the authoritative source for acceptance criteria.\n- Each story's \`acceptanceCriteria\` array MUST contain only criteria that are explicitly stated or directly implied by the spec.\n- If a debater proposed criteria beyond the spec (observable edge cases, error-path behaviors), place those in a separate \`suggestedCriteria\` array on the same story object. Each element of \`suggestedCriteria\` MUST be a plain string — never an object or structured value.\n- \`suggestedCriteria\` MUST contain only behavioral acceptance criteria — observable outputs, return values, state changes, or error conditions a test can assert. DO NOT include: implementation details (imports, internal structure), design suggestions ("consider X"), "not required" notes, or any criterion that cannot be expressed as a test assertion.\n- Never silently merge debater-invented criteria into \`acceptanceCriteria\`. The distinction matters: \`acceptanceCriteria\` drives automated testing; \`suggestedCriteria\` gates a hardening pass.\n- Preserve the spec's AC wording. You may refine for clarity but must not change semantics.\n- Preserve each story's \`routing\` object unchanged — especially \`routing.complexity\` and \`routing.testStrategy\`. These are required by the schema and must not be dropped or modified during synthesis.`
+    : "";
+  return `IMPORTANT: Your response must be a single valid JSON object in PRD format (with project, feature, branchName, userStories array, etc.). Do NOT wrap it in markdown fences. Output raw JSON only.${specAnchor}`;
+}
+
+export async function finalizePlanSelection(
+  scored: ScoredProposal[],
+  patchConfig: { enabled: boolean; overlapThreshold?: number; maxDeltas?: number } | undefined,
+  patchPrompts: PromiseWithResolvers<{ readonly patchPrompt?: string }>[],
+  outputPaths: string[],
+  proposalOrder: Array<{ readonly output: string }>,
+  selectorCtx: Parameters<typeof runPatchStep>[0],
+): Promise<{ winnerOutput?: string }> {
+  if (scored.length === 0) {
+    for (const selection of patchPrompts) selection.resolve({});
+    return {};
+  }
+
+  const winner = scored[0];
+  const runnerUp = scored[1];
+  if (!patchConfig?.enabled || !runnerUp || acOverlap(winner, runnerUp) >= (patchConfig.overlapThreshold ?? 0.8)) {
+    for (const selection of patchPrompts) selection.resolve({});
+    return { winnerOutput: winner.proposal.output };
+  }
+
+  const prompt = await runPatchStep(selectorCtx, winner, runnerUp, patchConfig.maxDeltas ?? 5);
+  const winnerIndex = proposalOrder.indexOf(winner.proposal);
+  for (let index = 0; index < patchPrompts.length; index++) {
+    patchPrompts[index].resolve(
+      index === winnerIndex ? { patchPrompt: buildPlanPatchPrompt(prompt, outputPaths[index] ?? "") } : {},
+    );
+  }
+  return { winnerOutput: winner.proposal.output };
 }
 
 /** Rewrite every userStory.routing.complexity to "expert" in a PRD JSON string. */
@@ -152,140 +147,4 @@ export function rewriteComplexitiesToExpert(prdJson: string): string {
   } catch {
     return prdJson;
   }
-}
-
-/** Close all non-null handles, swallowing errors. */
-export async function closePlanSessions(
-  handles: Array<SessionHandle | null>,
-  sessionManager: ISessionManager,
-): Promise<void> {
-  for (const handle of handles) {
-    if (handle) {
-      try {
-        await sessionManager.closeSession(handle);
-      } catch {
-        // Ignore close errors
-      }
-    }
-  }
-}
-
-/** Build a SuccessfulProposal from a stateful turn result. */
-export function makeStatefulProposal(
-  debater: ResolvedDebater["debater"],
-  agentName: string,
-  output: string,
-  handle: SessionHandle,
-): SuccessfulProposal {
-  return { debater, agentName, output, cost: 0, handle };
-}
-
-export interface RebuttalLoopResult {
-  rebuttals: Rebuttal[];
-  costUsd: number;
-}
-
-export async function runRebuttalLoop(
-  ctx: HybridCtx,
-  proposals: SuccessfulProposal[],
-  builder: DebatePromptBuilder,
-  sessionRolePrefix: `debate-${string}`,
-): Promise<RebuttalLoopResult> {
-  const logger = _debateSessionDeps.getSafeLogger();
-  const config = ctx.stageConfig;
-  const rebuttals: Rebuttal[] = [];
-  let costUsd = 0;
-  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
-  if (!agentManager) {
-    return { rebuttals: [], costUsd: 0 };
-  }
-
-  const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
-  const sessionManager = ctx.sessionManager;
-
-  const internalHandles: Array<SessionHandle | null> = [];
-  for (let i = 0; i < proposals.length; i++) {
-    const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}` as SessionRole;
-    if (proposal.handle) {
-      internalHandles.push(null);
-    } else if (sessionManager) {
-      const modelTier = modelTierFromDebater(proposal.debater);
-      const model = { agent: proposal.debater.agent, model: proposal.debater.model ?? modelTier };
-      const modelDef = resolveModelDefForDebater(
-        proposal.debater,
-        model,
-        ctx.config.models,
-        resolveDefaultAgent(ctx.config),
-      );
-      const name = sessionManager.nameFor({
-        workdir: ctx.workdir,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-        role: sessionRole,
-      });
-      const handle = await sessionManager.openSession(name, {
-        agentName: proposal.agentName,
-        role: sessionRole,
-        workdir: ctx.workdir,
-        pipelineStage: pipelineStageForDebate(ctx.stage),
-        modelDef,
-        timeoutSeconds: ctx.timeoutSeconds,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-        signal: ctx.abortSignal,
-      });
-      internalHandles.push(handle);
-    } else {
-      internalHandles.push(null);
-    }
-  }
-
-  try {
-    for (let round = 1; round <= config.rounds; round++) {
-      const priorRebuttals = rebuttals.filter((r) => r.round < round);
-
-      for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
-        const proposal = proposals[debaterIdx];
-        const effectiveHandle = proposal.handle ?? internalHandles[debaterIdx];
-        if (!effectiveHandle) continue;
-
-        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
-          storyId: ctx.storyId,
-          round,
-          debaterIndex: debaterIdx,
-        });
-
-        const rebuttalPrompt = builder.buildRebuttalPrompt(debaterIdx, proposalList, priorRebuttals);
-
-        try {
-          const turnResult = await agentManager.runAsSession(proposal.agentName, effectiveHandle, rebuttalPrompt, {
-            storyId: ctx.storyId,
-            pipelineStage: pipelineStageForDebate(ctx.stage),
-          });
-          costUsd += turnResult.estimatedCostUsd ?? 0;
-          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
-        } catch (err) {
-          logger?.warn("debate", "debate:rebuttal-failed", {
-            storyId: ctx.storyId,
-            round,
-            debaterIndex: debaterIdx,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
-  } finally {
-    for (const handle of internalHandles) {
-      if (handle && sessionManager) {
-        try {
-          await sessionManager.closeSession(handle);
-        } catch {
-          // ignore close errors
-        }
-      }
-    }
-  }
-
-  return { rebuttals, costUsd };
 }

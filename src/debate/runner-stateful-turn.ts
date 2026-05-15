@@ -27,6 +27,5 @@ export async function runStatefulTurn(
     agentName,
     output: turnResult.output,
     cost: turnResult.estimatedCostUsd ?? 0,
-    handle,
   };
 }

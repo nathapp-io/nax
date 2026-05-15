@@ -34,8 +34,6 @@ export interface SuccessfulProposal {
   /** Cost for this complete() call in USD. */
   cost: number;
   roleKey?: string;
-  /** Caller-managed session handle for stateful turns (ADR-019 §4). */
-  handle?: import("../agents/types").SessionHandle;
 }
 
 export interface ResolveOutcome {
