@@ -9,7 +9,7 @@ export type {
 } from "./types";
 export type { InteractionHandler } from "./interaction-handler";
 export { NO_OP_INTERACTION_HANDLER } from "./interaction-handler";
-export { CompleteError, SessionFailureError } from "./types";
+export { CompleteError, SessionFailureError, SessionTurnError } from "./types";
 export {
   AcpAgentAdapter,
   SpawnAcpClient,

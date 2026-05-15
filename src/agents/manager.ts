@@ -209,6 +209,7 @@ export class AgentManager implements IAgentManager {
     let hopsSoFar = 0;
     let rateLimitRetry = 0;
     let staleRetryAttempts = 0;
+    let adapterErrorRetries = 0;
     let currentBundle = request.bundle;
     let currentHopKind: import("./manager-types").HopKind = { kind: "primary" };
     let finalPrompt: string | undefined;
@@ -294,6 +295,31 @@ export class AgentManager implements IAgentManager {
           });
           currentHopKind = { kind: "stale-retry", attempt: staleRetryAttempts };
           continue;
+        }
+
+        // fail-adapter-error: same-agent retry when acpx signals retryable (e.g.
+        // QUEUE_DISCONNECTED_BEFORE_COMPLETION). Uses sessionErrorRetryableMaxRetries
+        // for retryable errors and sessionErrorMaxRetries for non-retryable ones.
+        // Uses stale-retry kind so the retry hop reuses the live handle if still cached,
+        // or reconnects via openSession(resume:true) on cache miss — same as fail-stale.
+        const isFailAdapterError = result.adapterFailure?.outcome === "fail-adapter-error";
+        if (isFailAdapterError && !request.signal?.aborted) {
+          const runConfig = request.runOptions.config ?? this._config;
+          const maxAdapterRetries = result.adapterFailure?.retriable
+            ? (runConfig.execution?.sessionErrorRetryableMaxRetries ?? 3)
+            : (runConfig.execution?.sessionErrorMaxRetries ?? 1);
+          if (adapterErrorRetries < maxAdapterRetries) {
+            adapterErrorRetries++;
+            logger?.warn("agent-manager", "fail-adapter-error: same-agent retry with fresh session", {
+              storyId: request.runOptions.storyId,
+              attempt: adapterErrorRetries,
+              maxAttempts: maxAdapterRetries,
+              retriable: result.adapterFailure?.retriable ?? false,
+              agent: currentAgent,
+            });
+            currentHopKind = { kind: "stale-retry", attempt: adapterErrorRetries };
+            continue;
+          }
         }
 
         // For fail-stale, treat hasBundle as true: session restarts don't require
