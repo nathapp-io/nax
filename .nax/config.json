@@ -70,7 +70,7 @@
   },
   "execution": {
     "permissionProfile": "unrestricted",
-    "sessionTimeoutSeconds": 3600,
+    "sessionTimeoutSeconds": 7200,
     "maxStoriesPerFeature": 15,
     "smartTestRunner": {
       "testFilePatterns": [

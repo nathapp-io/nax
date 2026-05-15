@@ -1,20 +1,20 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-15T07-32-36-247Z",
+    "id": "run-2026-05-15T08-12-56-678Z",
     "feature": "debate-callop-phase2-runners-cleanup",
-    "startedAt": "2026-05-15T07:32:36.247Z",
+    "startedAt": "2026-05-15T08:12:56.678Z",
     "status": "crashed",
     "dryRun": false,
-    "pid": 47824,
-    "crashedAt": "2026-05-15T08:04:33.725Z",
+    "pid": 59810,
+    "crashedAt": "2026-05-15T10:25:54.129Z",
     "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 4,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
     "pending": 2
   },
@@ -32,6 +32,6 @@
     "phase": "routing"
   },
   "iterations": 0,
-  "updatedAt": "2026-05-15T08:04:33.726Z",
-  "durationMs": 1917479
+  "updatedAt": "2026-05-15T10:25:54.129Z",
+  "durationMs": 7977451
 }
