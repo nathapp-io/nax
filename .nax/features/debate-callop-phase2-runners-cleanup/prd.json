@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase2-runners-cleanup",
   "branchName": "feat/debate-callop-phase2-runners-cleanup",
   "createdAt": "2026-05-15T00:00:00.000Z",
-  "updatedAt": "2026-05-15T07:32:36.440Z",
+  "updatedAt": "2026-05-15T07:56:59.324Z",
   "userStories": [
     {
       "id": "US-003",
@@ -32,8 +32,8 @@
         "operations"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 2,
       "escalations": [],
       "routing": {
@@ -94,7 +94,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/runner-hybrid.ts",
@@ -110,7 +112,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2473766d505b5d1986d8d908ce551e7c05c8f8ed"
     },
     {
       "id": "US-005",
