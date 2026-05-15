@@ -3,6 +3,7 @@ import type { DebateConfig } from "../config/selectors";
 import type { TurnResult } from "../agents/types";
 import type { SessionRole } from "../session/types";
 import type { Debater } from "../debate/types";
+import { _debateSessionDeps } from "../debate/session-helpers";
 import { raceAgainstAbort } from "../debate/utils";
 import type { RunOperation } from "./types";
 
@@ -30,25 +31,56 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
   session: { role: "debate-hybrid" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
-  async hopBody(_initialPrompt, ctx) {
-    // Proposal barriers are pre-resolved by the coordinator; await directly
-    // without racing against the abort signal so the send happens in fewer
-    // microtask hops and the barrier chain can be tested synchronously.
-    let priorPeerOutputs = await Promise.all(ctx.input.proposalBarriers.map((b) => b.promise));
-    let lastTurn!: TurnResult;
+  async hopBody(initialPrompt, ctx) {
+    const logger = _debateSessionDeps.getSafeLogger();
+    let totalCostUsd = 0;
+
+    const proposal = await ctx.send(initialPrompt);
+    totalCostUsd += proposal.estimatedCostUsd ?? 0;
+    ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
+
+    // Use allSettled so a failing peer does not cascade and abort this debater's
+    // rebuttal — the failed peer's output is replaced with an empty string.
+    const proposalSettled = await raceAgainstAbort(
+      Promise.allSettled(ctx.input.proposalBarriers.map((b) => b.promise)),
+      ctx.input.signal,
+      ctx.input.storyId,
+    );
+    let roundInputs = proposalSettled.map((r) => (r.status === "fulfilled" ? r.value : ""));
+
+    let lastTurn: TurnResult = proposal;
     for (let round = 1; round <= ctx.input.rounds; round++) {
-      const myRebut = await ctx.send(ctx.input.buildRebutPrompt(round, priorPeerOutputs));
-      ctx.input.rebutBarriers[round - 1][ctx.input.index].resolve(myRebut.output);
-      lastTurn = myRebut;
+      logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
+        storyId: ctx.input.storyId,
+        round,
+        debaterIndex: ctx.input.index,
+      });
+      try {
+        const myRebut = await ctx.send(ctx.input.buildRebutPrompt(round, roundInputs));
+        totalCostUsd += myRebut.estimatedCostUsd ?? 0;
+        ctx.input.rebutBarriers[round - 1][ctx.input.index].resolve(myRebut.output);
+        lastTurn = myRebut;
+      } catch (err) {
+        logger?.warn("debate", "debate:rebuttal-failed", {
+          storyId: ctx.input.storyId,
+          round,
+          debaterIndex: ctx.input.index,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        ctx.input.rebutBarriers[round - 1][ctx.input.index].reject(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+        return { ...proposal, output: `Agent "failed" during rebuttal`, estimatedCostUsd: totalCostUsd };
+      }
       if (round < ctx.input.rounds) {
-        priorPeerOutputs = await raceAgainstAbort(
+        roundInputs = await raceAgainstAbort(
           Promise.all(ctx.input.rebutBarriers[round - 1].map((b) => b.promise)),
           ctx.input.signal,
           ctx.input.storyId,
         );
       }
     }
-    return lastTurn;
+    return { ...lastTurn, estimatedCostUsd: totalCostUsd };
   },
   build(input, _ctx) {
     return {

@@ -2,7 +2,7 @@
  * runner-plan-helpers.ts
  *
  * Internal helpers for runPlan(): pre-phase invocation, stateful session lifecycle,
- * and tag-expert complexity rewrite.
+ * rebuttal loop, and tag-expert complexity rewrite.
  */
 
 import { resolveDefaultAgent } from "../agents";
@@ -12,8 +12,10 @@ import type { DebateConfig } from "../config/selectors";
 import type { CallContext } from "../operations/types";
 import type { SessionRole } from "../runtime/session-role";
 import type { ISessionManager } from "../session/types";
+import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
+import type { HybridCtx } from "./runner-hybrid";
 import {
   _debateSessionDeps,
   modelTierFromDebater,
@@ -21,7 +23,7 @@ import {
   resolveModelDefForDebater,
 } from "./session-helpers";
 import type { ResolvedDebater, SuccessfulProposal } from "./session-helpers";
-import type { DebateStageConfig } from "./types";
+import type { DebateStageConfig, Rebuttal } from "./types";
 import { resolvePostDebateVerifier } from "./verifiers";
 
 /** Injectable deps for testability — defined here to avoid circular imports with runner-plan. */
@@ -176,4 +178,114 @@ export function makeStatefulProposal(
   handle: SessionHandle,
 ): SuccessfulProposal {
   return { debater, agentName, output, cost: 0, handle };
+}
+
+export interface RebuttalLoopResult {
+  rebuttals: Rebuttal[];
+  costUsd: number;
+}
+
+export async function runRebuttalLoop(
+  ctx: HybridCtx,
+  proposals: SuccessfulProposal[],
+  builder: DebatePromptBuilder,
+  sessionRolePrefix: `debate-${string}`,
+): Promise<RebuttalLoopResult> {
+  const logger = _debateSessionDeps.getSafeLogger();
+  const config = ctx.stageConfig;
+  const rebuttals: Rebuttal[] = [];
+  let costUsd = 0;
+  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
+  if (!agentManager) {
+    return { rebuttals: [], costUsd: 0 };
+  }
+
+  const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
+  const sessionManager = ctx.sessionManager;
+
+  const internalHandles: Array<SessionHandle | null> = [];
+  for (let i = 0; i < proposals.length; i++) {
+    const proposal = proposals[i];
+    const sessionRole = `${sessionRolePrefix}-${i}` as SessionRole;
+    if (proposal.handle) {
+      internalHandles.push(null);
+    } else if (sessionManager) {
+      const modelTier = modelTierFromDebater(proposal.debater);
+      const model = { agent: proposal.debater.agent, model: proposal.debater.model ?? modelTier };
+      const modelDef = resolveModelDefForDebater(
+        proposal.debater,
+        model,
+        ctx.config.models,
+        resolveDefaultAgent(ctx.config),
+      );
+      const name = sessionManager.nameFor({
+        workdir: ctx.workdir,
+        featureName: ctx.featureName,
+        storyId: ctx.storyId,
+        role: sessionRole,
+      });
+      const handle = await sessionManager.openSession(name, {
+        agentName: proposal.agentName,
+        role: sessionRole,
+        workdir: ctx.workdir,
+        pipelineStage: pipelineStageForDebate(ctx.stage),
+        modelDef,
+        timeoutSeconds: ctx.timeoutSeconds,
+        featureName: ctx.featureName,
+        storyId: ctx.storyId,
+        signal: ctx.abortSignal,
+      });
+      internalHandles.push(handle);
+    } else {
+      internalHandles.push(null);
+    }
+  }
+
+  try {
+    for (let round = 1; round <= config.rounds; round++) {
+      const priorRebuttals = rebuttals.filter((r) => r.round < round);
+
+      for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
+        const proposal = proposals[debaterIdx];
+        const effectiveHandle = proposal.handle ?? internalHandles[debaterIdx];
+        if (!effectiveHandle) continue;
+
+        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
+          storyId: ctx.storyId,
+          round,
+          debaterIndex: debaterIdx,
+        });
+
+        const rebuttalPrompt = builder.buildRebuttalPrompt(debaterIdx, proposalList, priorRebuttals);
+
+        try {
+          const turnResult = await agentManager.runAsSession(proposal.agentName, effectiveHandle, rebuttalPrompt, {
+            storyId: ctx.storyId,
+            pipelineStage: pipelineStageForDebate(ctx.stage),
+          });
+          costUsd += turnResult.estimatedCostUsd ?? 0;
+          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
+        } catch (err) {
+          logger?.warn("debate", "debate:rebuttal-failed", {
+            storyId: ctx.storyId,
+            round,
+            debaterIndex: debaterIdx,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+  } finally {
+    for (const handle of internalHandles) {
+      if (handle && sessionManager) {
+        try {
+          await sessionManager.closeSession(handle);
+        } catch {
+          // ignore close errors
+        }
+      }
+    }
+  }
+
+  return { rebuttals, costUsd };
 }

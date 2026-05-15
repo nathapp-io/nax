@@ -131,9 +131,8 @@ describe("hybridDebaterOp", () => {
     });
   });
 
-  test("hopBody waits for proposal barriers, resolves the current round slot before the next round, and reuses settled round outputs", async () => {
+  test("hopBody sends proposal first, resolves own barrier with output, waits for peers, then sends rebuttals round by round", async () => {
     const op = getHybridDebaterOp();
-    const proposalSelf = defer<string>();
     const proposalPeer = defer<string>();
     const round1Self = defer<string>();
     const round1Peer = defer<string>();
@@ -152,6 +151,8 @@ describe("hybridDebaterOp", () => {
       originalRound2Resolve(value);
     };
 
+    // proposalSelf resolved by hopBody with the proposal output — test only owns proposalPeer
+    const proposalSelf = defer<string>();
     const input = makeInput({
       proposalBarriers: [proposalSelf, proposalPeer],
       rebutBarriers: [
@@ -170,20 +171,28 @@ describe("hybridDebaterOp", () => {
     });
 
     expect(hop).toBeDefined();
-    await Promise.resolve();
-    expect(sendCalls).toEqual([]);
+    // hopBody calls ctx.send("ignored") synchronously before the first await
+    expect(sendCalls).toEqual(["ignored"]);
 
-    proposalSelf.resolve("proposal-0");
+    // Let the proposal send complete and hopBody resolve its own barrier
+    await Promise.resolve();
+    await Promise.resolve();
+    // proposalSelf is now resolved with "rebut-1" by hopBody; waiting for proposalPeer
+    expect(sendCalls).toEqual(["ignored"]);
+
+    // Resolve the peer barrier — hopBody should proceed to round-1 rebuttal
     proposalPeer.resolve("proposal-1");
 
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    expect(sendCalls).toEqual(["round-1:proposal-0,proposal-1"]);
-    expect(settledSlots).toEqual(["rebut-1"]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1"]);
+    expect(settledSlots).toEqual(["rebut-2"]);
 
     await Promise.resolve();
-    expect(sendCalls).toEqual(["round-1:proposal-0,proposal-1"]);
+    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1"]);
 
     round1Peer.resolve("round-1-peer");
     await Promise.resolve();
@@ -193,18 +202,18 @@ describe("hybridDebaterOp", () => {
     await Promise.resolve();
 
     expect(sendCalls).toEqual([
-      "round-1:proposal-0,proposal-1",
-      "round-2:rebut-1,round-1-peer",
+      "ignored",
+      "round-1:rebut-1,proposal-1",
+      "round-2:rebut-2,round-1-peer",
     ]);
-    expect(settledSlots).toEqual(["rebut-1", "rebut-2"]);
+    expect(settledSlots).toEqual(["rebut-2", "rebut-3"]);
 
-    await expect(hop as Promise<{ readonly output: string }>).resolves.toEqual({ output: "rebut-2" });
+    await expect(hop as Promise<{ readonly output: string }>).resolves.toMatchObject({ output: "rebut-3" });
   });
 
   test("hopBody throws CALL_OP_ABORTED and stops before the next round when the signal aborts between rebuttal rounds", async () => {
     const op = getHybridDebaterOp();
     const controller = new AbortController();
-    const proposalSelf = defer<string>();
     const proposalPeer = defer<string>();
     const round1Self = defer<string>();
     const round1Peer = defer<string>();
@@ -212,6 +221,7 @@ describe("hybridDebaterOp", () => {
     const round2Peer = defer<string>();
     const sendCalls: string[] = [];
 
+    const proposalSelf = defer<string>();
     const input = makeInput({
       signal: controller.signal,
       proposalBarriers: [proposalSelf, proposalPeer],
@@ -229,7 +239,7 @@ describe("hybridDebaterOp", () => {
       }),
     });
 
-    proposalSelf.resolve("proposal-0");
+    // hopBody sends proposal synchronously; resolve peer barrier to unblock the wait
     proposalPeer.resolve("proposal-1");
     await Promise.resolve();
 
@@ -238,6 +248,7 @@ describe("hybridDebaterOp", () => {
 
     await expect(hop as Promise<{ readonly output: string }>).rejects.toBeInstanceOf(NaxError);
     await expect(hop as Promise<{ readonly output: string }>).rejects.toMatchObject({ code: "CALL_OP_ABORTED" });
-    expect(sendCalls).toEqual(["round-1:proposal-0|proposal-1"]);
+    // Only the proposal send fired; abort prevented the rebuttal send
+    expect(sendCalls).toEqual(["ignored"]);
   });
 });

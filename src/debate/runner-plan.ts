@@ -12,6 +12,7 @@ import { NaxError } from "../errors";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import type { HybridCtx } from "./runner-hybrid";
@@ -22,6 +23,7 @@ import {
   openPlanSessions,
   rewriteComplexitiesToExpert,
   runPrePhase,
+  runRebuttalLoop,
   runStatefulPlanTurn,
 } from "./runner-plan-helpers";
 import {
@@ -31,126 +33,15 @@ import {
   _debateSessionDeps,
   buildFailedResult,
   modelTierFromDebater,
-  pipelineStageForDebate,
   resolveModelDefForDebater,
   resolveOutcome,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
-import type { SessionRole } from "../runtime/session-role";
 import type { PostDebateVerifierContext } from "./verifiers";
 
 // Re-export so existing callers (plan.ts, tests) can continue to import from this module.
-export { _runPlanDeps } from "./runner-plan-helpers";
-
-export interface RebuttalLoopResult {
-  rebuttals: Rebuttal[];
-  costUsd: number;
-}
-
-export async function runRebuttalLoop(
-  ctx: HybridCtx,
-  proposals: SuccessfulProposal[],
-  builder: DebatePromptBuilder,
-  sessionRolePrefix: `debate-${string}`,
-): Promise<RebuttalLoopResult> {
-  const logger = _debateSessionDeps.getSafeLogger();
-  const config = ctx.stageConfig;
-  const rebuttals: Rebuttal[] = [];
-  let costUsd = 0;
-  const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
-  if (!agentManager) {
-    return { rebuttals: [], costUsd: 0 };
-  }
-
-  const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
-  const sessionManager = ctx.sessionManager;
-
-  const internalHandles: Array<import("../agents/types").SessionHandle | null> = [];
-  for (let i = 0; i < proposals.length; i++) {
-    const proposal = proposals[i];
-    const sessionRole = `${sessionRolePrefix}-${i}` as SessionRole;
-    if (proposal.handle) {
-      internalHandles.push(null);
-    } else if (sessionManager) {
-      const modelTier = modelTierFromDebater(proposal.debater);
-      const model = { agent: proposal.debater.agent, model: proposal.debater.model ?? modelTier };
-      const modelDef = resolveModelDefForDebater(
-        proposal.debater,
-        model,
-        ctx.config.models,
-        resolveDefaultAgent(ctx.config),
-      );
-      const name = sessionManager.nameFor({
-        workdir: ctx.workdir,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-        role: sessionRole,
-      });
-      const handle = await sessionManager.openSession(name, {
-        agentName: proposal.agentName,
-        role: sessionRole,
-        workdir: ctx.workdir,
-        pipelineStage: pipelineStageForDebate(ctx.stage),
-        modelDef,
-        timeoutSeconds: ctx.timeoutSeconds,
-        featureName: ctx.featureName,
-        storyId: ctx.storyId,
-        signal: ctx.abortSignal,
-      });
-      internalHandles.push(handle);
-    } else {
-      internalHandles.push(null);
-    }
-  }
-
-  try {
-    for (let round = 1; round <= config.rounds; round++) {
-      const priorRebuttals = rebuttals.filter((r) => r.round < round);
-
-      for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
-        const proposal = proposals[debaterIdx];
-        const effectiveHandle = proposal.handle ?? internalHandles[debaterIdx];
-        if (!effectiveHandle) continue;
-
-        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
-          storyId: ctx.storyId,
-          round,
-          debaterIndex: debaterIdx,
-        });
-
-        const rebuttalPrompt = builder.buildRebuttalPrompt(debaterIdx, proposalList, priorRebuttals);
-
-        try {
-          const turnResult = await agentManager.runAsSession(proposal.agentName, effectiveHandle, rebuttalPrompt, {
-            storyId: ctx.storyId,
-            pipelineStage: pipelineStageForDebate(ctx.stage),
-          });
-          costUsd += turnResult.estimatedCostUsd ?? 0;
-          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
-        } catch (err) {
-          logger?.warn("debate", "debate:rebuttal-failed", {
-            storyId: ctx.storyId,
-            round,
-            debaterIndex: debaterIdx,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
-  } finally {
-    for (const handle of internalHandles) {
-      if (handle && sessionManager) {
-        try {
-          await sessionManager.closeSession(handle);
-        } catch {
-          // ignore close errors
-        }
-      }
-    }
-  }
-
-  return { rebuttals, costUsd };
-}
+export { _runPlanDeps, runRebuttalLoop } from "./runner-plan-helpers";
+export type { RebuttalLoopResult } from "./runner-plan-helpers";
 
 interface PlanCtx extends DispatchContext {
   readonly storyId: string;
@@ -288,11 +179,11 @@ export async function runPlan(
           workdir: opts.workdir,
           featureName: opts.feature,
           storyId: ctx.storyId,
-          role: `debate-plan-${i}`,
+          role: `debate-plan-${i}` as SessionRole,
         });
         await sessionManager.runInSession(sessionName, debaterPrompt, {
           agentName,
-          role: `debate-plan-${i}`,
+          role: `debate-plan-${i}` as SessionRole,
           workdir: opts.workdir,
           pipelineStage: "plan",
           modelDef,

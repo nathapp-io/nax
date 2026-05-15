@@ -73,20 +73,22 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     () => resolved.map(() => Promise.withResolvers<string>()),
   );
 
-  // Cache proposal prompts so buildProposalPrompt is called once per debater.
+  // Build proposal prompts for the build() slot — barriers are NOT pre-resolved;
+  // each debater's hopBody resolves its own barrier after the proposal send.
   const proposalPrompts = resolved.map((_, i) => proposalBuilder.buildProposalPrompt(i));
-  for (let i = 0; i < resolved.length; i++) {
-    barrierStates[i].barrier.resolve(proposalPrompts[i]);
-  }
 
   const signal = resolveStatefulSignal(ctx);
   const failureError = new Error(`[debate] Hybrid debate aborted for story ${ctx.storyId}`);
+  let totalDebaterCostUsd = 0;
 
   const hybridSettled = await runStatefulBounded(
     resolved.map(({ debater, agentName }, index) => () => {
       const debaterCallCtx: CallContext = {
         ...createDebaterCallContext(ctx, agentName),
         sessionOverride: { role: `debate-hybrid-${index}` as SessionRole },
+        onCostAccumulated: (c: number) => {
+          totalDebaterCostUsd += c;
+        },
       };
       return callModule
         .callOp(debaterCallCtx, hybridDebaterOp, {
@@ -94,12 +96,13 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
           index,
           proposePrompt: proposalPrompts[index],
           buildRebutPrompt: (_round, peerOutputs) =>
-            proposalBuilder.buildCritiquePrompt(
+            proposalBuilder.buildRebuttalPrompt(
               index,
               peerOutputs.map((output, peerIdx) => ({
                 debater: resolved[peerIdx]?.debater ?? debater,
                 output,
               })),
+              [],
             ),
           proposalBarriers: barrierStates.map((s) => s.barrier),
           rebutBarriers,
@@ -165,56 +168,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       };
     }
 
-    if (resolved.length > 0) {
-      const { debater: fallbackDebater, agentName: fallbackAgentName } = resolved[0];
-      logger?.warn("debate", "debate:fallback", {
-        storyId: ctx.storyId,
-        stage: ctx.stage,
-        reason: "all debaters failed — retrying with first adapter",
-      });
-      try {
-        const fbBarrierState = createProposalBarrier();
-        fbBarrierState.barrier.resolve(proposalBuilder.buildProposalPrompt(0));
-        const fbRebutBarriers: PromiseWithResolvers<string>[][] = Array.from(
-          { length: ctx.stageConfig.rounds },
-          () => [Promise.withResolvers<string>()],
-        );
-        const fbCallCtx: CallContext = {
-          ...createDebaterCallContext(ctx, fallbackAgentName),
-          sessionOverride: { role: "debate-hybrid-0" as SessionRole },
-        };
-        const fbResult = await callModule.callOp(fbCallCtx, hybridDebaterOp, {
-          debater: fallbackDebater,
-          index: 0,
-          proposePrompt: proposalBuilder.buildProposalPrompt(0),
-          buildRebutPrompt: (_round, peerOutputs) =>
-            proposalBuilder.buildCritiquePrompt(
-              0,
-              peerOutputs.map((output) => ({ debater: fallbackDebater, output })),
-            ),
-          proposalBarriers: [fbBarrierState.barrier],
-          rebutBarriers: fbRebutBarriers,
-          signal,
-          storyId: ctx.storyId,
-          rounds: ctx.stageConfig.rounds,
-        } satisfies DebateHybridInput);
-        if (fbResult.success) {
-          return {
-            storyId: ctx.storyId,
-            stage: ctx.stage,
-            outcome: "passed",
-            rounds: 1,
-            debaters: [fallbackDebater.agent],
-            resolverType: ctx.stageConfig.resolver.type,
-            proposals: [{ debater: fallbackDebater, output: fbResult.rebut }],
-            totalCostUsd: 0,
-          };
-        }
-      } catch {
-        // Fallback also failed — fall through to buildFailedResult
-      }
-    }
-
     return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
@@ -259,6 +212,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     resolverType: ctx.stageConfig.resolver.type,
     proposals: successfulProposals,
     rebuttals,
-    totalCostUsd: resolveResult.resolverCostUsd,
+    totalCostUsd: totalDebaterCostUsd + resolveResult.resolverCostUsd,
   };
 }
