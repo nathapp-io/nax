@@ -4,6 +4,7 @@
  * runHybrid() implementation for DebateRunner — callOp/barrier pattern.
  */
 
+import type { DebateConfig } from "../config/selectors";
 import * as callModule from "../operations/call";
 import { type DebateHybridInput, hybridDebaterOp } from "../operations/debate-hybrid";
 import type { CallContext } from "../operations/types";
@@ -18,7 +19,6 @@ import {
   resolveStatefulSignal,
   runStatefulBounded,
 } from "./runner-stateful-helpers";
-import type { DebateConfig } from "../config/selectors";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -68,9 +68,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   );
 
   const barrierStates = resolved.map(() => createProposalBarrier());
-  const rebutBarriers: PromiseWithResolvers<string>[][] = Array.from(
-    { length: ctx.stageConfig.rounds },
-    () => resolved.map(() => Promise.withResolvers<string>()),
+  const rebutBarriers: PromiseWithResolvers<string>[][] = Array.from({ length: ctx.stageConfig.rounds }, () =>
+    resolved.map(() => Promise.withResolvers<string>()),
   );
 
   // Build proposal prompts for the build() slot — barriers are NOT pre-resolved;
@@ -140,7 +139,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   }
 
   // Propagate hard failures (callOp threw) rather than silently falling back.
-  const firstRejected = hybridSettled.find(r => r.status === "rejected") as PromiseRejectedResult | undefined;
+  const firstRejected = hybridSettled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
   if (firstRejected) throw firstRejected.reason as Error;
 
   const successfulProposals = hybridSettled.flatMap((result, index) =>

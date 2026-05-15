@@ -1,10 +1,10 @@
+import type { TurnResult } from "../agents/types";
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import type { TurnResult } from "../agents/types";
-import type { SessionRole } from "../session/types";
-import type { Debater } from "../debate/types";
 import { _debateSessionDeps } from "../debate/session-helpers";
+import type { Debater } from "../debate/types";
 import { raceAgainstAbort } from "../debate/utils";
+import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
 export interface DebateHybridInput {
@@ -67,9 +67,7 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
           debaterIndex: ctx.input.index,
           error: err instanceof Error ? err.message : String(err),
         });
-        ctx.input.rebutBarriers[round - 1][ctx.input.index].reject(
-          err instanceof Error ? err : new Error(String(err)),
-        );
+        ctx.input.rebutBarriers[round - 1][ctx.input.index].reject(err instanceof Error ? err : new Error(String(err)));
         return { ...proposal, output: `Agent "failed" during rebuttal`, estimatedCostUsd: totalCostUsd };
       }
       if (round < ctx.input.rounds) {
