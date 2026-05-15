@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase2-runners-cleanup",
   "branchName": "feat/debate-callop-phase2-runners-cleanup",
   "createdAt": "2026-05-15T00:00:00.000Z",
-  "updatedAt": "2026-05-15T07:18:23.717Z",
+  "updatedAt": "2026-05-15T07:29:03.945Z",
   "userStories": [
     {
       "id": "US-003",
@@ -32,9 +32,9 @@
         "operations"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 1,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "expert",
@@ -60,7 +60,8 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
-      "storyGitRef": "783d729da51e5484fb995ae3cfec08388efdcf04"
+      "storyGitRef": "783d729da51e5484fb995ae3cfec08388efdcf04",
+      "failureStage": "execution"
     },
     {
       "id": "US-004",
