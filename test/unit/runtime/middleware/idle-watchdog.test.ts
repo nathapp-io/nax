@@ -138,6 +138,7 @@ describe("attachAgentIdleWatchdog", () => {
   let tmpDir: string;
   let eventBus: IAgentStreamEventBus;
   let controllerRegistry: Map<string, CancelCallback>;
+  let currentUnsubscribe: (() => void) | undefined;
 
   beforeEach(() => {
     tmpDir = makeTempDir("nax-test-idle-watchdog-");
@@ -145,12 +146,22 @@ describe("attachAgentIdleWatchdog", () => {
     initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
     eventBus = new AgentStreamEventBus();
     controllerRegistry = new Map();
+    currentUnsubscribe = undefined;
   });
 
   afterEach(async () => {
-    await getLogger().flush();
-    resetLogger();
-    cleanupTempDir(tmpDir);
+    try {
+      if (currentUnsubscribe) currentUnsubscribe();
+    } catch {
+      /* best-effort — unsubscribe itself threw */
+    }
+    currentUnsubscribe = undefined;
+    try {
+      await getLogger().flush();
+      resetLogger();
+    } finally {
+      cleanupTempDir(tmpDir);
+    }
   });
 
   // AC1: message_update activity resets lastActivityAt
@@ -165,7 +176,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-1" }));
 
@@ -176,8 +187,6 @@ describe("attachAgentIdleWatchdog", () => {
 
     // Just verify that no error occurs and the event is processed
     expect(controllerRegistry.size).toBe(0); // observe mode doesn't register controllers
-
-    unsubscribe();
   });
 
   // AC2: thinking_update activity resets lastActivityAt
@@ -192,7 +201,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-2" }));
     await new Promise((r) => setTimeout(r, 50));
@@ -200,8 +209,6 @@ describe("attachAgentIdleWatchdog", () => {
     await getLogger().flush();
 
     expect(controllerRegistry.size).toBe(0);
-
-    unsubscribe();
   });
 
   // AC3: usage_update activity resets lastActivityAt
@@ -216,7 +223,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-3" }));
     await new Promise((r) => setTimeout(r, 50));
@@ -224,8 +231,6 @@ describe("attachAgentIdleWatchdog", () => {
     await getLogger().flush();
 
     expect(controllerRegistry.size).toBe(0);
-
-    unsubscribe();
   });
 
   // AC4: process_update does NOT reset lastActivityAt
@@ -240,7 +245,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-4" }));
 
@@ -259,7 +264,7 @@ describe("attachAgentIdleWatchdog", () => {
     expect(warnEntry).toBeDefined();
     expect(warnEntry?.data?.callId).toBe("call-4");
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC5: observe mode logs warning but does NOT invoke cancellation
@@ -279,7 +284,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-5" }));
 
@@ -294,7 +299,7 @@ describe("attachAgentIdleWatchdog", () => {
     expect(warnEntry?.data?.mode).toBe("observe");
     expect(cancelWasCalled).toBe(false);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC6: warn-then-cancel mode waits grace period and cancels if still idle
@@ -315,7 +320,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-6" }));
 
@@ -331,7 +336,7 @@ describe("attachAgentIdleWatchdog", () => {
     // The cancel should eventually be called after grace period
     expect(cancelWasCalled).toBe(true);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC6b: warn-then-cancel aborts cancellation if activity arrives during grace period
@@ -352,7 +357,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-6b" }));
 
@@ -369,7 +374,7 @@ describe("attachAgentIdleWatchdog", () => {
     // Cancel should NOT have been called because activity reset the timer
     expect(cancelWasCalled).toBe(false);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC7: cancel mode cancels immediately at threshold without grace period
@@ -394,7 +399,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-7" }));
 
@@ -407,7 +412,7 @@ describe("attachAgentIdleWatchdog", () => {
     const elapsedMs = cancelTime - startTime;
     expect(elapsedMs).toBeLessThan(500); // Should be around 200-300ms
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC8: call_ended event deletes all state and timers
@@ -422,7 +427,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-8" }));
 
@@ -440,7 +445,7 @@ describe("attachAgentIdleWatchdog", () => {
     // After call_ended, there should be no cancellation attempts
     expect(cancelEntries.length).toBe(0);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC9: maxRetryAttempts prevents infinite retries
@@ -456,7 +461,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-9" }));
 
@@ -470,7 +475,7 @@ describe("attachAgentIdleWatchdog", () => {
     expect(terminalFailure).toBeDefined();
     expect(terminalFailure?.level).toBe("error");
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // AC10: config validation rejects idleTimeoutSeconds <= 0 when mode is not 'off'
@@ -508,13 +513,13 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-unsub" }));
 
     // Unsubscribe before timeout
     await new Promise((r) => setTimeout(r, 100));
-    unsubscribe();
+    currentUnsubscribe();
 
     // Wait for what would have been the timeout
     await new Promise((r) => setTimeout(r, 300));
@@ -535,7 +540,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-disabled" }));
 
@@ -544,8 +549,6 @@ describe("attachAgentIdleWatchdog", () => {
 
     // No timers should be active when disabled
     expect(controllerRegistry.size).toBe(0);
-
-    unsubscribe();
   });
 
   test("handles multiple concurrent calls", async () => {
@@ -567,7 +570,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     // Start two calls
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-10a" }));
@@ -589,7 +592,7 @@ describe("attachAgentIdleWatchdog", () => {
     expect(cancelCalls).toContain("call-10b");
     expect(cancelCalls).not.toContain("call-10a");
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // Suggested criteria: mode 'off' should not create timers or state
@@ -609,7 +612,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-mode-off" }));
 
@@ -620,7 +623,7 @@ describe("attachAgentIdleWatchdog", () => {
     // No cancellation should occur when mode is 'off'
     expect(cancelWasCalled).toBe(false);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // Suggested criteria: cancelGraceSeconds of 0 in warn-then-cancel mode
@@ -641,7 +644,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-zero-grace" }));
 
@@ -656,7 +659,7 @@ describe("attachAgentIdleWatchdog", () => {
     const warnEntry = entries.find((e) => e.level === "warn" && e.data?.key === "idle_timeout_exceeded");
     expect(warnEntry?.data?.mode).toBe("warn-then-cancel");
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // Suggested criteria: cancellation function throwing should be handled gracefully
@@ -683,7 +686,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     // Start two calls
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-throwing" }));
@@ -703,7 +706,7 @@ describe("attachAgentIdleWatchdog", () => {
     const warningCount = entries.filter((e) => e.level === "warn").length;
     expect(warningCount).toBeGreaterThan(0);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 
   // Suggested criteria: multiple cancel attempts for same call
@@ -728,7 +731,7 @@ describe("attachAgentIdleWatchdog", () => {
       },
     });
 
-    const unsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
+    currentUnsubscribe = attachAgentIdleWatchdog(eventBus, controllerRegistry, config);
 
     eventBus.emitAgentStream(makeCallStartedEvent({ callId: "call-retry-a" }));
     await new Promise((r) => setTimeout(r, 50));
@@ -742,6 +745,6 @@ describe("attachAgentIdleWatchdog", () => {
     expect(cancelAttempts["call-retry-a"]).toBeGreaterThan(0);
     expect(cancelAttempts["call-retry-b"]).toBeGreaterThan(0);
 
-    unsubscribe();
+    currentUnsubscribe();
   });
 });
