@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-15T06-37-20-682Z",
+    "feature": "debate-callop-phase2-runners-cleanup",
+    "startedAt": "2026-05-15T06:37:20.682Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 25728
+  },
+  "progress": {
+    "total": 4,
+    "passed": 0,
+    "failed": 0,
+    "paused": 1,
+    "blocked": 0,
+    "pending": 3
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 1,
+  "updatedAt": "2026-05-15T07:06:13.545Z",
+  "durationMs": 1732863,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-15T07:06:12.798Z"
+    }
+  }
+}
