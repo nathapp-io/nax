@@ -4,8 +4,8 @@
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
-import { ConfiguredModelSchema, ModelTierSchema } from "@/config";
 import { z } from "zod";
+import { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
 
 export const PlanConfigSchema = z.object({
   model: ConfiguredModelSchema,
