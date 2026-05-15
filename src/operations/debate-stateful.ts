@@ -1,7 +1,7 @@
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
-import { raceAgainstAbort } from "../debate/utils";
 import type { Debater } from "../debate/types";
+import { raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
@@ -13,6 +13,7 @@ export interface DebateStatefulInput {
   readonly proposalBarriers: PromiseWithResolvers<string>[];
   readonly signal: AbortSignal;
   readonly storyId: string;
+  readonly skipRebuttal?: boolean;
 }
 
 export interface DebateStatefulOutput {
@@ -30,6 +31,9 @@ export const statefulDebaterOp: RunOperation<DebateStatefulInput, DebateStateful
   async hopBody(initialPrompt, ctx) {
     const proposal = await ctx.send(initialPrompt);
     ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
+    if (ctx.input.skipRebuttal) {
+      return proposal;
+    }
 
     const peerProposals = await raceAgainstAbort(
       Promise.all(ctx.input.proposalBarriers.map((barrier) => barrier.promise)),

@@ -13,7 +13,7 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../runtime/session-role";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
-import { runStatefulTurn } from "./runner-stateful";
+import { runStatefulTurn } from "./runner-stateful-turn";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
