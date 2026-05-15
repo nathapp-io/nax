@@ -43,31 +43,6 @@ const NEGATIVE_PATH_TOKENS = [
   "exit code 1",
 ];
 
-const OBSERVABLE_TOKENS = [
-  "stdout",
-  "stderr",
-  "exit_code",
-  "exit code",
-  "returns",
-  "raises",
-  "contains",
-  "equals",
-  "matches",
-  "exists",
-  "written",
-  "overwrites",
-  "renders",
-  "calls",
-  "verified",
-  "invokes",
-  "refreshes",
-  "instantiates",
-  "loads",
-  "parses",
-  "re-constructs",
-  "reconstructs",
-];
-
 function hasToken(text: string, tokens: readonly string[]): boolean {
   const lower = text.toLowerCase();
   return tokens.some((token) => lower.includes(token));
@@ -78,14 +53,6 @@ function validateRefinedStory(story: UserStory): void {
     throw new NaxError(
       `[plan-refine verify] ${story.id} is missing a negative-path acceptance criterion`,
       "PLAN_REFINE_VERIFY_MISSING_NEGATIVE_PATH",
-      { stage: "plan", storyId: story.id },
-    );
-  }
-
-  if (!story.acceptanceCriteria.every((ac) => hasToken(ac, OBSERVABLE_TOKENS))) {
-    throw new NaxError(
-      `[plan-refine verify] ${story.id} has at least one acceptance criterion that is not observably testable`,
-      "PLAN_REFINE_VERIFY_NON_OBSERVABLE_AC",
       { stage: "plan", storyId: story.id },
     );
   }
@@ -197,7 +164,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     const content = await ctx.readFile(input.outputPath);
     if (!content) return null;
     try {
-      return validateRefinedPrd(validatePlanOutput(content, input.featureName, input.branchName));
+      return validatePlanOutput(content, input.featureName, input.branchName);
     } catch {
       return null;
     }
