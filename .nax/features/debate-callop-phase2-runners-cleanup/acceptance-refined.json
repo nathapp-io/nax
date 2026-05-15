@@ -1,0 +1,373 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "statefulDebaterOp is exported from src/operations/index.ts with kind: \"run\", name: \"debate-stateful\", stage: \"review\", session: { role: \"debate-stateful\", lifetime: \"fresh\" }, config: debateConfigSelector",
+    "refined": "statefulDebaterOp is importable from src/operations/index.ts and has properties: kind === \"run\", name === \"debate-stateful\", stage === \"review\", session.role === \"debate-stateful\", session.lifetime === \"fresh\", config === debateConfigSelector",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-2",
+    "original": "statefulDebaterOp.model(input) returns { agent: input.debater.agent, model: input.debater.model ?? \"fast\" }",
+    "refined": "Calling statefulDebaterOp.model(input) with input.debater = { agent: \"claude\", model: undefined } returns { agent: \"claude\", model: \"fast\" }; with input.debater = { agent: \"claude\", model: \"balanced\" } returns { agent: \"claude\", model: \"balanced\" }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-3",
+    "original": "statefulDebaterOp.hopBody(initial, ctx) calls ctx.send exactly twice in the round-0 + round-1 success path: once with initial (the propose prompt), once with the rebut prompt built from peer proposals",
+    "refined": "Mocking ctx.send in hopBody execution and observing call count: on successful path without abort, ctx.send is invoked exactly 2 times with the first call argument being initial and the second call argument derived from buildRebutPrompt",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-4",
+    "original": "statefulDebaterOp.hopBody resolves ctx.input.proposalBarriers[ctx.input.index] with the round-0 TurnResult.output before awaiting peer barriers",
+    "refined": "After ctx.send completes the propose round, proposalBarriers[input.index].promise resolves with the output from the first ctx.send call, and this resolution occurs before any await on the peer barriers Promise.all",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-5",
+    "original": "statefulDebaterOp.hopBody awaits Promise.all(proposalBarriers.map(b => b.promise)) raced against runtime.signal abort; when runtime.signal.aborted === true, it throws NaxError with code CALL_OP_ABORTED and does not send round 1",
+    "refined": "When signal.aborted is set to true before the peer barrier await completes, hopBody throws a NaxError with code === \"CALL_OP_ABORTED\" and ctx.send is not called a second time",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-6",
+    "original": "statefulDebaterOp.parse(output, input, _ctx) returns an object with success: boolean and rebut: string; success is false when output starts with Agent \" (the error prefix set by buildHopCallback's catch path), allowing the coordinator to detect silent agent failures without relying on callOp throwing",
+    "refined": "Calling parse(output) with output === 'Agent \"foo\" failed' returns { success: false, rebut: 'Agent \"foo\" failed' }; calling parse(output) with output === 'Here is my rebuttal' returns { success: true, rebut: 'Here is my rebuttal' }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-7",
+    "original": "runStateful(ctx, prompt) launches N parallel callOp(ctx.callContext, statefulDebaterOp, …) invocations where N = resolvedDebaters.length",
+    "refined": "Mocking callOp and observing invocations: runStateful with resolvedDebaters.length === 3 results in exactly 3 parallel callOp invocations, each passed statefulDebaterOp and a DebateStatefulInput matching the debater at that index",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-8",
+    "original": "runStateful(ctx, prompt) bounds concurrent execution by ctx.callContext.runtime.configLoader.current().debate?.maxConcurrentDebaters ?? 2 (read from full config, not the slice)",
+    "refined": "Instrumenting Promise callbacks: with maxConcurrentDebaters === 2 and 5 debaters, no more than 2 callOp invocations are in-flight simultaneously; when one resolves, the next queued invocation begins",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When any single callOp invocation throws (abort / no-output) OR returns a result with success: false, runStateful rejects all peer proposalBarriers that have not yet resolved (preventing peer deadlock)",
+    "refined": "Mocking callOp to throw or return { success: false } for debater 1 while debaters 0 and 2 are waiting on proposalBarriers: all unresolved proposalBarriers are rejected with a NaxError, causing waiting debaters to throw and not deadlock",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-10",
+    "original": "runStateful(ctx, prompt) returns a DebateResult whose proposals, rebuttals, debaters, outcome, and totalCostUsd fields match the shape produced by the pre-refactor implementation for the same inputs",
+    "refined": "Executing runStateful and comparing the returned DebateResult: result has shape { proposals: string[], rebuttals: string[], debaters: Debater[], outcome: string, totalCostUsd: number } and for a given set of debaters and prompt, the shape and field types match the pre-refactor output",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-11",
+    "original": "raceAgainstAbort is exported from src/debate/utils.ts and re-exported from src/debate/index.ts; it has signature <T>(promise: Promise<T>, signal: AbortSignal, storyId: string | undefined) => Promise<T> and throws NaxError(\"CALL_OP_ABORTED\") on abort",
+    "refined": "raceAgainstAbort is importable from both src/debate/utils.ts and src/debate/index.ts; calling raceAgainstAbort(Promise.resolve(42), nonAbortedSignal) returns Promise<42>; calling raceAgainstAbort(Promise.resolve(42), abortedSignal) throws NaxError with code === \"CALL_OP_ABORTED\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-12",
+    "original": "runStateful's coordinator builds proposePrompt and rebuttal prompts via DebatePromptBuilder — no multi-line prompt strings assembled inline",
+    "refined": "Grepping src/debate/runner-stateful.ts for regex /[`'\"].*\\n.*[`'\"]/ or pattern templateLiteral in function runStateful: zero matches found; all prompt strings originate from DebatePromptBuilder method calls",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "src/debate/runner-stateful.ts contains no references to sessionManager.openSession, sessionManager.closeSession, agentManager.runAsSession, resolveModelDefForDebater, or ctx.config.models",
+    "refined": "Grepping src/debate/runner-stateful.ts for each of (sessionManager\\.openSession|sessionManager\\.closeSession|agentManager\\.runAsSession|resolveModelDefForDebater|ctx\\.config\\.models): zero matches found",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "The refactored runner-stateful.ts contains no property access on ctx.config.models or DebateConfig[\"models\"]",
+    "refined": "Grepping src/debate/runner-stateful.ts for regex (ctx\\.config\\.models|DebateConfig\\[.*models.*\\]): zero matches found",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "`hybridDebaterOp` is exported from `src/operations/index.ts` with `kind: \"run\"`, `name: \"debate-hybrid\"`, `stage: \"review\"`, `session: { role: \"debate-hybrid\", lifetime: \"fresh\" }`, `config: debateConfigSelector`",
+    "refined": "`hybridDebaterOp` is exported from `src/operations/index.ts` and when imported, `hybridDebaterOp.kind === \"run\"` && `hybridDebaterOp.name === \"debate-hybrid\"` && `hybridDebaterOp.stage === \"review\"` && `hybridDebaterOp.session.role === \"debate-hybrid\"` && `hybridDebaterOp.session.lifetime === \"fresh\"` && `hybridDebaterOp.config === debateConfigSelector`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-16",
+    "original": "`hybridDebaterOp.hopBody` performs the N-round rebuttal loop with one `ctx.send` per round and only awaits peer-barrier settlement after the current round has resolved its own slot (avoiding round-start deadlock)",
+    "refined": "When `hybridDebaterOp.hopBody` executes with N rebuttal rounds: exactly N `ctx.send()` calls are made, each round's current debater barrier is resolved before awaiting the next round's peer-barrier promises, and no peer-barrier promise is awaited before the current round's send resolves",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-17",
+    "original": "`hybridDebaterOp.hopBody` resolves the current round's barrier with each turn's output before awaiting the next round's peer barriers",
+    "refined": "For each round 1 through N in `hybridDebaterOp.hopBody`, the current debater's rebuttal barrier is resolved with the output of that round's `ctx.send()` call before any `Promise.all()` call awaiting peer barriers for the next round",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-18",
+    "original": "`runHybrid(ctx, prompt)` launches `N` parallel `callOp(ctx.callContext, hybridDebaterOp, …)` invocations",
+    "refined": "`runHybrid(ctx, prompt)` calls `callOp()` exactly N times (once per debater) with `hybridDebaterOp` as the operation argument, and all N invocations are initiated before awaiting any result",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When any single `callOp` invocation throws OR returns a result with `success: false`, `runHybrid` rejects all unresolved peer barriers across all rounds",
+    "refined": "When any of the N parallel `callOp()` invocations throws an error or returns `{ success: false, … }`, `runHybrid` calls `.reject()` on all barriers in `rebutBarriers[round][debaterIndex]` that have not yet been resolved, across all rounds from 1 to N",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When `hybridDebaterOp.hopBody` receives an abort signal between rebuttal rounds, it throws `NaxError` with code `CALL_OP_ABORTED` without sending further turns",
+    "refined": "When `ctx.input.signal.aborted === true` is checked between rebuttal rounds in `hybridDebaterOp.hopBody`, a `NaxError` is thrown with `.code === \"CALL_OP_ABORTED\"` and no additional `ctx.send()` calls are made after the signal is detected",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "`runHybrid(ctx, prompt)` returns a `DebateResult` whose shape matches the pre-refactor implementation for the same inputs",
+    "refined": "The return value of `runHybrid(ctx, prompt)` is an object with properties `participants: array`, `rounds: array`, and `proposals: object` matching the pre-refactor `DebateResult` type definition",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "`runHybrid`'s coordinator builds prompts via `DebatePromptBuilder` — no multi-line prompt strings assembled inline",
+    "refined": "In `src/debate/runner-hybrid.ts`, all calls to `ctx.input.buildRebutPrompt()` or other prompt-building functions use methods from `DebatePromptBuilder` (accessed via import and method calls), and no prompt string is constructed using template literals or string concatenation within `runHybrid`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "`src/debate/runner-hybrid.ts` contains no references to `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, or `ctx.config.models`",
+    "refined": "A grep search for the identifiers `sessionManager\\.openSession`, `sessionManager\\.closeSession`, `agentManager\\.runAsSession`, `resolveModelDefForDebater`, and `ctx\\.config\\.models` returns zero matches in `src/debate/runner-hybrid.ts`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "`planDebaterOp` is exported from `src/operations/index.ts` with `kind: \"run\"`, `name: \"debate-plan\"`, `stage: \"plan\"`, `session: { role: \"debate-plan\", lifetime: \"fresh\" }`, `config: debateConfigSelector`",
+    "refined": "Verify that `src/operations/index.ts` exports a named export `planDebaterOp` as a `RunOperation<DebatePlanInput, DebatePlanOutput, DebateConfig>` with properties: `kind === \"run\"`, `name === \"debate-plan\"`, `stage === \"plan\"`, `session.role === \"debate-plan\"`, `session.lifetime === \"fresh\"`, and `config === debateConfigSelector`",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-25",
+    "original": "`planDebaterOp.hopBody` accepts `selectionSignal: Promise<{ patchPrompt?: string }>` on `input` plus a coordinator-owned rebuttal-stage signal/barrier used to publish the pre-patch rebuttal output",
+    "refined": "Verify that `DebatePlanInput` interface includes properties `selectionSignal: Promise<{ patchPrompt?: string }>` and a rebuttal-stage barrier/signal property (e.g., `rebuttalBarrier: PromiseWithResolvers<string>` or equivalent) that can resolve the pre-patch rebut output",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-26",
+    "original": "After sending the rebut turn, `planDebaterOp.hopBody` resolves the rebuttal-stage signal/barrier with the rebuttal output, then awaits `selectionSignal` raced against `runtime.signal` abort",
+    "refined": "In unit tests, mock `ctx.send()` to return a rebut TurnResult, verify the rebuttal-stage barrier is resolved with that output immediately after the rebut turn, verify `selectionSignal` is awaited using `raceAgainstAbort(selectionSignal, runtime.signal, storyId)` or equivalent pattern",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When `selectionSignal` resolves with `{ patchPrompt }` where `patchPrompt` is a non-empty string, `planDebaterOp.hopBody` calls `ctx.send(patchPrompt)` exactly once and returns that turn's `TurnResult`",
+    "refined": "In a unit test, resolve the mocked `selectionSignal` with `{ patchPrompt: \"test prompt\" }`, verify `ctx.send()` is called exactly once with that exact prompt string, and verify the hopBody return value equals the TurnResult from that send call",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When `selectionSignal` resolves with `{}` or `{ patchPrompt: undefined }`, `planDebaterOp.hopBody` returns the rebut `TurnResult` without an extra send",
+    "refined": "In unit tests, resolve the mocked `selectionSignal` with `{}` and separately with `{ patchPrompt: undefined }`, verify `ctx.send()` is not called after the rebut turn, and verify hopBody returns the rebut TurnResult as-is",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "`runPlan(ctx, taskContext, outputFormat, opts)` constructs N `PromiseWithResolvers<{ patchPrompt?: string }>` plus N coordinator-owned rebuttal-stage barriers/signals and launches N parallel `callOp(ctx.callContext, planDebaterOp, …)` invocations",
+    "refined": "Verify that `runPlan` creates exactly N `PromiseWithResolvers<{ patchPrompt?: string }>` objects (one per debater) and N rebuttal-stage barrier objects, then launches exactly N concurrent `callOp(ctx.callContext, planDebaterOp, input)` calls passing these signals/barriers in the input",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "After all rebuttal-stage barriers/signals settle (without waiting for full `callOp` completion), `runPlan` runs scoring (delegating to the existing verifier-pick scoring helpers) and when patch is enabled in `stageConfig.selector` (kind `\"verifier-pick\"`) and runner-up overlap < `overlapThreshold`, resolves the winner's signal with `{ patchPrompt }` and losers' signals with `{}`",
+    "refined": "Verify that `runPlan` awaits `Promise.all(rebuttalBarriers)` without waiting for full `callOp` completion, calls existing scoring helpers from `verifier-pick.ts` (e.g., `extractManifestFromContext`, `computeScore`, `acOverlap`), and when `stageConfig.selector.kind === \"verifier-pick\"` and `winner.score - runnerUp.score > overlapThreshold`, resolves winner's `selectionSignal` with `{ patchPrompt: \"...\" }` and losers' with `{}`",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When patch is disabled or overlap >= threshold, `runPlan` resolves all signals with `{}`",
+    "refined": "Verify that when `stageConfig.selector.kind !== \"verifier-pick\"` or patch is disabled or `winner.score - runnerUp.score <= overlapThreshold`, all N `selectionSignal` promises are resolved with `{}`",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When the winner's patch turn fails (`ctx.send` for patch prompt throws), `runPlan` returns a `DebateResult` using the pre-patch rebut output captured from the rebuttal-stage barrier as the winner contribution (no re-throw, no undefined result)",
+    "refined": "In a unit test, mock `ctx.send()` to throw for the patch prompt, verify `runPlan` catches the error, uses the pre-patch rebut output stored in the rebuttal-stage barrier as the winner's contribution, and returns a valid `DebateResult` without re-throwing",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "`runPatchStep` in `verifier-pick.ts` does not call `agentManager.runAsSession`",
+    "refined": "Verify that the string `agentManager.runAsSession` does not appear in the `runPatchStep` function definition in `verifier-pick.ts`, and no calls to session-opening methods occur in that function",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "`runPatchStep` in `verifier-pick.ts` returns `Promise<string>` and only builds/returns the patch prompt",
+    "refined": "Verify that `runPatchStep` has signature `(…): Promise<string>` and the function body only assembles and returns a prompt string without dispatching to any agent or session APIs",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "`verifierPickSelector` no longer dispatches patch turns internally via `runPatchStep`",
+    "refined": "Verify that `verifierPickSelector` does not call `runPatchStep` and does not call `callOp`, `agentManager.complete`, or `sessionManager.openSession` for patch turns",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-36",
+    "original": "`SuccessfulProposal` interface in `src/debate/session-helpers.ts` no longer declares a `handle` field",
+    "refined": "Verify that the `SuccessfulProposal` type definition in `src/debate/session-helpers.ts` does not include `handle?: SessionHandle` or any similar session handle property",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-37",
+    "original": "`verifier-pick.ts` does not throw `NaxError` with code `VERIFIER_PICK_NO_HANDLE`",
+    "refined": "Verify that the string literal `\"VERIFIER_PICK_NO_HANDLE\"` does not appear in `verifier-pick.ts` and no code path throws a `NaxError` with that error code",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-38",
+    "original": "`runPlan`'s coordinator builds prompts via `DebatePromptBuilder` — no multi-line prompt strings assembled inline",
+    "refined": "Verify that all proposal and rebut prompts sent to debaters are constructed by calling methods on `DebatePromptBuilder` (e.g., `builder.buildProposalPrompt()`, `builder.buildRebutPrompt()`), and no template literals or string concatenation appears inline in `runPlan` for assembling multi-line prompts",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-39",
+    "original": "`runPlan` preserves the existing pre-debate phase, selector dispatch, hybrid/stateful plan behavior, and post-debate verifier flows while moving per-debater session lifecycle into `callOp`/`hopBody`",
+    "refined": "Verify that `runPlan` maintains the same input setup, selector dispatch logic, and verifier flow as the current implementation, with the difference that per-debater session lifecycle (open, send, close) is now encapsulated in `planDebaterOp.hopBody` instead of being managed by `runPlan` directly",
+    "testable": false,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-40",
+    "original": "`src/debate/runner-plan.ts` and `src/debate/runner-plan-helpers.ts` contain no references to `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, or `ctx.config.models`",
+    "refined": "Verify that the strings `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, and `ctx.config.models` do not appear in `src/debate/runner-plan.ts` or `src/debate/runner-plan-helpers.ts`",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-41",
+    "original": "src/debate/session-helpers.ts no longer exports `resolveDebaterModel`",
+    "refined": "Grep for 'export.*resolveDebaterModel' in src/debate/session-helpers.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-42",
+    "original": "src/debate/session-helpers.ts no longer exports `resolveModelDefForDebater`",
+    "refined": "Grep for 'export.*resolveModelDefForDebater' in src/debate/session-helpers.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-43",
+    "original": "src/debate/session-helpers.ts no longer exports `runComplete`",
+    "refined": "Grep for 'export.*runComplete' in src/debate/session-helpers.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-44",
+    "original": "src/debate/session-helpers.ts does not import `resolveConfiguredModel` or `resolveModelForAgent`",
+    "refined": "Grep for 'import.*\\b(resolveConfiguredModel|resolveModelForAgent)\\b' in src/debate/session-helpers.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-45",
+    "original": "src/debate/session-helpers.ts contains no references to `ModelsConfig` or `ModelDef` types",
+    "refined": "Grep for '\\b(ModelsConfig|ModelDef)\\b' in src/debate/session-helpers.ts (excluding comments) returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-46",
+    "original": "src/debate/index.ts no longer re-exports the deleted symbols (`resolveDebaterModel`, `resolveModelDefForDebater`, `runComplete`)",
+    "refined": "Grep for 'export.*\\b(resolveDebaterModel|resolveModelDefForDebater|runComplete)\\b' in src/debate/index.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Importing `resolveDebaterModel`, `resolveModelDefForDebater`, or `runComplete` from `@/debate` fails TypeScript compilation",
+    "refined": "bun run typecheck succeeds; adding 'import { resolveDebaterModel } from \"@/debate\"' causes typecheck to fail with an error indicating the symbol does not exist",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-48",
+    "original": "`debateConfigSelector` in `src/config/selectors.ts` equals `pickSelector(\"debate\", \"debate\", \"agent\")` (no `\"models\"` argument)",
+    "refined": "Line 44 in src/config/selectors.ts matches regex 'export const debateConfigSelector = pickSelector\\(\"debate\", \"debate\", \"agent\"\\)' (whitespace-insensitive)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-49",
+    "original": "`DebateConfig` derived type has exactly the keys `\"debate\" | \"agent\"` (verified at compile time via a type-assertion test or `satisfies` check)",
+    "refined": "A compile-time type assertion exists in test code that verifies DebateConfig has exactly keys 'debate' and 'agent' (e.g., type-level Expect or satisfies check); bun run typecheck confirms the assertion compiles",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-50",
+    "original": "No file under `src/debate/` references `config.models`, `ctx.config.models`, or `DebateConfig[\"models\"]`",
+    "refined": "Grep for '(config|ctx\\.config|DebateConfig)\\[\"?models\"?\\]' in src/debate/ directory returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-51",
+    "original": "Test fixtures and helpers that previously constructed a `DebateConfig` literal with a `models` field are updated to drop that field",
+    "refined": "Grep for 'DebateConfig.*models:' or similar object literal pattern in test files returns zero matches; all DebateConfig literals in test/ contain only 'debate' and 'agent' keys",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-52",
+    "original": "`test/unit/debate/runner-events.test.ts` does not contain any `describe`/`test` block exercising `resolveDebaterModel`",
+    "refined": "Grep for 'describe|test.*resolveDebaterModel' in test/unit/debate/runner-events.test.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-53",
+    "original": "`.claude/rules/adapter-wiring.md` session role registry: `\"debate-stateful\"`, `\"debate-hybrid\"`, `\"debate-plan\"` are moved from the `agentManager.runAsSession` row to the `callOp` run-kind row; the `debate-${string}` template-literal carve-out in the sanctioned-consumers prose is updated to note Phase 2 landing",
+    "refined": ".claude/rules/adapter-wiring.md session role registry table no longer lists 'debate-stateful', 'debate-hybrid', 'debate-plan' in agentManager.runAsSession row; these entries appear in callOp run-kind row; prose section on sanctioned consumers contains a note mentioning Phase 2 landing adjacent to the debate-${string} carve-out description",
+    "testable": true,
+    "storyId": "US-006"
+  }
+]
