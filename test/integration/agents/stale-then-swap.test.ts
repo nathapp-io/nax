@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AgentManager, SessionFailureError } from "@/agents";
+import { AgentManager, SessionFailureError, SessionTurnError } from "@/agents";
 import { buildHopCallback, _buildHopCallbackDeps } from "@/operations";
 import type { SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ContextBundle } from "@/context/engine";
@@ -214,5 +214,132 @@ describe("stale-then-swap — full runWithFallback loop", () => {
     expect(agents).toEqual(["claude", "claude", "codex"]);
     expect(outcome.result.success).toBe(true);
     expect(outcome.finalAgent).toBe("codex");
+  });
+});
+
+describe("fail-adapter-error retry — QUEUE_DISCONNECTED_BEFORE_COMPLETION (#1027 follow-up)", () => {
+  // Config: sessionErrorRetryableMaxRetries=2, no fallback agents so retries exhaust cleanly
+  function makeAdapterErrorConfig(retryableMax = 2, nonRetryableMax = 1) {
+    return makeNaxConfig({
+      execution: { sessionErrorRetryableMaxRetries: retryableMax, sessionErrorMaxRetries: nonRetryableMax },
+      agent: {
+        default: "claude",
+        fallback: { enabled: false, map: {}, maxHopsPerStory: 0, onQualityFailure: false, rebuildContext: false },
+      },
+    });
+  }
+
+  test("retryable fail-adapter-error retries up to sessionErrorRetryableMaxRetries then succeeds", async () => {
+    const config = makeAdapterErrorConfig(2);
+    const manager = new AgentManager(config);
+
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const sessionMgr = makeSessionManager({ openSession });
+
+    let callCount = 0;
+    const runAsSessionFn = mock(async () => {
+      callCount++;
+      if (callCount <= 2) throw new SessionTurnError("Queue owner disconnected", false, true);
+      return STUB_TURN;
+    });
+
+    const hopCtx = {
+      sessionManager: sessionMgr,
+      agentManager: makeMockAgentManager({ runAsSessionFn }),
+      story: makeStory({ id: "US-1027" }),
+      config,
+      featureName: "adapter-error-retry",
+      workdir: "/tmp",
+      effectiveTier: "balanced" as const,
+      defaultAgent: "claude",
+      pipelineStage: "run" as const,
+    };
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027" } as any);
+    const outcome = await manager.runWithFallback({
+      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027", config } as any,
+      bundle: STUB_BUNDLE,
+      executeHop: hopCb,
+    });
+
+    // 2 retryable failures + 1 success = 3 total calls
+    expect(callCount).toBe(3);
+    expect(outcome.result.success).toBe(true);
+  });
+
+  test("retryable fail-adapter-error exhausted → result is failure (no swap when fallback disabled)", async () => {
+    const config = makeAdapterErrorConfig(2);
+    const manager = new AgentManager(config);
+
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const sessionMgr = makeSessionManager({ openSession });
+
+    let callCount = 0;
+    const runAsSessionFn = mock(async () => {
+      callCount++;
+      throw new SessionTurnError("Queue owner disconnected", false, true);
+    });
+
+    const hopCtx = {
+      sessionManager: sessionMgr,
+      agentManager: makeMockAgentManager({ runAsSessionFn }),
+      story: makeStory({ id: "US-1027b" }),
+      config,
+      featureName: "adapter-error-retry-exhaust",
+      workdir: "/tmp",
+      effectiveTier: "balanced" as const,
+      defaultAgent: "claude",
+      pipelineStage: "run" as const,
+    };
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027b" } as any);
+    const outcome = await manager.runWithFallback({
+      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027b", config } as any,
+      bundle: STUB_BUNDLE,
+      executeHop: hopCb,
+    });
+
+    // 1 primary + 2 retries = 3 total calls (sessionErrorRetryableMaxRetries=2)
+    expect(callCount).toBe(3);
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.adapterFailure?.outcome).toBe("fail-adapter-error");
+    expect(outcome.result.adapterFailure?.retriable).toBe(true);
+  });
+
+  test("retry reuses live handle (stale-retry style): getLiveHandle called, openSession called once (primary only)", async () => {
+    const config = makeAdapterErrorConfig(1);
+    const manager = new AgentManager(config);
+
+    const openSession = mock(async () => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const getLiveHandle = mock((_name: string) => ({ id: "ses_01", agentName: "claude" } as SessionHandle));
+    const sessionMgr = makeSessionManager({ openSession, getLiveHandle });
+
+    let callCount = 0;
+    const runAsSessionFn = mock(async () => {
+      callCount++;
+      if (callCount === 1) throw new SessionTurnError("Queue owner disconnected", false, true);
+      return STUB_TURN;
+    });
+
+    const hopCtx = {
+      sessionManager: sessionMgr,
+      agentManager: makeMockAgentManager({ runAsSessionFn }),
+      story: makeStory({ id: "US-1027c" }),
+      config,
+      featureName: "adapter-error-fresh-session",
+      workdir: "/tmp",
+      effectiveTier: "balanced" as const,
+      defaultAgent: "claude",
+      pipelineStage: "run" as const,
+    };
+    const hopCb = buildHopCallback(hopCtx, undefined, { ...STUB_RUN_OPTIONS, storyId: "US-1027c" } as any);
+    await manager.runWithFallback({
+      runOptions: { ...STUB_RUN_OPTIONS, storyId: "US-1027c", config } as any,
+      bundle: STUB_BUNDLE,
+      executeHop: hopCb,
+    });
+
+    // openSession called once (primary only); retry uses getLiveHandle (stale-retry kind)
+    expect(openSession).toHaveBeenCalledTimes(1);
+    expect(getLiveHandle).toHaveBeenCalledTimes(1);
+    expect(callCount).toBe(2);
   });
 });
