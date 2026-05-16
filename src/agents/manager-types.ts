@@ -118,6 +118,10 @@ export interface RunAsSessionOpts {
   contextPullTools?: import("../context/engine").ToolDescriptor[];
   /** Server-side runtime for resolving context-engine pull tool calls. */
   contextToolRuntime?: { callTool(name: string, input: unknown): Promise<string> };
+  /** Per-callOp invocation id forwarded to dispatch events. */
+  readonly callId?: string;
+  /** Caller-supplied region id forwarded to dispatch events. */
+  readonly scopeId?: string;
 }
 
 export interface IAgentManager {

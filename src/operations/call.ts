@@ -27,6 +27,14 @@ export const _callOpDeps = {
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
 const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
 
+/**
+ * Generates a per-invocation correlation id (≤16 chars, /^[0-9a-z]+-[0-9a-z]+$/).
+ * Exported for unit-testing uniqueness and format guarantees.
+ */
+export function newCorrelationId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function normalizeRunOutcome(outcome: AgentRunOutcome): AgentRunOutcome {
   return outcome;
 }
@@ -111,6 +119,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const sections = composeSections(op.build(input, buildCtx));
   const prompt = join(sections);
   const timeoutMs = resolveTimeoutMs(op, input, buildCtx);
+  // Stamp a fresh callId per invocation; preserve caller-supplied one (AC7).
+  const callId = ctx.callId ?? newCorrelationId();
 
   const config = ctx.runtime.configLoader.current();
   const defaultAgent = ctx.runtime.agentManager.getDefault();
@@ -140,6 +150,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
       storyId: ctx.storyId,
       workdir: ctx.packageDir,
       featureName: ctx.featureName,
+      callId,
+      ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
       ...(sessionRole !== undefined ? { sessionRole } : {}),
       ...(sessionName !== undefined ? { sessionName } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -239,6 +251,8 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     sessionRole,
     featureName: ctx.featureName,
     storyId: ctx.storyId,
+    callId,
+    ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
     ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
     ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),
   };

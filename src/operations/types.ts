@@ -54,6 +54,10 @@ export interface CallContext {
    * resolver selectors) that need to surface cost alongside the op result.
    */
   readonly onCostAccumulated?: (costUsd: number) => void;
+  /** Optional region id forwarded onto every dispatch event the op produces. */
+  readonly scopeId?: string;
+  /** Optional pinned callId. callOp generates a fresh one when absent. */
+  readonly callId?: string;
 }
 
 interface OperationBase<I, O, C> {
