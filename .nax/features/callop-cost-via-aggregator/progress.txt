@@ -1,1 +1,2 @@
 [2026-05-16T11:35:16.361Z] US-001 — PASSED — Normalize exactCostUsd — make required, fall back to estimatedCostUsd — Cost: $0.4166
+[2026-05-16T11:59:05.554Z] US-002 — PASSED — Add callId + scopeId to dispatch event base; stamp and forward at callOp — Cost: $2.3516
