@@ -22,7 +22,7 @@ export type DebaterPersona = "challenger" | "pragmatist" | "completionist" | "se
 export interface Debater {
   /** Agent name (e.g. 'claude', 'opencode') */
   agent: string;
-  /** Optional model override — resolved from config.models.fast at runtime when absent */
+  /** Optional model override — defaults to the "fast" tier when absent */
   model?: string;
   /** Optional analytical persona — injected as a ## Your Role block in the prompt */
   persona?: DebaterPersona;

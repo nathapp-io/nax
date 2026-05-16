@@ -134,13 +134,14 @@ export async function runPlan(
     const rebuttalBarriers = resolved.map(() => Promise.withResolvers<string>());
     const proposalBarriers = resolved.map(() => Promise.withResolvers<string>());
 
+    const rebutBuilder = new DebatePromptBuilder(
+      { taskContext, outputFormat: "", stage: "plan" },
+      { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
+    );
+
     // Launch N callOp invocations without awaiting them (AC6)
     const callOpPromises = resolved.map(({ debater, agentName }, index) => {
       const debaterCtx: CallContext = { ...ctx.callContext, agentName };
-      const rebutBuilder = new DebatePromptBuilder(
-        { taskContext, outputFormat: "", stage: "plan" },
-        { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
-      );
       return callModule.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
@@ -231,14 +232,15 @@ export async function runPlan(
     const proposalBarriers = resolved.map(() => Promise.withResolvers<string>());
     const rebuttalBarriers = resolved.map(() => Promise.withResolvers<string>());
 
+    const rebutBuilder = new DebatePromptBuilder(
+      { taskContext, outputFormat: "", stage: "plan" },
+      { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
+    );
+
     // Launch all N debaters concurrently — shared proposalBarriers require all
     // debaters to be in-flight simultaneously (same constraint as hybrid runner).
     const callOpPromisesB = resolved.map(({ debater, agentName }, index) => {
       const debaterCtx: CallContext = { ...ctx.callContext, agentName };
-      const rebutBuilder = new DebatePromptBuilder(
-        { taskContext, outputFormat: "", stage: "plan" },
-        { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
-      );
       return callModule.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
