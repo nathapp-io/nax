@@ -5,11 +5,13 @@
  */
 
 import type { DebateConfig } from "../config/selectors";
+import type { DebatePlanOutput } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
 import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
 import { type ScoredProposal, acOverlap, runPatchStep } from "./selectors/verifier-pick";
+import type { ResolvedDebater } from "./session-helpers";
 import { _debateSessionDeps } from "./session-helpers";
 import type { DebateStageConfig } from "./types";
 import { resolvePostDebateVerifier } from "./verifiers";
@@ -111,7 +113,7 @@ export async function finalizePlanSelection(
   outputPaths: string[],
   proposalOrder: Array<{ readonly output: string }>,
   selectorCtx: Parameters<typeof runPatchStep>[0],
-): Promise<{ winnerOutput?: string }> {
+): Promise<{ winnerOutput?: string; winnerOutputPath?: string }> {
   if (scored.length === 0) {
     for (const selection of patchPrompts) selection.resolve({});
     return {};
@@ -119,19 +121,66 @@ export async function finalizePlanSelection(
 
   const winner = scored[0];
   const runnerUp = scored[1];
+  const winnerIndex = proposalOrder.indexOf(winner.proposal);
+  const winnerOutputPath = outputPaths[winnerIndex >= 0 ? winnerIndex : 0];
+
   if (!patchConfig?.enabled || !runnerUp || acOverlap(winner, runnerUp) >= (patchConfig.overlapThreshold ?? 0.8)) {
     for (const selection of patchPrompts) selection.resolve({});
-    return { winnerOutput: winner.proposal.output };
+    return { winnerOutput: winner.proposal.output, winnerOutputPath };
   }
 
   const prompt = await runPatchStep(selectorCtx, winner, runnerUp, patchConfig.maxDeltas ?? 5);
-  const winnerIndex = proposalOrder.indexOf(winner.proposal);
   for (let index = 0; index < patchPrompts.length; index++) {
     patchPrompts[index].resolve(
       index === winnerIndex ? { patchPrompt: buildPlanPatchPrompt(prompt, outputPaths[index] ?? "") } : {},
     );
   }
-  return { winnerOutput: winner.proposal.output };
+  return { winnerOutput: winner.proposal.output, winnerOutputPath };
+}
+
+export interface SettledPlanProposal {
+  readonly debater: ResolvedDebater["debater"];
+  readonly agentName: string;
+  readonly output: string;
+}
+
+export function buildFinalizedProposals(
+  resolved: ResolvedDebater[],
+  planSettled: PromiseSettledResult<DebatePlanOutput>[],
+  rebuttalSettled: PromiseSettledResult<string>[],
+): SettledPlanProposal[] {
+  return planSettled.flatMap((result, index) => {
+    if (result.status !== "fulfilled" || !result.value.success) {
+      return rebuttalSettled[index]?.status === "fulfilled"
+        ? [
+            {
+              debater: resolved[index].debater,
+              agentName: resolved[index].agentName,
+              output: rebuttalSettled[index].value,
+            },
+          ]
+        : [];
+    }
+    return [
+      {
+        debater: resolved[index].debater,
+        agentName: resolved[index].agentName,
+        output: result.value.patched ?? result.value.rebut,
+      },
+    ];
+  });
+}
+
+export async function readWinnerOutput(
+  winnerOutputPath: string | undefined,
+  fallbackOutput: string | undefined,
+): Promise<string | undefined> {
+  if (fallbackOutput === undefined || !winnerOutputPath) return fallbackOutput;
+  try {
+    return await _debateSessionDeps.readFile(winnerOutputPath);
+  } catch {
+    return fallbackOutput;
+  }
 }
 
 /** Rewrite every userStory.routing.complexity to "expert" in a PRD JSON string. */

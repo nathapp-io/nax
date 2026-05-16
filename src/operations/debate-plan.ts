@@ -16,6 +16,8 @@ export interface DebatePlanInput {
   readonly signal: AbortSignal;
   readonly storyId: string;
   readonly outputPath: string;
+  /** When explicitly false, skip the rebuttal send and resolve the rebuttal barrier with the proposal output. Default: true (rebuttal runs). */
+  readonly includeHybridRebuttals?: boolean;
 }
 
 export interface DebatePlanOutput {
@@ -35,6 +37,17 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
   async hopBody(initialPrompt, ctx) {
     const proposal = await ctx.send(initialPrompt);
     ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
+
+    if (ctx.input.includeHybridRebuttals === false) {
+      ctx.input.rebuttalBarrier.resolve(proposal.output);
+      const decision = await raceAgainstAbort(ctx.input.selectionSignal, ctx.input.signal, ctx.input.storyId);
+      if (!decision.patchPrompt) return proposal;
+      try {
+        return await ctx.send(decision.patchPrompt);
+      } catch {
+        return proposal;
+      }
+    }
 
     const peerProposals = await raceAgainstAbort(
       Promise.all(ctx.input.proposalBarriers.map((barrier) => barrier.promise)),

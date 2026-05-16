@@ -1,9 +1,3 @@
-/**
- * runner-plan.ts
- *
- * runPlan() implementation for DebateRunner.
- */
-
 import { join } from "node:path";
 import type { DebateConfig } from "../config/selectors";
 import * as callModule from "../operations/call";
@@ -14,16 +8,19 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { resolvePersonas } from "./personas";
 import {
   _runPlanDeps,
+  buildFinalizedProposals,
   buildPlanProposalPrompt,
   buildPlanRebuttalPrompt,
   buildPlanSynthesisSuffix,
   finalizePlanSelection,
+  readWinnerOutput,
   rewriteComplexitiesToExpert,
   runPrePhase,
 } from "./runner-plan-helpers";
 import {
   buildResolverContext,
   createDebaterCallContext,
+  createOneShotDebaterCallContext,
   createProposalBarrier,
   rejectUnresolvedBarriers,
   resolveStatefulSignal,
@@ -53,12 +50,6 @@ interface PlanCtx extends DispatchContext {
   readonly resolverContextInput?: import("./session-helpers").ResolverContextInput;
 }
 
-interface SettledPlanProposal {
-  readonly debater: ResolvedDebater["debater"];
-  readonly agentName: string;
-  readonly output: string;
-}
-
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;
 
 // Re-export so existing callers (plan.ts, tests) can continue to import from this module.
@@ -80,10 +71,11 @@ export async function runPlan(
 ): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
+  const sessionManager = ctx.callContext.runtime.sessionManager;
   const rawDebaters = config.debaters ?? [];
   const debaters = resolvePersonas(rawDebaters, "plan", config.autoPersona ?? false);
   const agentManager = ctx.agentManager ?? _debateSessionDeps.agentManager;
-  if (!agentManager) {
+  if (!agentManager || !sessionManager) {
     return buildFailedResult(ctx.storyId, ctx.stage, config, 0);
   }
 
@@ -152,11 +144,29 @@ export async function runPlan(
   const signal = resolveStatefulSignal(coordinatorCtx);
   const failureError = new Error(`[debate] Plan debate aborted for story ${ctx.storyId}`);
   const debaterCosts = new Array<number>(resolved.length).fill(0);
+  const useStatefulSessions = config.sessionMode === "stateful";
+  const includeHybridRebuttals = useStatefulSessions && config.mode === "hybrid";
+
+  if (config.mode === "hybrid" && !useStatefulSessions) {
+    logger?.warn("debate", "hybrid mode requires stateful sessions — falling back to panel (no rebuttal)", {
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+    });
+  }
 
   const planSettledPromise = runStatefulBounded(
     resolved.map(({ debater, agentName }, index) => () => {
+      const baseDebaterCallCtx: CallContext = useStatefulSessions
+        ? {
+            ...createDebaterCallContext(coordinatorCtx, agentName),
+            sessionOverride: { role: `debate-plan-${index}` as import("../session/types").SessionRole },
+          }
+        : {
+            ...createOneShotDebaterCallContext(coordinatorCtx, agentName),
+            sessionOverride: { role: `debate-plan-${index}` as import("../session/types").SessionRole },
+          };
       const debaterCallCtx: CallContext = {
-        ...createDebaterCallContext(coordinatorCtx, agentName),
+        ...baseDebaterCallCtx,
         onCostAccumulated: (costUsd) => {
           debaterCosts[index] += costUsd;
         },
@@ -182,6 +192,7 @@ export async function runPlan(
           signal,
           storyId: ctx.storyId,
           outputPath: outputPaths[index],
+          includeHybridRebuttals,
         } satisfies DebatePlanInput)
         .then(
           (result) => {
@@ -290,26 +301,7 @@ export async function runPlan(
     throw firstRejected.reason as Error;
   }
 
-  const finalizedProposals: SettledPlanProposal[] = planSettled.flatMap((result, index) => {
-    if (result.status !== "fulfilled" || !result.value.success) {
-      return rebuttalSettled[index]?.status === "fulfilled"
-        ? [
-            {
-              debater: resolved[index].debater,
-              agentName: resolved[index].agentName,
-              output: rebuttalSettled[index].value,
-            },
-          ]
-        : [];
-    }
-    return [
-      {
-        debater: resolved[index].debater,
-        agentName: resolved[index].agentName,
-        output: result.value.patched ?? result.value.rebut,
-      },
-    ];
-  });
+  const finalizedProposals = buildFinalizedProposals(resolved, planSettled, rebuttalSettled);
 
   const proposalOutputs = finalizedProposals.map((proposal) => proposal.output);
   const critiques = rebuttalOutputs.map((proposal) => proposal.output);
@@ -348,7 +340,10 @@ export async function runPlan(
         );
 
   let finalOutcome = outcome.outcome;
-  let winningOutput = outcome.output ?? finalizedProposals[0]?.output;
+  let winningOutput: string | undefined = outcome.output ?? finalizedProposals[0]?.output;
+
+  winningOutput = await readWinnerOutput(selectionSummary.winnerOutputPath ?? outputPaths[0], winningOutput);
+
   if (config.postDebateVerifier && winningOutput) {
     const verifierCtx: PostDebateVerifierContext = {
       storyId: ctx.storyId,
@@ -389,5 +384,14 @@ export async function runPlan(
     proposals,
     output: winningOutput,
     totalCostUsd,
+    ...(includeHybridRebuttals
+      ? {
+          rebuttals: rebuttalOutputs.map((proposal) => ({
+            debater: proposal.debater,
+            round: 1,
+            output: proposal.output,
+          })),
+        }
+      : {}),
   };
 }
