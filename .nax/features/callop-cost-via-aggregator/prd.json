@@ -3,7 +3,7 @@
   "feature": "callop-cost-via-aggregator",
   "branchName": "feat/callop-cost-via-aggregator",
   "createdAt": "2026-05-16T00:00:00.000Z",
-  "updatedAt": "2026-05-16T11:59:08.339Z",
+  "updatedAt": "2026-05-16T12:16:57.109Z",
   "userStories": [
     {
       "id": "US-001",
@@ -127,8 +127,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -187,7 +187,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/types.ts",
@@ -206,7 +208,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f613b90e838a2aa38db689f87243f36d9c83def6"
     },
     {
       "id": "US-005",
