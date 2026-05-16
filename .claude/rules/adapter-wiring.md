@@ -40,9 +40,8 @@ paths:
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-draft`, `plan-revise`, `plan-critic`, `plan-refine` | `callOp` run-kind |
+| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-draft`, `plan-revise`, `plan-critic`, `plan-refine`, `debate-stateful`, `debate-hybrid`, `debate-plan` | `callOp` run-kind |
 | `decompose`, `refine`, `fix-gen`, `auto`, `synthesis`, `judge` | `callOp` complete-kind |
-| `` debate-${string} `` | `agentManager.runAsSession` |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer
 
@@ -53,7 +52,7 @@ Everywhere else: go through `IAgentManager` / `ISessionManager`. Enforced by `te
 
 **Layer 3 (Manager API) is the intentional escape hatch for parallel fan-out and plugin contracts** — not a generic "behavior outside an Operation." Reach for it only when the dispatch shape cannot be expressed as a single `callOp` call. The only sanctioned `agentManager.completeAs` consumers are:
 
-- Debate fan-out (`src/debate/`) — parallel multi-agent debater invocations with dynamic agent names that preclude a static op config. (#855 Phase 1 has landed: resolver selectors — `synthesis` and `judge` — now dispatch via `callOp` complete-kind. Resolver session-role parity deferred to Phase 2.)
+- Debate fan-out (`src/debate/`) — parallel multi-agent debater invocations with dynamic agent names that preclude a static op config. (#855 Phase 1 + Phase 2 have landed: resolver selectors — `synthesis` and `judge` — dispatch via `callOp` complete-kind; debater session roles — `debate-stateful`, `debate-hybrid`, `debate-plan` — dispatch via `callOp` run-kind. The `` debate-${string} `` template-literal carve-out is retired; all debate roles now flow through `callOp`.)
 - `AgentManager`'s own internal dispatch (`src/agents/manager.ts`).
 
 New code goes through `callOp`. If you think you need Layer 3, check with the team first.

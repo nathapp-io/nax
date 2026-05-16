@@ -13,6 +13,7 @@ import {
   tddConfigSelector,
   testPatternConfigSelector,
 } from "../../../src/config/selectors";
+import type { DebateConfig } from "../../../src/config/selectors";
 
 describe("ConfigSelector — Phase 1 selectors", () => {
   describe("new selectors", () => {
@@ -76,12 +77,12 @@ describe("ConfigSelector — Phase 1 selectors", () => {
   });
 
   describe("widened selectors", () => {
-    test("debateConfigSelector now includes models and agent", () => {
+    test("debateConfigSelector includes only debate and agent (models removed in US-006 Phase D)", () => {
       const slice = debateConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("debate");
-      expect(slice).toHaveProperty("models");
       expect(slice).toHaveProperty("agent");
-      expect(Object.keys(slice).sort()).toEqual(["agent", "debate", "models"]);
+      expect(slice).not.toHaveProperty("models");
+      expect(Object.keys(slice).sort()).toEqual(["agent", "debate"]);
     });
 
     test("reviewConfigSelector now includes models, execution, project, quality, agent", () => {
@@ -151,10 +152,9 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(slice.review).toEqual(DEFAULT_CONFIG.review);
     });
 
-    test("debateConfigSelector preserves values", () => {
+    test("debateConfigSelector preserves debate and agent values (no models)", () => {
       const slice = debateConfigSelector.select(DEFAULT_CONFIG);
       expect(slice.debate).toEqual(DEFAULT_CONFIG.debate);
-      expect(slice.models).toEqual(DEFAULT_CONFIG.models);
       expect(slice.agent).toEqual(DEFAULT_CONFIG.agent);
     });
 
@@ -208,5 +208,21 @@ describe("ConfigSelector — Phase 1 selectors", () => {
     test("promptLoaderConfigSelector has correct name", () => {
       expect(promptLoaderConfigSelector.name).toBe("prompt-loader");
     });
+  });
+});
+
+// AC9: DebateConfig derived type has exactly "debate" | "agent" keys
+describe("DebateConfig type shape (AC9 — US-006 Phase D)", () => {
+  test("DebateConfig has exactly the keys 'debate' and 'agent' at runtime", () => {
+    const slice = debateConfigSelector.select(DEFAULT_CONFIG);
+    expect(Object.keys(slice).sort()).toEqual(["agent", "debate"]);
+  });
+
+  test("DebateConfig compile-time shape: 'models' is no longer a key", () => {
+    // Compile-time guard: this line fails tsc if DebateConfig still includes 'models'.
+    // Runtime assertion is also checked via the selector test above.
+    const slice: DebateConfig = debateConfigSelector.select(DEFAULT_CONFIG);
+    const keys = Object.keys(slice);
+    expect(keys).not.toContain("models");
   });
 });

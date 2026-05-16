@@ -30,4 +30,4 @@ registerSelector("majority-fail-closed", majorityFailClosedSelector);
 registerSelector("majority-fail-open", majorityFailOpenSelector);
 registerSelector("judge", judgeSelector);
 registerSelector("dialogue-verdict", dialogueVerdictSelector);
-registerSelector("verifier-pick", verifierPickSelector);
+registerSelector("verifier-pick", (ctx) => verifierPickSelector(ctx));

@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import type { CompleteOptions } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import * as callModule from "../../../src/operations";
+import type { DebateStatefulInput } from "../../../src/operations/debate-stateful";
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
@@ -322,21 +323,12 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
   });
 
   test("rounds > 1: critique runs on same session handle as proposal", async () => {
-    const handleCallMap: Record<string, string[]> = {};
-    const closedHandles: string[] = [];
-
+    const roleCallMap = new Map<string, string[]>();
     const mockSM = makeSessionManager({
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async (handle) => { closedHandles.push(handle.id); }),
+      closeSession: mock(async () => {}),
     });
-
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (_agentName, handle, prompt) => {
-        handleCallMap[handle.id] = handleCallMap[handle.id] ?? [];
-        handleCallMap[handle.id].push(prompt.includes("reviewing proposals") ? "critique" : "proposal");
-        return { output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
+    const agentManager = makeMockAgentManager();
 
     const runner = new DebateRunner({
       ctx: makeCallCtxWithIds("US-004", agentManager, mockSM),
@@ -349,13 +341,25 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
       sessionManager: mockSM,
     });
 
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateStatefulInput) => {
+      const role = callCtx.sessionOverride?.role ?? "";
+      const kind = input.proposePrompt.includes("reviewing proposals") ? "critique" : "proposal";
+      const calls = roleCallMap.get(role) ?? [];
+      calls.push(kind);
+      roleCallMap.set(role, calls);
+
+      input.proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" };
+    });
+
     await runner.run("review prompt");
 
-    for (const calls of Object.values(handleCallMap)) {
+    for (const calls of roleCallMap.values()) {
       expect(calls).toContain("proposal");
       expect(calls).toContain("critique");
     }
-    expect(closedHandles.length).toBe(2);
+    expect(roleCallMap.get("debate-review-0")).toEqual(["proposal", "critique"]);
+    expect(roleCallMap.get("debate-review-1")).toEqual(["proposal", "critique"]);
   });
 
   test("falls back to single-agent passed when only one proposal run succeeds", async () => {
@@ -391,8 +395,6 @@ describe("DebateRunner.run() — stateful mode uses runAsSession SSOT", () => {
 
 describe("runStateful() — resolveOutcome receives workdir and featureName (US-004 AC4)", () => {
   test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
-    const completeCalls: { opts?: CompleteOptions }[] = [];
-
     const mockSM = makeSessionManager({
       openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
       closeSession: mock(async () => {}),
@@ -404,10 +406,6 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         internalRoundTrips: 0,
       }),
-      completeFn: async (_agentName: string, _prompt: string, opts?: CompleteOptions) => {
-        completeCalls.push({ opts });
-        return { output: "synthesis resolved", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0.01, exactCostUsd: 0.01 };
-      },
     });
 
     const workdir = "/tmp/stateful-work";
@@ -425,12 +423,29 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
       sessionManager: mockSM,
     });
 
+    const resolverCalls: Array<{ workdir: string; featureName: string; role?: string }> = [];
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op, input: DebateStatefulInput | Record<string, unknown>) => {
+      if (op.name === "debate-synthesis") {
+        resolverCalls.push({
+          workdir: callCtx.packageDir,
+          featureName: callCtx.featureName ?? "",
+          role: callCtx.sessionOverride?.role,
+        });
+        return "synthesis resolved";
+      }
+
+      const statefulInput = input as DebateStatefulInput;
+      statefulInput.proposalBarriers[0]?.resolve('{"passed": true}');
+      return { success: true, rebut: '{"passed": true}' };
+    });
+
     await runner.run("review prompt");
 
-    const synthesisCall = completeCalls.find((c) => c.opts !== undefined);
+    const synthesisCall = resolverCalls[0];
     expect(synthesisCall).toBeDefined();
     const expectedSessionName = computeAcpHandle(workdir, featureName, storyId, "synthesis");
-    expect(synthesisCall?.opts?.sessionName).toBe(expectedSessionName);
+    expect(computeAcpHandle(synthesisCall?.workdir ?? "", synthesisCall?.featureName ?? "", storyId, "synthesis")).toBe(expectedSessionName);
+    expect(synthesisCall?.role).toBe("synthesis");
   });
 });
 

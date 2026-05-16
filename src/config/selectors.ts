@@ -41,7 +41,7 @@ export const tddConfigSelector = pickSelector(
   "project",
   "precheck",
 );
-export const debateConfigSelector = pickSelector("debate", "debate", "models", "agent");
+export const debateConfigSelector = pickSelector("debate", "debate", "agent");
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({

@@ -9,7 +9,7 @@ import { buildRunInteractionHandler } from "../agents/acp/adapter-output";
 import type { AgentRunRequest, IAgentManager } from "../agents/manager-types";
 import { SessionFailureError, SessionTurnError } from "../agents/types";
 import type { AgentResult, AgentRunOptions, TurnResult } from "../agents/types";
-import { resolveModelForAgent } from "../config";
+import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import type { NaxConfig } from "../config";
 import { ContextOrchestrator, createContextToolRuntime } from "../context/engine";
 import type { AdapterFailure, ContextBundle, RunCallCounter } from "../context/engine";
@@ -199,7 +199,10 @@ export function buildHopCallback(
           workdir,
           pipelineStage: stage,
           modelDef,
-          timeoutSeconds: resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds,
+          timeoutSeconds:
+            resolvedRunOptions.timeoutSeconds ??
+            config.execution?.sessionTimeoutSeconds ??
+            DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
           featureName,
           storyId: story.id,
           signal: resolvedRunOptions.abortSignal,
@@ -217,7 +220,10 @@ export function buildHopCallback(
         workdir,
         pipelineStage: stage,
         modelDef,
-        timeoutSeconds: resolvedRunOptions.timeoutSeconds ?? config.execution.sessionTimeoutSeconds,
+        timeoutSeconds:
+          resolvedRunOptions.timeoutSeconds ??
+          config.execution?.sessionTimeoutSeconds ??
+          DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
         featureName,
         storyId: story.id,
         signal: resolvedRunOptions.abortSignal,
@@ -235,6 +241,7 @@ export function buildHopCallback(
           workdir,
           projectDir,
           pipelineStage: stage,
+          sessionRole: resolvedRunOptions.sessionRole,
           signal: resolvedRunOptions.abortSignal,
           contextPullTools,
           contextToolRuntime,

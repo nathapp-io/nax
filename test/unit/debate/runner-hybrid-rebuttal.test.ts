@@ -1,22 +1,12 @@
-/**
- * Tests for hybrid mode rebuttal loop, session cleanup, and result assembly.
- * Covers ACs 1-10 for the rebuttal loop (ADR-019 §4 session pattern).
- * All tests exercise DebateRunner via its public interface (no direct HybridCtx construction).
- */
-
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
-import type { DebateStageConfig } from "../../../src/debate/types";
+import { type DebateStageConfig } from "../../../src/debate/types";
+import * as callModule from "../../../src/operations";
+import type { DebateHybridInput } from "../../../src/operations/debate-hybrid";
 import type { CallContext } from "../../../src/operations/types";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { makeMockAgentManager, makeSessionManager } from "../../helpers";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function isRebuttalPrompt(prompt: string): boolean {
-  return prompt.includes("## Your Task") && prompt.includes("You are debater");
-}
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
 
 function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStageConfig {
   return {
@@ -34,20 +24,26 @@ function makeHybridStageConfig(overrides: Partial<DebateStageConfig> = {}): Deba
   };
 }
 
-function makeCallCtxWithManagers(
+function makeCallCtx(
   agentManager: ReturnType<typeof makeMockAgentManager>,
   sessionManager: ReturnType<typeof makeSessionManager>,
   storyId = "US-test",
 ): CallContext {
+  const config = makeNaxConfig({
+    debate: {
+      maxConcurrentDebaters: 3,
+    },
+  });
+
   return {
     runtime: {
       agentManager,
       sessionManager,
-      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
+      configLoader: { current: () => config, select: (_sel: unknown) => config } as never,
+      packages: { resolve: () => ({ config, select: (_sel: unknown) => config }) } as never,
       signal: undefined,
-    } as any,
-    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+    } as never,
+    packageView: { config, select: (_sel: unknown) => config } as never,
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,
@@ -56,12 +52,17 @@ function makeCallCtxWithManagers(
 }
 
 function makeRunner(
-  agentManager: ReturnType<typeof makeMockAgentManager>,
-  sessionManager: ReturnType<typeof makeSessionManager>,
   stageConfigOverrides: Partial<DebateStageConfig> = {},
   storyId = "US-test",
 ): DebateRunner {
-  const ctx = makeCallCtxWithManagers(agentManager, sessionManager, storyId);
+  const agentManager = makeMockAgentManager();
+  const sessionManager = makeSessionManager({
+    openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+    closeSession: mock(async () => {}),
+    nameFor: mock((req) => req.role ?? ""),
+  });
+  const ctx = makeCallCtx(agentManager, sessionManager, storyId);
+
   return new DebateRunner({
     ctx,
     stage: "run",
@@ -74,7 +75,20 @@ function makeRunner(
   });
 }
 
-// ─── Setup / Teardown ─────────────────────────────────────────────────────────
+/** Simulate what hybridDebaterOp.hopBody does: resolve shared barriers, return last rebuttal. */
+function makeHybridOpMock(outputFn?: (index: number, round: number) => string) {
+  return async (_callCtx: CallContext, _op: unknown, input: DebateHybridInput) => {
+    const proposalOutput = outputFn ? outputFn(input.index, 0) : `proposal-${input.index}`;
+    input.proposalBarriers[input.index].resolve(proposalOutput);
+    let lastOutput = proposalOutput;
+    for (let r = 0; r < input.rounds; r++) {
+      const rebutOutput = outputFn ? outputFn(input.index, r + 1) : `rebuttal-${r + 1}-${input.index}`;
+      input.rebutBarriers[r][input.index].resolve(rebutOutput);
+      lastOutput = rebutOutput;
+    }
+    return { success: true, rebut: lastOutput };
+  };
+}
 
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
 
@@ -93,65 +107,25 @@ afterEach(() => {
   mock.restore();
 });
 
-// ─── AC1: 2 debaters, rounds=1 → exactly 2 sequential rebuttal calls ─────────
+describe("DebateRunner hybrid rebuttal", () => {
+  test("with 2 debaters and rounds=1, the coordinator assigns distinct session roles per debater", async () => {
+    const runner = makeRunner();
+    const sessionRoles: string[] = [];
 
-describe("DebateRunner hybrid rebuttal — sequential rebuttal call count with 2 debaters (AC1)", () => {
-  test("with 2 debaters and rounds=1, rebuttal runAsSession is called exactly 2 times", async () => {
-    const rebuttalCalls: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      sessionRoles.push((callCtx as CallContext).sessionOverride?.role ?? "");
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
+      return { success: true, rebut: `rebuttal-${input.index}` };
     });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) rebuttalCalls.push(agentName);
-        return { output: `output-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
+
     await runner.run("test prompt");
-    expect(rebuttalCalls).toHaveLength(2);
+
+    expect(sessionRoles).toEqual(["debate-hybrid-0", "debate-hybrid-1"]);
   });
 
-  test("with 2 debaters and rounds=1, rebuttal calls happen in sequential debater order (0 then 1)", async () => {
-    const rebuttalOrder: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) rebuttalOrder.push(handle.id);
-        return { output: `output-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
-    await runner.run("test prompt");
-    expect(rebuttalOrder).toHaveLength(2);
-    expect(rebuttalOrder[0]).toBe("debate-hybrid-0");
-    expect(rebuttalOrder[1]).toBe("debate-hybrid-1");
-  });
-});
-
-// ─── AC2: 3 debaters, rounds=2 → exactly 6 rebuttal calls ────────────────────
-
-describe("DebateRunner hybrid rebuttal — rebuttal call count with 3 debaters and 2 rounds (AC2)", () => {
-  test("with 3 debaters and rounds=2, rebuttal runAsSession is called exactly 6 times", async () => {
-    const rebuttalCalls: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) rebuttalCalls.push(agentName);
-        return { output: `output-${agentName}-${rebuttalCalls.length}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm, {
+  test("with 3 debaters and rounds=2, coordinator sets up 3 debaters × 2 rounds of rebuttal barriers", async () => {
+    const runner = makeRunner({
       rounds: 2,
       debaters: [
         { agent: "claude", model: "fast" },
@@ -159,264 +133,135 @@ describe("DebateRunner hybrid rebuttal — rebuttal call count with 3 debaters a
         { agent: "gemini", model: "fast" },
       ],
     });
-    await runner.run("test prompt");
-    expect(rebuttalCalls).toHaveLength(6);
-  });
-});
+    const barrierShapes: Array<{ slots: number; rounds: number }> = [];
 
-// ─── AC3: each rebuttal prompt includes all successful proposal outputs ────────
-
-describe("DebateRunner hybrid rebuttal — rebuttal prompts include proposal outputs (AC3)", () => {
-  test("each rebuttal turn prompt contains all successful proposal outputs", async () => {
-    const rebuttalPrompts: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) rebuttalPrompts.push(prompt);
-        return { output: `proposal-output-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
-    await runner.run("test prompt");
-    expect(rebuttalPrompts).toHaveLength(2);
-    for (const prompt of rebuttalPrompts) {
-      expect(prompt).toContain("proposal-output-claude");
-      expect(prompt).toContain("proposal-output-opencode");
-    }
-  });
-});
-
-// ─── AC4: round 2 prompts include round 1 rebuttal outputs ───────────────────
-
-describe("DebateRunner hybrid rebuttal — round 2 rebuttal prompts include round 1 outputs (AC4)", () => {
-  test("round 2 rebuttal prompts contain all round 1 rebuttal outputs in previous-rebuttals section", async () => {
-    let roundTracker = 0;
-    const round1RebuttalOutputs: string[] = [];
-    const round2Prompts: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) {
-          roundTracker++;
-          const output = `rebuttal-${agentName}-round-${roundTracker <= 2 ? 1 : 2}`;
-          if (roundTracker <= 2) round1RebuttalOutputs.push(output);
-          else round2Prompts.push(prompt);
-          return { output, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-        }
-        return { output: `proposal-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm, { rounds: 2 });
-    await runner.run("test prompt");
-    expect(round2Prompts).toHaveLength(2);
-    for (const prompt of round2Prompts) {
-      for (const r1output of round1RebuttalOutputs) {
-        expect(prompt).toContain(r1output);
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      barrierShapes.push({ slots: input.proposalBarriers.length, rounds: input.rebutBarriers.length });
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
       }
+      return { success: true, rebut: `rebut-2-${input.index}` };
+    });
+
+    await runner.run("test prompt");
+
+    expect(barrierShapes).toHaveLength(3);
+    for (const shape of barrierShapes) {
+      expect(shape.slots).toBe(3); // one barrier slot per debater
+      expect(shape.rounds).toBe(2); // two rebuttal rounds
     }
   });
-});
 
-// ─── AC5: failed rebuttal turn is skipped with warning ───────────────────────
+  test("each debater's buildRebutPrompt callback includes all successful proposal outputs", async () => {
+    const runner = makeRunner();
+    const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-describe("DebateRunner hybrid rebuttal — failed rebuttal turn is skipped with warning (AC5)", () => {
-  test("when one rebuttal turn throws, a warning is logged and the loop continues", async () => {
-    const warnMessages: string[] = [];
-    const mockLogger = {
-      warn: (_stage: string, msg: string) => { warnMessages.push(msg); },
-      info: () => {},
-      debug: () => {},
-      error: () => {},
-    };
-    _debateSessionDeps.getSafeLogger = mock(() => mockLogger) as unknown as typeof _debateSessionDeps.getSafeLogger;
-
-    let rebuttalCallCount = 0;
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      capturedBuildRebutPrompts.push(input.buildRebutPrompt);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
+      return { success: true, rebut: `rebuttal-${input.index}` };
     });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) {
-          rebuttalCallCount++;
-          if (agentName === "claude") throw new Error("rebuttal failed for claude");
-        }
-        return { output: `output-${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
+
+    await runner.run("test prompt");
+
+    expect(capturedBuildRebutPrompts).toHaveLength(2);
+    for (const buildRebutPrompt of capturedBuildRebutPrompts) {
+      const prompt = buildRebutPrompt(1, ["proposal-0", "proposal-1"], []);
+      expect(prompt).toContain("proposal-0");
+      expect(prompt).toContain("proposal-1");
+    }
+  });
+
+  test("buildRebutPrompt for round 2 receives prior round outputs via priorRoundOutputs", async () => {
+    const runner = makeRunner({ rounds: 2 });
+    const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
+
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      capturedBuildRebutPrompts.push(input.buildRebutPrompt);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
+      }
+      return { success: true, rebut: `rebut-2-${input.index}` };
     });
-    const runner = makeRunner(agentManager, sm);
+
+    await runner.run("test prompt");
+
+    expect(capturedBuildRebutPrompts).toHaveLength(2);
+    // Simulate hopBody calling buildRebutPrompt for round 2 with round-1 outputs as prior data
+    const round2Prompt = capturedBuildRebutPrompts[0](2, ["proposal-0", "proposal-1"], [["rebut-1-0", "rebut-1-1"]]);
+    expect(round2Prompt).toContain("rebut-1-0");
+    expect(round2Prompt).toContain("rebut-1-1");
+  });
+
+  test("when one callOp fails, the runner still returns a result with the remaining debater", async () => {
+    const runner = makeRunner();
+
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      if (input.index === 0) {
+        input.proposalBarriers[input.index].resolve("proposal-0");
+        input.rebutBarriers[0][input.index].resolve("rebuttal-0");
+        return { success: true, rebut: "rebuttal-0" };
+      }
+      throw new Error("debater failed");
+    });
+
     const result = await runner.run("test prompt");
-    expect(rebuttalCallCount).toBe(2);
-    expect(warnMessages.some((m) => m.includes("rebuttal") || m.includes("failed") || m.includes("debate"))).toBe(true);
-    // The runner should return a result (not throw) even when one rebuttal turn fails
-    expect(result).toBeDefined();
+
     expect(result.storyId).toBe("US-test");
+    // With < 2 successful debaters, falls back to single-debater result
+    expect(result.outcome).toBe("passed");
+    expect(result.debaters).toHaveLength(1);
   });
-});
 
-// ─── AC6: rebuttal calls use same handle as proposal ─────────────────────────
+  test("proposal and rebuttal turns for the same debater share the same session role", async () => {
+    const runner = makeRunner({ rounds: 2 });
+    const rolesByIndex = new Map<number, string>();
 
-describe("DebateRunner hybrid rebuttal — rebuttal calls use same handle as proposal (AC6)", () => {
-  test("each rebuttal runAsSession call uses the same handle as the proposal for that debater", async () => {
-    const handleCallCount: Record<string, number> = {};
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      rolesByIndex.set(input.index, (callCtx as CallContext).sessionOverride?.role ?? "");
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
+      }
+      return { success: true, rebut: `rebut-2-${input.index}` };
     });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (_agentName, handle, _prompt) => {
-        handleCallCount[handle.id] = (handleCallCount[handle.id] ?? 0) + 1;
-        return { output: "output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
+
     await runner.run("test prompt");
 
-    // Each handle should have been used for both proposal (1) and rebuttal (1) = 2 calls
-    for (const count of Object.values(handleCallCount)) {
-      expect(count).toBe(2);
-    }
+    // Each debater is dispatched via a single callOp — same role covers proposal + all rebuttals
+    expect(rolesByIndex.get(0)).toBe("debate-hybrid-0");
+    expect(rolesByIndex.get(1)).toBe("debate-hybrid-1");
   });
-});
 
-// ─── AC7: sessionManager.closeSession called once per debater ────────────────
+  test("per-turn costs accumulated through callOp.onCostAccumulated are reflected in totalCostUsd", async () => {
+    const runner = makeRunner();
 
-describe("DebateRunner hybrid rebuttal — sessionManager.closeSession called after normal rebuttal loop (AC7)", () => {
-  test("after the rebuttal loop completes normally, closeSession is called once per opened debater session", async () => {
-    const closedHandleIds: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async (handle) => { closedHandleIds.push(handle.id); }),
-      nameFor: mock((req) => req.role ?? ""),
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      (callCtx as CallContext).onCostAccumulated?.(0.1);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
+      return { success: true, rebut: `rebuttal-${input.index}` };
     });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName) => ({
-        output: `proposal-${agentName}`,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      }),
-    });
-    const runner = makeRunner(agentManager, sm);
-    await runner.run("test prompt");
-    expect(closedHandleIds).toHaveLength(2);
-    expect(closedHandleIds).toContain("debate-hybrid-0");
-    expect(closedHandleIds).toContain("debate-hybrid-1");
-  });
-});
 
-// ─── AC8: closeSession called even when all rebuttal turns fail ───────────────
-
-describe("DebateRunner hybrid rebuttal — closeSession called when rebuttal turns fail (AC8)", () => {
-  test("when all rebuttal turns fail, closeSession is still called for all opened sessions", async () => {
-    const closedHandleIds: string[] = [];
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async (handle) => { closedHandleIds.push(handle.id); }),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (_agentName, _handle, prompt) => {
-        if (isRebuttalPrompt(prompt)) throw new Error("rebuttal failed");
-        return { output: "proposal", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
-    await runner.run("test prompt");
-    expect(closedHandleIds).toHaveLength(2);
-  });
-});
-
-// ─── AC9: per-turn rebuttal costs summed into totalCostUsd ───────────────────
-
-describe("DebateRunner hybrid rebuttal — rebuttal costs accumulated in totalCostUsd (AC9)", () => {
-  test("per-turn rebuttal costs are summed and reflected in totalCostUsd", async () => {
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (_agentName, _handle, prompt) => {
-        const cost = isRebuttalPrompt(prompt) ? 0.05 : 0.1;
-        return { output: "output", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0, estimatedCostUsd: cost  };
-      },
-    });
-    const runner = makeRunner(agentManager, sm);
     const result = await runner.run("test prompt");
-    // 2 proposals × 0.10 + 2 rebuttals × 0.05 = 0.30
-    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0.29);
+
+    // 2 debaters × 0.1 USD = 0.2 USD
+    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0.19);
   });
-});
 
-// ─── AC10: DebateResult.rebuttals populated ───────────────────────────────────
+  test("DebateResult.rebuttals contains one entry per debater per round, collected from shared barriers", async () => {
+    const runner = makeRunner();
 
-describe("DebateRunner hybrid rebuttal — DebateResult.rebuttals populated and debug event emitted (AC10)", () => {
-  test("DebateResult.rebuttals contains one entry per successful rebuttal", async () => {
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName, _handle, prompt) => ({
-        output: isRebuttalPrompt(prompt) ? `rebuttal-output-${agentName}` : `proposal-${agentName}`,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      }),
-    });
-    const runner = makeRunner(agentManager, sm);
+    spyOn(callModule, "callOp").mockImplementation(makeHybridOpMock());
+
     const result = await runner.run("test prompt");
-    expect(result.rebuttals).toBeDefined();
-    expect(result.rebuttals).toHaveLength(2);
-    const outputs = (result.rebuttals ?? []).map((r) => r.output);
-    expect(outputs).toContain("rebuttal-output-claude");
-    expect(outputs).toContain("rebuttal-output-opencode");
-    for (const rebuttal of result.rebuttals ?? []) {
-      expect(rebuttal.round).toBe(1);
-      expect(typeof rebuttal.debater).toBe("object");
-    }
-  });
 
-  test("debate:rebuttal-start info event is emitted before each rebuttal turn", async () => {
-    const infoEvents: Array<{ stage: string; event: string; data?: unknown }> = [];
-    const mockLogger = {
-      warn: () => {},
-      info: (stage: string, event: string, data?: unknown) => { infoEvents.push({ stage, event, data }); },
-      debug: () => {},
-      error: () => {},
-    };
-    _debateSessionDeps.getSafeLogger = mock(() => mockLogger) as unknown as typeof _debateSessionDeps.getSafeLogger;
-
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
-    });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName) => ({
-        output: `output-${agentName}`,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      }),
-    });
-    const runner = makeRunner(agentManager, sm);
-    await runner.run("test prompt");
-
-    const rebuttalStartEvents = infoEvents.filter((e) => e.stage === "debate:rebuttal-start");
-    expect(rebuttalStartEvents).toHaveLength(2);
-    for (const evt of rebuttalStartEvents) {
-      expect((evt.data as Record<string, unknown>)?.round).toBeDefined();
-      expect((evt.data as Record<string, unknown>)?.debaterIndex).toBeDefined();
-    }
+    expect(result.rebuttals).toEqual([
+      { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebuttal-1-0" },
+      { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebuttal-1-1" },
+    ]);
   });
 });

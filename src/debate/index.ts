@@ -3,8 +3,10 @@
  */
 
 export { DebateRunner } from "./runner";
+export { runHybrid } from "./runner-hybrid";
+export type { HybridCtx } from "./runner-hybrid";
 export type { DebateRunnerOptions } from "./runner";
-export { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "./session-helpers";
+export { _debateSessionDeps, resolveOutcome } from "./session-helpers";
 export type {
   DebateSessionOptions,
   ResolverContextInput,
@@ -16,6 +18,7 @@ export type { FactsManifest } from "./facts-manifest";
 export { citationDistribution, citationRate, extractClaims } from "./citations";
 export type { ParsedClaim } from "./citations";
 export { _runPlanDeps } from "./runner-plan";
+export { raceAgainstAbort } from "./utils";
 export {
   registerSelector,
   resolveSelector,

@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DebateRunner, _debateSessionDeps } from "@/debate";
 import type { HybridCtx } from "@/debate/runner-hybrid";
 import type { DebateRunnerOptions, DebateStageConfig } from "@/debate";
 import type { CallContext } from "@/operations";
+import * as callModule from "@/operations";
+import type { DebateStatefulInput } from "@/operations/debate-stateful";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { debateConfigSelector } from "../../../src/config";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
@@ -390,37 +392,18 @@ describe("DebateRunner hybrid mode — single-agent fallback when fewer than 2 p
 
 describe("DebateRunner hybrid mode — successful proposal outputs collected (AC5)", () => {
   test("both proposal outputs appear in result.proposals when 2 proposals succeed", async () => {
-    const sm = makeSessionManager({
-      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
-      closeSession: mock(async () => {}),
-      nameFor: mock((req) => req.role ?? ""),
+    const runner = makeRunner();
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
+      if (!input.proposePrompt.includes("## Proposals")) {
+        input.proposalBarriers[0]?.resolve(`proposal-from-${input.debater.agent}`);
+        return { success: true, rebut: `proposal-from-${input.debater.agent}` };
+      }
+
+      return { success: true, rebut: `rebuttal-from-${input.debater.agent}` };
     });
-    const agentManager = makeMockAgentManager({
-      runAsSessionFn: async (agentName) => ({
-        output: `proposal-from-${agentName}`,
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      }),
-    });
-    const ctx = makeCallCtx({
-      runtime: {
-        agentManager,
-        sessionManager: sm,
-        configLoader: { current: () => DEFAULT_CONFIG } as any,
-        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
-        signal: undefined,
-      } as any,
-    });
-    const runner = new DebateRunner({
-      ctx,
-      stage: "run",
-      stageConfig: makeHybridStageConfig(),
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/work",
-      timeoutSeconds: 60,
-      sessionManager: sm,
-    });
+
     const result = await runner.run("test prompt");
+
     expect(result.proposals).toHaveLength(2);
     const outputs = result.proposals.map((p) => p.output);
     expect(outputs).toContain("proposal-from-claude");
