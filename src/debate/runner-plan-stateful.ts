@@ -5,7 +5,12 @@ import type { ConfiguredModel, ModelDef } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import type { SessionRole } from "../session/types";
 import type { ISessionManager } from "../session/types";
-import { _debateSessionDeps, modelTierFromDebater, pipelineStageForDebate, resolveModelDefForDebater } from "./session-helpers";
+import {
+  _debateSessionDeps,
+  modelTierFromDebater,
+  pipelineStageForDebate,
+  resolveModelDefForDebater,
+} from "./session-helpers";
 import type { ResolvedDebater } from "./session-helpers";
 import type { Debater } from "./types";
 

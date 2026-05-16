@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeNaxConfig } from "@test/helpers";
-import * as callModule from "@/operations/call";
+import * as callModule from "@/operations";
 import { _debateSessionDeps } from "@/debate";
 import { runPlan } from "../../../src/debate/runner-plan";
 

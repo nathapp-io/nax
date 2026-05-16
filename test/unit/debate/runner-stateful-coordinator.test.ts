@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
-import * as callModule from "@/operations/call";
+import * as callModule from "@/operations";
 import { runStateful } from "../../../src/debate/runner-stateful";
 
 interface PromiseWithResolvers<T> {

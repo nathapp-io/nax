@@ -7,13 +7,18 @@
 
 import type { IAgentManager } from "../agents";
 import type { DebateConfig } from "../config/selectors";
-import type { DebatePlanOutput } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
 import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
 import { buildResolverContext } from "./runner-stateful-helpers";
-import { type ScoredProposal, acOverlap, computeScore, extractManifestFromContext, runPatchStep } from "./selectors/verifier-pick";
+import {
+  type ScoredProposal,
+  acOverlap,
+  computeScore,
+  extractManifestFromContext,
+  runPatchStep,
+} from "./selectors/verifier-pick";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -47,6 +52,8 @@ interface PlanCtxMinimal {
   readonly config: DebateConfig;
   readonly callContext: CallContext;
   readonly abortSignal?: AbortSignal;
+  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
+  readonly resolverContextInput?: ResolverContextInput;
 }
 
 /** Run the pre-debate phase, returning the manifest section and accumulated cost. */
@@ -149,37 +156,42 @@ export async function finalizePlanSelection(
   return { winnerOutput: winner.proposal.output, winnerOutputPath };
 }
 
-export interface SettledPlanProposal {
-  readonly debater: ResolvedDebater["debater"];
-  readonly agentName: string;
-  readonly output: string;
-}
-
-export function buildFinalizedProposals(
+export async function scoreAndDispatchVerifierPick(
   resolved: ResolvedDebater[],
-  planSettled: PromiseSettledResult<DebatePlanOutput>[],
   rebuttalSettled: PromiseSettledResult<string>[],
-): SettledPlanProposal[] {
-  return planSettled.flatMap((result, index) => {
-    if (result.status !== "fulfilled" || !result.value.success) {
-      return rebuttalSettled[index]?.status === "fulfilled"
-        ? [
-            {
-              debater: resolved[index].debater,
-              agentName: resolved[index].agentName,
-              output: rebuttalSettled[index].value,
-            },
-          ]
-        : [];
-    }
-    return [
-      {
-        debater: resolved[index].debater,
-        agentName: resolved[index].agentName,
-        output: result.value.patched ?? result.value.rebut,
-      },
-    ];
+  ctx: PlanCtxMinimal,
+  opts: { workdir: string; feature: string },
+  agentManager: IAgentManager,
+  selectionResolvers: PromiseWithResolvers<{ patchPrompt?: string }>[],
+  outputPaths: string[],
+): Promise<void> {
+  const rebutProposals = resolved.map((r, i) => {
+    const rb = rebuttalSettled[i];
+    return { debater: r.debater, agentName: r.agentName, output: rb?.status === "fulfilled" ? rb.value : "", cost: 0 };
   });
+  const scoringCtx = {
+    storyId: ctx.storyId,
+    stage: ctx.stage,
+    stageConfig: ctx.stageConfig,
+    config: ctx.config,
+    proposals: rebutProposals,
+    critiques: [],
+    workdir: opts.workdir,
+    featureName: opts.feature,
+    timeoutMs: (ctx.stageConfig.timeoutSeconds ?? 600) * 1000,
+    agentManager,
+    debaters: resolved.map((e) => e.debater),
+    callContext: ctx.callContext,
+    ...(ctx.reviewerSession ? { reviewerSession: ctx.reviewerSession } : {}),
+    ...(ctx.resolverContextInput ? { resolverContextInput: ctx.resolverContextInput } : {}),
+  } satisfies Parameters<typeof extractManifestFromContext>[0];
+  const manifest = extractManifestFromContext(scoringCtx);
+  const scored: ScoredProposal[] = await Promise.all(
+    rebutProposals.map(async (p) => ({ proposal: p, score: await computeScore(p, manifest) })),
+  );
+  scored.sort((a, b) => b.score.total - a.score.total);
+  const patchConfig = ctx.stageConfig.selector?.kind === "verifier-pick" ? ctx.stageConfig.selector.patch : undefined;
+  await finalizePlanSelection(scored, patchConfig, selectionResolvers, outputPaths, rebutProposals, scoringCtx);
 }
 
 export async function readWinnerOutput(
@@ -235,18 +247,28 @@ export async function finalizePlanRun(
 
   if (successful.length === 0) {
     return {
-      storyId: ctx.storyId, stage: ctx.stage, outcome: "failed",
-      rounds: 0, debaters: [], resolverType: config.resolver.type,
-      proposals: [], totalCostUsd,
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      outcome: "failed",
+      rounds: 0,
+      debaters: [],
+      resolverType: config.resolver.type,
+      proposals: [],
+      totalCostUsd,
     };
   }
 
   if (successful.length === 1) {
     return {
-      storyId: ctx.storyId, stage: ctx.stage, outcome: "passed", rounds: 1,
-      debaters: [successful[0].debater.agent], resolverType: config.resolver.type,
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      outcome: "passed",
+      rounds: 1,
+      debaters: [successful[0].debater.agent],
+      resolverType: config.resolver.type,
       proposals: [{ debater: successful[0].debater, output: successful[0].output }],
-      output: successful[0].output, totalCostUsd,
+      output: successful[0].output,
+      totalCostUsd,
     };
   }
 
@@ -255,11 +277,23 @@ export async function finalizePlanRun(
 
   if (selectorKind === "verifier-pick") {
     const selectorCtx = {
-      storyId: ctx.storyId, stage: ctx.stage, stageConfig: ctx.stageConfig, config: ctx.config,
-      proposals: finalizedProposals.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output, cost: 0 })),
-      critiques: [], workdir: opts.workdir, featureName: opts.feature,
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      stageConfig: ctx.stageConfig,
+      config: ctx.config,
+      proposals: finalizedProposals.map((p) => ({
+        debater: p.debater,
+        agentName: p.agentName,
+        output: p.output,
+        cost: 0,
+      })),
+      critiques: [],
+      workdir: opts.workdir,
+      featureName: opts.feature,
       timeoutMs: (ctx.stageConfig.timeoutSeconds ?? 600) * 1000,
-      agentManager, debaters: finalizedProposals.map((p) => p.debater), callContext: ctx.callContext,
+      agentManager,
+      debaters: finalizedProposals.map((p) => p.debater),
+      callContext: ctx.callContext,
       ...(ctx.reviewerSession ? { reviewerSession: ctx.reviewerSession } : {}),
       ...(ctx.resolverContextInput ? { resolverContextInput: ctx.resolverContextInput } : {}),
     } satisfies Parameters<typeof extractManifestFromContext>[0];
@@ -269,7 +303,14 @@ export async function finalizePlanRun(
     );
     scored.sort((a, b) => b.score.total - a.score.total);
     const patchConfig = ctx.stageConfig.selector?.kind === "verifier-pick" ? ctx.stageConfig.selector.patch : undefined;
-    selectionSummary = await finalizePlanSelection(scored, patchConfig, [], outputPaths, selectorCtx.proposals, selectorCtx);
+    selectionSummary = await finalizePlanSelection(
+      scored,
+      patchConfig,
+      [],
+      outputPaths,
+      selectorCtx.proposals,
+      selectorCtx,
+    );
   }
 
   const proposalOutputs = finalizedProposals.map((p) => p.output);
@@ -277,10 +318,21 @@ export async function finalizePlanRun(
   const resolverTimeoutMs = (ctx.stageConfig.timeoutSeconds ?? 600) * 1000;
   const outcome: ResolveOutcome =
     selectorKind === "verifier-pick"
-      ? { outcome: "passed", resolverCostUsd: 0, output: selectionSummary.winnerOutput ?? finalizedProposals[0]?.output }
+      ? {
+          outcome: "passed",
+          resolverCostUsd: 0,
+          output: selectionSummary.winnerOutput ?? finalizedProposals[0]?.output,
+        }
       : await resolveOutcome(
-          proposalOutputs, critiqueOutputs, ctx.stageConfig, ctx.config, ctx.callContext,
-          ctx.storyId, resolverTimeoutMs, opts.workdir, opts.feature,
+          proposalOutputs,
+          critiqueOutputs,
+          ctx.stageConfig,
+          ctx.config,
+          ctx.callContext,
+          ctx.storyId,
+          resolverTimeoutMs,
+          opts.workdir,
+          opts.feature,
           ctx.reviewerSession,
           buildResolverContext(
             finalizedProposals.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output, cost: 0 })),
@@ -295,19 +347,23 @@ export async function finalizePlanRun(
   let winningOutput: string | undefined = outcome.output ?? finalizedProposals[0]?.output;
   winningOutput = await readWinnerOutput(selectionSummary.winnerOutputPath ?? outputPaths[0], winningOutput);
 
+  let runCostUsd = totalCostUsd;
   if (config.postDebateVerifier && winningOutput) {
     const verifierCtx: PostDebateVerifierContext = {
-      storyId: ctx.storyId, stage: ctx.stage, stageConfig: config,
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      stageConfig: config,
       selectorResult: { outcome: outcome.outcome, output: winningOutput, resolverCostUsd: outcome.resolverCostUsd },
       workdir: opts.workdir,
       ctx: ctx.callContext as unknown as import("../operations/types").CallContext,
     };
     const verifierResult = await _runPlanDeps.resolvePostDebateVerifier(config.postDebateVerifier.kind)(verifierCtx);
-    totalCostUsd += verifierResult.costUsd;
+    runCostUsd += verifierResult.costUsd;
     finalOutcome = verifierResult.outcome;
     const isTagExpert =
       config.postDebateVerifier.onBlocker === "tag-expert" &&
-      (verifierResult.findings as Array<{ severity: string }> | undefined)?.some((f) => f.severity === "blocker") === true;
+      (verifierResult.findings as Array<{ severity: string }> | undefined)?.some((f) => f.severity === "blocker") ===
+        true;
     if (isTagExpert) {
       winningOutput = rewriteComplexitiesToExpert(winningOutput);
       finalOutcome = "passed";
@@ -317,9 +373,15 @@ export async function finalizePlanRun(
   const proposals: Proposal[] = finalizedProposals.map((p) => ({ debater: p.debater, output: p.output }));
   logger?.info("debate", "debate:result", { storyId: ctx.storyId, stage: ctx.stage, outcome: finalOutcome });
   return {
-    storyId: ctx.storyId, stage: ctx.stage, outcome: finalOutcome, rounds: 1,
+    storyId: ctx.storyId,
+    stage: ctx.stage,
+    outcome: finalOutcome,
+    rounds: 1,
     debaters: finalizedProposals.map((p) => p.debater.agent),
-    resolverType: config.resolver.type, proposals, output: winningOutput, totalCostUsd,
+    resolverType: config.resolver.type,
+    proposals,
+    output: winningOutput,
+    totalCostUsd: runCostUsd,
     ...(includeHybridRebuttals ? { rebuttals: rebuttalList } : {}),
   };
 }
