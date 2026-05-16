@@ -254,8 +254,9 @@ try {
 2. **US-002: Add `callId` + `scopeId` to dispatch event base; stamp / forward at callOp** — depends on nothing (parallelizable with US-001)
 3. **US-003: Aggregator scope API (`openScope`, `byScope`, `byCall`)** — depends on US-001 + US-002
 4. **US-004: Strip cost from selectors — delete `SelectorResult.resolverCostUsd`, delete `onCostAccumulated`** — depends on US-003
-5. **US-005: Debate runners own scopes; populate `DebateResult.totalCostUsd` from aggregator** — depends on US-003 + US-004
-6. **US-006: Update `retry-strategy.md` + `adapter-wiring.md` to document the always-on cost flow** — depends on US-004 + US-005
+5. **US-005: `runner-stateful` + `runner-hybrid` — two-scope conversion** — depends on US-003 + US-004
+6. **US-006: `runner.ts` — four-scope conversion (pre-debate, debaters, selector, verifier)** — depends on US-003 + US-004 (parallelizable with US-005)
+7. **US-007: Update `retry-strategy.md` + `adapter-wiring.md` to document the always-on cost flow** — depends on US-005 + US-006
 
 ---
 
@@ -350,9 +351,11 @@ Extend `CostAggregator` with `byScope()`, `byCall()`, and `openScope(scopeId?: s
 
 #### Scope
 
-Make selectors completely cost-blind. Delete `CallContext.onCostAccumulated` and both write sites in `callOp`. Delete `SelectorResult.resolverCostUsd`. Strip every `let resolverCostUsd = 0` accumulator and `onCostAccumulated` closure from `judgeSelector` and `synthesisSelector` — they return only `{ outcome, output }`. Every reader of `SelectorResult.resolverCostUsd` is updated in this story so the codebase compiles after the field is removed (runners get their real cost-attribution rewrite in US-005).
+Make selectors completely cost-blind. Delete `CallContext.onCostAccumulated` and both write sites in `callOp`. Delete `SelectorResult.resolverCostUsd`. Strip every `let resolverCostUsd = 0` accumulator and `onCostAccumulated` closure from `judgeSelector` and `synthesisSelector`. Every reader of `SelectorResult.resolverCostUsd` is updated in this story so the codebase compiles after the field is removed (runners get their real cost-attribution rewrite in US-005 / US-006).
 
-Readers that today touch `resolverCostUsd`: `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/verifier-pick.ts`, `src/debate/selectors/majority.ts` (all return `resolverCostUsd: 0` today — drop the field from their return literals); `src/debate/runner.ts`, `src/debate/runner-plan-helpers.ts`, `src/debate/session-helpers.ts` (drop the field from the outcome shape; runner-side cost summation moves to US-005).
+**Migration ordering — this story is one commit.** `SelectorResult.resolverCostUsd` is a required field today (`src/debate/selectors/types.ts:34`, no `?`); a partial removal does not type-check. All selector files and all readers must be migrated together.
+
+Readers that today touch `resolverCostUsd`: `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/verifier-pick.ts`, `src/debate/selectors/majority.ts` (all return `resolverCostUsd: 0` today — drop the field from their return literals); `src/debate/runner.ts`, `src/debate/runner-plan-helpers.ts`, `src/debate/session-helpers.ts` (drop the field from the outcome shape; runner-side cost summation moves to US-005 / US-006).
 
 #### Context Files
 
@@ -368,27 +371,25 @@ Readers that today touch `resolverCostUsd`: `src/debate/selectors/dialogue-verdi
 
 - `CallContext` does not declare `onCostAccumulated`; `src/operations/call.ts` contains no reference to it
 - `SelectorResult` does not declare `resolverCostUsd`
-- `judgeSelector` and `synthesisSelector` return objects with exactly two keys (`outcome` and `output`) — no cost field, no scope opening, no mutable cost accumulator
+- `judgeSelector` and `synthesisSelector` return values whose only populated keys are within `Pick<SelectorResult, "outcome" | "output">` — no cost field, no scope opening, no mutable cost accumulator
 - `judgeSelector` and `synthesisSelector` forward `ctx.callContext` unchanged into `callOp` (no `callId` injection, no `scopeId` injection — the runner already set `scopeId` upstream)
 - `dialogueVerdictSelector`, `verifierPickSelector`, and `majoritySelector` returns also drop the `resolverCostUsd` key
-- `grep -r "resolverCostUsd" src/` returns zero matches after this story
-- `grep -r "onCostAccumulated" src/` returns zero matches after this story
+- **Codebase invariant:** `grep -r "resolverCostUsd" src/` returns zero matches
+- **Codebase invariant:** `grep -r "onCostAccumulated" src/` returns zero matches
 
 ---
 
-### US-005: Debate runners own scopes; populate `DebateResult.totalCostUsd` from aggregator
+### US-005: `runner-stateful` + `runner-hybrid` — two-scope conversion
 
 #### Scope
 
-Move all cost orchestration into the debate runners (`runner-stateful.ts`, `runner-hybrid.ts`, and `runner.ts` if it has its own dispatch fan-out). Each runner opens two scopes: one wrapping the debater fan-out, one wrapping the resolver/selector call. Every `CallContext` the runner constructs gets the matching `scopeId` stamped. After the fan-out resolves, `DebateResult.totalCostUsd` is read from `debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd`. No selector return value contributes to cost any more.
+Both runners have a clean two-stream cost shape today: one debater fan-out (`Promise.allSettled` over `callOp(statefulDebaterOp, …)`) and one resolver/selector call. Convert each runner to open two scopes — one for the fan-out, one for the resolver — stamp the matching `scopeId` into every `CallContext` they hand down, and populate `DebateResult.totalCostUsd` from the scope snapshots. No selector return value contributes to cost any more.
 
 #### Context Files
 
 - `src/debate/runner-stateful.ts` — `debaterCallContext` factory; `totalCostUsd` accumulator (replaced with scope read)
-- `src/debate/runner-hybrid.ts` — same pattern; also wraps `resolveResult` call
-- `src/debate/runner.ts` — verify if it owns dispatch; if so, same scope-wrapping pattern
-- `src/debate/runner-plan-helpers.ts` — drop `resolverCostUsd: 0` literals (the field is gone after US-004)
-- `src/debate/session-helpers.ts` — `DebateResult` shape (`totalCostUsd` unchanged); intermediate carry shapes updated
+- `src/debate/runner-hybrid.ts` — same pattern; also wraps the resolver call
+- `src/debate/session-helpers.ts` — `DebateResult.totalCostUsd` field unchanged; intermediate carry shapes (post-US-004) updated to drop `resolverCostUsd`
 - `test/unit/debate/runner-hybrid-rebuttal.test.ts`, `test/unit/debate/runner-stateful.test.ts` — assertions on `DebateResult.totalCostUsd` re-pointed at scope-populated value
 
 #### Acceptance Criteria
@@ -398,12 +399,46 @@ Move all cost orchestration into the debate runners (`runner-stateful.ts`, `runn
 - `runStateful` returns `DebateResult.totalCostUsd === debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd`
 - `runHybrid` follows the same two-scope pattern with the same `totalCostUsd` formula
 - When two debaters each produce one dispatch event with `estimatedCostUsd = 0.05` and the resolver produces one event with `estimatedCostUsd = 0.02`, `DebateResult.totalCostUsd === 0.12`
-- Per-debater closures (`debaterCallContext`, the `callOp` invocation in the fan-out) contain no `let totalCostUsd = 0` accumulator and no callback threading — cost flows only through `scopeId` → bus → aggregator
-- `grep -r "totalCostUsd\\s*+=\\|totalCostUsd\\s*=\\s*0" src/debate/` returns no matches (no mutable accumulators remain)
+- Per-debater closures contain no `let totalCostUsd = 0` accumulator and no callback threading — cost flows only through `scopeId` → bus → aggregator
+- **Codebase invariant:** after this story, `grep -nE "totalCostUsd\\s*\\+=|let\\s+totalCostUsd" src/debate/runner-stateful.ts src/debate/runner-hybrid.ts` returns zero matches
 
 ---
 
-### US-006: Document always-on cost flow in `retry-strategy.md` + `adapter-wiring.md`
+### US-006: `runner.ts` — four-scope conversion (pre-debate, debaters, selector, verifier)
+
+#### Scope
+
+`src/debate/runner.ts` orchestrates four cost-producing phases: pre-debate phase (`resolvePreDebatePhase`), debater fan-out, selector/resolver, and the optional post-debate verifier. Today each phase carries its own `*.costUsd` return field that the runner sums into `let totalCostUsd = 0`. Convert all four to scopes:
+
+| Phase | Scope variable | Source today |
+|:--|:--|:--|
+| Pre-debate | `prePhaseScope` | `prePhaseResult.costUsd` (`runner.ts:155`) |
+| Debater fan-out | `debaterScope` | `let totalCostUsd = 0` accumulator + per-call `costUsd` adds |
+| Selector/resolver | `resolverScope` | `selectorOutcome.resolverCostUsd` (`runner.ts:303`, removed in US-004) |
+| Post-debate verifier | `verifierScope` | `verifierResult.costUsd` (`runner.ts:318`) |
+
+The runner stops reading `prePhaseResult.costUsd` and `verifierResult.costUsd`; cost comes from `prePhaseScope.snapshot()` and `verifierScope.snapshot()`. **`resolvePreDebatePhase` and the post-debate verifier modules are not modified in this spec** — their return-shape `costUsd` fields become unread by `runner.ts` but remain in place. A follow-up issue will remove the now-unused fields once no consumer depends on them.
+
+#### Context Files
+
+- `src/debate/runner.ts` — `let totalCostUsd = 0` (line 115) + 3 add sites (lines 155, 303, 318) replaced with 4 scopes
+- `src/debate/runner-plan-helpers.ts` — drop `resolverCostUsd: 0` literals (the field is gone after US-004)
+- `test/unit/debate/runner.test.ts` (or equivalent) — assertions on `DebateResult.totalCostUsd` re-pointed at scope-populated value
+- Pre-debate phase modules and verifier modules — **read only**, not modified; their `costUsd` returns become dead-on-read
+
+#### Acceptance Criteria
+
+- `runner.ts` opens four scopes (`prePhaseScope`, `debaterScope`, `resolverScope`, `verifierScope`) via `ctx.runtime.costAggregator.openScope()`; all four are closed in a single `finally` block (or `try/finally` chain) regardless of resolution outcome
+- The `PreDebatePhaseContext` passed into `resolvePreDebatePhase(...)` carries `scopeId: prePhaseScope.scopeId` (threaded via the same `CallContext` mechanism the phase uses to dispatch)
+- Every `CallContext` constructed for the debater fan-out carries `scopeId: debaterScope.scopeId`; the `SelectorContext.callContext` carries `scopeId: resolverScope.scopeId`; the verifier dispatch context carries `scopeId: verifierScope.scopeId`
+- `runner.ts` returns `DebateResult.totalCostUsd === prePhaseScope.snapshot().totalCostUsd + debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd + verifierScope.snapshot().totalCostUsd`
+- `runner.ts` no longer reads `prePhaseResult.costUsd` or `verifierResult.costUsd` (the local `totalCostUsd` accumulator is deleted)
+- **Codebase invariant:** after this story, `grep -nE "totalCostUsd\\s*\\+=|let\\s+totalCostUsd" src/debate/` returns zero matches across all three runners (`runner-stateful.ts`, `runner-hybrid.ts`, `runner.ts`)
+- A follow-up issue is filed (referenced in the PR description) tracking removal of the now-unread `prePhaseResult.costUsd` and `verifierResult.costUsd` return fields from their respective modules
+
+---
+
+### US-007: Document always-on cost flow in `retry-strategy.md` + `adapter-wiring.md`
 
 #### Scope
 
