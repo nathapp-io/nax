@@ -36,6 +36,7 @@ export interface HybridCtx extends DispatchContext {
   readonly callContext: CallContext;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
+  readonly resolverCallContext?: CallContext;
 }
 
 export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateResult> {
@@ -69,7 +70,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   );
 
   const signal = resolveStatefulSignal(ctx);
-  let totalDebaterCostUsd = 0;
 
   // Shared barriers — one slot per debater, one round array per rebuttal round.
   const proposalBarriers: PromiseWithResolvers<string>[] = resolved.map(() => Promise.withResolvers<string>());
@@ -81,9 +81,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const debaterCallContext = (agentName: string, index: number): CallContext => ({
     ...createDebaterCallContext(ctx, agentName),
     sessionOverride: { role: debaterRole(index) },
-    onCostAccumulated: (cost: number) => {
-      totalDebaterCostUsd += cost;
-    },
+    scopeId: ctx.callContext.scopeId,
   });
 
   const proposalListFromOutputs = (peerOutputs: string[]): Proposal[] =>
@@ -198,11 +196,11 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
         debaters: [successfulResults[0].debater.agent],
         resolverType: ctx.stageConfig.resolver.type,
         proposals: [{ debater: successfulResults[0].debater, output: successfulResults[0].output }],
-        totalCostUsd: totalDebaterCostUsd,
+        totalCostUsd: 0,
       };
     }
 
-    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, totalDebaterCostUsd);
+    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
   // Build rebuttal list from rebutBarriers — collect settled barrier outputs per round.
@@ -223,7 +221,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     rebuttals.map((r) => r.output),
     ctx.stageConfig,
     ctx.config,
-    ctx.callContext,
+    { ...ctx.callContext, scopeId: ctx.resolverCallContext?.scopeId ?? ctx.callContext.scopeId },
     ctx.storyId,
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
@@ -252,6 +250,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     resolverType: ctx.stageConfig.resolver.type,
     proposals: successfulResults.map((proposal) => ({ debater: proposal.debater, output: proposal.output })),
     rebuttals,
-    totalCostUsd: totalDebaterCostUsd + resolveResult.resolverCostUsd,
+    totalCostUsd: 0,
   };
 }

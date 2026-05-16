@@ -1,3 +1,5 @@
+import { getSafeLogger } from "../logger";
+
 export interface CostEvent {
   readonly ts: number;
   readonly runId: string;
@@ -6,14 +8,16 @@ export interface CostEvent {
   readonly stage?: string;
   readonly storyId?: string;
   readonly packageDir?: string;
+  readonly callId?: string;
+  readonly scopeId?: string;
   readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
   /** Estimated cost from token usage × pricing rates (always present). */
   readonly estimatedCostUsd: number;
-  /** Exact cost reported by wire protocol (when available). */
-  readonly exactCostUsd?: number;
+  /** Normalized exact cost: from wire protocol when available, else falls back to estimatedCostUsd. */
+  readonly exactCostUsd: number;
   /** Canonical cost for budget/totals: exact when available, else estimated. */
   readonly costUsd: number;
-  /** Confidence derived from presence of exactCostUsd. */
+  /** Confidence derived from presence of exactCostUsd at wire boundary. */
   readonly confidence: "exact" | "estimated";
   readonly durationMs: number;
 }
@@ -25,6 +29,8 @@ export interface CostErrorEvent {
   readonly model?: string;
   readonly stage?: string;
   readonly storyId?: string;
+  readonly callId?: string;
+  readonly scopeId?: string;
   readonly errorCode: string;
   readonly durationMs: number;
 }
@@ -32,11 +38,20 @@ export interface CostErrorEvent {
 export interface CostSnapshot {
   readonly totalCostUsd: number;
   readonly totalEstimatedCostUsd: number;
-  readonly totalExactCostUsd?: number;
+  readonly totalExactCostUsd: number;
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly callCount: number;
   readonly errorCount: number;
+}
+
+export interface CostScopeHandle {
+  /** The scopeId this handle filters by. */
+  readonly scopeId: string;
+  /** Totals across events recorded with this scope's scopeId at call time. */
+  snapshot(): CostSnapshot;
+  /** Idempotent release of internal indexes. */
+  close(): void;
 }
 
 export interface OperationSummaryEvent {
@@ -57,17 +72,25 @@ export interface ICostAggregator {
   byAgent(): Record<string, CostSnapshot>;
   byStage(): Record<string, CostSnapshot>;
   byStory(): Record<string, CostSnapshot>;
+  byCall(): Record<string, CostSnapshot>;
+  byScope(): Record<string, CostSnapshot>;
+  openScope(scopeId?: string): CostScopeHandle;
   drain(): Promise<void>;
 }
 
 const EMPTY_SNAPSHOT: CostSnapshot = {
   totalCostUsd: 0,
   totalEstimatedCostUsd: 0,
+  totalExactCostUsd: 0,
   totalInputTokens: 0,
   totalOutputTokens: 0,
   callCount: 0,
   errorCount: 0,
 };
+
+function makeCorrelationId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export function createNoOpCostAggregator(): ICostAggregator {
   return {
@@ -86,6 +109,19 @@ export function createNoOpCostAggregator(): ICostAggregator {
     byStory() {
       return {};
     },
+    byCall() {
+      return {};
+    },
+    byScope() {
+      return {};
+    },
+    openScope(scopeId?: string): CostScopeHandle {
+      return {
+        scopeId: scopeId ?? makeCorrelationId(),
+        snapshot: () => EMPTY_SNAPSHOT,
+        close: () => {},
+      };
+    },
     async drain() {},
   };
 }
@@ -93,15 +129,18 @@ export function createNoOpCostAggregator(): ICostAggregator {
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** Injectable deps — swap `write` in tests to avoid real disk I/O. */
+/** Injectable deps — swap in tests to avoid real disk I/O or logger side-effects. */
 export const _costAggDeps = {
   write: (path: string, data: string): Promise<number> => Bun.write(path, data),
+  getSafeLogger: () => getSafeLogger(),
+  newCorrelationId: makeCorrelationId,
 };
 
 function emptySnap(): CostSnapshot {
   return {
     totalCostUsd: 0,
     totalEstimatedCostUsd: 0,
+    totalExactCostUsd: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     callCount: 0,
@@ -113,11 +152,18 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
   return {
     totalCostUsd: snap.totalCostUsd + e.costUsd,
     totalEstimatedCostUsd: snap.totalEstimatedCostUsd + e.estimatedCostUsd,
-    totalExactCostUsd: e.exactCostUsd != null ? (snap.totalExactCostUsd ?? 0) + e.exactCostUsd : snap.totalExactCostUsd,
+    totalExactCostUsd: snap.totalExactCostUsd + e.exactCostUsd,
     totalInputTokens: snap.totalInputTokens + e.tokens.input,
     totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
     callCount: snap.callCount + 1,
     errorCount: snap.errorCount,
+  };
+}
+
+function accumulateError(snap: CostSnapshot): CostSnapshot {
+  return {
+    ...snap,
+    errorCount: snap.errorCount + 1,
   };
 }
 
@@ -127,6 +173,7 @@ export class CostAggregator implements ICostAggregator {
   private _draining = false;
   private readonly _inFlightEvents: CostEvent[] = [];
   private readonly _inFlightErrors: CostErrorEvent[] = [];
+  private readonly _openScopes = new Set<string>();
 
   constructor(
     private readonly _runId: string,
@@ -190,7 +237,59 @@ export class CostAggregator implements ICostAggregator {
     return m;
   }
 
+  byCall(): Record<string, CostSnapshot> {
+    const m: Record<string, CostSnapshot> = {};
+    for (const e of [...this._events, ...this._inFlightEvents]) {
+      if (e.callId === undefined) continue;
+      m[e.callId] = accumulate(m[e.callId] ?? emptySnap(), e);
+    }
+    for (const e of [...this._errors, ...this._inFlightErrors]) {
+      if (e.callId === undefined) continue;
+      m[e.callId] = accumulateError(m[e.callId] ?? emptySnap());
+    }
+    return m;
+  }
+
+  byScope(): Record<string, CostSnapshot> {
+    const m: Record<string, CostSnapshot> = {};
+    for (const e of [...this._events, ...this._inFlightEvents]) {
+      if (e.scopeId === undefined) continue;
+      m[e.scopeId] = accumulate(m[e.scopeId] ?? emptySnap(), e);
+    }
+    for (const e of [...this._errors, ...this._inFlightErrors]) {
+      if (e.scopeId === undefined) continue;
+      m[e.scopeId] = accumulateError(m[e.scopeId] ?? emptySnap());
+    }
+    return m;
+  }
+
+  openScope(scopeId?: string): CostScopeHandle {
+    const id = scopeId ?? _costAggDeps.newCorrelationId();
+    this._openScopes.add(id);
+    let closed = false;
+
+    return {
+      scopeId: id,
+      snapshot: (): CostSnapshot => {
+        const matching = [...this._events, ...this._inFlightEvents].filter((e) => e.scopeId === id);
+        const matchingErrors = [...this._errors, ...this._inFlightErrors].filter((e) => e.scopeId === id);
+        const eventSnapshot = matching.reduce(accumulate, emptySnap());
+        return matchingErrors.reduce((snap) => accumulateError(snap), eventSnapshot);
+      },
+      close: (): void => {
+        if (closed) return;
+        closed = true;
+        this._openScopes.delete(id);
+      },
+    };
+  }
+
   async drain(): Promise<void> {
+    const openScopeCount = this._openScopes.size;
+    if (openScopeCount > 0) {
+      _costAggDeps.getSafeLogger()?.warn("cost-aggregator", "drain called with open scopes", { openScopeCount });
+    }
+
     this._draining = true;
     try {
       const events = this._events.splice(0);

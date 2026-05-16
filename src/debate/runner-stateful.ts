@@ -36,6 +36,7 @@ interface StatefulCtx extends DispatchContext {
   readonly callContext: CallContext;
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
+  readonly resolverCallContext?: CallContext;
 }
 
 export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<DebateResult> {
@@ -70,17 +71,15 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     prompt,
     resolved.map((entry) => entry.debater),
   );
+
   const signal = resolveStatefulSignal(ctx);
-  let totalCostUsd = 0;
   const noopBuildRebutPrompt = (): string => "";
   const localProposalBarrier = () => [Promise.withResolvers<string>()];
   const debaterRole = (index: number) => `debate-${ctx.stage}-${index}` as SessionRole;
   const debaterCallContext = (agentName: string, index: number): CallContext => ({
     ...createDebaterCallContext(ctx, agentName),
     sessionOverride: { role: debaterRole(index) },
-    onCostAccumulated: (cost: number) => {
-      totalCostUsd += cost;
-    },
+    scopeId: ctx.callContext.scopeId,
   });
   const throwIfAborted = (): void => {
     if (signal.aborted) {
@@ -147,7 +146,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
         debaters: [successfulProposals[0].debater.agent],
         resolverType: ctx.stageConfig.resolver.type,
         proposals: [{ debater: successfulProposals[0].debater, output: successfulProposals[0].output }],
-        totalCostUsd,
+        totalCostUsd: 0,
       };
     }
 
@@ -167,7 +166,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
         debaters: [fallback.debater.agent],
         resolverType: ctx.stageConfig.resolver.type,
         proposals: [{ debater: fallback.debater, output: fallback.output }],
-        totalCostUsd,
+        totalCostUsd: 0,
       };
     }
 
@@ -176,7 +175,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       stage: ctx.stage,
       reason: "fewer than 2 proposal rounds succeeded",
     });
-    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, totalCostUsd);
+    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
   const rebuttals = shouldRunRebuttal
@@ -218,7 +217,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     rebuttals.map((rebuttal) => rebuttal.output),
     ctx.stageConfig,
     ctx.config,
-    ctx.callContext,
+    { ...ctx.callContext, scopeId: ctx.resolverCallContext?.scopeId ?? ctx.callContext.scopeId },
     ctx.storyId,
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
@@ -250,6 +249,6 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     resolverType: ctx.stageConfig.resolver.type,
     proposals,
     rebuttals,
-    totalCostUsd: totalCostUsd + outcome.resolverCostUsd,
+    totalCostUsd: 0,
   };
 }

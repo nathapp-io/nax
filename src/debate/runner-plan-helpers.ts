@@ -324,7 +324,6 @@ export async function finalizePlanRun(
     selectorKind === "verifier-pick"
       ? {
           outcome: "passed",
-          resolverCostUsd: 0,
           output: selectionSummary.winnerOutput ?? finalizedProposals[0]?.output,
         }
       : await resolveOutcome(
@@ -357,7 +356,7 @@ export async function finalizePlanRun(
       storyId: ctx.storyId,
       stage: ctx.stage,
       stageConfig: config,
-      selectorResult: { outcome: outcome.outcome, output: winningOutput, resolverCostUsd: outcome.resolverCostUsd },
+      selectorResult: { outcome: outcome.outcome, output: winningOutput },
       workdir: opts.workdir,
       ctx: ctx.callContext as unknown as import("../operations/types").CallContext,
     };

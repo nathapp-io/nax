@@ -202,7 +202,7 @@ describe("judgeSelector", () => {
     expect(capturedPrompt).toContain("proposal content beta");
   });
 
-  test("returns resolverCostUsd from estimatedCostUsd reported by completeAs", async () => {
+  test("returns result without resolverCostUsd property (AC4)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "verdict",
@@ -224,7 +224,7 @@ describe("judgeSelector", () => {
     });
     const result = await judgeSelector(ctx);
 
-    expect(result.resolverCostUsd).toBe(0.88);
+    expect("resolverCostUsd" in result).toBe(false);
   });
 
   test("passes ctx.debaters to the prompt builder", async () => {
@@ -269,7 +269,6 @@ describe("judgeSelector", () => {
     const result = await judgeSelector(ctx);
 
     expect(result.outcome).toBe("passed");
-    expect(result.resolverCostUsd).toBe(0);
   });
 
   test("returns outcome: failed when op result is empty string (AC7)", async () => {
@@ -285,7 +284,6 @@ describe("judgeSelector", () => {
     const result = await judgeSelector(ctx);
 
     expect(result.outcome).toBe("failed");
-    expect(result.resolverCostUsd).toBe(0);
   });
 
   test("returns outcome: failed when op result is whitespace-only string (AC7)", async () => {
@@ -301,6 +299,22 @@ describe("judgeSelector", () => {
     const result = await judgeSelector(ctx);
 
     expect(result.outcome).toBe("failed");
-    expect(result.resolverCostUsd).toBe(0);
+  });
+
+  test("forwards ctx.callContext unchanged to callOp — no onCostAccumulated injected (AC6)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "verdict",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    const result = await judgeSelector(ctx);
+
+    // callContext is not mutated — result does not contain onCostAccumulated artifact
+    expect("onCostAccumulated" in ctx.callContext).toBe(false);
+    expect(result.outcome).toBeDefined();
   });
 });

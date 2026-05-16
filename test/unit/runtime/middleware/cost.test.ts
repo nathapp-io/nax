@@ -140,6 +140,19 @@ describe("attachCostSubscriber", () => {
     expect(errors[0].storyId).toBe("s-1");
   });
 
+  test("copies callId and scopeId from dispatch error to CostErrorEvent", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(makeErrorEvent({ callId: "call-err", scopeId: "scope-err" }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].callId).toBe("call-err");
+    expect(errors[0].scopeId).toBe("scope-err");
+  });
+
   test("unsubscribe stops recording", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
@@ -152,5 +165,106 @@ describe("attachCostSubscriber", () => {
     unsub();
     bus.emitDispatch(makeSessionTurnEvent());
     expect(recorded).toHaveLength(1);
+  });
+
+  test("normalizes exactCostUsd to estimatedCostUsd when undefined", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: 0.005 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].exactCostUsd).toBe(0.005);
+    expect(recorded[0].costUsd).toBe(0.005);
+    expect(recorded[0].confidence).toBe("estimated");
+  });
+
+  test("sets confidence to exact when exactCostUsd is present", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: 0.007 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].confidence).toBe("exact");
+  });
+
+  test("costUsd always equals exactCostUsd after normalization", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: 0.004 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].costUsd).toBe(recorded[0].exactCostUsd);
+  });
+
+  test("normalizes exactCostUsd with zero estimatedCostUsd fallback", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].exactCostUsd).toBe(0);
+    expect(recorded[0].costUsd).toBe(0);
+    expect(recorded[0].confidence).toBe("estimated");
+  });
+
+  // --- AC2: callId/scopeId copying ---
+  test("copies callId from dispatch event to CostEvent", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ callId: "call-abc" }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].callId).toBe("call-abc");
+  });
+
+  test("copies scopeId from dispatch event to CostEvent", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ scopeId: "scope-xyz" }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].scopeId).toBe("scope-xyz");
+  });
+
+  test("leaves callId undefined on CostEvent when dispatch event has no callId", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ callId: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].callId).toBeUndefined();
+  });
+
+  test("leaves scopeId undefined on CostEvent when dispatch event has no scopeId", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ scopeId: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].scopeId).toBeUndefined();
   });
 });

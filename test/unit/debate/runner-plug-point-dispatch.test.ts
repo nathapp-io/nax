@@ -80,7 +80,7 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
   let selectorCallCount = 0;
   const mockSelector: Selector = async (_ctx: SelectorContext): Promise<SelectorResult> => {
     selectorCallCount++;
-    return { outcome: "passed", resolverCostUsd: 0.01 };
+    return { outcome: "passed" };
   };
 
   beforeEach(() => {
@@ -126,7 +126,6 @@ describe("resolveOutcome() — selector dispatch wiring (US-004 AC1)", () => {
 
     expect(selectorCallCount).toBe(1);
     expect(result.outcome).toBe("passed");
-    expect(result.resolverCostUsd).toBe(0.01);
   });
 
   test("when stageConfig.selector is unset, pickSelectorKind maps resolver.type to selector kind", async () => {
@@ -228,7 +227,7 @@ describe("resolveOutcome() — dialogue-verdict selector fallback (US-004 AC2)",
   };
 
   const fallbackSelector: Selector = async (_ctx: SelectorContext): Promise<SelectorResult> => {
-    return { outcome: "passed", resolverCostUsd: 0.02 };
+    return { outcome: "passed" };
   };
 
   beforeEach(() => {
@@ -460,7 +459,6 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
   test("review-grounding-filter does not turn a failed selector with no findings into pass", async () => {
     registerSelector("test-failed-empty-selector", async () => ({
       outcome: "failed",
-      resolverCostUsd: 0,
       findings: [],
     }));
     const ctx = makeCallCtx();

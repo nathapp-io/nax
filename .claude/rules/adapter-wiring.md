@@ -28,9 +28,11 @@ paths:
 | 2 — Session | `sessionManager.openSession` / `sendPrompt` / `closeSession` / `runInSession` / `handoff` | Ad-hoc session work. |
 | 1 — Adapter primitive | `adapter.openSession` / `sendTurn` / `closeSession` / `complete` | **Wiring layer only** — see Rule 3. |
 
-## Rule 1: Adapter has 4 primitives
+## Rule 1: Adapter has 4 primitives; no cost-reporting surface
 
 `adapter.run` / `plan` / `decompose` and `agentManager.planAs` / `decomposeAs` no longer exist. Plan and decompose are `kind:"complete"` ops (`planOp`, `decomposeOp`).
+
+The agent adapter exposes exactly 4 primitives: `openSession`, `sendTurn`, `closeSession`, `complete`. The adapter is **cost-blind**. Cost recording is handled exclusively by the cost middleware layer (`DispatchEvent` → `CostAggregator`). Do not add cost-reporting fields or methods to the adapter interface — all cost attribution flows through orchestration layers via `CallContext.scopeId` and `costAggregator.openScope()`.
 
 ## Rule 2: Session naming
 
@@ -67,3 +69,24 @@ New code goes through `callOp`. If you think you need Layer 3, check with the te
 ## Rule 5: Permissions resolve at the resource opener
 
 Only `SessionManager.openSession` and `AgentManager.completeAs` call `resolvePermissions`. Everyone above passes `pipelineStage` upward; never resolve in middle layers, never hardcode `dangerouslySkipPermissions`.
+
+## Rule 6: CallContext fields — input only, no result-side data
+
+`CallContext` carries **input-side** information: `scopeId` (for cost attribution), stage, story metadata, runtime references. Explicitly forbid adding new `CallContext` fields whose purpose is to surface result-side data (cost, stats, agent output, turn metadata). 
+
+Result-side data flows through:
+- `TurnResult` (turnId, estimatedCostUsd, etc.)
+- `DispatchEvent` (middleware observation, not CallContext)
+- `CostAggregator` (scope-aggregated totals, not CallContext)
+
+If you need to thread result data backwards to a caller, the result is already in `O` or a sibling return value — never extend `CallContext` as a back-channel. This prevents callsite confusion (is this field for sending to the agent, or reporting back to the caller?) and keeps the adapter boundary clean.
+
+## Rule 7: Leaf code must stay cost-blind
+
+Selectors, debater closures, and helper functions that influence routing or execution decisions **must not** read cost data or make decisions based on cost. Cost is an orchestration concern, not a local decision concern.
+
+- Selectors (`synthesisOp`, `judgeOp` resolvers) cannot reference cost aggregators or turn results.
+- Debater closures (`debate/debater-selector.ts`) cannot introspect `CostAggregator` or `TurnResult.estimatedCostUsd`.
+- Leaf helpers (e.g. quality thresholds, routing heuristics) must declare their inputs explicitly — no implicit dependency-injection of cost.
+
+Cost attribution belongs to **orchestration layers** that wire `costAggregator.openScope()` and pass `scopeId` downward through `CallContext`. Leaf code sees neither `CostAggregator` nor `DispatchEvent` — it receives only structured input and returns structured output.

@@ -7,6 +7,7 @@ import type { DebateStatefulInput } from "../../../src/operations/debate-statefu
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
+import { createNoOpCostAggregator } from "../../../src/runtime/cost-aggregator";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 // ─── Compile-time check ───────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
       configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
       packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
       signal: undefined,
+      costAggregator: createNoOpCostAggregator(),
     } as any,
     packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
     packageDir: "/tmp/work",
@@ -65,6 +67,7 @@ function makeCallCtxWithIds(
       configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
       packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
       signal: undefined,
+      costAggregator: createNoOpCostAggregator(),
     } as any,
     packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
     packageDir: workdir,
@@ -134,6 +137,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
 
@@ -182,6 +186,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
 
@@ -221,6 +226,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
 
@@ -266,6 +272,7 @@ describe("DebateRunner.run() — stateful mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
 
@@ -481,5 +488,108 @@ describe("DebateRunner.run() — one-shot mode unchanged", () => {
 
     expect(runAsSessionCount).toBe(0);
     expect(completeCount).toBeGreaterThan(0);
+  });
+});
+
+// ─── US-005: Two-scope cost tracking ─────────────────────────────────────────
+
+describe("runStateful() — two-scope cost tracking (US-005)", () => {
+  function makeScopedCostAgg(debaterCost = 0, resolverCost = 0) {
+    let callCount = 0;
+    const closed: string[] = [];
+    const openFn = mock(() => {
+      const isDebater = callCount++ === 0;
+      const scopeId = isDebater ? "debater-scope" : "resolver-scope";
+      return {
+        scopeId,
+        snapshot: () => ({
+          totalCostUsd: isDebater ? debaterCost : resolverCost,
+          totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
+        close: mock(() => {
+          closed.push(scopeId);
+        }),
+      };
+    });
+    return { openScope: openFn, closed };
+  }
+
+  function makeCtxWithCostAgg(costAgg: ReturnType<typeof makeScopedCostAgg>): CallContext {
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: "ok",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    });
+    const sm = makeSessionManager({
+      openSession: mock(async (name: string) => ({ id: name, agentName: "claude" })),
+      closeSession: mock(async () => {}),
+    });
+    return {
+      runtime: {
+        agentManager,
+        sessionManager: sm,
+        configLoader: { current: () => DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
+        signal: undefined,
+        costAggregator: costAgg,
+      } as any,
+      packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+      packageDir: "/tmp/work",
+      agentName: "claude",
+      storyId: "US-cost",
+      featureName: "feat-cost",
+    };
+  }
+
+  function makeStatefulCostRunner(ctx: CallContext) {
+    return new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: makeStatefulStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
+      sessionManager: (ctx.runtime as any).sessionManager,
+    });
+  }
+
+  test("AC1: opens two scopes and closes both in finally", async () => {
+    const costAgg = makeScopedCostAgg();
+    const runner = makeStatefulCostRunner(makeCtxWithCostAgg(costAgg));
+    await runner.run("prompt");
+    expect(costAgg.openScope).toHaveBeenCalledTimes(2);
+    expect(costAgg.closed).toContain("debater-scope");
+    expect(costAgg.closed).toContain("resolver-scope");
+  });
+
+  test("AC2: debater callOp receives scopeId from debaterScope", async () => {
+    const costAgg = makeScopedCostAgg();
+    const ctx = makeCtxWithCostAgg(costAgg);
+    const capturedIds: (string | undefined)[] = [];
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op, input) => {
+      if ((op as { name?: string }).name === "debate-stateful") capturedIds.push(callCtx.scopeId);
+      (input as DebateStatefulInput).proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" } as any;
+    });
+    await makeStatefulCostRunner(ctx).run("prompt");
+    expect(capturedIds.length).toBeGreaterThan(0);
+    expect(capturedIds.every((id) => id === "debater-scope")).toBe(true);
+  });
+
+  test("AC6: totalCostUsd = debaterScope (0.10) + resolverScope (0.02) = 0.12", async () => {
+    const costAgg = makeScopedCostAgg(0.10, 0.02);
+    const ctx = makeCtxWithCostAgg(costAgg);
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input) => {
+      (input as DebateStatefulInput).proposalBarriers[0]?.resolve("ok");
+      return { success: true, rebut: "ok" } as any;
+    });
+    const result = await makeStatefulCostRunner(ctx).run("prompt");
+    expect(result.totalCostUsd).toBeCloseTo(0.12);
   });
 });

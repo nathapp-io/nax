@@ -28,6 +28,10 @@ export interface DispatchEventBase {
   readonly exactCostUsd?: number;
   readonly durationMs: number;
   readonly timestamp: number;
+  /** Per-callOp invocation id, stamped by the operation layer. */
+  readonly callId?: string;
+  /** Caller-supplied region id forwarded from CallContext.scopeId. */
+  readonly scopeId?: string;
 }
 
 export interface SessionTurnDispatchEvent extends DispatchEventBase {
@@ -56,6 +60,8 @@ export interface OperationCompletedEvent {
   readonly storyId?: string;
   readonly stage: PipelineStage;
   readonly timestamp: number;
+  readonly callId?: string;
+  readonly scopeId?: string;
 }
 
 export interface DispatchErrorEvent {
@@ -70,6 +76,8 @@ export interface DispatchErrorEvent {
   readonly durationMs: number;
   readonly timestamp: number;
   readonly resolvedPermissions: ResolvedPermissions;
+  readonly callId?: string;
+  readonly scopeId?: string;
 }
 
 export interface ReviewDecisionEvent {

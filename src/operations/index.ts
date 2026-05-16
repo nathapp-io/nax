@@ -1,4 +1,4 @@
-export { callOp, _callOpDeps, _runPostParseForTest } from "./call";
+export { callOp, newCorrelationId, _callOpDeps, _runPostParseForTest } from "./call";
 export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
 export { planRefineOp } from "./plan-refine";

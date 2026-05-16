@@ -4,13 +4,14 @@ import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCom
 export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAggregator, runId: string): () => void {
   const offDispatch = bus.onDispatch((event: DispatchEvent) => {
     const tu = event.tokenUsage;
-    const exactCostUsd = event.exactCostUsd;
-    const estimatedCostUsd = event.estimatedCostUsd ?? exactCostUsd ?? 0;
+    const wireExactCostUsd = event.exactCostUsd;
+    const estimatedCostUsd = event.estimatedCostUsd ?? 0;
 
-    if (!tu && exactCostUsd == null && estimatedCostUsd === 0) return;
+    const hasWireExactCost = typeof wireExactCostUsd === "number" && Number.isFinite(wireExactCostUsd);
+    const exactCostUsd = hasWireExactCost ? wireExactCostUsd : estimatedCostUsd;
+    const confidence: "exact" | "estimated" = hasWireExactCost ? "exact" : "estimated";
 
-    const costUsd = exactCostUsd ?? estimatedCostUsd;
-    const confidence: "exact" | "estimated" = exactCostUsd != null ? "exact" : "estimated";
+    if (!tu && exactCostUsd === 0) return;
 
     const costEvent: CostEvent = {
       ts: event.timestamp,
@@ -19,6 +20,8 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       model: "unknown",
       stage: event.stage,
       storyId: event.storyId,
+      callId: event.callId,
+      scopeId: event.scopeId,
       tokens: tu
         ? {
             input: tu.inputTokens ?? 0,
@@ -29,7 +32,7 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
         : { input: 0, output: 0 },
       estimatedCostUsd,
       exactCostUsd,
-      costUsd,
+      costUsd: exactCostUsd,
       confidence,
       durationMs: event.durationMs,
     };
@@ -43,6 +46,8 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       agentName: event.agentName,
       stage: event.stage,
       storyId: event.storyId,
+      callId: event.callId,
+      scopeId: event.scopeId,
       errorCode: event.errorCode,
       durationMs: event.durationMs,
     };

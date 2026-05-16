@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import * as callModule from "../../../src/operations";
 import type { CallContext } from "../../../src/operations/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { debateConfigSelector } from "../../../src/config";
+import { createNoOpCostAggregator } from "../../../src/runtime/cost-aggregator";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
@@ -18,6 +20,7 @@ function makeCallCtx(overrides: Partial<CallContext> = {}): CallContext {
       configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
       packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
       signal: undefined,
+      costAggregator: createNoOpCostAggregator(),
     } as any,
     packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
     packageDir: "/tmp/work",
@@ -92,6 +95,7 @@ describe("DebateRunner — one-shot panel mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
     const runner = new DebateRunner({ ctx, stage: "review", stageConfig: makeStageConfig(), config: DEFAULT_CONFIG, workdir: "/tmp" });
@@ -111,6 +115,7 @@ describe("DebateRunner — one-shot panel mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
     const runner = new DebateRunner({ ctx, stage: "review", stageConfig: makeStageConfig(), config: DEFAULT_CONFIG, workdir: "/tmp" });
@@ -139,6 +144,7 @@ describe("DebateRunner — one-shot panel mode", () => {
         configLoader: { current: () => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: () => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
     const runner = new DebateRunner({ ctx, stage: "review", stageConfig, config: DEFAULT_CONFIG, workdir: "/tmp" });
@@ -179,6 +185,7 @@ describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
         configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
         packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
         signal: undefined,
+        costAggregator: createNoOpCostAggregator(),
       } as any,
     });
     const sm = (ctx.runtime as any).sessionManager;
@@ -199,5 +206,105 @@ describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
     });
     const result = await runner.run("test prompt");
     expect(result.outcome).toBe("passed");
+  });
+});
+
+// ─── US-006: Four-scope cost tracking ────────────────────────────────────────
+
+describe("DebateRunner.runPanelOneShot() — four-scope cost tracking (US-006)", () => {
+  function makeScopedCostAgg(scopeCosts = [0, 0, 0, 0]) {
+    let callCount = 0;
+    const closed: string[] = [];
+    const scopeNames = ["pre-phase-scope", "debater-scope", "resolver-scope", "verifier-scope"];
+    const openFn = mock(() => {
+      const idx = callCount++;
+      const scopeId = scopeNames[idx] ?? `scope-${idx}`;
+      const cost = scopeCosts[idx] ?? 0;
+      return {
+        scopeId,
+        snapshot: () => ({
+          totalCostUsd: cost,
+          totalEstimatedCostUsd: 0,
+          totalExactCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
+        close: mock(() => {
+          closed.push(scopeId);
+        }),
+      };
+    });
+    return { openScope: openFn, closed };
+  }
+
+  function makeCtxWithCostAgg(costAgg: ReturnType<typeof makeScopedCostAgg>): CallContext {
+    const agentManager = makeMockAgentManager({
+      completeFn: async (_name: string, _p: string, _o: unknown) => ({
+        output: '{"passed":true}',
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+    return {
+      runtime: {
+        agentManager,
+        sessionManager: makeSessionManager(),
+        configLoader: { current: () => DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG }) } as any,
+        signal: undefined,
+        costAggregator: costAgg,
+      } as any,
+      packageView: { config: DEFAULT_CONFIG, select: (_: unknown) => DEFAULT_CONFIG } as any,
+      packageDir: "/tmp/work",
+      agentName: "claude",
+      storyId: "US-cost",
+      featureName: "feat-cost",
+    };
+  }
+
+  function makePanelCostRunner(ctx: CallContext) {
+    return new DebateRunner({
+      ctx,
+      stage: "review",
+      stageConfig: makeStageConfig(),
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/work",
+    });
+  }
+
+  test("AC1: opens four scopes and closes all four in finally", async () => {
+    const costAgg = makeScopedCostAgg();
+    const runner = makePanelCostRunner(makeCtxWithCostAgg(costAgg));
+    await runner.run("prompt");
+    expect(costAgg.openScope).toHaveBeenCalledTimes(4);
+    expect(costAgg.closed).toContain("pre-phase-scope");
+    expect(costAgg.closed).toContain("debater-scope");
+    expect(costAgg.closed).toContain("resolver-scope");
+    expect(costAgg.closed).toContain("verifier-scope");
+  });
+
+  test("AC3: debater callOp receives scopeId from debaterScope", async () => {
+    const costAgg = makeScopedCostAgg();
+    const ctx = makeCtxWithCostAgg(costAgg);
+    const capturedIds: (string | undefined)[] = [];
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, op) => {
+      if ((op as { name?: string }).name === "debate-propose") capturedIds.push(callCtx.scopeId);
+      return '{"passed":true}' as any;
+    });
+    await makePanelCostRunner(ctx).run("prompt");
+    expect(capturedIds.length).toBeGreaterThan(0);
+    expect(capturedIds.every((id) => id === "debater-scope")).toBe(true);
+  });
+
+  test("AC6: totalCostUsd = sum of all four scope snapshots", async () => {
+    const costAgg = makeScopedCostAgg([0.01, 0.10, 0.02, 0]);
+    const ctx = makeCtxWithCostAgg(costAgg);
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op) => {
+      return '{"passed":true}' as any;
+    });
+    const result = await makePanelCostRunner(ctx).run("prompt");
+    expect(result.totalCostUsd).toBeCloseTo(0.13);
   });
 });

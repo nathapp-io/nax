@@ -34,7 +34,6 @@ export interface SuccessfulProposal {
 
 export interface ResolveOutcome {
   outcome: "passed" | "failed" | "skipped";
-  resolverCostUsd: number;
   /** Synthesised output from synthesis/custom resolver — undefined for majority resolver */
   output?: string;
   /** Structured dialogue result from ReviewerSession resolver (debate+dialogue mode only) */
@@ -262,7 +261,6 @@ export async function resolveOutcome(
       const result = await resolveSelector(kind)(selectorCtx);
       return {
         outcome: result.outcome,
-        resolverCostUsd: result.resolverCostUsd,
         output: result.output,
         findings: result.findings,
         dialogueResult: result.dialogueResult,
@@ -275,7 +273,6 @@ export async function resolveOutcome(
       const fallbackResult = await resolveSelector(resolverTypeMappedKind)(selectorCtx);
       return {
         outcome: fallbackResult.outcome,
-        resolverCostUsd: fallbackResult.resolverCostUsd,
         output: fallbackResult.output,
         findings: fallbackResult.findings,
         dialogueResult: fallbackResult.dialogueResult,
@@ -286,7 +283,6 @@ export async function resolveOutcome(
   const result = await resolveSelector(kind)(selectorCtx);
   return {
     outcome: result.outcome,
-    resolverCostUsd: result.resolverCostUsd,
     output: result.output,
     findings: result.findings,
     dialogueResult: result.dialogueResult,

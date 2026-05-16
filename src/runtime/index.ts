@@ -4,6 +4,7 @@ export type {
   CostEvent,
   CostErrorEvent,
   CostSnapshot,
+  CostScopeHandle,
 } from "./cost-aggregator";
 export { createNoOpPromptAuditor, PromptAuditor, _promptAuditorDeps } from "./prompt-auditor";
 export type {

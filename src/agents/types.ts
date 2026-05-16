@@ -169,6 +169,10 @@ export interface AgentRunOptions {
    * Optional for backward compat — adapters that ignore it stay functional.
    */
   abortSignal?: AbortSignal;
+  /** Per-callOp invocation id stamped by the operation layer; forwarded to dispatch events. */
+  readonly callId?: string;
+  /** Caller-supplied region id forwarded from CallContext.scopeId; forwarded to dispatch events. */
+  readonly scopeId?: string;
   /**
    * Fires once the agent has established its physical session and the
    * adapter has captured its protocol identifiers — before any prompt has
@@ -286,6 +290,10 @@ export interface CompleteOptions {
    * onto this callback for the runtime bus.
    */
   onStreamActivity?: (event: import("../runtime/agent-stream-events").AgentStreamEvent) => void;
+  /** Per-callOp invocation id stamped by the operation layer; forwarded to dispatch events. */
+  readonly callId?: string;
+  /** Caller-supplied region id forwarded from CallContext.scopeId; forwarded to dispatch events. */
+  readonly scopeId?: string;
 }
 
 /**

@@ -288,7 +288,6 @@ describe("dialogueVerdictSelector (US-003 AC1-3)", () => {
         resolverContextInput: mockResolverContextInput,
       });
 
-      // Expected result: { outcome: "passed", resolverCostUsd: 0.005, ... }
       expect(ctx.reviewerSession).toBeDefined();
     });
 
@@ -306,11 +305,10 @@ describe("dialogueVerdictSelector (US-003 AC1-3)", () => {
         resolverContextInput: mockResolverContextInput,
       });
 
-      // Expected result: { outcome: "failed", resolverCostUsd: 0.005, ... }
       expect(ctx.reviewerSession).toBeDefined();
     });
 
-    test("returns resolverCostUsd === dialogueResult.cost ?? 0", async () => {
+    test("dialogueResult.cost is not mapped to resolverCostUsd (AC7)", async () => {
       const mockSession: Partial<ReviewerSession> = {
         resolveDebate: mock(async () => ({
           checkResult: { success: true, findings: [] },
@@ -324,24 +322,7 @@ describe("dialogueVerdictSelector (US-003 AC1-3)", () => {
         resolverContextInput: mockResolverContextInput,
       });
 
-      // Expected: resolverCostUsd === 0.123
-      expect(ctx.reviewerSession).toBeDefined();
-    });
-
-    test("returns resolverCostUsd === 0 when dialogueResult.cost is undefined", async () => {
-      const mockSession: Partial<ReviewerSession> = {
-        resolveDebate: mock(async () => ({
-          checkResult: { success: true, findings: [] },
-          findingReasoning: new Map(),
-        })),
-      };
-
-      const ctx = makeSelectorContext({
-        reviewerSession: mockSession as ReviewerSession,
-        resolverContextInput: mockResolverContextInput,
-      });
-
-      // Expected: resolverCostUsd === 0
+      // Verify SelectorResult type no longer has resolverCostUsd (compile-time check via type annotation)
       expect(ctx.reviewerSession).toBeDefined();
     });
 

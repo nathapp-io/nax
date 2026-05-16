@@ -1,0 +1,7 @@
+[2026-05-16T11:35:16.361Z] US-001 — PASSED — Normalize exactCostUsd — make required, fall back to estimatedCostUsd — Cost: $0.4166
+[2026-05-16T11:59:05.554Z] US-002 — PASSED — Add callId + scopeId to dispatch event base; stamp and forward at callOp — Cost: $2.3516
+[2026-05-16T12:16:54.300Z] US-003 — PASSED — Aggregator scope API — openScope, byScope, byCall — Cost: $1.4307
+[2026-05-16T12:42:49.475Z] US-004 — PASSED — Strip cost from selectors — delete resolverCostUsd and onCostAccumulated — Cost: $3.6904
+[2026-05-16T13:01:43.028Z] US-005 — PASSED — runner-stateful and runner-hybrid — two-scope conversion — Cost: $3.7720
+[2026-05-16T13:09:52.017Z] US-006 — PASSED — runner.ts — four-scope conversion (pre-debate, debaters, selector, verifier) — Cost: $1.7390
+[2026-05-16T13:11:38.853Z] US-007 — PASSED — Document always-on cost flow in retry-strategy.md and adapter-wiring.md — Cost: $0.2177

@@ -438,6 +438,8 @@ export class AgentManager implements IAgentManager {
         storyId: request.runOptions.storyId,
         stage: request.runOptions.pipelineStage ?? "run",
         timestamp: Date.now(),
+        ...(request.runOptions.callId !== undefined ? { callId: request.runOptions.callId } : {}),
+        ...(request.runOptions.scopeId !== undefined ? { scopeId: request.runOptions.scopeId } : {}),
       });
     }
   }
@@ -552,6 +554,8 @@ export class AgentManager implements IAgentManager {
         storyId: options.storyId,
         stage: options.pipelineStage ?? "complete",
         timestamp: Date.now(),
+        ...(options.callId !== undefined ? { callId: options.callId } : {}),
+        ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
       });
     }
   }
@@ -636,6 +640,7 @@ export class AgentManager implements IAgentManager {
         projectDir: opts.projectDir,
         resolvedPermissions,
         tokenUsage: result.tokenUsage,
+        estimatedCostUsd: result.estimatedCostUsd,
         exactCostUsd: result.exactCostUsd,
         durationMs: Date.now() - start,
         timestamp: Date.now(),
@@ -645,6 +650,8 @@ export class AgentManager implements IAgentManager {
           recordId: handle.protocolIds?.recordId ?? null,
         },
         origin: "runAsSession",
+        ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
+        ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
       };
       this._dispatchEvents.emitDispatch(event);
       return result;
@@ -661,6 +668,8 @@ export class AgentManager implements IAgentManager {
         durationMs: Date.now() - start,
         timestamp: Date.now(),
         resolvedPermissions,
+        ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
+        ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
       };
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
@@ -700,6 +709,8 @@ export class AgentManager implements IAgentManager {
         exactCostUsd: outcome.result.exactCostUsd,
         durationMs: Date.now() - start,
         timestamp: Date.now(),
+        ...(options.callId !== undefined ? { callId: options.callId } : {}),
+        ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
       };
       this._dispatchEvents.emitDispatch(event);
       return outcome.result;
@@ -716,6 +727,8 @@ export class AgentManager implements IAgentManager {
         durationMs: Date.now() - start,
         timestamp: Date.now(),
         resolvedPermissions,
+        ...(options.callId !== undefined ? { callId: options.callId } : {}),
+        ...(options.scopeId !== undefined ? { scopeId: options.scopeId } : {}),
       };
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;

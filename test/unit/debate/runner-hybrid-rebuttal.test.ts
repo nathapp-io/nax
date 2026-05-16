@@ -236,20 +236,21 @@ describe("DebateRunner hybrid rebuttal", () => {
     expect(rolesByIndex.get(1)).toBe("debate-hybrid-1");
   });
 
-  test("per-turn costs accumulated through callOp.onCostAccumulated are reflected in totalCostUsd", async () => {
+  test("callContext forwarded to callOp does not have onCostAccumulated (AC12)", async () => {
     const runner = makeRunner();
+    let capturedCallCtx: CallContext | undefined;
 
     spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
-      (callCtx as CallContext).onCostAccumulated?.(0.1);
+      capturedCallCtx = callCtx as CallContext;
       input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
       input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
       return { success: true, rebut: `rebuttal-${input.index}` };
     });
 
-    const result = await runner.run("test prompt");
+    await runner.run("test prompt");
 
-    // 2 debaters × 0.1 USD = 0.2 USD
-    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0.19);
+    expect(capturedCallCtx).toBeDefined();
+    expect("onCostAccumulated" in (capturedCallCtx ?? {})).toBe(false);
   });
 
   test("DebateResult.rebuttals contains one entry per debater per round, collected from shared barriers", async () => {

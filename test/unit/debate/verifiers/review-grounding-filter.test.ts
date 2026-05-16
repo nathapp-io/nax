@@ -40,7 +40,6 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
     } as DebateStageConfig,
     selectorResult: {
       outcome: "passed",
-      resolverCostUsd: 0.001,
     } as SelectorResult,
     workdir: "/test",
     ctx: {
@@ -75,8 +74,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
 
       const selectorResult: SelectorResult = {
         outcome: "passed",
-        resolverCostUsd: 0.001,
-      };
+        };
 
       const ctx = makeVerifierContext({
         selectorResult: {
@@ -152,8 +150,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-        } as SelectorResult,
+            } as SelectorResult,
       });
 
       // Expected result: { outcome: "failed", ... }
@@ -181,8 +178,7 @@ describe("reviewGroundingFilterVerifier (US-003 AC6)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-        } as SelectorResult,
+            } as SelectorResult,
       });
 
       // Expected result: { outcome: "passed", findings: [] }

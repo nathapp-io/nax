@@ -124,6 +124,34 @@ describe("runAsSession — dispatch emission", () => {
     expect(received[0]?.protocolIds.recordId).toBe("rec-xyz");
   });
 
+  test("forwards estimatedCostUsd on session-turn events when exactCostUsd is absent", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => ({
+        output: "hello",
+        tokenUsage: { inputTokens: 10, outputTokens: 5 },
+        estimatedCostUsd: 0.001,
+        exactCostUsd: undefined,
+        internalRoundTrips: 1,
+      })),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    await manager.runAsSession("claude", makeHandle(), "test-prompt", {
+      pipelineStage: "run",
+      storyId: "US-001",
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.estimatedCostUsd).toBe(0.001);
+    expect(received[0]?.exactCostUsd).toBeUndefined();
+  });
+
   test("emits DispatchErrorEvent on sendPrompt throw, then re-throws", async () => {
     const bus = new DispatchEventBus();
     const manager = new AgentManager(DEFAULT_CONFIG, undefined, {

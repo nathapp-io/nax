@@ -176,7 +176,7 @@ describe("synthesisSelector", () => {
     expect(result.outcome).toBe("failed");
   });
 
-  test("returns resolverCostUsd from estimatedCostUsd reported by completeAs", async () => {
+  test("returns result without resolverCostUsd property (AC5)", async () => {
     const agentManager = makeMockAgentManager({
       completeAsFn: async () => ({
         output: "synthesis",
@@ -189,7 +189,22 @@ describe("synthesisSelector", () => {
     const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
     const result = await synthesisSelector(ctx);
 
-    expect(result.resolverCostUsd).toBe(0.75);
+    expect("resolverCostUsd" in result).toBe(false);
+  });
+
+  test("forwards ctx.callContext unchanged to callOp — no onCostAccumulated injected (AC6)", async () => {
+    const agentManager = makeMockAgentManager({
+      completeAsFn: async () => ({
+        output: "synthesis",
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        estimatedCostUsd: 0,
+      }),
+    });
+
+    const ctx = makeCtx({ proposals: makeProposals(["p1"]), agentManager });
+    await synthesisSelector(ctx);
+
+    expect("onCostAccumulated" in ctx.callContext).toBe(false);
   });
 
   test("uses ctx.stageConfig.resolver.agent as the agent name", async () => {

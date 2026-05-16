@@ -96,7 +96,6 @@ export const dialogueVerdictSelector: Selector = async (ctx: SelectorContext): P
       const outcome = dialogueResult.checkResult.success ? "passed" : "failed";
       return {
         outcome,
-        resolverCostUsd: dialogueResult.cost ?? 0,
         findings: dialogueResult.checkResult.findings,
         dialogueResult,
       };
