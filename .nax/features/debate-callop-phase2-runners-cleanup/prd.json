@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase2-runners-cleanup",
   "branchName": "feat/debate-callop-phase2-runners-cleanup",
   "createdAt": "2026-05-15T00:00:00.000Z",
-  "updatedAt": "2026-05-16T06:15:01.609Z",
+  "updatedAt": "2026-05-16T07:08:33.966Z",
   "userStories": [
     {
       "id": "US-003",
@@ -23,7 +23,10 @@
         "`raceAgainstAbort` is exported from `src/debate/utils.ts` and re-exported from `src/debate/index.ts`; it has signature `<T>(promise: Promise<T>, signal: AbortSignal, storyId: string | undefined) => Promise<T>` and throws `NaxError(\"CALL_OP_ABORTED\")` on abort",
         "`runStateful`'s coordinator builds `proposePrompt` and rebuttal prompts via `DebatePromptBuilder` — no multi-line prompt strings assembled inline",
         "`src/debate/runner-stateful.ts` contains no references to `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, or `ctx.config.models`",
-        "The refactored `runner-stateful.ts` contains no property access on `ctx.config.models` or `DebateConfig[\"models\"]`"
+        "The refactored `runner-stateful.ts` contains no property access on `ctx.config.models` or `DebateConfig[\"models\"]`",
+        "When `raceAgainstAbort` is called with an already-aborted `AbortSignal`, it throws `NaxError` with code `CALL_OP_ABORTED` immediately without awaiting the wrapped promise",
+        "When `ctx.callContext.runtime.configLoader.current().debate?.maxConcurrentDebaters` is undefined, coordinator defaults to `2` concurrent debaters",
+        "Every `logger.*` call in `runner-stateful.ts` coordinator code places `storyId` as the first key in the data object"
       ],
       "tags": [
         "feature",
@@ -51,11 +54,8 @@
         "src/debate/concurrency.ts"
       ],
       "suggestedCriteria": [
-        "When `raceAgainstAbort` is called with an already-aborted `AbortSignal`, it throws `NaxError` with code `CALL_OP_ABORTED` immediately without awaiting the wrapped promise",
         "When fewer than 2 debaters succeed (the existing fallback threshold), `runStateful` returns a `DebateResult` with `outcome: \"skipped\"` and a populated `debaters` list reflecting only the successful debaters",
-        "When all `callOp` invocations return `success: false`, `runStateful` returns a `DebateResult` with `outcome: \"failed\"` without deadlocking",
-        "When `ctx.callContext.runtime.configLoader.current().debate?.maxConcurrentDebaters` is undefined, coordinator defaults to `2` concurrent debaters",
-        "Every `logger.*` call in `runner-stateful.ts` coordinator code places `storyId` as the first key in the data object"
+        "When all `callOp` invocations return `success: false`, `runStateful` returns a `DebateResult` with `outcome: \"failed\"` without deadlocking"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -76,7 +76,10 @@
         "When `hybridDebaterOp.hopBody` receives an abort signal between rebuttal rounds, it throws `NaxError` with code `CALL_OP_ABORTED` without sending further turns",
         "`runHybrid(ctx, prompt)` returns a `DebateResult` whose shape matches the pre-refactor implementation for the same inputs",
         "`runHybrid`'s coordinator builds prompts via `DebatePromptBuilder` — no multi-line prompt strings assembled inline",
-        "`src/debate/runner-hybrid.ts` contains no references to `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, or `ctx.config.models`"
+        "`src/debate/runner-hybrid.ts` contains no references to `sessionManager.openSession`, `sessionManager.closeSession`, `agentManager.runAsSession`, `resolveModelDefForDebater`, or `ctx.config.models`",
+        "When `rounds` is configured to 1 in debate config, `hybridDebaterOp.hopBody` calls `ctx.send` exactly twice (proposal + one rebut round)",
+        "When a debater fails in round 2 of 3, barriers for rounds 2 and 3 are both rejected (not just the current round's barriers)",
+        "Every `logger.*` call in `runner-hybrid.ts` coordinator code places `storyId` as the first key in the data object"
       ],
       "tags": [
         "feature",
@@ -104,11 +107,6 @@
         "src/operations/types.ts",
         "src/debate/concurrency.ts",
         "src/debate/session-helpers.ts"
-      ],
-      "suggestedCriteria": [
-        "When `rounds` is configured to 1 in debate config, `hybridDebaterOp.hopBody` calls `ctx.send` exactly twice (proposal + one rebut round)",
-        "When a debater fails in round 2 of 3, barriers for rounds 2 and 3 are both rejected (not just the current round's barriers)",
-        "Every `logger.*` call in `runner-hybrid.ts` coordinator code places `storyId` as the first key in the data object"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -194,7 +192,8 @@
         "No file under `src/debate/` references `config.models`, `ctx.config.models`, or `DebateConfig[\"models\"]`",
         "Test fixtures and helpers that previously constructed a `DebateConfig` literal with a `models` field are updated to drop that field",
         "`test/unit/debate/runner-events.test.ts` does not contain any `describe`/`test` block exercising `resolveDebaterModel`",
-        "`.claude/rules/adapter-wiring.md` session role registry: `\"debate-stateful\"`, `\"debate-hybrid\"`, `\"debate-plan\"` are moved from the `agentManager.runAsSession` row to the `callOp` run-kind row; the `debate-${string}` template-literal carve-out in the sanctioned-consumers prose is updated to note Phase 2 landing"
+        "`.claude/rules/adapter-wiring.md` session role registry: `\"debate-stateful\"`, `\"debate-hybrid\"`, `\"debate-plan\"` are moved from the `agentManager.runAsSession` row to the `callOp` run-kind row; the `debate-${string}` template-literal carve-out in the sanctioned-consumers prose is updated to note Phase 2 landing",
+        "When a test constructs a `DebateConfig` with a `models` field after the selector slim, TypeScript emits an excess-property error"
       ],
       "tags": [
         "refactor",
@@ -206,8 +205,8 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -223,9 +222,6 @@
         "src/debate/index.ts",
         "test/unit/debate/runner-events.test.ts",
         ".claude/rules/adapter-wiring.md"
-      ],
-      "suggestedCriteria": [
-        "When a test constructs a `DebateConfig` with a `models` field after the selector slim, TypeScript emits an excess-property error"
       ],
       "priorErrors": [],
       "priorFailures": [],

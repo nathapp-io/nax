@@ -94,18 +94,19 @@ describe("AC-3: statefulDebaterOp hopBody ctx.send invocations", () => {
       input: {
         debater: { agent: "claude", model: "balanced" },
         proposalBarriers: [
-          { resolve: mock(() => {}), reject: mock(() => {}) },
-          { resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer-1"), resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer-2"), resolve: mock(() => {}), reject: mock(() => {}) },
         ],
-        peerBarriers: [],
         index: 0,
         buildRebutPrompt: mock(() => "rebuttal-prompt"),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (statefulDebaterOp.hopBody) {
-      await statefulDebaterOp.hopBody(mockCtx);
+      await statefulDebaterOp.hopBody("initial proposal", mockCtx);
     }
 
     expect(sendCalls.length).toBe(2);
@@ -125,18 +126,19 @@ describe("AC-3: statefulDebaterOp hopBody ctx.send invocations", () => {
       input: {
         debater: { agent: "claude", model: "fast" },
         proposalBarriers: [
-          { resolve: mock(() => {}), reject: mock(() => {}) },
-          { resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer-1"), resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer-2"), resolve: mock(() => {}), reject: mock(() => {}) },
         ],
-        peerBarriers: [],
         index: 0,
         buildRebutPrompt: mock(() => "custom-rebuttal-prompt"),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (statefulDebaterOp.hopBody) {
-      await statefulDebaterOp.hopBody(mockCtx);
+      await statefulDebaterOp.hopBody("initial proposal", mockCtx);
     }
 
     expect(sendPrompts.length).toBe(2);
@@ -156,13 +158,14 @@ describe("AC-4: proposalBarriers promise resolution timing", () => {
     let proposalResolved = false;
 
     const mockCtx = {
-      send: mock(async (prompt: string) => {
+      send: mock(async (_prompt: string) => {
         return { output: "initial-proposal-output", costUsd: 0 };
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
         proposalBarriers: [
           {
+            promise: Promise.resolve(""),
             resolve: mock((val: string) => {
               proposalResolveValue = val;
               proposalResolved = true;
@@ -170,15 +173,16 @@ describe("AC-4: proposalBarriers promise resolution timing", () => {
             reject: mock(() => {}),
           },
         ],
-        peerBarriers: [],
         index: 0,
         buildRebutPrompt: mock(() => ""),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (statefulDebaterOp.hopBody) {
-      await statefulDebaterOp.hopBody(mockCtx);
+      await statefulDebaterOp.hopBody("initial proposal", mockCtx);
     }
 
     expect(proposalResolved).toBe(true);
@@ -205,18 +209,19 @@ describe("AC-5: statefulDebaterOp abort signal handling", () => {
       input: {
         debater: { agent: "claude", model: "fast" },
         proposalBarriers: [
-          { resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer"), resolve: mock(() => {}), reject: mock(() => {}) },
         ],
-        peerBarriers: [],
         index: 0,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: true, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: true } },
     } as any;
 
     try {
       if (statefulDebaterOp.hopBody) {
-        await statefulDebaterOp.hopBody(mockCtx);
+        await statefulDebaterOp.hopBody("initial proposal", mockCtx);
       }
     } catch (e) {
       error = e;
@@ -240,18 +245,19 @@ describe("AC-5: statefulDebaterOp abort signal handling", () => {
       input: {
         debater: { agent: "claude", model: "fast" },
         proposalBarriers: [
-          { resolve: mock(() => {}), reject: mock(() => {}) },
+          { promise: Promise.resolve("peer"), resolve: mock(() => {}), reject: mock(() => {}) },
         ],
-        peerBarriers: [],
         index: 0,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: true, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: true } },
     } as any;
 
     try {
       if (statefulDebaterOp.hopBody) {
-        await statefulDebaterOp.hopBody(mockCtx);
+        await statefulDebaterOp.hopBody("initial proposal", mockCtx);
       }
     } catch {
       // expected
@@ -340,14 +346,14 @@ describe("AC-7: runStateful callOp invocations", () => {
 
 describe("AC-8: maxConcurrentDebaters concurrency control", () => {
   test("with maxConcurrentDebaters === 2 and 5 debaters, no more than 2 in-flight simultaneously", async () => {
-    // This is verified by examining allSettledBounded usage in runner-stateful.ts
-    // AC8 verification: inspect that allSettledBounded is used with concurrencyLimit
+    // This is verified by examining runStatefulBounded usage in runner-stateful.ts
+    // AC8 verification: inspect that runStatefulBounded is used with concurrencyLimit
     const runStatefulSrc = readFileSync(
       join(import.meta.dir, "../../../src/debate/runner-stateful.ts"),
       "utf-8"
     );
 
-    expect(runStatefulSrc).toContain("allSettledBounded");
+    expect(runStatefulSrc).toContain("runStatefulBounded");
     expect(runStatefulSrc).toContain("concurrencyLimit");
   });
 
@@ -482,12 +488,13 @@ describe("AC-12: runStateful prompt construction", () => {
       "utf-8"
     );
 
-    // Check for template literals with embedded newlines (multiline prompts)
-    const multilineTemplatePattern = /[`'"].*\n.*[`'"]/;
-    const matches = runStatefulSrc.match(multilineTemplatePattern);
+    // Check that no template literal content spans multiple lines.
+    // Split by backtick: odd-indexed segments are inside template literals.
+    const parts = runStatefulSrc.split("`");
+    const hasMultilineTemplateLiteral = parts.some((part, i) => i % 2 === 1 && part.includes("\n"));
 
-    // Should be zero matches (prompts come from DebatePromptBuilder)
-    expect(matches === null).toBe(true);
+    // Should be false (prompts come from DebatePromptBuilder)
+    expect(hasMultilineTemplateLiteral).toBe(false);
   });
 
   test("all prompt strings in runStateful originate from DebatePromptBuilder method calls", () => {
@@ -625,25 +632,30 @@ describe("AC-16: hybridDebaterOp rebuttal round execution", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
+        proposalBarriers: [
+          { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+        ],
         rebutBarriers: [
           [
-            { resolve: mock(() => {}), reject: mock(() => {}) },
-            { resolve: mock(() => {}), reject: mock(() => {}) },
+            { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+            { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
           ],
           [
-            { resolve: mock(() => {}), reject: mock(() => {}) },
-            { resolve: mock(() => {}), reject: mock(() => {}) },
+            { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+            { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
           ],
         ],
         index: 0,
-        buildProposalPrompt: mock(() => "proposal"),
+        rounds: 2,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (hybridDebaterOp.hopBody) {
-      await hybridDebaterOp.hopBody(mockCtx);
+      await hybridDebaterOp.hopBody("proposal", mockCtx);
     }
 
     expect(sendCalls.length).toBe(3); // proposal + 2 rounds of rebuttals
@@ -655,14 +667,18 @@ describe("AC-16: hybridDebaterOp rebuttal round execution", () => {
     const resolutions: any[] = [];
 
     const mockCtx = {
-      send: mock(async (prompt: string) => {
+      send: mock(async (_prompt: string) => {
         return { output: "output", costUsd: 0 };
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
+        proposalBarriers: [
+          { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+        ],
         rebutBarriers: [
           [
             {
+              promise: Promise.resolve(""),
               resolve: mock((val: any) => {
                 resolutions.push({ type: "current", val });
               }),
@@ -671,14 +687,16 @@ describe("AC-16: hybridDebaterOp rebuttal round execution", () => {
           ],
         ],
         index: 0,
-        buildProposalPrompt: mock(() => "proposal"),
+        rounds: 1,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (hybridDebaterOp.hopBody) {
-      await hybridDebaterOp.hopBody(mockCtx);
+      await hybridDebaterOp.hopBody("proposal", mockCtx);
     }
 
     expect(resolutions.length > 0).toBe(true);
@@ -696,15 +714,19 @@ describe("AC-17: rebuttal barrier resolution timing", () => {
     const resolutionOrder: string[] = [];
 
     const mockCtx = {
-      send: mock(async (prompt: string) => {
+      send: mock(async (_prompt: string) => {
         return { output: `output-${resolutionOrder.length}`, costUsd: 0 };
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
+        proposalBarriers: [
+          { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+        ],
         rebutBarriers: [
           [
             {
-              resolve: mock((val: any) => {
+              promise: Promise.resolve(""),
+              resolve: mock((_val: any) => {
                 resolutionOrder.push("round-1-current");
               }),
               reject: mock(() => {}),
@@ -712,7 +734,8 @@ describe("AC-17: rebuttal barrier resolution timing", () => {
           ],
           [
             {
-              resolve: mock((val: any) => {
+              promise: Promise.resolve(""),
+              resolve: mock((_val: any) => {
                 resolutionOrder.push("round-2-current");
               }),
               reject: mock(() => {}),
@@ -720,14 +743,16 @@ describe("AC-17: rebuttal barrier resolution timing", () => {
           ],
         ],
         index: 0,
-        buildProposalPrompt: mock(() => "proposal"),
+        rounds: 2,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: false, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (hybridDebaterOp.hopBody) {
-      await hybridDebaterOp.hopBody(mockCtx);
+      await hybridDebaterOp.hopBody("proposal", mockCtx);
     }
 
     // Verify resolution happens during execution
@@ -804,19 +829,24 @@ describe("AC-20: hybridDebaterOp abort signal between rounds", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
+        proposalBarriers: [
+          { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+        ],
         rebutBarriers: [
-          [{ resolve: mock(() => {}), reject: mock(() => {}) }],
+          [{ promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) }],
         ],
         index: 0,
-        buildProposalPrompt: mock(() => "proposal"),
+        rounds: 1,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: true, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: true } },
     } as any;
 
     try {
       if (hybridDebaterOp.hopBody) {
-        await hybridDebaterOp.hopBody(mockCtx);
+        await hybridDebaterOp.hopBody("proposal", mockCtx);
       }
     } catch (e) {
       error = e;
@@ -838,19 +868,24 @@ describe("AC-20: hybridDebaterOp abort signal between rounds", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
+        proposalBarriers: [
+          { promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) },
+        ],
         rebutBarriers: [
-          [{ resolve: mock(() => {}), reject: mock(() => {}) }],
+          [{ promise: Promise.resolve(""), resolve: mock(() => {}), reject: mock(() => {}) }],
         ],
         index: 0,
-        buildProposalPrompt: mock(() => "proposal"),
+        rounds: 1,
         buildRebutPrompt: mock(() => "rebuttal"),
+        signal: { aborted: true, addEventListener: () => {}, removeEventListener: () => {} },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: true } },
     } as any;
 
     try {
       if (hybridDebaterOp.hopBody) {
-        await hybridDebaterOp.hopBody(mockCtx);
+        await hybridDebaterOp.hopBody("proposal", mockCtx);
       }
     } catch {
       // expected
@@ -866,14 +901,14 @@ describe("AC-20: hybridDebaterOp abort signal between rounds", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-21: runHybrid return value shape", () => {
-  test("runHybrid returns object with participants, rounds, and proposals properties", async () => {
+  test("runHybrid returns object with debaters, rounds, and proposals properties", async () => {
     const debateTypesSrc = readFileSync(
       join(import.meta.dir, "../../../src/debate/types.ts"),
       "utf-8"
     );
 
     expect(debateTypesSrc).toContain("interface DebateResult");
-    expect(debateTypesSrc).toContain("participants");
+    expect(debateTypesSrc).toContain("debaters");
     expect(debateTypesSrc).toContain("rounds");
     expect(debateTypesSrc).toContain("proposals");
   });
@@ -899,10 +934,11 @@ describe("AC-22: runHybrid prompt construction", () => {
       "utf-8"
     );
 
-    // Check for inline prompt assembly patterns
-    const inlinePromptPattern = /[`'"].*\n.*[`'"]/;
-    const matches = runHybridSrc.match(inlinePromptPattern);
-    expect(matches === null).toBe(true);
+    // Check that no template literal content spans multiple lines.
+    // Split by backtick: odd-indexed segments are inside template literals.
+    const parts = runHybridSrc.split("`");
+    const hasMultilineTemplateLiteral = parts.some((part, i) => i % 2 === 1 && part.includes("\n"));
+    expect(hasMultilineTemplateLiteral).toBe(false);
   });
 });
 
@@ -983,13 +1019,16 @@ describe("AC-25: DebatePlanInput interface", () => {
   });
 
   test("DebatePlanInput includes rebuttal-stage barrier property", async () => {
-    const debatePlanSrc = readFileSync(
-      join(import.meta.dir, "../../../src/operations/plan-debater.ts"),
-      "utf-8"
-    ).catch(() => "");
+    let debatePlanSrc = "";
+    try {
+      debatePlanSrc = readFileSync(
+        join(import.meta.dir, "../../../src/operations/debate-plan.ts"),
+        "utf-8"
+      );
+    } catch { /* file may not exist */ }
 
     if (debatePlanSrc) {
-      expect((debatePlanSrc as string)).toContain("rebuttal");
+      expect(debatePlanSrc).toContain("rebuttal");
     }
   });
 });
@@ -1003,20 +1042,24 @@ describe("AC-26: planDebaterOp rebuttal barrier resolution", () => {
     const { planDebaterOp } = await import("../../../src/operations/index.ts");
 
     const mockCtx = {
-      send: mock(async (prompt: string) => {
+      send: mock(async (_prompt: string) => {
         return { output: "rebut-output", costUsd: 0 };
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
-        selectionSignal: Promise.resolve({ patchPrompt: undefined }),
-        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
         index: 0,
+        buildRebutPrompt: mock((_peers: string[]) => "rebut prompt"),
+        proposalBarriers: [{ resolve: mock(() => {}), reject: mock(() => {}), promise: Promise.resolve("peer-output") }],
+        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
+        selectionSignal: Promise.resolve({ patchPrompt: undefined }),
+        signal: { aborted: false, addEventListener: mock(() => {}), removeEventListener: mock(() => {}) },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (planDebaterOp.hopBody) {
-      await planDebaterOp.hopBody(mockCtx);
+      await planDebaterOp.hopBody("proposal", mockCtx);
     }
 
     // Verify structure allows barrier resolution
@@ -1030,11 +1073,9 @@ describe("AC-26: planDebaterOp rebuttal barrier resolution", () => {
     const runPlanSrc = readFileSync(
       join(import.meta.dir, "../../../src/debate/runner-plan.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (runPlanSrc) {
-      expect((runPlanSrc as string)).toContain("selectionSignal");
-    }
+    expect(runPlanSrc).toContain("selectionSignal");
   });
 });
 
@@ -1055,15 +1096,19 @@ describe("AC-27: planDebaterOp patch prompt handling", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
-        selectionSignal: Promise.resolve({ patchPrompt: "test prompt" }),
-        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
         index: 0,
+        buildRebutPrompt: mock((_peers: string[]) => "rebut prompt"),
+        proposalBarriers: [{ resolve: mock(() => {}), reject: mock(() => {}), promise: Promise.resolve("peer-output") }],
+        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
+        selectionSignal: Promise.resolve({ patchPrompt: "test prompt" }),
+        signal: { aborted: false, addEventListener: mock(() => {}), removeEventListener: mock(() => {}) },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (planDebaterOp.hopBody) {
-      await planDebaterOp.hopBody(mockCtx);
+      await planDebaterOp.hopBody("proposal", mockCtx);
     }
 
     // Verify patch prompt is used in send call
@@ -1083,16 +1128,20 @@ describe("AC-27: planDebaterOp patch prompt handling", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
-        selectionSignal: Promise.resolve({ patchPrompt: "test prompt" }),
-        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
         index: 0,
+        buildRebutPrompt: mock((_peers: string[]) => "rebut prompt"),
+        proposalBarriers: [{ resolve: mock(() => {}), reject: mock(() => {}), promise: Promise.resolve("peer-output") }],
+        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
+        selectionSignal: Promise.resolve({ patchPrompt: "test prompt" }),
+        signal: { aborted: false, addEventListener: mock(() => {}), removeEventListener: mock(() => {}) },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     let result: any;
     if (planDebaterOp.hopBody) {
-      result = await planDebaterOp.hopBody(mockCtx);
+      result = await planDebaterOp.hopBody("proposal", mockCtx);
     }
 
     expect(result).toBeDefined();
@@ -1116,15 +1165,19 @@ describe("AC-28: planDebaterOp no-patch signal handling", () => {
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
-        selectionSignal: Promise.resolve({}),
-        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
         index: 0,
+        includeHybridRebuttals: false,
+        proposalBarriers: [{ resolve: mock(() => {}), reject: mock(() => {}), promise: Promise.resolve("peer-output") }],
+        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
+        selectionSignal: Promise.resolve({}),
+        signal: { aborted: false, addEventListener: mock(() => {}), removeEventListener: mock(() => {}) },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     if (planDebaterOp.hopBody) {
-      await planDebaterOp.hopBody(mockCtx);
+      await planDebaterOp.hopBody("proposal", mockCtx);
     }
 
     // Only rebut call, no patch call
@@ -1135,21 +1188,25 @@ describe("AC-28: planDebaterOp no-patch signal handling", () => {
     const { planDebaterOp } = await import("../../../src/operations/index.ts");
 
     const mockCtx = {
-      send: mock(async (prompt: string) => {
+      send: mock(async (_prompt: string) => {
         return { output: "rebut-output", costUsd: 0.1 };
       }),
       input: {
         debater: { agent: "claude", model: "fast" },
-        selectionSignal: Promise.resolve({ patchPrompt: undefined }),
-        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
         index: 0,
+        includeHybridRebuttals: false,
+        proposalBarriers: [{ resolve: mock(() => {}), reject: mock(() => {}), promise: Promise.resolve("peer-output") }],
+        rebuttalBarrier: { resolve: mock(() => {}), reject: mock(() => {}) },
+        selectionSignal: Promise.resolve({ patchPrompt: undefined }),
+        signal: { aborted: false, addEventListener: mock(() => {}), removeEventListener: mock(() => {}) },
+        storyId: "test-story",
       },
       runtime: { signal: { aborted: false } },
     } as any;
 
     let result: any;
     if (planDebaterOp.hopBody) {
-      result = await planDebaterOp.hopBody(mockCtx);
+      result = await planDebaterOp.hopBody("proposal", mockCtx);
     }
 
     expect(result?.output).toBe("rebut-output");
@@ -1235,7 +1292,7 @@ describe("AC-32: runPlan patch error recovery", () => {
     );
 
     expect(runPlanSrc).toContain("rebuttal");
-    expect(runPlanSrc).toContain("catch");
+    expect(runPlanSrc).toContain("rebuttalSettled");
   });
 });
 
@@ -1246,26 +1303,21 @@ describe("AC-32: runPlan patch error recovery", () => {
 describe("AC-33: runPatchStep function signature", () => {
   test("runPatchStep does not contain agentManager.runAsSession", () => {
     const runPatchStepSrc = readFileSync(
-      join(import.meta.dir, "../../../src/debate/verifier-pick.ts"),
+      join(import.meta.dir, "../../../src/debate/selectors/verifier-pick.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (runPatchStepSrc) {
-      expect((runPatchStepSrc as string)).not.toContain("agentManager.runAsSession");
-    }
+    expect(runPatchStepSrc).not.toContain("agentManager.runAsSession");
   });
 
   test("runPatchStep does not call session-opening methods", () => {
     const runPatchStepSrc = readFileSync(
-      join(import.meta.dir, "../../../src/debate/verifier-pick.ts"),
+      join(import.meta.dir, "../../../src/debate/selectors/verifier-pick.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (runPatchStepSrc) {
-      const src = runPatchStepSrc as string;
-      expect(src).not.toContain("sessionManager.openSession");
-      expect(src).not.toContain("sessionManager.closeSession");
-    }
+    expect(runPatchStepSrc).not.toContain("sessionManager.openSession");
+    expect(runPatchStepSrc).not.toContain("sessionManager.closeSession");
   });
 });
 
@@ -1276,13 +1328,11 @@ describe("AC-33: runPatchStep function signature", () => {
 describe("AC-34: runPatchStep return type", () => {
   test("runPatchStep has signature (…): Promise<string> and returns prompt string only", () => {
     const runPatchStepSrc = readFileSync(
-      join(import.meta.dir, "../../../src/debate/verifier-pick.ts"),
+      join(import.meta.dir, "../../../src/debate/selectors/verifier-pick.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (runPatchStepSrc) {
-      expect((runPatchStepSrc as string)).toContain("Promise<string>");
-    }
+    expect(runPatchStepSrc).toContain("Promise<string>");
   });
 });
 
@@ -1295,14 +1345,11 @@ describe("AC-35: verifierPickSelector no agent dispatch", () => {
     const selectorSrc = readFileSync(
       join(import.meta.dir, "../../../src/debate/selectors/verifier-pick.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (selectorSrc) {
-      const src = selectorSrc as string;
-      expect(src).not.toContain("callOp");
-      expect(src).not.toContain("agentManager.complete");
-      expect(src).not.toContain("sessionManager.openSession");
-    }
+    expect(selectorSrc).not.toContain("callOp");
+    expect(selectorSrc).not.toContain("agentManager.complete");
+    expect(selectorSrc).not.toContain("sessionManager.openSession");
   });
 });
 
@@ -1332,13 +1379,11 @@ describe("AC-36: SuccessfulProposal type definition", () => {
 describe("AC-37: VERIFIER_PICK_NO_HANDLE error removal", () => {
   test("VERIFIER_PICK_NO_HANDLE error code does not appear in verifier-pick.ts", () => {
     const verifierPickSrc = readFileSync(
-      join(import.meta.dir, "../../../src/debate/verifier-pick.ts"),
+      join(import.meta.dir, "../../../src/debate/selectors/verifier-pick.ts"),
       "utf-8"
-    ).catch(() => "");
+    );
 
-    if (verifierPickSrc) {
-      expect((verifierPickSrc as string)).not.toContain("VERIFIER_PICK_NO_HANDLE");
-    }
+    expect(verifierPickSrc).not.toContain("VERIFIER_PICK_NO_HANDLE");
   });
 });
 
@@ -1362,8 +1407,10 @@ describe("AC-38: runPlan prompt construction", () => {
       "utf-8"
     );
 
-    const multilinePattern = /[`'"].*\n.*[`'"]/;
-    expect(runPlanSrc.match(multilinePattern)).toBeNull();
+    // Split by backtick: odd-indexed segments are inside template literals.
+    const parts = runPlanSrc.split("`");
+    const hasMultilineTemplateLiteral = parts.some((part, i) => i % 2 === 1 && part.includes("\n"));
+    expect(hasMultilineTemplateLiteral).toBe(false);
   });
 });
 
