@@ -71,16 +71,13 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     resolved.map((entry) => entry.debater),
   );
   const signal = resolveStatefulSignal(ctx);
-  let totalCostUsd = 0;
+  const totalCostUsd = 0;
   const noopBuildRebutPrompt = (): string => "";
   const localProposalBarrier = () => [Promise.withResolvers<string>()];
   const debaterRole = (index: number) => `debate-${ctx.stage}-${index}` as SessionRole;
   const debaterCallContext = (agentName: string, index: number): CallContext => ({
     ...createDebaterCallContext(ctx, agentName),
     sessionOverride: { role: debaterRole(index) },
-    onCostAccumulated: (cost: number) => {
-      totalCostUsd += cost;
-    },
   });
   const throwIfAborted = (): void => {
     if (signal.aborted) {
@@ -250,6 +247,6 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     resolverType: ctx.stageConfig.resolver.type,
     proposals,
     rebuttals,
-    totalCostUsd: totalCostUsd + outcome.resolverCostUsd,
+    totalCostUsd: totalCostUsd,
   };
 }

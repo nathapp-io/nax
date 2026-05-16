@@ -128,7 +128,7 @@ export async function runPatchStep(
 
 export const verifierPickSelector: Selector = async (ctx: SelectorContext): Promise<SelectorResult> => {
   if (ctx.proposals.length === 0) {
-    return { outcome: "failed", resolverCostUsd: 0 };
+    return { outcome: "failed" };
   }
 
   const manifest = extractManifestFromContext(ctx);
@@ -136,5 +136,5 @@ export const verifierPickSelector: Selector = async (ctx: SelectorContext): Prom
     ctx.proposals.map(async (p) => ({ proposal: p, score: await computeScore(p, manifest) })),
   );
   scored.sort((a, b) => b.score.total - a.score.total);
-  return { outcome: "passed", output: scored[0]?.proposal.output, resolverCostUsd: 0 };
+  return { outcome: "passed", output: scored[0]?.proposal.output };
 };

@@ -300,8 +300,6 @@ export class DebateRunner {
       successful.map((s) => s.debater),
       agentManager,
     );
-    totalCostUsd += selectorOutcome.resolverCostUsd;
-
     let finalOutcome = selectorOutcome.outcome;
     if (config.postDebateVerifier) {
       const verifierCtx: PostDebateVerifierContext = {

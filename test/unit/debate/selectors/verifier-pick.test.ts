@@ -512,7 +512,7 @@ describe("verifierPickSelector", () => {
         const result = await verifierPickSelector(ctx);
         // After implementation, should verify:
         // result.output === "Final patched proposal"
-        // result.resolverCostUsd includes patch cost
+        // result.output contains the patched content
       } catch {
         // Expected to fail
       }
@@ -625,7 +625,6 @@ describe("verifierPickSelector", () => {
         const result = await verifierPickSelector(ctx);
         // After implementation, should return failed outcome
         expect(result.outcome).toBe("failed");
-        expect(result.resolverCostUsd).toBe(0);
       } catch {
         // Expected to fail
       }

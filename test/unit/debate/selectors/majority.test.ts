@@ -81,12 +81,12 @@ describe("majorityFailClosedSelector", () => {
     expect(result.outcome).toBe("failed");
   });
 
-  test("always returns resolverCostUsd === 0", async () => {
+  test("does not include resolverCostUsd in result", async () => {
     const ctx = makeCtx({
       proposals: makeProposals(['{"passed": true}', '{"passed": true}']),
     });
     const result = await majorityFailClosedSelector(ctx);
-    expect(result.resolverCostUsd).toBe(0);
+    expect("resolverCostUsd" in result).toBe(false);
   });
 
   test("maps outcome from majorityResolver(proposalOutputs, false)", async () => {
@@ -118,12 +118,12 @@ describe("majorityFailOpenSelector", () => {
     expect(result.outcome).toBe("passed"); // fail-open: unparseable → pass
   });
 
-  test("always returns resolverCostUsd === 0", async () => {
+  test("does not include resolverCostUsd in result", async () => {
     const ctx = makeCtx({
       proposals: makeProposals(['{"passed": false}', '{"passed": false}']),
     });
     const result = await majorityFailOpenSelector(ctx);
-    expect(result.resolverCostUsd).toBe(0);
+    expect("resolverCostUsd" in result).toBe(false);
   });
 
   test("maps outcome from majorityResolver(proposalOutputs, true) — explicit false still counts as pass in fail-open", async () => {

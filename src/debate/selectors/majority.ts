@@ -43,10 +43,10 @@ export function computeMajority(proposals: string[], failOpen: boolean): "passed
 
 export const majorityFailClosedSelector: Selector = async (ctx: SelectorContext): Promise<SelectorResult> => {
   const proposalOutputs = ctx.proposals.map((p) => p.output);
-  return { outcome: computeMajority(proposalOutputs, false), resolverCostUsd: 0 };
+  return { outcome: computeMajority(proposalOutputs, false) };
 };
 
 export const majorityFailOpenSelector: Selector = async (ctx: SelectorContext): Promise<SelectorResult> => {
   const proposalOutputs = ctx.proposals.map((p) => p.output);
-  return { outcome: computeMajority(proposalOutputs, true), resolverCostUsd: 0 };
+  return { outcome: computeMajority(proposalOutputs, true) };
 };

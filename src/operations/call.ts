@@ -162,7 +162,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
       try {
         const raw = await ctx.runtime.agentManager.completeAs(dispatchAgent, prompt, completeOptions);
-        ctx.onCostAccumulated?.(raw.estimatedCostUsd);
         const parsedComplete = op.parse(raw.output, input, buildCtx);
         return await runPostParse(op, parsedComplete, input, buildCtx);
       } catch (err) {
@@ -433,7 +432,6 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
   const rawOutput = outcome.result.output;
   const totalCost = outcome.result.estimatedCostUsd ?? 0;
-  ctx.onCostAccumulated?.(totalCost);
 
   if (!rawOutput) {
     throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {

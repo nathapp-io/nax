@@ -52,7 +52,6 @@ const makeVerifierContext = (overrides: Partial<PostDebateVerifierContext> = {})
   } as DebateStageConfig,
   selectorResult: {
     outcome: "passed",
-    resolverCostUsd: 0.001,
     output: makeValidPRDJson(),
   } as SelectorResult,
   workdir: "/test/workdir",
@@ -120,8 +119,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: "not valid json at all",
+                output: "not valid json at all",
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -132,8 +130,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: JSON.stringify({ notAPrd: true }),
+                output: JSON.stringify({ notAPrd: true }),
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -144,8 +141,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: JSON.stringify({ project: "test", feature: "test" }),
+                output: JSON.stringify({ project: "test", feature: "test" }),
         } as SelectorResult,
       });
       const result = await planChecklistVerifier(ctx);
@@ -161,8 +157,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
             ]),
           } as SelectorResult,
@@ -183,8 +178,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({
                 contextFiles: [{ path: "src/exists.ts" }],
                 verifiedBy: { kind: "test", anchor: "test-anchor", factIds: [] },
@@ -205,8 +199,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([makeValidStory()]), // no verifiedBy, no intent
+                    output: makeValidPRDJson([makeValidStory()]), // no verifiedBy, no intent
           } as SelectorResult,
         });
 
@@ -222,8 +215,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -239,8 +231,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([makeValidStory({ intent: true })]),
+                    output: makeValidPRDJson([makeValidStory({ intent: true })]),
           } as SelectorResult,
         });
 
@@ -276,8 +267,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -315,8 +305,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -347,8 +336,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({
                 contextFiles: [{ path: "src/file.ts", factId: "S-001" }],
                 verifiedBy: { kind: "test", anchor: "t", factIds: [] },
@@ -383,8 +371,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -415,8 +402,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -447,8 +433,7 @@ describe("planChecklistVerifier (US-004)", () => {
         const ctx = makeVerifierContext({
           selectorResult: {
             outcome: "passed",
-            resolverCostUsd: 0.001,
-            output: makeValidPRDJson([
+                    output: makeValidPRDJson([
               makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
             ]),
           } as SelectorResult,
@@ -471,8 +456,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
@@ -495,8 +479,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
@@ -520,8 +503,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
           ]),
         } as SelectorResult,
@@ -539,8 +521,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
@@ -557,8 +538,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
@@ -574,8 +554,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ verifiedBy: { kind: "test", anchor: "t", factIds: [] } }),
           ]),
         } as SelectorResult,
@@ -593,8 +572,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,
@@ -617,8 +595,7 @@ describe("planChecklistVerifier (US-004)", () => {
       const ctx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
-          resolverCostUsd: 0.001,
-          output: makeValidPRDJson([
+                output: makeValidPRDJson([
             makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
           ]),
         } as SelectorResult,

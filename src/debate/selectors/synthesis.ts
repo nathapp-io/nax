@@ -22,15 +22,7 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
   const resolverModel = ctx.stageConfig.resolver.model ?? RESOLVER_FALLBACK_MODEL;
   const proposals = ctx.proposals.map((p) => p.output);
 
-  let resolverCostUsd = 0;
-  const callCtx = {
-    ...ctx.callContext,
-    onCostAccumulated: (c: number) => {
-      resolverCostUsd += c;
-    },
-  };
-
-  const output = await callOp(callCtx, synthesisOp, {
+  const output = await callOp(ctx.callContext, synthesisOp, {
     proposals,
     critiques: ctx.critiques,
     debaters: ctx.debaters,
@@ -42,6 +34,5 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
   return {
     outcome: output.trim() ? "passed" : "failed",
     output,
-    resolverCostUsd,
   };
 };

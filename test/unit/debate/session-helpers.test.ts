@@ -210,7 +210,6 @@ describe("resolveOutcome() — workdir and featureName parameters (US-004 AC1)",
       "my-feature",
     );
     expect(result).toBeDefined();
-    expect(result.resolverCostUsd).toBe(0);
   });
 });
 
@@ -428,7 +427,6 @@ describe("resolveOutcome() — majority resolver warns when workdir provided (US
       30_000,
     );
     expect(baseResult.outcome).toBe("passed"); // 2 pass > 1 fail — majority wins
-    expect(baseResult.resolverCostUsd).toBe(0);
   });
 });
 
@@ -505,7 +503,6 @@ describe("resolveOutcome() — callContext parameter (AC2)", () => {
       makeMockAgentManager(),
     );
     expect(result.outcome).toBe("passed");
-    expect(result.resolverCostUsd).toBe(0);
   });
 
   test("resolveOutcome places callContext on the selectorCtx passed to selector (AC2)", async () => {

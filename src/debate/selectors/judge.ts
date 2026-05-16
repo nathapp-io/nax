@@ -21,15 +21,7 @@ export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<Sel
   const resolverModel = ctx.stageConfig.resolver.model ?? RESOLVER_FALLBACK_MODEL;
   const proposals = ctx.proposals.map((p) => p.output);
 
-  let resolverCostUsd = 0;
-  const callCtx = {
-    ...ctx.callContext,
-    onCostAccumulated: (c: number) => {
-      resolverCostUsd += c;
-    },
-  };
-
-  const output = await callOp(callCtx, judgeOp, {
+  const output = await callOp(ctx.callContext, judgeOp, {
     proposals,
     critiques: ctx.critiques,
     debaters: ctx.debaters,
@@ -40,6 +32,5 @@ export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<Sel
   return {
     outcome: output.trim() ? "passed" : "failed",
     output,
-    resolverCostUsd,
   };
 };

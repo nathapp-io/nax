@@ -69,7 +69,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   );
 
   const signal = resolveStatefulSignal(ctx);
-  let totalDebaterCostUsd = 0;
+  const totalDebaterCostUsd = 0;
 
   // Shared barriers — one slot per debater, one round array per rebuttal round.
   const proposalBarriers: PromiseWithResolvers<string>[] = resolved.map(() => Promise.withResolvers<string>());
@@ -81,9 +81,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const debaterCallContext = (agentName: string, index: number): CallContext => ({
     ...createDebaterCallContext(ctx, agentName),
     sessionOverride: { role: debaterRole(index) },
-    onCostAccumulated: (cost: number) => {
-      totalDebaterCostUsd += cost;
-    },
   });
 
   const proposalListFromOutputs = (peerOutputs: string[]): Proposal[] =>
@@ -252,6 +249,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     resolverType: ctx.stageConfig.resolver.type,
     proposals: successfulResults.map((proposal) => ({ debater: proposal.debater, output: proposal.output })),
     rebuttals,
-    totalCostUsd: totalDebaterCostUsd + resolveResult.resolverCostUsd,
+    totalCostUsd: totalDebaterCostUsd,
   };
 }
