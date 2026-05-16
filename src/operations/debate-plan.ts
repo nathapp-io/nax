@@ -79,7 +79,6 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
     return {
       success: !output.startsWith('Agent "'),
       rebut: output,
-      patched: output,
     };
   },
 };

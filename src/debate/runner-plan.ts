@@ -203,7 +203,7 @@ export async function runPlan(
         successful.push({
           debater: resolved[i].debater,
           agentName: resolved[i].agentName,
-          output: res.value.patched ?? res.value.rebut,
+          output: res.value.rebut,
           cost: 0,
           resolvedIndex: i,
         });
