@@ -1,0 +1,457 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "CostEvent.exactCostUsd is declared as required number (no ?:) in src/runtime/cost-aggregator.ts",
+    "refined": "The TypeScript interface CostEvent in src/runtime/cost-aggregator.ts contains the field declaration readonly exactCostUsd: number (without the optional ? operator)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "CostSnapshot.totalExactCostUsd is declared as required number (no ?:) in src/runtime/cost-aggregator.ts",
+    "refined": "The TypeScript interface CostSnapshot in src/runtime/cost-aggregator.ts contains the field declaration readonly totalExactCostUsd: number (without the optional ? operator)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "attachCostSubscriber in src/runtime/middleware/cost.ts constructs every CostEvent with exactCostUsd = event.exactCostUsd ?? estimatedCostUsd so the field is never undefined after the middleware boundary",
+    "refined": "In src/runtime/middleware/cost.ts, the attachCostSubscriber middleware assigns exactCostUsd using the expression event.exactCostUsd ?? estimatedCostUsd when constructing CostEvent objects; all CostEvent objects emitted from this middleware have exactCostUsd as a finite number (never null or undefined)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "attachCostSubscriber sets confidence = \"exact\" when event.exactCostUsd is a finite number, else \"estimated\"",
+    "refined": "In attachCostSubscriber, the CostEvent.confidence field is set to \"exact\" when event.exactCostUsd is a finite number; otherwise it is set to \"estimated\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "CostEvent.costUsd === CostEvent.exactCostUsd for every event the middleware emits",
+    "refined": "Every CostEvent object constructed and emitted by attachCostSubscriber satisfies the equality costUsd === exactCostUsd",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "CostAggregator.accumulate() increments totalExactCostUsd by e.exactCostUsd (the ?? 0 handles the EMPTY_SNAPSHOT initial case where totalExactCostUsd = 0)",
+    "refined": "The CostAggregator.accumulate(e: CostEvent) method increments the internal totalExactCostUsd property by e.exactCostUsd; a snapshot taken after accumulating events reflects the sum of all accumulated exactCostUsd values, starting from 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "EMPTY_SNAPSHOT constant has totalExactCostUsd: 0 and CostAggregator.snapshot() over zero events returns a snapshot with totalExactCostUsd === 0",
+    "refined": "The EMPTY_SNAPSHOT constant in src/runtime/cost-aggregator.ts is defined with totalExactCostUsd: 0; a CostAggregator instance with no accumulated events returns a snapshot via snapshot() method with totalExactCostUsd === 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "emptySnap() returns a snapshot with totalExactCostUsd === 0",
+    "refined": "The emptySnap() function returns a CostSnapshot object with the property totalExactCostUsd === 0",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "DispatchEventBase.exactCostUsd remains optional at the wire/adapter side — adapters that cannot report exact cost continue to omit the field; normalization runs in attachCostSubscriber only",
+    "refined": "The DispatchEventBase interface definition keeps exactCostUsd as optional (exactCostUsd?: number); adapter implementations continue to emit events with or without the exactCostUsd field; all normalization and fallback logic is isolated to attachCostSubscriber in src/runtime/middleware/cost.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When drain() writes the JSONL file, CostEvent lines in the output contain exactCostUsd as a number (CostErrorEvent lines omit exactCostUsd as they belong to a different schema)",
+    "refined": "The drain() function outputs JSONL where CostEvent objects contain exactCostUsd as a number field in each line; CostErrorEvent objects do not include exactCostUsd in their output lines",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "DispatchEventBase declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts",
+    "refined": "DispatchEventBase interface in src/runtime/dispatch-events.ts contains two optional readonly fields: callId: string | undefined and scopeId: string | undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "OperationCompletedEvent declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts (fields added directly, not via inheritance)",
+    "refined": "OperationCompletedEvent interface in src/runtime/dispatch-events.ts declares callId and scopeId as direct properties (not inherited), both optional and readonly",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "DispatchErrorEvent declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts (fields added directly, not via inheritance)",
+    "refined": "DispatchErrorEvent interface in src/runtime/dispatch-events.ts declares callId and scopeId as direct properties (not inherited), both optional and readonly",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "CallContext declares readonly scopeId?: string and readonly callId?: string in src/operations/types.ts",
+    "refined": "CallContext interface in src/operations/types.ts contains two optional readonly fields: scopeId: string | undefined and callId: string | undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "CompleteOptions declares readonly callId?: string and readonly scopeId?: string in src/agents/types.ts",
+    "refined": "CompleteOptions interface in src/agents/types.ts contains two optional readonly fields: callId: string | undefined and scopeId: string | undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "RunAsSessionOpts declares readonly callId?: string and readonly scopeId?: string in src/agents/manager-types.ts",
+    "refined": "RunAsSessionOpts interface in src/agents/manager-types.ts contains two optional readonly fields: callId: string | undefined and scopeId: string | undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "callOp(ctx, op, input) stamps a fresh callId via newCorrelationId() when ctx.callId is absent, and never overwrites a caller-supplied ctx.callId",
+    "refined": "callOp function in src/operations/call.ts uses ctx.callId if present; when absent, generates fresh id via newCorrelationId(); the stamped callId is passed to the underlying operation",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "For kind:\"complete\" ops, completeOptions carries callId and scopeId from callOp; CompleteDispatchEvent has callId and scopeId; completeAs emits DispatchErrorEvent with callId and scopeId on failure",
+    "refined": "For complete-kind operations, callOp forwards callId and scopeId via completeOptions argument; CompleteDispatchEvent emitted by completeAs contains callId and scopeId fields; DispatchErrorEvent emitted on failure contains callId and scopeId",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "For kind:\"run\" ops, runOptions carries callId and scopeId from callOp; SessionTurnDispatchEvent, OperationCompletedEvent, and DispatchErrorEvent all have callId and scopeId",
+    "refined": "For run-kind operations, callOp forwards callId and scopeId via runOptions argument; all dispatch events emitted (SessionTurnDispatchEvent, OperationCompletedEvent, DispatchErrorEvent) carry callId and scopeId fields with correct values",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "newCorrelationId() produces ≤16-char strings matching /^[0-9a-z]+-[0-9a-z]+$/; 10,000 sequential calls yield 10,000 distinct values",
+    "refined": "newCorrelationId() function in src/operations/call.ts returns strings matching /^[0-9a-z]+-[0-9a-z]+$/ with length ≤16 characters; calling it 10,000 times produces 10,000 unique values",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "CostEvent in src/runtime/cost-aggregator.ts declares readonly scopeId?: string and readonly callId?: string",
+    "refined": "CostEvent type definition in src/runtime/cost-aggregator.ts includes two optional readonly fields: scopeId?: string and callId?: string",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "attachCostSubscriber in src/runtime/middleware/cost.ts copies event.scopeId and event.callId from DispatchEvent onto CostEvent (leaving undefined when source has none)",
+    "refined": "attachCostSubscriber copies scopeId and callId properties from DispatchEvent to CostEvent; fields are set to undefined if the source DispatchEvent lacks them",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "CostAggregator.byScope() returns a Record<string, CostSnapshot> keyed by scopeId, including only events where scopeId !== undefined",
+    "refined": "CostAggregator.byScope() returns Record<string, CostSnapshot> where each key is a unique scopeId from recorded events, each value is the aggregated CostSnapshot for events with that scopeId, and events without scopeId are excluded",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "CostAggregator.byCall() returns a Record<string, CostSnapshot> keyed by callId, including only events where callId !== undefined",
+    "refined": "CostAggregator.byCall() returns Record<string, CostSnapshot> where each key is a unique callId from recorded events, each value is the aggregated CostSnapshot for events with that callId, and events without callId are excluded",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "CostAggregator.openScope(scopeId) returns a CostScopeHandle whose scopeId field equals the input; openScope() with no arg generates one via newCorrelationId() and exposes it on handle.scopeId",
+    "refined": "openScope(scopeId: string) returns CostScopeHandle with handle.scopeId === scopeId argument; openScope() called with no arguments generates a scopeId via newCorrelationId() and returns handle with generated ID in handle.scopeId",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "CostScopeHandle.snapshot() returns a CostSnapshot reflecting only CostEvents where e.scopeId === handle.scopeId at call time, aggregating costUsd into totalCostUsd",
+    "refined": "CostScopeHandle.snapshot() returns CostSnapshot containing only events where event.scopeId === handle.scopeId, with totalCostUsd field set to the sum of costUsd from all matching events",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "CostScopeHandle.snapshot() returns EMPTY_SNAPSHOT when no events with the scope's scopeId have been recorded",
+    "refined": "CostScopeHandle.snapshot() returns EMPTY_SNAPSHOT when zero CostEvents with event.scopeId === handle.scopeId exist in the aggregator",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "CostScopeHandle.close() is idempotent; calling it multiple times does not throw",
+    "refined": "CostScopeHandle.close() executes without error; invoking close() multiple times completes without throwing an exception",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "CostAggregator.drain() logs at level warn with { openScopeCount: number } when any scope is still open at drain time",
+    "refined": "CostAggregator.drain() emits a warn-level log message containing a data object with field openScopeCount: number when one or more CostScopeHandle instances remain open",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "createNoOpCostAggregator().openScope().snapshot() returns EMPTY_SNAPSHOT",
+    "refined": "createNoOpCostAggregator() returns ICostAggregator whose openScope() returns CostScopeHandle whose snapshot() returns EMPTY_SNAPSHOT",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "CallContext does not declare onCostAccumulated in src/operations/types.ts",
+    "refined": "grep for 'onCostAccumulated' in src/operations/types.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "src/operations/call.ts contains no reference to onCostAccumulated",
+    "refined": "grep for 'onCostAccumulated' in src/operations/call.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "SelectorResult does not declare resolverCostUsd in src/debate/selectors/types.ts",
+    "refined": "grep for 'resolverCostUsd' in src/debate/selectors/types.ts returns zero matches",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "judgeSelector in src/debate/selectors/judge.ts returns values whose only populated keys are within Pick<SelectorResult, 'outcome' | 'output'>",
+    "refined": "All return statements in judgeSelector function return objects with only 'outcome' (required) and 'output' (optional) fields; no resolverCostUsd, findings, or dialogueResult fields are present in any return value",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "synthesisSelector returns only Pick<SelectorResult, 'outcome' | 'output'>",
+    "refined": "All return statements in synthesisSelector function return objects with only 'outcome' (required) and 'output' (optional) fields; no resolverCostUsd, findings, or dialogueResult fields are present in any return value",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "judgeSelector and synthesisSelector forward ctx.callContext unchanged into callOp",
+    "refined": "Both judgeSelector and synthesisSelector pass ctx.callContext directly to callOp without mutation, property injection, or wrapping; no callId, scopeId, or onCostAccumulated augmentation occurs",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "dialogueVerdictSelector return at line 99 does not include resolverCostUsd",
+    "refined": "The return statement at line 99 in src/debate/selectors/dialogue-verdict.ts does not contain a resolverCostUsd field in the returned object",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "verifierPickSelector return values at lines 131 and 139 do not include resolverCostUsd",
+    "refined": "Return statements at lines 131 and 139 in src/debate/selectors/verifier-pick.ts do not contain a resolverCostUsd field in the returned objects",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "majorityFailClosedSelector and majorityFailOpenSelector returns do not include resolverCostUsd",
+    "refined": "All return statements in majorityFailClosedSelector and majorityFailOpenSelector functions do not contain a resolverCostUsd field in any returned object",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "ResolveOutcome in src/debate/session-helpers.ts does not declare resolverCostUsd and resolveOutcome() does not read resolverCostUsd from selector results",
+    "refined": "ResolveOutcome type definition does not contain a resolverCostUsd field, and the resolveOutcome() function does not access, read, or destructure resolverCostUsd from selector result objects at any point",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-41",
+    "original": "grep -r 'resolverCostUsd' src/ returns zero matches after this story",
+    "refined": "Running 'grep -r resolverCostUsd src/' yields zero matches across all TypeScript files in src/ directory",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-42",
+    "original": "grep -r 'onCostAccumulated' src/ returns zero matches after this story",
+    "refined": "Running 'grep -r onCostAccumulated src/' yields zero matches across all TypeScript files in src/ directory",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-43",
+    "original": "runStateful opens one debaterScope and one resolverScope via ctx.runtime.costAggregator.openScope(); both are closed in a finally block",
+    "refined": "ctx.runtime.costAggregator.openScope() is called exactly twice (once for debater, once for resolver); both returned scope objects have close() invoked in a finally block that executes regardless of success or error",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-44",
+    "original": "Every CallContext produced by debaterCallContext(agentName, index) carries scopeId: debaterScope.scopeId",
+    "refined": "All CallContext objects returned by the debaterCallContext factory function contain a scopeId property equal to debaterScope.scopeId",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-45",
+    "original": "The SelectorContext.callContext passed into the resolver carries scopeId: resolverScope.scopeId",
+    "refined": "The callContext object nested in SelectorContext passed to the selector function has scopeId === resolverScope.scopeId",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-46",
+    "original": "runStateful returns DebateResult.totalCostUsd === debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd",
+    "refined": "runStateful return value has totalCostUsd property equal to the sum of debaterScope.snapshot().totalCostUsd and resolverScope.snapshot().totalCostUsd",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-47",
+    "original": "runHybrid follows the same two-scope pattern with the same totalCostUsd formula",
+    "refined": "runHybrid opens debaterScope and resolverScope via openScope(), closes both in finally, and returns DebateResult.totalCostUsd === debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When two debaters each produce one dispatch event with costUsd = 0.05 and the resolver produces one event with costUsd = 0.02, DebateResult.totalCostUsd === 0.12",
+    "refined": "Test case: two debater dispatch events (0.05 each) and one resolver dispatch event (0.02) result in DebateResult.totalCostUsd === 0.12",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-49",
+    "original": "Per-debater closures contain no let totalCostUsd = 0 accumulator and no callback threading — cost flows only through scopeId → bus → aggregator",
+    "refined": "Source code contains no let totalCostUsd declaration in debaterCallContext factory or debater callbacks; no onCostAccumulated callback is threaded into CallContext; cost aggregation occurs exclusively via scopeId routing through the event bus to the aggregator",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-50",
+    "original": "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner-stateful.ts src/debate/runner-hybrid.ts returns zero matches",
+    "refined": "Executing grep with pattern 'totalCostUsd\\s*\\+=' and 'let\\s+totalCostUsd' against src/debate/runner-stateful.ts and src/debate/runner-hybrid.ts produces zero matches",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-51",
+    "original": "runner.ts opens four scopes (prePhaseScope, debaterScope, resolverScope, verifierScope) via ctx.runtime.costAggregator.openScope(); all four are closed in a finally block",
+    "refined": "Code inspection and runtime validation: (1) Four distinct openScope() calls exist and assign to prePhaseScope, debaterScope, resolverScope, verifierScope variables; (2) A finally block exists that calls close() on all four scope objects in sequence or via Promise.all",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-52",
+    "original": "The PreDebatePhaseContext.ctx passed into resolvePreDebatePhase carries scopeId: prePhaseScope.scopeId (runner sets it on this.ctx.scopeId before calling resolvePreDebatePhase)",
+    "refined": "When resolvePreDebatePhase is invoked, inspect the ctx parameter: ctx.scopeId === prePhaseScope.scopeId (mockable via spy on costAggregator.openScope return value)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-53",
+    "original": "Every CallContext constructed for the debater fan-out (line 171: { ...this.ctx, agentName }) carries scopeId: debaterScope.scopeId",
+    "refined": "For each debater invocation loop iteration, the CallContext object created has scopeId === debaterScope.scopeId (verifiable via spy on agent dispatch or CallContext construction)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-54",
+    "original": "The SelectorContext.callContext passed into resolveOutcome carries scopeId: resolverScope.scopeId",
+    "refined": "When resolveOutcome is invoked, SelectorContext.callContext.scopeId === resolverScope.scopeId (verifiable via spy on resolveOutcome call site)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-55",
+    "original": "The verifier dispatch context carries scopeId: verifierScope.scopeId",
+    "refined": "When the verifier is dispatched (if exists), the context object passed has scopeId === verifierScope.scopeId",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-56",
+    "original": "runner.ts returns DebateResult.totalCostUsd === prePhaseScope.snapshot().totalCostUsd + debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd + verifierScope.snapshot().totalCostUsd",
+    "refined": "The returned DebateResult object has totalCostUsd property equal to (prePhaseScope.snapshot().totalCostUsd + debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd + verifierScope.snapshot().totalCostUsd)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-57",
+    "original": "runner.ts no longer reads prePhaseResult.costUsd or verifierResult.costUsd (the local totalCostUsd accumulator and all += addition sites are deleted)",
+    "refined": "Code inspection: (1) No reference to prePhaseResult.costUsd exists in runner.ts; (2) No reference to verifierResult.costUsd exists in runner.ts; (3) No variable declaration or assignment containing += operator applied to totalCostUsd exists",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-58",
+    "original": "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner.ts returns zero matches",
+    "refined": "Shell command execution: `grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner.ts` returns empty output (exit 1 or no lines printed)",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-59",
+    "original": "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/ returns zero matches across runner-stateful.ts, runner-hybrid.ts, and runner.ts",
+    "refined": "Shell command execution: `grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/` returns empty output (exit 1 or no lines printed), confirming no matches in any file in the src/debate/ directory",
+    "testable": true,
+    "storyId": "US-006"
+  },
+  {
+    "acId": "AC-60",
+    "original": ".claude/rules/retry-strategy.md 'Success-path cost' subsection is rewritten to state cost flows only through DispatchEvent → cost middleware → CostAggregator path; callers use costAggregator.openScope() and CallContext.scopeId",
+    "refined": "File .claude/rules/retry-strategy.md contains a subsection titled or headed 'Success-path cost' that includes all of: the phrase 'DispatchEvent', the phrase 'cost middleware', the phrase 'CostAggregator', the phrase 'costAggregator.openScope()', and the phrase 'CallContext.scopeId'",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-61",
+    "original": ".claude/rules/retry-strategy.md no longer contains the string 'accumulatedRunCostUsd'",
+    "refined": "Grep search for 'accumulatedRunCostUsd' in file .claude/rules/retry-strategy.md returns zero matches",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-62",
+    "original": ".claude/rules/adapter-wiring.md documents that the agent adapter exposes 4 primitives and gains no cost-reporting surface",
+    "refined": "File .claude/rules/adapter-wiring.md contains the phrases 'agent adapter', '4 primitives' (or 'four primitives'), and 'no cost-reporting surface' (or similar negation of cost-reporting capability)",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-63",
+    "original": ".claude/rules/adapter-wiring.md explicitly forbids new fields on CallContext whose purpose is to surface result-side data",
+    "refined": "File .claude/rules/adapter-wiring.md contains a rule or constraint prefixed with a negative directive (e.g., 'forbid', 'banned', 'must not', 'do not'), referencing both 'CallContext' and 'result-side data' or equivalent phrase",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-64",
+    "original": ".claude/rules/adapter-wiring.md states that leaf code (selectors, debater closures) MUST stay cost-blind",
+    "refined": "File .claude/rules/adapter-wiring.md contains the phrase 'leaf code', the phrase 'cost-blind', and at least one of 'selectors' or 'debater closures' within the same paragraph or rule block",
+    "testable": true,
+    "storyId": "US-007"
+  },
+  {
+    "acId": "AC-65",
+    "original": "The updated wording preserves the spec constraints that callOp keeps Promise<O>, cost middleware is the only writer, and scope attribution belongs to orchestration layers",
+    "refined": "Both .claude/rules/retry-strategy.md and .claude/rules/adapter-wiring.md collectively contain: the phrase 'callOp', 'Promise<O>' (or 'Promise<…>' or equivalent generic notation), 'cost middleware' with language indicating it is the sole or only writer, and 'scope attribution' paired with 'orchestration' or 'orchestration layers'",
+    "testable": true,
+    "storyId": "US-007"
+  }
+]
