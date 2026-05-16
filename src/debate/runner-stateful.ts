@@ -175,12 +175,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
       stage: ctx.stage,
       reason: "fewer than 2 proposal rounds succeeded",
     });
-    return buildFailedResult(
-      ctx.storyId,
-      ctx.stage,
-      ctx.stageConfig,
-      0,
-    );
+    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
   const rebuttals = shouldRunRebuttal

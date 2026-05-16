@@ -640,6 +640,7 @@ export class AgentManager implements IAgentManager {
         projectDir: opts.projectDir,
         resolvedPermissions,
         tokenUsage: result.tokenUsage,
+        estimatedCostUsd: result.estimatedCostUsd,
         exactCostUsd: result.exactCostUsd,
         durationMs: Date.now() - start,
         timestamp: Date.now(),

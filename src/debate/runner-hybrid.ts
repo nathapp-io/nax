@@ -200,12 +200,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
       };
     }
 
-    return buildFailedResult(
-      ctx.storyId,
-      ctx.stage,
-      ctx.stageConfig,
-      0,
-    );
+    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
   }
 
   // Build rebuttal list from rebutBarriers — collect settled barrier outputs per round.

@@ -46,6 +46,8 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       agentName: event.agentName,
       stage: event.stage,
       storyId: event.storyId,
+      callId: event.callId,
+      scopeId: event.scopeId,
       errorCode: event.errorCode,
       durationMs: event.durationMs,
     };

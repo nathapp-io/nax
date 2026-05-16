@@ -140,6 +140,19 @@ describe("attachCostSubscriber", () => {
     expect(errors[0].storyId).toBe("s-1");
   });
 
+  test("copies callId and scopeId from dispatch error to CostErrorEvent", () => {
+    const errors: CostErrorEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), recordError: (e: CostErrorEvent) => errors.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(makeErrorEvent({ callId: "call-err", scopeId: "scope-err" }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].callId).toBe("call-err");
+    expect(errors[0].scopeId).toBe("scope-err");
+  });
+
   test("unsubscribe stops recording", () => {
     const recorded: CostEvent[] = [];
     const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };

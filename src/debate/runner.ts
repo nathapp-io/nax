@@ -73,7 +73,10 @@ export class DebateRunner {
     if (mode === "hybrid") {
       if (sessionMode === "stateful") return this.runSessionModeWithScopes(prompt, runHybrid);
       const logger = _debateSessionDeps.getSafeLogger();
-      logger?.warn("debate", `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`);
+      logger?.warn(
+        "debate",
+        `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`,
+      );
       return this.runPanelOneShot(prompt);
     }
     if (sessionMode === "stateful") return this.runSessionModeWithScopes(prompt, runStateful);
@@ -82,7 +85,7 @@ export class DebateRunner {
 
   private async runSessionModeWithScopes(
     prompt: string,
-    runner: (ctx: CallContext & any, prompt: string) => Promise<DebateResult>,
+    runner: typeof runHybrid | typeof runStateful,
   ): Promise<DebateResult> {
     const costAggregator = this.ctx.runtime.costAggregator ?? createNoOpCostAggregator();
     const debaterScope = costAggregator.openScope();
@@ -102,7 +105,7 @@ export class DebateRunner {
     }
   }
 
-async runPlan(
+  async runPlan(
     taskContext: string,
     outputFormat: string,
     opts: {

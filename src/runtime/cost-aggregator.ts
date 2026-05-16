@@ -29,6 +29,8 @@ export interface CostErrorEvent {
   readonly model?: string;
   readonly stage?: string;
   readonly storyId?: string;
+  readonly callId?: string;
+  readonly scopeId?: string;
   readonly errorCode: string;
   readonly durationMs: number;
 }
@@ -158,6 +160,13 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
   };
 }
 
+function accumulateError(snap: CostSnapshot): CostSnapshot {
+  return {
+    ...snap,
+    errorCount: snap.errorCount + 1,
+  };
+}
+
 export class CostAggregator implements ICostAggregator {
   private readonly _events: CostEvent[] = [];
   private readonly _errors: CostErrorEvent[] = [];
@@ -234,6 +243,10 @@ export class CostAggregator implements ICostAggregator {
       if (e.callId === undefined) continue;
       m[e.callId] = accumulate(m[e.callId] ?? emptySnap(), e);
     }
+    for (const e of [...this._errors, ...this._inFlightErrors]) {
+      if (e.callId === undefined) continue;
+      m[e.callId] = accumulateError(m[e.callId] ?? emptySnap());
+    }
     return m;
   }
 
@@ -242,6 +255,10 @@ export class CostAggregator implements ICostAggregator {
     for (const e of [...this._events, ...this._inFlightEvents]) {
       if (e.scopeId === undefined) continue;
       m[e.scopeId] = accumulate(m[e.scopeId] ?? emptySnap(), e);
+    }
+    for (const e of [...this._errors, ...this._inFlightErrors]) {
+      if (e.scopeId === undefined) continue;
+      m[e.scopeId] = accumulateError(m[e.scopeId] ?? emptySnap());
     }
     return m;
   }
@@ -255,7 +272,9 @@ export class CostAggregator implements ICostAggregator {
       scopeId: id,
       snapshot: (): CostSnapshot => {
         const matching = [...this._events, ...this._inFlightEvents].filter((e) => e.scopeId === id);
-        return matching.reduce(accumulate, emptySnap());
+        const matchingErrors = [...this._errors, ...this._inFlightErrors].filter((e) => e.scopeId === id);
+        const eventSnapshot = matching.reduce(accumulate, emptySnap());
+        return matchingErrors.reduce((snap) => accumulateError(snap), eventSnapshot);
       },
       close: (): void => {
         if (closed) return;

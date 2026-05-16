@@ -48,6 +48,38 @@ describe("CostAggregator", () => {
     expect(snap.errorCount).toBe(1);
   });
 
+  test("byCall() includes errorCount for matching callId", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ callId: "call-1", costUsd: 0.01 }));
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      callId: "call-1",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const by = agg.byCall();
+    expect(by["call-1"].callCount).toBe(1);
+    expect(by["call-1"].errorCount).toBe(1);
+  });
+
+  test("byScope() includes errorCount for matching scopeId", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ scopeId: "scope-1", costUsd: 0.01 }));
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      scopeId: "scope-1",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const by = agg.byScope();
+    expect(by["scope-1"].callCount).toBe(1);
+    expect(by["scope-1"].errorCount).toBe(1);
+  });
+
   test("byAgent() groups events by agentName", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ agentName: "claude", costUsd: 0.001 }));
@@ -287,6 +319,24 @@ describe("CostAggregator", () => {
     const snap = handle.snapshot();
     expect(snap.callCount).toBe(2);
     expect(snap.totalCostUsd).toBeCloseTo(0.03);
+    handle.close();
+  });
+
+  test("CostScopeHandle.snapshot() includes errorCount for matching scopeId", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    const handle = agg.openScope("region-X");
+    agg.record(makeEvent({ scopeId: "region-X", costUsd: 0.01 }));
+    agg.recordError({
+      ts: Date.now(),
+      runId: "r-001",
+      agentName: "claude",
+      scopeId: "region-X",
+      errorCode: "TIMEOUT",
+      durationMs: 100,
+    });
+    const snap = handle.snapshot();
+    expect(snap.callCount).toBe(1);
+    expect(snap.errorCount).toBe(1);
     handle.close();
   });
 
