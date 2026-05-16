@@ -1,37 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-15T08-12-56-678Z",
+    "id": "run-2026-05-16T03-09-31-324Z",
     "feature": "debate-callop-phase2-runners-cleanup",
-    "startedAt": "2026-05-15T08:12:56.678Z",
-    "status": "crashed",
+    "startedAt": "2026-05-16T03:09:31.324Z",
+    "status": "failed",
     "dryRun": false,
-    "pid": 59810,
-    "crashedAt": "2026-05-15T10:25:54.129Z",
-    "crashSignal": "SIGINT"
+    "pid": 31483
   },
   "progress": {
     "total": 4,
     "passed": 2,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0,
+    "spent": 9.05863448,
     "limit": 50
   },
-  "current": {
-    "storyId": "US-005",
-    "title": "Plan debater op and verifier-pick patch via signal",
-    "complexity": "expert",
-    "tddStrategy": "three-session-tdd",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 0,
-  "updatedAt": "2026-05-15T10:25:54.129Z",
-  "durationMs": 7977451
+  "current": null,
+  "iterations": 1,
+  "updatedAt": "2026-05-16T05:22:12.831Z",
+  "durationMs": 7961507,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-16T05:22:11.926Z"
+    }
+  }
 }
