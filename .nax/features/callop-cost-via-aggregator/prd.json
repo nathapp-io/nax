@@ -3,7 +3,7 @@
   "feature": "callop-cost-via-aggregator",
   "branchName": "feat/callop-cost-via-aggregator",
   "createdAt": "2026-05-16T00:00:00.000Z",
-  "updatedAt": "2026-05-16T12:16:57.109Z",
+  "updatedAt": "2026-05-16T12:42:52.234Z",
   "userStories": [
     {
       "id": "US-001",
@@ -180,8 +180,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -241,7 +241,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/runner-stateful.ts",
@@ -251,7 +253,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e0f3d253b58d190c0939418fb05a3dbf5db8ab41"
     },
     {
       "id": "US-006",
