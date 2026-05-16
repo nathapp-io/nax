@@ -174,13 +174,18 @@ For each story, confirm there is at least one negative-path acceptance criterion
 Check whether any sentence in any description contradicts an acceptance criterion in the same story. If there is a contradiction, fix the description so it matches the ACs.
 
 #### codebase-fit
-For each story, verify that the proposed files, helpers, tests, dependencies, and implementation notes match the codebase context. Remove invented helpers, files, call sites, or dependencies unless the change clearly requires creating them.
+For each story, verify:
+1. Proposed files, helpers, tests, dependencies, and implementation notes match the codebase context. Remove invented helpers, files, call sites, or dependencies unless the change clearly requires creating them.
+2. Each acceptance criterion's semantic meaning matches the spec's actual interface and data flow. Criteria that assert incorrect parameter semantics, wrong data flow, or behavior that contradicts the spec must be corrected or removed. Cross-check each AC against the spec's interface definitions, pseudocode, and design notes.
+
+#### contextfiles-spec-alignment
+For each story, compare contextFiles against files the spec explicitly lists as context (e.g., in "Context Files" sections). Ensure the most critical spec-recommended files are included, up to the 5-file limit. If a spec-recommended file is absent, add it (removing the least critical one if already at 5). Files the story will CREATE must not appear here.
 
 #### dependency-minimization
-Remove unnecessary dependencies between stories. A dependency should exist only if the downstream story truly cannot be implemented or validated first.
+Remove unnecessary dependencies between stories. A dependency should exist only if the downstream story truly cannot be implemented or validated first. Also verify that every story ID referenced in any "dependencies" array exists in this PRD — remove references to non-existent story IDs.
 
 #### routing-realism
-Re-check routing.complexity and routing.testStrategy against the current codebase shape. Prefer the lightest realistic routing. Do not mark stories as "complex" or choose a heavier test strategy unless the codebase evidence requires it.
+Re-check routing.complexity and routing.testStrategy against the current codebase shape. Prefer the lightest realistic routing. Do not mark stories as "complex" or choose a heavier test strategy unless the codebase evidence requires it. Also verify routing.reasoning is substantive — a generic value like "validated from LLM output" must be replaced with one sentence explaining why this specific complexity and strategy were chosen for this story.
 
 #### regression-coverage
 If a story changes existing behavior, extracts a shared helper, extends an existing function signature, or replaces a warning/stub path with real behavior, ensure there is at least one acceptance criterion protecting backward compatibility or proving the old placeholder behavior is gone.
