@@ -1,0 +1,305 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "callop-cost-via-aggregator",
+  "branchName": "feat/callop-cost-via-aggregator",
+  "createdAt": "2026-05-16T00:00:00.000Z",
+  "updatedAt": "2026-05-16T10:54:48.607Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Normalize exactCostUsd — make required, fall back to estimatedCostUsd",
+      "description": "**Goal** — Make exactCostUsd required on CostEvent and CostSnapshot, removing the ?? ladder at every read site.\n\n**Motivation** — Today exactCostUsd is optional on DispatchEventBase, CostEvent, and CostSnapshot.totalExactCostUsd. The attachCostSubscriber does `exactCostUsd ?? estimatedCostUsd ?? 0` to derive costUsd and uses `exactCostUsd != null` to derive confidence. Every reader must repeat this ladder.\n\n**Interface**\n```typescript\n// CostEvent — exactCostUsd becomes required\ninterface CostEvent {\n  readonly ts: number;\n  readonly runId: string;\n  readonly agentName: string;\n  readonly model: string;\n  readonly stage?: string;\n  readonly storyId?: string;\n  readonly packageDir?: string;\n  readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };\n  readonly estimatedCostUsd: number;\n  readonly exactCostUsd: number;  // was optional\n  readonly costUsd: number;\n  readonly confidence: \"exact\" | \"estimated\";\n  readonly durationMs: number;\n  readonly callId?: string;  // added in US-002, included here for context\n  readonly scopeId?: string; // added in US-002, included here for context\n}\n\n// CostSnapshot — totalExactCostUsd becomes required\ninterface CostSnapshot {\n  readonly totalCostUsd: number;\n  readonly totalEstimatedCostUsd: number;\n  readonly totalExactCostUsd: number;  // was optional\n  readonly totalInputTokens: number;\n  readonly totalOutputTokens: number;\n  readonly callCount: number;\n  readonly errorCount: number;\n}\n\nconst EMPTY_SNAPSHOT: CostSnapshot = {\n  totalCostUsd: 0,\n  totalEstimatedCostUsd: 0,\n  totalExactCostUsd: 0,  // added\n  totalInputTokens: 0,\n  totalOutputTokens: 0,\n  callCount: 0,\n  errorCount: 0,\n};\n\n// emptySnap() also needs totalExactCostUsd: 0\n```\n\n**Approach** — The change is at the producer boundary (attachCostSubscriber), not at the wire boundary (adapter primitives unchanged). Adapters continue to emit `exactCostUsd: number | undefined`; the middleware normalizes immediately before writing to the aggregator:\n- When `event.exactCostUsd` is a finite number: `exactCostUsd = event.exactCostUsd` and `confidence = \"exact\"`\n- When `event.exactCostUsd` is absent/undefined: `exactCostUsd = estimatedCostUsd` and `confidence = \"estimated\"`\n- `costUsd === exactCostUsd` always (the ?? ladder no longer applies at read sites)\n\nAccumulate with: `totalExactCostUsd: e.exactCostUsd + (snap.totalExactCostUsd ?? 0)` — the nullish coalescing handles the initial EMPTY_SNAPSHOT case where `totalExactCostUsd = 0` as a required field.",
+      "acceptanceCriteria": [
+        "CostEvent.exactCostUsd is declared as required number (no ?:) in src/runtime/cost-aggregator.ts",
+        "CostSnapshot.totalExactCostUsd is declared as required number (no ?:) in src/runtime/cost-aggregator.ts",
+        "attachCostSubscriber in src/runtime/middleware/cost.ts constructs every CostEvent with exactCostUsd = event.exactCostUsd ?? estimatedCostUsd so the field is never undefined after the middleware boundary",
+        "attachCostSubscriber sets confidence = \"exact\" when event.exactCostUsd is a finite number, else \"estimated\"",
+        "CostEvent.costUsd === CostEvent.exactCostUsd for every event the middleware emits",
+        "CostAggregator.accumulate() increments totalExactCostUsd by e.exactCostUsd (the ?? 0 handles the EMPTY_SNAPSHOT initial case where totalExactCostUsd = 0)",
+        "EMPTY_SNAPSHOT constant has totalExactCostUsd: 0 and CostAggregator.snapshot() over zero events returns a snapshot with totalExactCostUsd === 0",
+        "emptySnap() returns a snapshot with totalExactCostUsd === 0",
+        "DispatchEventBase.exactCostUsd remains optional at the wire/adapter side — adapters that cannot report exact cost continue to omit the field; normalization runs in attachCostSubscriber only",
+        "When drain() writes the JSONL file, CostEvent lines in the output contain exactCostUsd as a number (CostErrorEvent lines omit exactCostUsd as they belong to a different schema)"
+      ],
+      "tags": [
+        "feature",
+        "cost",
+        "api-change"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/cost-aggregator.ts",
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/dispatch-events.ts"
+      ],
+      "suggestedCriteria": [
+        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = 0.05 and estimatedCostUsd = 0.06, the recorded CostEvent has exactCostUsd = 0.05, confidence = \"exact\", costUsd = 0.05",
+        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = undefined and estimatedCostUsd = 0.04, the recorded CostEvent has exactCostUsd = 0.04, confidence = \"estimated\", costUsd = 0.04"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Add callId + scopeId to dispatch event base; stamp and forward at callOp",
+      "description": "**Goal** — Add two correlation fields (callId per-invocation, scopeId per-region) to all dispatch events and wire them through callOp.\n\n**Motivation** — Replacing the onCostAccumulated side channel requires cost to flow through the dispatch bus (already happening via attachCostSubscriber), but callers need to attribute cost to logical regions. callId enables per-invocation debug attribution; scopeId enables per-region cost aggregation.\n\n**Interface**\n```typescript\n// src/runtime/dispatch-events.ts\n// DispatchEventBase gets (per ADR-020 §D1, new cross-cutting fields go here):\ninterface DispatchEventBase {\n  // ... existing fields ...\n  /** Per-callOp invocation id, stamped by the operation layer. Optional only\n   * because legacy non-op dispatch sites may not stamp it; in production every\n   * callOp-driven event carries one. */\n  readonly callId?: string;\n  /** Caller-supplied region id, forwarded verbatim from CallContext.scopeId.\n   * Used by CostAggregator.byScope() and CostScopeHandle.snapshot() to roll\n   * up cost across many callOp invocations sharing one region. */\n  readonly scopeId?: string;\n}\n\n// SessionTurnDispatchEvent and CompleteDispatchEvent inherit callId/scopeId via DispatchEventBase\n\n// OperationCompletedEvent does NOT extend DispatchEventBase — add fields directly:\ninterface OperationCompletedEvent {\n  readonly kind: \"operation-completed\";\n  readonly operation: \"run-with-fallback\" | \"complete-with-fallback\";\n  // ... existing fields ...\n  readonly callId?: string;\n  readonly scopeId?: string;\n}\n\n// DispatchErrorEvent does NOT extend DispatchEventBase — add fields directly:\ninterface DispatchErrorEvent {\n  readonly kind: \"error\";\n  readonly origin: \"runAsSession\" | \"runTrackedSession\" | \"completeAs\";\n  // ... existing fields ...\n  readonly callId?: string;\n  readonly scopeId?: string;\n}\n\n// src/operations/types.ts — CallContext gains:\ninterface CallContext {\n  // ... existing fields ...\n  /** Optional region id forwarded onto every dispatch event the op produces.\n   * Set by orchestration layers (e.g. debate runners) that own the region;\n   * leaf code (selectors, debater closures) never sets or reads this. */\n  readonly scopeId?: string;\n  /** Optional pinned callId. Almost never set by callers — callOp generates\n   * a fresh one when absent. Reserved for advanced patterns. */\n  readonly callId?: string;\n}\n\n// src/agents/types.ts — CompleteOptions gains callId and scopeId fields:\nexport interface CompleteOptions {\n  // ... existing fields ...\n  readonly callId?: string;\n  readonly scopeId?: string;\n}\n\n// src/agents/manager-types.ts — RunAsSessionOpts gains callId and scopeId:\nexport interface RunAsSessionOpts {\n  // ... existing fields ...\n  readonly callId?: string;\n  readonly scopeId?: string;\n}\n\n// src/operations/call.ts — new helper:\nfunction newCorrelationId(): string {\n  // ≤16 chars: `${ts.toString(36)}-${random6}`\n  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;\n}\n```\n\n**Approach** — callOp stamps a fresh callId per invocation (using `ctx.callId ?? newCorrelationId()`). For complete-kind ops, callOp forwards both callId and ctx.scopeId via completeOptions to completeAs, which stamps them onto CompleteDispatchEvent and any DispatchErrorEvent. For run-kind ops, callOp forwards both callId and ctx.scopeId via runOptions to runWithFallback/runAsSession, which stamps them onto SessionTurnDispatchEvent, OperationCompletedEvent, and any DispatchErrorEvent. PreDebatePhaseContext carries a CallContext; the runner sets scopeId on that CallContext before calling resolvePreDebatePhase.",
+      "acceptanceCriteria": [
+        "DispatchEventBase declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts",
+        "OperationCompletedEvent declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts (fields added directly, not via inheritance)",
+        "DispatchErrorEvent declares readonly callId?: string and readonly scopeId?: string in src/runtime/dispatch-events.ts (fields added directly, not via inheritance)",
+        "CallContext declares readonly scopeId?: string and readonly callId?: string in src/operations/types.ts",
+        "CompleteOptions declares readonly callId?: string and readonly scopeId?: string in src/agents/types.ts",
+        "RunAsSessionOpts declares readonly callId?: string and readonly scopeId?: string in src/agents/manager-types.ts",
+        "callOp(ctx, op, input) stamps a fresh callId via newCorrelationId() when ctx.callId is absent, and never overwrites a caller-supplied ctx.callId",
+        "For kind:\"complete\" ops, completeOptions carries callId and scopeId from callOp; CompleteDispatchEvent has callId and scopeId; completeAs emits DispatchErrorEvent with callId and scopeId on failure",
+        "For kind:\"run\" ops, runOptions carries callId and scopeId from callOp; SessionTurnDispatchEvent, OperationCompletedEvent, and DispatchErrorEvent all have callId and scopeId",
+        "newCorrelationId() produces ≤16-char strings matching /^[0-9a-z]+-[0-9a-z]+$/; 10,000 sequential calls yield 10,000 distinct values"
+      ],
+      "tags": [
+        "feature",
+        "correlation",
+        "dispatch"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/dispatch-events.ts",
+        "src/operations/types.ts",
+        "src/operations/call.ts",
+        "src/agents/types.ts",
+        "src/agents/manager-types.ts",
+        "src/agents/manager.ts"
+      ],
+      "suggestedCriteria": [
+        "When callOp retries a complete-kind op via op.retry, all CompleteDispatchEvent and DispatchErrorEvent events across retry attempts share the same callId",
+        "When callOp is invoked with ctx.callId already set, that value is preserved and not overwritten by newCorrelationId()"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Aggregator scope API — openScope, byScope, byCall",
+      "description": "**Goal** — Extend CostAggregator with scope filtering API so callers can attribute cost to logical regions.\n\n**Motivation** — Selectors currently track cost via onCostAccumulated closures. The replacement is a scope API: callers open a named scope, stamp its scopeId into CallContext, then snapshot to get totals for all events in that scope.\n\n**Interface**\n```typescript\n// src/runtime/cost-aggregator.ts\n\n// CostEvent gains (from US-002):\ninterface CostEvent {\n  // ... existing fields ...\n  readonly callId?: string;\n  readonly scopeId?: string;\n}\n\n// New handle type:\nexport interface CostScopeHandle {\n  /** The scopeId this handle filters by. */\n  readonly scopeId: string;\n  /** Totals across events recorded with this scope's scopeId at call time. */\n  snapshot(): CostSnapshot;\n  /** Idempotent release of internal indexes. */\n  close(): void;\n}\n\n// ICostAggregator extends:\ninterface ICostAggregator {\n  // ... existing methods ...\n  /** Per-invocation totals (groups by callId; debug-only). */\n  byCall(): Record<string, CostSnapshot>;\n  /** Per-region totals (groups by scopeId). */\n  byScope(): Record<string, CostSnapshot>;\n  /** Opens a region scope. When scopeId is omitted the aggregator generates\n   * one via newCorrelationId() and exposes it on handle.scopeId. */\n  openScope(scopeId?: string): CostScopeHandle;\n}\n```\n\n**Approach** — CostScopeHandle.snapshot() filters events where e.scopeId === handle.scopeId and reduces to a CostSnapshot. close() is an idempotent release of internal indexes. CostAggregator.drain() logs at warn level with { openScopeCount } when any scope remains open. openScope() reuses newCorrelationId() from src/operations/call.ts.\n\nattachCostSubscriber copies event.callId and event.scopeId from DispatchEvent onto CostEvent when recording.\n\ncreateNoOpCostAggregator() returns a no-op whose openScope() returns a handle whose snapshot() returns EMPTY_SNAPSHOT.",
+      "acceptanceCriteria": [
+        "CostEvent in src/runtime/cost-aggregator.ts declares readonly scopeId?: string and readonly callId?: string",
+        "attachCostSubscriber in src/runtime/middleware/cost.ts copies event.scopeId and event.callId from DispatchEvent onto CostEvent (leaving undefined when source has none)",
+        "CostAggregator.byScope() returns a Record<string, CostSnapshot> keyed by scopeId, including only events where scopeId !== undefined",
+        "CostAggregator.byCall() returns a Record<string, CostSnapshot> keyed by callId, including only events where callId !== undefined",
+        "CostAggregator.openScope(scopeId) returns a CostScopeHandle whose scopeId field equals the input; openScope() with no arg generates one via newCorrelationId() and exposes it on handle.scopeId",
+        "CostScopeHandle.snapshot() returns a CostSnapshot reflecting only CostEvents where e.scopeId === handle.scopeId at call time, aggregating costUsd into totalCostUsd",
+        "CostScopeHandle.snapshot() returns EMPTY_SNAPSHOT when no events with the scope's scopeId have been recorded",
+        "CostScopeHandle.close() is idempotent; calling it multiple times does not throw",
+        "CostAggregator.drain() logs at level warn with { openScopeCount: number } when any scope is still open at drain time",
+        "createNoOpCostAggregator().openScope().snapshot() returns EMPTY_SNAPSHOT"
+      ],
+      "tags": [
+        "feature",
+        "cost",
+        "aggregator"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/runtime/cost-aggregator.ts",
+        "src/runtime/middleware/cost.ts",
+        "src/runtime/index.ts",
+        "src/operations/call.ts"
+      ],
+      "suggestedCriteria": [
+        "When no events have been recorded for a scopeId, scopeHandle.snapshot() returns EMPTY_SNAPSHOT with totalCostUsd = 0",
+        "When events A (scopeId='x', costUsd=0.05) and B (scopeId='y', costUsd=0.03) are recorded, scopeHandle('x').snapshot().totalCostUsd === 0.05 and scopeHandle('y').snapshot().totalCostUsd === 0.03",
+        "Calling scopeHandle.close() twice does not throw; second call is a no-op"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Strip cost from selectors — delete resolverCostUsd and onCostAccumulated",
+      "description": "**Goal** — Make selectors completely cost-blind. Remove onCostAccumulated from CallContext and both write sites in callOp. Remove resolverCostUsd from SelectorResult. Strip all mutable cost accumulators from selector implementations.\n\n**Motivation** — The onCostAccumulated callback is the side channel this spec replaces. Selectors (leaf code) should forward CallContext unchanged to callOp; cost attribution belongs to the orchestration layer (runners) that owns the region definition.\n\n**Interface**\n```typescript\n// After removal — CallContext (src/operations/types.ts):\n// onCostAccumulated field is DELETED entirely\n\n// After removal — SelectorResult (src/debate/selectors/types.ts):\ninterface SelectorResult {\n  readonly outcome: \"passed\" | \"failed\" | \"skipped\";\n  readonly output?: string;\n  // resolverCostUsd field is DELETED entirely\n  readonly findings?: unknown[];\n  readonly dialogueResult?: ReviewDialogueResult;\n}\n```\n\n**Approach** — This story is one commit. SelectorResult.resolverCostUsd is a required field today; a partial removal does not type-check. All selector files and all readers must be migrated together:\n- judgeSelector: remove `let resolverCostUsd = 0`, remove `onCostAccumulated` closure, return only `{ outcome, output }`\n- synthesisSelector: same pattern\n- dialogueVerdictSelector: drop `resolverCostUsd` from return at line 99 (it returns `dialogueResult.cost ?? 0`)\n- verifierPickSelector: drop `resolverCostUsd: 0` from return at lines 131 and 139\n- majorityFailClosedSelector, majorityFailOpenSelector: drop `resolverCostUsd: 0` from return\n- session-helpers.ts: remove `ResolveOutcome.resolverCostUsd` and stop mapping selector results through that field\n- runner-stateful.ts, runner-hybrid.ts, runner.ts, runner-plan-helpers.ts: drop `resolverCostUsd` from intermediate carry shapes and stop reading it from `resolveOutcome()`\n\njudgeSelector and synthesisSelector forward ctx.callContext unchanged into callOp — no callId injection, no scopeId injection, no onCostAccumulated threading.",
+      "acceptanceCriteria": [
+        "CallContext does not declare onCostAccumulated in src/operations/types.ts",
+        "src/operations/call.ts contains no reference to onCostAccumulated",
+        "SelectorResult does not declare resolverCostUsd in src/debate/selectors/types.ts",
+        "judgeSelector in src/debate/selectors/judge.ts returns values whose only populated keys are within Pick<SelectorResult, 'outcome' | 'output'>",
+        "synthesisSelector returns only Pick<SelectorResult, 'outcome' | 'output'>",
+        "judgeSelector and synthesisSelector forward ctx.callContext unchanged into callOp",
+        "dialogueVerdictSelector return at line 99 does not include resolverCostUsd",
+        "verifierPickSelector return values at lines 131 and 139 do not include resolverCostUsd",
+        "majorityFailClosedSelector and majorityFailOpenSelector returns do not include resolverCostUsd",
+        "ResolveOutcome in src/debate/session-helpers.ts does not declare resolverCostUsd and resolveOutcome() does not read resolverCostUsd from selector results",
+        "grep -r 'resolverCostUsd' src/ returns zero matches after this story",
+        "grep -r 'onCostAccumulated' src/ returns zero matches after this story"
+      ],
+      "tags": [
+        "feature",
+        "selectors",
+        "removal"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/types.ts",
+        "src/operations/call.ts",
+        "src/debate/selectors/types.ts",
+        "src/debate/selectors/judge.ts",
+        "src/debate/selectors/synthesis.ts",
+        "src/debate/selectors/dialogue-verdict.ts",
+        "src/debate/selectors/verifier-pick.ts",
+        "src/debate/selectors/majority.ts",
+        "src/debate/session-helpers.ts",
+        "src/debate/runner-stateful.ts",
+        "src/debate/runner-hybrid.ts",
+        "src/debate/runner.ts",
+        "src/debate/runner-plan-helpers.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "runner-stateful and runner-hybrid — two-scope conversion",
+      "description": "**Goal** — Convert runner-stateful and runner-hybrid to open two scopes each (debaterScope and resolverScope) and populate DebateResult.totalCostUsd from scope snapshots.\n\n**Motivation** — Both runners currently track debater costs with a mutable `let totalCostUsd = 0` accumulator plus per-call onCostAccumulated closure, then add resolverCostUsd from the selector result. After US-004, selectors no longer return resolverCostUsd. The runners must use scope snapshots instead.\n\n**Interface**\n```typescript\n// runner-stateful.ts — pattern:\nconst debaterScope = ctx.runtime.costAggregator.openScope();\nconst resolverScope = ctx.runtime.costAggregator.openScope();\ntry {\n  const debaterCallContext = (agentName: string, index: number): CallContext => ({\n    ...createDebaterCallContext(ctx, agentName),\n    sessionOverride: { role: debaterRole(index) },\n    scopeId: debaterScope.scopeId,  // runner stamps; debater closure never sees this\n  });\n  // ... Promise.allSettled over debater callOps using debaterCallContext ...\n  \n  const selectorCtx: SelectorContext = {\n    ...buildSelectorContext(ctx),\n    callContext: { ...ctx.callContext, scopeId: resolverScope.scopeId },\n  };\n  const selectorResult = await selector(selectorCtx);\n  \n  return {\n    ...buildDebateResult(ctx, proposals, rebuttals, selectorResult),\n    totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,\n  };\n} finally {\n  debaterScope.close();\n  resolverScope.close();\n}\n```\n\n**Approach** — Replace `let totalCostUsd = 0` and the onCostAccumulated closure in debaterCallContext factory with scopeId stamping. The runner opens two scopes in a try block; both are closed in finally. DebateResult.totalCostUsd = debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd. runner-hybrid follows the same two-scope pattern.\n\nAfter this story, `grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner-stateful.ts src/debate/runner-hybrid.ts` returns zero matches.",
+      "acceptanceCriteria": [
+        "runStateful opens one debaterScope and one resolverScope via ctx.runtime.costAggregator.openScope(); both are closed in a finally block",
+        "Every CallContext produced by debaterCallContext(agentName, index) carries scopeId: debaterScope.scopeId",
+        "The SelectorContext.callContext passed into the resolver carries scopeId: resolverScope.scopeId",
+        "runStateful returns DebateResult.totalCostUsd === debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd",
+        "runHybrid follows the same two-scope pattern with the same totalCostUsd formula",
+        "When two debaters each produce one dispatch event with costUsd = 0.05 and the resolver produces one event with costUsd = 0.02, DebateResult.totalCostUsd === 0.12",
+        "Per-debater closures contain no let totalCostUsd = 0 accumulator and no callback threading — cost flows only through scopeId → bus → aggregator",
+        "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner-stateful.ts src/debate/runner-hybrid.ts returns zero matches"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "cost-attribution"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/debate/runner-stateful.ts",
+        "src/debate/runner-hybrid.ts",
+        "src/debate/session-helpers.ts",
+        "src/debate/selectors/types.ts"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "runner.ts — four-scope conversion (pre-debate, debaters, selector, verifier)",
+      "description": "**Goal** — Convert runner.ts to open four scopes (prePhaseScope, debaterScope, resolverScope, verifierScope) and derive DebateResult.totalCostUsd from their snapshots.\n\n**Motivation** — runner.ts orchestrates four cost-producing phases: resolvePreDebatePhase, debater fan-out, selector/resolver, and the optional post-debate verifier. Today it uses `let totalCostUsd = 0` plus three add sites reading prePhaseResult.costUsd, selectorOutcome.resolverCostUsd, and verifierResult.costUsd.\n\n**Interface**\n```typescript\n// runner.ts — four scope variables:\nconst prePhaseScope = ctx.runtime.costAggregator.openScope();\nconst debaterScope = ctx.runtime.costAggregator.openScope();\nconst resolverScope = ctx.runtime.costAggregator.openScope();\nconst verifierScope = ctx.runtime.costAggregator.openScope();\n// all closed in finally block\n\n// PreDebatePhaseContext.ctx carries scopeId: prePhaseScope.scopeId\n// — the runner passes prePhaseCtx where ctx.ctx.scopeId = prePhaseScope.scopeId\n// — resolvePreDebatePhase dispatches via callOp using ctx.ctx, which carries scopeId\n\n// Every debater CallContext (line 171: { ...this.ctx, agentName }) carries scopeId: debaterScope.scopeId\n// SelectorContext.callContext carries scopeId: resolverScope.scopeId\n// Verifier dispatch context carries scopeId: verifierScope.scopeId\n\n// Result:\nDebateResult.totalCostUsd ===\n  prePhaseScope.snapshot().totalCostUsd +\n  debaterScope.snapshot().totalCostUsd +\n  resolverScope.snapshot().totalCostUsd +\n  verifierScope.snapshot().totalCostUsd\n```\n\n**Approach** — Open four scopes. The runner sets scopeId on the CallContext inside PreDebatePhaseContext before calling resolvePreDebatePhase — the PreDebatePhaseContext.ctx carries the scoped CallContext into the pre-debate phase. Every debater CallContext constructed at line 171 (and the fallback at line 227) carries debaterScope.scopeId. SelectorContext.callContext carries resolverScope.scopeId. Verifier dispatch context carries verifierScope.scopeId. runner.ts stops reading prePhaseResult.costUsd and verifierResult.costUsd; those fields become unread by this runner. The local `totalCostUsd` accumulator and all three `+=` addition sites are deleted.\n\nAfter this story, `grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner.ts` returns zero matches.",
+      "acceptanceCriteria": [
+        "runner.ts opens four scopes (prePhaseScope, debaterScope, resolverScope, verifierScope) via ctx.runtime.costAggregator.openScope(); all four are closed in a finally block",
+        "The PreDebatePhaseContext.ctx passed into resolvePreDebatePhase carries scopeId: prePhaseScope.scopeId (runner sets it on this.ctx.scopeId before calling resolvePreDebatePhase)",
+        "Every CallContext constructed for the debater fan-out (line 171: { ...this.ctx, agentName }) carries scopeId: debaterScope.scopeId",
+        "The SelectorContext.callContext passed into resolveOutcome carries scopeId: resolverScope.scopeId",
+        "The verifier dispatch context carries scopeId: verifierScope.scopeId",
+        "runner.ts returns DebateResult.totalCostUsd === prePhaseScope.snapshot().totalCostUsd + debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd + verifierScope.snapshot().totalCostUsd",
+        "runner.ts no longer reads prePhaseResult.costUsd or verifierResult.costUsd (the local totalCostUsd accumulator and all += addition sites are deleted)",
+        "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/runner.ts returns zero matches",
+        "grep -nE 'totalCostUsd\\s*\\+=|let\\s+totalCostUsd' src/debate/ returns zero matches across runner-stateful.ts, runner-hybrid.ts, and runner.ts"
+      ],
+      "tags": [
+        "feature",
+        "debate",
+        "cost-attribution"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/debate/runner.ts",
+        "src/debate/runner-plan-helpers.ts",
+        "src/debate/pre-phase/types.ts",
+        "src/debate/types.ts"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Document always-on cost flow in retry-strategy.md and adapter-wiring.md",
+      "description": "**Goal** — Update project-rule documents so future contributors understand: cost recording is always-on; leaf code (selectors, debater closures) is cost-blind; attribution comes from scopeId stamped by the orchestration layer.\n\n**Approach** —\n\n1. `.claude/rules/retry-strategy.md` — Rewrite the \"Success-path cost\" subsection:\n   - State: cost flows only through DispatchEvent → cost middleware → CostAggregator\n   - Callers needing per-region cost use costAggregator.openScope() and stamp CallContext.scopeId\n   - Remove the string \"accumulatedRunCostUsd\"\n\n2. `.claude/rules/adapter-wiring.md` — Add to layer table:\n   - Document that the agent adapter exposes 4 primitives and gains no cost-reporting surface\n   - Explicitly forbid new fields on CallContext whose purpose is to surface result-side data\n   - State that leaf code (selectors, debater closures) MUST stay cost-blind\n\n3. Keep the wording aligned with the spec's architectural constraints:\n   - `callOp` keeps `Promise<O>`\n   - cost middleware remains the only writer\n   - scope attribution belongs to orchestration layers rather than selectors or adapters",
+      "acceptanceCriteria": [
+        ".claude/rules/retry-strategy.md 'Success-path cost' subsection is rewritten to state cost flows only through DispatchEvent → cost middleware → CostAggregator path; callers use costAggregator.openScope() and CallContext.scopeId",
+        ".claude/rules/retry-strategy.md no longer contains the string 'accumulatedRunCostUsd'",
+        ".claude/rules/adapter-wiring.md documents that the agent adapter exposes 4 primitives and gains no cost-reporting surface",
+        ".claude/rules/adapter-wiring.md explicitly forbids new fields on CallContext whose purpose is to surface result-side data",
+        ".claude/rules/adapter-wiring.md states that leaf code (selectors, debater closures) MUST stay cost-blind",
+        "The updated wording preserves the spec constraints that callOp keeps Promise<O>, cost middleware is the only writer, and scope attribution belongs to orchestration layers"
+      ],
+      "tags": [
+        "documentation"
+      ],
+      "dependencies": [
+        "US-005",
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "validated from LLM output",
+        "noTestJustification": "Pure documentation changes; no runtime behavior to verify"
+      },
+      "contextFiles": [
+        ".claude/rules/retry-strategy.md",
+        ".claude/rules/adapter-wiring.md"
+      ]
+    }
+  ],
+  "analysis": "## Analysis\n\n### Key Files to Modify\n\n1. **src/runtime/dispatch-events.ts** — DispatchEventBase, OperationCompletedEvent, and DispatchErrorEvent need `callId?: string` and `scopeId?: string` fields. Notably, DispatchErrorEvent does NOT extend DispatchEventBase, so it gets the fields directly. OperationCompletedEvent is its own interface, also gets fields directly.\n\n2. **src/runtime/cost-aggregator.ts** — ICostAggregator needs `byCall()`, `byScope()`, and `openScope()`. CostEvent needs `callId?: string` and `scopeId?: string`. EMPTY_SNAPSHOT and emptySnap() need `totalExactCostUsd: 0`. The `accumulate()` function's `snap.totalExactCostUsd ?? 0` pattern works because EMPTY_SNAPSHOT already has `totalExactCostUsd: 0` as required.\n\n3. **src/runtime/middleware/cost.ts** — attachCostSubscriber copies callId and scopeId from dispatch events onto CostEvent.\n\n4. **src/operations/types.ts** — CallContext gains `scopeId?: string` and `callId?: string` fields; remove `onCostAccumulated`.\n\n5. **src/operations/call.ts** — Remove both `ctx.onCostAccumulated?.()` calls (lines 153 and 422); add `newCorrelationId()` helper; stamp callId and forward both callId and scopeId into completeOptions (for complete-kind) and runOptions (for run-kind).\n\n6. **src/agents/types.ts (CompleteOptions)** — Add `callId?: string` and `scopeId?: string` to CompleteOptions so complete-kind can forward correlation IDs to events.\n\n7. **src/agents/manager.ts** — `completeAs` passes callId/scopeId from CompleteOptions into CompleteDispatchEvent; `runAsSession` passes callId/scopeId from RunAsSessionOpts into SessionTurnDispatchEvent; both emit DispatchErrorEvent with correlation IDs on failure.\n\n8. **src/agents/manager-types.ts (RunAsSessionOpts)** — Add `callId?: string` and `scopeId?: string`.\n\n9. **src/runtime/session-run-hop.ts** — No changes needed; callId/scopeId come from AgentRunOptions which will be extended in US-002 via the agent types.\n\n10. **src/debate/selectors/types.ts** — SelectorResult: remove `resolverCostUsd: number` field.\n\n11. **src/debate/selectors/judge.ts** — Remove `let resolverCostUsd = 0` and `onCostAccumulated` callback; return only `{ outcome, output }`.\n\n12. **src/debate/selectors/synthesis.ts** — Same pattern as judge.ts.\n\n13. **src/debate/selectors/dialogue-verdict.ts** — Drop `resolverCostUsd` from return (line 99 returns `dialogueResult.cost ?? 0`).\n\n14. **src/debate/selectors/verifier-pick.ts** — Drop `resolverCostUsd: 0` from return literals (lines 131, 139).\n\n15. **src/debate/selectors/majority.ts** — Drop `resolverCostUsd: 0` from return literals (lines 46, 52).\n\n16. **src/debate/runner-stateful.ts** — Convert `let totalCostUsd = 0` + onCostAccumulated to two scope handles; use scope snapshots for DebateResult.totalCostUsd.\n\n17. **src/debate/runner-hybrid.ts** — Same two-scope conversion pattern as runner-stateful.\n\n18. **src/debate/runner.ts** — Four-scope conversion: prePhaseScope, debaterScope, resolverScope, verifierScope.\n\n19. **src/debate/session-helpers.ts** — ResolveOutcome currently has `resolverCostUsd: number`; to match the spec and keep US-004 type-safe, remove the field there as part of the same hard-cut migration that removes it from SelectorResult and its readers.\n\n20. **src/debate/runner-plan-helpers.ts** — Drop `resolverCostUsd: 0` literals and any intermediate carry shapes that still mention the field.\n\n### Migration Risks\n\n- **Breaking API change**: Removing `onCostAccumulated` from CallContext and `resolverCostUsd` from SelectorResult will cause compile errors in all consumers. All must be migrated in a single commit per spec.\n- **DispatchErrorEvent doesn't extend DispatchEventBase**: The correlation IDs must be added directly to DispatchErrorEvent, not just to the base.\n- **CompleteOptions needs callId/scopeId**: Currently CompleteOptions has no field for correlation IDs. completeAs must be able to read them from options and forward into events.\n- **PreDebatePhaseContext is just a wrapper around CallContext**: No structural change needed to PreDebatePhaseContext itself; the runner sets scopeId in the CallContext before calling resolvePreDebatePhase.\n- **EMPTY_SNAPSHOT currently missing totalExactCostUsd**: After US-001 makes it required, we must add `totalExactCostUsd: 0` to EMPTY_SNAPSHOT constant AND to the object literal in `emptySnap()`.\n- **callId propagation must be acceptance-tested, not just typed**: The codebase already uses unrelated call IDs in stream/watchdog layers, so this feature must prove the operation-layer callId reaches dispatch events and cost grouping rather than only adding new type fields.\n\n### Architecture Notes\n\n- **callId**: Per-callOp invocation ID, auto-generated by callOp unless caller pins one. Carried on all dispatch events within one invocation (including retries).\n- **scopeId**: Caller-supplied region ID forwarded verbatim from CallContext.scopeId. PreDebatePhaseContext just wraps CallContext, so the runner threads scopeId into `prePhaseCtx.ctx.scopeId` before calling resolvePreDebatePhase.\n- **Flow for run-kind**: callOp → runOptions { callId, scopeId } → agentManager.runWithFallback → runAsSession → SessionTurnDispatchEvent / OperationCompletedEvent / DispatchErrorEvent with callId and scopeId → attachCostSubscriber records to aggregator\n- **Flow for complete-kind**: callOp → completeOptions { callId, scopeId } → agentManager.completeAs → CompleteDispatchEvent / DispatchErrorEvent with callId and scopeId → attachCostSubscriber records to aggregator\n- **resolveOutcome in session-helpers.ts**: The current codebase still defines `ResolveOutcome.resolverCostUsd`, but the spec's hard cut means US-004 should remove that field there too. After that cut, runners derive total cost exclusively from scope snapshots rather than any resolver-side return field."
+}
