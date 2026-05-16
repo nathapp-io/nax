@@ -70,183 +70,195 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     prompt,
     resolved.map((entry) => entry.debater),
   );
-  const signal = resolveStatefulSignal(ctx);
-  const totalCostUsd = 0;
-  const noopBuildRebutPrompt = (): string => "";
-  const localProposalBarrier = () => [Promise.withResolvers<string>()];
-  const debaterRole = (index: number) => `debate-${ctx.stage}-${index}` as SessionRole;
-  const debaterCallContext = (agentName: string, index: number): CallContext => ({
-    ...createDebaterCallContext(ctx, agentName),
-    sessionOverride: { role: debaterRole(index) },
-  });
-  const throwIfAborted = (): void => {
-    if (signal.aborted) {
-      throw new NaxError("[debate] Stateful debate aborted", "CALL_OP_ABORTED", { storyId: ctx.storyId });
-    }
-  };
-
-  const proposalSettled = await allSettledBounded(
-    resolved.map(
-      ({ debater, agentName }, index) =>
-        () =>
-          callModule
-            .callOp(debaterCallContext(agentName, index), statefulDebaterOp, {
-              debater,
-              index,
-              proposePrompt: proposalBuilder.buildProposalPrompt(index),
-              buildRebutPrompt: noopBuildRebutPrompt,
-              proposalBarriers: localProposalBarrier(),
-              signal,
-              storyId: ctx.storyId,
-              skipRebuttal: true,
-            } satisfies DebateStatefulInput)
-            .then((result) => ({ ...result, resolvedIndex: index })),
-    ),
-    concurrencyLimit,
-  );
-  throwIfAborted();
-
-  const successfulProposals = proposalSettled.flatMap((result) =>
-    result.status === "fulfilled" && result.value.success
-      ? [
-          {
-            debater: resolved[result.value.resolvedIndex].debater,
-            agentName: resolved[result.value.resolvedIndex].agentName,
-            output: result.value.rebut,
-            cost: 0,
-            resolvedIndex: result.value.resolvedIndex,
-          },
-        ]
-      : [],
-  );
-
-  for (let index = 0; index < successfulProposals.length; index++) {
-    logger?.info("debate", "debate:proposal", {
-      storyId: ctx.storyId,
-      stage: ctx.stage,
-      debaterIndex: index,
-      agent: successfulProposals[index].debater.agent,
+  const debaterScope = ctx.runtime.costAggregator.openScope();
+  const resolverScope = ctx.runtime.costAggregator.openScope();
+  try {
+    const signal = resolveStatefulSignal(ctx);
+    const noopBuildRebutPrompt = (): string => "";
+    const localProposalBarrier = () => [Promise.withResolvers<string>()];
+    const debaterRole = (index: number) => `debate-${ctx.stage}-${index}` as SessionRole;
+    const debaterCallContext = (agentName: string, index: number): CallContext => ({
+      ...createDebaterCallContext(ctx, agentName),
+      sessionOverride: { role: debaterRole(index) },
+      scopeId: debaterScope.scopeId,
     });
-  }
+    const throwIfAborted = (): void => {
+      if (signal.aborted) {
+        throw new NaxError("[debate] Stateful debate aborted", "CALL_OP_ABORTED", { storyId: ctx.storyId });
+      }
+    };
 
-  if (successfulProposals.length < 2) {
-    if (successfulProposals.length === 1) {
+    const proposalSettled = await allSettledBounded(
+      resolved.map(
+        ({ debater, agentName }, index) =>
+          () =>
+            callModule
+              .callOp(debaterCallContext(agentName, index), statefulDebaterOp, {
+                debater,
+                index,
+                proposePrompt: proposalBuilder.buildProposalPrompt(index),
+                buildRebutPrompt: noopBuildRebutPrompt,
+                proposalBarriers: localProposalBarrier(),
+                signal,
+                storyId: ctx.storyId,
+                skipRebuttal: true,
+              } satisfies DebateStatefulInput)
+              .then((result) => ({ ...result, resolvedIndex: index })),
+      ),
+      concurrencyLimit,
+    );
+    throwIfAborted();
+
+    const successfulProposals = proposalSettled.flatMap((result) =>
+      result.status === "fulfilled" && result.value.success
+        ? [
+            {
+              debater: resolved[result.value.resolvedIndex].debater,
+              agentName: resolved[result.value.resolvedIndex].agentName,
+              output: result.value.rebut,
+              cost: 0,
+              resolvedIndex: result.value.resolvedIndex,
+            },
+          ]
+        : [],
+    );
+
+    for (let index = 0; index < successfulProposals.length; index++) {
+      logger?.info("debate", "debate:proposal", {
+        storyId: ctx.storyId,
+        stage: ctx.stage,
+        debaterIndex: index,
+        agent: successfulProposals[index].debater.agent,
+      });
+    }
+
+    if (successfulProposals.length < 2) {
+      if (successfulProposals.length === 1) {
+        logger?.warn("debate", "debate:fallback", {
+          storyId: ctx.storyId,
+          stage: ctx.stage,
+          reason: "only 1 debater succeeded",
+        });
+        return {
+          storyId: ctx.storyId,
+          stage: ctx.stage,
+          outcome: "passed",
+          rounds: 1,
+          debaters: [successfulProposals[0].debater.agent],
+          resolverType: ctx.stageConfig.resolver.type,
+          proposals: [{ debater: successfulProposals[0].debater, output: successfulProposals[0].output }],
+          totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,
+        };
+      }
+
       logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
         stage: ctx.stage,
-        reason: "only 1 debater succeeded",
+        reason: "all debaters failed — retrying with first adapter",
       });
-      return {
+
+      const fallback = await runZeroSuccessFallback(ctx, prompt, resolved[0]);
+      if (fallback) {
+        return {
+          storyId: ctx.storyId,
+          stage: ctx.stage,
+          outcome: "passed",
+          rounds: 1,
+          debaters: [fallback.debater.agent],
+          resolverType: ctx.stageConfig.resolver.type,
+          proposals: [{ debater: fallback.debater, output: fallback.output }],
+          totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,
+        };
+      }
+
+      logger?.warn("debate", "debate:fallback", {
         storyId: ctx.storyId,
         stage: ctx.stage,
-        outcome: "passed",
-        rounds: 1,
-        debaters: [successfulProposals[0].debater.agent],
-        resolverType: ctx.stageConfig.resolver.type,
-        proposals: [{ debater: successfulProposals[0].debater, output: successfulProposals[0].output }],
-        totalCostUsd,
-      };
+        reason: "fewer than 2 proposal rounds succeeded",
+      });
+      return buildFailedResult(
+        ctx.storyId,
+        ctx.stage,
+        ctx.stageConfig,
+        debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,
+      );
     }
 
-    logger?.warn("debate", "debate:fallback", {
-      storyId: ctx.storyId,
-      stage: ctx.stage,
-      reason: "all debaters failed — retrying with first adapter",
-    });
-
-    const fallback = await runZeroSuccessFallback(ctx, prompt, resolved[0]);
-    if (fallback) {
-      return {
-        storyId: ctx.storyId,
-        stage: ctx.stage,
-        outcome: "passed",
-        rounds: 1,
-        debaters: [fallback.debater.agent],
-        resolverType: ctx.stageConfig.resolver.type,
-        proposals: [{ debater: fallback.debater, output: fallback.output }],
-        totalCostUsd,
-      };
-    }
-
-    logger?.warn("debate", "debate:fallback", {
-      storyId: ctx.storyId,
-      stage: ctx.stage,
-      reason: "fewer than 2 proposal rounds succeeded",
-    });
-    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, totalCostUsd);
-  }
-
-  const rebuttals = shouldRunRebuttal
-    ? (
-        await allSettledBounded(
-          successfulProposals.map(
-            (proposal, index) => () =>
-              callModule
-                .callOp(debaterCallContext(proposal.agentName, proposal.resolvedIndex), statefulDebaterOp, {
-                  debater: proposal.debater,
-                  index,
-                  proposePrompt: rebuttalBuilder.buildCritiquePrompt(
+    const rebuttals = shouldRunRebuttal
+      ? (
+          await allSettledBounded(
+            successfulProposals.map(
+              (proposal, index) => () =>
+                callModule
+                  .callOp(debaterCallContext(proposal.agentName, proposal.resolvedIndex), statefulDebaterOp, {
+                    debater: proposal.debater,
                     index,
-                    successfulProposals.map((entry) => ({
-                      debater: entry.debater,
-                      output: entry.output,
-                    })),
-                  ),
-                  buildRebutPrompt: noopBuildRebutPrompt,
-                  proposalBarriers: localProposalBarrier(),
-                  signal,
-                  storyId: ctx.storyId,
-                  skipRebuttal: true,
-                } satisfies DebateStatefulInput)
-                .then((result) => ({ ...result, resolvedIndex: proposal.resolvedIndex })),
-          ),
-          concurrencyLimit,
+                    proposePrompt: rebuttalBuilder.buildCritiquePrompt(
+                      index,
+                      successfulProposals.map((entry) => ({
+                        debater: entry.debater,
+                        output: entry.output,
+                      })),
+                    ),
+                    buildRebutPrompt: noopBuildRebutPrompt,
+                    proposalBarriers: localProposalBarrier(),
+                    signal,
+                    storyId: ctx.storyId,
+                    skipRebuttal: true,
+                  } satisfies DebateStatefulInput)
+                  .then((result) => ({ ...result, resolvedIndex: proposal.resolvedIndex })),
+            ),
+            concurrencyLimit,
+          )
+        ).flatMap((result) =>
+          result.status === "fulfilled" && result.value.success
+            ? [{ debater: resolved[result.value.resolvedIndex].debater, round: 1, output: result.value.rebut }]
+            : [],
         )
-      ).flatMap((result) =>
-        result.status === "fulfilled" && result.value.success
-          ? [{ debater: resolved[result.value.resolvedIndex].debater, round: 1, output: result.value.rebut }]
-          : [],
-      )
-    : [];
-  throwIfAborted();
-  const proposalOutputs = successfulProposals.map((proposal) => proposal.output);
-  const outcome: ResolveOutcome = await resolveOutcome(
-    proposalOutputs,
-    rebuttals.map((rebuttal) => rebuttal.output),
-    ctx.stageConfig,
-    ctx.config,
-    ctx.callContext,
-    ctx.storyId,
-    ctx.timeoutSeconds * 1000,
-    ctx.workdir,
-    ctx.featureName,
-    ctx.reviewerSession,
-    buildResolverContext(successfulProposals, ctx.resolverContextInput),
-    undefined,
-    successfulProposals.map((proposal) => proposal.debater),
-    ctx.agentManager,
-  );
+      : [];
+    throwIfAborted();
+    const proposalOutputs = successfulProposals.map((proposal) => proposal.output);
+    const outcome: ResolveOutcome = await resolveOutcome(
+      proposalOutputs,
+      rebuttals.map((rebuttal) => rebuttal.output),
+      ctx.stageConfig,
+      ctx.config,
+      { ...ctx.callContext, scopeId: resolverScope.scopeId },
+      ctx.storyId,
+      ctx.timeoutSeconds * 1000,
+      ctx.workdir,
+      ctx.featureName,
+      ctx.reviewerSession,
+      buildResolverContext(successfulProposals, ctx.resolverContextInput),
+      undefined,
+      successfulProposals.map((proposal) => proposal.debater),
+      ctx.agentManager,
+    );
 
-  logger?.info("debate", "debate:result", {
-    storyId: ctx.storyId,
-    stage: ctx.stage,
-    outcome: outcome.outcome,
-  });
+    logger?.info("debate", "debate:result", {
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      outcome: outcome.outcome,
+    });
 
-  const proposals: Proposal[] = successfulProposals.map((proposal) => ({
-    debater: proposal.debater,
-    output: proposal.output,
-  }));
+    const proposals: Proposal[] = successfulProposals.map((proposal) => ({
+      debater: proposal.debater,
+      output: proposal.output,
+    }));
 
-  return {
-    storyId: ctx.storyId,
-    stage: ctx.stage,
-    outcome: outcome.outcome,
-    rounds: ctx.stageConfig.rounds,
-    debaters: successfulProposals.map((proposal) => proposal.debater.agent),
-    resolverType: ctx.stageConfig.resolver.type,
-    proposals,
-    rebuttals,
-    totalCostUsd: totalCostUsd,
-  };
+    return {
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      outcome: outcome.outcome,
+      rounds: ctx.stageConfig.rounds,
+      debaters: successfulProposals.map((proposal) => proposal.debater.agent),
+      resolverType: ctx.stageConfig.resolver.type,
+      proposals,
+      rebuttals,
+      totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,
+    };
+  } finally {
+    debaterScope.close();
+    resolverScope.close();
+  }
 }
