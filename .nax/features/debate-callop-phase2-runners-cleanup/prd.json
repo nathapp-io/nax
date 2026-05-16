@@ -3,7 +3,7 @@
   "feature": "debate-callop-phase2-runners-cleanup",
   "branchName": "feat/debate-callop-phase2-runners-cleanup",
   "createdAt": "2026-05-15T00:00:00.000Z",
-  "updatedAt": "2026-05-16T05:33:28.527Z",
+  "updatedAt": "2026-05-16T06:15:01.609Z",
   "userStories": [
     {
       "id": "US-003",
@@ -147,8 +147,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 2,
       "escalations": [],
       "routing": {
@@ -213,7 +213,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/debate/session-helpers.ts",
@@ -227,7 +229,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "614dd8455e328bed374bca965394fe429d66a295"
     }
   ],
   "analysis": "Phase 2 of 2 of the debate callOp migration. Phase 1 migrated the resolver ops (judge/synthesis) and added SelectorContext.callContext threading. This phase migrates the three stateful runners and deletes legacy helpers.\n\nCURRENT STATE:\n- src/debate/runner-stateful.ts: Coordinator that pre-opens N session handles, runs allSettledBounded for proposals (parallel, concurrency-bounded), then a critique round. Directly calls sessionManager.openSession/closeSession + agentManager.runAsSession. Finally block closes all handles.\n- src/debate/runner-hybrid.ts: Same pre-open pattern + N-round rebuttal loop via runRebuttalLoop(). Dual handle ownership: pre-opened handles for proposal round, internally-opened handles for rebuttal-only mode (used when proposal.handle is missing). Caller-managed vs internal handles tracked separately.\n- src/debate/runner-plan.ts: Two code paths — stateful (pre-opened handles via openPlanSessions()) and one-shot (sessionManager.runInSession()). Writes plan output to disk, reads back. Unique post-debate verifier phase. Uses runner-plan-helpers.ts for session lifecycle abstraction.\n- src/debate/runner-plan-helpers.ts: openPlanSessions, closePlanSessions, runStatefulPlanTurn, makeStatefulProposal helpers. Delegates to resolveModelDefForDebater for model resolution.\n- src/debate/session-helpers.ts: SuccessfulProposal interface (lines 30-39) includes optional handle field (line 38). resolveDebaterModel (lines 102-112), resolveModelDefForDebater (lines 167-183), runComplete (lines 141-153) — all to be deleted in US-006. resolveOutcome (lines 215-348) is the multi-selector orchestrator and is NOT deleted.\n- src/debate/selectors/verifier-pick.ts: runPatchStep (lines 127-148) calls ctx.agentManager.runAsSession with winner.proposal.handle. Throws NaxError(\"VERIFIER_PICK_NO_HANDLE\") when no handle (lines 136-141). verifierPickSelector falls back to unpatched on runPatchStep failure.\n- src/config/selectors.ts:44: debateConfigSelector = pickSelector(\"debate\", \"debate\", \"models\", \"agent\") — \"models\" removed after US-006.\n\nREFACTOR SHAPE:\nRunner becomes a coordinator: builds per-debater inputs (PromiseWithResolvers barriers, prompt builders), launches N parallel callOp(callContext, debaterOp, input) invocations via allSettledBounded, aggregates results. Per-debater session lifecycle moves into debaterOp.hopBody — buildHopCallback owns open/close, hopBody executes turns within the warm session.\n\nBARRIER PATTERN (critical):\n- Stateful: each debater's hopBody resolves its own proposalBarriers[i] with round-0 output BEFORE awaiting Promise.all(proposalBarriers) raced against abort signal. Coordinator MUST reject all unresolved barriers when any callOp invocation throws OR returns success:false — otherwise peers deadlock indefinitely waiting for a barrier that will never resolve.\n- Hybrid: rebuttal rounds must not await the current round's peer barriers before sending, or round 1 deadlocks immediately. Each round sends first, resolves its own rebuttal slot, then awaits peer settlement before the next round.\n- Plan: scoring cannot wait on full callOp completion because the op itself waits for a patch-decision signal after rebuttal. The coordinator therefore needs a second synchronization point (rebuttal-stage barriers/signals) that publishes pre-patch rebuttal outputs before selectionSignal is awaited.\n\nSESSION LIFECYCLE:\nbuildHopCallback (src/operations/build-hop-callback.ts:170-282) opens session before hopBody runs, closes in finally. Between ctx.send() calls, session stays warm. This preserves working-memory semantics that the stateful runners rely on.\n\nVERIFIER-PICK PATCH REFACTOR (US-005):\nCurrent: runPatchStep builds prompt + calls agentManager.runAsSession with winner.proposal.handle.\nAfter: runPatchStep is reduced to building the patch prompt from winner.proposal.output + deltas and returning it to the coordinator. The coordinator releases patch decisions only after rebuttal-stage barriers settle, then awaits full callOp completion. If the patch turn fails, the coordinator falls back to the pre-patch rebuttal output captured earlier. SuccessfulProposal.handle field is removed entirely.\n\nPARSE SHAPE:\ncallOp invokes op.parse() only after hopBody returns, and parse must remain synchronous/side-effect-free. Proposal text captured during earlier turns therefore remains coordinator-owned barrier data; op outputs should only include data actually available from the final turn result.\n\nCOST: callOp run-kind does not surface estimatedCostUsd in parsed O. Coordinators use cost: 0 per debater op result (interim, tracked in issue #1036). Full rollup deferred.\n\nNEW FILES TO CREATE:\n- src/operations/debate-stateful.ts (US-003)\n- src/debate/utils.ts with raceAgainstAbort (US-003)\n- src/operations/debate-hybrid.ts (US-004)\n- src/operations/debate-plan.ts (US-005)\n\nFILES TO MODIFY:\n- src/debate/runner-stateful.ts (coordinator rewrite, US-003)\n- src/debate/runner-hybrid.ts (coordinator rewrite, US-004)\n- src/debate/runner-plan.ts (coordinator rewrite, US-005)\n- src/debate/runner-plan-helpers.ts (remove session calls, US-005)\n- src/debate/selectors/verifier-pick.ts (remove agentManager.runAsSession, US-005)\n- src/debate/session-helpers.ts (delete 3 functions + handle field, US-006)\n- src/debate/index.ts (update re-exports, US-006)\n- src/config/selectors.ts (remove \"models\" from debateConfigSelector, US-006)\n- src/operations/index.ts (add new op exports, US-003/004/005)\n- test/unit/debate/runner-events.test.ts (delete resolveDebaterModel test block, US-006)\n- .claude/rules/adapter-wiring.md (move debate-stateful/hybrid/plan to callOp row, US-006)\n\nRISKS:\n1. Deadlock if coordinator fails to reject peer barriers on debater failure.\n2. Deadlock if hybrid rounds await current-round barriers before sending.\n3. Circular wait if plan scoring waits on full callOp completion instead of rebuttal-stage publication.\n4. SuccessfulProposal.handle removal breaks verifier-pick's current patch path unless US-005 fully replaces that dispatch before US-006 removes the field.\n5. Context threading: coordinators use ctx.callContext (from SelectorContext, added Phase 1) for callOp dispatch. Do not pass ctx directly.\n6. DebateConfig type erasure: removing \"models\" from selector causes compile-time failures on any remaining readers — desired safety net.\n\nTEST REFERENCE: test/unit/debate/runner-events.test.ts tests debate:start/proposal/result/fallback event emissions — must continue to pass post-refactor. The resolveDebaterModel test block is deleted in US-006."
