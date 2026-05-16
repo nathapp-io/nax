@@ -20,6 +20,8 @@ export function attachCostSubscriber(bus: IDispatchEventBus, aggregator: ICostAg
       model: "unknown",
       stage: event.stage,
       storyId: event.storyId,
+      callId: event.callId,
+      scopeId: event.scopeId,
       tokens: tu
         ? {
             input: tu.inputTokens ?? 0,

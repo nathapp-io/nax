@@ -205,4 +205,53 @@ describe("attachCostSubscriber", () => {
     expect(recorded[0].costUsd).toBe(0);
     expect(recorded[0].confidence).toBe("estimated");
   });
+
+  // --- AC2: callId/scopeId copying ---
+  test("copies callId from dispatch event to CostEvent", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ callId: "call-abc" }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].callId).toBe("call-abc");
+  });
+
+  test("copies scopeId from dispatch event to CostEvent", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ scopeId: "scope-xyz" }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].scopeId).toBe("scope-xyz");
+  });
+
+  test("leaves callId undefined on CostEvent when dispatch event has no callId", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ callId: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].callId).toBeUndefined();
+  });
+
+  test("leaves scopeId undefined on CostEvent when dispatch event has no scopeId", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ scopeId: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].scopeId).toBeUndefined();
+  });
 });
