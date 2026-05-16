@@ -37,7 +37,6 @@ function makeSelectorContext() {
     },
     config: {
       debate: config.debate,
-      models: config.models,
       agent: config.agent,
     },
     proposals: [],

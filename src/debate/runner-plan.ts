@@ -240,14 +240,7 @@ export async function runPlan(
       storyId: ctx.storyId,
       timeoutSeconds: opts.timeoutSeconds,
     };
-    openHandles = await openDebaterSessions(
-      resolved,
-      ctx.config,
-      sessionManager,
-      phaseOpts,
-      ctx.stage,
-      ctx.abortSignal,
-    );
+    openHandles = await openDebaterSessions(resolved, sessionManager, phaseOpts, ctx.stage, ctx.abortSignal);
 
     try {
       const proposalSettled = await allSettledBounded(
@@ -324,7 +317,7 @@ export async function runPlan(
   else {
     const settled = await allSettledBounded(
       resolved.map(({ debater, agentName }, index) => async () => {
-        const modelDef = resolveDebaterModelDef(debater, ctx.config);
+        const modelDef = resolveDebaterModelDef(debater);
         const sessionName = sessionManager.nameFor({
           workdir: opts.workdir,
           featureName: opts.feature,

@@ -1,11 +1,7 @@
-import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
-import type { CompleteOptions, CompleteResult } from "../agents/types";
-import type { ConfiguredModel, ModelTier } from "../config";
-import { DEFAULT_CONFIG, resolveConfiguredModel, resolveModelForAgent } from "../config";
+import type { ModelTier } from "../config";
+import { DEFAULT_CONFIG } from "../config";
 import type { PipelineStage } from "../config/permissions";
-import type { ModelsConfig } from "../config/schema-types";
-import type { ModelDef } from "../config/schema-types";
 import type { DebateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import type { CallContext } from "../operations/types";
@@ -96,19 +92,6 @@ export const _debateSessionDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
-/** Resolve the model string for a debater. Defaults to "fast" tier; falls back to raw model string on config error. */
-export function resolveDebaterModel(debater: Debater, config?: DebateConfig): string | undefined {
-  const modelSelection = { agent: debater.agent, model: debater.model ?? "fast" };
-  if (!config?.models) return debater.model;
-  try {
-    const defaultAgent = resolveDefaultAgent(config);
-    return resolveConfiguredModel(config.models, debater.agent, modelSelection, defaultAgent).modelDef.model;
-  } catch {
-    // Config resolution failed — return raw model string as fallback (backward compat)
-    return debater.model;
-  }
-}
-
 // ─── Pure helper functions ────────────────────────────────────────────────────
 
 export function buildFailedResult(
@@ -136,20 +119,6 @@ export function modelTierFromDebater(debater: Debater): ModelTier {
   return "fast";
 }
 
-export async function runComplete(
-  agentManager: IAgentManager,
-  agentName: string,
-  prompt: string,
-  options: CompleteOptions,
-  _modelTier: ModelTier,
-  timeoutMs?: number,
-): Promise<CompleteResult> {
-  return agentManager.completeAs(agentName, prompt, {
-    ...options,
-    ...(timeoutMs !== undefined && { timeoutMs }),
-  });
-}
-
 export function pipelineStageForDebate(stage: string): PipelineStage {
   switch (stage) {
     case "plan":
@@ -159,26 +128,6 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
       return stage;
     default:
       return "run";
-  }
-}
-
-export function resolveModelDefForDebater(
-  debater: Debater,
-  model: ConfiguredModel,
-  modelsConfig: ModelsConfig,
-  defaultAgent: string,
-): ModelDef {
-  try {
-    return resolveConfiguredModel(modelsConfig, debater.agent, model, defaultAgent).modelDef;
-  } catch {
-    // Fall through to secondary fallback strategies.
-  }
-
-  try {
-    return resolveConfiguredModel(DEFAULT_CONFIG.models, debater.agent, model, resolveDefaultAgent(DEFAULT_CONFIG))
-      .modelDef;
-  } catch {
-    return resolveModelForAgent(modelsConfig, debater.agent, "fast", defaultAgent);
   }
 }
 
@@ -273,7 +222,6 @@ export async function resolveOutcome(
     kind === "synthesis" ? "synthesis" : kind === "judge" ? "judge" : undefined;
   const effectiveConfig = config ?? {
     debate: DEFAULT_CONFIG.debate,
-    models: DEFAULT_CONFIG.models,
     agent: DEFAULT_CONFIG.agent,
   };
   const effectiveCallContext = buildResolverCallContext(

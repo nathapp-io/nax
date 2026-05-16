@@ -12,8 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { readdirSync } from "node:fs";
 
-// RED: These imports fail until session-helpers.ts is created
-import { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "../../../src/debate/session-helpers";
+import { _debateSessionDeps, resolveOutcome } from "../../../src/debate/session-helpers";
 import type { DebateSessionOptions } from "../../../src/debate/session-helpers";
 import type { SelectorContext } from "../../../src/debate/selectors";
 import { computeAcpHandle } from "../../../src/agents/acp/adapter";
@@ -25,11 +24,8 @@ import { makeMockAgentManager } from "../../helpers";
 
 const DEFAULT_DEBATE_CONFIG = debateConfigSelector.select(DEFAULT_CONFIG);
 
-// Barrel re-export checks (resolveDebaterModel is also not yet in barrel — both are RED)
-import {
-  _debateSessionDeps as barrelDeps,
-  resolveDebaterModel as barrelResolveDebaterModel,
-} from "../../../src/debate";
+// Barrel re-export checks
+import { _debateSessionDeps as barrelDeps } from "../../../src/debate";
 import type { DebateSessionOptions as BarrelDebateSessionOptions } from "../../../src/debate";
 
 // ─── AC1: File size constraint ────────────────────────────────────────────────
@@ -100,28 +96,6 @@ describe("_debateSessionDeps export from session-helpers.ts (AC5)", () => {
     expect(barrelDeps).toBeDefined();
     expect(typeof barrelDeps).toBe("object");
     expect(barrelDeps).toHaveProperty("agentManager");
-  });
-});
-
-// ─── AC6: resolveDebaterModel() exported from session-helpers.ts ──────────────
-
-describe("resolveDebaterModel() export from session-helpers.ts (AC6)", () => {
-  test("resolveDebaterModel is exported from session-helpers.ts as a function", () => {
-    expect(typeof resolveDebaterModel).toBe("function");
-  });
-
-  test("resolveDebaterModel returns raw model string when no config provided", () => {
-    const result = resolveDebaterModel({ agent: "claude", model: "claude-3-5-haiku" });
-    expect(result).toBe("claude-3-5-haiku");
-  });
-
-  test("resolveDebaterModel returns undefined when model absent and no config", () => {
-    const result = resolveDebaterModel({ agent: "claude" }, undefined);
-    expect(result).toBeUndefined();
-  });
-
-  test("resolveDebaterModel is re-exported through the debate barrel index.ts", () => {
-    expect(typeof barrelResolveDebaterModel).toBe("function");
   });
 });
 

@@ -1,16 +1,10 @@
-import { resolveDefaultAgent } from "../agents";
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
-import type { ConfiguredModel, ModelDef } from "../config";
-import type { DebateConfig } from "../config/selectors";
+import type { ModelDef } from "../config";
+import { resolveModel } from "../config/schema-types";
 import type { SessionRole } from "../session/types";
 import type { ISessionManager } from "../session/types";
-import {
-  _debateSessionDeps,
-  modelTierFromDebater,
-  pipelineStageForDebate,
-  resolveModelDefForDebater,
-} from "./session-helpers";
+import { _debateSessionDeps, modelTierFromDebater, pipelineStageForDebate } from "./session-helpers";
 import type { ResolvedDebater } from "./session-helpers";
 import type { Debater } from "./types";
 
@@ -21,15 +15,18 @@ interface StatefulPlanOpts {
   timeoutSeconds?: number;
 }
 
-export function resolveDebaterModelDef(debater: Debater, config: DebateConfig): ModelDef {
-  const modelTier = modelTierFromDebater(debater);
-  const model: ConfiguredModel = { agent: debater.agent, model: debater.model ?? modelTier };
-  return resolveModelDefForDebater(debater, model, config.models, resolveDefaultAgent(config));
+export function resolveDebaterModelDef(debater: Debater): ModelDef {
+  const tier = modelTierFromDebater(debater);
+  if (debater.model && debater.model !== tier) {
+    // Raw model string (not a tier alias) — resolve directly
+    return resolveModel(debater.model);
+  }
+  // Tier name without models config — use tier as model string fallback
+  return { provider: "unknown", model: tier };
 }
 
 export async function openDebaterSessions(
   resolved: ResolvedDebater[],
-  config: DebateConfig,
   sessionManager: ISessionManager,
   opts: StatefulPlanOpts,
   stage: string,
@@ -39,7 +36,7 @@ export async function openDebaterSessions(
   for (let i = 0; i < resolved.length; i++) {
     const { debater: rd, agentName } = resolved[i];
     const roleKey = `debate-plan-${i}` as SessionRole;
-    const modelDef = resolveDebaterModelDef(rd, config);
+    const modelDef = resolveDebaterModelDef(rd);
     const name = sessionManager.nameFor({
       workdir: opts.workdir,
       featureName: opts.feature,

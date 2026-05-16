@@ -4,7 +4,7 @@
 
 export { DebateRunner } from "./runner";
 export type { DebateRunnerOptions } from "./runner";
-export { _debateSessionDeps, resolveDebaterModel, resolveOutcome } from "./session-helpers";
+export { _debateSessionDeps, resolveOutcome } from "./session-helpers";
 export type {
   DebateSessionOptions,
   ResolverContextInput,

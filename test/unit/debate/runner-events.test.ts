@@ -1,17 +1,14 @@
 /**
  * Tests for DebateRunner — US-002
  *
- * File: session-events.test.ts
  * Covers:
  * - JSONL events: debate:start, debate:proposal, debate:result, debate:fallback
- * - resolveDebaterModel used to pass resolved model to completeAs()
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateRunner } from "../../../src/debate/runner";
-import { _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session-helpers";
-import type { DebateStageConfig, Debater } from "../../../src/debate/types";
-import type { NaxConfig } from "../../../src/config";
+import { _debateSessionDeps } from "../../../src/debate/session-helpers";
+import type { DebateStageConfig } from "../../../src/debate/types";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { CallContext } from "../../../src/operations/types";
 import { makeMockAgentManager, makeSessionManager } from "../../helpers";
@@ -19,17 +16,16 @@ import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 function makeCallCtx(
   storyId: string,
   agentManager: ReturnType<typeof makeMockAgentManager>,
-  config?: NaxConfig,
 ): CallContext {
   return {
     runtime: {
       agentManager,
       sessionManager: makeSessionManager(),
-      configLoader: { current: () => config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG } as any,
-      packages: { resolve: () => ({ config: config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG }) } as any,
+      configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+      packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
       signal: undefined,
     } as any,
-    packageView: { config: config ?? DEFAULT_CONFIG, select: (_sel: unknown) => config ?? DEFAULT_CONFIG } as any,
+    packageView: { config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
     packageDir: "/tmp/work",
     agentName: "claude",
     storyId,
@@ -199,110 +195,5 @@ describe("DebateRunner.run() — JSONL log events", () => {
     const fallbackWarning = warnings.find((w) => w.event === "debate:fallback");
     expect(fallbackWarning).toBeDefined();
     expect(fallbackWarning?.data.storyId).toBe("US-LOG");
-  });
-
-  test("uses resolveDebaterModel to pass resolved model to completeAs()", async () => {
-    const completeCalls: Array<{ agent: string; model: string | undefined }> = [];
-
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-
-    const agentManager = makeMockAgentManager({
-      completeAsFn: async (agentName, _prompt, opts) => {
-        completeCalls.push({ agent: agentName, model: opts?.modelDef?.model });
-        return { output: `output from ${agentName}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-      },
-    });
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtx("US-LOG", agentManager, config),
-      stage: "review",
-      stageConfig: makeStageConfig({
-        debaters: [{ agent: "claude" }, { agent: "claude" }],
-        rounds: 1,
-      }),
-      config,
-      workdir: "/tmp/work",
-    });
-
-    await runner.run("prompt");
-
-    expect(completeCalls.every((c) => c.model === "claude-haiku-4-5")).toBe(true);
-  });
-});
-
-// ─── resolveDebaterModel ─────────────────────────────────────────────────────
-
-describe("resolveDebaterModel()", () => {
-  test("returns debater.model as-is when no config provided", () => {
-    const debater: Debater = { agent: "claude", model: "fast" };
-    expect(resolveDebaterModel(debater)).toBe("fast");
-  });
-
-  test("resolves debater.model as tier name via config.models", () => {
-    const debater: Debater = { agent: "claude", model: "fast" };
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBe("claude-haiku-4-5");
-  });
-
-  test("resolves balanced tier via config.models", () => {
-    const debater: Debater = { agent: "claude", model: "balanced" };
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5", balanced: "claude-sonnet-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBe("claude-sonnet-4-5");
-  });
-
-  test("falls back to raw model string when tier not found in config", () => {
-    const debater: Debater = { agent: "claude", model: "custom-unknown-tier" };
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBe("custom-unknown-tier");
-  });
-
-  test("defaults to fast tier when model is absent", () => {
-    const debater: Debater = { agent: "claude" };
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBe("claude-haiku-4-5");
-  });
-
-  test("returns undefined when model absent and config has no models", () => {
-    const debater: Debater = { agent: "claude" };
-    expect(resolveDebaterModel(debater, undefined)).toBeUndefined();
-  });
-
-  test("returns undefined when model absent and config.models is undefined", () => {
-    const debater: Debater = { agent: "claude" };
-    const config = {} as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBeUndefined();
-  });
-
-  test("falls back to defaultAgent model when agent has no entry in config.models", () => {
-    const debater: Debater = { agent: "unknown-agent" };
-    const config = {
-      models: { claude: { fast: "claude-haiku-4-5" } },
-      autoMode: { defaultAgent: "claude" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBe("claude-haiku-4-5");
-  });
-
-  test("returns undefined when agent and defaultAgent both missing from config.models", () => {
-    const debater: Debater = { agent: "unknown-agent" };
-    const config = {
-      models: {},
-      autoMode: { defaultAgent: "also-missing" },
-    } as unknown as NaxConfig;
-    expect(resolveDebaterModel(debater, config)).toBeUndefined();
   });
 });
