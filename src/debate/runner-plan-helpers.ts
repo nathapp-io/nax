@@ -109,8 +109,12 @@ export function buildPlanRebuttalPrompt(
   debaterIndex: number,
   outputPath: string,
   peerProposals: import("./types").Proposal[],
+  priorRebuttals: import("./types").Rebuttal[] = [],
 ): string {
-  return appendFileOutputInstruction(builder.buildRebuttalPrompt(debaterIndex, peerProposals, []), outputPath);
+  return appendFileOutputInstruction(
+    builder.buildRebuttalPrompt(debaterIndex, peerProposals, priorRebuttals),
+    outputPath,
+  );
 }
 
 export function buildPlanPatchPrompt(patchPrompt: string, outputPath: string): string {
@@ -376,7 +380,7 @@ export async function finalizePlanRun(
     storyId: ctx.storyId,
     stage: ctx.stage,
     outcome: finalOutcome,
-    rounds: 1,
+    rounds: includeHybridRebuttals ? config.rounds : 1,
     debaters: finalizedProposals.map((p) => p.debater.agent),
     resolverType: config.resolver.type,
     proposals,

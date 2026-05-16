@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
+import { NaxError } from "@/errors";
 import { DebatePromptBuilder } from "@/prompts";
 import * as callModule from "@/operations";
 import { runHybrid } from "../../../src/debate/runner-hybrid";
@@ -17,12 +18,7 @@ interface HybridDebaterInput {
   readonly debater: { readonly agent: string; readonly model?: string };
   readonly index: number;
   readonly proposePrompt: string;
-  readonly buildRebutPrompt: (round: number, peerOutputs: string[]) => string;
   readonly proposalBarriers: PromiseWithResolvers<string>[];
-  readonly rebutBarriers: PromiseWithResolvers<string>[][];
-  readonly signal: AbortSignal;
-  readonly storyId: string;
-  readonly rounds: number;
 }
 
 function defer<T>(): PromiseWithResolvers<T> {
@@ -111,31 +107,21 @@ afterEach(() => {
 describe("runHybrid coordinator", () => {
   test("launches one callOp per debater, builds proposal prompts through DebatePromptBuilder, and returns the expected DebateResult shape", async () => {
     const ctx = makeHybridCtx();
-    const gates = [defer<void>(), defer<void>(), defer<void>()];
-    const started: number[] = [];
     const proposalPromptSpy = spyOn(DebatePromptBuilder.prototype, "buildProposalPrompt");
     const callOpSpy = spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: HybridDebaterInput) => {
-      started.push(input.index);
-      await gates[input.index].promise;
+      if (!input.proposePrompt.includes("## Proposals")) {
+        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
+        return {
+          success: true,
+          rebut: `proposal-${input.index}`,
+        };
+      }
       return {
         success: true,
-        rebut: `rebut-${input.index}`,
+        rebut: input.proposePrompt.includes("## Previous Rebuttals") ? `rebut-2-${input.index}` : `rebut-1-${input.index}`,
       };
     });
-
-    const runPromise = runHybrid(ctx, "hybrid debate prompt");
-    await Promise.resolve();
-
-    expect(callOpSpy).toHaveBeenCalledTimes(3);
-    expect(started).toEqual([0, 1, 2]);
-    expect(proposalPromptSpy).toHaveBeenCalledTimes(3);
-    expect(proposalPromptSpy.mock.calls.map(([index]) => index)).toEqual([0, 1, 2]);
-
-    gates[0].resolve();
-    gates[1].resolve();
-    gates[2].resolve();
-
-    const result = await runPromise;
+    const result = await runHybrid(ctx, "hybrid debate prompt");
 
     expect(result.storyId).toBe("US-hybrid");
     expect(result.stage).toBe("run");
@@ -143,15 +129,30 @@ describe("runHybrid coordinator", () => {
     expect(result.debaters).toEqual(["claude", "opencode", "gemini"]);
     expect(result.resolverType).toBe("majority-fail-closed");
     expect(typeof result.totalCostUsd).toBe("number");
+    expect(callOpSpy).toHaveBeenCalledTimes(9);
+    expect(proposalPromptSpy).toHaveBeenCalledTimes(3);
+    expect(proposalPromptSpy.mock.calls.map(([index]) => index)).toEqual([0, 1, 2]);
     expect(result.proposals).toHaveLength(3);
-    expect(result.rebuttals).toBeDefined();
+    expect(result.proposals.map((proposal) => proposal.output)).toEqual(["proposal-0", "proposal-1", "proposal-2"]);
+    expect(result.rebuttals).toEqual([
+      { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-1-0" },
+      { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebut-1-1" },
+      { debater: { agent: "gemini", model: "fast" }, round: 1, output: "rebut-1-2" },
+      { debater: { agent: "claude", model: "fast" }, round: 2, output: "rebut-2-0" },
+      { debater: { agent: "opencode", model: "fast" }, round: 2, output: "rebut-2-1" },
+      { debater: { agent: "gemini", model: "fast" }, round: 2, output: "rebut-2-2" },
+    ]);
   });
 
-  test("rejects when any callOp invocation throws or returns success false", async () => {
+  test("falls back to a failed result instead of throwing when debaters fail", async () => {
     const ctx = makeHybridCtx();
     const callOpSpy = spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: HybridDebaterInput) => {
       if (input.index === 0) {
-        return { success: true, rebut: "rebut-0" };
+        if (!input.proposePrompt.includes("## Proposals")) {
+          input.proposalBarriers[0]?.resolve("proposal-0");
+          return { success: true, rebut: "proposal-0" };
+        }
+        return { success: true, rebut: input.proposePrompt.includes("## Previous Rebuttals") ? "rebut-2-0" : "rebut-1-0" };
       }
       if (input.index === 1) {
         throw new Error("boom");
@@ -159,10 +160,29 @@ describe("runHybrid coordinator", () => {
       return { success: false, rebut: "rebut-2" };
     });
 
-    const runPromise = runHybrid(ctx, "hybrid debate prompt");
+    const result = await runHybrid(ctx, "hybrid debate prompt");
 
-    await expect(runPromise).rejects.toBeDefined();
+    expect(result.outcome).toBe("passed");
+    expect(result.proposals).toEqual([{ debater: { agent: "claude", model: "fast" }, output: "proposal-0" }]);
     expect(callOpSpy).toHaveBeenCalledTimes(3);
+  });
+
+  test("propagates CALL_OP_ABORTED instead of degrading an abort into a normal debate result", async () => {
+    const controller = new AbortController();
+    const ctx = makeHybridCtx();
+    ctx.abortSignal = controller.signal;
+    ctx.callContext.runtime.signal = controller.signal;
+
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: HybridDebaterInput) => {
+      if (input.index === 0) {
+        input.proposalBarriers[0]?.resolve("proposal-0");
+        return { success: true, rebut: "proposal-0" };
+      }
+      controller.abort();
+      throw new NaxError("aborted", "CALL_OP_ABORTED", { storyId: "US-hybrid" });
+    });
+
+    await expect(runHybrid(ctx, "hybrid debate prompt")).rejects.toMatchObject({ code: "CALL_OP_ABORTED" });
   });
 
   test("runner-hybrid.ts no longer references the old session-manager and model-resolution escape hatches", async () => {

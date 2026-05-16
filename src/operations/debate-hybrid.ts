@@ -3,7 +3,7 @@ import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import { _debateSessionDeps } from "../debate/session-helpers";
 import type { Debater } from "../debate/types";
-import { raceAgainstAbort } from "../debate/utils";
+import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
@@ -11,12 +11,13 @@ export interface DebateHybridInput {
   readonly debater: Debater;
   readonly index: number;
   readonly proposePrompt: string;
-  readonly buildRebutPrompt: (round: number, peerOutputs: string[]) => string;
+  readonly buildRebutPrompt: (round: number, peerOutputs: string[], priorRoundOutputs: string[][]) => string;
   readonly proposalBarriers: PromiseWithResolvers<string>[];
   readonly rebutBarriers: PromiseWithResolvers<string>[][];
   readonly signal: AbortSignal;
   readonly storyId: string;
   readonly rounds: number;
+  readonly turnSemaphore?: DebateTurnSemaphore;
 }
 
 export interface DebateHybridOutput {
@@ -35,7 +36,9 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
     const logger = _debateSessionDeps.getSafeLogger();
     let totalCostUsd = 0;
 
-    const proposal = await ctx.send(initialPrompt);
+    const proposal = ctx.input.turnSemaphore
+      ? await ctx.input.turnSemaphore.run(() => ctx.send(initialPrompt))
+      : await ctx.send(initialPrompt);
     totalCostUsd += proposal.estimatedCostUsd ?? 0;
     ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
 
@@ -49,6 +52,7 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
     let roundInputs = proposalSettled.map((r) => (r.status === "fulfilled" ? r.value : ""));
 
     let lastTurn: TurnResult = proposal;
+    const priorRoundOutputs: string[][] = [];
     for (let round = 1; round <= ctx.input.rounds; round++) {
       logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
         storyId: ctx.input.storyId,
@@ -56,7 +60,11 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
         debaterIndex: ctx.input.index,
       });
       try {
-        const myRebut = await ctx.send(ctx.input.buildRebutPrompt(round, roundInputs));
+        const myRebut = ctx.input.turnSemaphore
+          ? await ctx.input.turnSemaphore.run(() =>
+              ctx.send(ctx.input.buildRebutPrompt(round, roundInputs, priorRoundOutputs)),
+            )
+          : await ctx.send(ctx.input.buildRebutPrompt(round, roundInputs, priorRoundOutputs));
         totalCostUsd += myRebut.estimatedCostUsd ?? 0;
         ctx.input.rebutBarriers[round - 1][ctx.input.index].resolve(myRebut.output);
         lastTurn = myRebut;
@@ -71,11 +79,13 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
         return { ...proposal, output: `Agent "failed" during rebuttal`, estimatedCostUsd: totalCostUsd };
       }
       if (round < ctx.input.rounds) {
-        roundInputs = await raceAgainstAbort(
+        const settledRound = await raceAgainstAbort(
           Promise.all(ctx.input.rebutBarriers[round - 1].map((b) => b.promise)),
           ctx.input.signal,
           ctx.input.storyId,
         );
+        priorRoundOutputs.push(settledRound);
+        roundInputs = settledRound;
       }
     }
     return { ...lastTurn, estimatedCostUsd: totalCostUsd };

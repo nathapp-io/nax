@@ -55,88 +55,6 @@ export function rejectUnresolvedBarriers(barriers: ProposalBarrierState[], reaso
   }
 }
 
-export async function runStatefulBounded<T>(
-  tasks: Array<() => Promise<T>>,
-  barrierStates: ProposalBarrierState[],
-  limit: number,
-): Promise<PromiseSettledResult<T>[]> {
-  if (tasks.length === 0) return [];
-
-  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
-  const completion = Promise.withResolvers<PromiseSettledResult<T>[]>();
-  const concurrency = Math.max(1, Math.min(limit, tasks.length));
-  let active = 0;
-  let nextIndex = 0;
-  let completed = 0;
-  let overflowScheduled = false;
-  const finished = new Array(tasks.length).fill(false);
-  const proposalReached = new Array(tasks.length).fill(false);
-
-  const allActiveDebatersReachedBarrier = (): boolean => {
-    if (active === 0) return false;
-    for (let index = 0; index < nextIndex; index++) {
-      if (!finished[index] && !proposalReached[index]) return false;
-    }
-    return true;
-  };
-
-  const scheduleOverflowLaunch = (): void => {
-    if (overflowScheduled || nextIndex >= tasks.length) return;
-    overflowScheduled = true;
-    queueMicrotask(() => {
-      overflowScheduled = false;
-      if (nextIndex >= tasks.length || !allActiveDebatersReachedBarrier()) return;
-      startTask(nextIndex++);
-      scheduleOverflowLaunch();
-    });
-  };
-
-  const finishTask = (currentIndex: number): void => {
-    active -= 1;
-    completed += 1;
-    finished[currentIndex] = true;
-    if (completed === tasks.length) {
-      completion.resolve(results);
-      return;
-    }
-    launchNext();
-  };
-
-  const startTask = (currentIndex: number): void => {
-    active += 1;
-    void barrierStates[currentIndex].barrier.promise.then(
-      () => {
-        proposalReached[currentIndex] = true;
-        scheduleOverflowLaunch();
-      },
-      () => {
-        proposalReached[currentIndex] = true;
-        scheduleOverflowLaunch();
-      },
-    );
-
-    void tasks[currentIndex]().then(
-      (value) => {
-        results[currentIndex] = { status: "fulfilled", value };
-        finishTask(currentIndex);
-      },
-      (reason) => {
-        results[currentIndex] = { status: "rejected", reason };
-        finishTask(currentIndex);
-      },
-    );
-  };
-
-  const launchNext = (): void => {
-    while (active < concurrency && nextIndex < tasks.length) {
-      startTask(nextIndex++);
-    }
-  };
-
-  launchNext();
-  return completion.promise;
-}
-
 export function buildProposalRecords(
   resolved: ResolvedDebater[],
   proposalSettled: PromiseSettledResult<string>[],
@@ -233,17 +151,6 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
   };
 }
 
-export function hasStructuredPassedField(output: string): boolean {
-  try {
-    const parsed = JSON.parse(output.trim()) as unknown;
-    return (
-      typeof parsed === "object" && parsed !== null && typeof (parsed as Record<string, unknown>).passed === "boolean"
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function buildResolverContext(
   successfulProposals: SuccessfulProposal[],
   resolverContextInput: ResolverContextInput | undefined,
@@ -276,15 +183,12 @@ export async function runZeroSuccessFallback(
     await callModule.callOp(createDebaterCallContext(ctx, firstDebater.agentName), statefulDebaterOp, {
       debater: firstDebater.debater,
       index: 0,
-      proposePrompt: proposalBuilder.buildProposalPrompt(0),
-      buildRebutPrompt: (peerProposals) =>
-        buildRebuttalPromptBuilder(ctx.stage, prompt, [firstDebater.debater]).buildCritiquePrompt(
-          0,
-          peerProposals.map((output) => ({ debater: firstDebater.debater, output })),
-        ),
+      proposePrompt: prompt,
+      buildRebutPrompt: () => "",
       proposalBarriers: [barrierState.barrier],
       signal,
       storyId: ctx.storyId,
+      skipRebuttal: true,
     } satisfies DebateStatefulInput);
 
     const output = await barrierState.barrier.promise;

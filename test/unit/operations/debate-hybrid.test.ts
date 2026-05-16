@@ -14,12 +14,13 @@ interface DebateHybridInput {
   readonly debater: Debater;
   readonly index: number;
   readonly proposePrompt: string;
-  readonly buildRebutPrompt: (round: number, peerOutputs: string[]) => string;
+  readonly buildRebutPrompt: (round: number, peerOutputs: string[], priorRoundOutputs: string[][]) => string;
   readonly proposalBarriers: PromiseWithResolvers<string>[];
   readonly rebutBarriers: PromiseWithResolvers<string>[][];
   readonly signal: AbortSignal;
   readonly storyId: string;
   readonly rounds: number;
+  readonly turnSemaphore?: { readonly run: <T>(task: () => Promise<T>) => Promise<T> };
 }
 
 interface DebateHybridOutput {
@@ -85,7 +86,8 @@ function makeInput(overrides: Partial<DebateHybridInput> = {}): DebateHybridInpu
     debater: { agent: "claude", model: "fast" },
     index: 0,
     proposePrompt: "## Propose\nMake the case.",
-    buildRebutPrompt: (round: number, peerOutputs: string[]) => `round-${round}:${peerOutputs.join("|")}`,
+    buildRebutPrompt: (round: number, peerOutputs: string[], priorRoundOutputs: string[][]) =>
+      `round-${round}:${peerOutputs.join("|")}:${priorRoundOutputs.map((outputs) => outputs.join("&")).join("/")}`,
     proposalBarriers,
     rebutBarriers,
     signal: new AbortController().signal,
@@ -159,7 +161,8 @@ describe("hybridDebaterOp", () => {
         [round1Self, round1Peer],
         [round2Self, round2Peer],
       ],
-      buildRebutPrompt: (round, peerOutputs) => `round-${round}:${peerOutputs.join(",")}`,
+      buildRebutPrompt: (round, peerOutputs, priorRoundOutputs) =>
+        `round-${round}:${peerOutputs.join(",")}:${priorRoundOutputs.map((outputs) => outputs.join("&")).join("/")}`,
     });
 
     const hop = op.hopBody?.("ignored", {
@@ -188,11 +191,11 @@ describe("hybridDebaterOp", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1"]);
+    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1:"]);
     expect(settledSlots).toEqual(["rebut-2"]);
 
     await Promise.resolve();
-    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1"]);
+    expect(sendCalls).toEqual(["ignored", "round-1:rebut-1,proposal-1:"]);
 
     round1Peer.resolve("round-1-peer");
     await Promise.resolve();
@@ -203,8 +206,8 @@ describe("hybridDebaterOp", () => {
 
     expect(sendCalls).toEqual([
       "ignored",
-      "round-1:rebut-1,proposal-1",
-      "round-2:rebut-2,round-1-peer",
+      "round-1:rebut-1,proposal-1:",
+      "round-2:rebut-2,round-1-peer:rebut-2&round-1-peer",
     ]);
     expect(settledSlots).toEqual(["rebut-2", "rebut-3"]);
 
@@ -250,5 +253,14 @@ describe("hybridDebaterOp", () => {
     await expect(hop as Promise<{ readonly output: string }>).rejects.toMatchObject({ code: "CALL_OP_ABORTED" });
     // Only the proposal send fired; abort prevented the rebuttal send
     expect(sendCalls).toEqual(["ignored"]);
+  });
+
+  test("parse reports failure when rebuttal output is prefixed with Agent quote text", () => {
+    const op = getHybridDebaterOp();
+
+    expect(op.parse('Agent "claude" failed to respond', makeInput(), makeBuildCtx())).toEqual({
+      success: false,
+      rebut: 'Agent "claude" failed to respond',
+    });
   });
 });

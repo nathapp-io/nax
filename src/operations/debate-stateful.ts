@@ -1,7 +1,7 @@
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import type { Debater } from "../debate/types";
-import { raceAgainstAbort } from "../debate/utils";
+import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
@@ -14,6 +14,7 @@ export interface DebateStatefulInput {
   readonly signal: AbortSignal;
   readonly storyId: string;
   readonly skipRebuttal?: boolean;
+  readonly turnSemaphore?: DebateTurnSemaphore;
 }
 
 export interface DebateStatefulOutput {
@@ -29,7 +30,9 @@ export const statefulDebaterOp: RunOperation<DebateStatefulInput, DebateStateful
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
   async hopBody(initialPrompt, ctx) {
-    const proposal = await ctx.send(initialPrompt);
+    const proposal = ctx.input.turnSemaphore
+      ? await ctx.input.turnSemaphore.run(() => ctx.send(initialPrompt))
+      : await ctx.send(initialPrompt);
     ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
     if (ctx.input.skipRebuttal) {
       return proposal;
@@ -41,7 +44,9 @@ export const statefulDebaterOp: RunOperation<DebateStatefulInput, DebateStateful
       ctx.input.storyId,
     );
 
-    return ctx.send(ctx.input.buildRebutPrompt(peerProposals));
+    return ctx.input.turnSemaphore
+      ? ctx.input.turnSemaphore.run(() => ctx.send(ctx.input.buildRebutPrompt(peerProposals)))
+      : ctx.send(ctx.input.buildRebutPrompt(peerProposals));
   },
   build(input, _ctx) {
     return {

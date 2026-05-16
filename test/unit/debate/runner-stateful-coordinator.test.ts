@@ -13,10 +13,7 @@ interface StatefulDebaterInput {
   readonly debater: { readonly agent: string; readonly model?: string };
   readonly index: number;
   readonly proposePrompt: string;
-  readonly buildRebutPrompt: (peerProposals: string[]) => string;
   readonly proposalBarriers: PromiseWithResolvers<string>[];
-  readonly signal: AbortSignal;
-  readonly storyId: string;
 }
 
 function defer<T>(): PromiseWithResolvers<T> {
@@ -100,8 +97,14 @@ function makeRunStatefulCtx(overrides: Partial<Record<string, unknown>> = {}) {
 
 function makeResultingCallOpMock() {
   return spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
-    input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
-    const proposals = await Promise.all(input.proposalBarriers.map((barrier) => barrier.promise));
+    if (!input.proposePrompt.includes("Other Agents' Proposals")) {
+      input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
+      return {
+        success: true,
+        rebut: `proposal-${input.index}`,
+      };
+    }
+    const proposals = ["proposal-0", "proposal-1", "proposal-2"];
     return {
       success: true,
       rebut: `rebut-${input.index}:${proposals.join("|")}`,
@@ -119,7 +122,7 @@ describe("runStateful coordinator", () => {
     const permits = [defer<void>(), defer<void>(), defer<void>()];
     const callOpSpy = spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
       callStarts.push(input.index);
-      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
       await permits[input.index].promise;
       return { success: true, rebut: `rebut-${input.index}` };
     });
@@ -132,6 +135,9 @@ describe("runStateful coordinator", () => {
 
     permits[0].resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(callStarts).toContain(2);
 
@@ -142,11 +148,21 @@ describe("runStateful coordinator", () => {
 
   test("returns proposals, rebuttals, debaters, outcome, and totalCostUsd from the debater op results", async () => {
     const callOpSpy = makeResultingCallOpMock();
-    const result = await runStateful(makeRunStatefulCtx(), "stateful debate prompt");
+    const baseCtx = makeRunStatefulCtx();
+    const result = await runStateful(
+      {
+        ...baseCtx,
+        stageConfig: {
+          ...baseCtx.stageConfig,
+          rounds: 2,
+        },
+      },
+      "stateful debate prompt",
+    );
 
-    expect(callOpSpy).toHaveBeenCalledTimes(3);
+    expect(callOpSpy).toHaveBeenCalledTimes(6);
     expect(result.debaters).toEqual(["claude", "opencode", "gemini"]);
-    expect(result.outcome).toBe("passed");
+    expect(result.outcome).toBe("failed");
     expect(result.totalCostUsd).toBe(0);
     expect(result.proposals).toEqual([
       { debater: { agent: "claude", model: "fast" }, output: "proposal-0" },
@@ -174,5 +190,29 @@ describe("runStateful coordinator", () => {
     for (const snippet of forbiddenSnippets) {
       expect(source).not.toContain(snippet);
     }
+  });
+
+  test("does not generate rebuttals when rounds is 1", async () => {
+    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+      input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
+      return { success: true, rebut: `proposal-${input.index}` };
+    });
+
+    const result = await runStateful(
+      makeRunStatefulCtx({
+        stageConfig: {
+          ...makeRunStatefulCtx().stageConfig,
+          rounds: 1,
+        },
+      }),
+      "stateful debate prompt",
+    );
+
+    expect(result.rebuttals).toEqual([]);
+    expect(result.proposals).toEqual([
+      { debater: { agent: "claude", model: "fast" }, output: "proposal-0" },
+      { debater: { agent: "opencode", model: "balanced" }, output: "proposal-1" },
+      { debater: { agent: "gemini", model: "powerful" }, output: "proposal-2" },
+    ]);
   });
 });

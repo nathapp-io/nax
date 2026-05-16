@@ -281,32 +281,40 @@ export async function runPlan(
           { taskContext, outputFormat: "", stage: "plan" },
           { debaters: successful.map((p) => p.debater), sessionMode: "stateful" },
         );
-        const rebuttalSettled = await allSettledBounded(
-          successful.map((entry, localIndex) => async () => {
-            const handle = openHandles[entry.resolvedIndex] ?? null;
-            if (!handle) return { debater: entry.debater, output: entry.output };
-            const rebutPrompt = buildPlanRebuttalPrompt(
-              rebutBuilder,
-              localIndex,
-              outputPaths[entry.resolvedIndex],
-              successful.map((p) => ({ debater: p.debater, output: p.output })),
-            );
-            const rebutOutput = await executeStatefulRebuttal(
-              agentManager,
-              entry.agentName,
-              handle,
-              rebutPrompt,
-              outputPaths[entry.resolvedIndex],
-              ctx.storyId,
-              ctx.stage,
-            );
-            return { debater: entry.debater, output: rebutOutput };
-          }),
-          concurrencyLimit,
-        );
-        rebuttalList = rebuttalSettled.flatMap((r, i) =>
-          r.status === "fulfilled" ? [{ debater: successful[i].debater, round: 1, output: r.value.output }] : [],
-        );
+        const priorRebuttals: Rebuttal[] = [];
+        for (let round = 1; round <= config.rounds; round++) {
+          const settledRound = await allSettledBounded(
+            successful.map((entry, localIndex) => async () => {
+              const handle = openHandles[entry.resolvedIndex] ?? null;
+              if (!handle) return { debater: entry.debater, output: entry.output };
+              const rebutPrompt = buildPlanRebuttalPrompt(
+                rebutBuilder,
+                localIndex,
+                outputPaths[entry.resolvedIndex],
+                successful.map((p) => ({ debater: p.debater, output: p.output })),
+                priorRebuttals,
+              );
+              const rebutOutput = await executeStatefulRebuttal(
+                agentManager,
+                entry.agentName,
+                handle,
+                rebutPrompt,
+                outputPaths[entry.resolvedIndex],
+                ctx.storyId,
+                ctx.stage,
+              );
+              return { debater: entry.debater, output: rebutOutput };
+            }),
+            concurrencyLimit,
+          );
+          const roundRebuttals = settledRound.flatMap((result, index) =>
+            result.status === "fulfilled"
+              ? [{ debater: successful[index].debater, round, output: result.value.output }]
+              : [],
+          );
+          priorRebuttals.push(...roundRebuttals);
+        }
+        rebuttalList = priorRebuttals;
       }
     } finally {
       await closeDebaterSessions(openHandles, sessionManager);

@@ -5,20 +5,16 @@
  */
 
 import type { DebateConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import * as callModule from "../operations/call";
-import { type DebateHybridInput, hybridDebaterOp } from "../operations/debate-hybrid";
+import { type DebateStatefulInput, statefulDebaterOp } from "../operations/debate-stateful";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
+import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
-import {
-  createDebaterCallContext,
-  createProposalBarrier,
-  rejectUnresolvedBarriers,
-  resolveStatefulSignal,
-  runStatefulBounded,
-} from "./runner-stateful-helpers";
+import { createDebaterCallContext, resolveStatefulSignal } from "./runner-stateful-helpers";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -67,84 +63,56 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
   );
 
-  const barrierStates = resolved.map(() => createProposalBarrier());
-  const rebutBarriers: PromiseWithResolvers<string>[][] = Array.from({ length: ctx.stageConfig.rounds }, () =>
-    resolved.map(() => Promise.withResolvers<string>()),
-  );
-
-  // Build proposal prompts for the build() slot — barriers are NOT pre-resolved;
-  // each debater's hopBody resolves its own barrier after the proposal send.
-  const proposalPrompts = resolved.map((_, i) => proposalBuilder.buildProposalPrompt(i));
-
   const signal = resolveStatefulSignal(ctx);
-  const failureError = new Error(`[debate] Hybrid debate aborted for story ${ctx.storyId}`);
   let totalDebaterCostUsd = 0;
+  const noopBuildRebutPrompt = (): string => "";
+  const localProposalBarrier = () => [Promise.withResolvers<string>()];
+  const debaterRole = (index: number) => `debate-hybrid-${index}` as SessionRole;
+  const debaterCallContext = (agentName: string, index: number): CallContext => ({
+    ...createDebaterCallContext(ctx, agentName),
+    sessionOverride: { role: debaterRole(index) },
+    onCostAccumulated: (cost: number) => {
+      totalDebaterCostUsd += cost;
+    },
+  });
+  const throwIfAborted = (): void => {
+    if (signal.aborted) {
+      throw new NaxError("[debate] Hybrid debate aborted", "CALL_OP_ABORTED", { storyId: ctx.storyId });
+    }
+  };
 
-  const hybridSettled = await runStatefulBounded(
-    resolved.map(({ debater, agentName }, index) => () => {
-      const debaterCallCtx: CallContext = {
-        ...createDebaterCallContext(ctx, agentName),
-        sessionOverride: { role: `debate-hybrid-${index}` as SessionRole },
-        onCostAccumulated: (c: number) => {
-          totalDebaterCostUsd += c;
-        },
-      };
-      return callModule
-        .callOp(debaterCallCtx, hybridDebaterOp, {
-          debater,
-          index,
-          proposePrompt: proposalPrompts[index],
-          buildRebutPrompt: (_round, peerOutputs) =>
-            proposalBuilder.buildRebuttalPrompt(
+  const proposalSettled = await allSettledBounded(
+    resolved.map(
+      ({ debater, agentName }, index) =>
+        () =>
+          callModule
+            .callOp(debaterCallContext(agentName, index), statefulDebaterOp, {
+              debater,
               index,
-              peerOutputs.map((output, peerIdx) => ({
-                debater: resolved[peerIdx]?.debater ?? debater,
-                output,
-              })),
-              [],
-            ),
-          proposalBarriers: barrierStates.map((s) => s.barrier),
-          rebutBarriers,
-          signal,
-          storyId: ctx.storyId,
-          rounds: ctx.stageConfig.rounds,
-        } satisfies DebateHybridInput)
-        .then(
-          (result) => {
-            if (!result.success) {
-              rejectUnresolvedBarriers(barrierStates, failureError);
-              for (const round of rebutBarriers) {
-                for (const b of round) b.reject(failureError);
-              }
-            }
-            return result;
-          },
-          (error) => {
-            rejectUnresolvedBarriers(barrierStates, failureError);
-            for (const round of rebutBarriers) {
-              for (const b of round) b.reject(failureError);
-            }
-            throw error;
-          },
-        );
-    }),
-    barrierStates,
+              proposePrompt: proposalBuilder.buildProposalPrompt(index),
+              buildRebutPrompt: noopBuildRebutPrompt,
+              proposalBarriers: localProposalBarrier(),
+              signal,
+              storyId: ctx.storyId,
+              skipRebuttal: true,
+            } satisfies DebateStatefulInput)
+            .then((result) => ({ ...result, resolvedIndex: index })),
+    ),
     concurrencyLimit,
   );
+  throwIfAborted();
 
-  // Drain unsettled rebuttal barriers to prevent unhandled rejections when
-  // debaters fail before resolving their rebuttal slots (e.g. rounds=1).
-  for (const round of rebutBarriers) {
-    for (const b of round) b.promise.catch(() => {});
-  }
-
-  // Propagate hard failures (callOp threw) rather than silently falling back.
-  const firstRejected = hybridSettled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
-  if (firstRejected) throw firstRejected.reason as Error;
-
-  const successfulProposals = hybridSettled.flatMap((result, index) =>
+  const successfulProposals = proposalSettled.flatMap((result) =>
     result.status === "fulfilled" && result.value.success
-      ? [{ debater: resolved[index].debater, output: result.value.rebut }]
+      ? [
+          {
+            debater: resolved[result.value.resolvedIndex].debater,
+            agentName: resolved[result.value.resolvedIndex].agentName,
+            output: result.value.rebut,
+            cost: 0,
+            resolvedIndex: result.value.resolvedIndex,
+          },
+        ]
       : [],
   );
 
@@ -162,19 +130,46 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
         rounds: 1,
         debaters: [successfulProposals[0].debater.agent],
         resolverType: ctx.stageConfig.resolver.type,
-        proposals: [successfulProposals[0]],
-        totalCostUsd: 0,
+        proposals: [{ debater: successfulProposals[0].debater, output: successfulProposals[0].output }],
+        totalCostUsd: totalDebaterCostUsd,
       };
     }
 
-    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, 0);
+    return buildFailedResult(ctx.storyId, ctx.stage, ctx.stageConfig, totalDebaterCostUsd);
   }
 
-  const rebuttals: Rebuttal[] = hybridSettled.flatMap((result, index) =>
-    result.status === "fulfilled" && result.value.success
-      ? [{ debater: resolved[index].debater, round: ctx.stageConfig.rounds, output: result.value.rebut }]
-      : [],
-  );
+  const proposalList = successfulProposals.map((proposal) => ({ debater: proposal.debater, output: proposal.output }));
+  const rebuttals: Rebuttal[] = [];
+  for (let round = 1; round <= ctx.stageConfig.rounds; round++) {
+    const priorRebuttals = rebuttals.filter((entry) => entry.round < round);
+    const roundSettled = await allSettledBounded(
+      successfulProposals.map(
+        (proposal, index) => () =>
+          callModule
+            .callOp(debaterCallContext(proposal.agentName, proposal.resolvedIndex), statefulDebaterOp, {
+              debater: proposal.debater,
+              index,
+              proposePrompt: proposalBuilder.buildRebuttalPrompt(index, proposalList, priorRebuttals),
+              buildRebutPrompt: noopBuildRebutPrompt,
+              proposalBarriers: localProposalBarrier(),
+              signal,
+              storyId: ctx.storyId,
+              skipRebuttal: true,
+            } satisfies DebateStatefulInput)
+            .then((result) => ({ ...result, resolvedIndex: proposal.resolvedIndex })),
+      ),
+      concurrencyLimit,
+    );
+    throwIfAborted();
+
+    rebuttals.push(
+      ...roundSettled.flatMap((result) =>
+        result.status === "fulfilled" && result.value.success
+          ? [{ debater: resolved[result.value.resolvedIndex].debater, round, output: result.value.rebut }]
+          : [],
+      ),
+    );
+  }
 
   const proposalOutputs = successfulProposals.map((p) => p.output);
   const resolveResult: ResolveOutcome = await resolveOutcome(
@@ -209,7 +204,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     rounds: ctx.stageConfig.rounds,
     debaters: successfulProposals.map((p) => p.debater.agent),
     resolverType: ctx.stageConfig.resolver.type,
-    proposals: successfulProposals,
+    proposals: successfulProposals.map((proposal) => ({ debater: proposal.debater, output: proposal.output })),
     rebuttals,
     totalCostUsd: totalDebaterCostUsd + resolveResult.resolverCostUsd,
   };

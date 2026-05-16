@@ -130,4 +130,48 @@ describe("runPlan coordinator", () => {
       expect(helpersSource).not.toContain(snippet);
     }
   });
+
+  test("preserves all hybrid rebuttal rounds in stateful plan mode", async () => {
+    const ctx = makePlanContext();
+    const outputQueues = new Map<string, string[]>([
+      ["/tmp/out/prd-debate-0.json", ["proposal-0", "rebut-1-0", "rebut-2-0"]],
+      ["/tmp/out/prd-debate-1.json", ["proposal-1", "rebut-1-1", "rebut-2-1"]],
+    ]);
+
+    ctx.stageConfig = {
+      ...ctx.stageConfig,
+      sessionMode: "stateful",
+      mode: "hybrid",
+      rounds: 2,
+      selector: undefined,
+    };
+
+    ctx.agentManager.runAsSession = mock(async () => ({
+      output: "ok",
+      tokenUsage: { inputTokens: 1, outputTokens: 1 },
+      estimatedCostUsd: 0,
+      internalRoundTrips: 1,
+    }));
+    ctx.sessionManager.openSession = mock(async (name: string) => ({ id: name, agentName: "claude" }));
+    ctx.sessionManager.closeSession = mock(async () => {});
+    _debateSessionDeps.readFile = mock(async (path: string) => {
+      const queue = outputQueues.get(path);
+      return queue?.shift() ?? "{\"passed\":true}";
+    });
+
+    const result = await runPlan(ctx, "task context", "output format", {
+      workdir: "/tmp/work",
+      feature: "feat-plan",
+      outputDir: "/tmp/out",
+    });
+
+    expect(result.rounds).toBe(2);
+    expect(result.rebuttals).toEqual([
+      { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-1-0" },
+      { debater: { agent: "opencode", model: "balanced" }, round: 1, output: "rebut-1-1" },
+      { debater: { agent: "claude", model: "fast" }, round: 2, output: "rebut-2-0" },
+      { debater: { agent: "opencode", model: "balanced" }, round: 2, output: "rebut-2-1" },
+    ]);
+    expect(ctx.agentManager.runAsSession).toHaveBeenCalledTimes(6);
+  });
 });

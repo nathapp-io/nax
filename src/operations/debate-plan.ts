@@ -1,7 +1,7 @@
 import { debateConfigSelector } from "../config";
 import type { DebateConfig } from "../config/selectors";
 import type { Debater } from "../debate/types";
-import { raceAgainstAbort } from "../debate/utils";
+import { type DebateTurnSemaphore, raceAgainstAbort } from "../debate/utils";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
 
@@ -18,6 +18,7 @@ export interface DebatePlanInput {
   readonly outputPath: string;
   /** When explicitly false, skip the rebuttal send and resolve the rebuttal barrier with the proposal output. Default: true (rebuttal runs). */
   readonly includeHybridRebuttals?: boolean;
+  readonly turnSemaphore?: DebateTurnSemaphore;
 }
 
 export interface DebatePlanOutput {
@@ -35,15 +36,20 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
   fileOutput: (input) => input.outputPath,
   async hopBody(initialPrompt, ctx) {
-    const proposal = await ctx.send(initialPrompt);
+    const proposal = ctx.input.turnSemaphore
+      ? await ctx.input.turnSemaphore.run(() => ctx.send(initialPrompt))
+      : await ctx.send(initialPrompt);
     ctx.input.proposalBarriers[ctx.input.index].resolve(proposal.output);
 
     if (ctx.input.includeHybridRebuttals === false) {
       ctx.input.rebuttalBarrier.resolve(proposal.output);
       const decision = await raceAgainstAbort(ctx.input.selectionSignal, ctx.input.signal, ctx.input.storyId);
-      if (!decision.patchPrompt) return proposal;
+      const patchPrompt = decision.patchPrompt;
+      if (!patchPrompt) return proposal;
       try {
-        return await ctx.send(decision.patchPrompt);
+        return ctx.input.turnSemaphore
+          ? await ctx.input.turnSemaphore.run(() => ctx.send(patchPrompt))
+          : await ctx.send(patchPrompt);
       } catch {
         return proposal;
       }
@@ -55,16 +61,21 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
       ctx.input.storyId,
     );
 
-    const rebutResult = await ctx.send(ctx.input.buildRebutPrompt(peerProposals));
+    const rebutResult = ctx.input.turnSemaphore
+      ? await ctx.input.turnSemaphore.run(() => ctx.send(ctx.input.buildRebutPrompt(peerProposals)))
+      : await ctx.send(ctx.input.buildRebutPrompt(peerProposals));
     ctx.input.rebuttalBarrier.resolve(rebutResult.output);
 
     const decision = await raceAgainstAbort(ctx.input.selectionSignal, ctx.input.signal, ctx.input.storyId);
-    if (!decision.patchPrompt) {
+    const patchPrompt = decision.patchPrompt;
+    if (!patchPrompt) {
       return rebutResult;
     }
 
     try {
-      return await ctx.send(decision.patchPrompt);
+      return ctx.input.turnSemaphore
+        ? await ctx.input.turnSemaphore.run(() => ctx.send(patchPrompt))
+        : await ctx.send(patchPrompt);
     } catch {
       return rebutResult;
     }

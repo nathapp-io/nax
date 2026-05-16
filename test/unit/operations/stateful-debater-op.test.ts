@@ -17,6 +17,8 @@ interface StatefulDebaterInput {
   readonly proposalBarriers: PromiseWithResolvers<string>[];
   readonly signal: AbortSignal;
   readonly storyId: string;
+  readonly skipRebuttal?: boolean;
+  readonly turnSemaphore?: { readonly run: <T>(task: () => Promise<T>) => Promise<T> };
 }
 
 interface StatefulDebaterOutput {
@@ -185,6 +187,31 @@ describe("statefulDebaterOp", () => {
 
     await expect(hop as Promise<{ readonly output: string }>).rejects.toBeInstanceOf(NaxError);
     await expect(hop as Promise<{ readonly output: string }>).rejects.toMatchObject({ code: "CALL_OP_ABORTED" });
+    expect(sendCalls).toEqual([input.proposePrompt]);
+  });
+
+  test("hopBody returns the proposal directly when skipRebuttal is enabled", async () => {
+    const op = getStatefulDebaterOp();
+    const localBarrier = makeBarrier<string>();
+    const peerBarrier = makeBarrier<string>();
+    const sendCalls: string[] = [];
+    const input = makeInput({
+      proposalBarriers: [localBarrier, peerBarrier, makeBarrier<string>()],
+      skipRebuttal: true,
+    });
+
+    const hop = op.hopBody?.(input.proposePrompt, {
+      input,
+      send: mock(async (prompt: string) => {
+        sendCalls.push(prompt);
+        return { output: "proposal-only" };
+      }),
+    });
+
+    peerBarrier.resolve("peer-proposal");
+
+    await expect(hop as Promise<{ readonly output: string }>).resolves.toEqual({ output: "proposal-only" });
+    await expect(localBarrier.promise).resolves.toBe("proposal-only");
     expect(sendCalls).toEqual([input.proposePrompt]);
   });
 
