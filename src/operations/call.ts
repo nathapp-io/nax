@@ -1,4 +1,5 @@
 import { computeAcpHandle } from "../agents";
+import type { AgentRunOutcome } from "../agents";
 import { ParseValidationError, resolveRetryPreset } from "../agents/retry";
 import type { RetryPreset, RetryStrategy } from "../agents/retry";
 import type { TurnResult } from "../agents/types";
@@ -26,15 +27,8 @@ export const _callOpDeps = {
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
 const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
 
-function normalizeRunOutcome(outcome: Awaited<ReturnType<CallContext["runtime"]["agentManager"]["runWithFallback"]>>) {
-  if ("result" in outcome && outcome.result !== undefined) {
-    return outcome;
-  }
-
-  return {
-    result: outcome,
-    fallbacks: [],
-  };
+function normalizeRunOutcome(outcome: AgentRunOutcome): AgentRunOutcome {
+  return outcome;
 }
 
 function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
