@@ -170,7 +170,7 @@ exhaustedFallback: (lastOutput) =>
 
 Custom `RetryStrategy` implementations can also set `fallback` on their `{ retry: false }` decision — `callOp` reads it regardless of which strategy produced it.
 
-**Success-path cost:** When parse succeeds after one or more retries, `accumulatedRunCostUsd` is **not** merged into `O`. Cost across all attempts flows through the middleware layer (AgentManager audit), not via op output. The `{ retry: false }` path sets cost on `lastTurnResult.estimatedCostUsd`; the `fallback` path merges it explicitly. The success path does not — this is intentional.
+**Success-path cost:** Cost recording is always-on and flows **only** through the `DispatchEvent` → cost middleware → `CostAggregator` path, never through op output (`O`). Callers needing per-region cost attribution use `costAggregator.openScope()` and stamp `CallContext.scopeId` at the orchestration layer. Leaf code (selectors, debaters, adapters) remains cost-blind. The middleware layer is the sole writer of cost data.
 
 ## `ParseValidationError` discrimination
 
