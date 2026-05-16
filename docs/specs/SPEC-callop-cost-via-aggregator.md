@@ -8,7 +8,7 @@
 
 ## Summary
 
-Replace the `CallContext.onCostAccumulated` callback — a side-channel surfaced into the operation layer by the quick fixes for #1035 and #1036 — with a query API on `CostAggregator`. Callers that need per-op cost (debate selectors, debate runners) open a **cost scope** tagged with a per-call correlation id; the scope reads from the existing dispatch-event bus and reports the canonical cost for events recorded inside it. `callOp` stops carrying a cost output channel; agent adapters remain primitive; `DispatchEvent` → cost middleware → `CostAggregator` becomes the single, authoritative flow for cost.
+Replace the `CallContext.onCostAccumulated` callback — a side-channel surfaced into the operation layer by the quick fixes for #1035 and #1036 — with a query API on `CostAggregator`. Cost recording is universal infrastructure: every dispatch is always captured by the cost middleware and always lands in the aggregator. Code that wants to *attribute* cost to a logical region (one debate run, one resolver call, one TDD session) opens a **cost scope** tagged with a `scopeId`; the scope reads from the bus-driven aggregator. Selectors, debaters, and other leaf-level code stay completely cost-blind — they forward whatever `CallContext` they were handed. `callOp` keeps its `Promise<O>` contract; agent adapters remain primitive; `DispatchEvent` → cost middleware → `CostAggregator` is the single, authoritative cost flow.
 
 ## Motivation
 
@@ -55,30 +55,36 @@ Used today in: `src/debate/selectors/judge.ts`, `src/debate/selectors/synthesis.
 
 ### Approach
 
-Add a **per-call correlation id** (`callId`) onto the dispatch base event, stamp it at the `callOp` boundary (the only site that knows "this is one op invocation"), and add a scope API on `CostAggregator` that filters by `callId`. Callers wrap their `callOp` invocation in a scope and read `.snapshot()` at the end. The callback disappears.
+Two correlation dimensions on `DispatchEventBase`, with different owners:
+
+- **`callId`** — per-`callOp` invocation. Stamped automatically by `callOp` at entry, never set by anyone else. Used for debug attribution ("which one op invocation produced this event?"). Carried across retry attempts within one invocation.
+- **`scopeId`** — per-region. Set by the caller via `CallContext.scopeId`; `callOp` forwards verbatim onto every emitted dispatch event. The aggregator filters by `scopeId` to answer "what did this region cost?"
+
+The scope is the **only** opt-in. Cost recording itself is always-on — middleware writes every dispatch into the aggregator unconditionally. Code that wants to know what a region cost opens a scope; code that doesn't care never touches cost APIs.
+
+Crucially, **leaf code (selectors, debater closures) stays cost-blind.** The selector receives a `CallContext` and forwards it to `callOp`. The runner one layer up is what knows "this is one debate" or "this is the resolver call" and is the layer that opens scopes and reads snapshots. `SelectorResult.resolverCostUsd` is deleted entirely — selectors return only `{ outcome, output }`.
 
 ```
-┌─────────────┐   stamps callId    ┌──────────────┐   emits DispatchEvent(callId)    ┌────────────┐
-│   callOp    │ ──────────────────▶│ AgentManager │ ────────────────────────────────▶│ DispatchBus│
-└─────────────┘                    └──────────────┘                                  └─────┬──────┘
-                                                                                           │
-                                                                              attachCostSub│scriber
-                                                                                           ▼
-                                                                                  ┌────────────────┐
-                                                                                  │ CostAggregator │
-                                                                                  │   .byCall(id)  │
-                                                                                  └────────┬───────┘
-                                                                                           │
-            ┌──────────────────────────────────────────────────────────────────────────────┘
-            │                          snapshot
-            ▼
-  ┌─────────────────────┐
-  │ judgeSelector / etc │
-  │   reads cost here   │
-  └─────────────────────┘
+                                ┌─────────────┐
+                  caller sets   │ CallContext │  callOp auto-stamps callId
+                ┌───scopeId────▶│  .scopeId   │  (never overwrites scopeId)
+                │               │  .callId?   │
+                │               └──────┬──────┘
+                │                      │
+        ┌───────┴────────┐             ▼
+        │ DebateRunner   │      ┌──────────────┐    ┌────────────┐
+        │ owns the scope │      │   callOp     │───▶│ DispatchBus│
+        └───────┬────────┘      └──────────────┘    └─────┬──────┘
+                │                                         │ event {callId, scopeId}
+                │                            attachCostSub│scriber
+                │                                         ▼
+                │                                ┌────────────────┐
+                │            snapshot            │ CostAggregator │
+                └───────────────────────────────▶│  .byScope(id)  │
+                                                 └────────────────┘
 ```
 
-The cost-on-the-bus path is unchanged. We add a tag (`callId`) and a filter (`byCall`).
+Selectors never appear in this diagram — they're just `await callOp(ctx.callContext, op, input)` and are unaware cost exists.
 
 ### New types
 
@@ -87,21 +93,36 @@ The cost-on-the-bus path is unchanged. We add a tag (`callId`) and a filter (`by
 export interface DispatchEventBase {
   // ... existing fields ...
   /**
-   * Per-callOp correlation id stamped by the operation layer. Optional because
-   * legacy non-op dispatch sites (debate manager fan-out historical paths)
-   * may not stamp it. When absent, the event is not attributable to any scope
-   * and contributes to global totals only.
+   * Per-callOp invocation id, stamped by the operation layer. Optional only
+   * because legacy non-op dispatch sites may not stamp it; in production every
+   * callOp-driven event carries one.
    */
   readonly callId?: string;
+  /**
+   * Caller-supplied region id, forwarded verbatim from `CallContext.scopeId`.
+   * Used by `CostAggregator.byScope()` and `CostScopeHandle.snapshot()` to roll
+   * up cost across many `callOp` invocations sharing one region.
+   */
+  readonly scopeId?: string;
 }
+// Same two fields added to DispatchErrorEvent and OperationCompletedEvent.
+```
 
-export interface DispatchErrorEvent {
+```typescript
+// src/operations/types.ts
+export interface CallContext {
   // ... existing fields ...
-  readonly callId?: string;
-}
-
-export interface OperationCompletedEvent {
-  // ... existing fields ...
+  /**
+   * Optional region id forwarded onto every dispatch event the op produces.
+   * Set by orchestration layers (e.g. debate runners) that own the region;
+   * leaf code (selectors, debater closures) never sets or reads this.
+   */
+  readonly scopeId?: string;
+  /**
+   * Optional pinned callId. Almost never set by callers — `callOp` generates
+   * a fresh one when absent. Reserved for advanced patterns where two callers
+   * must share an invocation id (none in this spec).
+   */
   readonly callId?: string;
 }
 ```
@@ -109,110 +130,132 @@ export interface OperationCompletedEvent {
 ```typescript
 // src/runtime/cost-aggregator.ts
 export interface CostScopeHandle {
-  /** The callId this scope filters by. */
-  readonly callId: string;
-  /** Totals across events recorded with this scope's callId at the time of call. */
+  /** The scopeId this handle filters by. Pass it into CallContext.scopeId. */
+  readonly scopeId: string;
+  /** Totals across events recorded with this scope's scopeId at call time. */
   snapshot(): CostSnapshot;
-  /**
-   * Releases internal indexes for this scope. Idempotent. Always call in a
-   * finally — leaking scopes is a slow memory leak but not a correctness bug.
-   */
+  /** Idempotent release of internal indexes. */
   close(): void;
 }
 
 export interface ICostAggregator {
   // ... existing methods ...
-  /** Per-call totals (groups events by `callId`; events without a callId are excluded). */
+  /** Per-invocation totals (groups by `callId`; debug-only). */
   byCall(): Record<string, CostSnapshot>;
+  /** Per-region totals (groups by `scopeId`). */
+  byScope(): Record<string, CostSnapshot>;
   /**
-   * Opens a scope whose snapshot() returns totals for events recorded under
-   * `callId`. When `callId` is omitted the aggregator generates one via the
-   * shared `newCallId()` helper and exposes it on `handle.callId`.
+   * Opens a region scope. When `scopeId` is omitted the aggregator generates
+   * one via the shared id helper and exposes it on `handle.scopeId`.
    */
-  openScope(callId?: string): CostScopeHandle;
+  openScope(scopeId?: string): CostScopeHandle;
 }
 ```
 
 ```typescript
-// src/operations/call.ts — internal helper, sole producer of callIds
-function newCallId(): string {
-  // ≤16 chars, monotonic-ish: `${ts.toString(36)}-${random6}`
+// src/operations/call.ts — internal helper, sole producer of correlation ids
+function newCorrelationId(): string {
+  // ≤16 chars: `${ts.toString(36)}-${random6}`
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 ```
 
-`newCallId` lives in `src/operations/call.ts` and is the only generator. `CostAggregator.openScope()` reuses it via a small internal import; callers never invoke it directly — they either supply their own id or read `scope.callId` after `openScope()`.
+`newCorrelationId` lives in `src/operations/call.ts` and serves both `callId` generation inside `callOp` and `scopeId` generation inside `openScope()` (via a small internal import). Callers never invoke it directly.
 
 ### Flow
 
-1. `callOp` generates a fresh `callId` at entry (one per invocation, shared across retry attempts within that invocation).
-2. `callOp` threads `callId` through to:
-   - `agentManager.completeAs(agent, prompt, { ...completeOptions, callId })` for complete-kind.
-   - `runOptions.callId` for run-kind (consumed by `buildHopCallback` / `runWithFallback`).
-3. The session/manager layers carry `callId` into the `DispatchEvent` they emit (`emitDispatch`, `emitDispatchError`, `emitOperationCompleted`).
-4. `attachCostSubscriber` writes `callId` onto the `CostEvent` it forwards to `CostAggregator`.
-5. `CostAggregator.openScope(callId).snapshot()` returns the canonical totals (using `costUsd`, i.e. `exactCostUsd ?? estimatedCostUsd`).
+1. `callOp` stamps a fresh `callId` per invocation (never overwrites `ctx.callId` if the caller pinned one).
+2. `callOp` forwards both `callId` and `ctx.scopeId` (verbatim) into:
+   - `completeOptions` for complete-kind, threaded through `agentManager.completeAs`.
+   - `runOptions` for run-kind, threaded through `runWithFallback` and the session-run-hop layer.
+3. The session/manager layers carry both fields into `DispatchEvent`, `DispatchErrorEvent`, and `OperationCompletedEvent` they emit on the bus.
+4. `attachCostSubscriber` writes both `callId` and `scopeId` onto every `CostEvent` it forwards to `CostAggregator`.
+5. `CostAggregator.openScope(scopeId).snapshot()` returns canonical totals (using `costUsd`, which after US-001 is always equal to `exactCostUsd`).
 
 ### Caller pattern
 
+**Selector (cost-blind — no scope, no `resolverCostUsd` return):**
+
 ```typescript
-// src/debate/selectors/judge.ts (after migration)
+// src/debate/selectors/judge.ts
 export const judgeSelector: Selector = async (ctx) => {
-  const scope = ctx.callContext.runtime.costAggregator.openScope();
-  try {
-    const output = await callOp(
-      { ...ctx.callContext, callId: scope.callId },
-      judgeOp,
-      { ... },
-    );
-    return {
-      outcome: output.trim() ? "passed" : "failed",
-      output,
-      resolverCostUsd: scope.snapshot().totalCostUsd,
-    };
-  } finally {
-    scope.close();
-  }
+  const output = await callOp(ctx.callContext, judgeOp, { ... });
+  return {
+    outcome: output.trim() ? "passed" : "failed",
+    output,
+  };
 };
 ```
 
-If the caller does not need cost, it omits the scope entirely — no overhead, no callback to thread.
+**Runner (owns scopes, populates `DebateResult.totalCostUsd`):**
+
+```typescript
+// src/debate/runner-stateful.ts (sketch)
+const debaterScope = ctx.runtime.costAggregator.openScope();
+const resolverScope = ctx.runtime.costAggregator.openScope();
+try {
+  const debaterCallContext = (agent, i): CallContext => ({
+    ...baseDebaterCallContext(ctx, agent),
+    sessionOverride: { role: debaterRole(i) },
+    scopeId: debaterScope.scopeId,  // ← runner stamps; debater closure never sees this
+  });
+  await Promise.allSettled(
+    resolved.map(({ debater, agentName }, i) =>
+      callOp(debaterCallContext(agentName, i), statefulDebaterOp, { ... }),
+    ),
+  );
+
+  const selectorCtx: SelectorContext = {
+    ...buildSelectorContext(ctx),
+    callContext: { ...ctx.callContext, scopeId: resolverScope.scopeId },
+  };
+  const selectorResult = await selector(selectorCtx);
+
+  return {
+    ...buildDebateResult(ctx, proposals, rebuttals, selectorResult),
+    totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd,
+  };
+} finally {
+  debaterScope.close();
+  resolverScope.close();
+}
+```
 
 ### Removed surface
 
 - `CallContext.onCostAccumulated` — deleted from `src/operations/types.ts`.
-- Both write sites in `src/operations/call.ts:153, :422` — deleted.
-- Mutable `let resolverCostUsd = 0` / `let totalCostUsd = 0` accumulators in:
-  - `src/debate/selectors/judge.ts`
-  - `src/debate/selectors/synthesis.ts`
-  - `src/debate/runner-stateful.ts`
-  - `src/debate/runner-hybrid.ts`
+- Both write sites in `src/operations/call.ts` (complete-kind success path; run-kind success path) — deleted.
+- `SelectorResult.resolverCostUsd` field — deleted from `src/debate/selectors/types.ts`. Every selector return loses the field; readers in `runner-stateful.ts`, `runner-hybrid.ts`, `runner.ts`, `runner-plan-helpers.ts`, `session-helpers.ts`, `selectors/dialogue-verdict.ts`, `selectors/verifier-pick.ts`, `selectors/majority.ts` stop reading it (they read scope snapshots instead).
+- Mutable `let resolverCostUsd = 0` / `let totalCostUsd = 0` accumulators in `judge.ts`, `synthesis.ts`, `runner-stateful.ts`, `runner-hybrid.ts`.
 
 ### Failure handling
 
-- **Scope opened but `callOp` throws before any dispatch event fires** → `snapshot()` returns `EMPTY_SNAPSHOT` (cost zero). Correct: no work was done.
-- **Scope never closed** → events accumulate against the callId in the aggregator's internal index until the run ends. No correctness impact; small memory leak. Logged as warn from `CostAggregator.drain()` if any open scopes remain at drain time.
-- **`callId` collision** (vanishingly unlikely given timestamp+random) → totals merge. Acceptable; the dimension is debug/attribution, not accounting.
-- **Legacy callers still passing `onCostAccumulated`** → compile error after the field is removed; this is a hard cut, not a soft deprecation, because every consumer is in `src/debate/` and migrates in the same PR.
+- **Scope opened but no dispatch event fires before close** → `snapshot()` returns `EMPTY_SNAPSHOT`. Correct: no work was done in the region.
+- **Scope never closed** → events accumulate against the scopeId in the aggregator's internal index until the run ends. No correctness impact; small memory leak. `CostAggregator.drain()` logs `warn` with `{ openScopeCount }` if any scopes remain open at drain time.
+- **`scopeId` collision** (vanishingly unlikely; timestamp + 6-char random) → totals merge. Same risk profile as `callId`.
+- **Legacy callers still passing `onCostAccumulated` or reading `SelectorResult.resolverCostUsd`** → compile error after the field is removed. Hard cut, not soft deprecation; every consumer is in `src/debate/` and migrates in the same PR set.
+- **No aggregator wired** (`createNoOpCostAggregator`) → `openScope()` returns a no-op handle whose `snapshot()` always reports zero. Production runtime always wires a real `CostAggregator`, so cost recording is universally on; the no-op path exists only for tests and ad-hoc CLI invocations that explicitly opt out of the run-level cost subsystem.
 
 ### Approach choices considered and rejected
 
 | Alternative | Why rejected |
 |:---|:---|
+| Single `callId` dimension; selectors open per-call scopes | Forces leaf code (selectors, debater closures) to know cost exists. Violates the "selectors are cost-blind" principle and reintroduces the threading pattern the side-channel callback was trying to avoid. |
+| Selectors keep `SelectorResult.resolverCostUsd`, populated from a scope they open | Same problem: selectors are still cost-aware. Region attribution belongs one layer up, with the code that defines what the region *is*. |
 | Wrap `callOp` return in `{ output, costUsd }` envelope | Every caller pays the type-shape cost, even ones that don't care. `Promise<O>` is the contract ADR-019 fought for. |
-| Read cost from `aggregator.byStage()` or `byStory()` and subtract before/after | Race-prone under concurrent dispatch (debate fans out per agent in parallel). Correlation id is the deterministic primitive. |
+| Read cost from `aggregator.byStage()` / `byStory()` and subtract before/after | Race-prone under concurrent dispatch (debate fans out per agent in parallel). `scopeId` is the deterministic primitive. |
 | Emit a new event kind (`CostObservedEvent`) | Duplicates `DispatchEvent` which already carries cost. New event ≠ new information. |
-| Have `callOp` consult the aggregator internally and return `{ output, callId }` | Hides the read inside the op layer; selectors still need to know the callId to query. Net surface area is the same. |
-| Add `runtime.withCostScope(fn)` higher-order wrapper | Loses precision: a scope can wrap multiple `callOp` calls only if every one stamps the same callId. The id belongs on the invocation, not the wrapper. |
+| Have `callOp` consult the aggregator internally and return `{ output, callId }` | Hides the read inside the op layer and pushes attribution back to the caller anyway. |
+| Add `runtime.withCostScope(fn)` higher-order wrapper | Higher-order form is harder to compose with `Promise.allSettled` fan-out patterns the debate runners need. Explicit `openScope` + `try/finally` keeps the lifetime visible. |
 
 ## Stories
 
 1. **US-001: Normalize `exactCostUsd` — make required, fall back to `estimatedCostUsd`** — depends on nothing
-2. **US-002: Add `callId` to dispatch event base + stamp at callOp** — depends on nothing (parallelizable with US-001)
-3. **US-003: Aggregator scope API (`openScope`, `byCall`)** — depends on US-001 + US-002
-4. **US-004: Remove `onCostAccumulated`; migrate debate selectors (`judge`, `synthesis`)** — depends on US-003
-5. **US-005: Migrate debate runners (`runner-stateful`, `runner-hybrid`) to scope API** — depends on US-003
-6. **US-006: Update `retry-strategy.md` + `adapter-wiring.md` to document the scope-only cost flow** — depends on US-004 + US-005
+2. **US-002: Add `callId` + `scopeId` to dispatch event base; stamp / forward at callOp** — depends on nothing (parallelizable with US-001)
+3. **US-003: Aggregator scope API (`openScope`, `byScope`, `byCall`)** — depends on US-001 + US-002
+4. **US-004: Strip cost from selectors — delete `SelectorResult.resolverCostUsd`, delete `onCostAccumulated`** — depends on US-003
+5. **US-005: Debate runners own scopes; populate `DebateResult.totalCostUsd` from aggregator** — depends on US-003 + US-004
+6. **US-006: Update `retry-strategy.md` + `adapter-wiring.md` to document the always-on cost flow** — depends on US-004 + US-005
 
 ---
 
@@ -249,128 +292,136 @@ The change is at the producer boundary (`attachCostSubscriber`), not at the wire
 
 ---
 
-### US-002: Add `callId` to dispatch event base + stamp at callOp
+### US-002: Add `callId` + `scopeId` to dispatch event base; stamp / forward at callOp
 
 #### Scope
 
-Add an optional `callId` field to `DispatchEventBase`, `DispatchErrorEvent`, and `OperationCompletedEvent`. Stamp a fresh callId at the entry of `callOp` and thread it through `agentManager.completeAs` (complete-kind) and `runOptions` (run-kind) so it lands on every emitted dispatch event for that invocation.
+Add two optional fields — `callId` (per-invocation) and `scopeId` (per-region) — to `DispatchEventBase`, `DispatchErrorEvent`, and `OperationCompletedEvent`. `callOp` stamps a fresh `callId` per invocation and forwards `ctx.scopeId` verbatim onto every emitted dispatch event. Both fields are threaded through `agentManager.completeAs` (complete-kind) and `runOptions` (run-kind). `CallContext` gains the matching `scopeId?` and `callId?` fields.
 
 #### Context Files
 
 - `src/runtime/dispatch-events.ts` — event interface SSOT (extend `DispatchEventBase`)
-- `src/operations/call.ts` — stamp callId; thread into `completeOptions` (complete-kind) and `runOptions` (run-kind)
-- `src/agents/manager.ts` — `completeAs` / `runWithFallback` must accept and forward callId into emitted events
+- `src/operations/types.ts` — `CallContext` gains `scopeId?` and `callId?`
+- `src/operations/call.ts` — stamp callId; forward both fields into `completeOptions` (complete-kind) and `runOptions` (run-kind)
+- `src/agents/manager.ts` — `completeAs` / `runWithFallback` must accept and forward both fields into emitted events
 - `src/runtime/session-run-hop.ts` — `runAsSession` event emission site
 - `docs/adr/ADR-020-dispatch-boundary-ssot.md` §D1 — "new cross-cutting fields go on `DispatchEventBase`" precedent
 
 #### Acceptance Criteria
 
-- `DispatchEventBase`, `DispatchErrorEvent`, and `OperationCompletedEvent` each declare `readonly callId?: string`
-- `callOp(ctx, op, input)` generates one fresh callId per invocation via an internal `newCallId()` helper in `src/operations/call.ts` that returns a string of ≤16 chars matching `/^[0-9a-z]+-[0-9a-z]+$/`
-- For `kind:"complete"` ops, the `CompleteDispatchEvent` emitted by `agentManager.completeAs` carries `callId` equal to the invocation's stamped id
-- For `kind:"run"` ops, every `SessionTurnDispatchEvent` emitted during the invocation carries the same `callId`
-- When `callOp` retries via `op.retry`, every dispatch event across retry attempts within one `callOp` invocation carries the same `callId`
-- `DispatchErrorEvent` emitted from a failed `callOp` dispatch carries the same `callId` as the failed attempt
-- `OperationCompletedEvent` emitted by `runWithFallback` for a `callOp` invocation carries that invocation's `callId`
-- `newCallId()` returns a distinct value on each call (10,000 sequential calls produce 10,000 distinct ids in the test)
+- `DispatchEventBase`, `DispatchErrorEvent`, and `OperationCompletedEvent` each declare `readonly callId?: string` and `readonly scopeId?: string`
+- `CallContext` declares `readonly scopeId?: string` and `readonly callId?: string`
+- `callOp(ctx, op, input)` stamps a fresh `callId` via `newCorrelationId()` when `ctx.callId` is absent, and never overwrites a caller-supplied `callId`
+- `callOp` forwards `ctx.scopeId` verbatim onto every emitted dispatch event (no transformation, no generation if absent)
+- For `kind:"complete"` ops, the `CompleteDispatchEvent` emitted by `agentManager.completeAs` carries the invocation's `callId` and `ctx.scopeId`
+- For `kind:"run"` ops, every `SessionTurnDispatchEvent`, the `OperationCompletedEvent` from `runWithFallback`, and any `DispatchErrorEvent` from a failed dispatch carry the same `callId` and `scopeId` as the invocation
+- When `callOp` retries via `op.retry`, every dispatch event across retry attempts within one invocation shares the same `callId` and `scopeId`
+- `newCorrelationId()` produces ≤16-char strings matching `/^[0-9a-z]+-[0-9a-z]+$/`; 10,000 sequential calls yield 10,000 distinct values
 
 ---
 
-### US-003: Aggregator scope API (`openScope`, `byCall`)
+### US-003: Aggregator scope API (`openScope`, `byScope`, `byCall`)
 
 #### Scope
 
-Extend `CostAggregator` with `byCall(): Record<string, CostSnapshot>` and `openScope(callId: string): CostScopeHandle`. Update `attachCostSubscriber` to copy `event.callId` onto the `CostEvent` it records. Implement scope as a thin index that filters in-memory events.
+Extend `CostAggregator` with `byScope()`, `byCall()`, and `openScope(scopeId?: string): CostScopeHandle`. Update `attachCostSubscriber` to copy both `event.scopeId` and `event.callId` onto the `CostEvent` it records. Scope handles filter by `scopeId` (the caller-supplied region dimension). `byCall` is exposed for debug/per-invocation attribution and is not consumed by production code.
 
 #### Context Files
 
-- `src/runtime/cost-aggregator.ts` — extend `ICostAggregator` and `CostAggregator`, add `CostScopeHandle`
-- `src/runtime/middleware/cost.ts` — forward `event.callId` onto the constructed `CostEvent`
-- `src/runtime/index.ts` — surface the aggregator on `NaxRuntime` (already exists; verify barrel export of new types)
-- `test/unit/runtime/cost-aggregator.test.ts` — existing aggregator tests; mirror structure for new methods
+- `src/runtime/cost-aggregator.ts` — extend `ICostAggregator`, `CostAggregator`, add `CostScopeHandle`; reuse `newCorrelationId()` from `src/operations/call.ts`
+- `src/runtime/middleware/cost.ts` — forward both `event.scopeId` and `event.callId` onto the constructed `CostEvent`
+- `src/runtime/index.ts` — verify aggregator and new types exported from the barrel
+- `test/unit/runtime/cost-aggregator.test.ts` — existing tests; mirror structure for `byScope` / `openScope`
 
 #### Acceptance Criteria
 
-- `CostEvent` declares `readonly callId?: string`, and `attachCostSubscriber` sets `costEvent.callId = event.callId` (leaving it undefined when the source event has none)
+- `CostEvent` declares `readonly scopeId?: string` and `readonly callId?: string`; `attachCostSubscriber` copies both from `DispatchEvent` (leaving undefined when source has none)
+- `CostAggregator.byScope()` returns a `Record<string, CostSnapshot>` keyed by `scopeId`, including only events where `scopeId !== undefined`
 - `CostAggregator.byCall()` returns a `Record<string, CostSnapshot>` keyed by `callId`, including only events where `callId !== undefined`
-- `CostAggregator.openScope(callId)` returns a `CostScopeHandle` whose `callId` field equals the input; `openScope()` (no arg) generates one via the shared `newCallId()` and exposes it on `handle.callId`
-- `CostScopeHandle.snapshot()` returns a `CostSnapshot` reflecting only `CostEvent`s recorded with `e.callId === handle.callId` at the time `snapshot()` is called
-- `CostScopeHandle.snapshot()` aggregates `costUsd` (the canonical exact-equals-required field after US-001) into `CostSnapshot.totalCostUsd`, matching the per-event accumulator used by global `snapshot()`
-- `CostScopeHandle.snapshot()` returns `EMPTY_SNAPSHOT` when no events with the scope's `callId` have been recorded
-- `CostScopeHandle.close()` is idempotent (second call is a no-op); after `close()`, `snapshot()` returns the totals frozen at the time of the first `close()` call
-- `CostAggregator.drain()` logs at level `warn` with `{ openScopeCount: number }` when any scope is still open at drain time, but completes successfully
+- `CostAggregator.openScope(scopeId)` returns a `CostScopeHandle` whose `scopeId` field equals the input; `openScope()` (no arg) generates one via `newCorrelationId()` and exposes it on `handle.scopeId`
+- `CostScopeHandle.snapshot()` returns a `CostSnapshot` reflecting only `CostEvent`s recorded with `e.scopeId === handle.scopeId` at call time, aggregating `costUsd` into `CostSnapshot.totalCostUsd`
+- `CostScopeHandle.snapshot()` returns `EMPTY_SNAPSHOT` when no events with the scope's `scopeId` have been recorded
+- `CostScopeHandle.close()` is idempotent (second call is a no-op); after `close()`, `snapshot()` returns the totals frozen at the first `close()`
+- `CostAggregator.drain()` logs at level `warn` with `{ openScopeCount: number }` when any scope is still open at drain time, and completes successfully
 
 ---
 
-### US-004: Remove `onCostAccumulated`; migrate debate selectors (`judge`, `synthesis`)
+### US-004: Strip cost from selectors — delete `SelectorResult.resolverCostUsd`, delete `onCostAccumulated`
 
 #### Scope
 
-Delete `CallContext.onCostAccumulated` and both write sites in `callOp`. Migrate `judgeSelector` and `synthesisSelector` to open a scope, pass `callId` on the `CallContext` they hand to `callOp`, and read `resolverCostUsd` from `scope.snapshot().totalCostUsd`.
+Make selectors completely cost-blind. Delete `CallContext.onCostAccumulated` and both write sites in `callOp`. Delete `SelectorResult.resolverCostUsd`. Strip every `let resolverCostUsd = 0` accumulator and `onCostAccumulated` closure from `judgeSelector` and `synthesisSelector` — they return only `{ outcome, output }`. Every reader of `SelectorResult.resolverCostUsd` is updated in this story so the codebase compiles after the field is removed (runners get their real cost-attribution rewrite in US-005).
+
+Readers that today touch `resolverCostUsd`: `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/verifier-pick.ts`, `src/debate/selectors/majority.ts` (all return `resolverCostUsd: 0` today — drop the field from their return literals); `src/debate/runner.ts`, `src/debate/runner-plan-helpers.ts`, `src/debate/session-helpers.ts` (drop the field from the outcome shape; runner-side cost summation moves to US-005).
 
 #### Context Files
 
 - `src/operations/types.ts` — remove `onCostAccumulated` field
 - `src/operations/call.ts` — remove both `ctx.onCostAccumulated?.(...)` calls in the complete-kind and run-kind success paths
-- `src/debate/selectors/judge.ts` — current callback-based pattern (lines 24-30)
-- `src/debate/selectors/synthesis.ts` — same pattern (lines 25-30)
-- `src/debate/selectors/types.ts` — `SelectorResult.resolverCostUsd` shape (unchanged)
-- `test/unit/debate/selectors/judge.test.ts`, `test/unit/debate/selectors/synthesis.test.ts` — cost-parity regression tests must continue to assert real cost
+- `src/debate/selectors/types.ts` — remove `resolverCostUsd` from `SelectorResult`
+- `src/debate/selectors/judge.ts`, `src/debate/selectors/synthesis.ts` — strip cost closure and `resolverCostUsd` from return
+- `src/debate/selectors/dialogue-verdict.ts`, `src/debate/selectors/verifier-pick.ts`, `src/debate/selectors/majority.ts` — drop `resolverCostUsd` from return literals
+- `src/debate/runner.ts`, `src/debate/runner-plan-helpers.ts`, `src/debate/session-helpers.ts` — drop `resolverCostUsd` from intermediate carry shapes (runner cost lands in US-005)
+- `test/unit/debate/selectors/judge.test.ts`, `test/unit/debate/selectors/synthesis.test.ts` — assertions on `resolverCostUsd` move to scope-based assertions in US-005
 
 #### Acceptance Criteria
 
-- `CallContext` does not declare `onCostAccumulated`, and `src/operations/call.ts` contains no reference to it
-- `CallContext` declares `readonly callId?: string`; `callOp` uses `ctx.callId ?? newCallId()` and never overwrites a caller-supplied value
-- `judgeSelector` opens a `CostScopeHandle` (via `runtime.costAggregator.openScope()`) before invoking `callOp` and calls `handle.close()` in a `finally` block
-- `judgeSelector` returns `resolverCostUsd` equal to `handle.snapshot().totalCostUsd` after the `callOp` invocation completes
-- `synthesisSelector` follows the same pattern as `judgeSelector` (scope open → `callOp` with `callId: scope.callId` → `snapshot` → `close`)
-- When a `callOp` invocation under `judgeSelector` emits two dispatch events with `estimatedCostUsd = 0.04` each, the returned `resolverCostUsd` equals `0.08`
-- When `callOp` throws before any dispatch event fires, `judgeSelector` propagates the throw and the scope is closed by the `finally`
+- `CallContext` does not declare `onCostAccumulated`; `src/operations/call.ts` contains no reference to it
+- `SelectorResult` does not declare `resolverCostUsd`
+- `judgeSelector` and `synthesisSelector` return objects with exactly two keys (`outcome` and `output`) — no cost field, no scope opening, no mutable cost accumulator
+- `judgeSelector` and `synthesisSelector` forward `ctx.callContext` unchanged into `callOp` (no `callId` injection, no `scopeId` injection — the runner already set `scopeId` upstream)
+- `dialogueVerdictSelector`, `verifierPickSelector`, and `majoritySelector` returns also drop the `resolverCostUsd` key
+- `grep -r "resolverCostUsd" src/` returns zero matches after this story
+- `grep -r "onCostAccumulated" src/` returns zero matches after this story
 
 ---
 
-### US-005: Migrate debate runners (`runner-stateful`, `runner-hybrid`) to scope API
+### US-005: Debate runners own scopes; populate `DebateResult.totalCostUsd` from aggregator
 
 #### Scope
 
-Replace `onCostAccumulated`-based accumulators in `runner-stateful.ts` and `runner-hybrid.ts` with per-debater scopes. Each `debaterCallContext(agentName, index)` opens its own scope; `totalCostUsd` is the sum of `scope.snapshot().totalCostUsd` across all debaters after `Promise.allSettled` resolves.
+Move all cost orchestration into the debate runners (`runner-stateful.ts`, `runner-hybrid.ts`, and `runner.ts` if it has its own dispatch fan-out). Each runner opens two scopes: one wrapping the debater fan-out, one wrapping the resolver/selector call. Every `CallContext` the runner constructs gets the matching `scopeId` stamped. After the fan-out resolves, `DebateResult.totalCostUsd` is read from `debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd`. No selector return value contributes to cost any more.
 
 #### Context Files
 
-- `src/debate/runner-stateful.ts` — `debaterCallContext` factory and `totalCostUsd` accumulator
-- `src/debate/runner-hybrid.ts` — same pattern
-- `src/debate/session-helpers.ts` — `resolverCostUsd` field on outcome (shape unchanged)
-- `test/unit/debate/runner-hybrid-rebuttal.test.ts` — existing per-turn cost test must continue to pass against the scope-based path
+- `src/debate/runner-stateful.ts` — `debaterCallContext` factory; `totalCostUsd` accumulator (replaced with scope read)
+- `src/debate/runner-hybrid.ts` — same pattern; also wraps `resolveResult` call
+- `src/debate/runner.ts` — verify if it owns dispatch; if so, same scope-wrapping pattern
+- `src/debate/runner-plan-helpers.ts` — drop `resolverCostUsd: 0` literals (the field is gone after US-004)
+- `src/debate/session-helpers.ts` — `DebateResult` shape (`totalCostUsd` unchanged); intermediate carry shapes updated
+- `test/unit/debate/runner-hybrid-rebuttal.test.ts`, `test/unit/debate/runner-stateful.test.ts` — assertions on `DebateResult.totalCostUsd` re-pointed at scope-populated value
 
 #### Acceptance Criteria
 
-- Neither `runner-stateful.ts` nor `runner-hybrid.ts` references `onCostAccumulated`
-- `debaterCallContext(agentName, index)` returns a `CallContext` whose `callId` is unique per debater invocation (via `openScope().callId`)
-- `runStateful` returns `DebateResult.totalCostUsd` equal to the sum of every per-debater scope's `snapshot().totalCostUsd` plus `selectorResult.resolverCostUsd`
-- `runHybrid` returns `DebateResult.totalCostUsd` equal to the sum of every per-debater scope's `snapshot().totalCostUsd` plus `resolveResult.resolverCostUsd`
-- Every per-debater scope is closed regardless of whether the corresponding `callOp` resolves or rejects (verified by an `allSettled` + `finally` shape)
-- When two debaters each emit one dispatch event with `estimatedCostUsd = 0.05`, `totalCostUsd` reflects `0.10` plus the resolver cost
+- `runStateful` opens one `debaterScope` and one `resolverScope` via `ctx.runtime.costAggregator.openScope()`; both are closed in a `finally` block regardless of resolution outcome
+- Every `CallContext` produced by `debaterCallContext(agentName, index)` carries `scopeId: debaterScope.scopeId`; the `SelectorContext.callContext` passed into the resolver carries `scopeId: resolverScope.scopeId`
+- `runStateful` returns `DebateResult.totalCostUsd === debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd`
+- `runHybrid` follows the same two-scope pattern with the same `totalCostUsd` formula
+- When two debaters each produce one dispatch event with `estimatedCostUsd = 0.05` and the resolver produces one event with `estimatedCostUsd = 0.02`, `DebateResult.totalCostUsd === 0.12`
+- Per-debater closures (`debaterCallContext`, the `callOp` invocation in the fan-out) contain no `let totalCostUsd = 0` accumulator and no callback threading — cost flows only through `scopeId` → bus → aggregator
+- `grep -r "totalCostUsd\\s*+=\\|totalCostUsd\\s*=\\s*0" src/debate/` returns no matches (no mutable accumulators remain)
 
 ---
 
-### US-006: Document scope-only cost flow in `retry-strategy.md` + `adapter-wiring.md`
+### US-006: Document always-on cost flow in `retry-strategy.md` + `adapter-wiring.md`
 
 #### Scope
 
-Update the two project-rule documents that currently codify the `onCostAccumulated` decision so future contributors do not re-introduce a side channel.
+Update the project-rule documents so future contributors understand: (a) cost recording is always-on infrastructure; (b) leaf code (selectors, debater closures) is cost-blind; (c) attribution comes from `scopeId` set by the orchestration layer that owns the region.
 
 #### Context Files
 
-- `.claude/rules/retry-strategy.md` — current text codifies "Success-path cost is not merged into O" as intentional; update to point at the scope API
-- `.claude/rules/adapter-wiring.md` — adds the scope pattern to the layer table
-- `.claude/rules/forbidden-patterns.md` — add a forbidden-pattern row for `onCostAccumulated` to block re-introduction
+- `.claude/rules/retry-strategy.md` — current text codifies "Success-path cost is not merged into O" as intentional; rewrite to point at the scope API
+- `.claude/rules/adapter-wiring.md` — add the scope pattern to the layer table; document the cost-blind-leaves principle
+- `.claude/rules/forbidden-patterns.md` — add forbidden-pattern rows for callback-style cost channels and for selectors returning cost
 - `docs/architecture/agent-adapters.md` §14 — referenced by `adapter-wiring.md`; verify consistency
 
 #### Acceptance Criteria
 
-- `.claude/rules/retry-strategy.md` "Success-path cost" subsection is rewritten to state: cost flows only through the `DispatchEvent` → cost middleware → `CostAggregator` path; callers needing per-op cost use `costAggregator.openScope(callId)`
+- `.claude/rules/retry-strategy.md` "Success-path cost" subsection is rewritten to state: cost flows only through the `DispatchEvent` → cost middleware → `CostAggregator` path; callers needing per-region cost use `costAggregator.openScope()` and stamp `CallContext.scopeId`
 - `.claude/rules/retry-strategy.md` no longer contains the string `accumulatedRunCostUsd`
-- `.claude/rules/adapter-wiring.md` documents that the agent adapter exposes 4 primitives and gains no cost-reporting surface; the section explicitly forbids new fields on `CallContext` whose purpose is to surface result-side data
+- `.claude/rules/adapter-wiring.md` documents that the agent adapter exposes 4 primitives and gains no cost-reporting surface; the section explicitly forbids new fields on `CallContext` whose purpose is to surface result-side data, and states that leaf code (selectors, debater closures) MUST stay cost-blind
+- `.claude/rules/forbidden-patterns.md` adds a row: `❌ Selector / debater / leaf code that returns or accumulates cost (e.g. SelectorResult.resolverCostUsd, let totalCostUsd = 0) | ✅ Orchestration layer opens a CostAggregator scope and stamps CallContext.scopeId; leaf code stays cost-blind`
 - `.claude/rules/forbidden-patterns.md` adds a row: `❌ New "callback-style" output channels on CallContext (e.g. onCostAccumulated, onTokenObserved) | ✅ Read via CostAggregator scope or define an Operation that returns the value as part of O`
 
 ## File Format
