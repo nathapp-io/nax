@@ -3,7 +3,7 @@
   "feature": "callop-cost-via-aggregator",
   "branchName": "feat/callop-cost-via-aggregator",
   "createdAt": "2026-05-16T00:00:00.000Z",
-  "updatedAt": "2026-05-16T13:09:54.821Z",
+  "updatedAt": "2026-05-16T13:19:33.875Z",
   "userStories": [
     {
       "id": "US-001",
@@ -19,7 +19,9 @@
         "EMPTY_SNAPSHOT constant has totalExactCostUsd: 0 and CostAggregator.snapshot() over zero events returns a snapshot with totalExactCostUsd === 0",
         "emptySnap() returns a snapshot with totalExactCostUsd === 0",
         "DispatchEventBase.exactCostUsd remains optional at the wire/adapter side — adapters that cannot report exact cost continue to omit the field; normalization runs in attachCostSubscriber only",
-        "When drain() writes the JSONL file, CostEvent lines in the output contain exactCostUsd as a number (CostErrorEvent lines omit exactCostUsd as they belong to a different schema)"
+        "When drain() writes the JSONL file, CostEvent lines in the output contain exactCostUsd as a number (CostErrorEvent lines omit exactCostUsd as they belong to a different schema)",
+        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = 0.05 and estimatedCostUsd = 0.06, the recorded CostEvent has exactCostUsd = 0.05, confidence = \"exact\", costUsd = 0.05",
+        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = undefined and estimatedCostUsd = 0.04, the recorded CostEvent has exactCostUsd = 0.04, confidence = \"estimated\", costUsd = 0.04"
       ],
       "tags": [
         "feature",
@@ -43,10 +45,6 @@
         "src/runtime/middleware/cost.ts",
         "src/runtime/dispatch-events.ts"
       ],
-      "suggestedCriteria": [
-        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = 0.05 and estimatedCostUsd = 0.06, the recorded CostEvent has exactCostUsd = 0.05, confidence = \"exact\", costUsd = 0.05",
-        "When attachCostSubscriber receives a DispatchEvent with exactCostUsd = undefined and estimatedCostUsd = 0.04, the recorded CostEvent has exactCostUsd = 0.04, confidence = \"estimated\", costUsd = 0.04"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -66,7 +64,9 @@
         "callOp(ctx, op, input) stamps a fresh callId via newCorrelationId() when ctx.callId is absent, and never overwrites a caller-supplied ctx.callId",
         "For kind:\"complete\" ops, completeOptions carries callId and scopeId from callOp; CompleteDispatchEvent has callId and scopeId; completeAs emits DispatchErrorEvent with callId and scopeId on failure",
         "For kind:\"run\" ops, runOptions carries callId and scopeId from callOp; SessionTurnDispatchEvent, OperationCompletedEvent, and DispatchErrorEvent all have callId and scopeId",
-        "newCorrelationId() produces ≤16-char strings matching /^[0-9a-z]+-[0-9a-z]+$/; 10,000 sequential calls yield 10,000 distinct values"
+        "newCorrelationId() produces ≤16-char strings matching /^[0-9a-z]+-[0-9a-z]+$/; 10,000 sequential calls yield 10,000 distinct values",
+        "When callOp retries a complete-kind op via op.retry, all CompleteDispatchEvent and DispatchErrorEvent events across retry attempts share the same callId",
+        "When callOp is invoked with ctx.callId already set, that value is preserved and not overwritten by newCorrelationId()"
       ],
       "tags": [
         "feature",
@@ -93,10 +93,6 @@
         "src/agents/manager-types.ts",
         "src/agents/manager.ts"
       ],
-      "suggestedCriteria": [
-        "When callOp retries a complete-kind op via op.retry, all CompleteDispatchEvent and DispatchErrorEvent events across retry attempts share the same callId",
-        "When callOp is invoked with ctx.callId already set, that value is preserved and not overwritten by newCorrelationId()"
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -116,7 +112,10 @@
         "CostScopeHandle.snapshot() returns EMPTY_SNAPSHOT when no events with the scope's scopeId have been recorded",
         "CostScopeHandle.close() is idempotent; calling it multiple times does not throw",
         "CostAggregator.drain() logs at level warn with { openScopeCount: number } when any scope is still open at drain time",
-        "createNoOpCostAggregator().openScope().snapshot() returns EMPTY_SNAPSHOT"
+        "createNoOpCostAggregator().openScope().snapshot() returns EMPTY_SNAPSHOT",
+        "When no events have been recorded for a scopeId, scopeHandle.snapshot() returns EMPTY_SNAPSHOT with totalCostUsd = 0",
+        "When events A (scopeId='x', costUsd=0.05) and B (scopeId='y', costUsd=0.03) are recorded, scopeHandle('x').snapshot().totalCostUsd === 0.05 and scopeHandle('y').snapshot().totalCostUsd === 0.03",
+        "Calling scopeHandle.close() twice does not throw; second call is a no-op"
       ],
       "tags": [
         "feature",
@@ -143,11 +142,6 @@
         "src/runtime/middleware/cost.ts",
         "src/runtime/index.ts",
         "src/operations/call.ts"
-      ],
-      "suggestedCriteria": [
-        "When no events have been recorded for a scopeId, scopeHandle.snapshot() returns EMPTY_SNAPSHOT with totalCostUsd = 0",
-        "When events A (scopeId='x', costUsd=0.05) and B (scopeId='y', costUsd=0.03) are recorded, scopeHandle('x').snapshot().totalCostUsd === 0.05 and scopeHandle('y').snapshot().totalCostUsd === 0.03",
-        "Calling scopeHandle.close() twice does not throw; second call is a no-op"
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -321,8 +315,8 @@
         "US-005",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

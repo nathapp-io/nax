@@ -5,6 +5,7 @@ import { callOp } from "../operations/call";
 import { debateProposeOp } from "../operations/debate-propose";
 import { debateRebutOp } from "../operations/debate-rebut";
 import type { CallContext } from "../operations/types";
+import { createNoOpCostAggregator } from "../runtime";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { buildDebaterLabel, resolvePersonas } from "./personas";
@@ -69,27 +70,39 @@ export class DebateRunner {
   async run(prompt: string): Promise<DebateResult> {
     const sessionMode = this.stageConfig.sessionMode ?? "one-shot";
     const mode = this.stageConfig.mode ?? "panel";
-
     if (mode === "hybrid") {
-      if (sessionMode === "stateful") {
-        return runHybrid(this.toStatefulCtx(), prompt);
-      }
+      if (sessionMode === "stateful") return this.runSessionModeWithScopes(prompt, runHybrid);
       const logger = _debateSessionDeps.getSafeLogger();
-      logger?.warn(
-        "debate",
-        `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`,
-      );
+      logger?.warn("debate", `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`);
       return this.runPanelOneShot(prompt);
     }
-
-    if (sessionMode === "stateful") {
-      return runStateful(this.toStatefulCtx(), prompt);
-    }
-
+    if (sessionMode === "stateful") return this.runSessionModeWithScopes(prompt, runStateful);
     return this.runPanelOneShot(prompt);
   }
 
-  async runPlan(
+  private async runSessionModeWithScopes(
+    prompt: string,
+    runner: (ctx: CallContext & any, prompt: string) => Promise<DebateResult>,
+  ): Promise<DebateResult> {
+    const costAggregator = this.ctx.runtime.costAggregator ?? createNoOpCostAggregator();
+    const debaterScope = costAggregator.openScope();
+    const resolverScope = costAggregator.openScope();
+    try {
+      const ctx = this.toStatefulCtx();
+      const ctxWithScopes = {
+        ...ctx,
+        callContext: { ...this.ctx, scopeId: debaterScope.scopeId },
+        resolverCallContext: { ...this.ctx, scopeId: resolverScope.scopeId },
+      };
+      const result = await runner(ctxWithScopes, prompt);
+      return { ...result, totalCostUsd: debaterScope.snapshot().totalCostUsd + resolverScope.snapshot().totalCostUsd };
+    } finally {
+      debaterScope.close();
+      resolverScope.close();
+    }
+  }
+
+async runPlan(
     taskContext: string,
     outputFormat: string,
     opts: {
@@ -107,19 +120,18 @@ export class DebateRunner {
   }
 
   private async runPanelOneShot(prompt: string): Promise<DebateResult> {
-    const prePhaseScope = this.ctx.runtime.costAggregator.openScope();
-    const debaterScope = this.ctx.runtime.costAggregator.openScope();
-    const resolverScope = this.ctx.runtime.costAggregator.openScope();
-    const verifierScope = this.ctx.runtime.costAggregator.openScope();
+    const costAggregator = this.ctx.runtime.costAggregator ?? createNoOpCostAggregator();
+    const prePhaseScope = costAggregator.openScope();
+    const debaterScope = costAggregator.openScope();
+    const resolverScope = costAggregator.openScope();
+    const verifierScope = costAggregator.openScope();
     try {
       const logger = _debateSessionDeps.getSafeLogger();
       const config = this.stageConfig;
       const personaStage: "plan" | "review" = this.stage === "plan" ? "plan" : "review";
       const rawDebaters = config.debaters ?? [];
       const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
-
       const agentManager = this.ctx.runtime.agentManager;
-
       const resolved: ResolvedDebater[] = [];
       for (const debater of debaters) {
         if (!agentManager.getAgent(debater.agent)) {
