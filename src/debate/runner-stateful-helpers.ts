@@ -23,6 +23,8 @@ export interface StatefulCoordinatorCtx {
   readonly abortSignal?: AbortSignal;
 }
 
+export type DebateDebaterExecutionMode = "stateful" | "one-shot";
+
 export function createProposalBarrier(): ProposalBarrierState {
   const barrier = Promise.withResolvers<string>();
   let settled = false;
@@ -159,6 +161,7 @@ export function resolveStatefulSignal(ctx: StatefulCoordinatorCtx): AbortSignal 
 
 export function createDebaterCallContext(ctx: StatefulCoordinatorCtx, agentName: string): CallContext {
   const baseAgentManager = ctx.callContext.runtime.agentManager;
+  const sessionManager = ctx.callContext.runtime.sessionManager;
   const runtimeAgentManager = {
     ...baseAgentManager,
     runWithFallback: async (
@@ -177,6 +180,72 @@ export function createDebaterCallContext(ctx: StatefulCoordinatorCtx, agentName:
         finalAgent,
         finalBundle: hop.bundle,
         finalPrompt: hop.prompt,
+      };
+    },
+  };
+
+  return {
+    ...ctx.callContext,
+    agentName,
+    runtime: {
+      ...ctx.callContext.runtime,
+      agentManager: runtimeAgentManager,
+    },
+  };
+}
+
+export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, agentName: string): CallContext {
+  const baseAgentManager = ctx.callContext.runtime.agentManager;
+  const sessionManager = ctx.callContext.runtime.sessionManager;
+  const runtimeAgentManager = {
+    ...baseAgentManager,
+    runWithFallback: async (
+      request: import("../agents/manager-types").AgentRunRequest,
+      primaryAgentOverride?: string,
+    ) => {
+      if (!request.executeHop) {
+        return baseAgentManager.runWithFallback(request, primaryAgentOverride);
+      }
+
+      const finalAgent = primaryAgentOverride ?? agentName;
+      const hop = await request.executeHop(finalAgent, request.bundle, { kind: "primary" }, request.runOptions);
+      return {
+        result: hop.result,
+        fallbacks: [],
+        finalAgent,
+        finalBundle: hop.bundle,
+        finalPrompt: hop.prompt,
+      };
+    },
+    runAsSession: async (
+      _runAgentName: string,
+      _handle: import("../agents/types").SessionHandle,
+      prompt: string,
+      opts: import("../agents/manager-types").RunAsSessionOpts,
+    ) => {
+      const role = opts.sessionRole ?? "debate-plan";
+      const sessionName = sessionManager.nameFor({
+        workdir: opts.workdir ?? ctx.workdir,
+        featureName: opts.featureName ?? ctx.featureName,
+        storyId: opts.storyId ?? ctx.storyId,
+        role,
+        pipelineStage: opts.pipelineStage ?? (ctx.stage as import("../config/permissions").PipelineStage),
+      });
+      const turn = await sessionManager.runInSession(sessionName, prompt, {
+        role,
+        storyId: opts.storyId ?? ctx.storyId,
+        featureName: opts.featureName ?? ctx.featureName,
+        workdir: opts.workdir ?? ctx.workdir,
+        pipelineStage: opts.pipelineStage ?? ctx.stage,
+        signal: opts.signal,
+      });
+      return {
+        output: turn.output,
+        tokenUsage: turn.tokenUsage,
+        estimatedCostUsd: turn.estimatedCostUsd,
+        exactCostUsd: turn.exactCostUsd,
+        protocolIds: turn.protocolIds,
+        internalRoundTrips: turn.internalRoundTrips,
       };
     },
   };

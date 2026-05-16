@@ -26,6 +26,17 @@ export const _callOpDeps = {
 /** Hard ceiling for injected RetryStrategy instances that may not self-terminate. */
 const MAX_COMPLETE_RETRY_ATTEMPTS = 20;
 
+function normalizeRunOutcome(outcome: Awaited<ReturnType<CallContext["runtime"]["agentManager"]["runWithFallback"]>>) {
+  if ("result" in outcome && outcome.result !== undefined) {
+    return outcome;
+  }
+
+  return {
+    result: outcome,
+    fallbacks: [],
+  };
+}
+
 function normalizeSelector<C>(s: ConfigSelector<C> | readonly (keyof NaxConfig)[], opName: string): ConfigSelector<C> {
   if (Array.isArray(s)) {
     return pickSelector(`anonymous:${opName}`, ...(s as readonly (keyof NaxConfig)[])) as unknown as ConfigSelector<C>;
@@ -225,7 +236,10 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     workdir: ctx.packageDir,
     modelTier: effectiveTier,
     modelDef: resolved.modelDef,
-    timeoutSeconds: timeoutMs !== undefined ? Math.ceil(timeoutMs / 1000) : config.execution.sessionTimeoutSeconds,
+    timeoutSeconds:
+      timeoutMs !== undefined
+        ? Math.ceil(timeoutMs / 1000)
+        : (config.execution?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds),
     pipelineStage: op.stage,
     config,
     sessionRole,
@@ -391,7 +405,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
 
   // Single runWithFallback call. Retries (when op.retry is set) happen inside the
   // hop body via sendWithParseRetry — one session, multiple turns.
-  const outcome = await ctx.runtime.agentManager.runWithFallback(
+  const rawOutcome = await ctx.runtime.agentManager.runWithFallback(
     {
       runOptions,
       signal: ctx.runtime.signal,
@@ -401,6 +415,7 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     },
     dispatchAgent,
   );
+  const outcome = normalizeRunOutcome(rawOutcome);
 
   // Abort check: if the signal was aborted during the hop (e.g. in sendWithParseRetry),
   // buildHopCallback's catch swallowed it. Surface it here before parse runs.
