@@ -165,7 +165,22 @@ describe("DebateRunner — one-shot panel mode", () => {
 
 describe("DebateRunner.toStatefulCtx — callContext included (AC5)", () => {
   test("stateful mode run succeeds with callContext threaded through toStatefulCtx", async () => {
-    const ctx = makeCallCtx();
+    const agentManager = makeMockAgentManager({
+      runAsSessionFn: async () => ({
+        output: '{"passed":true}',
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      }),
+    });
+    const ctx = makeCallCtx({
+      runtime: {
+        agentManager,
+        sessionManager: makeSessionManager(),
+        configLoader: { current: () => DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG } as any,
+        packages: { resolve: () => ({ config: DEFAULT_CONFIG, select: (_sel: unknown) => DEFAULT_CONFIG }) } as any,
+        signal: undefined,
+      } as any,
+    });
     const sm = (ctx.runtime as any).sessionManager;
     const runner = new DebateRunner({
       ctx,
