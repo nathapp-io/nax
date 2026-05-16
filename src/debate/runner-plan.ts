@@ -17,18 +17,10 @@ import {
   scoreAndDispatchVerifierPick,
 } from "./runner-plan-helpers";
 import {
-  closeDebaterSessions,
-  executeStatefulRebuttal,
-  executeStatefulTurn,
-  openDebaterSessions,
-  resolveDebaterModelDef,
-} from "./runner-plan-stateful";
-import {
   type ResolvedDebater,
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
-  pipelineStageForDebate,
 } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
@@ -133,7 +125,6 @@ export async function runPlan(
   const outputPaths = resolved.map((_, i) => join(opts.outputDir, `prd-debate-${i}.json`));
 
   const successful: Array<SuccessfulProposal & { resolvedIndex: number }> = [];
-  let openHandles: Array<import("../agents/types").SessionHandle | null> = [];
   let rebuttalList: Rebuttal[] | undefined;
 
   // ── Path A: verifier-pick → coordinator with N callOp + selection signals ────
@@ -232,120 +223,114 @@ export async function runPlan(
     }
   }
 
-  // ── Path B: stateful (non-verifier-pick) → open/run/close sessions ───────────
+  // ── Path B: stateful (non-verifier-pick) → planDebaterOp via callOp ──────────
   else if (useStatefulSessions) {
-    const phaseOpts = {
-      workdir: opts.workdir,
-      feature: opts.feature,
-      storyId: ctx.storyId,
-      timeoutSeconds: opts.timeoutSeconds,
-    };
-    openHandles = await openDebaterSessions(resolved, sessionManager, phaseOpts, ctx.stage, ctx.abortSignal);
+    // Selection signals resolve immediately — no patch step for non-verifier-pick paths.
+    const selectionResolvers = resolved.map(() => Promise.withResolvers<{ patchPrompt?: string }>());
+    for (const resolver of selectionResolvers) resolver.resolve({});
+    const proposalBarriers = resolved.map(() => Promise.withResolvers<string>());
+    const rebuttalBarriers = resolved.map(() => Promise.withResolvers<string>());
 
-    try {
-      const proposalSettled = await allSettledBounded(
-        resolved.map(({ debater, agentName }, index) => async () => {
-          const handle = openHandles[index] ?? null;
-          if (!handle) throw new Error(`[debate] no session handle for debater ${index}`);
-          const prompt = buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection);
-          const output = await executeStatefulTurn(
-            agentManager,
-            agentName,
-            handle,
-            prompt,
-            outputPaths[index],
-            ctx.storyId,
-            ctx.stage,
-          );
-          return { debater, agentName, output, cost: 0, resolvedIndex: index };
-        }),
-        concurrencyLimit,
+    // Launch all N debaters concurrently — shared proposalBarriers require all
+    // debaters to be in-flight simultaneously (same constraint as hybrid runner).
+    const callOpPromisesB = resolved.map(({ debater, agentName }, index) => {
+      const debaterCtx: CallContext = { ...ctx.callContext, agentName };
+      const rebutBuilder = new DebatePromptBuilder(
+        { taskContext, outputFormat: "", stage: "plan" },
+        { debaters: resolved.map((e) => e.debater), sessionMode: "stateful" },
       );
+      return callModule.callOp(debaterCtx, planDebaterOp, {
+        debater,
+        index,
+        proposePrompt: buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection),
+        buildRebutPrompt: (peerProposals) =>
+          buildPlanRebuttalPrompt(
+            rebutBuilder,
+            index,
+            outputPaths[index],
+            peerProposals.map((output, i) => ({ debater: resolved[i]?.debater ?? debater, output })),
+          ),
+        proposalBarriers,
+        rebuttalBarrier: rebuttalBarriers[index],
+        selectionSignal: selectionResolvers[index].promise,
+        signal: ctx.abortSignal ?? new AbortController().signal,
+        storyId: ctx.storyId,
+        outputPath: outputPaths[index],
+        includeHybridRebuttals,
+      } satisfies DebatePlanInput);
+    });
 
-      for (let i = 0; i < proposalSettled.length; i++) {
-        const res = proposalSettled[i];
-        if (res.status === "fulfilled") {
-          successful.push(res.value);
-        } else {
-          logger?.warn("debate", "debate:debater-failed", {
-            storyId: ctx.storyId,
-            stage: ctx.stage,
-            debaterIndex: i,
-            agent: resolved[i].debater.agent,
-          });
-        }
-      }
+    // Propagate callOp settlement to rebuttalBarriers (mirrors AC9 from Path A).
+    for (let i = 0; i < callOpPromisesB.length; i++) {
+      callOpPromisesB[i].then(
+        (result) => {
+          rebuttalBarriers[i].resolve(result.rebut ?? "");
+        },
+        (err) => {
+          rebuttalBarriers[i].reject(err);
+        },
+      );
+    }
 
-      if (includeHybridRebuttals && successful.length >= 2) {
-        const rebutBuilder = new DebatePromptBuilder(
-          { taskContext, outputFormat: "", stage: "plan" },
-          { debaters: successful.map((p) => p.debater), sessionMode: "stateful" },
-        );
-        const priorRebuttals: Rebuttal[] = [];
-        for (let round = 1; round <= config.rounds; round++) {
-          const settledRound = await allSettledBounded(
-            successful.map((entry, localIndex) => async () => {
-              const handle = openHandles[entry.resolvedIndex] ?? null;
-              if (!handle) return { debater: entry.debater, output: entry.output };
-              const rebutPrompt = buildPlanRebuttalPrompt(
-                rebutBuilder,
-                localIndex,
-                outputPaths[entry.resolvedIndex],
-                successful.map((p) => ({ debater: p.debater, output: p.output })),
-                priorRebuttals,
-              );
-              const rebutOutput = await executeStatefulRebuttal(
-                agentManager,
-                entry.agentName,
-                handle,
-                rebutPrompt,
-                outputPaths[entry.resolvedIndex],
-                ctx.storyId,
-                ctx.stage,
-              );
-              return { debater: entry.debater, output: rebutOutput };
-            }),
-            concurrencyLimit,
-          );
-          const roundRebuttals = settledRound.flatMap((result, index) =>
-            result.status === "fulfilled"
-              ? [{ debater: successful[index].debater, round, output: result.value.output }]
-              : [],
-          );
-          priorRebuttals.push(...roundRebuttals);
-        }
-        rebuttalList = priorRebuttals;
+    const rebuttalSettled = await Promise.allSettled(rebuttalBarriers.map((b) => b.promise));
+    const settledB = await Promise.allSettled(callOpPromisesB);
+
+    for (let i = 0; i < settledB.length; i++) {
+      const res = settledB[i];
+      if (res.status === "fulfilled" && res.value.success) {
+        successful.push({
+          debater: resolved[i].debater,
+          agentName: resolved[i].agentName,
+          output: res.value.rebut,
+          cost: 0,
+          resolvedIndex: i,
+        });
+      } else {
+        logger?.warn("debate", "debate:debater-failed", {
+          storyId: ctx.storyId,
+          stage: ctx.stage,
+          debaterIndex: i,
+          agent: resolved[i].debater.agent,
+          error: res.status === "rejected" && res.reason instanceof Error ? res.reason.message : undefined,
+        });
       }
-    } finally {
-      await closeDebaterSessions(openHandles, sessionManager);
+    }
+
+    if (includeHybridRebuttals) {
+      rebuttalList = successful.flatMap((entry) => {
+        const rb = rebuttalSettled[entry.resolvedIndex];
+        return rb?.status === "fulfilled" ? [{ debater: entry.debater, round: 1, output: rb.value }] : [];
+      });
     }
   }
 
-  // ── Path C: one-shot (default) → sessionManager.runInSession ─────────────────
+  // ── Path C: one-shot (default) → planDebaterOp via callOp ───────────────────
   else {
+    const selectionResolversC = resolved.map(() => Promise.withResolvers<{ patchPrompt?: string }>());
+    for (const resolver of selectionResolversC) resolver.resolve({});
+    const proposalBarriersC = resolved.map(() => Promise.withResolvers<string>());
+    const rebuttalBarriersC = resolved.map(() => Promise.withResolvers<string>());
+    // Path C never awaits rebuttalBarriers — pre-resolve so they always settle (barriers-must-settle rule).
+    for (const barrier of rebuttalBarriersC) barrier.resolve("");
+
     const settled = await allSettledBounded(
       resolved.map(({ debater, agentName }, index) => async () => {
-        const modelDef = resolveDebaterModelDef(debater);
-        const sessionName = sessionManager.nameFor({
-          workdir: opts.workdir,
-          featureName: opts.feature,
+        const debaterCtx: CallContext = { ...ctx.callContext, agentName };
+        const result = await callModule.callOp(debaterCtx, planDebaterOp, {
+          debater,
+          index,
+          proposePrompt: buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection),
+          buildRebutPrompt: () => "",
+          proposalBarriers: proposalBarriersC,
+          rebuttalBarrier: rebuttalBarriersC[index],
+          selectionSignal: selectionResolversC[index].promise,
+          signal: ctx.abortSignal ?? new AbortController().signal,
           storyId: ctx.storyId,
-          role: `debate-plan-${index}`,
-        });
-        const prompt = buildPlanProposalPrompt(proposalBuilder, index, outputPaths[index], manifestSection);
-        await sessionManager.runInSession(sessionName, prompt, {
-          agentName,
-          role: `debate-plan-${index}`,
-          workdir: opts.workdir,
-          pipelineStage: pipelineStageForDebate(ctx.stage),
-          modelDef,
-          timeoutSeconds: opts.timeoutSeconds ?? 600,
-          featureName: opts.feature,
-          storyId: ctx.storyId,
-          signal: ctx.abortSignal,
-        });
-        const output = await _debateSessionDeps.readFile(outputPaths[index]);
-        return { debater, agentName, output, cost: 0, resolvedIndex: index };
+          outputPath: outputPaths[index],
+          includeHybridRebuttals: false,
+        } satisfies DebatePlanInput);
+        if (!result.success) throw new Error(result.rebut);
+        return { debater, agentName, output: result.rebut, cost: 0, resolvedIndex: index };
       }),
       concurrencyLimit,
     );
@@ -354,7 +339,6 @@ export async function runPlan(
       const res = settled[i];
       if (res.status === "fulfilled") {
         successful.push(res.value);
-        totalCostUsd += res.value.cost;
       } else {
         logger?.warn("debate", "debate:debater-failed", {
           storyId: ctx.storyId,

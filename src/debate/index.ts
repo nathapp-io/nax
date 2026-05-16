@@ -3,6 +3,8 @@
  */
 
 export { DebateRunner } from "./runner";
+export { runHybrid } from "./runner-hybrid";
+export type { HybridCtx } from "./runner-hybrid";
 export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveOutcome } from "./session-helpers";
 export type {

@@ -4,7 +4,7 @@ import { DebateRunner } from "../../../src/debate/runner";
 import { _debateSessionDeps } from "../../../src/debate/session-helpers";
 import { type DebateStageConfig } from "../../../src/debate/types";
 import * as callModule from "../../../src/operations";
-import type { DebateStatefulInput } from "../../../src/operations/debate-stateful";
+import type { DebateHybridInput } from "../../../src/operations/debate-hybrid";
 import type { CallContext } from "../../../src/operations/types";
 import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
 
@@ -75,8 +75,19 @@ function makeRunner(
   });
 }
 
-function isRebuttalTurn(input: DebateStatefulInput): boolean {
-  return input.proposePrompt.includes("## Proposals");
+/** Simulate what hybridDebaterOp.hopBody does: resolve shared barriers, return last rebuttal. */
+function makeHybridOpMock(outputFn?: (index: number, round: number) => string) {
+  return async (_callCtx: CallContext, _op: unknown, input: DebateHybridInput) => {
+    const proposalOutput = outputFn ? outputFn(input.index, 0) : `proposal-${input.index}`;
+    input.proposalBarriers[input.index].resolve(proposalOutput);
+    let lastOutput = proposalOutput;
+    for (let r = 0; r < input.rounds; r++) {
+      const rebutOutput = outputFn ? outputFn(input.index, r + 1) : `rebuttal-${r + 1}-${input.index}`;
+      input.rebutBarriers[r][input.index].resolve(rebutOutput);
+      lastOutput = rebutOutput;
+    }
+    return { success: true, rebut: lastOutput };
+  };
 }
 
 let origGetSafeLogger: typeof _debateSessionDeps.getSafeLogger;
@@ -97,26 +108,23 @@ afterEach(() => {
 });
 
 describe("DebateRunner hybrid rebuttal", () => {
-  test("with 2 debaters and rounds=1, the public runner launches 2 rebuttal turns in debater order", async () => {
+  test("with 2 debaters and rounds=1, the coordinator assigns distinct session roles per debater", async () => {
     const runner = makeRunner();
-    const rebuttalRoles: string[] = [];
+    const sessionRoles: string[] = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      }
-
-      rebuttalRoles.push(callCtx.sessionOverride?.role ?? "");
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      sessionRoles.push((callCtx as CallContext).sessionOverride?.role ?? "");
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
       return { success: true, rebut: `rebuttal-${input.index}` };
     });
 
     await runner.run("test prompt");
 
-    expect(rebuttalRoles).toEqual(["debate-hybrid-0", "debate-hybrid-1"]);
+    expect(sessionRoles).toEqual(["debate-hybrid-0", "debate-hybrid-1"]);
   });
 
-  test("with 3 debaters and rounds=2, the public runner launches 6 rebuttal turns", async () => {
+  test("with 3 debaters and rounds=2, coordinator sets up 3 debaters × 2 rounds of rebuttal barriers", async () => {
     const runner = makeRunner({
       rounds: 2,
       debaters: [
@@ -125,160 +133,135 @@ describe("DebateRunner hybrid rebuttal", () => {
         { agent: "gemini", model: "fast" },
       ],
     });
-    const rebuttalPrompts: string[] = [];
+    const barrierShapes: Array<{ slots: number; rounds: number }> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      barrierShapes.push({ slots: input.proposalBarriers.length, rounds: input.rebutBarriers.length });
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
       }
-
-      rebuttalPrompts.push(input.proposePrompt);
-      return {
-        success: true,
-        rebut: input.proposePrompt.includes("## Previous Rebuttals") ? `rebut-2-${input.index}` : `rebut-1-${input.index}`,
-      };
+      return { success: true, rebut: `rebut-2-${input.index}` };
     });
 
     await runner.run("test prompt");
 
-    expect(rebuttalPrompts).toHaveLength(6);
+    expect(barrierShapes).toHaveLength(3);
+    for (const shape of barrierShapes) {
+      expect(shape.slots).toBe(3); // one barrier slot per debater
+      expect(shape.rounds).toBe(2); // two rebuttal rounds
+    }
   });
 
-  test("each rebuttal prompt contains all successful proposal outputs", async () => {
+  test("each debater's buildRebutPrompt callback includes all successful proposal outputs", async () => {
     const runner = makeRunner();
-    const rebuttalPrompts: string[] = [];
+    const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      }
-
-      rebuttalPrompts.push(input.proposePrompt);
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      capturedBuildRebutPrompts.push(input.buildRebutPrompt);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
       return { success: true, rebut: `rebuttal-${input.index}` };
     });
 
     await runner.run("test prompt");
 
-    expect(rebuttalPrompts).toHaveLength(2);
-    for (const prompt of rebuttalPrompts) {
+    expect(capturedBuildRebutPrompts).toHaveLength(2);
+    for (const buildRebutPrompt of capturedBuildRebutPrompts) {
+      const prompt = buildRebutPrompt(1, ["proposal-0", "proposal-1"], []);
       expect(prompt).toContain("proposal-0");
       expect(prompt).toContain("proposal-1");
     }
   });
 
-  test("round 2 rebuttal prompts contain round 1 outputs in the previous-rebuttals section", async () => {
+  test("buildRebutPrompt for round 2 receives prior round outputs via priorRoundOutputs", async () => {
     const runner = makeRunner({ rounds: 2 });
-    const roundTwoPrompts: string[] = [];
+    const capturedBuildRebutPrompts: Array<DebateHybridInput["buildRebutPrompt"]> = [];
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
+      capturedBuildRebutPrompts.push(input.buildRebutPrompt);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
       }
-
-      if (input.proposePrompt.includes("## Previous Rebuttals")) {
-        roundTwoPrompts.push(input.proposePrompt);
-        return { success: true, rebut: `rebut-2-${input.index}` };
-      }
-
-      return { success: true, rebut: `rebut-1-${input.index}` };
+      return { success: true, rebut: `rebut-2-${input.index}` };
     });
 
     await runner.run("test prompt");
 
-    expect(roundTwoPrompts).toHaveLength(2);
-    for (const prompt of roundTwoPrompts) {
-      expect(prompt).toContain("rebut-1-0");
-      expect(prompt).toContain("rebut-1-1");
-    }
+    expect(capturedBuildRebutPrompts).toHaveLength(2);
+    // Simulate hopBody calling buildRebutPrompt for round 2 with round-1 outputs as prior data
+    const round2Prompt = capturedBuildRebutPrompts[0](2, ["proposal-0", "proposal-1"], [["rebut-1-0", "rebut-1-1"]]);
+    expect(round2Prompt).toContain("rebut-1-0");
+    expect(round2Prompt).toContain("rebut-1-1");
   });
 
-  test("when one rebuttal turn fails, the runner skips it and still returns a debate result", async () => {
+  test("when one callOp fails, the runner still returns a result with the remaining debater", async () => {
     const runner = makeRunner();
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      }
-
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateHybridInput) => {
       if (input.index === 0) {
-        throw new Error("rebuttal failed");
+        input.proposalBarriers[input.index].resolve("proposal-0");
+        input.rebutBarriers[0][input.index].resolve("rebuttal-0");
+        return { success: true, rebut: "rebuttal-0" };
       }
-
-      return { success: true, rebut: "rebuttal-1" };
+      throw new Error("debater failed");
     });
 
     const result = await runner.run("test prompt");
 
     expect(result.storyId).toBe("US-test");
-    expect(result.rebuttals).toEqual([{ debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebuttal-1" }]);
+    // With < 2 successful debaters, falls back to single-debater result
+    expect(result.outcome).toBe("passed");
+    expect(result.debaters).toHaveLength(1);
   });
 
-  test("proposal and rebuttal turns for the same debater reuse the same session role", async () => {
+  test("proposal and rebuttal turns for the same debater share the same session role", async () => {
     const runner = makeRunner({ rounds: 2 });
-    const rolesByDebater = new Map<number, string[]>();
+    const rolesByIndex = new Map<number, string>();
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateStatefulInput) => {
-      const roles = rolesByDebater.get(input.index) ?? [];
-      roles.push(callCtx.sessionOverride?.role ?? "");
-      rolesByDebater.set(input.index, roles);
-
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      rolesByIndex.set(input.index, (callCtx as CallContext).sessionOverride?.role ?? "");
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      for (let r = 0; r < input.rounds; r++) {
+        input.rebutBarriers[r][input.index].resolve(`rebut-${r + 1}-${input.index}`);
       }
-
-      return {
-        success: true,
-        rebut: input.proposePrompt.includes("## Previous Rebuttals") ? `rebut-2-${input.index}` : `rebut-1-${input.index}`,
-      };
+      return { success: true, rebut: `rebut-2-${input.index}` };
     });
 
     await runner.run("test prompt");
 
-    expect(rolesByDebater.get(0)).toEqual(["debate-hybrid-0", "debate-hybrid-0", "debate-hybrid-0"]);
-    expect(rolesByDebater.get(1)).toEqual(["debate-hybrid-1", "debate-hybrid-1", "debate-hybrid-1"]);
+    // Each debater is dispatched via a single callOp — same role covers proposal + all rebuttals
+    expect(rolesByIndex.get(0)).toBe("debate-hybrid-0");
+    expect(rolesByIndex.get(1)).toBe("debate-hybrid-1");
   });
 
-  test("per-turn costs accumulated through callOp are reflected in totalCostUsd", async () => {
+  test("per-turn costs accumulated through callOp.onCostAccumulated are reflected in totalCostUsd", async () => {
     const runner = makeRunner();
 
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateStatefulInput) => {
-      callCtx.onCostAccumulated?.(isRebuttalTurn(input) ? 0.05 : 0.1);
-
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      }
-
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: DebateHybridInput) => {
+      (callCtx as CallContext).onCostAccumulated?.(0.1);
+      input.proposalBarriers[input.index].resolve(`proposal-${input.index}`);
+      input.rebutBarriers[0][input.index].resolve(`rebuttal-${input.index}`);
       return { success: true, rebut: `rebuttal-${input.index}` };
     });
 
     const result = await runner.run("test prompt");
 
-    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0.29);
+    // 2 debaters × 0.1 USD = 0.2 USD
+    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0.19);
   });
 
-  test("DebateResult.rebuttals contains one entry per successful rebuttal turn", async () => {
+  test("DebateResult.rebuttals contains one entry per debater per round, collected from shared barriers", async () => {
     const runner = makeRunner();
 
-    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: DebateStatefulInput) => {
-      if (!isRebuttalTurn(input)) {
-        input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
-        return { success: true, rebut: `proposal-${input.index}` };
-      }
-
-      return { success: true, rebut: `rebuttal-${input.index}` };
-    });
+    spyOn(callModule, "callOp").mockImplementation(makeHybridOpMock());
 
     const result = await runner.run("test prompt");
 
     expect(result.rebuttals).toEqual([
-      { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebuttal-0" },
-      { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebuttal-1" },
+      { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebuttal-1-0" },
+      { debater: { agent: "opencode", model: "fast" }, round: 1, output: "rebuttal-1-1" },
     ]);
   });
 });

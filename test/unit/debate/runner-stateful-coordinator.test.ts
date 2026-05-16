@@ -176,6 +176,25 @@ describe("runStateful coordinator", () => {
     ]);
   });
 
+  test("when one callOp throws, the runner returns without deadlocking", async () => {
+    // Regression guard: stateful barriers are local (1-element, per-debater), so a
+    // failing debater cannot block others. This test verifies the runner returns
+    // quickly even when one debater's callOp throws instead of resolving its barrier.
+    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: StatefulDebaterInput) => {
+      if (input.index === 1) throw new Error("debater 1 failed");
+      input.proposalBarriers[0]?.resolve(`proposal-${input.index}`);
+      return { success: true, rebut: `proposal-${input.index}` };
+    });
+
+    const result = await runStateful(makeRunStatefulCtx(), "test prompt");
+
+    // debaters 0 and 2 succeed (index 1 throws); 2 successful → resolver runs
+    expect(result).toBeDefined();
+    expect(result.debaters).toHaveLength(2);
+    expect(result.debaters).toContain("claude");
+    expect(result.debaters).toContain("gemini");
+  });
+
   test("runner-stateful.ts no longer references the old session-manager and model-resolution escape hatches", async () => {
     const source = await Bun.file("src/debate/runner-stateful.ts").text();
     const forbiddenSnippets = [

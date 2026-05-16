@@ -133,12 +133,6 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
         finalPrompt: hop.prompt,
       };
     },
-    runAsSession: (
-      runAgentName: string,
-      handle: import("../agents/types").SessionHandle,
-      prompt: string,
-      opts: import("../agents/manager-types").RunAsSessionOpts,
-    ) => baseAgentManager.runAsSession(runAgentName, handle, prompt, opts),
   };
 
   return {

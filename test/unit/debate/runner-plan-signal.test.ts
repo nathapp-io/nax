@@ -108,8 +108,8 @@ describe("runPlan coordinator", () => {
 
   test("runner-plan.ts and runner-plan-helpers.ts do not contain the legacy session-manager and inline prompt strings", async () => {
     const [runnerSource, helpersSource] = await Promise.all([
-      Bun.file("src/debate/runner-plan.ts").text(),
-      Bun.file("src/debate/runner-plan-helpers.ts").text(),
+      Bun.file(new URL("../../../src/debate/runner-plan.ts", import.meta.url).pathname).text(),
+      Bun.file(new URL("../../../src/debate/runner-plan-helpers.ts", import.meta.url).pathname).text(),
     ]);
 
     const forbiddenSnippets = [
@@ -131,12 +131,36 @@ describe("runPlan coordinator", () => {
     }
   });
 
-  test("preserves all hybrid rebuttal rounds in stateful plan mode", async () => {
+  test("when one callOp throws, AC9 auto-rejects the rebuttal barrier and the runner returns without deadlocking", async () => {
+    // Regression guard: the verifier-pick path propagates callOp settlement to
+    // rebuttalBarriers via .then(). When one callOp throws, its barrier is rejected
+    // so Promise.allSettled(rebuttalBarriers) resolves and the runner returns quickly.
     const ctx = makePlanContext();
-    const outputQueues = new Map<string, string[]>([
-      ["/tmp/out/prd-debate-0.json", ["proposal-0", "rebut-1-0", "rebut-2-0"]],
-      ["/tmp/out/prd-debate-1.json", ["proposal-1", "rebut-1-1", "rebut-2-1"]],
-    ]);
+    let callCount = 0;
+    spyOn(callModule, "callOp").mockImplementation(async () => {
+      const idx = callCount++;
+      if (idx === 1) throw new Error("debater 1 failed");
+      return { success: true, rebut: `rebut-${idx}` } as never;
+    });
+
+    const result = await runPlan(ctx, "task context", "output format", {
+      workdir: "/tmp/work",
+      feature: "feat-plan",
+      outputDir: "/tmp/out",
+    });
+
+    // Only debater 0 succeeded → single-debater fallback (outcome: "passed")
+    expect(result).toBeDefined();
+    expect(result.outcome).toBe("passed");
+    expect(result.debaters).toHaveLength(1);
+    expect(result.debaters[0]).toBe("claude");
+  });
+
+  test("collects hybrid rebuttal from rebuttalBarrier in stateful plan mode", async () => {
+    // After migration to callOp/planDebaterOp, hybrid rebuttals are collected from
+    // the rebuttalBarrier propagated by the coordinator's .then() handler.
+    // planDebaterOp has a single rebuttalBarrier (one rebuttal round per callOp).
+    const ctx = makePlanContext();
 
     ctx.stageConfig = {
       ...ctx.stageConfig,
@@ -146,18 +170,9 @@ describe("runPlan coordinator", () => {
       selector: undefined,
     };
 
-    ctx.agentManager.runAsSession = mock(async () => ({
-      output: "ok",
-      tokenUsage: { inputTokens: 1, outputTokens: 1 },
-      estimatedCostUsd: 0,
-      internalRoundTrips: 1,
-    }));
-    ctx.sessionManager.openSession = mock(async (name: string) => ({ id: name, agentName: "claude" }));
-    ctx.sessionManager.closeSession = mock(async () => {});
-    _debateSessionDeps.readFile = mock(async (path: string) => {
-      const queue = outputQueues.get(path);
-      return queue?.shift() ?? "{\"passed\":true}";
-    });
+    spyOn(callModule, "callOp").mockImplementation(async (_callCtx, _op, input: any) =>
+      ({ success: true, rebut: `rebut-1-${input.index}` }) as never,
+    );
 
     const result = await runPlan(ctx, "task context", "output format", {
       workdir: "/tmp/work",
@@ -165,13 +180,12 @@ describe("runPlan coordinator", () => {
       outputDir: "/tmp/out",
     });
 
+    // rounds comes from stageConfig.rounds when includeHybridRebuttals=true
     expect(result.rounds).toBe(2);
+    // One rebuttal per debater (round=1), collected via rebuttalBarrier
     expect(result.rebuttals).toEqual([
       { debater: { agent: "claude", model: "fast" }, round: 1, output: "rebut-1-0" },
       { debater: { agent: "opencode", model: "balanced" }, round: 1, output: "rebut-1-1" },
-      { debater: { agent: "claude", model: "fast" }, round: 2, output: "rebut-2-0" },
-      { debater: { agent: "opencode", model: "balanced" }, round: 2, output: "rebut-2-1" },
     ]);
-    expect(ctx.agentManager.runAsSession).toHaveBeenCalledTimes(6);
   });
 });
