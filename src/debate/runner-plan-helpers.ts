@@ -1,19 +1,29 @@
 /**
  * runner-plan-helpers.ts
  *
- * Internal helpers for runPlan(): pre-phase invocation and prompt shaping.
+ * Internal helpers for runPlan(): pre-phase invocation, prompt shaping,
+ * verifier-pick selection, and post-debate utilities.
  */
 
+import type { IAgentManager } from "../agents";
 import type { DebateConfig } from "../config/selectors";
 import type { DebatePlanOutput } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
 import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
-import { type ScoredProposal, acOverlap, runPatchStep } from "./selectors/verifier-pick";
-import type { ResolvedDebater } from "./session-helpers";
-import { _debateSessionDeps } from "./session-helpers";
-import type { DebateStageConfig } from "./types";
+import { buildResolverContext } from "./runner-stateful-helpers";
+import { type ScoredProposal, acOverlap, computeScore, extractManifestFromContext, runPatchStep } from "./selectors/verifier-pick";
+import {
+  type ResolveOutcome,
+  type ResolvedDebater,
+  type ResolverContextInput,
+  type SuccessfulProposal,
+  _debateSessionDeps,
+  resolveOutcome,
+} from "./session-helpers";
+import type { DebateResult, DebateStageConfig, Proposal, Rebuttal } from "./types";
+import type { PostDebateVerifierContext } from "./verifiers";
 import { resolvePostDebateVerifier } from "./verifiers";
 
 /** Injectable deps for testability — defined here to avoid circular imports with runner-plan. */
@@ -36,10 +46,8 @@ interface PlanCtxMinimal {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   readonly callContext: CallContext;
+  readonly abortSignal?: AbortSignal;
 }
-
-const FILE_OUTPUT_INSTRUCTION =
-  "Write the complete PRD JSON to this file path and then reply with a short confirmation:";
 
 /** Run the pre-debate phase, returning the manifest section and accumulated cost. */
 export async function runPrePhase(
@@ -70,6 +78,9 @@ export async function runPrePhase(
     return { manifestSection: "", costUsd: 0, block: false };
   }
 }
+
+const FILE_OUTPUT_INSTRUCTION =
+  "Write the complete PRD JSON to this file path and then reply with a short confirmation:";
 
 function appendFileOutputInstruction(prompt: string, outputPath: string): string {
   return `${prompt}\n\n${FILE_OUTPUT_INSTRUCTION}\n${outputPath}`;
@@ -196,4 +207,119 @@ export function rewriteComplexitiesToExpert(prdJson: string): string {
   } catch {
     return prdJson;
   }
+}
+
+interface PlanFinCtx {
+  readonly storyId: string;
+  readonly stage: string;
+  readonly stageConfig: DebateStageConfig;
+  readonly config: DebateConfig;
+  readonly callContext: CallContext;
+  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
+  readonly resolverContextInput?: ResolverContextInput;
+}
+
+export async function finalizePlanRun(
+  ctx: PlanFinCtx,
+  opts: { workdir: string; feature: string; specContent?: string },
+  successful: Array<SuccessfulProposal & { resolvedIndex: number }>,
+  rebuttalList: Rebuttal[] | undefined,
+  outputPaths: string[],
+  totalCostUsd: number,
+  agentManager: IAgentManager,
+  selectorKind: string | undefined,
+  includeHybridRebuttals: boolean,
+): Promise<DebateResult> {
+  const config = ctx.stageConfig;
+  const logger = _debateSessionDeps.getSafeLogger();
+
+  if (successful.length === 0) {
+    return {
+      storyId: ctx.storyId, stage: ctx.stage, outcome: "failed",
+      rounds: 0, debaters: [], resolverType: config.resolver.type,
+      proposals: [], totalCostUsd,
+    };
+  }
+
+  if (successful.length === 1) {
+    return {
+      storyId: ctx.storyId, stage: ctx.stage, outcome: "passed", rounds: 1,
+      debaters: [successful[0].debater.agent], resolverType: config.resolver.type,
+      proposals: [{ debater: successful[0].debater, output: successful[0].output }],
+      output: successful[0].output, totalCostUsd,
+    };
+  }
+
+  const finalizedProposals = successful.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output }));
+  let selectionSummary: { winnerOutput?: string; winnerOutputPath?: string } = {};
+
+  if (selectorKind === "verifier-pick") {
+    const selectorCtx = {
+      storyId: ctx.storyId, stage: ctx.stage, stageConfig: ctx.stageConfig, config: ctx.config,
+      proposals: finalizedProposals.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output, cost: 0 })),
+      critiques: [], workdir: opts.workdir, featureName: opts.feature,
+      timeoutMs: (ctx.stageConfig.timeoutSeconds ?? 600) * 1000,
+      agentManager, debaters: finalizedProposals.map((p) => p.debater), callContext: ctx.callContext,
+      ...(ctx.reviewerSession ? { reviewerSession: ctx.reviewerSession } : {}),
+      ...(ctx.resolverContextInput ? { resolverContextInput: ctx.resolverContextInput } : {}),
+    } satisfies Parameters<typeof extractManifestFromContext>[0];
+    const manifest = extractManifestFromContext(selectorCtx);
+    const scored: ScoredProposal[] = await Promise.all(
+      selectorCtx.proposals.map(async (proposal) => ({ proposal, score: await computeScore(proposal, manifest) })),
+    );
+    scored.sort((a, b) => b.score.total - a.score.total);
+    const patchConfig = ctx.stageConfig.selector?.kind === "verifier-pick" ? ctx.stageConfig.selector.patch : undefined;
+    selectionSummary = await finalizePlanSelection(scored, patchConfig, [], outputPaths, selectorCtx.proposals, selectorCtx);
+  }
+
+  const proposalOutputs = finalizedProposals.map((p) => p.output);
+  const critiqueOutputs = rebuttalList?.map((r) => r.output) ?? [];
+  const resolverTimeoutMs = (ctx.stageConfig.timeoutSeconds ?? 600) * 1000;
+  const outcome: ResolveOutcome =
+    selectorKind === "verifier-pick"
+      ? { outcome: "passed", resolverCostUsd: 0, output: selectionSummary.winnerOutput ?? finalizedProposals[0]?.output }
+      : await resolveOutcome(
+          proposalOutputs, critiqueOutputs, ctx.stageConfig, ctx.config, ctx.callContext,
+          ctx.storyId, resolverTimeoutMs, opts.workdir, opts.feature,
+          ctx.reviewerSession,
+          buildResolverContext(
+            finalizedProposals.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output, cost: 0 })),
+            ctx.resolverContextInput,
+          ),
+          buildPlanSynthesisSuffix(opts.specContent),
+          finalizedProposals.map((p) => p.debater),
+          agentManager,
+        );
+
+  let finalOutcome = outcome.outcome;
+  let winningOutput: string | undefined = outcome.output ?? finalizedProposals[0]?.output;
+  winningOutput = await readWinnerOutput(selectionSummary.winnerOutputPath ?? outputPaths[0], winningOutput);
+
+  if (config.postDebateVerifier && winningOutput) {
+    const verifierCtx: PostDebateVerifierContext = {
+      storyId: ctx.storyId, stage: ctx.stage, stageConfig: config,
+      selectorResult: { outcome: outcome.outcome, output: winningOutput, resolverCostUsd: outcome.resolverCostUsd },
+      workdir: opts.workdir,
+      ctx: ctx.callContext as unknown as import("../operations/types").CallContext,
+    };
+    const verifierResult = await _runPlanDeps.resolvePostDebateVerifier(config.postDebateVerifier.kind)(verifierCtx);
+    totalCostUsd += verifierResult.costUsd;
+    finalOutcome = verifierResult.outcome;
+    const isTagExpert =
+      config.postDebateVerifier.onBlocker === "tag-expert" &&
+      (verifierResult.findings as Array<{ severity: string }> | undefined)?.some((f) => f.severity === "blocker") === true;
+    if (isTagExpert) {
+      winningOutput = rewriteComplexitiesToExpert(winningOutput);
+      finalOutcome = "passed";
+    }
+  }
+
+  const proposals: Proposal[] = finalizedProposals.map((p) => ({ debater: p.debater, output: p.output }));
+  logger?.info("debate", "debate:result", { storyId: ctx.storyId, stage: ctx.stage, outcome: finalOutcome });
+  return {
+    storyId: ctx.storyId, stage: ctx.stage, outcome: finalOutcome, rounds: 1,
+    debaters: finalizedProposals.map((p) => p.debater.agent),
+    resolverType: config.resolver.type, proposals, output: winningOutput, totalCostUsd,
+    ...(includeHybridRebuttals ? { rebuttals: rebuttalList } : {}),
+  };
 }
