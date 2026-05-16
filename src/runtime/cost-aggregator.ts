@@ -9,11 +9,11 @@ export interface CostEvent {
   readonly tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
   /** Estimated cost from token usage × pricing rates (always present). */
   readonly estimatedCostUsd: number;
-  /** Exact cost reported by wire protocol (when available). */
-  readonly exactCostUsd?: number;
+  /** Normalized exact cost: from wire protocol when available, else falls back to estimatedCostUsd. */
+  readonly exactCostUsd: number;
   /** Canonical cost for budget/totals: exact when available, else estimated. */
   readonly costUsd: number;
-  /** Confidence derived from presence of exactCostUsd. */
+  /** Confidence derived from presence of exactCostUsd at wire boundary. */
   readonly confidence: "exact" | "estimated";
   readonly durationMs: number;
 }
@@ -32,7 +32,7 @@ export interface CostErrorEvent {
 export interface CostSnapshot {
   readonly totalCostUsd: number;
   readonly totalEstimatedCostUsd: number;
-  readonly totalExactCostUsd?: number;
+  readonly totalExactCostUsd: number;
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly callCount: number;
@@ -63,6 +63,7 @@ export interface ICostAggregator {
 const EMPTY_SNAPSHOT: CostSnapshot = {
   totalCostUsd: 0,
   totalEstimatedCostUsd: 0,
+  totalExactCostUsd: 0,
   totalInputTokens: 0,
   totalOutputTokens: 0,
   callCount: 0,
@@ -102,6 +103,7 @@ function emptySnap(): CostSnapshot {
   return {
     totalCostUsd: 0,
     totalEstimatedCostUsd: 0,
+    totalExactCostUsd: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     callCount: 0,
@@ -113,7 +115,7 @@ function accumulate(snap: CostSnapshot, e: CostEvent): CostSnapshot {
   return {
     totalCostUsd: snap.totalCostUsd + e.costUsd,
     totalEstimatedCostUsd: snap.totalEstimatedCostUsd + e.estimatedCostUsd,
-    totalExactCostUsd: e.exactCostUsd != null ? (snap.totalExactCostUsd ?? 0) + e.exactCostUsd : snap.totalExactCostUsd,
+    totalExactCostUsd: snap.totalExactCostUsd + e.exactCostUsd,
     totalInputTokens: snap.totalInputTokens + e.tokens.input,
     totalOutputTokens: snap.totalOutputTokens + e.tokens.output,
     callCount: snap.callCount + 1,

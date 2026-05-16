@@ -153,4 +153,56 @@ describe("attachCostSubscriber", () => {
     bus.emitDispatch(makeSessionTurnEvent());
     expect(recorded).toHaveLength(1);
   });
+
+  test("normalizes exactCostUsd to estimatedCostUsd when undefined", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: 0.005 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].exactCostUsd).toBe(0.005);
+    expect(recorded[0].costUsd).toBe(0.005);
+    expect(recorded[0].confidence).toBe("estimated");
+  });
+
+  test("sets confidence to exact when exactCostUsd is present", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: 0.007 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].confidence).toBe("exact");
+  });
+
+  test("costUsd always equals exactCostUsd after normalization", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: 0.004 }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].costUsd).toBe(recorded[0].exactCostUsd);
+  });
+
+  test("normalizes exactCostUsd with zero estimatedCostUsd fallback", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent({ exactCostUsd: undefined, estimatedCostUsd: undefined }));
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].exactCostUsd).toBe(0);
+    expect(recorded[0].costUsd).toBe(0);
+    expect(recorded[0].confidence).toBe("estimated");
+  });
 });

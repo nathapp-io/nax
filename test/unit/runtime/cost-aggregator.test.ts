@@ -11,6 +11,7 @@ function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
     model: "claude-sonnet-4-6",
     tokens: { input: 100, output: 50 },
     estimatedCostUsd: 0.001,
+    exactCostUsd: 0.001,
     costUsd: 0.001,
     confidence: "estimated",
     durationMs: 500,
@@ -192,6 +193,37 @@ describe("CostAggregator", () => {
 
       resolveWrite!();
       await drainTask;
+      _costAggDeps.write = origWrite;
+    });
+  });
+
+  test("snapshot() returns zero totalExactCostUsd when no events recorded", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    const snap = agg.snapshot();
+    expect(snap.totalExactCostUsd).toBe(0);
+  });
+
+  test("snapshot() accumulates totalExactCostUsd from events", () => {
+    const agg = new CostAggregator("r-001", "/tmp/drain");
+    agg.record(makeEvent({ exactCostUsd: 0.005, costUsd: 0.005 }));
+    agg.record(makeEvent({ exactCostUsd: 0.003, costUsd: 0.003 }));
+    const snap = agg.snapshot();
+    expect(snap.totalExactCostUsd).toBeCloseTo(0.008);
+  });
+
+  test("drain() includes exactCostUsd in JSONL output", async () => {
+    await withTempDir(async (dir) => {
+      const drainDir = join(dir, "cost");
+      let captured = "";
+      const origWrite = _costAggDeps.write;
+      _costAggDeps.write = async (_p, data) => { captured = String(data); return 0; };
+      const agg = new CostAggregator("r-test", drainDir);
+      agg.record(makeEvent({ exactCostUsd: 0.012 }));
+      await agg.drain();
+      const lines = captured.trim().split("\n");
+      expect(lines).toHaveLength(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.exactCostUsd).toBe(0.012);
       _costAggDeps.write = origWrite;
     });
   });
