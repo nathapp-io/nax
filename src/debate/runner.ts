@@ -41,7 +41,6 @@ export interface DebateRunnerOptions {
   readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
   readonly resolverContextInput?: ResolverContextInput;
 }
-
 export class DebateRunner {
   private readonly ctx: CallContext;
   private readonly stage: string;
@@ -53,7 +52,6 @@ export class DebateRunner {
   private readonly sessionManager: ISessionManager | undefined;
   private readonly reviewerSession: DebateRunnerOptions["reviewerSession"];
   private readonly resolverContextInput: DebateRunnerOptions["resolverContextInput"];
-
   constructor(opts: DebateRunnerOptions) {
     this.ctx = opts.ctx;
     this.stage = opts.stage;
@@ -66,7 +64,6 @@ export class DebateRunner {
     this.reviewerSession = opts.reviewerSession;
     this.resolverContextInput = opts.resolverContextInput;
   }
-
   async run(prompt: string): Promise<DebateResult> {
     const sessionMode = this.stageConfig.sessionMode ?? "one-shot";
     const mode = this.stageConfig.mode ?? "panel";
@@ -104,7 +101,6 @@ export class DebateRunner {
       resolverScope.close();
     }
   }
-
   async runPlan(
     taskContext: string,
     outputFormat: string,
@@ -121,7 +117,6 @@ export class DebateRunner {
   ): Promise<DebateResult> {
     return runPlan(this.toPlanCtx(), taskContext, outputFormat, opts);
   }
-
   private async runPanelOneShot(prompt: string): Promise<DebateResult> {
     const costAggregator = this.ctx.runtime.costAggregator ?? createNoOpCostAggregator();
     const prePhaseScope = costAggregator.openScope();
