@@ -1,14 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-17T11-24-42-599Z",
+    "id": "run-2026-05-17T11-54-26-837Z",
     "feature": "rectification-runtime-required",
-    "startedAt": "2026-05-17T11:24:42.599Z",
-    "status": "crashed",
+    "startedAt": "2026-05-17T11:54:26.837Z",
+    "status": "failed",
     "dryRun": false,
-    "pid": 97944,
-    "crashedAt": "2026-05-17T11:32:11.694Z",
-    "crashSignal": "SIGINT"
+    "pid": 29545
   },
   "progress": {
     "total": 3,
@@ -19,19 +17,20 @@
     "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 3.7028715000000005,
     "limit": 50
   },
   "current": null,
   "iterations": 1,
-  "updatedAt": "2026-05-17T11:32:11.694Z",
-  "durationMs": 449095,
+  "updatedAt": "2026-05-17T12:46:13.421Z",
+  "durationMs": 3106584,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
-      "status": "running"
+      "status": "passed",
+      "lastRunAt": "2026-05-17T12:46:12.537Z"
     }
   }
 }

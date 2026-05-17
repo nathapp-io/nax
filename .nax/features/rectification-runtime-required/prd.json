@@ -3,7 +3,7 @@
   "feature": "rectification-runtime-required",
   "branchName": "feat/rectification-runtime-required",
   "createdAt": "2026-05-17T15:43:21+08:00",
-  "updatedAt": "2026-05-17T11:42:41.867Z",
+  "updatedAt": "2026-05-17T12:27:14.034Z",
   "userStories": [
     {
       "id": "US-001",
@@ -160,9 +160,9 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
+      "status": "paused",
       "passes": false,
-      "attempts": 2,
+      "attempts": 3,
       "escalations": [],
       "routing": {
         "complexity": "medium",
