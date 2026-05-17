@@ -12,6 +12,7 @@ import { SessionTurnError } from "../agents/types";
 import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { getLogger } from "../logger";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -68,6 +69,14 @@ export const _rectificationGateDeps = {
   resolveTestCommands: resolveQualityTestCommands,
 };
 
+function isNaxRuntime(value: unknown): value is import("../runtime").NaxRuntime {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const maybeRuntime = value as { sessionManager?: unknown; signal?: unknown };
+  return maybeRuntime.sessionManager !== undefined && maybeRuntime.signal !== undefined;
+}
+
 /**
  * Run full test suite gate before verifier session (v0.11 Rectification).
  *
@@ -89,12 +98,22 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName: string | undefined,
   projectDir: string | undefined,
-  _sessionManagerRemoved: undefined,
   sessionId: string | undefined,
-  // Default makes function.length === 11 (callers always provide runtime in
-  // production; tests that don't need rectification safely omit it).
-  runtime: import("../runtime").NaxRuntime = undefined as unknown as import("../runtime").NaxRuntime,
+  runtime: import("../runtime").NaxRuntime,
+  ...legacyArgs: [import("../runtime").NaxRuntime?]
 ): Promise<FullSuiteGateResult> {
+  const runtimeArg = runtime as unknown;
+  const legacyRuntimeArg = legacyArgs[0];
+  let resolvedSessionId = sessionId;
+  let resolvedRuntime = isNaxRuntime(runtimeArg) ? runtimeArg : undefined;
+
+  if (!resolvedRuntime && isNaxRuntime(legacyRuntimeArg)) {
+    resolvedRuntime = legacyRuntimeArg;
+    if (typeof runtimeArg === "string") {
+      resolvedSessionId = runtimeArg;
+    }
+  }
+
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) {
     return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "disabled" };
@@ -139,6 +158,13 @@ export async function runFullSuiteGate(
         return { passed: true, cost: 0, fullSuiteGatePassed: false, status: "deferred-unattributable" };
       }
 
+      if (!resolvedRuntime) {
+        throw new NaxError("[tdd] runFullSuiteGate requires runtime", "DISPATCH_NO_RUNTIME", {
+          stage: "tdd",
+          storyId: story.id,
+        });
+      }
+
       return await runRectificationLoop(
         story,
         config,
@@ -152,10 +178,10 @@ export async function runFullSuiteGate(
         effectiveTestCmd,
         fullSuiteTimeout,
         fullSuiteResult.output,
-        runtime,
+        resolvedRuntime,
         featureName,
         projectDir,
-        sessionId,
+        resolvedSessionId,
       );
     }
 
