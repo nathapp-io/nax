@@ -3,7 +3,7 @@
   "feature": "rectification-runtime-required",
   "branchName": "feat/rectification-runtime-required",
   "createdAt": "2026-05-17T15:43:21+08:00",
-  "updatedAt": "2026-05-17T12:27:14.034Z",
+  "updatedAt": "2026-05-17T12:47:56.191Z",
   "userStories": [
     {
       "id": "US-001",
@@ -160,15 +160,15 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "paused",
+      "status": "pending",
       "passes": false,
       "attempts": 3,
       "escalations": [],
       "routing": {
-        "complexity": "medium",
+        "complexity": "complex",
         "testStrategy": "three-session-tdd",
         "reasoning": "validated from LLM output",
-        "initialComplexity": "medium",
+        "initialComplexity": "complex",
         "modelTier": "balanced"
       },
       "contextFiles": [
