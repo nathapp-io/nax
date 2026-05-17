@@ -10,6 +10,8 @@ export interface DebateJudgeInput {
   readonly debaters?: Debater[];
   readonly resolverAgent: string;
   readonly resolverModel: string;
+  /** Debate stage timeout in seconds — passed from stageConfig so the op uses the correct stage's budget. */
+  readonly timeoutSeconds?: number;
 }
 
 export const judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig> = {
@@ -19,7 +21,7 @@ export const judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig> 
   jsonMode: false,
   config: debateConfigSelector,
   model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),
-  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
+  timeoutMs: (input, ctx) => (input.timeoutSeconds ?? ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
     const prompt = DebatePromptBuilder.resolverJudgePrompt(input.proposals, input.critiques, input.debaters);
     return {

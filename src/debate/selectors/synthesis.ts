@@ -29,6 +29,7 @@ export const synthesisSelector: Selector = async (ctx: SelectorContext): Promise
     resolverAgent,
     resolverModel,
     promptSuffix: ctx.promptSuffix,
+    timeoutSeconds: ctx.stageConfig.timeoutSeconds,
   });
 
   return {

@@ -27,6 +27,7 @@ export const judgeSelector: Selector = async (ctx: SelectorContext): Promise<Sel
     debaters: ctx.debaters,
     resolverAgent,
     resolverModel,
+    timeoutSeconds: ctx.stageConfig.timeoutSeconds,
   });
 
   return {
