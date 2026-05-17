@@ -295,7 +295,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     featureName,
     projectDir,
     implementerBinding?.sessionId,
-    runtime as import("../runtime").NaxRuntime,
+    runtime,
   );
   const { cost: fullSuiteGateCost, fullSuiteGatePassed } = fullSuiteGate;
 

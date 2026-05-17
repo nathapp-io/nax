@@ -15,7 +15,7 @@ import {
   runDeferredRegression,
 } from "../../../src/execution/lifecycle/run-regression";
 import type { VerificationResult } from "../../../src/verification";
-import { makeNaxConfig } from "../../helpers";
+import { makeMockRuntime, makeNaxConfig } from "../../helpers";
 
 const WORKDIR_DISABLED = `/tmp/nax-test-disabled-${randomUUID()}`;
 const WORKDIR_PER_STORY = `/tmp/nax-test-per-story-${randomUUID()}`;
@@ -81,6 +81,10 @@ function makeConfig(
   });
 }
 
+function makeRuntime() {
+  return makeMockRuntime();
+}
+
 // ---------------------------------------------------------------------------
 // runDeferredRegression tests
 // ---------------------------------------------------------------------------
@@ -95,6 +99,7 @@ describe("runDeferredRegression", () => {
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_DISABLED,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -112,6 +117,7 @@ describe("runDeferredRegression", () => {
       config: makeConfig("per-story", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_PER_STORY,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -131,6 +137,7 @@ describe("runDeferredRegression", () => {
         { id: "US-002", status: "failed" },
       ]),
       workdir: WORKDIR_NO_PASSED,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -148,6 +155,7 @@ describe("runDeferredRegression", () => {
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([]),
       workdir: WORKDIR_SHAPE,
+      runtime: makeRuntime(),
     });
 
     expect(typeof result.success).toBe("boolean");
@@ -166,6 +174,7 @@ describe("runDeferredRegression", () => {
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_STORY_IDS,
+      runtime: makeRuntime(),
     });
 
     for (const storyId of result.affectedStories) {
@@ -182,6 +191,7 @@ describe("runDeferredRegression", () => {
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_COUNTS,
+      runtime: makeRuntime(),
     });
 
     expect(result.passedTests).toBeGreaterThanOrEqual(0);
@@ -221,6 +231,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       config: makeConfig("deferred", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_BEHAVIORAL,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -241,6 +252,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       config,
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_TIMEOUT_ACCEPT,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(true);
@@ -272,6 +284,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       config,
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_TIMEOUT_REJECT,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(false);
@@ -289,6 +302,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       config: makeConfig("deferred", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
       workdir: WORKDIR_NO_OUTPUT,
+      runtime: makeRuntime(),
     });
 
     expect(result.success).toBe(false);
@@ -331,6 +345,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
         { id: "US-002", status: "passed" },
       ]),
       workdir: WORKDIR_UNMAPPED,
+      runtime: makeRuntime(),
     });
 
     expect(result.affectedStories).toContain("US-001");
