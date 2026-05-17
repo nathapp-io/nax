@@ -3,7 +3,7 @@
   "feature": "lite-recheck-exhausted-autofix",
   "branchName": "feat/lite-recheck-exhausted-autofix",
   "createdAt": "2026-05-17T13:50:40+08:00",
-  "updatedAt": "2026-05-17T06:12:15.615Z",
+  "updatedAt": "2026-05-17T06:17:24.429Z",
   "userStories": [
     {
       "id": "US-001",
@@ -73,8 +73,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -127,7 +127,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/autofix.ts",
@@ -138,7 +140,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5ed831afe230140643733e2e7089e42385e80318"
     },
     {
       "id": "US-004",
