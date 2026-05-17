@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { CallOpFn } from "../../../src/findings/cycle";
-import { classifyOutcome, runFixCycle } from "../../../src/findings/cycle";
-import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "../../../src/findings";
-import type { Finding } from "../../../src/findings";
-import { makeLogger, makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import type { CallOpFn } from "@/findings/cycle";
+import { classifyOutcome, runFixCycle } from "@/findings";
+import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
+import type { Finding } from "@/findings";
+import { makeLogger, makeMockAgentManager, makeNaxConfig } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -597,7 +597,7 @@ callOp: callOpMock as unknown as CallOpFn});
   test("validator error still respects the mode opts parameter", async () => {
     let validateAttempts = 0;
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 3 });
-    const cycle = makeCycle([lintA], [strategy], async (_ctx, opts) => {
+    const cycle = makeCycle([lintA], [strategy], async (_ctx, _opts) => {
       validateAttempts++;
       throw new Error("Validator failed");
     }, { config: { maxAttemptsTotal: 10, validatorRetries: 1 } });
@@ -771,7 +771,7 @@ callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as impo
       cycleName: "my-cycle",
       reason: "max-attempts-per-strategy",
       exhaustedStrategy: "lint-fix",
-      liteFindingsAfter: [lintA],
+      liteFindingsAfterCount: 1,
     });
   });
 });

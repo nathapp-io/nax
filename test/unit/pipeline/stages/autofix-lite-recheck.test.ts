@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import { DEFAULT_CONFIG } from "../../../../src/config";
+import type { PipelineContext } from "@/pipeline/types";
+import { DEFAULT_CONFIG } from "@/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -386,12 +386,10 @@ describe("_autofixDeps.runReviewStage (AC7, AC8)", () => {
       } as any,
     });
 
-    // We can verify that runReviewStage actually updates ctx by using a real-ish ctx.
-    // Since the real reviewStage.execute will try to call reviewOrchestrator, we only
-    // verify that the function runs to completion without throwing (the orchestrator
-    // behavior is integration-tested separately).
-    // Here we just confirm the injection point works: it doesn't throw or return a value.
-    // The actual behavior is tested via recheckReview lite-mode integration above.
+    // We can't spy on reviewStage.execute without mock.module() (banned).
+    // Verify the injection point itself: it resolves and doesn't throw.
+    // Full execute-path behavior is covered by the recheckReview lite-mode
+    // integration tests above (which exercise the full stack via _autofixDeps).
     await expect(_autofixDeps.runReviewStage(ctx)).resolves.toBeUndefined();
   });
 });

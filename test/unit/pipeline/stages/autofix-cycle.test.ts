@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import { _cycleDeps } from "../../../../src/findings";
+import { DEFAULT_CONFIG } from "@/config";
+import { _cycleDeps } from "@/findings";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import {
   applyTestEditDeclarations,
@@ -8,13 +8,13 @@ import {
   buildAutofixStrategies,
   runAgentRectificationV2,
 } from "../../../../src/pipeline/stages/autofix-cycle";
-import type { Iteration } from "../../../../src/findings";
-import type { Finding } from "../../../../src/findings";
-import type { TestEditDeclaration } from "../../../../src/operations";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import type { Iteration } from "@/findings";
+import type { Finding } from "@/findings";
+import type { TestEditDeclaration } from "@/operations";
+import type { PipelineContext } from "@/pipeline/types";
 import { toAdversarialReviewFindings } from "../../../../src/review/adversarial-helpers";
-import type { ReviewCheckResult } from "../../../../src/review/types";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "../../../helpers";
+import type { ReviewCheckResult } from "@/review/types";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─── Minimal context for strategy/declaration unit tests ──────────────────────
 
@@ -642,10 +642,11 @@ describe("runAgentRectificationV2", () => {
     await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
 
     // In normal (full) path, validate is called with mode: "full"
-    // This should result in lite: false being passed to recheckReview
+    // This should result in lite: false being passed to recheckReview — and never lite: true.
     expect(capturedRecheckCalls.length).toBeGreaterThan(0);
     const normalPathCall = capturedRecheckCalls.find((call) => call.opts?.lite === false);
     expect(normalPathCall).toBeDefined();
+    expect(capturedRecheckCalls.every((call) => call.opts?.lite !== true)).toBe(true);
   });
 
   test("validate closure passes lite: true when autofix-implementer is exhausted (AC#4)", async () => {

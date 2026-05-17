@@ -10,15 +10,15 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { Finding } from "../../../../src/findings";
-import { InteractionChain } from "../../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { Finding } from "@/findings";
+import { InteractionChain } from "@/interaction";
+import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { ReviewFinding } from "../../../../src/plugins/extensions";
-import { makeSparseNaxConfig, makeStory } from "../../../helpers";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import type { ReviewFinding } from "@/plugins/extensions";
+import { makeSparseNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -296,9 +296,13 @@ export async function runFixCycle<F extends Finding>(
     }
 
     // ── Lite-validate on terminal exhausted iteration ─────────────────────────
-    // Counting provisional attempts (including this iteration's fixesApplied).
-    const provisionalIterations = [...cycle.iterations, { fixesApplied } as Iteration<F>];
-    const allExhausted = group.every((s) => countStrategyAttempts(provisionalIterations, s.name) >= s.maxAttempts);
+    // Count provisional attempts including this iteration's fixesApplied, without
+    // constructing a fake Iteration<F> object (only fixesApplied is relevant here).
+    const allExhausted = group.every((s) => {
+      const prior = countStrategyAttempts(cycle.iterations, s.name);
+      const current = fixesApplied.filter((fa) => fa.strategyName === s.name).length;
+      return prior + current >= s.maxAttempts;
+    });
     if (allExhausted) {
       let liteFindingsAfter: F[];
       try {
@@ -363,7 +367,7 @@ export async function runFixCycle<F extends Finding>(
         cycleName,
         reason: "max-attempts-per-strategy",
         exhaustedStrategy: group[0]?.name,
-        liteFindingsAfter,
+        liteFindingsAfterCount: liteFindingsAfter.length,
       });
       return {
         iterations: cycle.iterations,
