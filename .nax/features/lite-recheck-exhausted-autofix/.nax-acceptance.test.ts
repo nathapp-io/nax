@@ -88,7 +88,10 @@ describe("AC-2: runFixCycle invokes non-terminal validate with { mode: 'full' }"
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(validateCalls.length).toBeGreaterThan(0);
     const fullModeCalls = validateCalls.filter((c) => c.mode === "full");
@@ -172,7 +175,10 @@ describe("AC-6: validate throws, error caught in retry logic", () => {
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(result).toBeDefined();
     // Error should be caught; result should have validator-error or related exit reason
@@ -202,7 +208,10 @@ describe("AC-7: terminal exhausted calls cycle.validate(ctx, { mode: 'lite' }) e
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     // Should exit with resolved when lite validate returns empty
     const liteCalls = validateCalls.filter((c) => c.mode === "lite");
@@ -256,7 +265,10 @@ describe("AC-9: lite validate returns non-empty, result has max-attempts-per-str
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
     expect(result.finalFindings).toEqual([finding]);
@@ -283,7 +295,10 @@ describe("AC-10: terminal exhausted, iteration.findingsAfter equals lite validat
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(result.finalFindings[0]?.source).toBe("lite-source");
   });
@@ -310,7 +325,10 @@ describe("AC-11: terminal exhausted, iteration.outcome equals classifyOutcome(be
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     const expectedOutcome = classifyOutcome([beforeFinding], [afterFinding]);
     expect(result.iterations[result.iterations.length - 1]?.outcome).toBe(expectedOutcome);
@@ -336,7 +354,10 @@ describe("AC-12: terminal exhausted, cycle.findings mutated to lite result", () 
     };
 
     const ctx = makeFixCycleContext();
-    await runFixCycle(cycle, ctx, "test-cycle");
+    await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(cycle.findings[0]?.source).toBe("lite-final");
   });
@@ -367,7 +388,10 @@ describe("AC-13: lite validate throws, returns pre-throw findings with exhausted
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
     expect(result.finalFindings[0]?.source).toBe("original");
@@ -456,7 +480,10 @@ describe("AC-16: terminal non-empty, logger.info with reason max-attempts-per-st
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     expect(result.exitReason).toBe("max-attempts-per-strategy");
     expect(result.exhaustedStrategy).toBe("exhausted-strategy");
@@ -487,7 +514,10 @@ describe("AC-17: terminal attempt has unresolved strategy, cycle.validate not ca
     };
 
     const ctx = makeFixCycleContext();
-    const result = await runFixCycle(cycle, ctx, "test-cycle");
+    const result = await runFixCycle(cycle, ctx, "test-cycle", {
+      callOp: async (_ctx, _op, _input) => ({} as any),
+      logger: null,
+    });
 
     // With unresolved, should exit agent-gave-up without calling lite validate
     if (result.exitReason === "agent-gave-up") {

@@ -3,7 +3,7 @@
   "feature": "lite-recheck-exhausted-autofix",
   "branchName": "feat/lite-recheck-exhausted-autofix",
   "createdAt": "2026-05-17T13:50:40+08:00",
-  "updatedAt": "2026-05-17T06:36:34.042Z",
+  "updatedAt": "2026-05-17T06:51:11.201Z",
   "userStories": [
     {
       "id": "US-001",
@@ -165,8 +165,8 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

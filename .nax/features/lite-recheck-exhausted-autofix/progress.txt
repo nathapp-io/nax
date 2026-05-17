@@ -1,3 +1,4 @@
 [2026-05-17T06:12:12.846Z] US-001 — PASSED — Widen FixCycle validate signature with mode opts — Cost: $0.6029
 [2026-05-17T06:17:21.653Z] US-002 — PASSED — Run lite validate on exhausted terminal iteration in runFixCycle — Cost: $0.9261
 [2026-05-17T06:36:31.276Z] US-003 — PASSED — Add lite recheck mode that skips LLM reviewers in recheckReview and reviewStage — Cost: $2.8491
+[2026-05-17T06:51:11.201Z] US-004 — PASSED — Forward validate lite mode from autofix-cycle closure to recheckReview — Cost: $0.4155
