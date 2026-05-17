@@ -140,7 +140,6 @@ describe("rectification session reuse", () => {
       "my-feature",
       "/tmp/project",
       undefined,
-      undefined,
       runtime as any,
     );
 
@@ -182,7 +181,7 @@ describe("rectification session reuse", () => {
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, "my-feature", undefined, undefined, undefined, runtime as any);
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
     expect(agentManager.run).not.toHaveBeenCalled();
 
@@ -225,7 +224,7 @@ describe("rectification session reuse", () => {
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, "my-feature", undefined, undefined, undefined, runtime as any);
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
     expect(agentManager.run).not.toHaveBeenCalled();
 
@@ -270,7 +269,7 @@ describe("rectification session reuse", () => {
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, "my-feature", undefined, undefined, undefined, runtime as any);
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
     // Session opened once and reused across all attempts — this is the spec equivalent
     // of the legacy keepOpen flag. Handle is closed once in the finally at loop exit.
@@ -311,7 +310,7 @@ describe("rectification session reuse", () => {
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, undefined, undefined, undefined, undefined, runtime as any); // no featureName
+    } as any, undefined, undefined, undefined, runtime as any); // no featureName
 
     expect(agentManager.run).not.toHaveBeenCalled();
 
@@ -349,13 +348,15 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
     })) as any;
 
     const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" });
+    const { sessionManager } = makeRuntime();
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     const result = await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn,
       error: () => {},
       debug: () => {},
-    } as any, "my-feature");
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
     expect(result.passed).toBe(true);
     expect(result.fullSuiteGatePassed).toBe(false);
@@ -400,7 +401,6 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
       "my-feature",
       "/tmp/project",
-      undefined,
       "the-session-id", // sessionId provided → bindHandle must be called
       runtime as any,
     );
@@ -446,7 +446,6 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
       "my-feature",
       "/tmp/project",
-      undefined,
       undefined, // no sessionId → bindHandle must NOT be called
       runtime as any,
     );
@@ -484,7 +483,6 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
         { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
         "my-feature",
         "/tmp/project",
-        undefined,
         undefined,
         runtime as any,
       );
