@@ -11,6 +11,8 @@ export interface DebateSynthesisInput {
   readonly resolverAgent: string;
   readonly resolverModel: string;
   readonly promptSuffix?: string;
+  /** Debate stage timeout in seconds — passed from stageConfig so the op uses the correct stage's budget. */
+  readonly timeoutSeconds?: number;
 }
 
 export const synthesisOp: CompleteOperation<DebateSynthesisInput, string, DebateConfig> = {
@@ -20,6 +22,7 @@ export const synthesisOp: CompleteOperation<DebateSynthesisInput, string, Debate
   jsonMode: false,
   config: debateConfigSelector,
   model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),
+  timeoutMs: (input, ctx) => (input.timeoutSeconds ?? ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
     const base = DebatePromptBuilder.resolverSynthesisPrompt(input.proposals, input.critiques, input.debaters);
     const content = input.promptSuffix ? `${base}\n\n${input.promptSuffix}` : base;
