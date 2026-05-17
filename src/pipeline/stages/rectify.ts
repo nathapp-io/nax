@@ -155,7 +155,7 @@ export const _rectifyDeps = {
       agentManager: ctx.agentManager,
       projectDir: ctx.projectDir,
       testScopedTemplate: opts.testScopedTemplate,
-      sessionManager: ctx.sessionManager,
+      runtime: ctx.runtime,
       sessionId: ctx.sessionId,
     }),
   resolveTestCommands: resolveQualityTestCommands,
