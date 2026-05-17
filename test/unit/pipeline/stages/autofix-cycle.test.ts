@@ -648,17 +648,31 @@ describe("runAgentRectificationV2", () => {
     expect(normalPathCall).toBeDefined();
   });
 
-  test("validate closure always passes lite option with correct value", async () => {
+  test("validate closure passes lite: true when autofix-implementer is exhausted (AC#4)", async () => {
     const capturedRecheckCalls: Array<{ opts?: { lite?: boolean } }> = [];
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
       capturedRecheckCalls.push({ opts });
-      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
-      return true;
+      // Keep findings present so the cycle exits with max-attempts-per-strategy, not resolved
+      ctx.reviewResult = {
+        success: false,
+        checks: [failedCheck("lint", "still failing")],
+      } as unknown as PipelineContext["reviewResult"];
+      return false;
     });
 
-    const ctx = makeCtx();
+    // maxAttempts: 1 exhausts the implementer after one iteration, which forces the
+    // allExhausted branch in runFixCycle to call validate(ctx, { mode: "lite" })
+    const ctx = makeCtx({
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          autofix: { enabled: true, maxAttempts: 1, maxTotalAttempts: 4 },
+        },
+      } as PipelineContext["config"],
+    });
     ctx.reviewResult = {
       success: false,
       checks: [failedCheck("lint", "lint failure")],
@@ -666,13 +680,11 @@ describe("runAgentRectificationV2", () => {
 
     await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
 
-    // Verify that recheckReview was called with the lite option
-    expect(capturedRecheckCalls.length).toBeGreaterThan(0);
-    // All calls should include the lite option (false for normal path, true for exhausted path)
-    for (const call of capturedRecheckCalls) {
-      expect(call.opts).toBeDefined();
-      expect(typeof call.opts?.lite).toBe("boolean");
-    }
+    // The exhausted-cycle path calls validate(ctx, { mode: "lite" }), which must
+    // forward lite: true to recheckReview. A regression swapping === "lite" to === "full"
+    // would break this assertion.
+    const liteCall = capturedRecheckCalls.find((call) => call.opts?.lite === true);
+    expect(liteCall).toBeDefined();
   });
 });
 
