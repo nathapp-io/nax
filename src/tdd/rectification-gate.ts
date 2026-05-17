@@ -7,6 +7,7 @@
  */
 
 import type { IAgentManager } from "../agents";
+import { NaxError } from "../errors";
 import { SessionTurnError } from "../agents/types";
 import type { SessionHandle } from "../agents/types";
 import type { ModelTier } from "../config";
@@ -137,6 +138,12 @@ export async function runFullSuiteGate(
         return { passed: true, cost: 0, fullSuiteGatePassed: false, status: "deferred-unattributable" };
       }
 
+      if (!runtime) {
+        throw new NaxError("runtime is required for rectification", "RUNTIME_REQUIRED", {
+          stage: "rectification",
+          storyId: story.id,
+        });
+      }
       return await runRectificationLoop(
         story,
         config,
@@ -150,11 +157,11 @@ export async function runFullSuiteGate(
         effectiveTestCmd,
         fullSuiteTimeout,
         fullSuiteResult.output,
+        runtime,
         featureName,
         projectDir,
         sessionManager,
         sessionId,
-        runtime,
       );
     }
 
@@ -167,6 +174,12 @@ export async function runFullSuiteGate(
         failuresLength: testSummary.failures.length,
         exitCode: fullSuiteResult.exitCode,
       });
+      if (!runtime) {
+        throw new NaxError("runtime is required for rectification", "RUNTIME_REQUIRED", {
+          stage: "rectification",
+          storyId: story.id,
+        });
+      }
       return await runRectificationLoop(
         story,
         config,
@@ -180,11 +193,11 @@ export async function runFullSuiteGate(
         effectiveTestCmd,
         fullSuiteTimeout,
         fullSuiteResult.output,
+        runtime,
         featureName,
         projectDir,
         sessionManager,
         sessionId,
-        runtime,
       );
     }
 
@@ -236,11 +249,11 @@ async function runRectificationLoop(
   testCmd: string,
   fullSuiteTimeout: number,
   testOutput: string,
+  runtime: import("../runtime").NaxRuntime,
   featureName?: string,
   projectDir?: string,
   sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
-  runtime?: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
@@ -288,7 +301,6 @@ async function runRectificationLoop(
     },
     execute: async (prompt) => {
       currentAttempt++;
-      const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
       const defaultAgent = agentManager.getDefault();
 
@@ -381,11 +393,6 @@ async function runRectificationLoop(
             throw err;
           }
         }
-      } else {
-        // Legacy keepOpen path — used when no runtime is available (standalone callers).
-        rectifyResult = await agentManager.run({
-          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
-        });
       }
 
       // G5: bind updated protocolIds after each rectification attempt so the session descriptor
@@ -475,7 +482,7 @@ async function runRectificationLoop(
     },
   }).finally(async () => {
     // ADR-008 §6: close the held implementer session at loop exit. Best-effort.
-    if (heldHandle && runtime) {
+    if (heldHandle) {
       const stale = heldHandle;
       heldHandle = undefined;
       await runtime.sessionManager.closeSession(stale).catch(() => {});
