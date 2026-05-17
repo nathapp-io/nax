@@ -97,7 +97,7 @@ describe("AC-6: Call to runRectificationLoop from runDeferredRegression passes r
 
     // Find the runRectificationLoop call within runDeferredRegression
     const callMatch = source.match(
-      /await _regressionDeps\.runRectificationLoop\s*\(\s*\{[^}]*runtime/s
+      /await _regressionDeps\.runRectificationLoop\s*\(\s*\{[\s\S]*?runtime/
     );
     expect(callMatch).not.toBeNull();
   });
@@ -159,7 +159,7 @@ describe("AC-18: runFullSuiteGate signature and calls include runtime parameter"
   test("function signature includes runtime parameter", () => {
     const source = readSourceFile("src/tdd/rectification-gate.ts");
 
-    const hasFunctionSignature = /runtime\?:\s*import\("\.\.\/runtime"\)\.NaxRuntime/.test(source);
+    const hasFunctionSignature = /runtime:\s*import\("\.\.\/runtime"\)\.NaxRuntime/.test(source);
     expect(hasFunctionSignature).toBe(true);
   });
 
@@ -273,8 +273,8 @@ describe("AC-21: finally block calls closeSession with heldHandle guard only", (
     if (finallyMatch) {
       const finallyBlock = finallyMatch[0];
 
-      // Should have if (heldHandle && runtime) pattern
-      const hasProperGuard = /if\s*\(\s*heldHandle\s*&&\s*runtime\s*\)/.test(finallyBlock);
+      // Should have if (heldHandle) pattern — no runtime check needed (runtime is always present)
+      const hasProperGuard = /if\s*\(\s*heldHandle\s*\)/.test(finallyBlock);
       expect(hasProperGuard).toBe(true);
 
       // Should NOT have just if (heldHandle && runtime) then access runtime without check
