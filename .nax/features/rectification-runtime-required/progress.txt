@@ -1,1 +1,2 @@
 [2026-05-17T08:17:12.361Z] US-001 — PASSED — Thread NaxRuntime Through Broken Rectification Callers — Cost: $4.0275
+[2026-05-17T10:11:12.926Z] US-002 — PASSED — Require Runtime and Remove Legacy Path in Verification Rectification Loop — Cost: $4.2048
