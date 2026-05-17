@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-17T07-49-04-840Z",
+    "feature": "rectification-runtime-required",
+    "startedAt": "2026-05-17T07:49:04.840Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 15438
+  },
+  "progress": {
+    "total": 3,
+    "passed": 1,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 1
+  },
+  "cost": {
+    "spent": 12.214834300000001,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-05-17T10:47:41.904Z",
+  "durationMs": 10717064,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "failed",
+      "failedTests": [
+        "test/integration/tdd/tdd-orchestrator-failureCategory.test.ts",
+        "test/integration/agents/acp/tdd-flow-rectification.test.ts"
+      ],
+      "affectedStories": [
+        "US-002"
+      ],
+      "lastRunAt": "2026-05-17T10:47:41.138Z"
+    }
+  }
+}

@@ -3,7 +3,7 @@
   "feature": "rectification-runtime-required",
   "branchName": "feat/rectification-runtime-required",
   "createdAt": "2026-05-17T15:43:21+08:00",
-  "updatedAt": "2026-05-17T10:11:15.703Z",
+  "updatedAt": "2026-05-17T10:41:44.928Z",
   "userStories": [
     {
       "id": "US-001",
@@ -160,9 +160,9 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "medium",
@@ -185,7 +185,8 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
-      "storyGitRef": "4208899a4472886bbb753489d320af78002925ee"
+      "storyGitRef": "4208899a4472886bbb753489d320af78002925ee",
+      "failureStage": "execution"
     }
   ],
   "analysis": "The codebase already has the required runtime plumbing, but two rectification entry points still omit runtime and therefore can execute legacy keepOpen branches that call agentManager.run() instead of runAsSession(). In src/pipeline/stages/rectify.ts, _rectifyDeps.runRectificationLoop currently passes sessionManager and sessionId but not runtime (src/pipeline/stages/rectify.ts:141-160). In deferred regression, DeferredRegressionOptions still requires agentManager and has no runtime (src/execution/lifecycle/run-regression.ts:31-37), runDeferredRegression destructures agentManager from options (src/execution/lifecycle/run-regression.ts:104), and calls runRectificationLoop without runtime (src/execution/lifecycle/run-regression.ts:323-333). run-completion currently forwards agentManager into deferred regression (src/execution/lifecycle/run-completion.ts:145-150) even though RunCompletionOptions already extends DispatchContext and has runtime by contract (src/execution/lifecycle/run-completion.ts:39, src/runtime/dispatch-context.ts:20-24).\n\nBoth rectification subsystems still expose optional runtime and optional sessionManager, and each contains explicit legacy else branches. In verification rectification loop, RectificationLoopOptions includes sessionManager? and runtime? (src/verification/rectification-loop.ts:50-86), function destructures both (src/verification/rectification-loop.ts:186-200), dispatches through runAsSession only inside if (runtime) (src/verification/rectification-loop.ts:333-401), falls back to agentManager.run({ keepOpen }) in else (src/verification/rectification-loop.ts:402-407), binds G5 handles through sessionManager guard (src/verification/rectification-loop.ts:413-418), and cleanup has redundant runtime check in finally (src/verification/rectification-loop.ts:532-535). TDD rectification gate mirrors this: runFullSuiteGate and private runRectificationLoop accept sessionManager? and runtime? (src/tdd/rectification-gate.ts:82-95, src/tdd/rectification-gate.ts:226-244), internal callsites pass both (src/tdd/rectification-gate.ts:140-158 and src/tdd/rectification-gate.ts:170-188), dispatch path is conditional on runtime with legacy keepOpen else (src/tdd/rectification-gate.ts:316-389), bindHandle uses sessionManager guard (src/tdd/rectification-gate.ts:393-398), and finally cleanup has heldHandle && runtime guard (src/tdd/rectification-gate.ts:478-481). Orchestrator currently passes implementerBinding?.sessionManager into runFullSuiteGate before sessionId/runtime (src/tdd/orchestrator.ts:287-300), so signature shifts are required there.\n\nkeepOpen must remain in shared agent/run path and is still read by runtime session hop logic (src/runtime/session-run-hop.ts:111-113); removing it globally would be incorrect. This feature only removes two specific legacy branches in rectification subsystems.\n\nTest impact is broad but focused: rectification-loop unit tests currently call runRectificationLoop without runtime (e.g., src/test/unit/verification/rectification-loop.test.ts:136-144 and 184-192), so runtime must be threaded in test calls after runtime becomes required. Escalation tests in test/unit/verification/rectification-loop-escalation.test.ts also invoke runRectificationLoop and will need the same update. TDD gate tests include both runtime-path tests and legacy-style calls. rectification-gate-session.test.ts already exercises runtime dispatch in one case (test/unit/tdd/rectification-gate-session.test.ts:140-153), but other calls omit runtime (e.g., src/test/unit/tdd/rectification-gate-session.test.ts:183-189) and will need to provide makeTestRuntime() consistently. test/helpers/runtime.ts already auto-tracks runtimes and closes them in global afterEach (test/helpers/runtime.ts:11-17), but story scope explicitly asks for per-file afterEach runtime.close() patterns to keep ownership explicit in updated test suites.\n\nRisks and compatibility: making runtime required is a compile-time breaking interface change for direct callers of runRectificationLoop and runFullSuiteGate/private helper, but this is intentionally constrained to in-repo call sites and tests. Behavioral risk is low because TDD already uses the modern runAsSession path when runtime is provided, and transport retry/session lifecycle logic already exists there. Main regression risks are (1) missing runtime threading in one caller leading to compile failure, (2) tests relying on old optional signatures, and (3) bindHandle behavior when sessionId is absent; code already treats bind as best-effort with try/catch. Migration path is in-place refactor: thread runtime from existing DispatchContext-bearing objects (PipelineContext and RunCompletionOptions), remove obsolete sessionManager parameters from rectification interfaces/signatures/calls, and update tests to construct runtime via makeTestRuntime() for all new required call sites."
