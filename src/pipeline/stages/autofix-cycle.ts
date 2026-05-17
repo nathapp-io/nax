@@ -527,7 +527,7 @@ export async function runAgentRectificationV2(
       maxAttemptsTotal: maxTotalAttempts,
       validatorRetries: 1,
     },
-    async validate(_cycleCtx: FixCycleContext): Promise<Finding[]> {
+    async validate(_cycleCtx: FixCycleContext, _opts: { mode: "full" | "lite" }): Promise<Finding[]> {
       // Update beforeRef after all strategies in this iteration have committed.
       iterationBeforeRef = (await _autofixCycleGuardDeps.captureGitRef(ctx.workdir)) ?? iterationBeforeRef;
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state

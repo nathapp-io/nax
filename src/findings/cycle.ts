@@ -330,7 +330,7 @@ export async function runFixCycle<F extends Finding>(
     let validatorAttempt = 0;
     for (;;) {
       try {
-        findingsAfter = await cycle.validate(ctx);
+        findingsAfter = await cycle.validate(ctx, { mode: "full" });
         break;
       } catch (err) {
         if (validatorAttempt >= cycle.config.validatorRetries) {

@@ -176,7 +176,7 @@ export interface FixCycle<F extends Finding> {
    * strategies complete. On throw, retried config.validatorRetries times before
    * exiting with "validator-error".
    */
-  validate: (ctx: FixCycleContext) => Promise<F[]>;
+  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<F[]>;
   config: FixCycleConfig;
   /**
    * Optional verdict string used to bias strategy selection when findings is

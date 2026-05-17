@@ -62,7 +62,7 @@ function makeStrategy(
 function makeCycle(
   findings: Finding[],
   strategies: FixStrategy<Finding, unknown, unknown>[],
-  validateFn: (ctx: FixCycleContext) => Promise<Finding[]>,
+  validateFn: (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<Finding[]>,
   overrides?: Partial<FixCycle<Finding>>,
 ): FixCycle<Finding> {
   return {
@@ -569,5 +569,43 @@ callOp: callOpMock as unknown as CallOpFn});
     expect(result.iterations[1].outcome).toBe("unchanged");
     expect(result.iterations[2].outcome).toBe("resolved");
     expect(callOpMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ─── runFixCycle — validate mode opts ──────────────────────────────────────────
+
+describe("runFixCycle — validate mode opts", () => {
+  test("passes { mode: 'full' } to validate in non-terminal path", async () => {
+    const validateCalls: Array<{ mode: "full" | "lite" }> = [];
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 2 });
+    const cycle = makeCycle([lintA], [strategy], async (_ctx, opts) => {
+      validateCalls.push(opts);
+      return []; // resolved
+    });
+    const callOpMock = makeCallOpMock();
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: callOpMock as unknown as CallOpFn});
+
+    expect(result.exitReason).toBe("resolved");
+    expect(validateCalls).toHaveLength(1);
+    expect(validateCalls[0]).toEqual({ mode: "full" });
+  });
+
+  test("validator error still respects the mode opts parameter", async () => {
+    let validateAttempts = 0;
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 3 });
+    const cycle = makeCycle([lintA], [strategy], async (_ctx, opts) => {
+      validateAttempts++;
+      throw new Error("Validator failed");
+    }, { config: { maxAttemptsTotal: 10, validatorRetries: 1 } });
+    const callOpMock = makeCallOpMock();
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: callOpMock as unknown as CallOpFn});
+
+    expect(result.exitReason).toBe("validator-error");
+    // Verify attempts were made - validator throws and gets retried once, then exits
+    expect(validateAttempts).toBe(2); // first call (fail) + one retry
   });
 });

@@ -294,7 +294,7 @@ export async function runAcceptanceFixCycle(
         coRun: "co-run-sequential",
       },
     ],
-    validate: async (_ctx) => {
+    validate: async (_ctx, _opts: { mode: "full" | "lite" }) => {
       const result = await runAcceptanceTestsOnce(ctx, prd);
       if (result.passed) return [];
       currentTestOutput = result.testOutput;

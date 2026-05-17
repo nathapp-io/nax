@@ -3,7 +3,7 @@
   "feature": "lite-recheck-exhausted-autofix",
   "branchName": "feat/lite-recheck-exhausted-autofix",
   "createdAt": "2026-05-17T13:50:40+08:00",
-  "updatedAt": "2026-05-17T05:54:02.268Z",
+  "updatedAt": "2026-05-17T06:09:13.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,7 +31,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/findings/cycle-types.ts",
@@ -39,7 +41,11 @@
         "src/pipeline/stages/autofix-cycle.ts",
         "src/execution/lifecycle/acceptance-loop.ts",
         "test/unit/findings/cycle.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "097f0bb4dbcebc3a5a168412239ecc0cd5140b56"
     },
     {
       "id": "US-002",
@@ -80,7 +86,10 @@
         "src/findings/cycle.ts",
         "src/findings/cycle-types.ts",
         "test/unit/findings/cycle.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -123,7 +132,10 @@
         "src/pipeline/types.ts",
         "test/unit/pipeline/stages/autofix-unresolved.test.ts",
         "test/unit/pipeline/stages/review.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -160,7 +172,10 @@
         "src/pipeline/stages/autofix-cycle.ts",
         "src/pipeline/stages/autofix.ts",
         ".claude/rules/project-conventions.md"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Feature is a cross-module orchestration fix centered on autofix V2 terminal-iteration behavior, not a new subsystem. Current bug source is the cap-exhausted early return in runFixCycle that skips validator execution and returns stale findings. In src/findings/cycle.ts:297-326, when all strategies hit maxAttempts after fixesApplied, the code pushes an iteration with findingsAfter: cycle.findings, outcome: \"unchanged\", logs max-attempts-per-strategy, and exits without validate. That stale snapshot causes false escalation and stale digest payloads. The normal validate path is below at src/findings/cycle.ts:328-360 and currently calls cycle.validate(ctx) with retries; this must become explicit full mode for non-terminal iterations and a separate lite-mode advisory call in the exhausted branch. FixCycle.validate type is currently single-arg in src/findings/cycle-types.ts:179 and must widen to include opts.mode. Autofix V2 wiring point is src/pipeline/stages/autofix-cycle.ts:530-565 where validate closure currently calls _autofixDeps.recheckReview(ctx); this file is exactly 600 lines (wc -l), matching hard limit in .claude/rules/project-conventions.md:23-25, so the closure update must be line-neutral. Acceptance loop has its own cycle validate in src/execution/lifecycle/acceptance-loop.ts:297-303 and already mechanical-only; it should accept-and-ignore opts without behavior change.\n\nLite mode must skip LLM reviewers through both review entry paths. In src/review/runner.ts:323-331, runner already honors ctx.retrySkipChecks and can skip configured check names like semantic/adversarial. But src/pipeline/stages/review.ts has two pre-runner dialogue branches: reReview path at src/pipeline/stages/review.ts:35 and review path at :74 that can dispatch session LLM calls before orchestrator. Those branches currently do not check retrySkipChecks; therefore a new PipelineContext side-channel flag is required (add optional skipLLMReviewers near retrySkipChecks in src/pipeline/types.ts:253-265). recheckReview helper in src/pipeline/stages/autofix.ts:273-286 currently does inline dynamic import and fail-open guard; for lite mode it must temporarily set both ctx.retrySkipChecks (augment with adversarial/semantic) and ctx.skipLLMReviewers=true, then restore original values in finally including undefined-origin cases and throw paths. Existing fail-open-on-retry guard in recheckReview (src/pipeline/stages/autofix.ts:281-285) should be bypassed in lite mode per spec. To make this testable without banned mock.module pattern, _autofixDeps should gain an injectable runReviewStage wrapper around current dynamic import+enabled+execute behavior (export block at src/pipeline/stages/autofix.ts:416-426).\n\nExisting tests already cover key related behavior and should be updated/extended rather than introducing unrelated abstractions. test/unit/findings/cycle.test.ts has makeCycle helper typed with old validate signature at :65 and includes skip-validate-on-final-attempt block at :306-357 that must be replaced with lite-validate expectations, plus agent-gave-up precedence tests at :397-419 that protect ordering. test/unit/pipeline/stages/review.test.ts already validates many review-stage branches and is the right place to assert skipLLMReviewers gating in dialogue paths. test/unit/pipeline/stages/autofix-unresolved.test.ts demonstrates direct _autofixDeps stubbing pattern for this repo and should guide tests for runReviewStage/recheckReview behavior. There is no migration or config impact: no schema keys, no adapter changes, no runtime boundary changes. Backward compatibility risk is primarily behavioral in review/autofix interaction; mitigations are preserving default mode as full, making lite opt-in only from terminal exhausted path, preserving agent-gave-up branch order, preserving validatorRetries semantics for normal validate, and adding explicit fallback when lite validate throws. Logging risks: stage logs in cycle should keep structured fields with storyId first per .claude/rules/project-conventions.md:82. Digest format remains unchanged; only finalFindings content becomes accurate."
