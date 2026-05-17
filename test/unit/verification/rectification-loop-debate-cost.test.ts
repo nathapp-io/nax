@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import {
   FAILING_TEST_OUTPUT,
@@ -42,7 +42,8 @@ describe("runRectificationLoop — debate cost included in story total", () => {
   });
 
   test("debate cost is accumulated into story.routing.estimatedCostUsd when totalCostUsd > 0", async () => {
-    _rectificationDeps.agentManager = makeMockAgentManager();
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",
@@ -50,6 +51,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
     }));
 
     const story = makeStory({ routing: { modelTier: "balanced", estimatedCostUsd: 0.10 } as never });
+    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -58,13 +60,16 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(story.routing?.estimatedCostUsd).toBeCloseTo(0.15, 5);
   });
 
   test("story.routing.estimatedCostUsd is not modified when debate returns totalCostUsd === 0", async () => {
-    _rectificationDeps.agentManager = makeMockAgentManager();
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause analysis output.",
@@ -72,6 +77,7 @@ describe("runRectificationLoop — debate cost included in story total", () => {
     }));
 
     const story = makeStory({ routing: { modelTier: "balanced", estimatedCostUsd: 0.10 } as never });
+    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -80,18 +86,23 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(story.routing?.estimatedCostUsd).toBeCloseTo(0.10, 5);
   });
 
   test("debate cost is tracked and loop completes without error when debate succeeds", async () => {
-    _rectificationDeps.agentManager = makeMockAgentManager();
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
     _rectificationDeps.runVerification = mock(async () => SUCCESS_VERIFICATION);
     _rectificationDeps.runDebate = mock(async () => ({
       output: "Root cause: incorrect state mutation.",
       totalCostUsd: 0.03,
     }));
+
+    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
 
     const result = await runRectificationLoop({
       config: makeConfig(true),
@@ -100,6 +111,8 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(true);

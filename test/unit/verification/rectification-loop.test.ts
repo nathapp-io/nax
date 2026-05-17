@@ -8,12 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentRunOptions } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
-import { makeMockAgentManager, makeNaxConfig } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -105,22 +104,13 @@ describe("runRectificationLoop — session context params", () => {
   });
 
   test("passes featureName, storyId, and sessionRole='implementer' to agent.run()", async () => {
-    const capturedRunOptions: Array<{ type: "run" | "runAs"; opts: any }> = [];
-
-    const runFn = mock(async (agentName: string, opts: any) => {
-      capturedRunOptions.push({ type: "run", opts: { ...opts, agent: agentName } });
-      return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-    });
-    const runWithFallbackFn = mock(async (req: any) => ({ result: await runFn(req.runOptions.agent, req.runOptions), fallbacks: [] }));
+    const capturedRunOptions: Array<{ type: "runAsSession"; opts: any }> = [];
 
     const mockAgentManager = makeMockAgentManager({
-      runFn,
-      runWithFallbackFn,
-      runAs: mock(async (agentName: string, req: any) => {
-        capturedRunOptions.push({ type: "runAs", opts: { ...req.runOptions, agent: agentName } });
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+      runAsSessionFn: mock(async (agentName: string, _handle: any, _prompt: string, opts: any) => {
+        capturedRunOptions.push({ type: "runAsSession", opts: { ...opts, agent: agentName } });
+        return { output: "", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
     _rectificationDeps.agentManager = mockAgentManager;
@@ -133,6 +123,11 @@ describe("runRectificationLoop — session context params", () => {
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     const result = await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -141,6 +136,8 @@ describe("runRectificationLoop — session context params", () => {
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
       featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(true);
@@ -151,24 +148,12 @@ describe("runRectificationLoop — session context params", () => {
   });
 
   test("passes undefined featureName when not provided (backward compatibility)", async () => {
-    const capturedOptions: AgentRunOptions[] = [];
-
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
+    const capturedOptions: any[] = [];
 
     const mockAgentManager = makeMockAgentManager({
-      getAgentFn: (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, _prompt: string, opts: any) => {
         capturedOptions.push(opts);
-        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+        return { output: "", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
     });
 
@@ -181,6 +166,11 @@ describe("runRectificationLoop — session context params", () => {
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -189,6 +179,8 @@ describe("runRectificationLoop — session context params", () => {
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
       // featureName intentionally omitted
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(capturedOptions).toHaveLength(1);
@@ -198,10 +190,10 @@ describe("runRectificationLoop — session context params", () => {
   });
 
   test("returns false when agent not found", async () => {
-    _rectificationDeps.agentManager = makeMockAgentManager({
+    const mockAgentManager = makeMockAgentManager({
       getAgentFn: () => undefined,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
     });
+    _rectificationDeps.agentManager = mockAgentManager;
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
@@ -209,6 +201,11 @@ describe("runRectificationLoop — session context params", () => {
       output: FAILING_TEST_OUTPUT,
       countsTowardEscalation: true,
     }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -218,6 +215,8 @@ describe("runRectificationLoop — session context params", () => {
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
       featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(false);
@@ -236,12 +235,13 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
 3 passed, 2 failed [1.7ms]
     `.trim();
 
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      runFn: mock(async (_agentName: string, opts: AgentRunOptions) => {
-          capturedPrompts.push(opts.prompt);
-          return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
     });
+    _rectificationDeps.agentManager = mockAgentManager;
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
@@ -249,6 +249,11 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       status: "TEST_FAILURE" as const,
       countsTowardEscalation: true,
     }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig({
@@ -266,6 +271,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: unmappedOutput,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(capturedPrompts).toHaveLength(1);
@@ -283,9 +290,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
     } as unknown as Partial<NaxConfig>);
 
     // Set the injected agentManager (DI pattern — createManager no longer exists)
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      runFn: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: true,
@@ -294,6 +300,11 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     const result = await runRectificationLoop({
       config,
       workdir: "/tmp/test",
@@ -301,7 +312,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
-      // no agentManager in opts — uses _rectificationDeps.agentManager
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(true);
@@ -345,9 +357,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
     let verifyCallCount = 0;
 
     // Set the injected agentManager (DI pattern — createManager no longer exists)
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     _rectificationDeps.escalateTier = mock(() => ({ tier: "balanced", agent: "claude" }));
 
@@ -361,6 +372,11 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       };
     });
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     const result = await runRectificationLoop({
       config,
       workdir: "/tmp/test",
@@ -368,6 +384,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(false);
@@ -375,31 +393,15 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
   });
 
   test("storyId is always passed from story.id regardless of featureName", async () => {
-    const capturedOptions: AgentRunOptions[] = [];
+    const capturedOptions: any[] = [];
 
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (opts: AgentRunOptions) => {
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, _prompt: string, opts: any) => {
         capturedOptions.push(opts);
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async (agentName: string, opts: AgentRunOptions) => {
-      capturedOptions.push(opts);
-      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-      }),
-      runAs: mock(async (_name: string, req: any) => {
-      capturedOptions.push(req.runOptions);
-      return { success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+        return { output: "", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
     });
+    _rectificationDeps.agentManager = mockAgentManager;
 
     _rectificationDeps.runVerification = mock(async () => ({
       success: false,
@@ -408,6 +410,11 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -415,6 +422,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     // Should have attempted maxRetries times
@@ -786,22 +795,8 @@ describe("runRectificationLoop — logging failing test names", () => {
   });
 
   test("logs failingTests with all testName strings when 10 or fewer failures", async () => {
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     const retryOutput = `
 test/example.test.ts:
@@ -825,6 +820,11 @@ Error: Expected true to be false
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -832,6 +832,8 @@ Error: Expected true to be false
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: "✗ test [1ms]\n(fail) test [1ms]\nerror: failed\n1 passed, 1 failed [1ms]",
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     const failingLog = capturedWarns.find((w) =>
@@ -846,22 +848,8 @@ Error: Expected true to be false
   });
 
   test("logs failingTests (first 10) and totalFailingTests when more than 10 failures", async () => {
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     // Create test output with 15 failures
     let retryOutput = "test/example.test.ts:\n";
@@ -891,6 +879,11 @@ Error: Test failed
 1 passed, 1 failed [1ms]
     `.trim();
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -898,6 +891,8 @@ Error: Test failed
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: initialOutput,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     // Verify warn was called with truncated failingTests and totalFailingTests
@@ -913,22 +908,8 @@ Error: Test failed
   });
 
   test("logs failingTests: [] and totalFailingTests when no structured failures but failed > 0", async () => {
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     // Retry output with failures but no structured (fail) blocks
     // Parser will count ✗ marks but won't parse detailed failure info
@@ -948,6 +929,11 @@ test/example.test.ts:
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -955,6 +941,8 @@ test/example.test.ts:
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     // Verify failingTests is empty array and totalFailingTests is set
@@ -968,22 +956,8 @@ test/example.test.ts:
   });
 
   test("does not include totalFailingTests when 10 or fewer failures", async () => {
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
-      }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn: mock(async () => ({ success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-      runAs: mock(async () => ({ success: false, exitCode: 1, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] })),
-    });
+    const mockAgentManager = makeMockAgentManager();
+    _rectificationDeps.agentManager = mockAgentManager;
 
     const retryOutput = `
 test/example.test.ts:
@@ -1002,6 +976,11 @@ Error: Test failed
       countsTowardEscalation: true,
     }));
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -1009,6 +988,8 @@ Error: Test failed
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     // Verify totalFailingTests is not present when <= 10 failures
@@ -1022,27 +1003,13 @@ Error: Test failed
 
   test("stops successfully when retry output parses to zero remaining failures", async () => {
     let agentRunCount = 0;
-    const mockAgent = {
-      name: "claude",
-      run: mock(async (_opts: AgentRunOptions) => {
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => {
         agentRunCount += 1;
-        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0 };
+        return { output: "", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
-      complete: mock(async (_prompt: string) => ""),
-      isInstalled: mock(async () => true),
-      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
-      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
-    };
-
-    const runFn = mock(async () => {
-      agentRunCount += 1;
-      return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
     });
-    _rectificationDeps.agentManager = makeMockAgentManager({
-      getAgentFn: () => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
-      runFn,
-      runAs: runFn,
-    });
+    _rectificationDeps.agentManager = mockAgentManager;
 
     let verificationCalls = 0;
     _rectificationDeps.runVerification = mock(async () => {
@@ -1055,6 +1022,11 @@ Error: Test failed
       };
     });
 
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
+
     const result = await runRectificationLoop({
       config: makeConfig(),
       workdir: "/tmp/test",
@@ -1062,6 +1034,8 @@ Error: Test failed
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(true);
