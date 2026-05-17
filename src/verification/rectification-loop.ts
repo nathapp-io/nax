@@ -67,22 +67,15 @@ export interface RectificationLoopOptions {
    */
   testScopedTemplate?: string;
   /**
-   * In-process session registry (Phase 1+ plumbing). When provided, each rectification
-   * attempt's protocolIds are bound to the descriptor so the audit trail stays current
-   * across retries (G5: bindHandle after each agent.run() in the rectification loop).
-   */
-  sessionManager?: import("../session").ISessionManager;
-  /**
    * nax session ID for the implementer session (sess-<uuid>).
-   * Required alongside sessionManager for bindHandle to work.
+   * Required alongside runtime for bindHandle to work (G5).
    */
   sessionId?: string;
   /**
-   * NaxRuntime (ADR-019 Phase D). When present, each rectification attempt dispatches
-   * via buildHopCallback → runWithFallback (fresh session per hop). keepOpen is only
-   * used in the legacy path when runtime is absent.
+   * NaxRuntime (ADR-019 Phase D). Required — each rectification attempt dispatches
+   * via runAsSession (fresh session per hop).
    */
-  runtime?: import("../runtime").NaxRuntime;
+  runtime: import("../runtime").NaxRuntime;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,7 +187,6 @@ export async function runRectificationLoop(
     featureName,
     projectDir,
     testScopedTemplate,
-    sessionManager,
     sessionId,
     runtime,
   } = opts;
@@ -312,25 +304,8 @@ export async function runRectificationLoop(
         defaultAgent,
       );
 
-      const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
-
-      const runOptions = {
-        prompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: config.execution.sessionTimeoutSeconds,
-        pipelineStage: "rectification" as const,
-        config,
-        projectDir,
-        maxInteractionTurns: config.agent?.maxInteractionTurns,
-        featureName,
-        storyId: story.id,
-        sessionRole: "implementer" as const,
-      };
-
       let agentResult!: import("../agents").AgentResult;
-      if (runtime) {
+      {
         // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
         // once and reuse across attempts. openSession is idempotent on a live
         // handle (session/manager.ts:354) so we attach to any session opened
@@ -399,20 +374,15 @@ export async function runRectificationLoop(
             throw err;
           }
         }
-      } else {
-        // Legacy keepOpen path — used when no runtime is available (standalone callers).
-        agentResult = await agentManager.run({
-          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
-        });
       }
 
       costAccum += agentResult.estimatedCostUsd ?? 0;
 
       // G5: update session descriptor with latest protocolIds so the audit trail
       // reflects the session that actually ran (may differ after internal retries).
-      if (sessionManager && sessionId && agentResult.protocolIds) {
+      if (sessionId && agentResult.protocolIds) {
         try {
-          sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
+          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
         } catch {
           // Session may not exist in manager (e.g. v2 context disabled) — ignore.
         }
@@ -529,7 +499,7 @@ export async function runRectificationLoop(
     // ADR-008 §6: close the held implementer session at loop exit. Best-effort —
     // failures here must not mask the loop outcome. Tier escalation below opens
     // a fresh session via runAs, so we close before that branch fires.
-    if (heldHandle && runtime) {
+    if (heldHandle) {
       const stale = heldHandle;
       heldHandle = undefined;
       await runtime.sessionManager.closeSession(stale).catch(() => {});

@@ -7,8 +7,8 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { SessionTurnError } from "../agents/types";
 import type { SessionHandle } from "../agents/types";
+import { SessionTurnError } from "../agents/types";
 import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
@@ -87,11 +87,10 @@ export async function runFullSuiteGate(
   implementerTier: ModelTier,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
-  featureName?: string,
-  projectDir?: string,
-  sessionManager?: import("../session").ISessionManager,
-  sessionId?: string,
-  runtime?: import("../runtime").NaxRuntime,
+  featureName: string | undefined,
+  projectDir: string | undefined,
+  sessionId: string | undefined,
+  runtime: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) {
@@ -150,42 +149,25 @@ export async function runFullSuiteGate(
         effectiveTestCmd,
         fullSuiteTimeout,
         fullSuiteResult.output,
+        runtime,
         featureName,
         projectDir,
-        sessionManager,
         sessionId,
-        runtime,
       );
     }
 
-    // @design: BUG-059 / BUG-060 defense: if structured failures exist but
-    // failed === 0 (parser drift), failures.length wins — treat as real failure.
+    // @design: BUG-059 / BUG-060 defense: parser counter mismatch (failed===0
+    // but failures.length>0) is an unreliable signal — we can't determine the
+    // true failure count so we fail the gate without entering the rectification
+    // loop. The run-level regression gate is the safety net for these cases.
     if (testSummary.failures.length > 0) {
-      logger.warn("tdd", "Full suite gate: parser counter mismatch — routing to rectification using failures.length", {
+      logger.warn("tdd", "Full suite gate: parser counter mismatch — failing gate (unreliable failure count)", {
         storyId: story.id,
         failedCounter: testSummary.failed,
         failuresLength: testSummary.failures.length,
         exitCode: fullSuiteResult.exitCode,
       });
-      return await runRectificationLoop(
-        story,
-        config,
-        workdir,
-        agentManager,
-        implementerTier,
-        lite,
-        logger,
-        { ...testSummary, failed: Math.max(testSummary.failed, testSummary.failures.length) },
-        rectificationConfig,
-        effectiveTestCmd,
-        fullSuiteTimeout,
-        fullSuiteResult.output,
-        featureName,
-        projectDir,
-        sessionManager,
-        sessionId,
-        runtime,
-      );
+      return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "execution-failed" };
     }
 
     // @design: BUG-059: Non-zero exit with 0 parsed failures could mean:
@@ -236,11 +218,10 @@ async function runRectificationLoop(
   testCmd: string,
   fullSuiteTimeout: number,
   testOutput: string,
+  runtime: import("../runtime").NaxRuntime,
   featureName?: string,
   projectDir?: string,
-  sessionManager?: import("../session").ISessionManager,
   sessionId?: string,
-  runtime?: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
@@ -288,7 +269,6 @@ async function runRectificationLoop(
     },
     execute: async (prompt) => {
       currentAttempt++;
-      const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
       const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
       const defaultAgent = agentManager.getDefault();
 
@@ -313,86 +293,80 @@ async function runRectificationLoop(
       };
 
       let rectifyResult!: import("../agents").AgentResult;
-      if (runtime) {
-        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session once
-        // and reuse across attempts. openSession is idempotent (session/manager.ts:354)
-        // so we attach to any session opened upstream by execution.ts when one
-        // is still alive.
-        //
-        // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
-        // signals retryable:true). The runtime path bypasses runWithFallback so we
-        // must handle it locally — mirrors the fail-adapter-error retry in manager.ts.
-        let transportRetries = 0;
-        const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
-        while (transportRetries <= maxTransportRetries) {
-          if (!heldHandle) {
-            heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
-              agentName: defaultAgent,
-              role: "implementer",
-              workdir,
-              pipelineStage: "rectification",
-              modelDef: runOptions.modelDef,
-              timeoutSeconds: config.execution.sessionTimeoutSeconds,
-              featureName,
-              storyId: story.id,
-              signal: runtime.signal,
-            });
-          }
-          // ADR-020 single-emission invariant: each runAsSession emits one
-          // session-turn event for audit/cost subscribers, regardless of handle
-          // reuse across attempts.
-          try {
-            const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
-              storyId: story.id,
-              featureName,
-              workdir,
-              projectDir,
-              pipelineStage: "rectification",
-              sessionRole: "implementer",
-              signal: runtime.signal,
-              maxTurns: config.agent?.maxInteractionTurns,
-            });
-            rectifyResult = {
-              success: true,
-              exitCode: 0,
-              output: turn.output,
-              rateLimited: false,
-              durationMs: 0,
-              estimatedCostUsd: turn.estimatedCostUsd,
-              ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
-              ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
-              ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
-            };
-            break;
-          } catch (err) {
-            const stale = heldHandle;
-            heldHandle = undefined;
-            await runtime.sessionManager.closeSession(stale).catch(() => {});
-            if (err instanceof SessionTurnError && err.retryable && transportRetries < maxTransportRetries) {
-              transportRetries++;
-              getSafeLogger()?.warn("tdd", "fail-adapter-error: same-agent retry with fresh session", {
-                storyId: story.id,
-                attempt: transportRetries,
-                maxAttempts: maxTransportRetries,
-                retriable: true,
-              });
-              continue;
-            }
-            throw err;
-          }
+
+      // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session once
+      // and reuse across attempts. openSession is idempotent (session/manager.ts:354)
+      // so we attach to any session opened upstream by execution.ts when one
+      // is still alive.
+      //
+      // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
+      // signals retryable:true). The runtime path bypasses runWithFallback so we
+      // must handle it locally — mirrors the fail-adapter-error retry in manager.ts.
+      let transportRetries = 0;
+      const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
+      while (true) {
+        if (!heldHandle) {
+          heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+            agentName: defaultAgent,
+            role: "implementer",
+            workdir,
+            pipelineStage: "rectification",
+            modelDef: runOptions.modelDef,
+            timeoutSeconds: config.execution.sessionTimeoutSeconds,
+            featureName,
+            storyId: story.id,
+            signal: runtime.signal,
+          });
         }
-      } else {
-        // Legacy keepOpen path — used when no runtime is available (standalone callers).
-        rectifyResult = await agentManager.run({
-          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
-        });
+        // ADR-020 single-emission invariant: each runAsSession emits one
+        // session-turn event for audit/cost subscribers, regardless of handle
+        // reuse across attempts.
+        try {
+          const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
+            storyId: story.id,
+            featureName,
+            workdir,
+            projectDir,
+            pipelineStage: "rectification",
+            sessionRole: "implementer",
+            signal: runtime.signal,
+            maxTurns: config.agent?.maxInteractionTurns,
+          });
+          rectifyResult = {
+            success: true,
+            exitCode: 0,
+            output: turn.output,
+            rateLimited: false,
+            durationMs: 0,
+            estimatedCostUsd: turn.estimatedCostUsd,
+            ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+            ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+            ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
+          };
+          break;
+        } catch (err) {
+          const stale = heldHandle;
+          heldHandle = undefined;
+          await runtime.sessionManager.closeSession(stale).catch(() => {});
+          if (err instanceof SessionTurnError && err.retryable && transportRetries < maxTransportRetries) {
+            transportRetries++;
+            getSafeLogger()?.warn("tdd", "fail-adapter-error: same-agent retry with fresh session", {
+              storyId: story.id,
+              attempt: transportRetries,
+              maxAttempts: maxTransportRetries,
+              retriable: true,
+            });
+            continue;
+          }
+          throw err;
+        }
       }
 
       // G5: bind updated protocolIds after each rectification attempt so the session descriptor
       // reflects the session that actually ran (may change after internal session retries).
-      if (sessionManager && sessionId && rectifyResult.protocolIds) {
+      if (sessionId && rectifyResult.protocolIds) {
         try {
-          sessionManager.bindHandle(sessionId, rectificationSessionName, rectifyResult.protocolIds);
+          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, rectifyResult.protocolIds);
         } catch {
           // Session may not exist in manager (e.g. v2 context disabled) — ignore.
         }
@@ -475,7 +449,7 @@ async function runRectificationLoop(
     },
   }).finally(async () => {
     // ADR-008 §6: close the held implementer session at loop exit. Best-effort.
-    if (heldHandle && runtime) {
+    if (heldHandle) {
       const stale = heldHandle;
       heldHandle = undefined;
       await runtime.sessionManager.closeSession(stale).catch(() => {});

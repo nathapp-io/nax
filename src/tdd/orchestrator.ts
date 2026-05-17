@@ -294,7 +294,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     logger,
     featureName,
     projectDir,
-    implementerBinding?.sessionManager,
     implementerBinding?.sessionId,
     runtime,
   );

@@ -15,7 +15,7 @@ import {
   makeConfig,
   makeStory,
 } from "./_rectification-debate-helpers";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makeSessionManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // debate integration — debate.stages.rectification.enabled = false (default)
@@ -34,25 +34,20 @@ describe("runRectificationLoop — debate disabled (default)", () => {
   test("does not call DebateSession when debate.stages.rectification.enabled is false", async () => {
     const capturedPrompts: string[] = [];
 
-    const runFn = mock(async (agentName: string, opts: any) => {
-      if (opts?.prompt) {
-        capturedPrompts.push(opts.prompt);
-      }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-    });
     const mockManager = makeMockAgentManager({
-      runFn,
-      runAs: mock(async (agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "done", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(false),
@@ -61,6 +56,8 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(capturedPrompts).toHaveLength(1);
@@ -70,25 +67,20 @@ describe("runRectificationLoop — debate disabled (default)", () => {
   test("prompt does not contain Root Cause Analysis section when debate is disabled", async () => {
     const capturedPrompts: string[] = [];
 
-    const runFn = mock(async (agentName: string, opts: any) => {
-      if (opts?.prompt) {
-        capturedPrompts.push(opts.prompt);
-      }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-    });
     const mockManager = makeMockAgentManager({
-      runFn,
-      runAs: mock(async (agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "done", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
-      completeWithFallbackFn: mock(async () => ({ result: { output: "", estimatedCostUsd: 0 }, fallbacks: [] })),
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(false),
@@ -97,6 +89,8 @@ describe("runRectificationLoop — debate disabled (default)", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     for (const p of capturedPrompts) {
@@ -120,31 +114,28 @@ describe("runRectificationLoop — debate enabled", () => {
   });
 
   test("runs DebateSession before building rectification prompt when debate.stages.rectification.enabled is true", async () => {
-    const capturedPrompts: string[] = [];
     let completeCalls = 0;
 
-    const runFn = mock(async (agentName: string, opts: any) => {
-      if (opts?.prompt) {
-        capturedPrompts.push(opts.prompt);
-      }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-    });
     const mockManager = makeMockAgentManager({
-      runFn,
-      runAs: mock(async (agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-      }),
+      runAsSessionFn: mock(async () => ({
+        output: "done",
+        estimatedCostUsd: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })),
       completeFn: mock(async () => {
         completeCalls++;
         return { output: "The root cause is a missing null check.", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       }),
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -153,6 +144,8 @@ describe("runRectificationLoop — debate enabled", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(completeCalls).toBeGreaterThan(0);
@@ -162,25 +155,21 @@ describe("runRectificationLoop — debate enabled", () => {
     const capturedPrompts: string[] = [];
     const diagnosisOutput = "The root cause is a missing null check in the handler.";
 
-    const runFn = mock(async (agentName: string, opts: any) => {
-      if (opts?.prompt) {
-        capturedPrompts.push(opts.prompt);
-      }
-      return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-    });
     const mockManager = makeMockAgentManager({
-      runFn,
-      runAs: mock(async (agentName: string, req: any) => {
-        if (req.runOptions?.prompt) {
-          capturedPrompts.push(req.runOptions.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "done", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
       }),
       completeFn: mock(async () => ({ output: diagnosisOutput, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 })),
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -189,6 +178,8 @@ describe("runRectificationLoop — debate enabled", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(capturedPrompts).toHaveLength(1);
@@ -200,19 +191,20 @@ describe("runRectificationLoop — debate enabled", () => {
     const diagnosisOutput = "Root cause: missing validation.";
 
     const mockManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
-      runFn: async (_agentName: string, opts: any) => {
-        if (opts?.prompt) {
-          capturedPrompts.push(opts.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-      },
-      completeAsFn: async () => ({ result: { output: diagnosisOutput, estimatedCostUsd: 0 }, fallbacks: [] }),
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "done", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }),
+      completeAsFn: async () => ({ output: diagnosisOutput, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 }),
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -221,6 +213,8 @@ describe("runRectificationLoop — debate enabled", () => {
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(capturedPrompts).toHaveLength(1);
@@ -249,21 +243,22 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
     const capturedPrompts: string[] = [];
 
     const mockManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
-      runFn: async (_agentName: string, opts: any) => {
-        if (opts?.prompt) {
-          capturedPrompts.push(opts.prompt);
-        }
-        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
-      },
+      runAsSessionFn: mock(async (_agentName: string, _handle: any, prompt: string, _opts: any) => {
+        capturedPrompts.push(prompt);
+        return { output: "done", estimatedCostUsd: 0, tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 };
+      }),
       completeAsFn: async () => {
         throw new Error("Debate agent failed");
       },
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     await runRectificationLoop({
       config: makeConfig(true),
@@ -272,6 +267,8 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(capturedPrompts).toHaveLength(1);
@@ -280,24 +277,24 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
 
   test("rectification still runs and returns result even when debate fails", async () => {
     const mockManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      getAgentFn: (name: string) => (name === "claude" ? {} as any : null),
-      runFn: async () => ({
-        success: true,
-        exitCode: 0,
+      runAsSessionFn: mock(async () => ({
         output: "done",
-        rateLimited: false,
-        durationMs: 10,
         estimatedCostUsd: 0,
-        agentFallbacks: [] as unknown[],
-      }),
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })),
       completeAsFn: async () => {
         throw new Error("All debaters failed");
       },
     });
 
-    _rectificationDeps.agentManager = mockManager as any;
+    _rectificationDeps.agentManager = mockManager;
     _rectificationDeps.runVerification = mock(async () => ({ success: true, output: "1 pass", status: "SUCCESS" as const, countsTowardEscalation: true }));
+
+    const runtime = {
+      sessionManager: makeSessionManager(),
+      signal: undefined as any,
+    } as any;
 
     const result = await runRectificationLoop({
       config: makeConfig(true),
@@ -306,6 +303,8 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       testCommand: "bun test",
       timeoutSeconds: 30,
       testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockManager,
+      runtime,
     });
 
     expect(result.succeeded).toBe(true);

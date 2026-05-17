@@ -146,7 +146,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         config,
         prd,
         workdir,
-        agentManager: options.agentManager,
+        runtime: options.runtime,
       });
 
       const lastRunAt = new Date().toISOString();

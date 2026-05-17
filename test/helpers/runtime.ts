@@ -10,14 +10,23 @@ import { makeSessionManager } from "./mock-session-manager";
 
 const createdRuntimes = new Set<NaxRuntime>();
 
-afterEach(async () => {
+async function closeCreatedRuntimes(): Promise<void> {
   const runtimes = Array.from(createdRuntimes);
   createdRuntimes.clear();
   await Promise.allSettled(runtimes.map((runtime) => runtime.close()));
-});
+}
+
+// Registered once at module load time — fires in the scope of the first test
+// file that imports this module. Additional registrations inside trackRuntime
+// ensure the hook fires in every subsequent test file's scope as well.
+afterEach(closeCreatedRuntimes);
 
 function trackRuntime(runtime: NaxRuntime): NaxRuntime {
   createdRuntimes.add(runtime);
+
+  // Register cleanup in the current test file's scope. If the module-level
+  // afterEach already fired (createdRuntimes is empty), this is a no-op.
+  afterEach(closeCreatedRuntimes);
 
   const close = runtime.close.bind(runtime);
   runtime.close = async () => {

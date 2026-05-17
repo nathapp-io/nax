@@ -99,6 +99,33 @@ const story: UserStory = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Runtime mock for tests that enter the rectification loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeFakeRuntime(adapter: AcpAgentAdapter) {
+  return {
+    sessionManager: {
+      openSession: mock(async (name: string) =>
+        adapter.openSession(name, {
+          agentName: "claude",
+          workdir: ACP_WORKDIR,
+          // biome-ignore lint/suspicious/noExplicitAny: test mock
+          resolvedPermissions: { mode: "approve-all", skipPermissions: true } as any,
+          // biome-ignore lint/suspicious/noExplicitAny: test mock
+          modelDef: { model: "claude" } as any,
+          timeoutSeconds: 30,
+          promptRetries: 0,
+        }),
+      ),
+      closeSession: mock(async () => {}),
+      bindHandle: mock(() => undefined),
+    },
+    signal: undefined,
+    // biome-ignore lint/suspicious/noExplicitAny: test mock — partial runtime
+  } as any;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Deps restore
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -251,6 +278,10 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+      undefined,
+      undefined,
+      undefined,
+      makeFakeRuntime(adapter),
     );
 
     expect(clientsCreated).toBeGreaterThanOrEqual(1);
@@ -289,6 +320,10 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       true,
       // biome-ignore lint/suspicious/noExplicitAny: test logger mock
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+      undefined,
+      undefined,
+      undefined,
+      makeFakeRuntime(adapter),
     );
 
     expect(result.passed).toBe(false);

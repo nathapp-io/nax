@@ -11,12 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { NaxConfig } from "../../../../src/config";
-import { _regressionDeps, runDeferredRegression } from "../../../../src/execution/lifecycle/run-regression";
-import type { DeferredRegressionOptions } from "../../../../src/execution/lifecycle/run-regression";
-import type { PRD } from "../../../../src/prd";
-import type { VerificationResult } from "../../../../src/verification/types";
-import { makeNaxConfig } from "../../../helpers";
+import type { NaxConfig } from "@/config";
+import { _regressionDeps, runDeferredRegression } from "@/execution";
+import type { DeferredRegressionOptions } from "@/execution";
+import type { PRD } from "@/prd";
+import type { VerificationResult } from "@/verification";
+import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -74,12 +75,13 @@ function makePrd(storyIds: string[]): PRD {
   } as unknown as PRD;
 }
 
-function makeOptions(storyIds: string[]): DeferredRegressionOptions {
+function makeOptions(storyIds: string[], runtimeOverride?: NaxRuntime): DeferredRegressionOptions {
   return {
     config: makeConfig(),
     prd: makePrd(storyIds),
     workdir: "/tmp/test-workdir",
-  };
+    runtime: runtimeOverride ?? makeMockRuntime(),
+  } as unknown as DeferredRegressionOptions;
 }
 
 // Save/restore pattern — no mock.module() to avoid Bun 1.x global leaks
@@ -313,7 +315,8 @@ describe("runDeferredRegression — disabled mode", () => {
       config,
       prd: makePrd(["US-001"]),
       workdir: "/tmp/test",
-    });
+      runtime: makeMockRuntime(),
+    } as unknown as DeferredRegressionOptions);
 
     expect(result.success).toBe(true);
     expect(_regressionDeps.runVerification).not.toHaveBeenCalled();
@@ -444,5 +447,79 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
     expect(result.storyOutcomes?.["US-001"]).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3/AC4: TypeScript type guards — runtime required, agentManager not a substitute
+//
+// These @ts-expect-error annotations are RED before implementation:
+//   - Before impl: `agentManager` satisfies the old interface (no TS error on the line)
+//     → @ts-expect-error is UNUSED → typecheck fails with "Unused @ts-expect-error"
+//   - After impl: `runtime` is required and missing → TS error on the line
+//     → @ts-expect-error correctly suppresses it → typecheck passes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// AC4: runtime is required even when agentManager is present
+// @ts-expect-error — agentManager is not a substitute for the required runtime field
+const _ac4TypeCheck: DeferredRegressionOptions = {
+  config: {} as NaxConfig,
+  prd: {} as PRD,
+  workdir: "/tmp",
+  agentManager: {} as import("../../../../src/agents").IAgentManager,
+};
+void _ac4TypeCheck;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC5: runDeferredRegression reads agentManager from runtime.agentManager
+// AC6: runDeferredRegression passes runtime to runRectificationLoop
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
+  test("AC5: passes runtime.agentManager to runRectificationLoop (not a separate agentManager)", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return makeVerifyResult(); // initial: fail
+      return makePassResult(); // mid-loop: pass → early exit
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+
+    let capturedAgentManager: unknown;
+    _regressionDeps.runRectificationLoop = mock(async (opts) => {
+      capturedAgentManager = opts.agentManager;
+      return { succeeded: true, cost: 0.1, durationMs: 50 };
+    });
+
+    const { makeMockAgentManager: makeAM } = await import("../../../helpers");
+    const specificAgentManager = makeAM();
+    const mockRuntime = makeMockRuntime({ agentManager: specificAgentManager });
+
+    await runDeferredRegression(makeOptions(["US-001"], mockRuntime));
+
+    // AC5: agentManager in opts comes from runtime.agentManager, not a separate field
+    expect(capturedAgentManager).toBe(specificAgentManager);
+  });
+
+  test("AC6: passes runtime to runRectificationLoop opts", async () => {
+    let verifyCallIndex = 0;
+    _regressionDeps.runVerification = mock(async () => {
+      const i = verifyCallIndex++;
+      if (i === 0) return makeVerifyResult();
+      return makePassResult();
+    });
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
+
+    let capturedRuntime: unknown;
+    _regressionDeps.runRectificationLoop = mock(async (opts) => {
+      capturedRuntime = opts.runtime;
+      return { succeeded: true, cost: 0.1, durationMs: 50 };
+    });
+
+    const mockRuntime = makeMockRuntime();
+    await runDeferredRegression(makeOptions(["US-001"], mockRuntime));
+
+    // AC6: runtime is passed through to runRectificationLoop
+    expect(capturedRuntime).toBe(mockRuntime);
   });
 });

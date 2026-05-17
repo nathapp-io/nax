@@ -337,6 +337,16 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: true, estimatedCostUsd: 0.03 },
     ]);
 
+    const mockRuntime = {
+      sessionManager: {
+        openSession: mock(async () => ({ id: "mock-session", agentName: "claude" })),
+        closeSession: mock(async () => {}),
+        bindHandle: mock(() => {}),
+      },
+      signal: undefined,
+      // biome-ignore lint/suspicious/noExplicitAny: test mock — partial runtime
+    } as any;
+
     const result = await runThreeSessionTdd({
       agent,
       agentManager: fakeAgentManager(agent),
@@ -353,6 +363,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
       config,
       workdir: "/tmp/test",
       modelTier: "balanced",
+      runtime: mockRuntime,
     });
 
     expect(result.success).toBe(false);

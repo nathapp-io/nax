@@ -6,9 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
-import type { UserStory } from "../../../src/prd";
 import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
 import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 import { makeStory } from "../../helpers";
@@ -37,23 +35,22 @@ function makeConfig(maxRetries = 2): NaxConfig {
   } as unknown as NaxConfig;
 }
 
-function makeAgent(runResults: Partial<AgentResult>[] = []) {
-  let callIndex = 0;
-  const calls: AgentRunOptions[] = [];
-  const run = async (_opts: AgentRunOptions): Promise<AgentResult> => {
-    const result = runResults[callIndex] ?? { success: true };
-    callIndex++;
-    return {
-      success: true,
-      exitCode: 0,
-      output: "agent done",
-      rateLimited: false,
-      durationMs: 100,
-      estimatedCostUsd: 0.01,
-      ...result,
-    };
+function makeRuntime(handleOverrides: Record<string, unknown> = {}) {
+  const handle = {
+    id: "nax-rectify",
+    agentName: "claude",
+    ...handleOverrides,
   };
-  return { run, calls, isInstalled: mock(async () => true), complete: mock(async () => ""), buildCommand: mock(() => []) };
+  const sessionManager = {
+    openSession: mock(async () => handle),
+    closeSession: mock(async () => {}),
+    bindHandle: mock(() => {}),
+  };
+  return {
+    sessionManager,
+    signal: new AbortController().signal,
+    handle,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,14 +99,12 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("rectification session reuse", () => {
+  // AC3: runAsSession is invoked; agentManager.run is never called.
+  // AC6: closeSession called once in finally after loop exits normally.
   test("uses runtime runAsSession branch so each rectification attempt emits dispatch events", async () => {
     const story = makeStory();
     const config = makeConfig(2);
-    const handle = {
-      id: "nax-rectify",
-      agentName: "claude",
-      protocolIds: { recordId: "rec-1", sessionId: "sess-1" },
-    };
+    const { sessionManager } = makeRuntime({ protocolIds: { recordId: "rec-1", sessionId: "sess-1" } });
 
     mockSuiteResults = [
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
@@ -130,10 +125,7 @@ describe("rectification session reuse", () => {
       },
     });
     const runtime = {
-      sessionManager: {
-        openSession: mock(async () => handle),
-        closeSession: mock(async () => {}),
-      },
+      sessionManager,
       signal: new AbortController().signal,
     };
 
@@ -148,7 +140,6 @@ describe("rectification session reuse", () => {
       "my-feature",
       "/tmp/project",
       undefined,
-      undefined,
       runtime as any,
     );
 
@@ -158,10 +149,11 @@ describe("rectification session reuse", () => {
     expect(runtime.sessionManager.closeSession).toHaveBeenCalledTimes(1);
   });
 
+  // AC3: all runAsSession calls use sessionRole "implementer"; run is never called.
   test("all attempts use the same sessionRole", async () => {
     const story = makeStory();
     const config = makeConfig(2); // maxRetries=2
-    const agent = makeAgent();
+    const { sessionManager } = makeRuntime();
 
     // Suite always fails so both rectification attempts run
     mockSuiteResults = [
@@ -172,34 +164,39 @@ describe("rectification session reuse", () => {
 
     const agentManager = makeMockAgentManager({
       getDefaultAgent: "claude",
-      getAgentFn: (_name: string) => agent as any,
-      runFn: async (_agentName: string, opts: AgentRunOptions) => {
-        agent.calls.push(opts);
-        const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
+      runAsSessionFn: async () => ({
+        output: "agent done",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+      runFn: async () => {
+        throw new Error("legacy run path should not be invoked");
       },
     });
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, "my-feature");
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
-    expect(agent.calls.length).toBe(2); // both attempts ran
+    expect(agentManager.run).not.toHaveBeenCalled();
 
-    // The adapter auto-derives session handle from featureName + storyId + sessionRole.
-    // Both attempts must share the same sessionRole so the adapter uses the same session.
-    const sessionRoles = agent.calls.map((c) => c.sessionRole);
+    const calls = (agentManager.runAsSession as any).mock.calls as Array<[string, unknown, string, { sessionRole?: string }]>;
+    expect(calls.length).toBe(2);
+    const sessionRoles = calls.map(([, , , opts]) => opts.sessionRole);
     expect(sessionRoles[0]).toBeDefined();
     expect(sessionRoles[0]).toBe(sessionRoles[1]);
   });
 
+  // AC3: consistent sessionRole across 3 attempts.
   test("all attempts use the same sessionRole across retry attempts", async () => {
     const story = makeStory();
     const config = makeConfig(3); // maxRetries=3 — three attempts
-    const agent = makeAgent();
+    const { sessionManager } = makeRuntime();
 
     mockSuiteResults = [
       { success: false, exitCode: 1, output: FAILING_OUTPUT }, // initial gate
@@ -210,69 +207,83 @@ describe("rectification session reuse", () => {
 
     const agentManager = makeMockAgentManager({
       getDefaultAgent: "claude",
-      getAgentFn: (_name: string) => agent as any,
-      runFn: async (_agentName: string, opts: AgentRunOptions) => {
-        agent.calls.push(opts);
-        const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
+      runAsSessionFn: async () => ({
+        output: "agent done",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+      runFn: async () => {
+        throw new Error("legacy run path should not be invoked");
       },
     });
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any, "my-feature");
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
-    expect(agent.calls.length).toBe(3);
+    expect(agentManager.run).not.toHaveBeenCalled();
 
-    // All attempts must share the same sessionRole for session reuse (caller-managed per ADR-019)
-    const sessionRoles = agent.calls.map((c) => c.sessionRole);
+    const calls = (agentManager.runAsSession as any).mock.calls as Array<[string, unknown, string, { sessionRole?: string }]>;
+    expect(calls.length).toBe(3);
+    const sessionRoles = calls.map(([, , , opts]) => opts.sessionRole);
     expect(sessionRoles[0]).toBeDefined();
     expect(sessionRoles[0]).toBe(sessionRoles[1]);
     expect(sessionRoles[1]).toBe(sessionRoles[2]);
   });
 
-  test("rectification calls set keepOpen except on last attempt", async () => {
+  // Replaces "keepOpen" test: spec behavior is that the held session handle is reused
+  // across all attempts (openSession called once; runAsSession called N times with same handle).
+  test("held session handle is reused across all rectification attempts (openSession called once)", async () => {
     const story = makeStory();
-    const config = makeConfig(2);
-    const agent = makeAgent();
+    const config = makeConfig(3); // maxRetries=3
+    const { sessionManager } = makeRuntime();
 
     mockSuiteResults = [
-      { success: false, exitCode: 1, output: FAILING_OUTPUT },
-      { success: false, exitCode: 1, output: FAILING_OUTPUT },
-      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+      { success: false, exitCode: 1, output: FAILING_OUTPUT }, // initial gate
+      { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 1
+      { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 2
+      { success: false, exitCode: 1, output: FAILING_OUTPUT }, // after attempt 3 (final)
     ];
 
     const agentManager = makeMockAgentManager({
       getDefaultAgent: "claude",
-      getAgentFn: (_name: string) => agent as any,
-      runFn: async (_agentName: string, opts: AgentRunOptions) => {
-        agent.calls.push(opts);
-        const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
+      runAsSessionFn: async () => ({
+        output: "agent done",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+      runFn: async () => {
+        throw new Error("legacy run path should not be invoked");
       },
     });
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any);
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
-    expect(agent.calls.length).toBe(2);
-    // Non-last attempts keep the session open so retries share context.
-    // Last attempt closes the session.
-    expect(agent.calls[0]?.keepOpen).toBe(true);
-    expect(agent.calls[1]?.keepOpen).toBe(false);
+    // Session opened once and reused across all attempts — this is the spec equivalent
+    // of the legacy keepOpen flag. Handle is closed once in the finally at loop exit.
+    expect(sessionManager.openSession).toHaveBeenCalledTimes(1);
+    expect(agentManager.runAsSession).toHaveBeenCalledTimes(3);
+    expect(agentManager.run).not.toHaveBeenCalled();
+    expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
   });
 
+  // AC3: sessionRole consistency even without featureName.
   test("all attempts use the same sessionRole even without featureName", async () => {
     const story = makeStory({ id: "US-002" });
     const config = makeConfig(2);
-    const agent = makeAgent();
+    const { sessionManager } = makeRuntime();
 
     mockSuiteResults = [
       { success: false, exitCode: 1, output: FAILING_OUTPUT },
@@ -282,23 +293,30 @@ describe("rectification session reuse", () => {
 
     const agentManager = makeMockAgentManager({
       getDefaultAgent: "claude",
-      getAgentFn: (_name: string) => agent as any,
-      runFn: async (_agentName: string, opts: AgentRunOptions) => {
-        agent.calls.push(opts);
-        const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
+      runAsSessionFn: async () => ({
+        output: "agent done",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+      runFn: async () => {
+        throw new Error("legacy run path should not be invoked");
       },
     });
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     await runFullSuiteGate(story, config, "/tmp/fake-workdir-2", agentManager, "balanced", true, {
       info: () => {},
       warn: () => {},
       error: () => {},
       debug: () => {},
-    } as any); // no featureName
+    } as any, undefined, undefined, undefined, runtime as any); // no featureName
 
-    expect(agent.calls.length).toBe(2);
-    const [role1, role2] = agent.calls.map((c) => c.sessionRole);
+    expect(agentManager.run).not.toHaveBeenCalled();
+
+    const calls = (agentManager.runAsSession as any).mock.calls as Array<[string, unknown, string, { sessionRole?: string }]>;
+    expect(calls.length).toBe(2);
+    const [role1, role2] = calls.map(([, , , opts]) => opts.sessionRole);
     expect(role1).toBeDefined();
     expect(role1).toBe(role2);
   });
@@ -306,7 +324,6 @@ describe("rectification session reuse", () => {
   test("defers unattributable failures to run-level regression instead of rectifying", async () => {
     const story = makeStory({ id: "US-UNMAPPED" });
     const config = makeConfig(1);
-    const agent = makeAgent();
     const warn = mock(() => {});
     const unmappedOutput = `
 test/example.test.ts:
@@ -330,27 +347,151 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       failures: [],
     })) as any;
 
-    const agentManager = makeMockAgentManager({
-      getDefaultAgent: "claude",
-      getAgentFn: (_name: string) => agent as any,
-      runFn: async (_agentName: string, opts: AgentRunOptions) => {
-        agent.calls.push(opts);
-        const result = await agent.run(opts);
-        return { success: result.success, exitCode: result.exitCode, output: result.output, rateLimited: result.rateLimited, durationMs: result.durationMs, estimatedCostUsd: result.estimatedCostUsd, agentFallbacks: [] };
-      },
-    });
+    const agentManager = makeMockAgentManager({ getDefaultAgent: "claude" });
+    const { sessionManager } = makeRuntime();
+    const runtime = { sessionManager, signal: new AbortController().signal };
 
     const result = await runFullSuiteGate(story, config, "/tmp/fake-workdir", agentManager, "balanced", true, {
       info: () => {},
       warn,
       error: () => {},
       debug: () => {},
-    } as any, "my-feature");
+    } as any, "my-feature", undefined, undefined, runtime as any);
 
     expect(result.passed).toBe(true);
     expect(result.fullSuiteGatePassed).toBe(false);
     expect(result.status).toBe("deferred-unattributable");
-    expect(agent.calls.length).toBe(0);
+    // Rectification loop must NOT be entered — neither run nor runAsSession called (AC3).
+    expect(agentManager.run).not.toHaveBeenCalled();
+    expect(agentManager.runAsSession).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  // AC4: bindHandle is called when sessionId is provided and attempt result includes protocolIds.
+  test("calls runtime.sessionManager.bindHandle when sessionId is provided and protocolIds present", async () => {
+    const story = makeStory({ id: "US-AC4" });
+    const config = makeConfig(1);
+    const protocolIds = { recordId: "rec-abc", sessionId: "sess-abc" };
+    const { sessionManager } = makeRuntime({ protocolIds });
+
+    // Initial suite fails, rectification attempt runs, then suite passes.
+    mockSuiteResults = [
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+      { success: true, exitCode: 0, output: "" },
+    ];
+
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runAsSessionFn: async () => ({
+        output: "fixed",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+    });
+    const runtime = { sessionManager, signal: new AbortController().signal };
+
+    await runFullSuiteGate(
+      story,
+      config,
+      "/tmp/fake-workdir",
+      agentManager,
+      "balanced",
+      true,
+      { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+      "my-feature",
+      "/tmp/project",
+      "the-session-id", // sessionId provided → bindHandle must be called
+      runtime as any,
+    );
+
+    expect(sessionManager.bindHandle).toHaveBeenCalledTimes(1);
+    expect(sessionManager.bindHandle).toHaveBeenCalledWith(
+      "the-session-id",
+      expect.any(String),
+      protocolIds,
+    );
+  });
+
+  // AC5: bindHandle is NOT called when sessionId is absent.
+  test("does not call runtime.sessionManager.bindHandle when sessionId is absent", async () => {
+    const story = makeStory({ id: "US-AC5" });
+    const config = makeConfig(1);
+    const protocolIds = { recordId: "rec-xyz", sessionId: "sess-xyz" };
+    const { sessionManager } = makeRuntime({ protocolIds });
+
+    mockSuiteResults = [
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+      { success: true, exitCode: 0, output: "" },
+    ];
+
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runAsSessionFn: async () => ({
+        output: "fixed",
+        tokenUsage: { inputTokens: 1, outputTokens: 2 },
+        estimatedCostUsd: 0.01,
+        internalRoundTrips: 1,
+      }),
+    });
+    const runtime = { sessionManager, signal: new AbortController().signal };
+
+    await runFullSuiteGate(
+      story,
+      config,
+      "/tmp/fake-workdir",
+      agentManager,
+      "balanced",
+      true,
+      { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+      "my-feature",
+      "/tmp/project",
+      undefined, // no sessionId → bindHandle must NOT be called
+      runtime as any,
+    );
+
+    expect(sessionManager.bindHandle).not.toHaveBeenCalled();
+  });
+
+  // AC7: when a non-retryable error clears heldHandle in the catch block, the finally
+  // does NOT call closeSession a second time (no double-close).
+  test("does not double-close session when non-retryable error clears heldHandle in catch", async () => {
+    const story = makeStory({ id: "US-AC7" });
+    const config = makeConfig(1);
+    const { sessionManager } = makeRuntime();
+
+    mockSuiteResults = [
+      { success: false, exitCode: 1, output: FAILING_OUTPUT },
+    ];
+
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      runAsSessionFn: async () => {
+        throw new Error("non-retryable agent error");
+      },
+    });
+    const runtime = { sessionManager, signal: new AbortController().signal };
+
+    try {
+      await runFullSuiteGate(
+        story,
+        config,
+        "/tmp/fake-workdir",
+        agentManager,
+        "balanced",
+        true,
+        { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
+        "my-feature",
+        "/tmp/project",
+        undefined,
+        runtime as any,
+      );
+    } catch {
+      // Expected: non-retryable error propagates out of runFullSuiteGate.
+    }
+
+    // closeSession called exactly once (in the catch error handler) — NOT again in the finally.
+    expect(sessionManager.openSession).toHaveBeenCalledTimes(1);
+    expect(sessionManager.closeSession).toHaveBeenCalledTimes(1);
   });
 });

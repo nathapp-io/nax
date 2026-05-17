@@ -1,0 +1,193 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rectification-runtime-required",
+  "branchName": "feat/rectification-runtime-required",
+  "createdAt": "2026-05-17T15:43:21+08:00",
+  "updatedAt": "2026-05-17T13:19:33.841Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Thread NaxRuntime Through Broken Rectification Callers",
+      "description": "**Goal** — Thread `NaxRuntime` into the two non-TDD rectification dispatch paths so they always use runtime-backed rectification options.\n\n**Motivation** — `agentManager.run()` → `_runHop` → `createSessionRunHop` → `sessionManager.sendPrompt()` bypasses the dispatch middleware layer entirely. No `SessionTurnDispatchEvent` means no prompt audit record and no cost entry in `CostAggregator`.\n\n**Approach** — Thread `NaxRuntime` from existing context objects — both callers already have runtime available:\n- `rectify.ts`: `ctx` extends `DispatchContext` which includes `runtime: NaxRuntime`\n- `run-completion.ts`: `RunCompletionOptions extends DispatchContext`, so `options.runtime` exists\n\nNo new types, no new abstractions. The change is purely threading + deletion.\n\n**Scope** — In: `src/pipeline/stages/rectify.ts`, `src/execution/lifecycle/run-regression.ts`, `src/execution/lifecycle/run-completion.ts` caller/interface wiring updates. Out: any behavior changes inside rectification-loop transport logic or TDD gate internals.\n\n**Interface**\n```typescript\nexport interface DeferredRegressionOptions {\n  config: NaxConfig;\n  prd: PRD;\n  workdir: string;\n  runtime: import(\"../../runtime\").NaxRuntime;  // added; agentManager removed (use runtime.agentManager)\n}\n```",
+      "acceptanceCriteria": [
+        "When `_rectifyDeps.runRectificationLoop` is invoked in `src/pipeline/stages/rectify.ts`, then it passes `runtime: ctx.runtime` and does not pass `sessionManager`.",
+        "When `_rectifyDeps.runRectificationLoop` is invoked in `src/pipeline/stages/rectify.ts`, then it continues to pass `sessionId: ctx.sessionId`.",
+        "Given a `DeferredRegressionOptions` literal without `runtime`, when it is passed to `runDeferredRegression`, then TypeScript reports a missing required `runtime` property error.",
+        "Given a `DeferredRegressionOptions` literal with `agentManager` and without `runtime`, when it is passed to `runDeferredRegression`, then TypeScript still reports a missing required `runtime` property error.",
+        "When `runDeferredRegression` runs, then it reads the manager from `runtime.agentManager` and not from `options.agentManager`.",
+        "When `runDeferredRegression` calls `runRectificationLoop`, then the options object includes `runtime`.",
+        "When `run-completion.ts` calls `runDeferredRegression`, then it passes `runtime: options.runtime` and does not pass `agentManager`."
+      ],
+      "tags": [
+        "feature",
+        "rectification",
+        "runtime",
+        "dispatch"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/rectify.ts",
+        "src/execution/lifecycle/run-regression.ts",
+        "src/execution/lifecycle/run-completion.ts",
+        "src/runtime/dispatch-context.ts",
+        "src/verification/rectification-loop.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3e6eeba6578296ed42e420ae239431a2f2ebf1d4"
+    },
+    {
+      "id": "US-002",
+      "title": "Require Runtime and Remove Legacy Path in Verification Rectification Loop",
+      "description": "**Goal** — Make `runtime` mandatory for `runRectificationLoop` and delete the legacy non-runtime execution branch in `src/verification/rectification-loop.ts`.\n\n**Motivation** — `agentManager.run()` → `_runHop` → `createSessionRunHop` → `sessionManager.sendPrompt()` bypasses the dispatch middleware layer entirely. No `SessionTurnDispatchEvent` means no prompt audit record and no cost entry in `CostAggregator`.\n\n**Approach** — Thread `NaxRuntime` from existing context objects — both callers already have runtime available:\n- `rectify.ts`: `ctx` extends `DispatchContext` which includes `runtime: NaxRuntime`\n- `run-completion.ts`: `RunCompletionOptions extends DispatchContext`, so `options.runtime` exists\n\nNo new types, no new abstractions. The change is purely threading + deletion.\n\n**Scope** — In: `RectificationLoopOptions` contract update, unconditional runtime/runAsSession dispatch path, G5 bindHandle source change to `runtime.sessionManager`, and finally-guard simplification; associated test call-site updates for required runtime. Out: removal of `AgentRunOptions.keepOpen` globally.\n\n**Interface**\n```typescript\n// Before\nsessionManager?: import(\"../session\").ISessionManager;\nsessionId?: string;\nruntime?: import(\"../runtime\").NaxRuntime;\n\n// After — sessionManager removed (superseded by runtime.sessionManager)\nsessionId?: string;   // kept: caller-provided nax session ID for G5 bindHandle\nruntime: import(\"../runtime\").NaxRuntime;  // now required\n```\n\n**Approach** — Legacy branch deletion\n```typescript\n// DELETE from rectification-loop.ts ~line 402 and rectification-gate.ts ~line 384\n} else {\n  // Legacy keepOpen path — used when no runtime is available (standalone callers).\n  agentResult = await agentManager.run({\n    runOptions: { ...runOptions, keepOpen: !isLastAttempt },\n  });\n}\n```\n\nThe `if (runtime)` check that precedes this branch also becomes unconditional — the entire `while (true)` transport-retry block runs without a wrapping `if`.\n\n**Approach** — G5 bindHandle update\n```typescript\n// Before\nif (sessionManager && sessionId && agentResult.protocolIds) {\n  sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);\n}\n\n// After — sessionManager guard removed; runtime.sessionManager used directly\nif (sessionId && agentResult.protocolIds) {\n  try {\n    runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);\n  } catch {\n    // Session may not exist in manager (e.g. v2 context disabled) — ignore.\n  }\n}\n```\n\n**Approach** — `finally` guard simplification\n```typescript\n// Before\nif (heldHandle && runtime) {\n\n// After\nif (heldHandle) {\n```",
+      "acceptanceCriteria": [
+        "Given a `runRectificationLoop` call that includes `sessionManager` in the options object, when TypeScript checks the call, then it reports that `sessionManager` is not a valid property of `RectificationLoopOptions`.",
+        "Given a `runRectificationLoop` call that omits `runtime`, when TypeScript checks the call, then it reports that required property `runtime` is missing.",
+        "When `runRectificationLoop` executes a rectification attempt, then it invokes `agentManager.runAsSession()` and does not invoke `agentManager.run()`.",
+        "Given `sessionId` is provided and an attempt result includes `agentResult.protocolIds`, when `runRectificationLoop` completes that attempt, then it calls `runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, protocolIds)`.",
+        "Given `sessionId` is not provided and an attempt result includes `agentResult.protocolIds`, when `runRectificationLoop` completes that attempt, then it does not call `runtime.sessionManager.bindHandle`.",
+        "When `runRectificationLoop` exits its retry loop after opening a held handle, then it calls `runtime.sessionManager.closeSession(heldHandle)`.",
+        "When `runRectificationLoop` exits its retry loop without opening a held handle, then it does not call `runtime.sessionManager.closeSession`."
+      ],
+      "tags": [
+        "feature",
+        "rectification",
+        "runtime",
+        "verification"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Autofix exhausted: 3 findings remain\n  - abandonment, assumption, convention in src/tdd/rectification-gate.ts",
+          "timestamp": "2026-05-17T09:24:46.822Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/verification/rectification-loop.ts",
+        "test/unit/verification/rectification-loop.test.ts",
+        "test/unit/verification/rectification-loop-escalation.test.ts",
+        "test/helpers/runtime.ts",
+        "test/helpers/index.ts"
+      ],
+      "suggestedCriteria": [
+        "Given `runtime.sessionManager.bindHandle` throws, when protocol IDs are present, then `runRectificationLoop` continues without throwing from the bind step.",
+        "Given `SessionTurnError` is retryable and transport retry budget remains, when a runAsSession attempt fails with that error, then `runRectificationLoop` retries with a fresh opened session handle."
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: 3 findings remain\n  - abandonment, assumption, convention in src/tdd/rectification-gate.ts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/verification/rectification-loop.ts",
+              "line": 79,
+              "message": "runtime property is still marked as optional (runtime?) but AC-2 requires it to be mandatory. Callers omitting runtime will not trigger a TypeScript error.",
+              "suggestion": "Change line 79 from `runtime?: import(\"../runtime\").NaxRuntime;` to `runtime: import(\"../runtime\").NaxRuntime;` (remove the `?`)",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "git diff 4592efbccb9d4b8fb9a592b11cf3d707676f1b31..HEAD -- src/verification/rectification-loop.ts",
+                  "file": "src/verification/rectification-loop.ts",
+                  "line": 78,
+                  "observed": "  runtime: import(\"../runtime\").NaxRuntime;"
+                },
+                "acQuote": "Given a `runRectificationLoop` call that omits `runtime`, when TypeScript checks the call, then it reports that required property `runtime` is missing.",
+                "acIndex": 2
+              }
+            }
+          ],
+          "cost": 3.9824891300000003,
+          "timestamp": "2026-05-17T09:24:46.822Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "4592efbccb9d4b8fb9a592b11cf3d707676f1b31"
+    },
+    {
+      "id": "US-003",
+      "title": "Require Runtime and Remove Legacy Path in TDD Rectification Gate",
+      "description": "**Goal** — Make runtime mandatory in `runFullSuiteGate`/private `runRectificationLoop`, remove `sessionManager` parameters, and delete the legacy non-runtime branch in `src/tdd/rectification-gate.ts`.\n\n**Motivation** — `agentManager.run()` → `_runHop` → `createSessionRunHop` → `sessionManager.sendPrompt()` bypasses the dispatch middleware layer entirely. No `SessionTurnDispatchEvent` means no prompt audit record and no cost entry in `CostAggregator`.\n\n**Approach** — Thread `NaxRuntime` from existing context objects — both callers already have runtime available:\n- `rectify.ts`: `ctx` extends `DispatchContext` which includes `runtime: NaxRuntime`\n- `run-completion.ts`: `RunCompletionOptions extends DispatchContext`, so `options.runtime` exists\n\nNo new types, no new abstractions. The change is purely threading + deletion.\n\n**Scope** — In: runFullSuiteGate and private helper signatures/calls, orchestrator call-site argument removal, unconditional runtime dispatch, G5 bindHandle runtime source update, finally guard simplification, and corresponding TDD gate test updates. Out: deferred regression caller threading (handled by US-001) and verification loop changes (handled by US-002).\n\n**Interface**\n```typescript\n// Before\nsessionManager?: import(\"../session\").ISessionManager,\nsessionId?: string,\nruntime?: import(\"../runtime\").NaxRuntime,\n\n// After\nsessionId?: string,   // kept: same reason as above\nruntime: import(\"../runtime\").NaxRuntime,  // now required; sessionManager param removed\n```\n\n**Approach** — Legacy branch deletion\n```typescript\n// DELETE from rectification-loop.ts ~line 402 and rectification-gate.ts ~line 384\n} else {\n  // Legacy keepOpen path — used when no runtime is available (standalone callers).\n  agentResult = await agentManager.run({\n    runOptions: { ...runOptions, keepOpen: !isLastAttempt },\n  });\n}\n```\n\nThe `if (runtime)` check that precedes this branch also becomes unconditional — the entire `while (true)` transport-retry block runs without a wrapping `if`.\n\n**Approach** — G5 bindHandle update\n```typescript\n// Before\nif (sessionManager && sessionId && agentResult.protocolIds) {\n  sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);\n}\n\n// After — sessionManager guard removed; runtime.sessionManager used directly\nif (sessionId && agentResult.protocolIds) {\n  try {\n    runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);\n  } catch {\n    // Session may not exist in manager (e.g. v2 context disabled) — ignore.\n  }\n}\n```\n\n**Approach** — `finally` guard simplification\n```typescript\n// Before\nif (heldHandle && runtime) {\n\n// After\nif (heldHandle) {\n```",
+      "acceptanceCriteria": [
+        "Given a call to `runFullSuiteGate` that still passes `sessionManager` in the old positional slot, when TypeScript checks the call, then it reports an argument type mismatch.",
+        "Given a call to `runFullSuiteGate` that omits `runtime`, when TypeScript checks the call, then it reports that the required `runtime` argument is missing.",
+        "Given private `runRectificationLoop` in `rectification-gate.ts`, when it is called from `runFullSuiteGate`, then no `sessionManager` argument is passed.",
+        "Given private `runRectificationLoop` in `rectification-gate.ts`, when it is called from `runFullSuiteGate`, then a non-optional `runtime` argument is passed.",
+        "When private `runRectificationLoop` executes a rectification attempt, then it invokes `agentManager.runAsSession()` and does not invoke `agentManager.run()`.",
+        "Given `sessionId` is provided and a rectification attempt result includes `rectifyResult.protocolIds`, when private `runRectificationLoop` completes that attempt, then it calls `runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, protocolIds)`.",
+        "When private `runRectificationLoop` exits after opening a held handle, then it calls `runtime.sessionManager.closeSession(heldHandle)`.",
+        "When `src/tdd/orchestrator.ts` calls `runFullSuiteGate`, then the call compiles without passing `sessionManager`."
+      ],
+      "tags": [
+        "feature",
+        "rectification",
+        "runtime",
+        "tdd"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 3,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tdd/rectification-gate.ts",
+        "src/tdd/orchestrator.ts",
+        "test/unit/tdd/rectification-gate.test.ts",
+        "test/unit/tdd/rectification-gate-session.test.ts",
+        "test/helpers/runtime.ts"
+      ],
+      "suggestedCriteria": [
+        "Given no `sessionId` is provided, when private `runRectificationLoop` receives protocol IDs, then it does not call `runtime.sessionManager.bindHandle`.",
+        "Given retryable `SessionTurnError` during runAsSession, when retry budget remains, then private `runRectificationLoop` closes stale handle and retries with a fresh session."
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4208899a4472886bbb753489d320af78002925ee",
+      "failureStage": "execution"
+    }
+  ],
+  "analysis": "The codebase already has the required runtime plumbing, but two rectification entry points still omit runtime and therefore can execute legacy keepOpen branches that call agentManager.run() instead of runAsSession(). In src/pipeline/stages/rectify.ts, _rectifyDeps.runRectificationLoop currently passes sessionManager and sessionId but not runtime (src/pipeline/stages/rectify.ts:141-160). In deferred regression, DeferredRegressionOptions still requires agentManager and has no runtime (src/execution/lifecycle/run-regression.ts:31-37), runDeferredRegression destructures agentManager from options (src/execution/lifecycle/run-regression.ts:104), and calls runRectificationLoop without runtime (src/execution/lifecycle/run-regression.ts:323-333). run-completion currently forwards agentManager into deferred regression (src/execution/lifecycle/run-completion.ts:145-150) even though RunCompletionOptions already extends DispatchContext and has runtime by contract (src/execution/lifecycle/run-completion.ts:39, src/runtime/dispatch-context.ts:20-24).\n\nBoth rectification subsystems still expose optional runtime and optional sessionManager, and each contains explicit legacy else branches. In verification rectification loop, RectificationLoopOptions includes sessionManager? and runtime? (src/verification/rectification-loop.ts:50-86), function destructures both (src/verification/rectification-loop.ts:186-200), dispatches through runAsSession only inside if (runtime) (src/verification/rectification-loop.ts:333-401), falls back to agentManager.run({ keepOpen }) in else (src/verification/rectification-loop.ts:402-407), binds G5 handles through sessionManager guard (src/verification/rectification-loop.ts:413-418), and cleanup has redundant runtime check in finally (src/verification/rectification-loop.ts:532-535). TDD rectification gate mirrors this: runFullSuiteGate and private runRectificationLoop accept sessionManager? and runtime? (src/tdd/rectification-gate.ts:82-95, src/tdd/rectification-gate.ts:226-244), internal callsites pass both (src/tdd/rectification-gate.ts:140-158 and src/tdd/rectification-gate.ts:170-188), dispatch path is conditional on runtime with legacy keepOpen else (src/tdd/rectification-gate.ts:316-389), bindHandle uses sessionManager guard (src/tdd/rectification-gate.ts:393-398), and finally cleanup has heldHandle && runtime guard (src/tdd/rectification-gate.ts:478-481). Orchestrator currently passes implementerBinding?.sessionManager into runFullSuiteGate before sessionId/runtime (src/tdd/orchestrator.ts:287-300), so signature shifts are required there.\n\nkeepOpen must remain in shared agent/run path and is still read by runtime session hop logic (src/runtime/session-run-hop.ts:111-113); removing it globally would be incorrect. This feature only removes two specific legacy branches in rectification subsystems.\n\nTest impact is broad but focused: rectification-loop unit tests currently call runRectificationLoop without runtime (e.g., src/test/unit/verification/rectification-loop.test.ts:136-144 and 184-192), so runtime must be threaded in test calls after runtime becomes required. Escalation tests in test/unit/verification/rectification-loop-escalation.test.ts also invoke runRectificationLoop and will need the same update. TDD gate tests include both runtime-path tests and legacy-style calls. rectification-gate-session.test.ts already exercises runtime dispatch in one case (test/unit/tdd/rectification-gate-session.test.ts:140-153), but other calls omit runtime (e.g., src/test/unit/tdd/rectification-gate-session.test.ts:183-189) and will need to provide makeTestRuntime() consistently. test/helpers/runtime.ts already auto-tracks runtimes and closes them in global afterEach (test/helpers/runtime.ts:11-17), but story scope explicitly asks for per-file afterEach runtime.close() patterns to keep ownership explicit in updated test suites.\n\nRisks and compatibility: making runtime required is a compile-time breaking interface change for direct callers of runRectificationLoop and runFullSuiteGate/private helper, but this is intentionally constrained to in-repo call sites and tests. Behavioral risk is low because TDD already uses the modern runAsSession path when runtime is provided, and transport retry/session lifecycle logic already exists there. Main regression risks are (1) missing runtime threading in one caller leading to compile failure, (2) tests relying on old optional signatures, and (3) bindHandle behavior when sessionId is absent; code already treats bind as best-effort with try/catch. Migration path is in-place refactor: thread runtime from existing DispatchContext-bearing objects (PipelineContext and RunCompletionOptions), remove obsolete sessionManager parameters from rectification interfaces/signatures/calls, and update tests to construct runtime via makeTestRuntime() for all new required call sites."
+}

@@ -25,3 +25,13 @@ export {
   type CrashRecoveryContext,
 } from "./crash-recovery";
 export { PidRegistry, _pidRegistryDeps } from "./pid-registry";
+export {
+  runDeferredRegression,
+  _regressionDeps,
+  handleRunCompletion,
+  _runCompletionDeps,
+  type DeferredRegressionOptions,
+  type DeferredRegressionResult,
+  type RunCompletionOptions,
+  type RunCompletionResult,
+} from "./lifecycle";

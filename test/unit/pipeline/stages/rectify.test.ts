@@ -1,8 +1,10 @@
 // RE-ARCH: keep
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rectifyStage, _rectifyDeps } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
 import { DEFAULT_CONFIG } from "@/config";
+import { _rectificationDeps } from "@/verification";
+import { makeMockRuntime, makeMockAgentManager, makeSessionManager } from "@test/helpers";
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
@@ -138,5 +140,80 @@ describe("rectifyStage", () => {
       expect(result.fromStage).toBe("verify");
       expect(result.resetRetryCount).toBe(true);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Runtime threading — AC1 and AC2
+// ─────────────────────────────────────────────────────────────────────────────
+
+let savedRectDeps: typeof _rectificationDeps;
+beforeEach(() => {
+  savedRectDeps = { ..._rectificationDeps };
+});
+afterEach(() => {
+  Object.assign(_rectificationDeps, savedRectDeps);
+});
+
+describe("rectifyStage — runtime threading", () => {
+  test("AC1: default _rectifyDeps wrapper uses runtime path (openSession called) when ctx.runtime is provided", async () => {
+    let openSessionCalled = false;
+    const mockSessionManager = makeSessionManager({
+      openSession: mock(async () => {
+        openSessionCalled = true;
+        return { id: "mock-session-handle", agentName: "claude" };
+      }),
+    });
+    const mockAgentManager = makeMockAgentManager();
+    const mockRuntime = makeMockRuntime({
+      agentManager: mockAgentManager,
+      sessionManager: mockSessionManager,
+    });
+
+    // Short-circuit: verification returns success so loop exits after one agent run
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      status: "SUCCESS" as const,
+      countsTowardEscalation: false,
+      passCount: 5,
+      failCount: 0,
+    }));
+
+    const ctx = makeCtx({
+      runtime: mockRuntime,
+      agentManager: mockAgentManager,
+      sessionManager: mockSessionManager,
+      sessionId: "sess-test-001",
+      verifyResult: makeVerifyResult(false),
+      prd: { feature: "test-feature", userStories: [] } as any,
+    } as Partial<PipelineContext>);
+
+    // Use the DEFAULT _rectifyDeps.runRectificationLoop (not mocked by this test)
+    await _rectifyDeps.runRectificationLoop(ctx, {
+      testCommand: "bun test",
+      testOutput: "2 fail | (fail) test > should work\n1 pass | 2 fail",
+    });
+
+    // AC1: After implementation, runtime path taken → openSession was called
+    expect(openSessionCalled).toBe(true);
+  });
+
+  test("AC2: stage passes sessionId from ctx to _rectifyDeps (regression guard)", async () => {
+    let capturedSessionId: string | undefined;
+    const saved = { ..._rectifyDeps };
+    _rectifyDeps.runRectificationLoop = async (capturedCtx: PipelineContext) => {
+      capturedSessionId = capturedCtx.sessionId;
+      return { succeeded: false, cost: 0, durationMs: 0 };
+    };
+
+    const ctx = makeCtx({
+      sessionId: "sess-ac2-expected",
+      verifyResult: makeVerifyResult(false),
+    });
+
+    await rectifyStage.execute(ctx);
+    Object.assign(_rectifyDeps, saved);
+
+    expect(capturedSessionId).toBe("sess-ac2-expected");
   });
 });

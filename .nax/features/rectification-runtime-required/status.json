@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-17T12-47-56-122Z",
+    "feature": "rectification-runtime-required",
+    "startedAt": "2026-05-17T12:47:56.122Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 96296
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 4.738893890000001,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-05-17T13:23:50.296Z",
+  "durationMs": 2154174,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-05-17T13:23:49.566Z"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-17T13:23:49.567Z"
+    }
+  }
+}

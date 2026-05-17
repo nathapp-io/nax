@@ -16,13 +16,13 @@ import {
   _runCompletionDeps,
   handleRunCompletion,
   type RunCompletionOptions,
-} from "../../../../src/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
-import type { StoryMetrics } from "../../../../src/metrics";
+  type DeferredRegressionResult,
+} from "@/execution";
+import type { StoryMetrics } from "@/metrics";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
-import type { NaxConfig } from "../../../../src/config";
-import type { PRD, UserStory } from "../../../../src/prd";
-import { makeNaxConfig, makeMockRuntime } from "../../../helpers";
+import type { NaxConfig } from "@/config";
+import type { PRD, UserStory } from "@/prd";
+import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -447,6 +447,28 @@ describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-ski
     expect(skippedCall?.status).toBe("passed");
     expect(typeof skippedCall?.lastRunAt).toBe("string");
     expect(new Date(skippedCall?.lastRunAt as string).toISOString()).toBe(skippedCall?.lastRunAt);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // AC7: run-completion passes runtime: options.runtime (not agentManager) to runDeferredRegression
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  test("AC7: passes runtime to runDeferredRegression and does not pass agentManager", async () => {
+    let capturedArgs: Record<string, unknown> | undefined;
+    _runCompletionDeps.runDeferredRegression = mock(async (opts) => {
+      capturedArgs = opts as unknown as Record<string, unknown>;
+      return { success: true, failedTests: 0, failedTestFiles: [], passedTests: 0, rectificationAttempts: 0, affectedStories: [] };
+    });
+
+    const mockRuntime = makeMockRuntime();
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const config = makeConfig("deferred", "bun test");
+
+    await handleRunCompletion(makeOpts(config, prd, { runtime: mockRuntime }));
+
+    // AC7: runtime is passed through, agentManager is not explicitly passed
+    expect(capturedArgs?.runtime).toBe(mockRuntime);
+    expect(capturedArgs?.agentManager).toBeUndefined();
   });
 
   test("smart-skip: setPostRunPhase is called even though runDeferredRegression is not", async () => {

@@ -8,11 +8,11 @@
  * - Unmapped tests: warn and mark all passed stories for re-verification
  */
 
-import type { IAgentManager } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
+import type { NaxRuntime } from "../../runtime";
 import { hasCommitsForStory } from "../../utils/git";
 import { parseTestOutput } from "../../verification";
 import { runRectificationLoop } from "../../verification/rectification-loop";
@@ -32,8 +32,8 @@ export interface DeferredRegressionOptions {
   config: NaxConfig;
   prd: PRD;
   workdir: string;
-  /** AgentManager — routes agent calls through IAgentManager for fallback support. */
-  agentManager: IAgentManager;
+  /** NaxRuntime — provides agentManager, sessionManager, and signal for rectification. */
+  runtime: NaxRuntime;
 }
 
 export interface DeferredRegressionResult {
@@ -101,7 +101,7 @@ async function findResponsibleStory(
  */
 export async function runDeferredRegression(options: DeferredRegressionOptions): Promise<DeferredRegressionResult> {
   const logger = getSafeLogger();
-  const { config, prd, workdir, agentManager } = options;
+  const { config, prd, workdir, runtime } = options;
 
   // Check if regression gate is deferred
   const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
@@ -328,8 +328,9 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         timeoutSeconds,
         testOutput: currentTestOutput,
         promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
-        agentManager,
+        agentManager: runtime.agentManager,
         featureName: prd.feature,
+        runtime,
       });
 
       // Accumulate telemetry regardless of whether the attempt succeeded (issue #679).
