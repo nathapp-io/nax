@@ -9,6 +9,7 @@
  */
 
 import { getSafeLogger } from "@/logger";
+import type { Logger } from "@/logger";
 import { callOp as _callOp } from "@/operations";
 import type { Operation } from "@/operations";
 import { errorMessage } from "@/utils/errors";
@@ -143,9 +144,9 @@ export async function runFixCycle<F extends Finding>(
   cycle: FixCycle<F>,
   ctx: FixCycleContext,
   cycleName: string,
-  _deps: { callOp?: CallOpFn; now?: () => string } = {},
+  _deps: { callOp?: CallOpFn; now?: () => string; logger?: Logger | null } = {},
 ): Promise<FixCycleResult<F>> {
-  const logger = getSafeLogger();
+  const logger = _deps.logger !== undefined ? _deps.logger : getSafeLogger();
   const doCallOp = _deps.callOp ?? _cycleDeps.callOp;
   const now = _deps.now ?? _cycleDeps.now;
 
@@ -294,31 +295,83 @@ export async function runFixCycle<F extends Finding>(
       };
     }
 
-    // ── Skip validate if all active strategies are now at their cap ───────────
-    // Counting provisional attempts (including this iteration's fixesApplied).
-    const provisionalIterations = [...cycle.iterations, { fixesApplied } as Iteration<F>];
-    const allExhausted = group.every((s) => countStrategyAttempts(provisionalIterations, s.name) >= s.maxAttempts);
+    // ── Lite-validate on terminal exhausted iteration ─────────────────────────
+    // Count provisional attempts including this iteration's fixesApplied, without
+    // constructing a fake Iteration<F> object (only fixesApplied is relevant here).
+    const allExhausted = group.every((s) => {
+      const prior = countStrategyAttempts(cycle.iterations, s.name);
+      const current = fixesApplied.filter((fa) => fa.strategyName === s.name).length;
+      return prior + current >= s.maxAttempts;
+    });
     if (allExhausted) {
+      let liteFindingsAfter: F[];
+      try {
+        liteFindingsAfter = await cycle.validate(ctx, { mode: "lite" });
+      } catch (err) {
+        const finishedAt = now();
+        cycle.iterations.push({
+          iterationNum: cycle.iterations.length + 1,
+          findingsBefore,
+          fixesApplied,
+          findingsAfter: cycle.findings,
+          outcome: "unchanged",
+          startedAt,
+          finishedAt,
+        });
+        logger?.warn("findings.cycle", "lite validate failed on terminal exhausted branch", {
+          storyId,
+          packageDir,
+          cycleName,
+          error: errorMessage(err),
+        });
+        return {
+          iterations: cycle.iterations,
+          finalFindings: cycle.findings,
+          exitReason: "max-attempts-per-strategy",
+          exhaustedStrategy: group[0]?.name,
+          costUsd: totalCostUsd,
+        };
+      }
+
+      const outcome = classifyOutcome(findingsBefore, liteFindingsAfter);
       const finishedAt = now();
       cycle.iterations.push({
         iterationNum: cycle.iterations.length + 1,
         findingsBefore,
         fixesApplied,
-        findingsAfter: cycle.findings,
-        outcome: "unchanged",
+        findingsAfter: liteFindingsAfter,
+        outcome,
         startedAt,
         finishedAt,
       });
-      logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached (skipped final validate)", {
+      cycle.findings = liteFindingsAfter;
+
+      if (liteFindingsAfter.length === 0) {
+        logger?.info("findings.cycle", "cycle exited — resolved after terminal lite validate", {
+          storyId,
+          packageDir,
+          cycleName,
+          reason: "resolved",
+        });
+        return {
+          iterations: cycle.iterations,
+          finalFindings: [],
+          exitReason: "resolved",
+          costUsd: totalCostUsd,
+        };
+      }
+
+      logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached (lite validate)", {
         storyId,
         packageDir,
         cycleName,
         reason: "max-attempts-per-strategy",
         exhaustedStrategy: group[0]?.name,
+        liteFindingsAfterCount: liteFindingsAfter.length,
       });
       return {
         iterations: cycle.iterations,
-        finalFindings: cycle.findings,
+        finalFindings: liteFindingsAfter,
         exitReason: "max-attempts-per-strategy",
         exhaustedStrategy: group[0]?.name,
         costUsd: totalCostUsd,
@@ -330,7 +383,7 @@ export async function runFixCycle<F extends Finding>(
     let validatorAttempt = 0;
     for (;;) {
       try {
-        findingsAfter = await cycle.validate(ctx);
+        findingsAfter = await cycle.validate(ctx, { mode: "full" });
         break;
       } catch (err) {
         if (validatorAttempt >= cycle.config.validatorRetries) {

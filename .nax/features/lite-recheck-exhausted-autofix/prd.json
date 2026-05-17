@@ -1,0 +1,191 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "lite-recheck-exhausted-autofix",
+  "branchName": "feat/lite-recheck-exhausted-autofix",
+  "createdAt": "2026-05-17T13:50:40+08:00",
+  "updatedAt": "2026-05-17T06:51:11.201Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Widen FixCycle validate signature with mode opts",
+      "description": "**Goal** — Widen the cycle validator contract to carry validate mode so callers can request full vs lite behavior without introducing a new cycle abstraction.\n\n**Motivation** — The skip-validate optimisation is wrong-shaped and misses whether the terminal fix actually resolved findings.\n\n**Approach** — Pure type widening across the cycle subsystem. Existing call sites pass `{ mode: \"full\" }`; existing closure definitions accept-and-ignore the new opts arg. No behavior changes.\n\n**Scope** — In: type widening in cycle interfaces and existing closure/call-site signatures. Out: any behavior changes in acceptance validation or new config/runtime schema.\n\n**Interface**\n```ts\nvalidate: (ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<F[]>;\n```",
+      "acceptanceCriteria": [
+        "Given `FixCycle<F>` in `src/findings/cycle-types.ts`, when defining `validate`, then its signature is `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<F[]>`.",
+        "When `runFixCycle` executes the non-terminal validate path in `src/findings/cycle.ts`, then it calls `cycle.validate(ctx, { mode: \"full\" })`.",
+        "Given the `validate` closure in `src/pipeline/stages/autofix-cycle.ts`, when `runFixCycle` invokes it in non-terminal flow, then it accepts and processes the `opts` argument without changing current review behavior.",
+        "Given the `validate` closure in `src/execution/lifecycle/acceptance-loop.ts`, when called with either mode, then behavior remains unchanged and mode is ignored.",
+        "Given `makeCycle` in `test/unit/findings/cycle.test.ts`, when declaring `validateFn`, then the parameter type is `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<Finding[]>`.",
+        "Given non-terminal validation where `cycle.validate` throws, when `runFixCycle` executes, then existing validator-retry/validator-error behavior is unchanged except that the call shape includes `{ mode: \"full\" }`."
+      ],
+      "tags": [
+        "feature",
+        "autofix",
+        "findings-cycle",
+        "types"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/findings/cycle-types.ts",
+        "src/findings/cycle.ts",
+        "src/pipeline/stages/autofix-cycle.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "test/unit/findings/cycle.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "097f0bb4dbcebc3a5a168412239ecc0cd5140b56"
+    },
+    {
+      "id": "US-002",
+      "title": "Run lite validate on exhausted terminal iteration in runFixCycle",
+      "description": "**Goal** — Replace exhausted-cycle skip-validate exit with lite-validate-then-classify so terminal fixes can resolve without needless escalation.\n\n**Motivation** — If the last fix resolved everything, `cycle.findings` still holds the pre-fix snapshot and the story escalates unnecessarily.\n\n**Approach** — Replaces the `allExhausted` early-return block in `src/findings/cycle.ts:297-326` with a lite-validate-then-classify sequence. Detects silent pass on the final fix; produces accurate post-fix findings when escalation is genuinely needed.\n\n**Scope** — In: `runFixCycle` terminal exhausted branch behavior, iteration recording, logging, and fallback behavior on lite validate throw. Out: strategy selection, total-attempt and bail-when semantics, and agent-gave-up branch ordering.\n\n**Interface**\n```ts\nvalidate: (ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<F[]>;\n```",
+      "acceptanceCriteria": [
+        "When all active strategies have reached `maxAttempts` after an iteration’s `fixesApplied`, then `runFixCycle` invokes `cycle.validate(ctx, { mode: \"lite\" })` exactly once.",
+        "When lite validate returns an empty array in the terminal exhausted branch, then `runFixCycle` returns `exitReason: \"resolved\"`, `finalFindings: []`, and `exhaustedStrategy: undefined`.",
+        "When lite validate returns non-empty findings in the terminal exhausted branch, then `runFixCycle` returns `exitReason: \"max-attempts-per-strategy\"`, `finalFindings` equal to the lite result, and `exhaustedStrategy` equal to the first strategy name in the execution group.",
+        "Given terminal exhausted processing with successful lite validate, when the iteration is pushed, then `findingsAfter` equals the lite validate return value rather than the pre-fix `cycle.findings` snapshot.",
+        "Given terminal exhausted processing with successful lite validate, when outcome is set, then it equals `classifyOutcome(findingsBefore, liteFindingsAfter)`.",
+        "Given terminal exhausted processing with successful lite validate, when exit is prepared, then `cycle.findings` is updated to the lite validate return value.",
+        "When the terminal lite validate call throws, then `runFixCycle` returns `exitReason: \"max-attempts-per-strategy\"` with `finalFindings` equal to existing `cycle.findings`, keeps `exhaustedStrategy` set to the first strategy in group, and does not consume validator-retry budget.",
+        "When terminal lite validate throws, then `runFixCycle` emits a warn log containing stage `findings.cycle` and data fields `storyId`, `packageDir`, `cycleName`, and `error`.",
+        "When terminal exhausted branch resolves after successful lite validate with empty findings, then `runFixCycle` emits an info log with stage `findings.cycle` whose data object has first key `storyId` and includes `packageDir`, `cycleName`, and `reason: \"resolved\"`.",
+        "When terminal exhausted branch exits cap-exhausted after successful lite validate with non-empty findings, then `runFixCycle` emits an info log with stage `findings.cycle` whose data object has first key `storyId` and includes `packageDir`, `cycleName`, `reason: \"max-attempts-per-strategy\"`, `exhaustedStrategy`, and `liteFindingsAfter`.",
+        "Given a terminal attempt where a strategy `extractApplied` returns `unresolved`, when `runFixCycle` processes that iteration, then it exits `agent-gave-up` without invoking `cycle.validate`."
+      ],
+      "tags": [
+        "feature",
+        "autofix",
+        "findings-cycle",
+        "escalation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/findings/cycle.ts",
+        "src/findings/cycle-types.ts",
+        "test/unit/findings/cycle.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "daf8d8b4be11231c4a40e8abf49e8258c10e22cd"
+    },
+    {
+      "id": "US-003",
+      "title": "Add lite recheck mode that skips LLM reviewers in recheckReview and reviewStage",
+      "description": "**Goal** — Introduce lite-mode recheck that runs mechanical validation while preventing semantic/adversarial LLM reviewer calls across both runner and dialogue paths.\n\n**Motivation** — Mechanical checks are cheap and answer whether escalation is still needed, while adversarial/semantic calls are expensive and cannot be fixed further in an exhausted cycle.\n\n**Approach** — Adds an optional `{ lite?: boolean }` argument to `recheckReview` and gates the two LLM entry points in `reviewStage.execute`. Introduces an injectable `_autofixDeps.runReviewStage` so behavior is testable without `mock.module()`.\n\n**Scope** — In: `recheckReview` option handling/restoration semantics, `PipelineContext` side-channel flag, review dialogue gating, and dep injection for review stage invocation. Out: new review checks, config changes, debate-path redesign, and V1 autofix behavior outside signature widening.\n\n**Interface**\n```ts\n// PipelineContext extension\nskipLLMReviewers?: boolean\n\n// recheckReview shape\nrecheckReview(ctx: PipelineContext, opts?: { lite?: boolean }): Promise<boolean>\n\n// injected review-stage dep\nrunReviewStage: (ctx: PipelineContext) => Promise<void>\n```",
+      "acceptanceCriteria": [
+        "Given `PipelineContext`, when `skipLLMReviewers` is unset, then behavior is identical to `false`.",
+        "Given `recheckReview`, when called as `recheckReview(ctx)` or `recheckReview(ctx, {})`, then it returns the same pass/fail result as current behavior for the same `ctx.reviewResult` inputs.",
+        "Given `recheckReview(ctx, { lite: true })`, when delegating to review stage, then it augments `ctx.retrySkipChecks` with `\"adversarial\"` and `\"semantic\"` only for that call and restores the original value afterward, including when original was `undefined` and when delegated call throws.",
+        "Given `recheckReview(ctx, { lite: true })`, when delegating to review stage, then it sets `ctx.skipLLMReviewers = true` only for that call and restores the original value afterward, including when original was `undefined` and when delegated call throws.",
+        "Given `recheckReview(ctx, { lite: true })`, when `ctx.reviewResult.success === true`, then it returns `true` regardless of `failOpen` checks.",
+        "Given `recheckReview(ctx)` or `recheckReview(ctx, { lite: false })`, when `ctx.reviewResult.checks` includes a `failOpen` check, then it returns `false` and does not mutate `retrySkipChecks` or `skipLLMReviewers`.",
+        "Given `_autofixDeps.runReviewStage`, when invoked, then it wraps dynamic `import(\"./review\")` and calls `reviewStage.execute(ctx)` using signature `(ctx: PipelineContext) => Promise<void>`.",
+        "Given `_autofixDeps.runReviewStage`, when `reviewStage.enabled(ctx) === false`, then it returns without invoking `reviewStage.execute`.",
+        "Given `reviewStage.execute` and `ctx.skipLLMReviewers === true`, when dialogue retry branch conditions are otherwise met, then `ctx.reviewerSession.reReview()` is not invoked.",
+        "Given `reviewStage.execute` and `ctx.skipLLMReviewers === true`, when dialogue first-run branch conditions are otherwise met, then `ctx.reviewerSession.review()` is not invoked.",
+        "Given `reviewStage.execute` and `ctx.skipLLMReviewers` unset or false, when dialogue conditions are met, then dialogue branches execute as before with no behavior change.",
+        "Given `reviewDebateEnabled === true`, when executing review stage with lite recheck signals, then control reaches orchestrator path where runner honors `ctx.retrySkipChecks` and no additional debate-branch `skipLLMReviewers` check is required.",
+        "Given `recheckReview(ctx, { lite: true })`, when `_autofixDeps.runReviewStage` throws, then the throw is propagated after `ctx.retrySkipChecks` and `ctx.skipLLMReviewers` are restored to their original values."
+      ],
+      "tags": [
+        "feature",
+        "autofix",
+        "review",
+        "llm"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/autofix.ts",
+        "src/pipeline/stages/review.ts",
+        "src/pipeline/types.ts",
+        "test/unit/pipeline/stages/autofix-unresolved.test.ts",
+        "test/unit/pipeline/stages/review.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5ed831afe230140643733e2e7089e42385e80318"
+    },
+    {
+      "id": "US-004",
+      "title": "Forward validate lite mode from autofix-cycle closure to recheckReview",
+      "description": "**Goal** — Wire lite/full validate mode through autofix-cycle validate closure so terminal exhausted calls activate LLM-skip behavior end-to-end.\n\n**Motivation** — Without forwarding mode into `recheckReview`, exhausted-cycle lite validation would still dispatch normal review behavior and miss the cost/behavior target.\n\n**Approach** — The single-line wiring that activates lite mode end-to-end. Must keep `src/pipeline/stages/autofix-cycle.ts` at or below 600 lines (the project's hard limit).\n\n**Scope** — In: modify the closure call from `recheckReview(ctx)` to include lite option derived from `opts.mode`. Out: any other behavior in closure body and any unrelated refactors in the 600-line file.\n\n**Interface**\n```ts\n_autofixDeps.recheckReview(ctx, { lite: opts.mode === \"lite\" })\n```",
+      "acceptanceCriteria": [
+        "Given the `validate` closure in `src/pipeline/stages/autofix-cycle.ts`, when called, then it invokes `_autofixDeps.recheckReview(ctx, { lite: opts.mode === \"lite\" })` on every call.",
+        "When `runFixCycle` invokes the closure with `opts.mode === \"full\"`, then LLM reviewers configured in `config.checks` execute as in current non-terminal behavior.",
+        "When `runFixCycle` invokes the closure with `opts.mode === \"full\"`, then `_autofixDeps.recheckReview` receives `{ lite: false }` and does not run lite-mode LLM-skip behavior.",
+        "When `runFixCycle` invokes the closure with `opts.mode === \"lite\"`, then no `adversarial` or `semantic` LLM call is dispatched, including dialogue path when `config.review.dialogue.enabled === true`.",
+        "Given the same closure execution, when mode forwarding is added, then existing behavior for `iterationBeforeRef` capture, `collectCurrentFindings`, `resolveTestFilePatterns`, `validateMockStructureFiles`, `pendingMockStructureHandoffs` stash, `applyTestEditDeclarations`, and `ctx.testEditDeclarations` clearing remains unchanged.",
+        "When `wc -l src/pipeline/stages/autofix-cycle.ts` is run after implementation, then line count is less than or equal to 600."
+      ],
+      "tags": [
+        "feature",
+        "autofix",
+        "integration",
+        "line-limit"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/autofix-cycle.ts",
+        "src/pipeline/stages/autofix.ts",
+        ".claude/rules/project-conventions.md"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fb44fd8d82f4cdf851162295e90cb6f6b10f9588"
+    }
+  ],
+  "analysis": "Feature is a cross-module orchestration fix centered on autofix V2 terminal-iteration behavior, not a new subsystem. Current bug source is the cap-exhausted early return in runFixCycle that skips validator execution and returns stale findings. In src/findings/cycle.ts:297-326, when all strategies hit maxAttempts after fixesApplied, the code pushes an iteration with findingsAfter: cycle.findings, outcome: \"unchanged\", logs max-attempts-per-strategy, and exits without validate. That stale snapshot causes false escalation and stale digest payloads. The normal validate path is below at src/findings/cycle.ts:328-360 and currently calls cycle.validate(ctx) with retries; this must become explicit full mode for non-terminal iterations and a separate lite-mode advisory call in the exhausted branch. FixCycle.validate type is currently single-arg in src/findings/cycle-types.ts:179 and must widen to include opts.mode. Autofix V2 wiring point is src/pipeline/stages/autofix-cycle.ts:530-565 where validate closure currently calls _autofixDeps.recheckReview(ctx); this file is exactly 600 lines (wc -l), matching hard limit in .claude/rules/project-conventions.md:23-25, so the closure update must be line-neutral. Acceptance loop has its own cycle validate in src/execution/lifecycle/acceptance-loop.ts:297-303 and already mechanical-only; it should accept-and-ignore opts without behavior change.\n\nLite mode must skip LLM reviewers through both review entry paths. In src/review/runner.ts:323-331, runner already honors ctx.retrySkipChecks and can skip configured check names like semantic/adversarial. But src/pipeline/stages/review.ts has two pre-runner dialogue branches: reReview path at src/pipeline/stages/review.ts:35 and review path at :74 that can dispatch session LLM calls before orchestrator. Those branches currently do not check retrySkipChecks; therefore a new PipelineContext side-channel flag is required (add optional skipLLMReviewers near retrySkipChecks in src/pipeline/types.ts:253-265). recheckReview helper in src/pipeline/stages/autofix.ts:273-286 currently does inline dynamic import and fail-open guard; for lite mode it must temporarily set both ctx.retrySkipChecks (augment with adversarial/semantic) and ctx.skipLLMReviewers=true, then restore original values in finally including undefined-origin cases and throw paths. Existing fail-open-on-retry guard in recheckReview (src/pipeline/stages/autofix.ts:281-285) should be bypassed in lite mode per spec. To make this testable without banned mock.module pattern, _autofixDeps should gain an injectable runReviewStage wrapper around current dynamic import+enabled+execute behavior (export block at src/pipeline/stages/autofix.ts:416-426).\n\nExisting tests already cover key related behavior and should be updated/extended rather than introducing unrelated abstractions. test/unit/findings/cycle.test.ts has makeCycle helper typed with old validate signature at :65 and includes skip-validate-on-final-attempt block at :306-357 that must be replaced with lite-validate expectations, plus agent-gave-up precedence tests at :397-419 that protect ordering. test/unit/pipeline/stages/review.test.ts already validates many review-stage branches and is the right place to assert skipLLMReviewers gating in dialogue paths. test/unit/pipeline/stages/autofix-unresolved.test.ts demonstrates direct _autofixDeps stubbing pattern for this repo and should guide tests for runReviewStage/recheckReview behavior. There is no migration or config impact: no schema keys, no adapter changes, no runtime boundary changes. Backward compatibility risk is primarily behavioral in review/autofix interaction; mitigations are preserving default mode as full, making lite opt-in only from terminal exhausted path, preserving agent-gave-up branch order, preserving validatorRetries semantics for normal validate, and adding explicit fallback when lite validate throws. Logging risks: stage logs in cycle should keep structured fields with storyId first per .claude/rules/project-conventions.md:82. Digest format remains unchanged; only finalFindings content becomes accurate."
+}

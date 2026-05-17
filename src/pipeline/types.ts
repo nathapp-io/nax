@@ -263,6 +263,13 @@ export interface PipelineContext extends DispatchContext {
    * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
    */
   mechanicalFailedOnly?: boolean;
+  /**
+   * When true, reviewStage skips LLM-driven dialogue paths (reviewerSession.review() and
+   * reReview()). Set by recheckReview in lite mode so the recheck runs only mechanical
+   * checks. Combined with retrySkipChecks including "adversarial" and "semantic", this
+   * ensures no LLM reviewer calls are made during an exhausted-cycle lite recheck.
+   */
+  skipLLMReviewers?: boolean;
 }
 
 /**

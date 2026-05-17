@@ -10,15 +10,15 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import type { Finding } from "../../../../src/findings";
-import { InteractionChain } from "../../../../src/interaction/chain";
-import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
+import { DEFAULT_CONFIG } from "@/config";
+import type { Finding } from "@/findings";
+import { InteractionChain } from "@/interaction";
+import type { InteractionPlugin, InteractionResponse } from "@/interaction/types";
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { ReviewFinding } from "../../../../src/plugins/extensions";
-import { makeSparseNaxConfig, makeStory } from "../../../helpers";
+import type { PipelineContext } from "@/pipeline/types";
+import type { PRD, UserStory } from "@/prd";
+import type { ReviewFinding } from "@/plugins/extensions";
+import { makeSparseNaxConfig, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -484,5 +484,196 @@ describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-00
 
     expect(result.action).toBe("continue");
     reviewOrchestrator.review = original;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// skipLLMReviewers gating in reviewStage.execute (AC9–12)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("reviewStage — skipLLMReviewers gating (AC9–12)", () => {
+  // Helpers for reviewer session mocks
+  function makeReviewerSession(overrides: Partial<{ review: () => Promise<any>; reReview: () => Promise<any> }> = {}) {
+    return {
+      review: async () => ({
+        checkResult: { success: true, findings: [] },
+        cost: 0,
+      }),
+      reReview: async () => ({
+        checkResult: { success: true, findings: [] },
+      }),
+      ...overrides,
+    };
+  }
+
+  function makeDialogueConfig() {
+    return makeSparseNaxConfig({
+      review: { enabled: true, dialogue: { enabled: true } },
+      interaction: {
+        plugin: "cli",
+        defaults: { timeout: 30000, fallback: "abort" as const },
+        triggers: {},
+      },
+    });
+  }
+
+  // AC9: retry branch — reReview() not called when skipLLMReviewers=true
+  test("does not call reviewerSession.reReview() when skipLLMReviewers=true (AC9)", async () => {
+    let reReviewCalled = false;
+    const session = makeReviewerSession({
+      reReview: async () => {
+        reReviewCalled = true;
+        return { checkResult: { success: true, findings: [] } };
+      },
+    });
+
+    const ctx = makeCtx({
+      config: makeDialogueConfig(),
+      reviewerSession: session as any,
+      skipLLMReviewers: true,
+    });
+
+    // Fall through to orchestrator — mock it to return pass
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.reviewFromContext;
+    reviewOrchestrator.reviewFromContext = async () => ({
+      success: true,
+      pluginFailed: false,
+      mechanicalFailedOnly: false,
+      builtIn: { success: true, checks: [], totalDurationMs: 0 },
+    }) as any;
+
+    const result = await reviewStage.execute(ctx);
+
+    reviewOrchestrator.reviewFromContext = original;
+
+    expect(reReviewCalled).toBe(false);
+    expect(result.action).toBe("continue");
+  });
+
+  // AC10: first-run branch — review() not called when skipLLMReviewers=true
+  test("does not call reviewerSession.review() when skipLLMReviewers=true (AC10)", async () => {
+    let reviewCalled = false;
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.reviewFromContext;
+    reviewOrchestrator.reviewFromContext = async () => ({
+      success: true,
+      pluginFailed: false,
+      mechanicalFailedOnly: false,
+      builtIn: { success: true, checks: [], totalDurationMs: 0 },
+    }) as any;
+
+    // Mock createReviewerSession to capture if review() is called
+    const originalCreate = _reviewDeps.createReviewerSession;
+    _reviewDeps.createReviewerSession = (() => {
+      return makeReviewerSession({
+        review: async () => {
+          reviewCalled = true;
+          return { checkResult: { success: true, findings: [] }, cost: 0 };
+        },
+      });
+    }) as any;
+
+    const config = makeDialogueConfig();
+    // add semanticConfig so the review() branch would fire without skipLLMReviewers
+    (config.review as any).semantic = { enabled: true };
+
+    // biome-ignore lint/suspicious/noExplicitAny: test-only — agentManager/sessionManager are in DispatchContext
+    const ctx = makeCtx({
+      config,
+      skipLLMReviewers: true,
+      agentManager: {} as any,
+      sessionManager: {} as any,
+    } as any);
+
+    const result = await reviewStage.execute(ctx);
+
+    reviewOrchestrator.reviewFromContext = original;
+    _reviewDeps.createReviewerSession = originalCreate;
+
+    expect(reviewCalled).toBe(false);
+    expect(result.action).toBe("continue");
+  });
+
+  // AC11: when skipLLMReviewers is unset, dialogue branches execute normally
+  test("calls reviewerSession.reReview() when skipLLMReviewers is unset (AC11)", async () => {
+    let reReviewCalled = false;
+    const session = makeReviewerSession({
+      reReview: async () => {
+        reReviewCalled = true;
+        return { checkResult: { success: true, findings: [] } };
+      },
+    });
+
+    const ctx = makeCtx({
+      config: makeDialogueConfig(),
+      reviewerSession: session as any,
+      // skipLLMReviewers not set
+    });
+
+    const result = await reviewStage.execute(ctx);
+
+    expect(reReviewCalled).toBe(true);
+    expect(result.action).toBe("continue");
+  });
+
+  // AC11: when skipLLMReviewers=false, dialogue branches execute normally
+  test("calls reviewerSession.reReview() when skipLLMReviewers=false (AC11)", async () => {
+    let reReviewCalled = false;
+    const session = makeReviewerSession({
+      reReview: async () => {
+        reReviewCalled = true;
+        return { checkResult: { success: true, findings: [] } };
+      },
+    });
+
+    const ctx = makeCtx({
+      config: makeDialogueConfig(),
+      reviewerSession: session as any,
+      skipLLMReviewers: false,
+    });
+
+    const result = await reviewStage.execute(ctx);
+
+    expect(reReviewCalled).toBe(true);
+    expect(result.action).toBe("continue");
+  });
+
+  // AC12: debate+dialogue with skipLLMReviewers=true reaches orchestrator path (no extra check needed)
+  test("reaches orchestrator path when reviewDebateEnabled=true and skipLLMReviewers=true (AC12)", async () => {
+    let orchestratorCalled = false;
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.reviewFromContext;
+    reviewOrchestrator.reviewFromContext = async () => {
+      orchestratorCalled = true;
+      return {
+        success: true,
+        pluginFailed: false,
+        mechanicalFailedOnly: false,
+        builtIn: { success: true, checks: [], totalDurationMs: 0 },
+      } as any;
+    };
+
+    const config = makeDialogueConfig();
+    // enable debate
+    (config as any).debate = { enabled: true, stages: { review: { enabled: true } } };
+
+    const ctx = makeCtx({
+      rootConfig: {
+        ...DEFAULT_CONFIG,
+        debate: { enabled: true, stages: { review: { enabled: true } } },
+      } as any,
+      config,
+      skipLLMReviewers: true,
+      retrySkipChecks: new Set(["adversarial", "semantic"]),
+    });
+
+    const result = await reviewStage.execute(ctx);
+
+    reviewOrchestrator.reviewFromContext = original;
+
+    expect(orchestratorCalled).toBe(true);
+    expect(result.action).toBe("continue");
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../../src/config";
-import { _cycleDeps } from "../../../../src/findings";
+import { DEFAULT_CONFIG } from "@/config";
+import { _cycleDeps } from "@/findings";
 import { _autofixDeps } from "../../../../src/pipeline/stages/autofix";
 import {
   applyTestEditDeclarations,
@@ -8,13 +8,13 @@ import {
   buildAutofixStrategies,
   runAgentRectificationV2,
 } from "../../../../src/pipeline/stages/autofix-cycle";
-import type { Iteration } from "../../../../src/findings";
-import type { Finding } from "../../../../src/findings";
-import type { TestEditDeclaration } from "../../../../src/operations";
-import type { PipelineContext } from "../../../../src/pipeline/types";
+import type { Iteration } from "@/findings";
+import type { Finding } from "@/findings";
+import type { TestEditDeclaration } from "@/operations";
+import type { PipelineContext } from "@/pipeline/types";
 import { toAdversarialReviewFindings } from "../../../../src/review/adversarial-helpers";
-import type { ReviewCheckResult } from "../../../../src/review/types";
-import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "../../../helpers";
+import type { ReviewCheckResult } from "@/review/types";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
 
 // ─── Minimal context for strategy/declaration unit tests ──────────────────────
 
@@ -621,6 +621,71 @@ describe("runAgentRectificationV2", () => {
     expect(ctx.autofixPriorIterations).toBeDefined();
     // Side-channel still present — validate() never ran to consume it.
     expect(ctx.testEditDeclarations).toHaveLength(1);
+  });
+
+  test("validate closure forwards lite: false when mode is full (normal path)", async () => {
+    const capturedRecheckCalls: Array<{ ctx: PipelineContext; opts?: { lite?: boolean } }> = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
+      capturedRecheckCalls.push({ ctx, opts });
+      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
+      return true;
+    });
+
+    const ctx = makeCtx();
+    ctx.reviewResult = {
+      success: false,
+      checks: [failedCheck("lint", "lint failure")],
+    } as unknown as PipelineContext["reviewResult"];
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // In normal (full) path, validate is called with mode: "full"
+    // This should result in lite: false being passed to recheckReview — and never lite: true.
+    expect(capturedRecheckCalls.length).toBeGreaterThan(0);
+    const normalPathCall = capturedRecheckCalls.find((call) => call.opts?.lite === false);
+    expect(normalPathCall).toBeDefined();
+    expect(capturedRecheckCalls.every((call) => call.opts?.lite !== true)).toBe(true);
+  });
+
+  test("validate closure passes lite: true when autofix-implementer is exhausted (AC#4)", async () => {
+    const capturedRecheckCalls: Array<{ opts?: { lite?: boolean } }> = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
+      capturedRecheckCalls.push({ opts });
+      // Keep findings present so the cycle exits with max-attempts-per-strategy, not resolved
+      ctx.reviewResult = {
+        success: false,
+        checks: [failedCheck("lint", "still failing")],
+      } as unknown as PipelineContext["reviewResult"];
+      return false;
+    });
+
+    // maxAttempts: 1 exhausts the implementer after one iteration, which forces the
+    // allExhausted branch in runFixCycle to call validate(ctx, { mode: "lite" })
+    const ctx = makeCtx({
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          autofix: { enabled: true, maxAttempts: 1, maxTotalAttempts: 4 },
+        },
+      } as PipelineContext["config"],
+    });
+    ctx.reviewResult = {
+      success: false,
+      checks: [failedCheck("lint", "lint failure")],
+    } as unknown as PipelineContext["reviewResult"];
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // The exhausted-cycle path calls validate(ctx, { mode: "lite" }), which must
+    // forward lite: true to recheckReview. A regression swapping === "lite" to === "full"
+    // would break this assertion.
+    const liteCall = capturedRecheckCalls.find((call) => call.opts?.lite === true);
+    expect(liteCall).toBeDefined();
   });
 });
 

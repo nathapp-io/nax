@@ -1,0 +1,254 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `FixCycle<F>` in `src/findings/cycle-types.ts`, when defining `validate`, then its signature is `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<F[]>`.",
+    "refined": "The `FixCycle<F>` interface in `src/findings/cycle-types.ts` has a `validate` property with type `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<F[]>`. TypeScript compilation of code referencing this interface succeeds.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `runFixCycle` executes the non-terminal validate path in `src/findings/cycle.ts`, then it calls `cycle.validate(ctx, { mode: \"full\" })`.",
+    "refined": "The `runFixCycle` function in `src/findings/cycle.ts` invokes `cycle.validate(ctx, { mode: \"full\" })` exactly once per non-terminal validation flow. Test assertion confirms the call signature matches.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given the `validate` closure in `src/pipeline/stages/autofix-cycle.ts`, when `runFixCycle` invokes it in non-terminal flow, then it accepts and processes the `opts` argument without changing current review behavior.",
+    "refined": "The `validate` closure assigned in `src/pipeline/stages/autofix-cycle.ts` has signature `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<Finding[]>`. TypeScript compilation succeeds and unit tests confirm review behavior is unchanged relative to baseline before this change.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given the `validate` closure in `src/execution/lifecycle/acceptance-loop.ts`, when called with either mode, then behavior remains unchanged and mode is ignored.",
+    "refined": "The `validate` closure assigned in `src/execution/lifecycle/acceptance-loop.ts` accepts the `opts` parameter. Unit tests confirm that calling with `{ mode: \"full\" }` and `{ mode: \"lite\" }` produce identical behavior to the baseline (mode argument is not used in the closure body).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given `makeCycle` in `test/unit/findings/cycle.test.ts`, when declaring `validateFn`, then the parameter type is `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<Finding[]>`.",
+    "refined": "The `makeCycle` test helper function in `test/unit/findings/cycle.test.ts` has `validateFn` parameter with type `(ctx: FixCycleContext, opts: { mode: \"full\" | \"lite\" }) => Promise<Finding[]>`. TypeScript strict mode compilation of test files succeeds.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given non-terminal validation where `cycle.validate` throws, when `runFixCycle` executes, then existing validator-retry/validator-error behavior is unchanged except that the call shape includes `{ mode: \"full\" }`.",
+    "refined": "When `cycle.validate` throws an error during non-terminal validation in `runFixCycle`, the error is caught and handled using the existing retry/error recovery logic. Unit test asserts that the error handler receives an error with identical properties to the baseline test, and audit trail shows the call was made with `{ mode: \"full\" }`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When all active strategies have reached `maxAttempts` after an iteration's `fixesApplied`, then `runFixCycle` invokes `cycle.validate(ctx, { mode: \"lite\" })` exactly once.",
+    "refined": "When all active strategies exhaust maxAttempts after an iteration, cycle.validate(ctx, { mode: \"lite\" }) is called exactly once",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When lite validate returns an empty array in the terminal exhausted branch, then `runFixCycle` returns `exitReason: \"resolved\"`, `finalFindings: []`, and `exhaustedStrategy: undefined`.",
+    "refined": "When cycle.validate returns [], runFixCycle return value satisfies { exitReason: \"resolved\", finalFindings: [], exhaustedStrategy: undefined }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When lite validate returns non-empty findings in the terminal exhausted branch, then `runFixCycle` returns `exitReason: \"max-attempts-per-strategy\"`, `finalFindings` equal to the lite result, and `exhaustedStrategy` equal to the first strategy name in the execution group.",
+    "refined": "When cycle.validate returns non-empty array, runFixCycle return value satisfies { exitReason: \"max-attempts-per-strategy\", finalFindings: deepEqual(liteResult), exhaustedStrategy: firstStrategyName }",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given terminal exhausted processing with successful lite validate, when the iteration is pushed, then `findingsAfter` equals the lite validate return value rather than the pre-fix `cycle.findings` snapshot.",
+    "refined": "When terminal exhausted processing succeeds, pushed iteration.findingsAfter equals lite validate return value (not pre-fix cycle.findings)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given terminal exhausted processing with successful lite validate, when outcome is set, then it equals `classifyOutcome(findingsBefore, liteFindingsAfter)`.",
+    "refined": "When terminal exhausted processing succeeds, iteration.outcome deepEqual classifyOutcome(findingsBefore, liteFindingsAfter)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given terminal exhausted processing with successful lite validate, when exit is prepared, then `cycle.findings` is updated to the lite validate return value.",
+    "refined": "When terminal exhausted processing succeeds, cycle.findings is mutated to equal lite validate return value before exit",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the terminal lite validate call throws, then `runFixCycle` returns `exitReason: \"max-attempts-per-strategy\"` with `finalFindings` equal to existing `cycle.findings`, keeps `exhaustedStrategy` set to the first strategy in group, and does not consume validator-retry budget.",
+    "refined": "When cycle.validate throws, runFixCycle returns { exitReason: \"max-attempts-per-strategy\", finalFindings: deepEqual(preThrowCycleFindings), exhaustedStrategy: firstStrategyName }, and validatorRetryBudget unchanged",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When terminal lite validate throws, then `runFixCycle` emits a warn log containing stage `findings.cycle` and data fields `storyId`, `packageDir`, `cycleName`, and `error`.",
+    "refined": "When cycle.validate throws, logger.warn called with stage=\"findings.cycle\" and context object containing storyId, packageDir, cycleName, error keys",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When terminal exhausted branch resolves after successful lite validate with empty findings, then `runFixCycle` emits an info log with stage `findings.cycle` whose data object has first key `storyId` and includes `packageDir`, `cycleName`, and `reason: \"resolved\"`.",
+    "refined": "When terminal branch resolves with empty findings, logger.info called with stage=\"findings.cycle\" and context { storyId, packageDir, cycleName, reason: \"resolved\", ... } with storyId as first key",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When terminal exhausted branch exits cap-exhausted after successful lite validate with non-empty findings, then `runFixCycle` emits an info log with stage `findings.cycle` whose data object has first key `storyId` and includes `packageDir`, `cycleName`, `reason: \"max-attempts-per-strategy\"`, `exhaustedStrategy`, and `liteFindingsAfter`.",
+    "refined": "When terminal branch exits with non-empty findings, logger.info called with stage=\"findings.cycle\" and context { storyId, packageDir, cycleName, reason: \"max-attempts-per-strategy\", exhaustedStrategy, liteFindingsAfter, ... } with storyId as first key",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a terminal attempt where a strategy `extractApplied` returns `unresolved`, when `runFixCycle` processes that iteration, then it exits `agent-gave-up` without invoking `cycle.validate`.",
+    "refined": "When terminal attempt has unresolved strategy from extractApplied, runFixCycle returns { exitReason: \"agent-gave-up\", ... } and cycle.validate is never called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `PipelineContext`, when `skipLLMReviewers` is unset, then behavior is identical to `false`.",
+    "refined": "When `ctx.skipLLMReviewers` is undefined, all downstream logic behaves identically to when `ctx.skipLLMReviewers === false`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `recheckReview`, when called as `recheckReview(ctx)` or `recheckReview(ctx, {})`, then it returns the same pass/fail result as current behavior for the same `ctx.reviewResult` inputs.",
+    "refined": "`recheckReview(ctx)` and `recheckReview(ctx, {})` return identical boolean values for identical input contexts",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `recheckReview(ctx, { lite: true })`, when delegating to review stage, then it augments `ctx.retrySkipChecks` with `\"adversarial\"` and `\"semantic\"` only for that call and restores the original value afterward, including when original was `undefined` and when delegated call throws.",
+    "refined": "When `recheckReview(ctx, { lite: true })` delegates to review stage: (a) `ctx.retrySkipChecks` is mutated to include both `\"adversarial\"` and `\"semantic\"` before delegation; (b) original array/undefined is restored after delegation completes or throws; (c) restoration occurs in a finally block ensuring it executes even on error",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `recheckReview(ctx, { lite: true })`, when delegating to review stage, then it sets `ctx.skipLLMReviewers = true` only for that call and restores the original value afterward, including when original was `undefined` and when delegated call throws.",
+    "refined": "When `recheckReview(ctx, { lite: true })` delegates to review stage: (a) `ctx.skipLLMReviewers` is set to `true` before delegation; (b) original value (including undefined) is restored after delegation completes or throws; (c) restoration occurs in a finally block ensuring it executes even on error",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `recheckReview(ctx, { lite: true })`, when `ctx.reviewResult.success === true`, then it returns `true` regardless of `failOpen` checks.",
+    "refined": "`recheckReview(ctx, { lite: true })` returns `true` when `ctx.reviewResult.success === true`, even if `ctx.reviewResult.checks` contains one or more failing checks with `failOpen: true`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `recheckReview(ctx)` or `recheckReview(ctx, { lite: false })`, when `ctx.reviewResult.checks` includes a `failOpen` check, then it returns `false` and does not mutate `retrySkipChecks` or `skipLLMReviewers`.",
+    "refined": "When `ctx.reviewResult.checks` contains a failing check with `failOpen: true`: (a) `recheckReview(ctx)` returns `false`; (b) `recheckReview(ctx, { lite: false })` returns `false`; (c) `ctx.retrySkipChecks` is not modified; (d) `ctx.skipLLMReviewers` is not modified",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given `_autofixDeps.runReviewStage`, when invoked, then it wraps dynamic `import(\"./review\")` and calls `reviewStage.execute(ctx)` using signature `(ctx: PipelineContext) => Promise<void>`.",
+    "refined": "`_autofixDeps.runReviewStage` is an async function with exact signature `(ctx: PipelineContext) => Promise<void>` that dynamically imports the review stage module and invokes `reviewStage.execute(ctx)` passing the context",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given `_autofixDeps.runReviewStage`, when `reviewStage.enabled(ctx) === false`, then it returns without invoking `reviewStage.execute`.",
+    "refined": "When `reviewStage.enabled(ctx)` returns `false`, `_autofixDeps.runReviewStage(ctx)` returns successfully without calling `reviewStage.execute`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given `reviewStage.execute` and `ctx.skipLLMReviewers === true`, when dialogue retry branch conditions are otherwise met, then `ctx.reviewerSession.reReview()` is not invoked.",
+    "refined": "When `ctx.skipLLMReviewers === true` and all dialogue retry branch conditions are met, `ctx.reviewerSession.reReview()` is not called",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given `reviewStage.execute` and `ctx.skipLLMReviewers === true`, when dialogue first-run branch conditions are otherwise met, then `ctx.reviewerSession.review()` is not invoked.",
+    "refined": "When `ctx.skipLLMReviewers === true` and all dialogue first-run branch conditions are met, `ctx.reviewerSession.review()` is not called",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given `reviewStage.execute` and `ctx.skipLLMReviewers` unset or false, when dialogue conditions are met, then dialogue branches execute as before with no behavior change.",
+    "refined": "When `ctx.skipLLMReviewers` is `undefined` or `false`, dialogue branches execute with identical behavior to before this feature (review() and reReview() called when branch conditions are met)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given `reviewDebateEnabled === true`, when executing review stage with lite recheck signals, then control reaches orchestrator path where runner honors `ctx.retrySkipChecks` and no additional debate-branch `skipLLMReviewers` check is required.",
+    "refined": "When `reviewDebateEnabled === true` and lite recheck mode is active (`ctx.retrySkipChecks` includes adversarial/semantic), the review stage executes the orchestrator path and `ctx.retrySkipChecks` is honored by runner routing logic",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given `recheckReview(ctx, { lite: true })`, when `_autofixDeps.runReviewStage` throws, then the throw is propagated after `ctx.retrySkipChecks` and `ctx.skipLLMReviewers` are restored to their original values.",
+    "refined": "When `_autofixDeps.runReviewStage` throws an error during `recheckReview(ctx, { lite: true })`: (a) `ctx.retrySkipChecks` is restored to its original value before throw propagates; (b) `ctx.skipLLMReviewers` is restored to its original value before throw propagates; (c) the error is re-thrown unchanged",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given the `validate` closure in `src/pipeline/stages/autofix-cycle.ts`, when called, then it invokes `_autofixDeps.recheckReview(ctx, { lite: opts.mode === \"lite\" })` on every call.",
+    "refined": "The validate closure must invoke _autofixDeps.recheckReview(ctx, { lite: <boolean> }) where the lite property equals true when opts.mode === \"lite\" and false when opts.mode === \"full\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When `runFixCycle` invokes the closure with `opts.mode === \"full\"`, then LLM reviewers configured in `config.checks` execute as in current non-terminal behavior.",
+    "refined": "When opts.mode === \"full\", the recheckReview call must receive { lite: false } as the second argument, enabling normal (non-lite-mode) LLM review execution",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When `runFixCycle` invokes the closure with `opts.mode === \"full\"`, then `_autofixDeps.recheckReview` receives `{ lite: false }` and does not run lite-mode LLM-skip behavior.",
+    "refined": "recheckReview must be called with second argument { lite: false } when opts.mode === \"full\", preventing lite-mode behavior",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When `runFixCycle` invokes the closure with `opts.mode === \"lite\"`, then no `adversarial` or `semantic` LLM call is dispatched, including dialogue path when `config.review.dialogue.enabled === true`.",
+    "refined": "When opts.mode === \"lite\", recheckReview must receive { lite: true }, which must suppress adversarial and semantic LLM dispatcher calls and dialogue-path LLM invocations",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given the same closure execution, when mode forwarding is added, then existing behavior for `iterationBeforeRef` capture, `collectCurrentFindings`, `resolveTestFilePatterns`, `validateMockStructureFiles`, `pendingMockStructureHandoffs` stash, `applyTestEditDeclarations`, and `ctx.testEditDeclarations` clearing remains unchanged.",
+    "refined": "All closure body operations (iterationBeforeRef capture, collectCurrentFindings, resolveTestFilePatterns, validateMockStructureFiles, pendingMockStructureHandoffs stash, applyTestEditDeclarations, ctx.testEditDeclarations clearing) must execute in their current sequence and order relative to the recheckReview invocation",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When `wc -l src/pipeline/stages/autofix-cycle.ts` is run after implementation, then line count is less than or equal to 600.",
+    "refined": "The file src/pipeline/stages/autofix-cycle.ts must have a line count of 600 or fewer lines when measured by wc -l",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

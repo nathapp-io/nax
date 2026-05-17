@@ -270,19 +270,43 @@ export const autofixStage: PipelineStage = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function recheckReview(ctx: PipelineContext): Promise<boolean> {
-  // Import reviewStage lazily to avoid circular deps
+async function recheckReview(ctx: PipelineContext, opts?: { lite?: boolean }): Promise<boolean> {
+  const lite = opts?.lite === true;
+
+  if (lite) {
+    const origSkipChecks = ctx.retrySkipChecks;
+    const origSkipLLMReviewers = ctx.skipLLMReviewers;
+    ctx.retrySkipChecks = new Set([...(ctx.retrySkipChecks ?? []), "adversarial", "semantic"]);
+    ctx.skipLLMReviewers = true;
+    try {
+      await _autofixDeps.runReviewStage(ctx);
+    } finally {
+      ctx.retrySkipChecks = origSkipChecks;
+      ctx.skipLLMReviewers = origSkipLLMReviewers;
+    }
+    // In lite mode: success=true is always a genuine pass; failOpen is skipped (LLM not involved).
+    return ctx.reviewResult?.success === true;
+  }
+
+  // Standard (non-lite) path — import lazily to avoid circular deps.
+  // Disabled stage is treated as a pass (no review needed).
   const { reviewStage } = await import("./review");
   if (!reviewStage.enabled(ctx)) return true;
   // reviewStage.execute updates ctx.reviewResult in place.
   // We cannot use result.action here because review returns "continue" for BOTH
   // pass and built-in-check-failure (to hand off to autofix). Check success directly.
-  await reviewStage.execute(ctx);
+  await _autofixDeps.runReviewStage(ctx);
   // A fail-open result (LLM could not parse its response) is not a genuine pass in a
   // recheck context — we already know the review was failing before this call.
   const hasFailOpen = (ctx.reviewResult?.checks ?? []).some((c) => c.failOpen);
   if (hasFailOpen) return false;
   return ctx.reviewResult?.success === true;
+}
+
+async function runReviewStage(ctx: PipelineContext): Promise<void> {
+  const { reviewStage } = await import("./review");
+  if (!reviewStage.enabled(ctx)) return;
+  await reviewStage.execute(ctx);
 }
 
 async function runMechanicalFixes(ctx: PipelineContext, failedCheckNames: Set<ReviewCheckName>): Promise<void> {
@@ -417,6 +441,7 @@ export const _autofixDeps = {
   runQualityCommand,
   recheckReview,
   runAgentRectification,
+  runReviewStage,
   runTestWriterRectification: (
     ctx: PipelineContext,
     testWriterChecks: ReviewCheckResult[],
