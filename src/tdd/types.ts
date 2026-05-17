@@ -122,7 +122,7 @@ export interface ThreeSessionTddOptions {
    */
   agentManager: import("../agents/manager-types").IAgentManager;
   /** Runtime services used by rectification to emit prompt audit/cost events. */
-  runtime?: import("../runtime").NaxRuntime;
+  runtime: import("../runtime").NaxRuntime;
 }
 
 /**

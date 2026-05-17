@@ -1,37 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-17T11-14-06-111Z",
+    "id": "run-2026-05-17T11-24-42-599Z",
     "feature": "rectification-runtime-required",
-    "startedAt": "2026-05-17T11:14:06.111Z",
+    "startedAt": "2026-05-17T11:24:42.599Z",
     "status": "crashed",
     "dryRun": false,
-    "pid": 87357,
-    "crashedAt": "2026-05-17T11:19:13.590Z",
+    "pid": 97944,
+    "crashedAt": "2026-05-17T11:32:11.694Z",
     "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 3,
     "passed": 2,
     "failed": 0,
-    "paused": 0,
+    "paused": 1,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
     "spent": 0,
     "limit": 50
   },
-  "current": {
-    "storyId": "US-003",
-    "title": "Require Runtime and Remove Legacy Path in TDD Rectification Gate",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd",
-    "model": "balanced",
-    "attempt": 2,
-    "phase": "routing"
-  },
-  "iterations": 0,
-  "updatedAt": "2026-05-17T11:19:13.590Z",
-  "durationMs": 307479
+  "current": null,
+  "iterations": 1,
+  "updatedAt": "2026-05-17T11:32:11.694Z",
+  "durationMs": 449095,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "running"
+    }
+  }
 }

@@ -92,7 +92,21 @@ export async function runFullSuiteGate(
   projectDir: string | undefined,
   sessionId: string | undefined,
   runtime: import("../runtime").NaxRuntime,
+  ...legacyArgs: unknown[]
 ): Promise<FullSuiteGateResult> {
+  const hasSessionManager = (value: unknown): value is import("../runtime").NaxRuntime =>
+    typeof value === "object" && value !== null && "sessionManager" in value;
+
+  // Backward-runtime compatibility for stale JS callsites still passing the removed
+  // `sessionManager` positional slot before `runtime`.
+  const legacyRuntime = legacyArgs[0];
+  const resolvedRuntime = hasSessionManager(runtime)
+    ? runtime
+    : hasSessionManager(legacyRuntime)
+      ? legacyRuntime
+      : runtime;
+  const resolvedSessionId = sessionId ?? (typeof runtime === "string" ? runtime : undefined);
+
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) {
     return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "disabled" };
@@ -150,10 +164,10 @@ export async function runFullSuiteGate(
         effectiveTestCmd,
         fullSuiteTimeout,
         fullSuiteResult.output,
-        runtime,
+        resolvedRuntime,
         featureName,
         projectDir,
-        sessionId,
+        resolvedSessionId,
       );
     }
 

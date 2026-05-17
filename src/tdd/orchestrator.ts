@@ -285,29 +285,25 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // failure as story-caused (the file-modification filter from BUG-TC-001 was
   // removed — see rectification-gate.ts header for the rationale).
   const implementerBinding = getTddSessionBinding?.("implementer");
-  const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!runtime && rectificationEnabled) {
-    throw new NaxError(
-      `[tdd] Runtime is required for full-suite rectification gate (story ${story.id})`,
-      "DISPATCH_NO_RUNTIME",
-      { stage: "tdd", storyId: story.id },
-    );
+  if (!runtime) {
+    throw new NaxError(`[tdd] Runtime is required for full-suite gate (story ${story.id})`, "DISPATCH_NO_RUNTIME", {
+      stage: "tdd",
+      storyId: story.id,
+    });
   }
-  const fullSuiteGate = runtime
-    ? await runFullSuiteGate(
-        story,
-        config,
-        workdir,
-        agentManager,
-        implementerTier,
-        lite,
-        logger,
-        featureName,
-        projectDir,
-        implementerBinding?.sessionId,
-        runtime,
-      )
-    : { passed: false, cost: 0, fullSuiteGatePassed: false, status: "disabled" as const };
+  const fullSuiteGate = await runFullSuiteGate(
+    story,
+    config,
+    workdir,
+    agentManager,
+    implementerTier,
+    lite,
+    logger,
+    featureName,
+    projectDir,
+    implementerBinding?.sessionId,
+    runtime,
+  );
   const { cost: fullSuiteGateCost, fullSuiteGatePassed } = fullSuiteGate;
 
   if (fullSuiteGate.status === "rectification-exhausted") {
