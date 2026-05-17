@@ -32,7 +32,8 @@ export const reviewStage: PipelineStage = {
     // MW-010: workdir is already resolved to the package directory at context creation
 
     // AC3: When dialogue is enabled (non-debate) and a session already exists (retry loop), use reReview()
-    if (dialogueEnabled && !reviewDebateEnabled && ctx.reviewerSession) {
+    // skipLLMReviewers=true (set by recheckReview lite mode) bypasses LLM calls — fall through to orchestrator.
+    if (dialogueEnabled && !reviewDebateEnabled && ctx.reviewerSession && !ctx.skipLLMReviewers) {
       try {
         const diff = ctx.storyGitRef ?? "";
         const reReviewResult = await ctx.reviewerSession.reReview(diff);
@@ -70,8 +71,9 @@ export const reviewStage: PipelineStage = {
       }
     }
 
-    // AC2: When dialogue is enabled and no session exists (first run), create one
-    if (dialogueEnabled && !ctx.reviewerSession && ctx.agentManager && ctx.sessionManager) {
+    // AC2: When dialogue is enabled and no session exists (first run), create one.
+    // skipLLMReviewers=true (set by recheckReview lite mode) bypasses LLM calls — fall through to orchestrator.
+    if (dialogueEnabled && !ctx.reviewerSession && ctx.agentManager && ctx.sessionManager && !ctx.skipLLMReviewers) {
       ctx.reviewerSession = _reviewDeps.createReviewerSession(
         ctx.agentManager,
         ctx.sessionManager,
