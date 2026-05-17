@@ -7,12 +7,12 @@
  */
 
 import type { IAgentManager } from "../agents";
-import { SessionTurnError } from "../agents/types";
-import { NaxError } from "../errors";
 import type { SessionHandle } from "../agents/types";
+import { SessionTurnError } from "../agents/types";
 import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { getLogger } from "../logger";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
