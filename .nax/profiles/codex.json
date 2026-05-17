@@ -17,6 +17,6 @@
     }
   },
   "acceptance": {
-    "model": { "agent": "codex", "model": "fast" }
+    "model": { "agent": "claude", "model": "fast" }
   }
 }

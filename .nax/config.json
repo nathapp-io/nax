@@ -106,7 +106,7 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun test test/",
+      "test": "bun run test",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint:json",
       "build": "bun run build",
