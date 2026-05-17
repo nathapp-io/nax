@@ -72,11 +72,10 @@ export interface RectificationLoopOptions {
    */
   sessionId?: string;
   /**
-   * NaxRuntime (ADR-019 Phase D). When present, each rectification attempt dispatches
-   * via buildHopCallback → runWithFallback (fresh session per hop). keepOpen is only
-   * used in the legacy path when runtime is absent.
+   * NaxRuntime (ADR-019 Phase D). Required — each rectification attempt dispatches
+   * via runAsSession (fresh session per hop).
    */
-  runtime?: import("../runtime").NaxRuntime;
+  runtime: import("../runtime").NaxRuntime;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -305,25 +304,8 @@ export async function runRectificationLoop(
         defaultAgent,
       );
 
-      const isLastAttempt = currentAttempt >= rectificationConfig.maxRetries;
-
-      const runOptions = {
-        prompt,
-        workdir,
-        modelTier,
-        modelDef,
-        timeoutSeconds: config.execution.sessionTimeoutSeconds,
-        pipelineStage: "rectification" as const,
-        config,
-        projectDir,
-        maxInteractionTurns: config.agent?.maxInteractionTurns,
-        featureName,
-        storyId: story.id,
-        sessionRole: "implementer" as const,
-      };
-
       let agentResult!: import("../agents").AgentResult;
-      if (runtime) {
+      {
         // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
         // once and reuse across attempts. openSession is idempotent on a live
         // handle (session/manager.ts:354) so we attach to any session opened
@@ -392,18 +374,13 @@ export async function runRectificationLoop(
             throw err;
           }
         }
-      } else {
-        // Legacy keepOpen path — used when no runtime is available (standalone callers).
-        agentResult = await agentManager.run({
-          runOptions: { ...runOptions, keepOpen: !isLastAttempt },
-        });
       }
 
       costAccum += agentResult.estimatedCostUsd ?? 0;
 
       // G5: update session descriptor with latest protocolIds so the audit trail
       // reflects the session that actually ran (may differ after internal retries).
-      if (runtime && sessionId && agentResult.protocolIds) {
+      if (sessionId && agentResult.protocolIds) {
         try {
           runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
         } catch {
@@ -525,7 +502,7 @@ export async function runRectificationLoop(
     if (heldHandle) {
       const stale = heldHandle;
       heldHandle = undefined;
-      await runtime?.sessionManager.closeSession(stale).catch(() => {});
+      await runtime.sessionManager.closeSession(stale).catch(() => {});
     }
   });
 
