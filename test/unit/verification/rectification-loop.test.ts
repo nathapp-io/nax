@@ -426,6 +426,332 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// runRectificationLoop — runtime is required, legacy sessionManager path removed
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runRectificationLoop — runtime required and legacy path removed", () => {
+  const origAgentManager = _rectificationDeps.agentManager;
+  const origRunVerification = _rectificationDeps.runVerification;
+
+  afterEach(() => {
+    _rectificationDeps.agentManager = origAgentManager;
+    _rectificationDeps.runVerification = origRunVerification;
+    mock.restore();
+  });
+
+  test("invokes agentManager.runAsSession (not agentManager.run) when runtime is provided", async () => {
+    const capturedSessionCalls: Array<{ method: "runAsSession" | "run"; agentName: string }> = [];
+    const { makeSessionManager } = await import("../../helpers");
+
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async (agentName: string) => {
+        capturedSessionCalls.push({ method: "runAsSession", agentName });
+        return {
+          output: "fixed",
+          estimatedCostUsd: 1.5,
+          tokenUsage: { inputTokens: 100, outputTokens: 50 },
+          internalRoundTrips: 1,
+        };
+      }),
+      runFn: mock(async () => {
+        capturedSessionCalls.push({ method: "run", agentName: "claude" });
+        return { success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 10, estimatedCostUsd: 0, agentFallbacks: [] };
+      }),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const runtime = {
+      sessionManager: makeSessionManager({
+        openSession: mock(async () => ({
+          id: "test-session",
+          agentName: "claude",
+        })),
+        closeSession: mock(async () => {}),
+      }),
+      signal: undefined as any,
+    } as any;
+
+    await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-RUNTIME-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(capturedSessionCalls).toHaveLength(1);
+    expect(capturedSessionCalls[0].method).toBe("runAsSession");
+    expect(capturedSessionCalls[0].agentName).toBe("claude");
+  });
+
+  test("calls runtime.sessionManager.bindHandle when sessionId and protocolIds are present", async () => {
+    const bindHandleCalls: Array<{ sessionId: string; name: string; protocolIds: any }> = [];
+    const { makeSessionManager } = await import("../../helpers");
+
+    const mockSessionManager = makeSessionManager({
+      bindHandle: mock((sessionId: string, name: string, protocolIds: any) => {
+        bindHandleCalls.push({ sessionId, name, protocolIds });
+        return { id: "mock-session", state: "BOUND" };
+      }),
+      openSession: mock(async () => ({
+        id: "test-session",
+        agentName: "claude",
+        protocolIds: { protocol: "acp", pid: 12345 },
+      })),
+      closeSession: mock(async () => {}),
+    });
+
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => ({
+        output: "fixed",
+        estimatedCostUsd: 1.5,
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        internalRoundTrips: 1,
+      })),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const runtime = {
+      sessionManager: mockSessionManager,
+      signal: undefined as any,
+    } as any;
+
+    await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-BIND-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      sessionId: "sess-abc123",
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(bindHandleCalls.length).toBeGreaterThan(0);
+    expect(bindHandleCalls[0].sessionId).toBe("sess-abc123");
+    expect(bindHandleCalls[0].name).toContain("implementer");
+    expect(bindHandleCalls[0].protocolIds).toBeDefined();
+  });
+
+  test("does not call runtime.sessionManager.bindHandle when sessionId is missing", async () => {
+    const bindHandleCalls: Array<{ sessionId: string; name: string }> = [];
+    const { makeSessionManager } = await import("../../helpers");
+
+    const mockSessionManager = makeSessionManager({
+      bindHandle: mock((sessionId: string, name: string) => {
+        bindHandleCalls.push({ sessionId, name });
+        return { id: "mock-session", state: "BOUND" };
+      }),
+      openSession: mock(async () => ({
+        id: "test-session",
+        agentName: "claude",
+        protocolIds: { protocol: "acp", pid: 12345 },
+      })),
+      closeSession: mock(async () => {}),
+    });
+
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => ({
+        output: "fixed",
+        estimatedCostUsd: 1.5,
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        internalRoundTrips: 1,
+      })),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const runtime = {
+      sessionManager: mockSessionManager,
+      signal: undefined as any,
+    } as any;
+
+    await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-NO-BIND-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      // sessionId intentionally omitted
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(bindHandleCalls).toHaveLength(0);
+  });
+
+  test("calls runtime.sessionManager.closeSession when held handle exists on loop exit", async () => {
+    const closeSessionCalls: Array<{ id: string }> = [];
+    const { makeSessionManager } = await import("../../helpers");
+
+    const mockSessionManager = makeSessionManager({
+      openSession: mock(async () => ({
+        id: "test-session-hold",
+        agentName: "claude",
+      })),
+      closeSession: mock(async (handle) => {
+        closeSessionCalls.push({ id: handle.id });
+      }),
+    });
+
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => ({
+        output: "fixed",
+        estimatedCostUsd: 1.5,
+        tokenUsage: { inputTokens: 100, outputTokens: 50 },
+        internalRoundTrips: 1,
+      })),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const runtime = {
+      sessionManager: mockSessionManager,
+      signal: undefined as any,
+    } as any;
+
+    await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-CLOSE-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(closeSessionCalls.length).toBeGreaterThan(0);
+    expect(closeSessionCalls[0].id).toBe("test-session-hold");
+  });
+
+  test("does not call runtime.sessionManager.closeSession when runtime is not provided", async () => {
+    const closeSessionCalls: Array<{ id: string }> = [];
+
+    _rectificationDeps.agentManager = undefined;
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const result = await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-NO-CLOSE-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      // no runtime — should fail since it's now required
+    } as any);
+
+    expect(result.succeeded).toBe(false);
+  });
+
+  test("closes held session handle even when verification fails on retry", async () => {
+    const closeSessionCalls: Array<{ id: string }> = [];
+    const { makeSessionManager } = await import("../../helpers");
+
+    const mockSessionManager = makeSessionManager({
+      openSession: mock(async () => ({
+        id: "test-session-retry",
+        agentName: "claude",
+      })),
+      closeSession: mock(async (handle) => {
+        closeSessionCalls.push({ id: handle.id });
+      }),
+    });
+
+    let attemptCount = 0;
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => {
+        attemptCount++;
+        return {
+          output: `Attempt ${attemptCount} fix`,
+          estimatedCostUsd: 1.0,
+          tokenUsage: { inputTokens: 100, outputTokens: 50 },
+          internalRoundTrips: 1,
+        };
+      }),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+
+    let verifyCount = 0;
+    _rectificationDeps.runVerification = mock(async () => {
+      verifyCount++;
+      return {
+        success: false,
+        output: `Still failing after attempt ${verifyCount}\n✗ test [1ms]\n(fail) test\nerror\n1 failed`,
+        status: "TEST_FAILURE" as const,
+        countsTowardEscalation: true,
+      };
+    });
+
+    const runtime = {
+      sessionManager: mockSessionManager,
+      signal: undefined as any,
+    } as any;
+
+    await runRectificationLoop({
+      config: makeConfig({ execution: { sessionTimeoutSeconds: 120, rectification: { maxRetries: 2 } } } as any),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-RETRY-CLOSE-001" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(closeSessionCalls.length).toBeGreaterThan(0);
+    expect(closeSessionCalls[0].id).toBe("test-session-retry");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // runRectificationLoop — logging failing test names
 // ─────────────────────────────────────────────────────────────────────────────
 
