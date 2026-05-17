@@ -67,14 +67,8 @@ export interface RectificationLoopOptions {
    */
   testScopedTemplate?: string;
   /**
-   * In-process session registry (Phase 1+ plumbing). When provided, each rectification
-   * attempt's protocolIds are bound to the descriptor so the audit trail stays current
-   * across retries (G5: bindHandle after each agent.run() in the rectification loop).
-   */
-  sessionManager?: import("../session").ISessionManager;
-  /**
    * nax session ID for the implementer session (sess-<uuid>).
-   * Required alongside sessionManager for bindHandle to work.
+   * Required alongside runtime for bindHandle to work (G5).
    */
   sessionId?: string;
   /**
@@ -194,7 +188,6 @@ export async function runRectificationLoop(
     featureName,
     projectDir,
     testScopedTemplate,
-    sessionManager,
     sessionId,
     runtime,
   } = opts;
@@ -410,9 +403,9 @@ export async function runRectificationLoop(
 
       // G5: update session descriptor with latest protocolIds so the audit trail
       // reflects the session that actually ran (may differ after internal retries).
-      if (sessionManager && sessionId && agentResult.protocolIds) {
+      if (runtime && sessionId && agentResult.protocolIds) {
         try {
-          sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
+          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
         } catch {
           // Session may not exist in manager (e.g. v2 context disabled) — ignore.
         }
@@ -529,10 +522,10 @@ export async function runRectificationLoop(
     // ADR-008 §6: close the held implementer session at loop exit. Best-effort —
     // failures here must not mask the loop outcome. Tier escalation below opens
     // a fresh session via runAs, so we close before that branch fires.
-    if (heldHandle && runtime) {
+    if (heldHandle) {
       const stale = heldHandle;
       heldHandle = undefined;
-      await runtime.sessionManager.closeSession(stale).catch(() => {});
+      await runtime?.sessionManager.closeSession(stale).catch(() => {});
     }
   });
 
