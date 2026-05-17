@@ -18,7 +18,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -185,7 +185,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     );
 
     const config = makeConfig();
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
     // maxRetries = 2, so loop runs 2 times, then escalation = 1 more = total 3
     await runRectificationLoop({
       config,
@@ -227,7 +227,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     );
 
     const config = makeConfig();
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     // story.routing.complexity = "medium" → modelTier = "balanced"
     await runRectificationLoop({
@@ -268,7 +268,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
     // Stub escalateTier to return null (already at last tier)
     _rectificationDeps.escalateTier = mock(() => null);
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -305,7 +305,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       return makeVerificationResult(true, PASSING_TEST_OUTPUT);
     });
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -339,7 +339,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       makeVerificationResult(false, FAILING_TEST_OUTPUT),
     );
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -391,7 +391,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       },
     } as any);
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config,
@@ -451,7 +451,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       },
     } as any);
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config,
@@ -507,7 +507,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       },
     } as any);
 
-    const runtime = { sessionManager: makeSessionManager(), signal: undefined as any } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config,

@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
-import { makeMockAgentManager, makeNaxConfig, makeStory } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "../../helpers";
 
 const SILENT_LOGGER = {
   info: () => {},
@@ -60,6 +60,10 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
       "balanced",
       true,
       SILENT_LOGGER,
+      undefined,
+      undefined,
+      undefined,
+      makeMockRuntime(),
     );
 
     // Gate must NOT pass — we have real failures even though failed===0
@@ -92,6 +96,10 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
       "balanced",
       true,
       SILENT_LOGGER,
+      undefined,
+      undefined,
+      undefined,
+      makeMockRuntime(),
     );
 
     // passed > 0, failures empty, failed === 0: environmental noise → gate passes
@@ -118,6 +126,10 @@ describe("runFullSuiteGate — pass/fail decisions", () => {
       "balanced",
       true,
       SILENT_LOGGER,
+      undefined,
+      undefined,
+      undefined,
+      makeMockRuntime(),
     );
 
     expect(result.fullSuiteGatePassed).toBe(true);

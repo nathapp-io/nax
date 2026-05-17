@@ -12,7 +12,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { _rectificationDeps, runRectificationLoop } from "../../../src/verification/rectification-loop";
 import { getSafeLogger, initLogger, resetLogger } from "../../../src/logger";
-import { makeMockAgentManager, makeNaxConfig, makeSessionManager } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeSessionManager } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -123,10 +123,7 @@ describe("runRectificationLoop — session context params", () => {
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -166,10 +163,7 @@ describe("runRectificationLoop — session context params", () => {
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -202,10 +196,7 @@ describe("runRectificationLoop — session context params", () => {
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
@@ -250,10 +241,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig({
@@ -300,10 +288,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config,
@@ -372,10 +357,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       };
     });
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config,
@@ -410,10 +392,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -450,7 +429,6 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
 
   test("invokes agentManager.runAsSession (not agentManager.run) when runtime is provided", async () => {
     const capturedSessionCalls: Array<{ method: "runAsSession" | "run"; agentName: string }> = [];
-    const { makeSessionManager } = await import("../../helpers");
 
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: mock(async (agentName: string) => {
@@ -477,7 +455,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
+    const runtime = makeMockRuntime({
       sessionManager: makeSessionManager({
         openSession: mock(async () => ({
           id: "test-session",
@@ -485,8 +463,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
         })),
         closeSession: mock(async () => {}),
       }),
-      signal: undefined as any,
-    } as any;
+    });
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -507,7 +484,6 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
 
   test("calls runtime.sessionManager.bindHandle when sessionId and protocolIds are present", async () => {
     const bindHandleCalls: Array<{ sessionId: string; name: string; protocolIds: any }> = [];
-    const { makeSessionManager } = await import("../../helpers");
 
     const mockSessionManager = makeSessionManager({
       bindHandle: mock((sessionId: string, name: string, protocolIds: any) => {
@@ -540,10 +516,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: mockSessionManager,
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime({ sessionManager: mockSessionManager });
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -566,7 +539,6 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
 
   test("does not call runtime.sessionManager.bindHandle when sessionId is missing", async () => {
     const bindHandleCalls: Array<{ sessionId: string; name: string }> = [];
-    const { makeSessionManager } = await import("../../helpers");
 
     const mockSessionManager = makeSessionManager({
       bindHandle: mock((sessionId: string, name: string) => {
@@ -599,10 +571,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: mockSessionManager,
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime({ sessionManager: mockSessionManager });
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -622,7 +591,6 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
 
   test("calls runtime.sessionManager.closeSession when held handle exists on loop exit", async () => {
     const closeSessionCalls: Array<{ id: string }> = [];
-    const { makeSessionManager } = await import("../../helpers");
 
     const mockSessionManager = makeSessionManager({
       openSession: mock(async () => ({
@@ -652,10 +620,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: mockSessionManager,
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime({ sessionManager: mockSessionManager });
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -700,7 +665,6 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
 
   test("closes held session handle even when verification fails on retry", async () => {
     const closeSessionCalls: Array<{ id: string }> = [];
-    const { makeSessionManager } = await import("../../helpers");
 
     const mockSessionManager = makeSessionManager({
       openSession: mock(async () => ({
@@ -738,10 +702,7 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
       };
     });
 
-    const runtime = {
-      sessionManager: mockSessionManager,
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime({ sessionManager: mockSessionManager });
 
     await runRectificationLoop({
       config: makeConfig({ execution: { sessionTimeoutSeconds: 120, rectification: { maxRetries: 2 } } } as any),
@@ -820,10 +781,7 @@ Error: Expected true to be false
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -879,10 +837,7 @@ Error: Test failed
 1 passed, 1 failed [1ms]
     `.trim();
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -929,10 +884,7 @@ test/example.test.ts:
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -976,10 +928,7 @@ Error: Test failed
       countsTowardEscalation: true,
     }));
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     await runRectificationLoop({
       config: makeConfig(),
@@ -1022,10 +971,7 @@ Error: Test failed
       };
     });
 
-    const runtime = {
-      sessionManager: makeSessionManager(),
-      signal: undefined as any,
-    } as any;
+    const runtime = makeMockRuntime();
 
     const result = await runRectificationLoop({
       config: makeConfig(),
