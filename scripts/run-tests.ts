@@ -29,7 +29,6 @@
  */
 
 const BAIL = process.argv.includes("--bail");
-
 type Phase = {
   name: string;
   dir: string;
@@ -44,25 +43,43 @@ const PHASES: Phase[] = [
   { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
   { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 30_000 },
 ];
+const REAP_GRACE_MS = 5_000;
+const REAP_POLL_MS = 100;
 
 /**
  * Reap an entire process group, escalating TERM → KILL.
  * Safe to call multiple times; ESRCH errors are ignored.
  */
-function reapGroup(pgid: number, reason: string): void {
+async function waitForGroupExit(pgid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!groupHasSurvivors(pgid)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, REAP_POLL_MS));
+  }
+  return !groupHasSurvivors(pgid);
+}
+
+async function reapGroup(pgid: number, reason: string): Promise<void> {
   process.stderr.write(`[run-tests] reaping pgid ${pgid} (${reason})\n`);
   try {
     process.kill(-pgid, "SIGTERM");
   } catch {
     // Group may already be gone.
   }
-  setTimeout(() => {
-    try {
-      process.kill(-pgid, "SIGKILL");
-    } catch {
-      // Already dead.
-    }
-  }, 5_000).unref();
+
+  if (await waitForGroupExit(pgid, REAP_GRACE_MS)) {
+    return;
+  }
+
+  try {
+    process.kill(-pgid, "SIGKILL");
+  } catch {
+    // Already dead.
+  }
+
+  await waitForGroupExit(pgid, REAP_POLL_MS * 5);
 }
 
 /**
@@ -112,12 +129,13 @@ async function runPhase(phase: Phase): Promise<number> {
   process.on("SIGTERM", onSigterm);
 
   let timedOut = false;
+  let timeoutReapPromise: Promise<void> | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
     process.stderr.write(
       `\n[run-tests] ${phase.name} exceeded ${phase.phaseTimeoutMs / 1000}s\n`,
     );
-    reapGroup(pgid, "phase timeout");
+    timeoutReapPromise = reapGroup(pgid, "phase timeout");
   }, phase.phaseTimeoutMs);
   timer.unref();
 
@@ -131,12 +149,12 @@ async function runPhase(phase: Phase): Promise<number> {
   // `null` or non-zero exit signals abnormal termination; always sweep the
   // group as a safety net to prevent orphan accumulation across phases.
   const abnormal = timedOut || exitCode === null || exitCode !== 0;
-  if (abnormal && groupHasSurvivors(pgid)) {
+  if (timeoutReapPromise) {
+    await timeoutReapPromise;
+  } else if (abnormal && groupHasSurvivors(pgid)) {
     const reason =
       exitCode === null ? "leader signaled (likely Bun panic/segfault)" : `leader exit ${exitCode}`;
-    reapGroup(pgid, reason);
-    // Brief settle so SIGTERM lands before the next phase boots.
-    await Bun.sleep(500);
+    await reapGroup(pgid, reason);
   }
 
   const elapsedS = ((Date.now() - startedAt) / 1000).toFixed(2);
