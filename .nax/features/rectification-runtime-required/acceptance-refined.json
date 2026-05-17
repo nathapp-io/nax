@@ -1,0 +1,156 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When `_rectifyDeps.runRectificationLoop` is invoked in `src/pipeline/stages/rectify.ts`, then it passes `runtime: ctx.runtime` and does not pass `sessionManager`.",
+    "refined": "The call site in `src/pipeline/stages/rectify.ts` that invokes `_rectifyDeps.runRectificationLoop` includes the argument `runtime: ctx.runtime` and does not include any `sessionManager` property in the options object.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `_rectifyDeps.runRectificationLoop` is invoked in `src/pipeline/stages/rectify.ts`, then it continues to pass `sessionId: ctx.sessionId`.",
+    "refined": "The call site in `src/pipeline/stages/rectify.ts` that invokes `_rectifyDeps.runRectificationLoop` includes the argument `sessionId: ctx.sessionId` in the options object.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a `DeferredRegressionOptions` literal without `runtime`, when it is passed to `runDeferredRegression`, then TypeScript reports a missing required `runtime` property error.",
+    "refined": "TypeScript compilation produces an error when `runDeferredRegression` is called with an object that conforms to `DeferredRegressionOptions` but omits the `runtime` property, indicating `runtime` is a required property.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given a `DeferredRegressionOptions` literal with `agentManager` and without `runtime`, when it is passed to `runDeferredRegression`, then TypeScript still reports a missing required `runtime` property error.",
+    "refined": "TypeScript compilation produces an error when `runDeferredRegression` is called with an object that includes `agentManager` but omits the required `runtime` property, confirming that `runtime` is mandatory regardless of whether other properties are present.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `runDeferredRegression` runs, then it reads the manager from `runtime.agentManager` and not from `options.agentManager`.",
+    "refined": "Inside the `runDeferredRegression` function body, all accesses to the agent manager use the expression `runtime.agentManager`, and no references to `options.agentManager` exist in the source code.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When `runDeferredRegression` calls `runRectificationLoop`, then the options object includes `runtime`.",
+    "refined": "The call to `runRectificationLoop` within the `runDeferredRegression` function passes an options object that includes the `runtime` property.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When `run-completion.ts` calls `runDeferredRegression`, then it passes `runtime: options.runtime` and does not pass `agentManager`.",
+    "refined": "The call site in `src/execution/lifecycle/run-completion.ts` that invokes `runDeferredRegression` includes the argument `runtime: options.runtime` and does not include any `agentManager` property in the options object.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a `runRectificationLoop` call that includes `sessionManager` in the options object, when TypeScript checks the call, then it reports that `sessionManager` is not a valid property of `RectificationLoopOptions`.",
+    "refined": "TypeScript type-checking reports error TS2353 ('sessionManager' does not exist on type 'RectificationLoopOptions') when `sessionManager` is passed to `runRectificationLoop`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a `runRectificationLoop` call that omits `runtime`, when TypeScript checks the call, then it reports that required property `runtime` is missing.",
+    "refined": "TypeScript type-checking reports error TS2741 (Property 'runtime' is missing in type but required in 'RectificationLoopOptions') when `runtime` is omitted from `runRectificationLoop` call.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `runRectificationLoop` executes a rectification attempt, then it invokes `agentManager.runAsSession()` and does not invoke `agentManager.run()`.",
+    "refined": "During each rectification attempt execution, `agentManager.runAsSession()` is called exactly once, and `agentManager.run()` call count is zero.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `sessionId` is provided and an attempt result includes `agentResult.protocolIds`, when `runRectificationLoop` completes that attempt, then it calls `runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, protocolIds)`.",
+    "refined": "When `sessionId` is truthy and `agentResult.protocolIds` is non-empty, `runtime.sessionManager.bindHandle` is invoked with arguments matching `(sessionId, rectificationSessionName, agentResult.protocolIds)`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given `sessionId` is not provided and an attempt result includes `agentResult.protocolIds`, when `runRectificationLoop` completes that attempt, then it does not call `runtime.sessionManager.bindHandle`.",
+    "refined": "When `sessionId` is falsy or undefined, `runtime.sessionManager.bindHandle` call count is zero regardless of `agentResult.protocolIds` presence.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When `runRectificationLoop` exits its retry loop after opening a held handle, then it calls `runtime.sessionManager.closeSession(heldHandle)`.",
+    "refined": "When the retry loop exits with `heldHandle` assigned a non-null session ID, `runtime.sessionManager.closeSession(heldHandle)` is called exactly once in the finally block.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When `runRectificationLoop` exits its retry loop without opening a held handle, then it does not call `runtime.sessionManager.closeSession`.",
+    "refined": "When the retry loop exits with `heldHandle` remaining null or undefined, `runtime.sessionManager.closeSession` call count is zero.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a call to `runFullSuiteGate` that still passes `sessionManager` in the old positional slot, when TypeScript checks the call, then it reports an argument type mismatch.",
+    "refined": "TypeScript compiler emits error TS2345 (argument of type ... not assignable to parameter) when source code attempts to call `runFullSuiteGate` with a `sessionManager` parameter.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a call to `runFullSuiteGate` that omits `runtime`, when TypeScript checks the call, then it reports that the required `runtime` argument is missing.",
+    "refined": "TypeScript compiler emits error TS2554 (expected 2 arguments, got 1) when source code calls `runFullSuiteGate` without the `runtime` parameter.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given private `runRectificationLoop` in `rectification-gate.ts`, when it is called from `runFullSuiteGate`, then no `sessionManager` argument is passed.",
+    "refined": "Code inspection of `runFullSuiteGate` function body confirms the call to `runRectificationLoop(...)` does not include `sessionManager` in its argument list.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given private `runRectificationLoop` in `rectification-gate.ts`, when it is called from `runFullSuiteGate`, then a non-optional `runtime` argument is passed.",
+    "refined": "Code inspection of `runFullSuiteGate` function body confirms the call to `runRectificationLoop(...)` includes a `runtime` argument that satisfies the non-optional `runtime: NaxRuntime` parameter.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When private `runRectificationLoop` executes a rectification attempt, then it invokes `agentManager.runAsSession()` and does not invoke `agentManager.run()`.",
+    "refined": "Code inspection of `runRectificationLoop` confirms `agentManager.runAsSession()` is called during rectification, the legacy `else { agentManager.run(...) }` block is deleted, and no remaining calls to `agentManager.run()` exist in the transport-retry loop.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `sessionId` is provided and a rectification attempt result includes `rectifyResult.protocolIds`, when private `runRectificationLoop` completes that attempt, then it calls `runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, protocolIds)`.",
+    "refined": "Code inspection of `runRectificationLoop` confirms that after a rectification attempt, when both `sessionId` and `agentResult.protocolIds` are defined, `runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds)` is invoked without a preceding `sessionManager` existence guard.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When private `runRectificationLoop` exits after opening a held handle, then it calls `runtime.sessionManager.closeSession(heldHandle)`.",
+    "refined": "Code inspection of the `finally` block in `runRectificationLoop` confirms that when `heldHandle` is defined, `runtime.sessionManager.closeSession(heldHandle)` is invoked unconditionally (no `if (heldHandle && runtime)` guard; only `if (heldHandle)` guard remains).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `src/tdd/orchestrator.ts` calls `runFullSuiteGate`, then the call compiles without passing `sessionManager`.",
+    "refined": "TypeScript compilation succeeds for `src/tdd/orchestrator.ts` and code inspection confirms the call to `runFullSuiteGate` does not include a `sessionManager` argument and does include a `runtime` argument.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
