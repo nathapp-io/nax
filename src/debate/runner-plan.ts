@@ -6,6 +6,7 @@ import { planDebaterOp } from "../operations/debate-plan";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
+import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import {
@@ -141,7 +142,11 @@ export async function runPlan(
 
     // Launch N callOp invocations without awaiting them (AC6)
     const callOpPromises = resolved.map(({ debater, agentName }, index) => {
-      const debaterCtx: CallContext = { ...ctx.callContext, agentName };
+      const debaterCtx: CallContext = {
+        ...ctx.callContext,
+        agentName,
+        sessionOverride: { role: `debate-plan-${index}` as SessionRole },
+      };
       return callModule.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
@@ -240,7 +245,11 @@ export async function runPlan(
     // Launch all N debaters concurrently — shared proposalBarriers require all
     // debaters to be in-flight simultaneously (same constraint as hybrid runner).
     const callOpPromisesB = resolved.map(({ debater, agentName }, index) => {
-      const debaterCtx: CallContext = { ...ctx.callContext, agentName };
+      const debaterCtx: CallContext = {
+        ...ctx.callContext,
+        agentName,
+        sessionOverride: { role: `debate-plan-${index}` as SessionRole },
+      };
       return callModule.callOp(debaterCtx, planDebaterOp, {
         debater,
         index,
@@ -317,7 +326,11 @@ export async function runPlan(
 
     const settled = await allSettledBounded(
       resolved.map(({ debater, agentName }, index) => async () => {
-        const debaterCtx: CallContext = { ...ctx.callContext, agentName };
+        const debaterCtx: CallContext = {
+          ...ctx.callContext,
+          agentName,
+          sessionOverride: { role: `debate-plan-${index}` as SessionRole },
+        };
         const result = await callModule.callOp(debaterCtx, planDebaterOp, {
           debater,
           index,
