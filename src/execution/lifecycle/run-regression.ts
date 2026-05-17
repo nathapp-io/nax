@@ -33,7 +33,7 @@ export interface DeferredRegressionOptions {
   prd: PRD;
   workdir: string;
   /** NaxRuntime — provides agentManager, sessionManager, and signal for rectification. */
-  runtime: NaxRuntime;
+  runtime?: NaxRuntime;
 }
 
 export interface DeferredRegressionResult {
@@ -291,6 +291,24 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   if (affectedStories.size === 0) {
     logger?.warn("regression", "No stories could be mapped to failures");
+    return {
+      success: false,
+      failedTests: testFilesInFailures.size,
+      failedTestFiles: Array.from(testFilesInFailures),
+      passedTests: testSummary.passed,
+      rectificationAttempts: 0,
+      affectedStories: Array.from(affectedStories),
+      storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
+    };
+  }
+
+  // Guard: runtime is required for rectification dispatch
+  if (!runtime) {
+    logger?.warn("regression", "No runtime available — skipping rectification, returning affected stories", {
+      affectedStoriesCount: affectedStories.size,
+    });
     return {
       success: false,
       failedTests: testFilesInFailures.size,
