@@ -3,7 +3,7 @@
   "feature": "rectification-runtime-required",
   "branchName": "feat/rectification-runtime-required",
   "createdAt": "2026-05-17T15:43:21+08:00",
-  "updatedAt": "2026-05-17T08:17:15.146Z",
+  "updatedAt": "2026-05-17T09:24:48.853Z",
   "userStories": [
     {
       "id": "US-001",
@@ -73,13 +73,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Autofix exhausted: 3 findings remain\n  - abandonment, assumption, convention in src/tdd/rectification-gate.ts",
+          "timestamp": "2026-05-17T09:24:46.822Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/verification/rectification-loop.ts",
@@ -92,8 +99,41 @@
         "Given `runtime.sessionManager.bindHandle` throws, when protocol IDs are present, then `runRectificationLoop` continues without throwing from the bind step.",
         "Given `SessionTurnError` is retryable and transport retry budget remains, when a runAsSession attempt fails with that error, then `runRectificationLoop` retries with a fresh opened session handle."
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: 3 findings remain\n  - abandonment, assumption, convention in src/tdd/rectification-gate.ts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/verification/rectification-loop.ts",
+              "line": 79,
+              "message": "runtime property is still marked as optional (runtime?) but AC-2 requires it to be mandatory. Callers omitting runtime will not trigger a TypeScript error.",
+              "suggestion": "Change line 79 from `runtime?: import(\"../runtime\").NaxRuntime;` to `runtime: import(\"../runtime\").NaxRuntime;` (remove the `?`)",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "git diff 4592efbccb9d4b8fb9a592b11cf3d707676f1b31..HEAD -- src/verification/rectification-loop.ts",
+                  "file": "src/verification/rectification-loop.ts",
+                  "line": 78,
+                  "observed": "  runtime: import(\"../runtime\").NaxRuntime;"
+                },
+                "acQuote": "Given a `runRectificationLoop` call that omits `runtime`, when TypeScript checks the call, then it reports that required property `runtime` is missing.",
+                "acIndex": 2
+              }
+            }
+          ],
+          "cost": 3.9824891300000003,
+          "timestamp": "2026-05-17T09:24:46.822Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "4592efbccb9d4b8fb9a592b11cf3d707676f1b31"
     },
