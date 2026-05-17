@@ -32,6 +32,7 @@ export const hybridDebaterOp: RunOperation<DebateHybridInput, DebateHybridOutput
   session: { role: "debate-hybrid" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
+  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
   async hopBody(initialPrompt, ctx) {
     const logger = _debateSessionDeps.getSafeLogger();
     let totalCostUsd = 0;

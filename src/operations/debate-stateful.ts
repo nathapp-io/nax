@@ -29,6 +29,7 @@ export const statefulDebaterOp: RunOperation<DebateStatefulInput, DebateStateful
   session: { role: "debate-stateful" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
+  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
   async hopBody(initialPrompt, ctx) {
     const proposal = ctx.input.turnSemaphore
       ? await ctx.input.turnSemaphore.run(() => ctx.send(initialPrompt))

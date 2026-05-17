@@ -19,6 +19,7 @@ export const judgeOp: CompleteOperation<DebateJudgeInput, string, DebateConfig> 
   jsonMode: false,
   config: debateConfigSelector,
   model: (input) => ({ agent: input.resolverAgent, model: input.resolverModel }),
+  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.review?.timeoutSeconds ?? 600) * 1000,
   build(input, _ctx) {
     const prompt = DebatePromptBuilder.resolverJudgePrompt(input.proposals, input.critiques, input.debaters);
     return {

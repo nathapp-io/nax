@@ -34,6 +34,7 @@ export const planDebaterOp: RunOperation<DebatePlanInput, DebatePlanOutput, Deba
   session: { role: "debate-plan" satisfies SessionRole, lifetime: "fresh" },
   config: debateConfigSelector,
   model: (input) => ({ agent: input.debater.agent, model: input.debater.model ?? "fast" }),
+  timeoutMs: (_input, ctx) => (ctx.config.debate?.stages?.plan?.timeoutSeconds ?? 600) * 1000,
   fileOutput: (input) => input.outputPath,
   async hopBody(initialPrompt, ctx) {
     const proposal = ctx.input.turnSemaphore
