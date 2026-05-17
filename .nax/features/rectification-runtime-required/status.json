@@ -1,43 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-17T07-49-04-840Z",
+    "id": "run-2026-05-17T11-14-06-111Z",
     "feature": "rectification-runtime-required",
-    "startedAt": "2026-05-17T07:49:04.840Z",
-    "status": "failed",
+    "startedAt": "2026-05-17T11:14:06.111Z",
+    "status": "crashed",
     "dryRun": false,
-    "pid": 15438
+    "pid": 87357,
+    "crashedAt": "2026-05-17T11:19:13.590Z",
+    "crashSignal": "SIGINT"
   },
   "progress": {
     "total": 3,
-    "passed": 1,
-    "failed": 1,
+    "passed": 2,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 1
   },
   "cost": {
-    "spent": 12.214834300000001,
+    "spent": 0,
     "limit": 50
   },
-  "current": null,
-  "iterations": 4,
-  "updatedAt": "2026-05-17T10:47:41.904Z",
-  "durationMs": 10717064,
-  "postRun": {
-    "acceptance": {
-      "status": "not-run"
-    },
-    "regression": {
-      "status": "failed",
-      "failedTests": [
-        "test/integration/tdd/tdd-orchestrator-failureCategory.test.ts",
-        "test/integration/agents/acp/tdd-flow-rectification.test.ts"
-      ],
-      "affectedStories": [
-        "US-002"
-      ],
-      "lastRunAt": "2026-05-17T10:47:41.138Z"
-    }
-  }
+  "current": {
+    "storyId": "US-003",
+    "title": "Require Runtime and Remove Legacy Path in TDD Rectification Gate",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd",
+    "model": "balanced",
+    "attempt": 2,
+    "phase": "routing"
+  },
+  "iterations": 0,
+  "updatedAt": "2026-05-17T11:19:13.590Z",
+  "durationMs": 307479
 }
