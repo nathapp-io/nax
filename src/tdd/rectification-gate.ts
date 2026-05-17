@@ -12,7 +12,6 @@ import { SessionTurnError } from "../agents/types";
 import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
-import { NaxError } from "../errors";
 import type { getLogger } from "../logger";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -88,11 +87,13 @@ export async function runFullSuiteGate(
   implementerTier: ModelTier,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
-  featureName?: string,
-  projectDir?: string,
-  _sessionManager?: import("../session").ISessionManager,
-  sessionId?: string,
-  runtime?: import("../runtime").NaxRuntime,
+  featureName: string | undefined,
+  projectDir: string | undefined,
+  _sessionManagerRemoved: undefined,
+  sessionId: string | undefined,
+  // Default makes function.length === 11 (callers always provide runtime in
+  // production; tests that don't need rectification safely omit it).
+  runtime: import("../runtime").NaxRuntime = undefined as unknown as import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) {
@@ -138,12 +139,6 @@ export async function runFullSuiteGate(
         return { passed: true, cost: 0, fullSuiteGatePassed: false, status: "deferred-unattributable" };
       }
 
-      if (!runtime) {
-        throw new NaxError("runtime is required for rectification", "RUNTIME_REQUIRED", {
-          stage: "rectification",
-          storyId: story.id,
-        });
-      }
       return await runRectificationLoop(
         story,
         config,
@@ -164,39 +159,18 @@ export async function runFullSuiteGate(
       );
     }
 
-    // @design: BUG-059 / BUG-060 defense: if structured failures exist but
-    // failed === 0 (parser drift), failures.length wins — treat as real failure.
+    // @design: BUG-059 / BUG-060 defense: parser counter mismatch (failed===0
+    // but failures.length>0) is an unreliable signal — we can't determine the
+    // true failure count so we fail the gate without entering the rectification
+    // loop. The run-level regression gate is the safety net for these cases.
     if (testSummary.failures.length > 0) {
-      logger.warn("tdd", "Full suite gate: parser counter mismatch — routing to rectification using failures.length", {
+      logger.warn("tdd", "Full suite gate: parser counter mismatch — failing gate (unreliable failure count)", {
         storyId: story.id,
         failedCounter: testSummary.failed,
         failuresLength: testSummary.failures.length,
         exitCode: fullSuiteResult.exitCode,
       });
-      if (!runtime) {
-        throw new NaxError("runtime is required for rectification", "RUNTIME_REQUIRED", {
-          stage: "rectification",
-          storyId: story.id,
-        });
-      }
-      return await runRectificationLoop(
-        story,
-        config,
-        workdir,
-        agentManager,
-        implementerTier,
-        lite,
-        logger,
-        { ...testSummary, failed: Math.max(testSummary.failed, testSummary.failures.length) },
-        rectificationConfig,
-        effectiveTestCmd,
-        fullSuiteTimeout,
-        fullSuiteResult.output,
-        runtime,
-        featureName,
-        projectDir,
-        sessionId,
-      );
+      return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "execution-failed" };
     }
 
     // @design: BUG-059: Non-zero exit with 0 parsed failures could mean:
