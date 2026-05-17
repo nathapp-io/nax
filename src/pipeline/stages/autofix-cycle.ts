@@ -531,7 +531,7 @@ export async function runAgentRectificationV2(
       // Update beforeRef after all strategies in this iteration have committed.
       iterationBeforeRef = (await _autofixCycleGuardDeps.captureGitRef(ctx.workdir)) ?? iterationBeforeRef;
       // recheckReview mutates ctx.reviewResult; subsequent buildInput reads fresh state
-      await _autofixDeps.recheckReview(ctx);
+      await _autofixDeps.recheckReview(ctx, { lite: _opts.mode === "lite" });
       const fresh = collectCurrentFindings(ctx);
       const pending = ctx.testEditDeclarations ?? [];
       if (pending.length === 0) return fresh;

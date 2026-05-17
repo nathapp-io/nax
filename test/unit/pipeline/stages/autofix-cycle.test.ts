@@ -622,6 +622,58 @@ describe("runAgentRectificationV2", () => {
     // Side-channel still present — validate() never ran to consume it.
     expect(ctx.testEditDeclarations).toHaveLength(1);
   });
+
+  test("validate closure forwards lite: false when mode is full (normal path)", async () => {
+    const capturedRecheckCalls: Array<{ ctx: PipelineContext; opts?: { lite?: boolean } }> = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
+      capturedRecheckCalls.push({ ctx, opts });
+      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
+      return true;
+    });
+
+    const ctx = makeCtx();
+    ctx.reviewResult = {
+      success: false,
+      checks: [failedCheck("lint", "lint failure")],
+    } as unknown as PipelineContext["reviewResult"];
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // In normal (full) path, validate is called with mode: "full"
+    // This should result in lite: false being passed to recheckReview
+    expect(capturedRecheckCalls.length).toBeGreaterThan(0);
+    const normalPathCall = capturedRecheckCalls.find((call) => call.opts?.lite === false);
+    expect(normalPathCall).toBeDefined();
+  });
+
+  test("validate closure always passes lite option with correct value", async () => {
+    const capturedRecheckCalls: Array<{ opts?: { lite?: boolean } }> = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
+    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
+      capturedRecheckCalls.push({ opts });
+      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
+      return true;
+    });
+
+    const ctx = makeCtx();
+    ctx.reviewResult = {
+      success: false,
+      checks: [failedCheck("lint", "lint failure")],
+    } as unknown as PipelineContext["reviewResult"];
+
+    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
+
+    // Verify that recheckReview was called with the lite option
+    expect(capturedRecheckCalls.length).toBeGreaterThan(0);
+    // All calls should include the lite option (false for normal path, true for exhausted path)
+    for (const call of capturedRecheckCalls) {
+      expect(call.opts).toBeDefined();
+      expect(typeof call.opts?.lite).toBe("boolean");
+    }
+  });
 });
 
 // ─── autofixCapacityExhausted ─────────────────────────────────────────────────
