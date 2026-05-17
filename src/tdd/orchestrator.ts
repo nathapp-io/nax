@@ -3,7 +3,6 @@
 import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
-import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
@@ -285,12 +284,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   // failure as story-caused (the file-modification filter from BUG-TC-001 was
   // removed — see rectification-gate.ts header for the rationale).
   const implementerBinding = getTddSessionBinding?.("implementer");
-  if (!runtime) {
-    throw new NaxError(`[tdd] Runtime is required for full-suite gate (story ${story.id})`, "DISPATCH_NO_RUNTIME", {
-      stage: "tdd",
-      storyId: story.id,
-    });
-  }
   const fullSuiteGate = await runFullSuiteGate(
     story,
     config,
