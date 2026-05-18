@@ -36,6 +36,30 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   parse(_output, _input, _ctx): VerifierOutput {
     return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
   },
+  async verify(parsed, _input, _ctx): Promise<VerifierOutput | null> {
+    // Signal to recover when parse produced no usable value (success=false).
+    return parsed.success ? parsed : null;
+  },
+  async recover(_input, verifyCtx): Promise<VerifierOutput | null> {
+    // Derive outcome from the verdict file the verifier agent writes to disk (AC-5).
+    const verdictPath = `${verifyCtx.packageView.packageDir}/.nax-verifier-verdict.json`;
+    const content = await verifyCtx.readFile(verdictPath);
+    if (!content) return null;
+    try {
+      const v = JSON.parse(content) as Record<string, unknown>;
+      if (typeof v.approved !== "boolean") return null;
+      const testsAllPassing =
+        v.tests !== null && typeof v.tests === "object" && (v.tests as Record<string, unknown>).allPassing === true;
+      return {
+        success: v.approved === true && testsAllPassing,
+        filesChanged: [],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+      };
+    } catch {
+      return null;
+    }
+  },
 };
 
 /** Backward-compat alias — callers may use either name. */

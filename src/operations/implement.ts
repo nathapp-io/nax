@@ -38,6 +38,14 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   parse(_output, _input, _ctx): ImplementerOutput {
     return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
   },
+  async verify(parsed, _input, _ctx): Promise<ImplementerOutput | null> {
+    // Signal to recover when parse produced no usable value (success=false).
+    return parsed.success ? parsed : null;
+  },
+  async recover(_input, _ctx): Promise<ImplementerOutput | null> {
+    // No standard disk artifact for implementer sessions; recovery deferred to caller.
+    return null;
+  },
 };
 
 /** Backward-compat alias — callers may use either name. */
