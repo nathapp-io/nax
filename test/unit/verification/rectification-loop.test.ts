@@ -638,6 +638,65 @@ describe("runRectificationLoop — runtime required and legacy path removed", ()
     expect(closeSessionCalls[0].id).toBe("test-session-hold");
   });
 
+  test("calls openSession unconditionally — does not shortcut via getLiveHandle (regression: terminal COMPLETED session)", async () => {
+    // Regression guard for the deferred-regression bug: execution.ts marks the
+    // implementer session COMPLETED via closeStory(), but keepOpen leaves a stale
+    // handle in _liveHandles. The old code called getLiveHandle() and used that
+    // stale handle directly, bypassing openSession's terminal-state reset logic,
+    // which caused "Session is in terminal state COMPLETED" from sendPrompt.
+    //
+    // With the fix, openSession is always called. getLiveHandle must NOT be called.
+    const openSessionCalls: string[] = [];
+    const getLiveHandleCalls: string[] = [];
+
+    const mockSessionManager = makeSessionManager({
+      openSession: mock(async (name: string) => {
+        openSessionCalls.push(name);
+        return { id: name, agentName: "claude" };
+      }),
+      getLiveHandle: mock((name: string) => {
+        getLiveHandleCalls.push(name);
+        // Simulate a stale handle that exists in _liveHandles after closeStory()
+        return { id: name, agentName: "claude" };
+      }),
+      closeSession: mock(async () => {}),
+    });
+
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => ({
+        output: "fixed",
+        estimatedCostUsd: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })),
+    });
+
+    _rectificationDeps.agentManager = mockAgentManager;
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+      status: "SUCCESS" as const,
+      countsTowardEscalation: true,
+    }));
+
+    const runtime = makeMockRuntime({ sessionManager: mockSessionManager });
+
+    await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-TERMINAL-REGRESSION" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      featureName: "my-feature",
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(openSessionCalls).toHaveLength(1);
+    expect(getLiveHandleCalls).toHaveLength(0);
+  });
+
   test("does not call runtime.sessionManager.closeSession when runtime is not provided", async () => {
     const closeSessionCalls: Array<{ id: string }> = [];
 

@@ -308,10 +308,11 @@ export async function runRectificationLoop(
       {
         // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
         // once and reuse across attempts. openSession is idempotent on a live
-        // handle (session/manager.ts:354) so we attach to any session opened
-        // upstream by execution.ts when one is still alive. If keepOpen was set,
-        // the implementer session handle is still in _liveHandles and
-        // getLiveHandle finds it without re-connecting.
+        // handle (session/manager.ts:427) — it returns the existing handle when
+        // the session is still alive, and opens a fresh one (clearing the stale
+        // _liveHandles entry) when keepOpen left a completed descriptor behind.
+        // Always go through openSession rather than getLiveHandle so the terminal-
+        // state guard in openSession runs on every attempt.
         //
         // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
         // signals retryable:true). The runtime path bypasses runWithFallback so we
@@ -320,24 +321,17 @@ export async function runRectificationLoop(
         const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
         while (true) {
           if (!heldHandle) {
-            // First: try to resume the implementer session left open by execution.ts.
-            const existingHandle = runtime.sessionManager.getLiveHandle(rectificationSessionName);
-            if (existingHandle && existingHandle.agentName === defaultAgent) {
-              heldHandle = existingHandle;
-            } else {
-              // No live handle — open a fresh session for this rectification cycle.
-              heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
-                agentName: defaultAgent,
-                role: "implementer",
-                workdir,
-                pipelineStage: "rectification",
-                modelDef,
-                timeoutSeconds: config.execution.sessionTimeoutSeconds,
-                featureName,
-                storyId: story.id,
-                signal: runtime.signal,
-              });
-            }
+            heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+              agentName: defaultAgent,
+              role: "implementer",
+              workdir,
+              pipelineStage: "rectification",
+              modelDef,
+              timeoutSeconds: config.execution.sessionTimeoutSeconds,
+              featureName,
+              storyId: story.id,
+              signal: runtime.signal,
+            });
           }
           // ADR-020 single-emission invariant: each runAsSession emits one
           // session-turn event for audit/cost subscribers, regardless of handle
