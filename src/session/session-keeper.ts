@@ -78,7 +78,7 @@ export class SessionKeeper {
 
     while (true) {
       if (!this.heldHandle) {
-        const existing = this.sessionManager.getLiveHandle(sessionName);
+        const existing = this.sessionManager.getLiveHandle?.(sessionName);
         if (existing && existing.agentName === defaultAgent) {
           this.heldHandle = existing;
         } else {
@@ -150,6 +150,20 @@ export class SessionKeeper {
     if (!this.heldHandle?.protocolIds) return;
     try {
       this.sessionManager.bindHandle(this.heldHandle.id, this.opts.sessionName, this.heldHandle.protocolIds);
+    } catch {
+      // Session may not exist in manager (e.g. v2 context disabled) — ignore.
+    }
+  }
+
+  /**
+   * Bind protocolIds to an explicit target manager, if provided.
+   * No-op when manager is undefined — callers use this to make bindHandle conditional
+   * on whether the optional sessionManager parameter was supplied.
+   */
+  bindProtocolIdsTo(manager: ISessionManager | undefined): void {
+    if (!manager || !this.heldHandle?.protocolIds) return;
+    try {
+      manager.bindHandle(this.heldHandle.id, this.opts.sessionName, this.heldHandle.protocolIds);
     } catch {
       // Session may not exist in manager (e.g. v2 context disabled) — ignore.
     }

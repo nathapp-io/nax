@@ -26,7 +26,6 @@ import {
   runRetryLoop,
 } from "../verification";
 import { buildFailureRecords } from "../verification/failure-records";
-import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
 
 /** Failure snapshot for the TDD rectification gate retry loop. */
@@ -316,7 +315,8 @@ async function runRectificationLoop(
 
       // G5: bind updated protocolIds after each rectification attempt so the session descriptor
       // reflects the session that actually ran (may change after internal session retries).
-      keeper.bindProtocolIds();
+      // Only binds when the optional sessionManager was explicitly provided by the caller.
+      keeper.bindProtocolIdsTo(sessionManager);
 
       const editReasonMatch = rectifyResult.output?.match(/TEST_EDIT_REASON:\s*(\w+)/);
       if (editReasonMatch) {
