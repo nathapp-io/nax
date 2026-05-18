@@ -35,3 +35,9 @@ export {
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./lifecycle";
+export {
+  StoryOrchestratorBuilder,
+  type ExecutionPlan,
+  type OrchestratorSlot,
+  type StoryOrchestratorResult,
+} from "./story-orchestrator";

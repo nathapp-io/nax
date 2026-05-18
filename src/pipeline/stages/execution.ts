@@ -12,6 +12,8 @@ import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
 import type { ContextBundle } from "../../context/engine";
 import { failAndClose } from "../../execution/session-manager-runtime";
+import { StoryOrchestratorBuilder } from "../../execution/story-orchestrator";
+import type { ExecutionPlan } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -360,4 +362,7 @@ export const _executionDeps = {
   checkStoryAmbiguity,
   failAndClose,
   runThreeSessionTddFromCtx,
+  StoryOrchestratorBuilder,
 };
+
+export type { ExecutionPlan };

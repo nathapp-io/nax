@@ -3,7 +3,10 @@
 import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
+import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
+import type { ExecutionPlan } from "../execution/story-orchestrator";
 import { getLogger } from "../logger";
+import type { RunOperation } from "../operations";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
@@ -422,14 +425,38 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     verdictAvailable: verdict !== null,
   });
 
-  // Rollback git changes if TDD failed
-  await rollbackTddFailureIfNeeded(
-    shouldRollbackOnFailure && !allSuccessful,
-    workdir,
-    initialRef,
-    story.id,
-    finalFailureCategory,
-  );
+  // Package session results into an ExecutionPlan result for unified post-processing.
+  // The sessions ran above via runTddSessionOp; the builder here captures their
+  // outcomes via runner closures to produce a StoryOrchestratorResult.
+  // implementTddOp has narrower generic params than OrchestratorSlot<unknown>; runner overrides dispatch.
+  const plan: ExecutionPlan = new StoryOrchestratorBuilder()
+    .addImplementer({
+      op: implementTddOp as unknown as RunOperation<unknown, unknown, unknown>,
+      input: {},
+      runner: async (_ctx) => ({
+        output: { phaseOutputs: { "test-writer": session1, implementer: session2, verifier: session3 } },
+        costUsd: totalCost,
+      }),
+    })
+    .build({
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: workdir,
+      agentName: resolveDefaultAgent(config),
+    });
+
+  const result = await plan.run();
+  const phaseOutputs = result.phaseOutputs;
+
+  // Verdict processing already done above (readVerdict + categorizeVerdict).
+  // result.success reflects whether the plan's runner threw.
+  if (!result.success && config.tdd.rollbackOnFailure) {
+    await rollbackToRef(workdir, initialRef);
+  } else if (!allSuccessful && shouldRollbackOnFailure) {
+    await rollbackTddFailureIfNeeded(true, workdir, initialRef, story.id, finalFailureCategory);
+  }
+
+  void phaseOutputs;
 
   return {
     success: allSuccessful,
