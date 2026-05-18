@@ -45,6 +45,7 @@ function makeRuntime(handleOverrides: Record<string, unknown> = {}) {
     openSession: mock(async () => handle),
     closeSession: mock(async () => {}),
     bindHandle: mock(() => {}),
+    getLiveHandle: mock(() => undefined),
   };
   return {
     sessionManager,
@@ -367,8 +368,8 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  // AC4: bindHandle is called when sessionId is provided and attempt result includes protocolIds.
-  test("calls runtime.sessionManager.bindHandle when sessionId is provided and protocolIds present", async () => {
+  // AC4: bindHandle is called when sessionManager is provided and attempt result includes protocolIds.
+  test("calls sessionManager.bindHandle when sessionManager is provided and protocolIds present", async () => {
     const story = makeStory({ id: "US-AC4" });
     const config = makeConfig(1);
     const protocolIds = { recordId: "rec-abc", sessionId: "sess-abc" };
@@ -401,20 +402,20 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
       "my-feature",
       "/tmp/project",
-      "the-session-id", // sessionId provided → bindHandle must be called
+      sessionManager as any, // sessionManager provided → bindHandle must be called
       runtime as any,
     );
 
     expect(sessionManager.bindHandle).toHaveBeenCalledTimes(1);
     expect(sessionManager.bindHandle).toHaveBeenCalledWith(
-      "the-session-id",
+      "nax-rectify",
       expect.any(String),
       protocolIds,
     );
   });
 
-  // AC5: bindHandle is NOT called when sessionId is absent.
-  test("does not call runtime.sessionManager.bindHandle when sessionId is absent", async () => {
+  // AC5: bindHandle is NOT called when sessionManager is absent.
+  test("does not call sessionManager.bindHandle when sessionManager is absent", async () => {
     const story = makeStory({ id: "US-AC5" });
     const config = makeConfig(1);
     const protocolIds = { recordId: "rec-xyz", sessionId: "sess-xyz" };
@@ -446,7 +447,7 @@ src/foo.ts:12:8 - error TS2304: Cannot find name 'missingSymbol'
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
       "my-feature",
       "/tmp/project",
-      undefined, // no sessionId → bindHandle must NOT be called
+      undefined, // no sessionManager → bindHandle must NOT be called
       runtime as any,
     );
 

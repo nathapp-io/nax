@@ -294,7 +294,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     logger,
     featureName,
     projectDir,
-    implementerBinding?.sessionId,
+    implementerBinding?.sessionManager,
     runtime,
   );
   const { cost: fullSuiteGateCost, fullSuiteGatePassed } = fullSuiteGate;

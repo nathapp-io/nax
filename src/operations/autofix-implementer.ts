@@ -24,7 +24,7 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   kind: "run",
   name: "autofix-implementer",
   stage: "rectification",
-  session: { role: "implementer", lifetime: "fresh" },
+  session: { role: "implementer", lifetime: "warm" },
   config: autofixConfigSelector,
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story);

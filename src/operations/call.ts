@@ -251,6 +251,11 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     featureName: ctx.featureName,
     storyId: ctx.storyId,
     callId,
+    // "warm" lifetime: the op expects to reuse the same ACP session across multiple
+    // callOp invocations (e.g. autofix-implementer across fix-cycle iterations).
+    // keepOpen=true prevents buildHopCallback from closing the session after each hop
+    // so subsequent openSession calls find the live handle and return it immediately.
+    ...(runOp.session.lifetime === "warm" ? { keepOpen: true } : {}),
     ...(ctx.scopeId !== undefined ? { scopeId: ctx.scopeId } : {}),
     ...(ctx.interactionBridge ? { interactionBridge: ctx.interactionBridge } : {}),
     ...(ctx.maxInteractionTurns !== undefined ? { maxInteractionTurns: ctx.maxInteractionTurns } : {}),

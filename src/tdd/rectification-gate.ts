@@ -9,14 +9,15 @@
 import type { IAgentManager } from "../agents";
 import type { SessionHandle } from "../agents/types";
 import { SessionTurnError } from "../agents/types";
-import type { ModelTier } from "../config";
 import { resolveModelForAgent } from "../config";
+import type { ModelTier } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
-import type { getLogger } from "../logger";
 import { getSafeLogger } from "../logger";
+import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
+import type { ISessionManager } from "../session";
 import { formatSessionName } from "../session/naming";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
@@ -89,7 +90,7 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName: string | undefined,
   projectDir: string | undefined,
-  sessionId: string | undefined,
+  sessionManager: ISessionManager | undefined,
   runtime: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
@@ -152,7 +153,7 @@ export async function runFullSuiteGate(
         runtime,
         featureName,
         projectDir,
-        sessionId,
+        sessionManager,
       );
     }
 
@@ -221,7 +222,7 @@ async function runRectificationLoop(
   runtime: import("../runtime").NaxRuntime,
   featureName?: string,
   projectDir?: string,
-  sessionId?: string,
+  sessionManager?: ISessionManager,
 ): Promise<FullSuiteGateResult> {
   logger.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
@@ -297,7 +298,8 @@ async function runRectificationLoop(
       // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session once
       // and reuse across attempts. openSession is idempotent (session/manager.ts:354)
       // so we attach to any session opened upstream by execution.ts when one
-      // is still alive.
+      // is still alive. If keepOpen was set, the implementer session handle is
+      // still in _liveHandles and getLiveHandle finds it without re-connecting.
       //
       // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
       // signals retryable:true). The runtime path bypasses runWithFallback so we
@@ -306,17 +308,24 @@ async function runRectificationLoop(
       const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
       while (true) {
         if (!heldHandle) {
-          heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
-            agentName: defaultAgent,
-            role: "implementer",
-            workdir,
-            pipelineStage: "rectification",
-            modelDef: runOptions.modelDef,
-            timeoutSeconds: config.execution.sessionTimeoutSeconds,
-            featureName,
-            storyId: story.id,
-            signal: runtime.signal,
-          });
+          // First: try to resume the implementer session left open by execution.ts.
+          const existingHandle = sessionManager?.getLiveHandle(rectificationSessionName);
+          if (existingHandle && existingHandle.agentName === defaultAgent) {
+            heldHandle = existingHandle;
+          } else {
+            // No live handle — open a fresh session for this rectification cycle.
+            heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
+              agentName: defaultAgent,
+              role: "implementer",
+              workdir,
+              pipelineStage: "rectification",
+              modelDef: runOptions.modelDef,
+              timeoutSeconds: config.execution.sessionTimeoutSeconds,
+              featureName,
+              storyId: story.id,
+              signal: runtime.signal,
+            });
+          }
         }
         // ADR-020 single-emission invariant: each runAsSession emits one
         // session-turn event for audit/cost subscribers, regardless of handle
@@ -364,9 +373,9 @@ async function runRectificationLoop(
 
       // G5: bind updated protocolIds after each rectification attempt so the session descriptor
       // reflects the session that actually ran (may change after internal session retries).
-      if (sessionId && rectifyResult.protocolIds) {
+      if (sessionManager && heldHandle && rectifyResult.protocolIds) {
         try {
-          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, rectifyResult.protocolIds);
+          sessionManager.bindHandle(heldHandle.id, rectificationSessionName, rectifyResult.protocolIds);
         } catch {
           // Session may not exist in manager (e.g. v2 context disabled) — ignore.
         }
