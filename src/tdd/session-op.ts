@@ -4,6 +4,7 @@ import type { ModelTier, NaxConfig } from "../config";
 import type { ContextBundle } from "../context/engine";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
+import { getLogger } from "../logger";
 import {
   callOp,
   implementTddOp,
@@ -23,8 +24,10 @@ import type {
   VerifierOutput,
 } from "../operations";
 import type { UserStory } from "../prd";
+import { parseSelfVerificationMarker } from "../quality";
 import type { NaxRuntime } from "../runtime";
 import type { SessionRole } from "../session/types";
+import { _sessionRunnerDeps } from "./session-runner";
 import type { TddSessionBinding } from "./session-runner";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -85,57 +88,129 @@ export async function runTddSessionOp(
     ? buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" })
     : undefined;
 
-  // Intercept runWithFallback to capture tokenUsage from the AgentRunOutcome.
-  // callOp returns only the parsed O and does not surface tokenUsage in its return value.
-  // Object.create delegates all other methods to origManager via prototype chain.
+  // Subscribe to dispatch events filtered by scopeId so we can surface this op's
+  // tokenUsage AND raw response on TddSessionResult. Per adapter-wiring.md
+  // Rule 6/7, cost/token data flows through DispatchEvent → middleware/listeners,
+  // never via a manager overlay or CallContext back-channel.
+  // Defensive: integration-test runtimes may omit costAggregator/dispatchEvents.
+  // When absent, tokenUsage is unrecoverable — TddSessionResult.tokenUsage stays
+  // undefined. The raw response is also unavailable, so selfVerification-marker
+  // parsing is skipped.
+  const scope = runtime.costAggregator?.openScope();
   let capturedTokenUsage: import("../agents/cost").TokenUsage | undefined;
-  const origManager = runtime.agentManager;
-  const captureManager = Object.create(origManager) as import("../agents/manager-types").IAgentManager;
-  captureManager.runWithFallback = async (req, primaryAgentOverride) => {
-    const outcome = await origManager.runWithFallback(req, primaryAgentOverride);
-    if (outcome.result.tokenUsage) capturedTokenUsage = outcome.result.tokenUsage;
-    return outcome;
-  };
+  let capturedResponse = "";
+  let capturedCostUsd = 0;
+  const unsubscribe =
+    runtime.dispatchEvents && scope
+      ? runtime.dispatchEvents.onDispatch((event) => {
+          if (event.scopeId === scope.scopeId) {
+            if (event.tokenUsage) capturedTokenUsage = event.tokenUsage;
+            if (event.response) capturedResponse = event.response;
+            if (event.exactCostUsd !== undefined) capturedCostUsd += event.exactCostUsd;
+            else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
+          }
+        })
+      : () => {};
 
   const packageView = runtime.packages.resolve(workdir);
   const ctx: CallContext = {
-    runtime: { ...runtime, agentManager: captureManager } as NaxRuntime,
+    runtime,
     packageView,
     packageDir: workdir,
     agentName: resolveDefaultAgent(runtime.configLoader.current()),
     storyId: story.id,
     featureName,
     story,
+    ...(scope ? { scopeId: scope.scopeId } : {}),
     ...(interactionBridge ? { interactionBridge } : {}),
   };
 
   const startTime = Date.now();
 
-  let opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
-  if (role === "test-writer") {
-    const input: TestWriterInput = {
-      story,
-      ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
-    };
-    opOutput = await callOp(ctx, testWriterOp, input);
-  } else if (role === "implementer") {
-    const input: ImplementerInput = {
-      story,
-      ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
-    };
-    opOutput = await callOp(ctx, implementerOp, input);
-  } else {
-    const input: VerifierInput = { story };
-    opOutput = await callOp(ctx, verifierOp, input);
-  }
+  try {
+    let opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
+    if (role === "test-writer") {
+      const input: TestWriterInput = {
+        story,
+        ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+      };
+      opOutput = await callOp(ctx, testWriterOp, input);
+    } else if (role === "implementer") {
+      const input: ImplementerInput = {
+        story,
+        ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+      };
+      opOutput = await callOp(ctx, implementerOp, input);
+    } else {
+      const input: VerifierInput = { story };
+      opOutput = await callOp(ctx, verifierOp, input);
+    }
 
-  return {
-    role,
-    success: opOutput.success,
-    filesChanged: opOutput.filesChanged,
-    estimatedCostUsd: opOutput.estimatedCostUsd,
-    durationMs: opOutput.durationMs || Date.now() - startTime,
-    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
-    ...("isolation" in opOutput && opOutput.isolation ? { isolation: opOutput.isolation } : {}),
-  };
+    // Post-dispatch checks: mirror the legacy `runTddSession` path so callOp
+    // dispatch produces equivalent TddSessionResults. Without these, isolation
+    // violations, uncommitted agent edits, and self-verification markers are
+    // silently dropped.
+    await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
+
+    const lite = options.lite ?? false;
+    const skipIsolation = lite && role !== "verifier";
+    const testFilePatterns =
+      typeof options.config.execution?.smartTestRunner === "object"
+        ? options.config.execution.smartTestRunner?.testFilePatterns
+        : undefined;
+
+    let isolation: import("./types").IsolationCheck | undefined;
+    if (!skipIsolation) {
+      if (role === "test-writer") {
+        const allowedPaths = options.config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+        isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
+          workdir,
+          _beforeRef,
+          allowedPaths,
+          testFilePatterns,
+        );
+      } else if (role === "implementer" || role === "verifier") {
+        isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, _beforeRef, testFilePatterns);
+      }
+    }
+
+    // Verifier inherits any isolation surfaced via the op's recover path
+    // (verifierOp.recover reads .nax-verifier-verdict.json).
+    if (!isolation && "isolation" in opOutput && opOutput.isolation) {
+      isolation = opOutput.isolation;
+    }
+
+    const filesChanged =
+      opOutput.filesChanged.length > 0
+        ? opOutput.filesChanged
+        : await _sessionRunnerDeps.getChangedFiles(workdir, _beforeRef);
+
+    const selfVerificationResult =
+      role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, workdir);
+    const selfVerificationFailed =
+      selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
+
+    if (isolation && !isolation.passed) {
+      getLogger().error("tdd", "Isolation violated", {
+        storyId: story.id,
+        role,
+        description: isolation.description,
+        violations: isolation.violations,
+      });
+    }
+
+    return {
+      role,
+      success: opOutput.success && (!isolation || isolation.passed) && !selfVerificationFailed,
+      filesChanged,
+      estimatedCostUsd: capturedCostUsd || opOutput.estimatedCostUsd,
+      durationMs: opOutput.durationMs || Date.now() - startTime,
+      ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+      ...(isolation ? { isolation } : {}),
+      ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
+    };
+  } finally {
+    unsubscribe();
+    scope?.close();
+  }
 }

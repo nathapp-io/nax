@@ -4,6 +4,7 @@ import { resolveDefaultAgent } from "../agents";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { getLogger } from "../logger";
+import { createRuntime } from "../runtime";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
@@ -63,9 +64,18 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     _recursionDepth = 0,
     projectDir,
     agentManager,
-    runtime,
   } = options;
   const logger = getLogger();
+
+  // Defensive runtime default: the type contract requires `runtime`, but TS
+  // doesn't typecheck test files (tsconfig excludes `test/`), so integration
+  // tests that omit it still need to work. Production callers always pass it
+  // and the `??` is a no-op. When synthesised here, each invocation gets its
+  // own isolated dispatchEvents bus and cost aggregator.
+  const runtime =
+    (options.runtime as import("../runtime").NaxRuntime | undefined) ??
+    createRuntime(config, workdir, { agentManager });
+  const effectiveOptions = { ...options, runtime };
 
   // MED-7: Recursion guard to prevent infinite loops
   const MAX_RECURSION_DEPTH = 2;
@@ -150,7 +160,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
     session1 = await runTddSessionOp(
       writeTddTestOp,
-      options,
+      effectiveOptions,
       initialRef,
       testWriterBundle,
       getTddSessionBinding?.("test-writer"),
@@ -255,7 +265,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
   const session2 = await runTddSessionOp(
     implementTddOp,
-    options,
+    effectiveOptions,
     session2Ref,
     implementerBundle,
     getTddSessionBinding?.("implementer"),
@@ -330,7 +340,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
   const session3 = await runTddSessionOp(
     verifyTddOp,
-    options,
+    effectiveOptions,
     session3Ref,
     verifierBundle,
     getTddSessionBinding?.("verifier"),
