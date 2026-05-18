@@ -30,7 +30,7 @@ describe("AC5: execution.ts refactored to use StoryOrchestratorBuilder", () => {
 
     const executionStagePath = path.join(
       import.meta.dir,
-      "../../../../src/pipeline/stages/execution.ts"
+      "../../../src/pipeline/stages/execution.ts"
     );
 
     const source = fs.readFileSync(executionStagePath, "utf-8");
@@ -57,7 +57,7 @@ describe("AC5: execution.ts refactored to use StoryOrchestratorBuilder", () => {
 
     const executionStagePath = path.join(
       import.meta.dir,
-      "../../../../src/pipeline/stages/execution.ts"
+      "../../../src/pipeline/stages/execution.ts"
     );
 
     const source = fs.readFileSync(executionStagePath, "utf-8");
@@ -74,7 +74,7 @@ describe("AC6: tdd/orchestrator.ts refactored to use StoryOrchestratorBuilder", 
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -93,7 +93,7 @@ describe("AC6: tdd/orchestrator.ts refactored to use StoryOrchestratorBuilder", 
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -111,7 +111,7 @@ describe("AC7: tdd/orchestrator.ts processes verifier completion via phaseOutput
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -130,7 +130,7 @@ describe("AC7: tdd/orchestrator.ts processes verifier completion via phaseOutput
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -151,7 +151,7 @@ describe("AC8: tdd/orchestrator.ts handles rollback based on StoryOrchestratorRe
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -169,7 +169,7 @@ describe("AC8: tdd/orchestrator.ts handles rollback based on StoryOrchestratorRe
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -184,7 +184,7 @@ describe("AC8: tdd/orchestrator.ts handles rollback based on StoryOrchestratorRe
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
@@ -205,7 +205,7 @@ describe("AC8: tdd/orchestrator.ts handles rollback based on StoryOrchestratorRe
 
     const tddOrchestratorPath = path.join(
       import.meta.dir,
-      "../../../../src/tdd/orchestrator.ts"
+      "../../../src/tdd/orchestrator.ts"
     );
 
     const source = fs.readFileSync(tddOrchestratorPath, "utf-8");
