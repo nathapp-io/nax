@@ -44,4 +44,6 @@ export type {
   IterationOutcome,
 } from "./cycle-types";
 
+export type { ReviewCheckResult } from "../review/types";
+
 export { classifyOutcome, runFixCycle, _cycleDeps } from "./cycle";
