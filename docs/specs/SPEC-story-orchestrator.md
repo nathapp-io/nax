@@ -189,7 +189,7 @@ export interface ImplementerOutput {
 export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, TddConfig> = {
   kind: "run",
   name: "implementer",
-  stage: "execution",
+  stage: "run", // PipelineStage — see src/config/permissions.ts:15
   session: { role: "implementer", lifetime: "warm" },
   config: tddConfigSelector,
   build(input, ctx): ComposeInput { ... },
@@ -218,7 +218,7 @@ export interface TestWriterOutput {
 export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddConfig> = {
   kind: "run",
   name: "test-writer",
-  stage: "execution",
+  stage: "run",
   session: { role: "test-writer", lifetime: "fresh" },
   config: tddConfigSelector,
   build(input, ctx): ComposeInput { ... },
@@ -247,7 +247,7 @@ export interface VerifierOutput {
 export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
   kind: "run",
   name: "verifier",
-  stage: "execution",
+  stage: "verify", // verifier runs after implementer — verify-stage permissions apply
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
   build(input, ctx): ComposeInput { ... },
@@ -298,53 +298,130 @@ there via the orchestrator's construction-time dependency.
 ### Phase 2 — `StoryOrchestratorBuilder`
 
 New file `src/execution/story-orchestrator.ts`. A builder that declaratively assembles the
-phases for one story execution, then runs them in order.
+phases for one story execution, then runs them in order. The builder is a **pure dispatcher
+over ops** — every phase is a `callOp(ctx, op, input)` invocation. The builder does not own
+session loops, does not catch exceptions for control flow, and does not let callers inject
+ad-hoc closures.
+
+#### 2A. Slot shape (generic, type-safe)
 
 ```typescript
-export interface OrchestratorSlot {
-  readonly op: RunOperation<unknown, unknown, unknown>;
-  readonly input: unknown;
+export interface OrchestratorSlot<I, O, C> {
+  readonly op: RunOperation<I, O, C>;
+  readonly input: I;
 }
+```
 
+`OrchestratorSlot` is generic so each `add*` method preserves the typed `RunOperation` it
+receives. Internally the builder stores a heterogeneous list
+(`OrchestratorSlot<unknown, unknown, unknown>[]`), but **callers never cast** — typed `add*`
+methods accept the typed op + input.
+
+#### 2B. Builder API
+
+```typescript
 export class StoryOrchestratorBuilder {
   addImplementer(input: ImplementerInput): this;
-  addTestWriter(input: TestWriterInput): this;   // TDD only
-  addVerifier(input: VerifierInput): this;        // TDD only
-  addSemanticReview(input: SemanticReviewInput): this;    // if review.semantic enabled
+  addTestWriter(input: TestWriterInput): this;             // TDD only
+  addVerifier(input: VerifierInput): this;                  // TDD only
+  addSemanticReview(input: SemanticReviewInput): this;      // if review.semantic enabled
   addAdversarialReview(input: AdversarialReviewInput): this; // if review.adversarial enabled
-  /**
-   * Enable rectification. No role is pre-declared — the rectification phase
-   * uses the existing FixStrategy resolution from findings/cycle.ts to determine
-   * at runtime which op runs (implementerRectifyOp, testWriterRectifyOp, or both
-   * in sequence) based on the actual failure type in each iteration.
-   */
-  addRectification(): this;
+  /** Enable the rectification phase. See §2D for contract. */
+  addRectification(opts: RectificationPhaseOptions): this;
   build(ctx: CallContext): ExecutionPlan;
 }
 
 export interface ExecutionPlan {
-  /** Run all slots in order, returning results per phase. */
+  /** Run all configured phases in order. Returns aggregated results. */
   run(): Promise<StoryOrchestratorResult>;
 }
 ```
 
-`execution.ts`'s TDD-path branch and `tdd/orchestrator.ts` become thin callers that configure
-the builder based on `config` flags and `routing.testStrategy`, then call `plan.run()`.
+**Review op provenance.** `addSemanticReview` and `addAdversarialReview` accept the existing
+`SemanticReviewInput` and `AdversarialReviewInput` from `src/operations/semantic-review.ts:15`
+and `src/operations/adversarial-review.ts:14` respectively. The builder dispatches
+`semanticReviewOp` and `adversarialReviewOp` as-is — no new op definitions, no new input types.
 
-**Scope boundary — what stays outside the builder:**  
-The builder owns phase sequencing, session management (via `SessionKeeper`), and cost
-accumulation. The following TDD-specific behaviours remain in `tdd/orchestrator.ts` as a thin
-wrapper around `plan.run()`:
+**Phase ordering.** The canonical run order is:
 
-- **Rollback** — `config.tdd.rollbackOnFailure`: git reset to `initialRef` on failure. The
-  wrapper reads `StoryOrchestratorResult.success` and calls `rollback()` when needed.
-- **Verdict reading** — `readVerdict()` + `categorizeVerdict()`: parsing the verifier's output
-  file after the verifier slot completes. The wrapper receives the verifier's `VerifierOutput`
-  from `StoryOrchestratorResult.phaseOutputs["verifier"]` and processes it.
-- **Isolation surfacing** — `IsolationCheck` per session: the wrapper collects these from
-  `StoryOrchestratorResult.phaseOutputs` and populates `ThreeSessionTddResult.sessions`.
+```
+test-writer (if added)
+  → implementer
+  → verifier (if added)
+  → semantic review (if added)
+  → adversarial review (if added)
+  → rectification (if added)
+```
 
-To support this, `StoryOrchestratorResult` adds:
+Semantic runs before adversarial because adversarial is more expensive and is gated on
+mechanical/semantic passing in the existing `ReviewConfig.gateLLMChecksOnMechanicalPass`
+contract (`src/review/types.ts:202`). Rectification, when enabled, consumes failures from
+**all** prior phases that ran (verifier, semantic, adversarial) — see §2D step 1.
+
+#### 2C. Dispatch contract — `callOp` is mandatory (Layer 4)
+
+Per `adapter-wiring.md` Rule 1, the builder dispatches **every** phase via `callOp(ctx, op, input)`.
+
+- **No Layer 3 (`agentManager.runWithFallback`).** Layer 3 bypasses middleware, `op.retry`,
+  `op.recover`, `interactionBridge`, `packageView.select`, and `DispatchEvent` cost
+  attribution. Reaching for Layer 3 was the root cause of the failed US-004 attempt
+  (archive tag `archive/story-orchestrator-us004-attempt`).
+- **No per-slot `runner` closures.** `OrchestratorSlot` does NOT carry an `(ctx) => Promise`
+  field. If a phase cannot be expressed as `callOp(ctx, op, input)`, the op itself must grow
+  `hopBody`, `verify`, or `recover` — not the builder.
+- **No outer-scope `sharedState`.** Phase outputs flow exclusively through
+  `StoryOrchestratorResult.phaseOutputs[op.name]`. Subsequent phases that need a prior result
+  read it from the result map at construction time (the wrapper) or via the phase's own input
+  derivation (see §2D).
+- **No exception-as-control-flow.** Ops return structured `{ success: false, … }` for
+  expected failures. `ExecutionPlan.run()` catches only true thrown errors (not "early exit"
+  exceptions) and logs them with `storyId` + phase name before propagating.
+
+#### 2D. Rectification phase contract
+
+`addRectification(opts)` enables a loop that resolves the failing op per-iteration via the
+existing `FixStrategy` machinery in `findings/cycle.ts`.
+
+```typescript
+export interface RectificationPhaseOptions {
+  /** Max rectification attempts. From config.execution.rectification.maxRetries. */
+  readonly maxAttempts: number;
+  /** Strategies in priority order. Built from existing implementerRectifyOp / testWriterRectifyOp ops. */
+  readonly strategies: FixStrategy<ReviewCheckResult, unknown, unknown, AutofixConfig>[];
+  /** Abort if failure count increases between iterations. From config.execution.rectification.abortOnIncreasingFailures. */
+  readonly abortOnIncreasingFailures: boolean;
+}
+```
+
+**Loop body, per iteration:**
+1. Aggregate failures from every prior phase that ran: `phaseOutputs[verifierOp.name]`
+   (TDD path), `phaseOutputs[semanticReviewOp.name]`, and
+   `phaseOutputs[adversarialReviewOp.name]`. Failures are typed as `ReviewCheckResult[]`.
+   When multiple phases produced failures, concatenate; `runFixCycle` handles strategy
+   selection across the combined set.
+2. Call `runFixCycle(strategies, failures, ctx)` from `findings/cycle.ts`. It picks the
+   active strategy and returns the chosen op + input. The cycle is the single decision
+   point — the builder does not introspect failure types itself.
+3. Dispatch the chosen op via `callOp(ctx, chosenOp, chosenInput)`.
+4. Re-run the verifier (`callOp(ctx, verifierOp, verifierInput)`) to capture fresh
+   verdict + failures. Overwrite `phaseOutputs["verifier"]`.
+5. Stop when verifier reports `success: true`, when `attempts >= maxAttempts`, when
+   `abortOnIncreasingFailures && newFailureCount > prevFailureCount`, or when the abort
+   signal fires.
+
+**Session lifecycle:** the rectification phase owns **one** `SessionKeeper` instance for the
+implementer session, constructed at phase entry and closed in `.finally()`. The keeper is
+threaded into each iteration's `callOp` via the implementer op's warm-lifetime session
+(`implementerOp.session.lifetime === "warm"` causes `callOp` to set `keepOpen: true` —
+session-keeper reuses the live handle via `getLiveHandle`). The verifier and test-writer
+ops are `fresh` and open/close their own sessions per iteration.
+
+**Verdict consumption:** the rectification phase reads `phaseOutputs["verifier"]` for its
+fix decision but does not call `readVerdict()` or `categorizeVerdict()` — those remain in
+the `tdd/orchestrator.ts` wrapper (see §2F). The phase consumes the structured
+`VerifierOutput`, not the raw verdict file.
+
+#### 2E. Result shape and reader contract
 
 ```typescript
 export interface StoryOrchestratorResult {
@@ -352,10 +429,56 @@ export interface StoryOrchestratorResult {
   readonly phaseCosts: Record<string, number>;
   readonly totalCostUsd: number;
   readonly durationMs: number;
-  /** Per-phase parsed outputs, keyed by op name. Wrappers read these for post-processing. */
+  /**
+   * Per-phase parsed outputs, keyed by op.name. Stored as `unknown` because the map is
+   * heterogeneous across phases. **Reader contract:** wrappers MUST narrow via a type
+   * guard or cast adjacent to the known op (e.g. cast `phaseOutputs[verifierOp.name]` to
+   * `VerifierOutput` immediately after confirming the verifier ran). Do not generic-cast
+   * the whole map and pass it around — keep narrowing localised to the read site.
+   */
   readonly phaseOutputs: Record<string, unknown>;
 }
 ```
+
+We deliberately keep `Record<string, unknown>` rather than a generic phase-name → output
+map because the slot list is heterogeneous and the wrappers are the only readers. The
+named-op-adjacent cast pattern (e.g. `phaseOutputs[verifierOp.name] as VerifierOutput`)
+keeps the unsafe edge isolated.
+
+#### 2F. Scope boundary — what stays in `tdd/orchestrator.ts`
+
+The builder owns phase dispatch, session management (via `SessionKeeper`), and cost
+aggregation. The TDD wrapper retains:
+
+- **Rollback** — `config.tdd.rollbackOnFailure`: git reset to `initialRef` when
+  `StoryOrchestratorResult.success === false`.
+- **Verdict reading** — `readVerdict()` + `categorizeVerdict()` parse the verifier's
+  on-disk verdict file. Wrapper reads `phaseOutputs[verifierOp.name]` and disk artifact.
+- **Isolation surfacing** — collect `IsolationCheck` from `phaseOutputs` per session and
+  populate `ThreeSessionTddResult.sessions`.
+- **Greenfield-no-tests detection** — inspecting test-writer output to decide whether to
+  skip the implementer/verifier slots entirely (current behaviour after `testWriterOp`).
+- **`priorFailures` review-escalation skip** — skipping `addTestWriter` on a retry when
+  `priorFailures.length > 0` so the wrapper varies the builder configuration per attempt.
+- **Full-suite gate** — currently invoked between implementer and verifier in
+  `tdd/rectification-gate.ts`. Stays in the wrapper; runs around `plan.run()` rather than
+  inside it.
+
+These are wrapper responsibilities. The builder must not learn about TDD-specific files,
+verdict semantics, or test-skipping heuristics.
+
+#### 2G. Forbidden patterns (from the failed attempt)
+
+Based on commit `5d3dea52` (archive tag `archive/story-orchestrator-us004-attempt`):
+
+| ❌ Forbidden | Why | ✅ Use Instead |
+|:---|:---|:---|
+| `OrchestratorSlot.runner?: (ctx) => Promise<…>` | Closures escape the contract; bypass `callOp` middleware | Grow `hopBody` / `verify` / `recover` on the op |
+| `agentManager.runWithFallback` in builder code | Layer 3 bypasses `op.retry`, `interactionBridge`, `packageView.select`, `DispatchEvent` | `callOp(ctx, op, input)` per §2C |
+| Outer-scope `let sharedState = {}` mutated by phase callbacks | Hides data flow; defeats `phaseOutputs` SSOT | Read prior outputs via `phaseOutputs[priorOp.name]` |
+| `throw new NaxError("early exit", …)` to short-circuit `plan.run()` | Exceptions-as-control-flow obscures failure attribution | Return `{ success: false, … }` from the op; let `plan.run()` check and stop |
+| `try { … } catch { success = false }` in `ExecutionPlan.run()` without logging | Silently swallows failures | Log with `{ storyId, phase: op.name, error: errorMessage(err) }` then propagate |
+| Generic-casting `phaseOutputs as SomeShape` once at the top of the wrapper | Spreads unsafe assumptions through the file | Narrow at the read site, adjacent to the named op |
 
 ### Failure Handling
 
@@ -454,9 +577,15 @@ Keep behaviour tests:
 ### US-004: `StoryOrchestratorBuilder` — unified builder  
 **Depends on US-001, US-002, US-003**
 
-Create `src/execution/story-orchestrator.ts` with `StoryOrchestratorBuilder` and `ExecutionPlan`.
-Refactor `src/pipeline/stages/execution.ts` and `src/tdd/orchestrator.ts` to configure and run
-the builder instead of branching internally.
+Create `src/execution/story-orchestrator.ts` with `StoryOrchestratorBuilder` and `ExecutionPlan`
+per Design §2A–§2G. Every phase dispatches via `callOp(ctx, op, input)` — no Layer 3, no
+per-slot runner closures, no `sharedState`, no exception-as-control-flow (see §2G forbidden
+patterns). Refactor `src/pipeline/stages/execution.ts` and `src/tdd/orchestrator.ts` to
+configure and run the builder; the TDD wrapper retains rollback / verdict reading / isolation
+surfacing / greenfield detection / priorFailures skip / full-suite gate per §2F.
+
+**Reference (failed attempt):** archive tag `archive/story-orchestrator-us004-attempt`,
+commit `5d3dea52`. The failures the new design prevents are enumerated in §2G.
 
 Delete path-specific tests:
 - `test/unit/pipeline/stages/execution-tdd-simple.test.ts` — tests routing between old separate paths
@@ -521,10 +650,13 @@ Keep behaviour tests:
 
 ### US-004: `StoryOrchestratorBuilder`
 
+- `OrchestratorSlot<I, O, C>` is generic; the typed `add*` methods accept the typed op + input without requiring callers to cast (no `as unknown as RunOperation<unknown, …>` at call sites)
 - `StoryOrchestratorBuilder.build(ctx)` throws `NaxError` with code `"ORCHESTRATOR_NO_IMPLEMENTER"` when `addImplementer` was not called
-- `ExecutionPlan.run()` executes slots in declaration order: test-writer (if added) → implementer → verifier (if added) → semantic review (if added) → rectification (if added)
-- `ExecutionPlan.run()` skips any slot that was not declared via the corresponding `add*` method
-- `StoryOrchestratorResult` captures per-slot costs in `phaseCosts` (keyed by op name), their sum as `totalCostUsd`, and parsed phase outputs in `phaseOutputs` (keyed by op name)
-- Both `execution.ts` and `tdd/orchestrator.ts` replace their internal session loops with `StoryOrchestratorBuilder` — no residual `if (isTddStrategy)` branch that duplicates session management
-- `tdd/orchestrator.ts` reads `StoryOrchestratorResult.phaseOutputs["verifier"]` to run `readVerdict()` / `categorizeVerdict()` post-processing
-- `tdd/orchestrator.ts` reads `StoryOrchestratorResult.success` and triggers git rollback (reset to `initialRef`) when `config.tdd.rollbackOnFailure` is `true`
+- `ExecutionPlan.run()` executes slots in canonical order: test-writer (if added) → implementer → verifier (if added) → semantic review (if added) → adversarial review (if added) → rectification (if added); any slot not added is skipped. `addAdversarialReview` uses the existing `adversarialReviewOp` / `AdversarialReviewInput` from `src/operations/adversarial-review.ts`; `addSemanticReview` uses the existing `semanticReviewOp` / `SemanticReviewInput` from `src/operations/semantic-review.ts`
+- `ExecutionPlan.run()` dispatches every phase via `callOp(ctx, slot.op, slot.input)` — no calls to `agentManager.runWithFallback`, no per-slot `runner` closures, no outer-scope `sharedState` mutation
+- `ExecutionPlan.run()` returns `StoryOrchestratorResult.success === false` (no throw) when any op returns `{ success: false }`; thrown errors are logged with `{ storyId, phase: op.name, error }` and propagated
+- `StoryOrchestratorResult` captures per-slot costs in `phaseCosts` (keyed by `op.name`), their sum as `totalCostUsd`, and parsed phase outputs in `phaseOutputs` (keyed by `op.name`, typed as `Record<string, unknown>` with read-site narrowing)
+- `addRectification(opts)` loops per §2D: reads failures from `phaseOutputs[verifierOp.name]`, resolves the fix via `runFixCycle(opts.strategies, …)`, dispatches the chosen op via `callOp`, re-runs the verifier, and terminates on success / `maxAttempts` / `abortOnIncreasingFailures` / abort signal
+- The rectification phase owns one `SessionKeeper` instance for the implementer session (constructed at phase entry, closed in `.finally()`); reuses the warm-lifetime implementer handle across iterations
+- Both `execution.ts` and `tdd/orchestrator.ts` replace their internal session loops with `StoryOrchestratorBuilder` — no residual `if (isTddStrategy)` branch
+- `tdd/orchestrator.ts` retains rollback, verdict reading, isolation surfacing, greenfield-no-tests detection, `priorFailures` review-escalation skip, and the full-suite gate — none of these appear inside the builder or any op
