@@ -3,7 +3,7 @@
   "feature": "story-orchestrator",
   "branchName": "refactor/story-orchestrator",
   "createdAt": "2026-05-18T06:48:30Z",
-  "updatedAt": "2026-05-18T08:36:36.285Z",
+  "updatedAt": "2026-05-18T09:56:48.629Z",
   "userStories": [
     {
       "id": "US-001",
@@ -119,8 +119,8 @@
         "execution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -175,7 +175,9 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/pipeline/stages/execution.ts",
@@ -187,7 +189,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "eafc87dca95bd79b2348569307d82d40960a37ce"
     }
   ],
   "analysis": "Current code confirms the split orchestration design and duplication targeted by the spec. `executionStage` has a TDD branch (`src/pipeline/stages/execution.ts:48-63`) and a separate single-session path with independent `keepOpen` logic (`src/pipeline/stages/execution.ts:161`). TDD session runner computes `keepOpen` differently (`src/tdd/session-runner.ts:213`), which matches the spec’s divergence root cause. Rectification retry/reuse is duplicated in two `while (true)` loops with similar flow: `getLiveHandle -> openSession -> runAsSession -> retry/close` in `src/verification/rectification-loop.ts:321-394` and `src/tdd/rectification-gate.ts:309-378`; these are the exact extraction points for SessionKeeper. There is a real bind canonicalization mismatch in code today: rectification loop binds with `sessionId` (`src/verification/rectification-loop.ts:394`) while gate binds with `heldHandle.id` (`src/tdd/rectification-gate.ts:378`), matching US-002 requirements. TDD ops are currently minimal role tags via `TddRunOp` in `src/tdd/session-op.ts:19-25` and are dispatched by calling `runTddSession` directly (`src/tdd/session-op.ts:105`), so US-003 requires a real migration to `RunOperation` + `callOp`. Operation infrastructure already supports this shape (`src/operations/types.ts`, `src/operations/call.ts`). Existing operation exports still expose TDD tag types (`src/operations/index.ts`), and that export must be removed to satisfy spec ACs. `executionGatesConfigSelector` and `ExecutionGatesConfig` already exist in selectors (`src/config/selectors.ts`), so US-001 should create behavior helpers in `src/operations/execution-gates.ts` and consume selector output rather than creating new config plumbing. TDD orchestration currently includes rollback and verdict handling in `src/tdd/orchestrator.ts` (`rollbackTddFailureIfNeeded` at lines 21-44 and verdict imports at line 17), so Phase 2 must keep these behaviors in the thin wrapper while moving sequencing/session lifecycle into the builder result flow. Tests confirm which ones are wiring-specific and should be removed (`test/unit/tdd/session-runner-keep-open.test.ts`, `test/unit/tdd/rectification-gate-session.test.ts`, `test/unit/tdd/session-runner-bindhandle.test.ts`, `test/unit/tdd/session-op.test.ts`, `test/unit/pipeline/stages/execution-tdd-simple.test.ts`, `test/integration/tdd/rectification-gate-orchestrator.test.ts`) and which behavior suites should remain/adjust (`test/unit/verification/rectification-loop.test.ts`, `test/unit/tdd/rectification-gate.test.ts`, `test/integration/tdd/tdd-orchestrator-core.test.ts`, `test/integration/tdd/tdd-orchestrator-verdict.test.ts`, `test/unit/verification/rectification-loop-escalation.test.ts`). Main risks are session lifecycle regressions (open/close/reuse), retry behavior drift after extraction, and preserving current TDD wrapper semantics (rollback/verdict/isolation) during builder unification. Migration path should stay phased: US-001/US-002/US-003 first, then US-004."
