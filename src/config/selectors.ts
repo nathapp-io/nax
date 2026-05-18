@@ -73,6 +73,7 @@ export const precheckConfigSelector = pickSelector(
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
 export const autofixConfigSelector = pickSelector("autofix", "quality", "execution");
+export const executionGatesConfigSelector = pickSelector("execution-gates", "review", "execution");
 
 // Test-pattern resolver — resolveTestFilePatterns reads execution.smartTestRunner
 // (root config patterns). Co-located so context-tool-runtime, semantic review,
@@ -136,3 +137,4 @@ export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfi
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
+export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;

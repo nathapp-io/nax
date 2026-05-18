@@ -1,0 +1,173 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "story-orchestrator",
+  "branchName": "refactor/story-orchestrator",
+  "createdAt": "2026-05-18T06:48:30Z",
+  "updatedAt": "2026-05-18T06:55:30.562Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "ExecutionGates SSOT for keep-open and review/rectification gates",
+      "description": "**Goal** — Consolidate keep-open and review/rectification config gates into one shared helper module used by both execution paths.\n\n**Motivation** — Duplication causes bugs. The `keepOpen` session flag was computed under different conditions in `session-runner.ts` (TDD) vs `execution.ts` (single-session), causing session re-open bugs that required a dedicated hotfix (PR #1058).\n\n**Approach** —\n#### 1A. `ExecutionGates` — config gate SSOT\n\nNew file `src/operations/execution-gates.ts`. Single source of truth for all config-derived\nboolean decisions. Replaces three divergent inline checks.\n\n```typescript\nimport { executionGatesConfigSelector } from \"../config\";\nimport type { ExecutionGatesConfig } from \"../config/selectors\";\nimport type { SessionRole } from \"../session/types\";\n\nexport { executionGatesConfigSelector };\n\n/** Returns true when the implementer session must stay open after the agent turn. */\nexport function shouldKeepSessionOpen(config: ExecutionGatesConfig, role: SessionRole): boolean;\n\n/** Returns true when the review stage is enabled. */\nexport function shouldRunReview(config: ExecutionGatesConfig): boolean;\n\n/** Returns true when the rectification stage is enabled. */\nexport function shouldRunRectification(config: ExecutionGatesConfig): boolean;\n```\n\n`shouldKeepSessionOpen` replaces:\n- `session-runner.ts`: `role === \"implementer\" && (config.execution.rectification?.enabled ?? false)`\n- `execution.ts`: `!!(ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true)`\n\nUnified rule: **`role === \"implementer\" && (shouldRunReview(config) || shouldRunRectification(config))`**\n\n`execution.ts` calls `shouldKeepSessionOpen(config, \"implementer\")` with a hardcoded role\nliteral — it manages a single implementer session and never varies the role. `session-runner.ts`\npasses the `role` variable because it dispatches all three TDD roles through the same function.\n\n**Scope** — In: create `src/operations/execution-gates.ts`; wire `src/tdd/session-runner.ts` and `src/pipeline/stages/execution.ts` to call it; remove path-specific keep-open condition testing and replace with helper-level behavior tests. Out: session transport retry extraction, TDD op model migration, and builder orchestration.\n\n**Interface**\n```typescript\nimport { executionGatesConfigSelector } from \"../config\";\nimport type { ExecutionGatesConfig } from \"../config/selectors\";\nimport type { SessionRole } from \"../session/types\";\n\nexport { executionGatesConfigSelector };\n\nexport function shouldKeepSessionOpen(config: ExecutionGatesConfig, role: SessionRole): boolean;\nexport function shouldRunReview(config: ExecutionGatesConfig): boolean;\nexport function shouldRunRectification(config: ExecutionGatesConfig): boolean;\n```",
+      "acceptanceCriteria": [
+        "shouldKeepSessionOpen(config, \"implementer\") returns true when config.review.enabled is true.",
+        "shouldKeepSessionOpen(config, \"implementer\") returns true when config.execution.rectification.enabled is true.",
+        "shouldKeepSessionOpen(config, \"implementer\") returns false when both config.review.enabled and config.execution.rectification.enabled are absent or false.",
+        "shouldKeepSessionOpen(config, \"test-writer\") returns false regardless of config.review.enabled and config.execution.rectification.enabled values.",
+        "shouldKeepSessionOpen(config, \"verifier\") returns false regardless of config.review.enabled and config.execution.rectification.enabled values.",
+        "shouldRunReview(config) returns true when config.review.enabled is true.",
+        "shouldRunReview(config) returns false when config.review is absent.",
+        "shouldRunRectification(config) returns true when config.execution.rectification.enabled is true.",
+        "shouldRunRectification(config) returns false when config.execution.rectification is absent.",
+        "Given `src/tdd/session-runner.ts` is inspected after US-001, when locating keepOpen assignment, then the expression includes `shouldKeepSessionOpen(` and does not include the prior inline `role === \"implementer\" && (config.execution.rectification?.enabled ?? false)` expression.",
+        "Given `src/pipeline/stages/execution.ts` is inspected after US-001, when locating keepOpen assignment, then the expression includes `shouldKeepSessionOpen(` and does not include the prior inline `ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true` expression."
+      ],
+      "tags": [
+        "feature",
+        "orchestration",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/selectors.ts",
+        "src/tdd/session-runner.ts",
+        "src/pipeline/stages/execution.ts",
+        "test/unit/tdd/session-runner-keep-open.test.ts",
+        "test/unit/operations/autofix-implementer.test.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "SessionKeeper for rectification session reuse and retry canonicalization",
+      "description": "**Goal** — Replace duplicated rectification session-reuse/transport-retry loops with a shared SessionKeeper and unify bindHandle descriptor-key semantics.\n\n**Motivation** — Both rectification loops carry an identical ~75-line `while` block for `getLiveHandle → openSession → transport-retry → bindHandle`. Any fix to that pattern must be applied in two places.\n\n**Approach** —\n#### 1B. `SessionKeeper` — session reuse + transport retry abstraction\n\nNew file `src/session/session-keeper.ts`. Encapsulates the `getLiveHandle → openSession →\ntry/catch transport retry → bindHandle` pattern duplicated in `rectification-loop.ts` and\n`rectification-gate.ts`.\n\n```typescript\nimport type { RetryStrategy } from \"../agents/retry\";\nimport type { IAgentManager } from \"../agents/manager-types\";\nimport type { SessionHandle, TurnResult } from \"../agents/types\";\nimport type { ModelDef } from \"../config\";\nimport type { PipelineStage } from \"../config/permissions\";\nimport type { ISessionManager, SessionRole } from \"../session/types\";\n\nexport interface SessionKeeperOptions {\n  readonly sessionName: string;\n  readonly defaultAgent: string;\n  readonly role: SessionRole;\n  readonly pipelineStage: PipelineStage;\n  readonly storyId: string;\n  readonly featureName: string;\n  readonly workdir: string;\n  readonly projectDir?: string;\n  readonly modelDef: ModelDef;\n  readonly timeoutSeconds: number;\n  /**\n   * Transport retry policy for retryable SessionTurnErrors.\n   * Callers build this from resolveRetryPreset({ preset: \"transient-network\",\n   * maxAttempts: config.execution.sessionErrorRetryableMaxRetries + 1, baseDelayMs: 0 }).\n   * Defaults to no retries when absent.\n   */\n  readonly retryStrategy?: RetryStrategy;\n  readonly signal?: AbortSignal;\n  readonly maxTurns?: number;\n}\n\nexport interface SessionKeeperSendOptions {\n  readonly prompt: string;\n}\n\n/**\n * Manages a single held session handle across multiple send() calls.\n * On each send: reuses an existing live handle (getLiveHandle) if present,\n * or opens a new one (openSession). On SessionTurnError with retryable=true,\n * discards the stale handle and delegates to the injected `retryStrategy` for the retry decision.\n * Call close() in a finally block to ensure the handle is released.\n */\nexport class SessionKeeper {\n  constructor(\n    private readonly sessionManager: ISessionManager,\n    private readonly agentManager: IAgentManager,\n    private readonly opts: SessionKeeperOptions,\n  ) {}\n\n  /** Send one turn. Reuses or opens the held handle. Retries on retryable transport errors. */\n  async send(opts: SessionKeeperSendOptions): Promise<TurnResult>;\n\n  /**\n   * Bind protocolIds from the last turn to the session descriptor for the audit trail.\n   * Always uses heldHandle.id as the descriptor key — this is the canonical form.\n   * (rectification-loop.ts previously passed a separate `sessionId` variable as the\n   * first arg to bindHandle; that was a divergence bug corrected as part of US-002.)\n   */\n  bindProtocolIds(): void;\n\n  /** Close the held handle (best-effort). Safe to call when no handle is open. */\n  async close(): Promise<void>;\n}\n```\n\nBoth `rectification-loop.ts` and `rectification-gate.ts` replace their ~75-line `while` blocks\nwith a `SessionKeeper` instance, constructed in the caller's scope and closed in `.finally()`.\n\n`bindHandle` argument canonicalisation: `rectification-gate.ts` passes `heldHandle.id` as the\nfirst arg to `bindHandle`; `rectification-loop.ts` incorrectly passes a separate `sessionId`\nvariable (the story descriptor ID). US-002 fixes the loop to also use `heldHandle.id`, making\n`SessionKeeper.bindProtocolIds()` the single implementation that all callers delegate to.\n\n**Scope** — In: add `src/session/session-keeper.ts`; replace inline loops in `src/verification/rectification-loop.ts` and `src/tdd/rectification-gate.ts`; preserve retry behavior; canonicalize bindHandle key; delete wiring-only tests and keep behavior tests. Out: TDD op-type migration and orchestrator builder sequencing.\n\n**Interface**\n```typescript\nexport interface SessionKeeperOptions {\n  readonly sessionName: string;\n  readonly defaultAgent: string;\n  readonly role: SessionRole;\n  readonly pipelineStage: PipelineStage;\n  readonly storyId: string;\n  readonly featureName: string;\n  readonly workdir: string;\n  readonly projectDir?: string;\n  readonly modelDef: ModelDef;\n  readonly timeoutSeconds: number;\n  readonly retryStrategy?: RetryStrategy;\n  readonly signal?: AbortSignal;\n  readonly maxTurns?: number;\n}\n\nexport interface SessionKeeperSendOptions {\n  readonly prompt: string;\n}\n\nexport class SessionKeeper {\n  async send(opts: SessionKeeperSendOptions): Promise<TurnResult>;\n  bindProtocolIds(): void;\n  async close(): Promise<void>;\n}\n```",
+      "acceptanceCriteria": [
+        "SessionKeeper.send() returns the TurnResult from agentManager.runAsSession on success.",
+        "SessionKeeper.send() calls sessionManager.getLiveHandle(sessionName) before openSession, and when a live handle with matching agentName exists, SessionKeeper.send() reuses that handle.",
+        "Given no matching live handle exists, when SessionKeeper.send() runs, then it calls sessionManager.openSession and uses the returned handle.",
+        "Given agentManager.runAsSession throws SessionTurnError with retryable: true, when retryStrategy.shouldRetry returns retry: true, then SessionKeeper.send() closes the stale handle and retries.",
+        "Given agentManager.runAsSession throws SessionTurnError with retryable: true, when retryStrategy is absent or returns retry: false, then SessionKeeper.send() re-throws the error.",
+        "Given agentManager.runAsSession throws SessionTurnError with retryable: false, when SessionKeeper.send() handles the error, then it re-throws immediately without calling retryStrategy.shouldRetry.",
+        "SessionKeeper.bindProtocolIds() calls sessionManager.bindHandle(heldHandle.id, sessionName, protocolIds) when heldHandle.protocolIds is defined.",
+        "SessionKeeper.bindProtocolIds() performs no sessionManager.bindHandle call when heldHandle.protocolIds is undefined.",
+        "SessionKeeper.close() calls sessionManager.closeSession for the held handle when one exists and does not throw when no handle is held.",
+        "Given `src/verification/rectification-loop.ts` is inspected after US-002, when searching for the previous session retry block, then the previous inline `while (true)` loop used for `getLiveHandle/openSession/runAsSession` is removed and SessionKeeper usage is present.",
+        "Given `src/tdd/rectification-gate.ts` is inspected after US-002, when searching for the previous session retry block, then the previous inline `while (true)` loop used for `getLiveHandle/openSession/runAsSession` is removed and SessionKeeper usage is present."
+      ],
+      "tags": [
+        "feature",
+        "session",
+        "retry",
+        "orchestration"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/session/manager.ts",
+        "src/agents/types.ts",
+        "src/verification/rectification-loop.ts",
+        "src/tdd/rectification-gate.ts",
+        "test/unit/tdd/session-runner-bindhandle.test.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Upgrade implementer/test-writer/verifier to full RunOperation shapes",
+      "description": "**Goal** — Replace TDD role-tag operations with full typed RunOperation implementations and route TDD dispatch through callOp.\n\n**Motivation** — TDD ops are second-class. `implement.ts`, `verify.ts`, `write-test.ts` re-export `TddRunOp = { role: TddSessionRole }` — minimal role tags that cannot carry `op.retry`, `op.recover`, or `op.hopBody`. Recovery logic lives inline in the orchestrator instead of on the operation. This violates ADR-020 §D4.\n\n**Approach** —\n#### 1C. Upgrade TDD role tags to full `RunOperation` shapes\n\n`implement.ts`, `verify.ts`, `write-test.ts` are currently thin re-exports of `TddRunOp`\n(a minimal `{ role: TddSessionRole }` tag). Each is upgraded to a standalone\n`RunOperation<Input, Output, TddConfig>` per ADR-020 §D.\n\nThese roles are not TDD-specific — the implementer role is shared by both single-session and\nTDD paths, and test-writer / verifier may be used outside TDD in the future. Input/output types\nare therefore defined alongside their op in `src/operations/` (not in `src/tdd/types.ts`) and\nnamed without a `Tdd` prefix.\n\n**`src/operations/implement.ts`** — implementer input/output + op:\n\n```typescript\nexport interface ImplementerInput {\n  readonly story: UserStory;\n  readonly contextMarkdown?: string;\n  readonly featureContextMarkdown?: string;\n  readonly constitution?: string;\n}\n\nexport interface ImplementerOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n}\n\nexport const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, TddConfig> = {\n  kind: \"run\",\n  name: \"implementer\",\n  stage: \"execution\",\n  session: { role: \"implementer\", lifetime: \"warm\" },\n  config: tddConfigSelector,\n  build(input, ctx): ComposeInput { ... },\n  parse(output, input, ctx): ImplementerOutput { ... },\n};\n```\n\n**`src/operations/write-test.ts`** — test-writer input/output + op:\n\n```typescript\n// Test-writer receives the same full context as the implementer.\nexport interface TestWriterInput {\n  readonly story: UserStory;\n  readonly contextMarkdown?: string;\n  readonly featureContextMarkdown?: string;\n  readonly constitution?: string;\n}\n\nexport interface TestWriterOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n}\n\nexport const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddConfig> = {\n  kind: \"run\",\n  name: \"test-writer\",\n  stage: \"execution\",\n  session: { role: \"test-writer\", lifetime: \"fresh\" },\n  config: tddConfigSelector,\n  build(input, ctx): ComposeInput { ... },\n  parse(output, input, ctx): TestWriterOutput { ... },\n};\n```\n\n**`src/operations/verify.ts`** — verifier input/output + op:\n\n```typescript\n// Verifier uses limited context — no feature context, no constitution.\n// (verifierLimitedContext=true in the current session-op.ts role resolution.)\nexport interface VerifierInput {\n  readonly story: UserStory;\n}\n\nexport interface VerifierOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n  /** Isolation check result, populated when isolation was run. */\n  readonly isolation?: IsolationCheck;\n}\n\nexport const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {\n  kind: \"run\",\n  name: \"verifier\",\n  stage: \"execution\",\n  session: { role: \"verifier\", lifetime: \"fresh\" },\n  config: tddConfigSelector,\n  build(input, ctx): ComposeInput { ... },\n  parse(output, input, ctx): VerifierOutput { ... },\n};\n```\n\n`runTddSessionOp` in `session-op.ts` is updated to call `callOp(ctx, op, input)` for these\nthree ops instead of calling `runTddSession()` directly. `TddRunOp` is retired and `session-op.ts`\nis deleted (or kept as a thin re-export shim until all callers are updated).\n\n**`CallContext` wiring:** `callOp` requires a `CallContext` that carries `runtime: NaxRuntime`,\n`packageView: PackageView`, `agentName`, etc. `TddSessionOpOptions` gains a `runtime: NaxRuntime`\nfield so `runTddSessionOp` can construct the required `CallContext` internally:\n\n```typescript\n// addition to TddSessionOpOptions in src/tdd/session-op.ts\nruntime: NaxRuntime;\n\n// inside runTddSessionOp, before calling callOp:\n// Thread interactionBridge so multi-turn Q&A is preserved for implementer + test-writer.\n// Verifier does not receive an interactionBridge (includeContext=false for that role).\nconst interactionBridge = includeContext && options.interactionChain\n  ? buildInteractionBridge(options.interactionChain, {\n      featureName: options.featureName,\n      storyId: options.story.id,\n      stage: \"execution\",\n    })\n  : undefined;\n\nconst ctx: CallContext = {\n  runtime: options.runtime,\n  packageView: options.runtime.packageView(options.story.workdir ?? \"\"),\n  agentName: options.agentManager.getDefault() ?? \"claude\",\n  storyId: options.story.id,\n  featureName: options.featureName,\n  story: options.story,\n  ...(interactionBridge ? { interactionBridge } : {}),\n};\n```\n\n`TddSessionOpOptions` already carries `interactionChain?: InteractionChain | null` — no new\nfield is needed. `includeContext` is already resolved per-role before this block runs\n(verifier has `includeContext = false`, so its bridge is always omitted). All callers of\n`runTddSessionOp` in `tdd/orchestrator.ts` pass `runtime` — `NaxRuntime` is already available\nthere via the orchestrator's construction-time dependency.\n\n**Scope** — In: replace role-tag exports in `src/operations/implement.ts`, `src/operations/write-test.ts`, and `src/operations/verify.ts`; rewire `src/tdd/session-op.ts` to `callOp`; thread `runtime` through `runTddSessionOp` callers; remove `TddRunOp` export surface and obsolete role-tag tests. Out: StoryOrchestratorBuilder sequencing.\n\n**Interface**\n```typescript\nexport interface ImplementerInput {\n  readonly story: UserStory;\n  readonly contextMarkdown?: string;\n  readonly featureContextMarkdown?: string;\n  readonly constitution?: string;\n}\n\nexport interface ImplementerOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n}\n\nexport interface TestWriterInput {\n  readonly story: UserStory;\n  readonly contextMarkdown?: string;\n  readonly featureContextMarkdown?: string;\n  readonly constitution?: string;\n}\n\nexport interface TestWriterOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n}\n\nexport interface VerifierInput {\n  readonly story: UserStory;\n}\n\nexport interface VerifierOutput {\n  readonly success: boolean;\n  readonly filesChanged: string[];\n  readonly estimatedCostUsd: number;\n  readonly durationMs: number;\n  readonly isolation?: IsolationCheck;\n}\n```",
+      "acceptanceCriteria": [
+        "implementerOp.kind equals \"run\", implementerOp.session.role equals \"implementer\", and implementerOp.session.lifetime equals \"warm\".",
+        "testWriterOp.session.role equals \"test-writer\" and testWriterOp.session.lifetime equals \"fresh\".",
+        "verifierOp.session.role equals \"verifier\" and verifierOp.session.lifetime equals \"fresh\".",
+        "Given implementerOp.parse receives empty or unparseable output, when parse executes, then it returns ImplementerOutput with success: false and filesChanged: [].",
+        "Given upgraded TDD op parse cannot produce a usable value and op-level recover can derive output from disk artifacts, when callOp post-parse flow runs, then it returns recovered output instead of throwing parse failure.",
+        "When runTddSessionOp routes by op.session.role, then it dispatches via callOp to implementerOp, testWriterOp, or verifierOp and does not call runTddSession() directly.",
+        "Given `src/operations/index.ts` is inspected after US-003, when reading exports, then `TddRunOp` is not exported.",
+        "Given role-tag wiring tests are inspected after US-003, when checking `test/unit/tdd/session-op.test.ts`, then the file does not exist."
+      ],
+      "tags": [
+        "feature",
+        "operations",
+        "tdd",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/tdd/session-op.ts",
+        "src/operations/implement.ts",
+        "src/operations/verify.ts",
+        "src/operations/write-test.ts",
+        "src/operations/call.ts",
+        "src/tdd/orchestrator.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "StoryOrchestratorBuilder to unify execution and TDD orchestration",
+      "description": "**Goal** — Introduce StoryOrchestratorBuilder and replace duplicated orchestration/session-loop branching in execution and TDD entry points.\n\n**Motivation** — nax currently maintains two parallel execution paths that duplicate session management, rectification loops, config-gate checks, and transport-retry logic.\n\n**Approach** —\n### Phase 2 — `StoryOrchestratorBuilder`\n\nNew file `src/execution/story-orchestrator.ts`. A builder that declaratively assembles the\nphases for one story execution, then runs them in order.\n\n```typescript\nexport interface OrchestratorSlot {\n  readonly op: RunOperation<unknown, unknown, unknown>;\n  readonly input: unknown;\n}\n\nexport class StoryOrchestratorBuilder {\n  addImplementer(input: ImplementerInput): this;\n  addTestWriter(input: TestWriterInput): this;   // TDD only\n  addVerifier(input: VerifierInput): this;        // TDD only\n  addSemanticReview(input: SemanticReviewInput): this;    // if review.semantic enabled\n  addAdversarialReview(input: AdversarialReviewInput): this; // if review.adversarial enabled\n  /**\n   * Enable rectification. No role is pre-declared — the rectification phase\n   * uses the existing FixStrategy resolution from findings/cycle.ts to determine\n   * at runtime which op runs (implementerRectifyOp, testWriterRectifyOp, or both\n   * in sequence) based on the actual failure type in each iteration.\n   */\n  addRectification(): this;\n  build(ctx: CallContext): ExecutionPlan;\n}\n\nexport interface ExecutionPlan {\n  /** Run all slots in order, returning results per phase. */\n  run(): Promise<StoryOrchestratorResult>;\n}\n```\n\n`execution.ts`'s TDD-path branch and `tdd/orchestrator.ts` become thin callers that configure\nthe builder based on `config` flags and `routing.testStrategy`, then call `plan.run()`.\n\n**Scope boundary — what stays outside the builder:**\nThe builder owns phase sequencing, session management (via `SessionKeeper`), and cost\naccumulation. The following TDD-specific behaviours remain in `tdd/orchestrator.ts` as a thin\nwrapper around `plan.run()`:\n\n- **Rollback** — `config.tdd.rollbackOnFailure`: git reset to `initialRef` on failure. The\n  wrapper reads `StoryOrchestratorResult.success` and calls `rollback()` when needed.\n- **Verdict reading** — `readVerdict()` + `categorizeVerdict()`: parsing the verifier's output\n  file after the verifier slot completes. The wrapper receives the verifier's `VerifierOutput`\n  from `StoryOrchestratorResult.phaseOutputs[\"verifier\"]` and processes it.\n- **Isolation surfacing** — `IsolationCheck` per session: the wrapper collects these from\n  `StoryOrchestratorResult.phaseOutputs` and populates `ThreeSessionTddResult.sessions`.\n\nTo support this, `StoryOrchestratorResult` adds:\n\n```typescript\nexport interface StoryOrchestratorResult {\n  readonly success: boolean;\n  readonly phaseCosts: Record<string, number>;\n  readonly totalCostUsd: number;\n  readonly durationMs: number;\n  /** Per-phase parsed outputs, keyed by op name. Wrappers read these for post-processing. */\n  readonly phaseOutputs: Record<string, unknown>;\n}\n```\n\n**Scope** — In: create `src/execution/story-orchestrator.ts`; refactor `src/pipeline/stages/execution.ts` and `src/tdd/orchestrator.ts` to build and run an ExecutionPlan; preserve rollback/verdict/isolation post-processing in TDD wrapper; remove legacy path-routing tests tied to old loop internals while retaining behavior-focused tests. Out: SessionKeeper internals and TDD op definition migration (already handled in dependencies).\n\n**Interface**\n```typescript\nexport interface OrchestratorSlot {\n  readonly op: RunOperation<unknown, unknown, unknown>;\n  readonly input: unknown;\n}\n\nexport class StoryOrchestratorBuilder {\n  addImplementer(input: ImplementerInput): this;\n  addTestWriter(input: TestWriterInput): this;\n  addVerifier(input: VerifierInput): this;\n  addSemanticReview(input: SemanticReviewInput): this;\n  addAdversarialReview(input: AdversarialReviewInput): this;\n  addRectification(): this;\n  build(ctx: CallContext): ExecutionPlan;\n}\n\nexport interface ExecutionPlan {\n  run(): Promise<StoryOrchestratorResult>;\n}\n\nexport interface StoryOrchestratorResult {\n  readonly success: boolean;\n  readonly phaseCosts: Record<string, number>;\n  readonly totalCostUsd: number;\n  readonly durationMs: number;\n  readonly phaseOutputs: Record<string, unknown>;\n}\n```",
+      "acceptanceCriteria": [
+        "Given addImplementer was never called, when StoryOrchestratorBuilder.build(ctx) is invoked, then it throws NaxError with code \"ORCHESTRATOR_NO_IMPLEMENTER\".",
+        "Given slots are declared in order, when ExecutionPlan.run() executes, then it runs test-writer (if added), implementer, verifier (if added), semantic review (if added), and rectification (if added) in that order.",
+        "When an add* method is not called for a phase, then ExecutionPlan.run() skips that phase and does not emit that phase key in phaseOutputs.",
+        "ExecutionPlan.run() stores per-phase costs in phaseCosts keyed by op name, stores parsed phase outputs in phaseOutputs keyed by op name, and sets totalCostUsd equal to the numeric sum of phaseCosts values.",
+        "Given `src/pipeline/stages/execution.ts` is inspected after US-004, when locating story execution orchestration, then the file uses StoryOrchestratorBuilder/ExecutionPlan and does not contain residual duplicated session-loop orchestration guarded by `if (isTddStrategy)`.",
+        "Given `src/tdd/orchestrator.ts` is inspected after US-004, when locating story execution orchestration, then the file uses StoryOrchestratorBuilder/ExecutionPlan for phase sequencing and does not keep independent duplicated session-loop orchestration.",
+        "When tdd/orchestrator.ts processes verifier completion through StoryOrchestratorResult, then it reads `phaseOutputs[\"verifier\"]` and applies `readVerdict()` and `categorizeVerdict()`.",
+        "Given StoryOrchestratorResult.success is false and config.tdd.rollbackOnFailure is true, when tdd/orchestrator.ts completes plan.run(), then it triggers rollback to initialRef."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "orchestration",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/tdd/orchestrator.ts",
+        "src/operations/call.ts",
+        "src/operations/types.ts",
+        "src/tdd/verdict.ts",
+        "src/tdd/verdict-reader.ts"
+      ]
+    }
+  ],
+  "analysis": "Current code confirms the split orchestration design and duplication targeted by the spec. `executionStage` has a TDD branch (`src/pipeline/stages/execution.ts:48-63`) and a separate single-session path with independent `keepOpen` logic (`src/pipeline/stages/execution.ts:161`). TDD session runner computes `keepOpen` differently (`src/tdd/session-runner.ts:213`), which matches the spec’s divergence root cause. Rectification retry/reuse is duplicated in two `while (true)` loops with similar flow: `getLiveHandle -> openSession -> runAsSession -> retry/close` in `src/verification/rectification-loop.ts:321-394` and `src/tdd/rectification-gate.ts:309-378`; these are the exact extraction points for SessionKeeper. There is a real bind canonicalization mismatch in code today: rectification loop binds with `sessionId` (`src/verification/rectification-loop.ts:394`) while gate binds with `heldHandle.id` (`src/tdd/rectification-gate.ts:378`), matching US-002 requirements. TDD ops are currently minimal role tags via `TddRunOp` in `src/tdd/session-op.ts:19-25` and are dispatched by calling `runTddSession` directly (`src/tdd/session-op.ts:105`), so US-003 requires a real migration to `RunOperation` + `callOp`. Operation infrastructure already supports this shape (`src/operations/types.ts`, `src/operations/call.ts`). Existing operation exports still expose TDD tag types (`src/operations/index.ts`), and that export must be removed to satisfy spec ACs. `executionGatesConfigSelector` and `ExecutionGatesConfig` already exist in selectors (`src/config/selectors.ts`), so US-001 should create behavior helpers in `src/operations/execution-gates.ts` and consume selector output rather than creating new config plumbing. TDD orchestration currently includes rollback and verdict handling in `src/tdd/orchestrator.ts` (`rollbackTddFailureIfNeeded` at lines 21-44 and verdict imports at line 17), so Phase 2 must keep these behaviors in the thin wrapper while moving sequencing/session lifecycle into the builder result flow. Tests confirm which ones are wiring-specific and should be removed (`test/unit/tdd/session-runner-keep-open.test.ts`, `test/unit/tdd/rectification-gate-session.test.ts`, `test/unit/tdd/session-runner-bindhandle.test.ts`, `test/unit/tdd/session-op.test.ts`, `test/unit/pipeline/stages/execution-tdd-simple.test.ts`, `test/integration/tdd/rectification-gate-orchestrator.test.ts`) and which behavior suites should remain/adjust (`test/unit/verification/rectification-loop.test.ts`, `test/unit/tdd/rectification-gate.test.ts`, `test/integration/tdd/tdd-orchestrator-core.test.ts`, `test/integration/tdd/tdd-orchestrator-verdict.test.ts`, `test/unit/verification/rectification-loop-escalation.test.ts`). Main risks are session lifecycle regressions (open/close/reuse), retry behavior drift after extraction, and preserving current TDD wrapper semantics (rollback/verdict/isolation) during builder unification. Migration path should stay phased: US-001/US-002/US-003 first, then US-004."
+}
