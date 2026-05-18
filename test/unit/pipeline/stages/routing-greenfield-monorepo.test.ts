@@ -71,7 +71,7 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
   let repoRoot: string;
 
   beforeEach(async () => {
-    initLogger({ level: "silent", format: "jsonl", logFilePath: undefined });
+    initLogger({ level: "silent" });
     repoRoot = makeTempDir("nax-mw011-");
 
     // Set up monorepo structure

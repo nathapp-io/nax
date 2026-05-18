@@ -99,7 +99,7 @@ describe("attachAgentIdleWatchdog — tool-call activity", () => {
   beforeEach(() => {
     tmpDir = makeTempDir("nax-test-idle-watchdog-tool-");
     logFile = join(tmpDir, `idle-watchdog-tool-${Date.now()}.jsonl`);
-    initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
+    initLogger({ level: "silent", filePath: logFile });
   });
 
   afterEach(async () => {

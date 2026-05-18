@@ -18,7 +18,7 @@ let testDir: string;
 let featureDir: string;
 
 beforeEach(async () => {
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
   testDir = makeTempDir("nax-acceptance-test-");
   featureDir = path.join(testDir, ".nax/features/test-feature");
   await fs.mkdir(featureDir, { recursive: true });

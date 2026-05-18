@@ -1,7 +1,7 @@
 /**
  * Log level type — ordered from most to least severe
  */
-export type LogLevel = "error" | "warn" | "info" | "debug";
+export type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
 
 /**
  * Structured log entry format

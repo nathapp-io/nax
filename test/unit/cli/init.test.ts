@@ -8,10 +8,11 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _initContextDeps as contextDeps } from "../../../src/cli/init-context";
-import { initProject } from "../../../src/cli/init";
+import { _initDeps, initProject } from "../../../src/cli/init";
 import { withTempDir } from "../../helpers/temp";
+
 
 const TEMPLATE_FILES = [
   "test-writer.md",
@@ -216,7 +217,8 @@ describe("initProject — --ai flag wired through to context generation", () => 
 
   test("accepts options object with ai: false without error", async () => {
     await withTempDir(async (tempDir) => {
-      await expect(initProject(tempDir, { ai: false })).resolves.toBeUndefined();
+      const result = await initProject(tempDir, { ai: false });
+      expect(result).toBeUndefined();
     });
   });
 
@@ -253,93 +255,70 @@ describe("initProject — --ai flag wired through to context generation", () => 
 });
 
 describe("initProject — prints summary with created files and next steps", () => {
-  test("summary output includes nax/config.json", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+  function captureInitLog(): { output: string[]; restore: () => void } {
+    const output: string[] = [];
+    const orig = _initDeps.log;
+    _initDeps.log = (...args: unknown[]) => { output.push(args.map(String).join(" ")); };
+    return { output, restore: () => { _initDeps.log = orig; } };
+  }
 
+  test("summary output includes nax/config.json", async () => {
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("config.json");
+        expect(output.join("\n")).toContain("config.json");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 
   test("summary output includes nax/constitution.md", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("constitution.md");
+        expect(output.join("\n")).toContain("constitution.md");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 
   test("summary output includes nax/context.md", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("context.md");
+        expect(output.join("\n")).toContain("context.md");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 
   test("next-steps checklist includes nax generate", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("nax generate");
+        expect(output.join("\n")).toContain("nax generate");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 
   test("next-steps checklist includes nax plan", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("nax plan");
+        expect(output.join("\n")).toContain("nax plan");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 
   test("next-steps checklist includes nax run", async () => {
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
-
+    const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-
-        const allOutput = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
-        expect(allOutput).toContain("nax run");
+        expect(output.join("\n")).toContain("nax run");
       });
-    } finally {
-      logSpy.mockRestore();
-    }
+    } finally { restore(); }
   });
 });

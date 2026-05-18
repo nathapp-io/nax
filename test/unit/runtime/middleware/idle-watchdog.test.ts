@@ -143,7 +143,7 @@ describe("attachAgentIdleWatchdog", () => {
   beforeEach(() => {
     tmpDir = makeTempDir("nax-test-idle-watchdog-");
     logFile = join(tmpDir, `test-idle-watchdog-${Date.now()}.jsonl`);
-    initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
+    initLogger({ level: "silent", filePath: logFile });
     eventBus = new AgentStreamEventBus();
     controllerRegistry = new Map();
     currentUnsubscribe = undefined;

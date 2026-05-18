@@ -37,7 +37,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 
 describe("execution runner", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {
@@ -477,7 +477,7 @@ describe("execution runner", () => {
 
 describe("execution runner — lite mode routing", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {

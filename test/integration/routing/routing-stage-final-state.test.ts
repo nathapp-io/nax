@@ -145,7 +145,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
   beforeEach(async () => {
     workdir = makeTempDir("nax-routing-final-state-test-");
-    initLogger({ level: "debug" });
+    initLogger({ level: "silent" });
   });
 
   afterEach(async () => {

@@ -13,7 +13,7 @@ describe("createPluginLogger", () => {
 
   beforeEach(() => {
     logFile = `${import.meta.dir}/test-plugin-logger-${Date.now()}.jsonl`;
-    initLogger({ level: "debug", filePath: logFile });
+    initLogger({ level: "silent", filePath: logFile });
     logger = createPluginLogger("test-plugin");
   });
 

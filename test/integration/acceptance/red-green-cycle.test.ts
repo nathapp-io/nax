@@ -116,7 +116,7 @@ let tmpDir: string;
 let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(async () => {
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
   tmpDir = makeTempDir("nax-acc-cycle-");
   const featureDir = path.join(tmpDir, ".nax/features/test-feature");
   await fs.mkdir(featureDir, { recursive: true });

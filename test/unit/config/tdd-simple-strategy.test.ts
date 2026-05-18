@@ -18,7 +18,7 @@ import { validateRoutingDecision } from "../../../src/routing/strategies/llm";
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
 });
 
 afterEach(() => {

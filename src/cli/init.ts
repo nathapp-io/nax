@@ -17,6 +17,10 @@ import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
 
+export const _initDeps = {
+  log: console.log.bind(console) as (...args: unknown[]) => void,
+};
+
 /** Result of project name validation */
 export interface ProjectNameValidationResult {
   valid: boolean;
@@ -362,18 +366,18 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   await promptsInitCommand({ workdir: projectRoot, force: false, autoWireConfig: false });
 
   // Print summary
-  console.log("\n[OK] nax init complete. Created files:");
-  console.log("  - .nax/config.json");
-  console.log("  - .nax/context.md");
-  console.log("  - .nax/constitution.md");
-  console.log("  - .nax/hooks/");
-  console.log("  - .nax/templates/");
-  console.log("\nNext steps:");
-  console.log("  1. Review .nax/context.md and fill in TODOs");
-  console.log("  2. Review .nax/config.json and adjust quality commands");
-  console.log("  3. Run: nax generate");
-  console.log("  4. Run: nax plan");
-  console.log("  5. Run: nax run");
+  _initDeps.log("\n[OK] nax init complete. Created files:");
+  _initDeps.log("  - .nax/config.json");
+  _initDeps.log("  - .nax/context.md");
+  _initDeps.log("  - .nax/constitution.md");
+  _initDeps.log("  - .nax/hooks/");
+  _initDeps.log("  - .nax/templates/");
+  _initDeps.log("\nNext steps:");
+  _initDeps.log("  1. Review .nax/context.md and fill in TODOs");
+  _initDeps.log("  2. Review .nax/config.json and adjust quality commands");
+  _initDeps.log("  3. Run: nax generate");
+  _initDeps.log("  4. Run: nax plan");
+  _initDeps.log("  5. Run: nax run");
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }
@@ -387,11 +391,11 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
   } else if (options.package) {
     const projectRoot = options.projectRoot ?? process.cwd();
     await initPackage(projectRoot, options.package);
-    console.log("\n[OK] Package scaffold created.");
-    console.log(`  Created: .nax/mono/${options.package}/context.md`);
-    console.log("\nNext steps:");
-    console.log(`  1. Review .nax/mono/${options.package}/context.md and fill in TODOs`);
-    console.log(`  2. Run: nax generate --package ${options.package}`);
+    _initDeps.log("\n[OK] Package scaffold created.");
+    _initDeps.log(`  Created: .nax/mono/${options.package}/context.md`);
+    _initDeps.log("\nNext steps:");
+    _initDeps.log(`  1. Review .nax/mono/${options.package}/context.md and fill in TODOs`);
+    _initDeps.log(`  2. Run: nax generate --package ${options.package}`);
   } else {
     const projectRoot = options.projectRoot ?? process.cwd();
     await initProject(projectRoot, { name: options.name, force: options.force });

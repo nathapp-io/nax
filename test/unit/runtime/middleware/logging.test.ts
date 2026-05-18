@@ -75,7 +75,7 @@ describe("attachLoggingSubscriber", () => {
   beforeEach(() => {
     tmpDir = makeTempDir("nax-test-logging-sub-");
     logFile = join(tmpDir, `test-logging-sub-${Date.now()}.jsonl`);
-    initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
+    initLogger({ level: "silent", filePath: logFile });
   });
 
   afterEach(async () => {

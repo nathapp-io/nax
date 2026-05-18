@@ -8,7 +8,7 @@
 export { promptsCommand, buildFrontmatter, type PromptsCommandOptions } from "./prompts-main";
 
 // Init command exports
-export { promptsInitCommand, type PromptsInitCommandOptions } from "./prompts-init";
+export { _promptsInitDeps, promptsInitCommand, type PromptsInitCommandOptions } from "./prompts-init";
 
 // Export command exports
 export { exportPromptCommand, type ExportPromptCommandOptions } from "./prompts-export";

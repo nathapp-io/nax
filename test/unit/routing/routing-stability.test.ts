@@ -32,7 +32,7 @@ const routeCtxConfig: NaxConfig = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CON
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
 });
 
 afterEach(() => {

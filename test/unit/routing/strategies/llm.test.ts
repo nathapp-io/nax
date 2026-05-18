@@ -41,7 +41,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
 });
 
 afterEach(() => {

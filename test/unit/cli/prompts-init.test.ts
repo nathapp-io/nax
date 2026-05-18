@@ -6,12 +6,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promptsInitCommand } from "../../../src/cli/prompts";
+import { _promptsInitDeps, promptsInitCommand } from "../../../src/cli/prompts";
 import { buildRoleTaskSection } from "../../../src/prompts/sections/role-task";
 import { makeTempDir } from "../../helpers/temp";
+
 
 const TEMPLATE_FILES = [
   "test-writer.md",
@@ -186,27 +186,27 @@ describe("promptsInitCommand — header comment in each template", () => {
 describe("promptsInitCommand — no-overwrite protection", () => {
   let tempDir: string;
   let consoleOutput: string[];
-  let originalConsoleLog: typeof console.log;
-  let originalConsoleWarn: typeof console.warn;
+  let savedLog: typeof _promptsInitDeps.log;
+  let savedWarn: typeof _promptsInitDeps.warn;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
 
     consoleOutput = [];
-    originalConsoleLog = console.log;
-    originalConsoleWarn = console.warn;
-    console.log = (...args: unknown[]) => {
+    savedLog = _promptsInitDeps.log;
+    savedWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
-    console.warn = (...args: unknown[]) => {
+    _promptsInitDeps.warn = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
-    console.warn = originalConsoleWarn;
+    _promptsInitDeps.log = savedLog;
+    _promptsInitDeps.warn = savedWarn;
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -299,21 +299,27 @@ describe("promptsInitCommand — --force flag", () => {
 describe("promptsInitCommand — summary output", () => {
   let tempDir: string;
   let consoleOutput: string[];
-  let originalConsoleLog: typeof console.log;
+  let savedLog: typeof _promptsInitDeps.log;
+  let savedWarn: typeof _promptsInitDeps.warn;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
-    originalConsoleLog = console.log;
-    console.log = (...args: unknown[]) => {
+    savedLog = _promptsInitDeps.log;
+    savedWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = (...args: unknown[]) => {
+      consoleOutput.push(args.map((a) => String(a)).join(" "));
+    };
+    _promptsInitDeps.warn = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
+    _promptsInitDeps.log = savedLog;
+    _promptsInitDeps.warn = savedWarn;
     rmSync(tempDir, { recursive: true, force: true });
   });
 

@@ -68,7 +68,7 @@ function createContinueStage(name: string): PipelineStage {
 
 describe("Pipeline Runner", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {

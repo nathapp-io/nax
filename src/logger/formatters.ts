@@ -27,7 +27,7 @@ export function formatConsole(entry: LogEntry): string {
   });
 
   // Level-specific color coding
-  let levelColor: (text: string) => string;
+  let levelColor: (text: string) => string = chalk.gray;
   switch (entry.level) {
     case "error":
       levelColor = chalk.red;
@@ -39,6 +39,7 @@ export function formatConsole(entry: LogEntry): string {
       levelColor = chalk.blue;
       break;
     case "debug":
+    case "silent":
       levelColor = chalk.gray;
       break;
   }

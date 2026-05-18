@@ -79,7 +79,7 @@ function makeCtx(story: UserStory): PipelineContext {
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
   _routingDeps.resolveRouting = mockResolveRouting as typeof _routingDeps.resolveRouting;
   _routingDeps.isGreenfieldStory = mockIsGreenfieldStory as typeof _routingDeps.isGreenfieldStory;
   _routingDeps.savePRD = mockSavePRD as typeof _routingDeps.savePRD;

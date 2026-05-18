@@ -15,6 +15,7 @@ import { extractRunSummary } from "./logs-reader";
  * Log level hierarchy for filtering
  */
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  silent: -1,
   debug: 0,
   info: 1,
   warn: 2,

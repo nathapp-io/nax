@@ -733,7 +733,7 @@ describe("runRectificationLoop — logging failing test names", () => {
 
   beforeEach(() => {
     resetLogger();
-    initLogger({ level: "warn", headless: true });
+    initLogger({ level: "silent" });
     capturedWarns = [];
 
     // Patch the logger to capture warn calls
