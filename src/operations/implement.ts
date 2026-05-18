@@ -35,7 +35,22 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
       ...(input.constitution ? { constitution: input.constitution } : {}),
     };
   },
-  parse(_output, _input, _ctx): ImplementerOutput {
+  parse(output, _input, _ctx): ImplementerOutput {
+    try {
+      if (output) {
+        const v = JSON.parse(output) as Record<string, unknown>;
+        if (v !== null && typeof v === "object" && typeof v.success === "boolean") {
+          return {
+            success: v.success as boolean,
+            filesChanged: Array.isArray(v.filesChanged) ? (v.filesChanged as string[]) : [],
+            estimatedCostUsd: 0,
+            durationMs: 0,
+          };
+        }
+      }
+    } catch {
+      // fall through to graceful degradation
+    }
     return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
   },
   async verify(parsed, _input, _ctx): Promise<ImplementerOutput | null> {

@@ -33,7 +33,22 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
       },
     };
   },
-  parse(_output, _input, _ctx): VerifierOutput {
+  parse(output, _input, _ctx): VerifierOutput {
+    try {
+      if (output) {
+        const v = JSON.parse(output) as Record<string, unknown>;
+        if (v !== null && typeof v === "object" && typeof v.success === "boolean") {
+          return {
+            success: v.success as boolean,
+            filesChanged: Array.isArray(v.filesChanged) ? (v.filesChanged as string[]) : [],
+            estimatedCostUsd: 0,
+            durationMs: 0,
+          };
+        }
+      }
+    } catch {
+      // fall through to graceful degradation
+    }
     return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
   },
   async verify(parsed, _input, _ctx): Promise<VerifierOutput | null> {

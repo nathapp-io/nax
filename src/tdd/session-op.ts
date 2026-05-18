@@ -1,13 +1,30 @@
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import type { ContextBundle } from "../context/engine";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
-import { implementTddOp, implementerOp, testWriterOp, verifierOp, verifyTddOp, writeTddTestOp } from "../operations";
+import {
+  callOp,
+  implementTddOp,
+  implementerOp,
+  testWriterOp,
+  verifierOp,
+  verifyTddOp,
+  writeTddTestOp,
+} from "../operations";
+import type {
+  CallContext,
+  ImplementerInput,
+  ImplementerOutput,
+  TestWriterInput,
+  TestWriterOutput,
+  VerifierInput,
+  VerifierOutput,
+} from "../operations";
 import type { UserStory } from "../prd";
 import type { NaxRuntime } from "../runtime";
 import type { SessionRole } from "../session/types";
-import { runTddSession } from "./session-runner";
 import type { TddSessionBinding } from "./session-runner";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -21,7 +38,7 @@ export interface TddSessionOpOptions {
   config: NaxConfig;
   workdir: string;
   modelTier: ModelTier;
-  /** Runtime for constructing CallContext when dispatching via callOp. */
+  /** Runtime for constructing CallContext for callOp dispatch. */
   runtime: NaxRuntime;
   featureName?: string;
   contextMarkdown?: string;
@@ -39,82 +56,86 @@ type TddSessionOp = { readonly session: { readonly role: SessionRole } };
 
 /**
  * Run a single TDD session for the given op (role).
- * Resolves per-role model tier, context inclusion, and isolation settings,
- * then delegates to runTddSession.
+ * Dispatches via callOp to implementerOp, testWriterOp, or verifierOp based on
+ * op.session.role. Does not call runTddSession() directly.
  */
 export async function runTddSessionOp(
   op: TddSessionOp,
   options: TddSessionOpOptions,
-  beforeRef: string,
-  contextBundle?: ContextBundle,
-  sessionBinding?: TddSessionBinding,
+  _beforeRef: string,
+  _contextBundle?: ContextBundle,
+  _sessionBinding?: TddSessionBinding,
 ): Promise<TddSessionResult> {
   const {
-    agent,
-    agentManager,
     story,
-    config,
     workdir,
-    modelTier,
     featureName,
     contextMarkdown,
     featureContextMarkdown,
     constitution,
-    lite = false,
     interactionChain,
-    projectDir,
-    abortSignal,
+    runtime,
   } = options;
 
   const role = op.session.role as TddSessionRole;
 
-  let tier: ModelTier;
-  let includeContext: boolean;
-  let skipIsolation: boolean;
-
-  switch (role) {
-    case "test-writer":
-      tier = config.tdd.sessionTiers?.testWriter ?? "balanced";
-      includeContext = true;
-      skipIsolation = lite;
-      break;
-    case "implementer":
-      tier = config.tdd.sessionTiers?.implementer ?? modelTier;
-      includeContext = true;
-      skipIsolation = lite;
-      break;
-    case "verifier":
-      tier = config.tdd.sessionTiers?.verifier ?? "fast";
-      includeContext = false;
-      skipIsolation = false;
-      break;
-  }
+  const includeContext = role !== "verifier";
 
   const interactionBridge = includeContext
     ? buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" })
     : undefined;
 
-  const verifierLimitedContext = role === "verifier";
+  // Intercept runWithFallback to capture tokenUsage from the AgentRunOutcome.
+  // callOp returns only the parsed O and does not surface tokenUsage in its return value.
+  // Object.create delegates all other methods to origManager via prototype chain.
+  let capturedTokenUsage: import("../agents/cost").TokenUsage | undefined;
+  const origManager = runtime.agentManager;
+  const captureManager = Object.create(origManager) as import("../agents/manager-types").IAgentManager;
+  captureManager.runWithFallback = async (req, primaryAgentOverride) => {
+    const outcome = await origManager.runWithFallback(req, primaryAgentOverride);
+    if (outcome.result.tokenUsage) capturedTokenUsage = outcome.result.tokenUsage;
+    return outcome;
+  };
 
-  return runTddSession(
-    role,
-    agent,
-    agentManager,
-    story,
-    config,
-    workdir,
-    tier,
-    beforeRef,
-    includeContext ? contextMarkdown : undefined,
-    lite,
-    skipIsolation,
-    verifierLimitedContext ? undefined : constitution,
+  const packageView = runtime.packages.resolve(workdir);
+  const ctx: CallContext = {
+    runtime: { ...runtime, agentManager: captureManager } as NaxRuntime,
+    packageView,
+    packageDir: workdir,
+    agentName: resolveDefaultAgent(runtime.configLoader.current()),
+    storyId: story.id,
     featureName,
-    interactionBridge,
-    projectDir,
-    includeContext ? featureContextMarkdown : undefined,
-    verifierLimitedContext ? undefined : contextBundle,
-    sessionBinding,
-    abortSignal,
-  );
+    story,
+    ...(interactionBridge ? { interactionBridge } : {}),
+  };
+
+  const startTime = Date.now();
+
+  let opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
+  if (role === "test-writer") {
+    const input: TestWriterInput = {
+      story,
+      ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+    };
+    opOutput = await callOp(ctx, testWriterOp, input);
+  } else if (role === "implementer") {
+    const input: ImplementerInput = {
+      story,
+      ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+    };
+    opOutput = await callOp(ctx, implementerOp, input);
+  } else {
+    const input: VerifierInput = { story };
+    opOutput = await callOp(ctx, verifierOp, input);
+  }
+
+  return {
+    role,
+    success: opOutput.success,
+    filesChanged: opOutput.filesChanged,
+    estimatedCostUsd: opOutput.estimatedCostUsd,
+    durationMs: opOutput.durationMs || Date.now() - startTime,
+    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+    ...("isolation" in opOutput && opOutput.isolation ? { isolation: opOutput.isolation } : {}),
+  };
 }
