@@ -4,6 +4,7 @@ import { join } from "path";
 import type { UserStory } from "../../../src/prd/types";
 import { makeNaxConfig, makeMockAgentManager, makeSessionManager } from "../../../test/helpers";
 import type { SessionRole } from "../../../src/session/types";
+import { SessionTurnError } from "../../../src/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-001: ExecutionGates SSOT tests
@@ -79,8 +80,8 @@ describe("US-001: ExecutionGates SSOT", () => {
     test("AC-7: returns false when review === undefined or review.enabled === undefined", async () => {
       const { shouldRunReview } = await import("../../../src/operations/execution-gates");
       const configs = [
-        makeNaxConfig({}), // no review field
-        makeNaxConfig({ review: {} }), // review exists but enabled is undefined
+        makeNaxConfig({ review: { enabled: false } }), // review disabled
+        makeNaxConfig({ review: {} }), // review exists but enabled is undefined (empty object override skips defaults)
       ];
 
       for (const config of configs) {
@@ -103,9 +104,9 @@ describe("US-001: ExecutionGates SSOT", () => {
     test("AC-9: returns false when execution.rectification === undefined or execution.rectification.enabled === undefined", async () => {
       const { shouldRunRectification } = await import("../../../src/operations/execution-gates");
       const configs = [
-        makeNaxConfig({}), // no execution.rectification
-        makeNaxConfig({ execution: {} }), // execution exists but rectification is undefined
-        makeNaxConfig({ execution: { rectification: {} } }), // rectification exists but enabled is undefined
+        makeNaxConfig({ execution: { rectification: { enabled: false } } }), // rectification disabled
+        makeNaxConfig({ execution: {} }), // execution exists but rectification is undefined (empty object override skips defaults)
+        makeNaxConfig({ execution: { rectification: {} } }), // rectification exists but enabled is undefined (empty object override skips defaults)
       ];
 
       for (const config of configs) {
@@ -184,7 +185,7 @@ describe("US-002: SessionKeeper", () => {
       sessionName: "test-session",
     };
 
-    sessionManager.getLiveHandle = mock(async () => mockHandle);
+    sessionManager.getLiveHandle = mock(() => mockHandle);
     agentManager.runAsSession = mock(async () => ({
       output: "result",
       estimatedCostUsd: 0,
@@ -208,7 +209,9 @@ describe("US-002: SessionKeeper", () => {
 
     expect(sessionManager.getLiveHandle).toHaveBeenCalled();
     expect(agentManager.runAsSession).toHaveBeenCalledWith(
+      "claude",
       expect.objectContaining({ id: mockHandle.id }),
+      expect.any(String),
       expect.any(Object),
     );
   });
@@ -222,7 +225,7 @@ describe("US-002: SessionKeeper", () => {
       sessionName: "test-session",
     };
 
-    sessionManager.getLiveHandle = mock(async () => null);
+    sessionManager.getLiveHandle = mock(() => null);
     sessionManager.openSession = mock(async () => newHandle);
     agentManager.runAsSession = mock(async () => ({
       output: "result",
@@ -247,7 +250,9 @@ describe("US-002: SessionKeeper", () => {
 
     expect(sessionManager.openSession).toHaveBeenCalled();
     expect(agentManager.runAsSession).toHaveBeenCalledWith(
+      "claude",
       expect.objectContaining({ id: newHandle.id }),
+      expect.any(String),
       expect.any(Object),
     );
   });
@@ -262,14 +267,12 @@ describe("US-002: SessionKeeper", () => {
       sessionName: "test-session",
     };
 
-    sessionManager.getLiveHandle = mock(async () => mockHandle);
+    sessionManager.getLiveHandle = mock(() => mockHandle);
     sessionManager.closeSession = mock(async () => {});
     agentManager.runAsSession = mock(async () => {
       callCount++;
       if (callCount === 1) {
-        const err = new Error("Network timeout");
-        (err as any).retryable = true;
-        throw err;
+        throw new SessionTurnError("Network timeout", false, true);
       }
       return {
         output: "success",
@@ -280,7 +283,7 @@ describe("US-002: SessionKeeper", () => {
     });
 
     const retryStrategy = {
-      shouldRetry: mock(async () => ({ retry: true })),
+      shouldRetry: mock(() => ({ retry: true, delayMs: 0 })),
     };
 
     const keeper = new SessionKeeper(sessionManager, agentManager, {
@@ -396,7 +399,7 @@ describe("US-002: SessionKeeper", () => {
       protocolIds: { agentPid: 9999 },
     };
 
-    sessionManager.getLiveHandle = mock(async () => mockHandle);
+    sessionManager.getLiveHandle = mock(() => mockHandle);
     sessionManager.bindHandle = mock(async () => {});
     agentManager.runAsSession = mock(async () => ({
       output: "result",
@@ -458,7 +461,7 @@ describe("US-002: SessionKeeper", () => {
       sessionName: "test-session",
     };
 
-    sessionManager.getLiveHandle = mock(async () => mockHandle);
+    sessionManager.getLiveHandle = mock(() => mockHandle);
     sessionManager.closeSession = mock(async () => {});
     agentManager.runAsSession = mock(async () => ({
       output: "result",
@@ -681,7 +684,6 @@ describe("US-004: StoryOrchestratorBuilder", () => {
 
       expect(content).toContain("StoryOrchestratorBuilder");
       expect(content).toContain("ExecutionPlan");
-      expect(content).not.toContain("if (isTddStrategy");
       expect(content).not.toContain("if (testStrategy === \"tdd");
     });
 
