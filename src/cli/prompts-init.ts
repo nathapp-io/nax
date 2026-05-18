@@ -8,6 +8,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildRoleTaskSection } from "../prompts/sections/role-task";
 
+export const _promptsInitDeps = {
+  log: console.log.bind(console) as (...args: unknown[]) => void,
+  warn: console.warn.bind(console) as (...args: unknown[]) => void,
+};
+
 export interface PromptsInitCommandOptions {
   /** Working directory (project root) */
   workdir: string;
@@ -62,7 +67,7 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
   const existingFiles = TEMPLATE_ROLES.map((t) => t.file).filter((f) => existsSync(join(templatesDir, f)));
 
   if (existingFiles.length > 0 && !force) {
-    console.warn(
+    _promptsInitDeps.warn(
       `[WARN] nax/templates/ already contains files: ${existingFiles.join(", ")}. No files overwritten.\n       Pass --force to overwrite existing templates.`,
     );
     return [];
@@ -81,9 +86,9 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
     written.push(filePath);
   }
 
-  console.log(`[OK] Written ${written.length} template files to nax/templates/:`);
+  _promptsInitDeps.log(`[OK] Written ${written.length} template files to nax/templates/:`);
   for (const filePath of written) {
-    console.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
+    _promptsInitDeps.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
   }
 
   // Auto-wire prompts.overrides in nax.config.json (if enabled)
@@ -123,7 +128,9 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
       null,
       2,
     );
-    console.log(`\nNo nax.config.json found. To activate overrides, create nax/config.json with:\n${exampleConfig}`);
+    _promptsInitDeps.log(
+      `\nNo nax.config.json found. To activate overrides, create nax/config.json with:\n${exampleConfig}`,
+    );
     return;
   }
 
@@ -134,7 +141,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
 
   // Check if prompts.overrides is already set
   if (config.prompts?.overrides && Object.keys(config.prompts.overrides).length > 0) {
-    console.log(
+    _promptsInitDeps.log(
       "[INFO] prompts.overrides already configured in nax.config.json. Skipping auto-wiring.\n" +
         "       To reset overrides, remove the prompts.overrides section and re-run this command.",
     );
@@ -161,7 +168,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
   const updatedConfig = formatConfigJson(config);
   await Bun.write(configPath, updatedConfig);
 
-  console.log("[OK] Auto-wired prompts.overrides in nax.config.json");
+  _promptsInitDeps.log("[OK] Auto-wired prompts.overrides in nax.config.json");
 }
 
 /**

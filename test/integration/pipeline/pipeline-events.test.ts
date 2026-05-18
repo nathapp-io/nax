@@ -127,7 +127,7 @@ const createMockContext = (): PipelineContext => ({
 
 describe("PipelineEventEmitter", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {
@@ -309,7 +309,7 @@ describe("PipelineEventEmitter", () => {
 
 describe("runPipeline event emission", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {

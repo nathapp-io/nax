@@ -126,7 +126,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
 
 describe("Verify Stage", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
   });
 
   afterEach(() => {

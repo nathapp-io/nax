@@ -20,6 +20,15 @@ const isolatedGlobalDir = mkdtempSync(join(tmpdir(), "nax-test-global-"));
 process.env.NAX_GLOBAL_CONFIG_DIR = isolatedGlobalDir;
 delete process.env.NAX_RUNS_DIR;
 
+// ─── Console suppression ──────────────────────────────────────────────────────
+// Suppress all console output in tests. Tests that need to capture output
+// should override _deps.log / _deps.warn in a local beforeEach, not rely on
+// global console. Tests that intentionally test console output (e.g. logger
+// unit tests) override console.log locally with their own capture functions.
+console.log = () => {};
+console.warn = () => {};
+console.error = () => {};
+
 // ─── ACP spawn sentinel ───────────────────────────────────────────────────────
 // Blocks real acpx sessions from being created in tests. Any test that calls
 // code leading to _acpAdapterDeps.createClient without first mocking it will

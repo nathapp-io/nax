@@ -49,7 +49,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
 });
 
 afterEach(() => {

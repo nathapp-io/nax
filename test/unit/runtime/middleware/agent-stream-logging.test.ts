@@ -106,7 +106,7 @@ describe("attachAgentStreamLogging", () => {
   beforeEach(() => {
     tmpDir = makeTempDir("nax-test-agent-stream-logging-");
     logFile = join(tmpDir, `test-agent-stream-logging-${Date.now()}.jsonl`);
-    initLogger({ level: "debug", filePath: logFile, useChalk: false, headless: true });
+    initLogger({ level: "silent", filePath: logFile });
   });
 
   afterEach(async () => {

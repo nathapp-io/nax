@@ -8,6 +8,7 @@ import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js"
  * Severity ordering for log levels (lower number = more severe)
  */
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  silent: -1,
   error: 0,
   warn: 1,
   info: 2,
@@ -257,7 +258,7 @@ export class Logger {
  * });
  * ```
  */
-export function initLogger(options: LoggerOptions = { level: "warn" }): Logger {
+export function initLogger(options: LoggerOptions = { level: "silent" }): Logger {
   if (instance) {
     throw new Error("Logger already initialized. Call getLogger() to access existing instance.");
   }
@@ -280,7 +281,7 @@ export function initLogger(options: LoggerOptions = { level: "warn" }): Logger {
 /**
  * No-op logger for tests/environments where logger isn't initialized
  */
-const noopLogger: Logger = new Logger({ level: "error", useChalk: false, headless: false });
+const noopLogger: Logger = new Logger({ level: "silent", useChalk: false, headless: false });
 
 export function getLogger(): Logger {
   if (!instance) {

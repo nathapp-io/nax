@@ -133,7 +133,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
 
   beforeEach(() => {
     resetLogger();
-    initLogger({ level: "debug", headless: true });
+    initLogger({ level: "silent" });
     capturedInfos = [];
     capturedWarns = [];
 

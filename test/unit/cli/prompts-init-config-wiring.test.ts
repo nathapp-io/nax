@@ -6,11 +6,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promptsInitCommand } from "../../../src/cli/prompts";
+import { _promptsInitDeps, promptsInitCommand } from "../../../src/cli/prompts";
 import { makeTempDir } from "../../helpers/temp";
+
 
 const EXPECTED_OVERRIDES = {
   "test-writer": ".nax/templates/test-writer.md",
@@ -31,8 +31,8 @@ function writeConfigJson(workdir: string, config: Record<string, unknown>): void
 
 describe("promptsInitCommand — auto-wires prompts.overrides", () => {
   let tempDir: string;
-  let originalConsoleLog: typeof console.log;
-  let originalConsoleWarn: typeof console.warn;
+  let originalLog: typeof _promptsInitDeps.log;
+  let originalWarn: typeof _promptsInitDeps.warn;
   let consoleOutput: string[];
 
   beforeEach(() => {
@@ -40,19 +40,19 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
-    originalConsoleLog = console.log;
-    originalConsoleWarn = console.warn;
-    console.log = (...args: unknown[]) => {
+    originalLog = _promptsInitDeps.log;
+    originalWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
-    console.warn = (...args: unknown[]) => {
+    _promptsInitDeps.warn = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
-    console.warn = originalConsoleWarn;
+    _promptsInitDeps.log = originalLog;
+    _promptsInitDeps.warn = originalWarn;
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -122,8 +122,8 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
 
 describe("promptsInitCommand — does not overwrite existing prompts.overrides", () => {
   let tempDir: string;
-  let originalConsoleLog: typeof console.log;
-  let originalConsoleWarn: typeof console.warn;
+  let originalLog: typeof _promptsInitDeps.log;
+  let originalWarn: typeof _promptsInitDeps.warn;
   let consoleOutput: string[];
 
   beforeEach(() => {
@@ -131,19 +131,19 @@ describe("promptsInitCommand — does not overwrite existing prompts.overrides",
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
-    originalConsoleLog = console.log;
-    originalConsoleWarn = console.warn;
-    console.log = (...args: unknown[]) => {
+    originalLog = _promptsInitDeps.log;
+    originalWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
-    console.warn = (...args: unknown[]) => {
+    _promptsInitDeps.warn = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
-    console.warn = originalConsoleWarn;
+    _promptsInitDeps.log = originalLog;
+    _promptsInitDeps.warn = originalWarn;
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -195,8 +195,8 @@ describe("promptsInitCommand — does not overwrite existing prompts.overrides",
 
 describe("promptsInitCommand — handles missing nax.config.json gracefully", () => {
   let tempDir: string;
-  let originalConsoleLog: typeof console.log;
-  let originalConsoleWarn: typeof console.warn;
+  let originalLog: typeof _promptsInitDeps.log;
+  let originalWarn: typeof _promptsInitDeps.warn;
   let consoleOutput: string[];
 
   beforeEach(() => {
@@ -204,19 +204,19 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
-    originalConsoleLog = console.log;
-    originalConsoleWarn = console.warn;
-    console.log = (...args: unknown[]) => {
+    originalLog = _promptsInitDeps.log;
+    originalWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
-    console.warn = (...args: unknown[]) => {
+    _promptsInitDeps.warn = (...args: unknown[]) => {
       consoleOutput.push(args.map((a) => String(a)).join(" "));
     };
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
-    console.warn = originalConsoleWarn;
+    _promptsInitDeps.log = originalLog;
+    _promptsInitDeps.warn = originalWarn;
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -261,18 +261,18 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
 
 describe("promptsInitCommand — headless/non-TTY mode auto-writes config", () => {
   let tempDir: string;
-  let originalConsoleLog: typeof console.log;
-  let originalConsoleWarn: typeof console.warn;
+  let originalLog: typeof _promptsInitDeps.log;
+  let originalWarn: typeof _promptsInitDeps.warn;
   let originalIsTTY: boolean | undefined;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-prompts-config-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
-    originalConsoleLog = console.log;
-    originalConsoleWarn = console.warn;
-    console.log = () => {};
-    console.warn = () => {};
+    originalLog = _promptsInitDeps.log;
+    originalWarn = _promptsInitDeps.warn;
+    _promptsInitDeps.log = () => {};
+    _promptsInitDeps.warn = () => {};
 
     // Simulate non-TTY mode
     originalIsTTY = process.stdout.isTTY;
@@ -280,8 +280,8 @@ describe("promptsInitCommand — headless/non-TTY mode auto-writes config", () =
   });
 
   afterEach(() => {
-    console.log = originalConsoleLog;
-    console.warn = originalConsoleWarn;
+    _promptsInitDeps.log = originalLog;
+    _promptsInitDeps.warn = originalWarn;
     // Restore TTY state
     Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
     rmSync(tempDir, { recursive: true, force: true });

@@ -13,7 +13,7 @@ import { initLogger, resetLogger } from "../../../../src/logger";
 
 beforeEach(() => {
   resetLogger();
-  initLogger({ level: "error", useChalk: false });
+  initLogger({ level: "silent" });
 });
 
 afterEach(() => {

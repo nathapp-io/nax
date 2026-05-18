@@ -173,7 +173,7 @@ function makeContext(
 
 describe("Verify Stage --- Smart Runner Integration", () => {
   beforeEach(() => {
-    initLogger({ level: "error", useChalk: false });
+    initLogger({ level: "silent" });
     _smartRunnerDeps.getChangedTestFiles = mockGetChangedTestFiles as typeof _smartRunnerDeps.getChangedTestFiles;
     _smartRunnerDeps.getChangedNonTestFiles = mockGetChangedNonTestFiles;
     _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;

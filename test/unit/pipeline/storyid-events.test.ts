@@ -113,7 +113,7 @@ function makeCtx(
 beforeEach(() => {
   _executionDeps.getAgent = () => mockAgent as any;
   resetLogger();
-  initLogger({ level: "debug", useChalk: false });
+  initLogger({ level: "silent" });
   mockAgentRun.mockClear();
 });
 

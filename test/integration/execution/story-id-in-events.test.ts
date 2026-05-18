@@ -163,7 +163,7 @@ describe("StoryId is present in JSONL events emitted by pipeline stages", () => 
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-storyid-test-");
-    initLogger({ level: "debug", useChalk: false });
+    initLogger({ level: "silent" });
     captureLogger();
   });
 
