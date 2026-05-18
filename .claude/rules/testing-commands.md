@@ -8,10 +8,11 @@ This rule is enforced by a PreToolUse hook: `.claude/hooks/guard-bun-test.ts`. B
 
 | Goal | Use |
 |:---|:---|
-| Full suite | `bun run test` |
-| Full suite, bail on first failure | `bun run test:bail` |
+| Full suite (AGENT Friendly) | `bun run test` |
+| Full suite, bail on first failure (AGENT Friendly) | `bun run test:bail` |
 | One file / directory (iteration) | `timeout 30 bun test <path> --timeout=5000` |
 | Long-running targeted test | `timeout -k 5s 60s bun test <path> --timeout=60000` |
+| AGENT Friendly (Only print errors) | `AGENT=1 timeout 30 bun test <path> --timeout=5000` |
 
 ## Rules
 
