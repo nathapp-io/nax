@@ -2,8 +2,8 @@
 
 import { resolveDefaultAgent } from "../agents";
 import { createConfigLoader, resolveModelForAgent } from "../config";
-import { NaxError } from "../errors";
 import { isGreenfieldStory } from "../context/greenfield";
+import { NaxError } from "../errors";
 import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
 import type { ExecutionPlan } from "../execution/story-orchestrator";
 import { getLogger } from "../logger";
@@ -266,7 +266,8 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     op: implementTddOp as unknown as RunOperation<unknown, unknown, unknown>,
     input: {},
     runner: async (_ctx) => {
-      if (sharedState.earlyExitResult) throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
+      if (sharedState.earlyExitResult)
+        throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
 
       const session2Ref = (await captureGitRef(workdir)) ?? "HEAD";
       const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
@@ -306,7 +307,8 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     op: verifyTddOp as unknown as RunOperation<unknown, unknown, unknown>,
     input: {},
     runner: async (_ctx) => {
-      if (sharedState.earlyExitResult) throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
+      if (sharedState.earlyExitResult)
+        throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
 
       // Full-Suite Gate (v0.11 Rectification) runs before the verifier session
       const implementerBinding = getTddSessionBinding?.("implementer");
@@ -349,7 +351,10 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
           lite,
           fullSuiteGatePassed: sharedState.fullSuiteGatePassed,
         };
-        throw new NaxError("full-suite gate exhausted", "TDD_FULL_SUITE_GATE_EXHAUSTED", { stage: "tdd", storyId: story.id });
+        throw new NaxError("full-suite gate exhausted", "TDD_FULL_SUITE_GATE_EXHAUSTED", {
+          stage: "tdd",
+          storyId: story.id,
+        });
       }
 
       const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
