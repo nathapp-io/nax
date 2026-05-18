@@ -2,6 +2,7 @@
 
 import { resolveDefaultAgent } from "../agents";
 import { createConfigLoader, resolveModelForAgent } from "../config";
+import { NaxError } from "../errors";
 import { isGreenfieldStory } from "../context/greenfield";
 import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
 import type { ExecutionPlan } from "../execution/story-orchestrator";
@@ -198,7 +199,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
             totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
             lite,
           };
-          throw new Error("test-writer failed");
+          throw new NaxError("test-writer failed", "TDD_TEST_WRITER_FAILED", { stage: "tdd", storyId: story.id });
         }
 
         // @design: BUG-20 Fix: Verify test-writer created test files
@@ -245,7 +246,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
               totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
               lite,
             };
-            throw new Error("greenfield no tests");
+            throw new NaxError("greenfield no tests", "TDD_GREENFIELD_NO_TESTS", { stage: "tdd", storyId: story.id });
           }
         }
 
@@ -265,7 +266,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     op: implementTddOp as unknown as RunOperation<unknown, unknown, unknown>,
     input: {},
     runner: async (_ctx) => {
-      if (sharedState.earlyExitResult) throw new Error("early exit");
+      if (sharedState.earlyExitResult) throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
 
       const session2Ref = (await captureGitRef(workdir)) ?? "HEAD";
       const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
@@ -293,7 +294,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
           totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
           lite,
         };
-        throw new Error("implementer failed");
+        throw new NaxError("implementer failed", "TDD_IMPLEMENTER_FAILED", { stage: "tdd", storyId: story.id });
       }
 
       return { output: session2, costUsd: session2.estimatedCostUsd };
@@ -305,7 +306,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     op: verifyTddOp as unknown as RunOperation<unknown, unknown, unknown>,
     input: {},
     runner: async (_ctx) => {
-      if (sharedState.earlyExitResult) throw new Error("early exit");
+      if (sharedState.earlyExitResult) throw new NaxError("early exit", "TDD_EARLY_EXIT", { stage: "tdd", storyId: story.id });
 
       // Full-Suite Gate (v0.11 Rectification) runs before the verifier session
       const implementerBinding = getTddSessionBinding?.("implementer");
@@ -348,7 +349,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
           lite,
           fullSuiteGatePassed: sharedState.fullSuiteGatePassed,
         };
-        throw new Error("full-suite gate exhausted");
+        throw new NaxError("full-suite gate exhausted", "TDD_FULL_SUITE_GATE_EXHAUSTED", { stage: "tdd", storyId: story.id });
       }
 
       const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
