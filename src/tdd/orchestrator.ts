@@ -407,7 +407,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   }
 
   // AC7: Read phaseOutputs["verifier"] then apply readVerdict() and categorizeVerdict()
-  const verifierOutput = result.phaseOutputs["verifier"] as TddSessionResult | undefined;
+  const verifierOutput = result.phaseOutputs.verifier as TddSessionResult | undefined;
 
   const verdict = await readVerdict(workdir);
   await cleanupVerdict(workdir);

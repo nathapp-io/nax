@@ -17,9 +17,9 @@ import type { ExecutionPlan } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
+import type { CallContext, RunOperation } from "../../operations";
 import { buildHopCallback } from "../../operations/build-hop-callback";
 import { shouldKeepSessionOpen } from "../../operations/execution-gates";
-import type { CallContext, RunOperation } from "../../operations";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { runThreeSessionTddFromCtx } from "../../tdd";
@@ -71,7 +71,10 @@ export const executionStage: PipelineStage = {
       name: "implementer",
       stage: "run" as const,
       config: [],
-      build: () => ({ role: { id: "r", content: "", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+      build: () => ({
+        role: { id: "r", content: "", overridable: false },
+        task: { id: "t", content: "", overridable: false },
+      }),
       parse: () => ({}),
       session: { role: "implementer" as const, lifetime: "fresh" as const },
     };
@@ -85,7 +88,11 @@ export const executionStage: PipelineStage = {
             storyId: ctx.story.id,
             lite: isLiteMode,
           });
-          const result = await _executionDeps.runThreeSessionTddFromCtx(ctx, { agent, dryRun: false, lite: isLiteMode });
+          const result = await _executionDeps.runThreeSessionTddFromCtx(ctx, {
+            agent,
+            dryRun: false,
+            lite: isLiteMode,
+          });
           tddResult = result;
           return { output: result, costUsd: result.totalCost };
         }
@@ -106,7 +113,7 @@ export const executionStage: PipelineStage = {
 
         const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
         const baseRunOptions: import("../../agents/types").AgentRunOptions = {
-          prompt: ctx.prompt!,
+          prompt: ctx.prompt ?? "",
           workdir: ctx.workdir,
           env: ctx.worktreeDependencyContext?.env,
           modelTier: effectiveTier,
@@ -183,14 +190,17 @@ export const executionStage: PipelineStage = {
 
     const callCtx: CallContext = {
       runtime: ctx.runtime ?? ({} as import("../../runtime").NaxRuntime),
-      packageView: ctx.packageView ?? ctx.runtime?.packages.repo() ?? ({
-        packageDir: ctx.workdir,
-        relativeFromRoot: "",
-        config: ctx.config,
-        select<C>(selector: import("../../config").ConfigSelector<C>): C {
-          return selector.select(ctx.config);
-        },
-      } as import("../../runtime").PackageView),
+      packageView:
+        ctx.packageView ??
+        ctx.runtime?.packages.repo() ??
+        ({
+          packageDir: ctx.workdir,
+          relativeFromRoot: "",
+          config: ctx.config,
+          select<C>(selector: import("../../config").ConfigSelector<C>): C {
+            return selector.select(ctx.config);
+          },
+        } as import("../../runtime").PackageView),
       packageDir: ctx.workdir,
       agentName: defaultAgent,
     };
