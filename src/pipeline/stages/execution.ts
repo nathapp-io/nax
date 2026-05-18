@@ -16,6 +16,7 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
+import { shouldKeepSessionOpen } from "../../operations/execution-gates";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { runThreeSessionTddFromCtx } from "../../tdd";
@@ -157,8 +158,7 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    // Determine whether to keep session open for review or rectification
-    const keepOpen = !!(ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true);
+    const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
 
     const baseRunOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,

@@ -63,3 +63,9 @@ export { planDraftOp, inspectDraftOutput } from "./plan-draft";
 export type { PlanDraftInput, PlanDraftOutput } from "./plan-draft";
 export { planCriticLlmOp, inspectCriticOutput } from "./plan-critic-llm";
 export type { PlanCriticLlmInput, PlanCriticLlmOutput } from "./plan-critic-llm";
+export {
+  shouldKeepSessionOpen,
+  shouldRunReview,
+  shouldRunRectification,
+  executionGatesConfigSelector,
+} from "./execution-gates";

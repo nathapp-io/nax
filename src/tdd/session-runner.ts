@@ -12,6 +12,7 @@ import type { TddConfig } from "../config/selectors";
 import { createContextToolRuntime } from "../context/engine";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
+import { shouldKeepSessionOpen } from "../operations/execution-gates";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
 import { parseSelfVerificationMarker, resolveSelfVerificationPromptInput } from "../quality";
@@ -205,12 +206,7 @@ export async function runTddSession(
   const logger = getLogger();
   logger.info("tdd", `-> Session: ${role}`, { role, storyId: story.id, lite });
 
-  // When rectification is enabled, keep the implementer session open after it finishes.
-  // Legacy path: the rectification gate resumes the same session directly, preserving context.
-  // ADR-019 runtime path: each rectification hop opens a fresh session via buildHopCallback;
-  // keepOpen=true causes session-run-hop to skip closeSession so the sweep handles cleanup.
-  // This flag lives in runOptions and is meaningful regardless of execution path (ADR-019 Phase D).
-  const keepOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
+  const keepOpen = shouldKeepSessionOpen(config, role);
 
   const agentRunOptions = {
     prompt,
