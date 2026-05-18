@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
+import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
@@ -63,13 +64,18 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
+    // Use the wired-runtime helper so per-session cost flows through the
+    // dispatch bus → runTddSessionOp's subscriber → totalCost accumulation.
+    const { runtime, agentManager } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+
     const result = await runThreeSessionTdd({
       agent,
-      agentManager: fakeAgentManager(agent),
+      agentManager,
       story,
       config: DEFAULT_CONFIG,
       workdir: "/tmp/test",
       modelTier: "balanced",
+      runtime,
     });
 
     expect(result.success).toBe(true);

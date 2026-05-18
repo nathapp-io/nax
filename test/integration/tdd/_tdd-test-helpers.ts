@@ -63,11 +63,15 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
       if (r.success === false) {
         throw new Error(r.output ?? "Agent failed");
       }
+      // Default to a parseable JSON envelope so callOp's CALL_OP_NO_OUTPUT
+      // guard accepts the response. Callers supplying explicit `output` (e.g.
+      // for parser-specific assertions) override this default.
+      const defaultOutput = JSON.stringify({ success: r.success ?? true, filesChanged: [] });
       return {
-        output: r.output ?? "",
+        output: r.output ?? defaultOutput,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         internalRoundTrips: 1,
-        estimatedCostUsd: r.estimatedCostUsd ?? 0 ,
+        estimatedCostUsd: r.estimatedCostUsd ?? 0,
       };
     }),
     closeSession: mock(async () => {}),

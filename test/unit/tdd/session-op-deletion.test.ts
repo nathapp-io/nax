@@ -43,7 +43,7 @@ describe("test/unit/tdd/session-op.test.ts — removal verification", () => {
     // In either case, it should not export TddRunOp anymore
 
     try {
-      const sessionOp = await import("@/tdd/session-op");
+      const sessionOp = await import("@/tdd");
 
       // If the module exists, verify it doesn't export TddRunOp
       expect("TddRunOp" in sessionOp).toBe(false);

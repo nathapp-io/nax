@@ -17,8 +17,8 @@ afterEach(async () => {
 
 describe("runTddSessionOp — callOp routing", () => {
   test("runTddSessionOp routes test-writer role via callOp to testWriterOp", async () => {
-    const { runTddSessionOp } = await import("@/tdd/session-op");
-    const { writeTddTestOp } = await import("@/tdd/session-op");
+    const { runTddSessionOp } = await import("@/tdd");
+    const { writeTddTestOp } = await import("@/tdd");
     const { callOp } = await import("@/operations");
 
     const agentManager = makeMockAgentManager();
@@ -36,8 +36,8 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp routes implementer role via callOp to implementerOp", async () => {
-    const { runTddSessionOp } = await import("@/tdd/session-op");
-    const { implementTddOp } = await import("@/tdd/session-op");
+    const { runTddSessionOp } = await import("@/tdd");
+    const { implementTddOp } = await import("@/tdd");
     const { callOp } = await import("@/operations");
 
     const agentManager = makeMockAgentManager();
@@ -55,8 +55,8 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp routes verifier role via callOp to verifierOp", async () => {
-    const { runTddSessionOp } = await import("@/tdd/session-op");
-    const { verifyTddOp } = await import("@/tdd/session-op");
+    const { runTddSessionOp } = await import("@/tdd");
+    const { verifyTddOp } = await import("@/tdd");
     const { callOp } = await import("@/operations");
 
     const agentManager = makeMockAgentManager();
@@ -74,8 +74,8 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp does not call runTddSession directly", async () => {
-    const sessionOp = await import("@/tdd/session-op");
-    const sessionRunner = await import("@/tdd/session-runner");
+    const sessionOp = await import("@/tdd");
+    const sessionRunner = await import("@/tdd");
 
     // Verify that runTddSessionOp exists as an export
     expect(sessionOp.runTddSessionOp).toBeDefined();
@@ -88,7 +88,7 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp forwards runtime to build CallContext", async () => {
-    const { runTddSessionOp, TddSessionOpOptions } = await import("@/tdd/session-op");
+    const { runTddSessionOp, TddSessionOpOptions } = await import("@/tdd");
 
     // Verify that TddSessionOpOptions now includes runtime field
     // which is needed to construct CallContext for callOp
@@ -110,7 +110,7 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp threads interactionBridge for implementer and test-writer", async () => {
-    const { runTddSessionOp } = await import("@/tdd/session-op");
+    const { runTddSessionOp } = await import("@/tdd");
 
     // After upgrade, interactionBridge should be threaded to CallContext
     // for implementer and test-writer roles (but not for verifier).
@@ -137,7 +137,7 @@ describe("runTddSessionOp — callOp routing", () => {
   });
 
   test("runTddSessionOp does not thread interactionBridge for verifier", async () => {
-    const { runTddSessionOp } = await import("@/tdd/session-op");
+    const { runTddSessionOp } = await import("@/tdd");
 
     // Verifier role has includeContext=false, so interactionBridge
     // should NOT be built or passed to CallContext, even if

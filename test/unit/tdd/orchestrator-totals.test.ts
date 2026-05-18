@@ -6,12 +6,42 @@
  * the same way it does for single-session runs.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { AgentResult } from "../../../src/agents/types";
 import type { UserStory } from "../../../src/prd";
+import { _isolationDeps } from "../../../src/tdd/isolation";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
+import { _gitDeps } from "../../../src/utils/git";
 import { makeNaxConfig, makeMockRuntime } from "../../helpers";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
+
+// Mock spawn-based deps so the post-dispatch isolation/getChangedFiles/autoCommit
+// helpers don't try to invoke real `git`. This test asserts on token aggregation;
+// the helpers are exercised in detail under test/integration/tdd/.
+function emptySpawn(): unknown {
+  return {
+    exited: Promise.resolve(0),
+    stdout: new Response("").body,
+    stderr: new Response("").body,
+  };
+}
+let savedIsolation: typeof _isolationDeps.spawn;
+let savedSessionRunner: typeof _sessionRunnerDeps.spawn;
+let savedGit: typeof _gitDeps.spawn;
+beforeAll(() => {
+  savedIsolation = _isolationDeps.spawn;
+  savedSessionRunner = _sessionRunnerDeps.spawn;
+  savedGit = _gitDeps.spawn;
+  _isolationDeps.spawn = mock(emptySpawn) as unknown as typeof _isolationDeps.spawn;
+  _sessionRunnerDeps.spawn = mock(emptySpawn) as unknown as typeof _sessionRunnerDeps.spawn;
+  _gitDeps.spawn = mock(emptySpawn) as unknown as typeof _gitDeps.spawn;
+});
+afterAll(() => {
+  _isolationDeps.spawn = savedIsolation;
+  _sessionRunnerDeps.spawn = savedSessionRunner;
+  _gitDeps.spawn = savedGit;
+});
 
 function makeStory(): UserStory {
   return {
@@ -89,8 +119,14 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
       { inputTokens: 200, outputTokens: 100, cacheReadInputTokens: 10 }, // implementer
       { inputTokens: 50, outputTokens: 25 }, // verifier
     ]);
-    const agentManager = fakeAgentManager(agent as never);
-    const runtime = makeMockRuntime({ agentManager, config: makeConfig() });
+    let agentManager!: ReturnType<typeof fakeAgentManager>;
+    const runtime = makeMockRuntime({
+      config: makeConfig(),
+      agentManagerFactory: (rt) => {
+        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        return agentManager;
+      },
+    });
 
     const result = await runThreeSessionTdd({
       agent: agent as never,
@@ -111,8 +147,14 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
 
   test("totalTokenUsage undefined when no session reports usage", async () => {
     const agent = agentReturning([undefined, undefined, undefined]);
-    const agentManager = fakeAgentManager(agent as never);
-    const runtime = makeMockRuntime({ agentManager, config: makeConfig() });
+    let agentManager!: ReturnType<typeof fakeAgentManager>;
+    const runtime = makeMockRuntime({
+      config: makeConfig(),
+      agentManagerFactory: (rt) => {
+        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        return agentManager;
+      },
+    });
 
     const result = await runThreeSessionTdd({
       agent: agent as never,
@@ -129,8 +171,14 @@ describe("runThreeSessionTdd — token + duration aggregation", () => {
 
   test("totalDurationMs sums session durations", async () => {
     const agent = agentReturning([undefined, undefined, undefined]);
-    const agentManager = fakeAgentManager(agent as never);
-    const runtime = makeMockRuntime({ agentManager, config: makeConfig() });
+    let agentManager!: ReturnType<typeof fakeAgentManager>;
+    const runtime = makeMockRuntime({
+      config: makeConfig(),
+      agentManagerFactory: (rt) => {
+        agentManager = fakeAgentManager(agent as never, { dispatchEvents: rt.dispatchEvents });
+        return agentManager;
+      },
+    });
 
     const result = await runThreeSessionTdd({
       agent: agent as never,

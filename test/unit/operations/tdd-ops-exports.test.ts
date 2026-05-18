@@ -33,21 +33,21 @@ describe("src/operations/index.ts — TddRunOp export removal", () => {
   });
 
   test("writeTddTestOp is exported from write-test.ts (backward compat alias)", async () => {
-    const writeTest = await import("@/operations/write-test");
+    const writeTest = await import("@/operations");
     // writeTddTestOp may still be exported as an alias to testWriterOp
     // or may be renamed, depending on implementation choice
     expect(writeTest).toBeDefined();
   });
 
   test("implementTddOp is exported from implement.ts (backward compat alias)", async () => {
-    const implement = await import("@/operations/implement");
+    const implement = await import("@/operations");
     // implementTddOp may still be exported as an alias to implementerOp
     // or may be renamed, depending on implementation choice
     expect(implement).toBeDefined();
   });
 
   test("verifyTddOp is exported from verify.ts (backward compat alias)", async () => {
-    const verify = await import("@/operations/verify");
+    const verify = await import("@/operations");
     // verifyTddOp may still be exported as an alias to verifierOp
     // or may be renamed, depending on implementation choice
     expect(verify).toBeDefined();
@@ -56,19 +56,19 @@ describe("src/operations/index.ts — TddRunOp export removal", () => {
 
 describe("src/operations/ — files structure", () => {
   test("src/operations/implement.ts exists and exports implementerOp", async () => {
-    const impl = await import("@/operations/implement");
+    const impl = await import("@/operations");
     expect(impl).toBeDefined();
     // Should export a RunOperation, not the old TddRunOp
   });
 
   test("src/operations/write-test.ts exists and exports testWriterOp", async () => {
-    const wt = await import("@/operations/write-test");
+    const wt = await import("@/operations");
     expect(wt).toBeDefined();
     // Should export a RunOperation, not the old TddRunOp
   });
 
   test("src/operations/verify.ts exists and exports verifierOp", async () => {
-    const v = await import("@/operations/verify");
+    const v = await import("@/operations");
     expect(v).toBeDefined();
     // Should export a RunOperation, not the old TddRunOp
   });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { shouldKeepSessionOpen, shouldRunReview, shouldRunRectification } from "@/operations/execution-gates";
+import { shouldKeepSessionOpen, shouldRunReview, shouldRunRectification } from "@/operations";
 import { makeNaxConfig } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
