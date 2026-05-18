@@ -19,9 +19,11 @@ import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../..
 import { getLogger } from "../../logger";
 import { buildHopCallback } from "../../operations/build-hop-callback";
 import { shouldKeepSessionOpen } from "../../operations/execution-gates";
+import type { CallContext, RunOperation } from "../../operations";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { runThreeSessionTddFromCtx } from "../../tdd";
+import type { ThreeSessionTddResult } from "../../tdd/types";
 import { errorMessage } from "../../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -47,23 +49,157 @@ export const executionStage: PipelineStage = {
       };
     }
 
-    // Three-session TDD path (respect tdd.enabled config)
     const isTddStrategy =
       ctx.routing.testStrategy === "three-session-tdd" || ctx.routing.testStrategy === "three-session-tdd-lite";
     const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
 
-    // TYPE-2 fix: TddConfig has no enabled field, removed dead code
-    if (isTddStrategy) {
-      logger.info("execution", `Starting three-session TDD${isLiteMode ? " (lite)" : ""}`, {
-        storyId: ctx.story.id,
-        lite: isLiteMode,
-      });
+    // HARD FAILURE: Missing prompt indicates pipeline misconfiguration (single-session path only)
+    if (!isTddStrategy && !ctx.prompt) {
+      return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
+    }
 
-      const tddResult = await _executionDeps.runThreeSessionTddFromCtx(ctx, {
-        agent,
-        dryRun: false,
-        lite: isLiteMode,
-      });
+    // Shared state captured from the runner closure for post-plan processing
+    let tddResult: ThreeSessionTddResult | undefined;
+    let singleResult: AgentResult | undefined;
+    let finalBundle: ContextBundle | undefined = ctx.contextBundle;
+    let finalPrompt: string | undefined = ctx.prompt;
+
+    // Build execution plan — one implementer slot whose runner dispatches either TDD or single-session
+    const builder = new _executionDeps.StoryOrchestratorBuilder();
+    const placeholderOp: RunOperation<unknown, unknown, unknown> = {
+      kind: "run" as const,
+      name: "implementer",
+      stage: "run" as const,
+      config: [],
+      build: () => ({ role: { id: "r", content: "", overridable: false }, task: { id: "t", content: "", overridable: false } }),
+      parse: () => ({}),
+      session: { role: "implementer" as const, lifetime: "fresh" as const },
+    };
+
+    builder.addImplementer({
+      op: placeholderOp,
+      input: {},
+      runner: async (_callCtx: CallContext) => {
+        if (isTddStrategy) {
+          logger.info("execution", `Starting three-session TDD${isLiteMode ? " (lite)" : ""}`, {
+            storyId: ctx.story.id,
+            lite: isLiteMode,
+          });
+          const result = await _executionDeps.runThreeSessionTddFromCtx(ctx, { agent, dryRun: false, lite: isLiteMode });
+          tddResult = result;
+          return { output: result, costUsd: result.totalCost };
+        }
+
+        // Single/batch session path
+        let effectiveTier = ctx.routing.modelTier;
+        if (!_executionDeps.validateAgentForTier(agent, ctx.routing.modelTier)) {
+          effectiveTier =
+            (agent.capabilities.supportedTiers[0] as typeof ctx.routing.modelTier | undefined) ?? ctx.routing.modelTier;
+          logger.debug("execution", "Agent tier mismatch — clamping to supported tier", {
+            storyId: ctx.story.id,
+            agentName: agent.name,
+            requestedTier: ctx.routing.modelTier,
+            effectiveTier,
+            supportedTiers: agent.capabilities.supportedTiers,
+          });
+        }
+
+        const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
+        const baseRunOptions: import("../../agents/types").AgentRunOptions = {
+          prompt: ctx.prompt!,
+          workdir: ctx.workdir,
+          env: ctx.worktreeDependencyContext?.env,
+          modelTier: effectiveTier,
+          modelDef: resolveModelForAgent(
+            ctx.rootConfig.models,
+            ctx.routing.agent ?? defaultAgent,
+            effectiveTier,
+            defaultAgent,
+          ),
+          timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+          pipelineStage: "run",
+          config: ctx.config,
+          projectDir: ctx.projectDir,
+          maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+          abortSignal: ctx.abortSignal,
+          featureName: ctx.prd.feature,
+          storyId: ctx.story.id,
+          sessionRole: "implementer",
+          keepOpen,
+          interactionBridge: buildInteractionBridge(ctx.interaction, {
+            featureName: ctx.prd.feature,
+            storyId: ctx.story.id,
+            stage: "execution",
+          }),
+        };
+
+        const effectiveManager: IAgentManager = ctx.agentManager;
+        finalPrompt = baseRunOptions.prompt;
+
+        // Both must be present: sessionManager provides the session handle;
+        // agentManager.runAsSession dispatches prompts into it. Neither alone is sufficient.
+        const hopCallback =
+          ctx.sessionManager && ctx.agentManager
+            ? buildHopCallback(
+                {
+                  sessionManager: ctx.sessionManager,
+                  agentManager: ctx.agentManager,
+                  story: ctx.story,
+                  config: ctx.config,
+                  projectDir: ctx.projectDir,
+                  featureName: ctx.prd.feature,
+                  workdir: ctx.workdir,
+                  effectiveTier,
+                  defaultAgent,
+                  contextToolRunCounter: ctx.contextToolRunCounter,
+                  pipelineStage: "run",
+                },
+                ctx.sessionId,
+                baseRunOptions,
+              )
+            : undefined;
+
+        const executeHop: AgentRunRequest["executeHop"] | undefined = hopCallback
+          ? async (agentName, hopBundle, hopKind, resolvedRunOptions) => {
+              const hop = await hopCallback(agentName, hopBundle, hopKind, resolvedRunOptions);
+              finalBundle = hop.bundle ?? finalBundle;
+              finalPrompt = hop.prompt;
+              return hop;
+            }
+          : undefined;
+
+        const request: AgentRunRequest = {
+          runOptions: baseRunOptions,
+          bundle: ctx.contextBundle,
+          signal: ctx.abortSignal,
+          ...(executeHop && { executeHop }),
+        };
+
+        const result = await effectiveManager.run(request);
+        singleResult = result;
+        return { output: result, costUsd: result.estimatedCostUsd ?? 0 };
+      },
+    });
+
+    const callCtx: CallContext = {
+      runtime: ctx.runtime ?? ({} as import("../../runtime").NaxRuntime),
+      packageView: ctx.packageView ?? ctx.runtime?.packages.repo() ?? ({
+        packageDir: ctx.workdir,
+        relativeFromRoot: "",
+        config: ctx.config,
+        select<C>(selector: import("../../config").ConfigSelector<C>): C {
+          return selector.select(ctx.config);
+        },
+      } as import("../../runtime").PackageView),
+      packageDir: ctx.workdir,
+      agentName: defaultAgent,
+    };
+
+    const plan = builder.build(callCtx);
+    await plan.run();
+
+    // Process TDD result
+    if (isTddStrategy && tddResult) {
       const primaryResult: AgentResult = {
         success: tddResult.success,
         estimatedCostUsd: tddResult.totalCost,
@@ -73,37 +209,25 @@ export const executionStage: PipelineStage = {
         durationMs: tddResult.totalDurationMs ?? 0,
         ...(tddResult.totalTokenUsage && { tokenUsage: tddResult.totalTokenUsage }),
       };
-      const outcome = {
-        success: tddResult.success,
-        primaryResult,
-        totalCost: tddResult.totalCost,
-        totalTokenUsage: tddResult.totalTokenUsage,
-        fallbacks: [],
-        needsHumanReview: tddResult.needsHumanReview,
-        reviewReason: tddResult.reviewReason,
-        failureCategory: tddResult.failureCategory,
-        fullSuiteGatePassed: tddResult.fullSuiteGatePassed,
-        lite: tddResult.lite,
-      };
 
-      ctx.agentResult = outcome.primaryResult;
+      ctx.agentResult = primaryResult;
 
       // Propagate full-suite gate result so verify stage can skip redundant run (BUG-054)
-      if (outcome.fullSuiteGatePassed) {
+      if (tddResult.fullSuiteGatePassed) {
         ctx.fullSuiteGatePassed = true;
       }
 
-      if (!outcome.success) {
+      if (!tddResult.success) {
         // Store failure category in context for runner to use at max-attempts decision
-        ctx.tddFailureCategory = outcome.failureCategory;
+        ctx.tddFailureCategory = tddResult.failureCategory;
 
         // Log and notify when human review is needed
-        if (outcome.needsHumanReview) {
+        if (tddResult.needsHumanReview) {
           logger.warn("execution", "Human review needed", {
             storyId: ctx.story.id,
-            reason: outcome.reviewReason,
-            lite: outcome.lite,
-            failureCategory: outcome.failureCategory,
+            reason: tddResult.reviewReason,
+            lite: tddResult.lite,
+            failureCategory: tddResult.failureCategory,
           });
           // Send notification via interaction chain (Telegram in headless mode)
           if (ctx.interaction) {
@@ -115,7 +239,7 @@ export const executionStage: PipelineStage = {
                 storyId: ctx.story.id,
                 stage: "execution",
                 summary: `⚠️ Human review needed: ${ctx.story.id}`,
-                detail: `Story: ${ctx.story.title}\nReason: ${outcome.reviewReason ?? "No reason provided"}\nCategory: ${outcome.failureCategory ?? "unknown"}`,
+                detail: `Story: ${ctx.story.title}\nReason: ${tddResult.reviewReason ?? "No reason provided"}\nCategory: ${tddResult.failureCategory ?? "unknown"}`,
                 fallback: "continue",
                 createdAt: Date.now(),
               });
@@ -130,113 +254,22 @@ export const executionStage: PipelineStage = {
           // Pause for human review instead of auto-escalating (#3 bench-04 finding)
           return {
             action: "pause",
-            reason: outcome.reviewReason || `Human review needed: ${outcome.failureCategory ?? "unknown"}`,
+            reason: tddResult.reviewReason || `Human review needed: ${tddResult.failureCategory ?? "unknown"}`,
           };
         }
 
-        return routeTddFailure(outcome.failureCategory, isLiteMode, ctx, outcome.reviewReason);
+        return routeTddFailure(tddResult.failureCategory, isLiteMode, ctx, tddResult.reviewReason);
       }
 
       return { action: "continue" };
     }
 
-    // Single/batch session (test-after) path
-    // HARD FAILURE: Missing prompt indicates pipeline misconfiguration
-    if (!ctx.prompt) {
-      return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
+    // Process single-session result
+    if (!singleResult) {
+      return { action: "fail", reason: "Execution produced no result" };
     }
 
-    // Validate agent supports the requested tier; clamp to first supported if not (issue #369)
-    let effectiveTier = ctx.routing.modelTier;
-    if (!_executionDeps.validateAgentForTier(agent, ctx.routing.modelTier)) {
-      effectiveTier =
-        (agent.capabilities.supportedTiers[0] as typeof ctx.routing.modelTier | undefined) ?? ctx.routing.modelTier;
-      logger.debug("execution", "Agent tier mismatch — clamping to supported tier", {
-        storyId: ctx.story.id,
-        agentName: agent.name,
-        requestedTier: ctx.routing.modelTier,
-        effectiveTier,
-        supportedTiers: agent.capabilities.supportedTiers,
-      });
-    }
-
-    const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
-
-    const baseRunOptions: import("../../agents/types").AgentRunOptions = {
-      prompt: ctx.prompt,
-      workdir: ctx.workdir,
-      env: ctx.worktreeDependencyContext?.env,
-      modelTier: effectiveTier,
-      modelDef: resolveModelForAgent(
-        ctx.rootConfig.models,
-        ctx.routing.agent ?? defaultAgent,
-        effectiveTier,
-        defaultAgent,
-      ),
-      timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      pipelineStage: "run",
-      config: ctx.config,
-      projectDir: ctx.projectDir,
-      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-      abortSignal: ctx.abortSignal,
-      featureName: ctx.prd.feature,
-      storyId: ctx.story.id,
-      sessionRole: "implementer",
-      keepOpen,
-      interactionBridge: buildInteractionBridge(ctx.interaction, {
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-        stage: "execution",
-      }),
-    };
-
-    const effectiveManager: IAgentManager = ctx.agentManager;
-
-    // finalBundle/finalPrompt track the last hop's values via closure side-effects.
-    let finalBundle: ContextBundle | undefined = ctx.contextBundle;
-    let finalPrompt: string | undefined = baseRunOptions.prompt;
-
-    // Both must be present: sessionManager provides the session handle;
-    // agentManager.runAsSession dispatches prompts into it. Neither alone is sufficient.
-    const hopCallback =
-      ctx.sessionManager && ctx.agentManager
-        ? buildHopCallback(
-            {
-              sessionManager: ctx.sessionManager,
-              agentManager: ctx.agentManager,
-              story: ctx.story,
-              config: ctx.config,
-              projectDir: ctx.projectDir,
-              featureName: ctx.prd.feature,
-              workdir: ctx.workdir,
-              effectiveTier,
-              defaultAgent,
-              contextToolRunCounter: ctx.contextToolRunCounter,
-              pipelineStage: "run",
-            },
-            ctx.sessionId,
-            baseRunOptions,
-          )
-        : undefined;
-
-    const executeHop: AgentRunRequest["executeHop"] | undefined = hopCallback
-      ? async (agentName, hopBundle, hopKind, resolvedRunOptions) => {
-          const hop = await hopCallback(agentName, hopBundle, hopKind, resolvedRunOptions);
-          finalBundle = hop.bundle ?? finalBundle;
-          finalPrompt = hop.prompt;
-          return hop;
-        }
-      : undefined;
-
-    const request: AgentRunRequest = {
-      runOptions: baseRunOptions,
-      bundle: ctx.contextBundle,
-      signal: ctx.abortSignal,
-      ...(executeHop && { executeHop }),
-    };
-
-    const result = await effectiveManager.run(request);
-
+    const result = singleResult;
     ctx.agentResult = result;
     ctx.selfVerification = parseSelfVerificationMarker(result.output ?? "", ctx.workdir);
     const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";

@@ -55,7 +55,10 @@ export class StoryOrchestratorBuilder {
     return this;
   }
 
-  addRectification(): this {
+  addRectification(slot?: OrchestratorSlot): this {
+    if (slot) {
+      this._slots.push(slot);
+    }
     return this;
   }
 

@@ -7,13 +7,14 @@ import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
 import type { ExecutionPlan } from "../execution/story-orchestrator";
 import { getLogger } from "../logger";
 import type { RunOperation } from "../operations";
+import { implementTddOp, verifyTddOp, writeTddTestOp } from "../operations";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
-import { implementTddOp, runTddSessionOp, verifyTddOp, writeTddTestOp } from "./session-op";
+import { runTddSessionOp } from "./session-op";
 import { rollbackToRef, truncateTestOutput } from "./session-runner";
 import type { FailureCategory, TddSessionResult, ThreeSessionTddOptions, ThreeSessionTddResult } from "./types";
 import { sumTddTokenUsage } from "./types";
@@ -51,7 +52,6 @@ async function rollbackTddFailureIfNeeded(
  */
 export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<ThreeSessionTddResult> {
   const {
-    agent,
     story,
     config,
     workdir,
@@ -127,11 +127,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   const initialRef = (await captureGitRef(workdir)) ?? "HEAD";
   const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
+  const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
 
-  // Session 1: Test Writer
   // @design: BUG-018 / #410: Skip on retry (tests already exist) or review-stage escalation
-  // (tests already passed). stage="review" is set by buildEscalationFailure when
-  // reviewFindings are present (covers both review and autofix exhaustion).
   const hasReviewEscalation = (story.priorFailures ?? []).some((f) => f.stage === "review");
   const isRetry = (story.attempts ?? 0) > 0 || hasReviewEscalation;
 
@@ -147,205 +145,275 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     });
   }
 
-  let session1: TddSessionResult | undefined;
+  // Shared mutable state captured across builder slot runners
+  const sharedState: {
+    session1: TddSessionResult | undefined;
+    session2: TddSessionResult | undefined;
+    session3: TddSessionResult | undefined;
+    earlyExitResult: ThreeSessionTddResult | undefined;
+    fullSuiteGatePassed: boolean;
+    fullSuiteGateCost: number;
+  } = {
+    session1: undefined,
+    session2: undefined,
+    session3: undefined,
+    earlyExitResult: undefined,
+    fullSuiteGatePassed: false,
+    fullSuiteGateCost: 0,
+  };
 
+  // Build execution plan using StoryOrchestratorBuilder for phase sequencing
+  const builder = new StoryOrchestratorBuilder();
+
+  // Test-writer slot (skipped on retry)
   if (!isRetry) {
-    const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
-    session1 = await runTddSessionOp(
-      writeTddTestOp,
-      options,
-      initialRef,
-      testWriterBundle,
-      getTddSessionBinding?.("test-writer"),
-    );
-    sessions.push(session1);
-    await recordTddSessionOutcome?.(session1);
-  }
+    builder.addTestWriter({
+      op: writeTddTestOp as unknown as RunOperation<unknown, unknown, unknown>,
+      input: {},
+      runner: async (_ctx) => {
+        const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
+        const session1 = await runTddSessionOp(
+          writeTddTestOp,
+          options,
+          initialRef,
+          testWriterBundle,
+          getTddSessionBinding?.("test-writer"),
+        );
+        sharedState.session1 = session1;
+        sessions.push(session1);
+        await recordTddSessionOutcome?.(session1);
 
-  if (session1 && !session1.success) {
-    needsHumanReview = true;
-    reviewReason = "Test writer session failed or violated isolation";
-    const failureCategory: FailureCategory =
-      session1.isolation && !session1.isolation.passed ? "isolation-violation" : "session-failure";
-    logger.warn("tdd", "[WARN] Test writer session failed", { storyId: story.id, reviewReason, failureCategory });
+        if (!session1.success) {
+          needsHumanReview = true;
+          reviewReason = "Test writer session failed or violated isolation";
+          const failureCategory: FailureCategory =
+            session1.isolation && !session1.isolation.passed ? "isolation-violation" : "session-failure";
+          logger.warn("tdd", "[WARN] Test writer session failed", { storyId: story.id, reviewReason, failureCategory });
+          sharedState.earlyExitResult = {
+            success: false,
+            sessions,
+            needsHumanReview,
+            reviewReason,
+            failureCategory,
+            totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
+            lite,
+          };
+          throw new Error("test-writer failed");
+        }
 
-    return {
-      success: false,
-      sessions,
-      needsHumanReview,
-      reviewReason,
-      failureCategory,
-      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
-      lite,
-    };
-  }
+        // @design: BUG-20 Fix: Verify test-writer created test files
+        const _tddTestFilePatterns =
+          typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
+            ? config.execution.smartTestRunner.testFilePatterns
+            : undefined;
+        const testFilesCreated = session1.filesChanged.filter((f) => isTestFile(f, _tddTestFilePatterns));
 
-  // @design: BUG-20 Fix: Verify test-writer created test files (isTestFile is language-agnostic).
-  // ADR-009: pass user-configured testFilePatterns; undefined → broad regex fallback.
-  const _tddTestFilePatterns =
-    typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
-      ? config.execution.smartTestRunner.testFilePatterns
-      : undefined;
-  const testFilesCreated = session1 ? session1.filesChanged.filter((f) => isTestFile(f, _tddTestFilePatterns)) : [];
+        if (testFilesCreated.length === 0) {
+          // @design: BUG-012 Fix: Check if test files already exist before declaring greenfield
+          const resolvedForGreenfield = await resolveTestFilePatterns(config, workdir);
+          let hasPreExistingTests = false;
+          try {
+            hasPreExistingTests = !(await isGreenfieldStory(story, workdir, resolvedForGreenfield.globs));
+            const dirCheck = Bun.spawn(["test", "-d", workdir], { stdout: "pipe", stderr: "pipe" });
+            if ((await dirCheck.exited) !== 0) {
+              hasPreExistingTests = false;
+            }
+          } catch {
+            hasPreExistingTests = false;
+          }
 
-  if (!isRetry && testFilesCreated.length === 0) {
-    // @design: BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
-    // The test-writer may have produced 0 new files because tests were pre-written and committed
-    // separately (e.g. during dogfooding or manual setup). If tests already exist, skip
-    // test-writer phase and proceed directly to the implementer.
-    // Resolve effective test patterns via SSOT (ADR-009) — replaces deprecated testPattern read.
-    const resolvedForGreenfield = await resolveTestFilePatterns(config, workdir);
+          if (hasPreExistingTests) {
+            logger.info(
+              "tdd",
+              "Test writer created no new files but tests already exist in repo — skipping test-writer, proceeding to implementer (BUG-012 fix)",
+              { storyId: story.id },
+            );
+          } else {
+            needsHumanReview = true;
+            reviewReason = "Test writer session created no test files (greenfield project)";
+            logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
+              storyId: story.id,
+              reviewReason,
+              filesChanged: session1.filesChanged,
+            });
+            sharedState.earlyExitResult = {
+              success: false,
+              sessions,
+              needsHumanReview,
+              reviewReason,
+              failureCategory: "greenfield-no-tests",
+              totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
+              lite,
+            };
+            throw new Error("greenfield no tests");
+          }
+        }
 
-    // Scan directly for existing test files — don't use isGreenfieldStory() here because its
-    // "safe fallback" returns false (not greenfield) on scan errors, which would incorrectly
-    // allow proceeding to the implementer when the workdir is unreadable.
-    let hasPreExistingTests = false;
-    try {
-      // isGreenfieldStory returns true when NO tests exist; we want the inverse
-      hasPreExistingTests = !(await isGreenfieldStory(story, workdir, resolvedForGreenfield.globs));
-      // Sanity check: if workdir doesn't exist, isGreenfieldStory returns false (safe fallback),
-      // meaning hasPreExistingTests = true — wrong. Validate by checking if workdir is readable.
-      const dirCheck = Bun.spawn(["test", "-d", workdir], { stdout: "pipe", stderr: "pipe" });
-      if ((await dirCheck.exited) !== 0) {
-        hasPreExistingTests = false;
-      }
-    } catch {
-      hasPreExistingTests = false;
-    }
-
-    if (hasPreExistingTests) {
-      // Tests exist in repo — test-writer correctly produced no new files.
-      // Skip the pause, proceed to implementer.
-      logger.info(
-        "tdd",
-        "Test writer created no new files but tests already exist in repo — skipping test-writer, proceeding to implementer (BUG-012 fix)",
-        {
+        logger.info("tdd", "Created test files", {
           storyId: story.id,
-        },
-      );
-    } else {
-      // Genuinely greenfield — no tests anywhere. Pause for human review.
-      needsHumanReview = true;
-      reviewReason = "Test writer session created no test files (greenfield project)";
-      logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
-        storyId: story.id,
-        reviewReason,
-        filesChanged: session1?.filesChanged,
-      });
+          testFilesCount: testFilesCreated.length,
+          testFiles: testFilesCreated,
+        });
 
-      return {
-        success: false,
-        sessions,
-        needsHumanReview,
-        reviewReason,
-        failureCategory: "greenfield-no-tests",
-        totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
-        lite,
-      };
-    }
+        return { output: session1, costUsd: session1.estimatedCostUsd };
+      },
+    });
   }
 
-  logger.info("tdd", "Created test files", {
-    storyId: story.id,
-    testFilesCount: testFilesCreated.length,
-    testFiles: testFilesCreated,
+  // Implementer slot
+  builder.addImplementer({
+    op: implementTddOp as unknown as RunOperation<unknown, unknown, unknown>,
+    input: {},
+    runner: async (_ctx) => {
+      if (sharedState.earlyExitResult) throw new Error("early exit");
+
+      const session2Ref = (await captureGitRef(workdir)) ?? "HEAD";
+      const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
+      const session2 = await runTddSessionOp(
+        implementTddOp,
+        options,
+        session2Ref,
+        implementerBundle,
+        getTddSessionBinding?.("implementer"),
+      );
+      sharedState.session2 = session2;
+      sessions.push(session2);
+      await recordTddSessionOutcome?.(session2);
+
+      if (!session2.success) {
+        needsHumanReview = true;
+        reviewReason = "Implementer session failed or violated isolation";
+        logger.warn("tdd", "[WARN] Implementer session failed", { storyId: story.id, reviewReason });
+        sharedState.earlyExitResult = {
+          success: false,
+          sessions,
+          needsHumanReview,
+          reviewReason,
+          failureCategory: "session-failure",
+          totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
+          lite,
+        };
+        throw new Error("implementer failed");
+      }
+
+      return { output: session2, costUsd: session2.estimatedCostUsd };
+    },
   });
 
-  const session2Ref = (await captureGitRef(workdir)) ?? "HEAD";
+  // Verifier slot — also runs the full-suite gate before the verifier session
+  builder.addVerifier({
+    op: verifyTddOp as unknown as RunOperation<unknown, unknown, unknown>,
+    input: {},
+    runner: async (_ctx) => {
+      if (sharedState.earlyExitResult) throw new Error("early exit");
 
-  // Session 2: Implementer
-  const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
-  const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
-  const session2 = await runTddSessionOp(
-    implementTddOp,
-    options,
-    session2Ref,
-    implementerBundle,
-    getTddSessionBinding?.("implementer"),
-  );
-  sessions.push(session2);
-  await recordTddSessionOutcome?.(session2);
+      // Full-Suite Gate (v0.11 Rectification) runs before the verifier session
+      const implementerBinding = getTddSessionBinding?.("implementer");
+      const fullSuiteGate = await runFullSuiteGate(
+        story,
+        config,
+        workdir,
+        agentManager,
+        implementerTier,
+        lite,
+        logger,
+        featureName,
+        projectDir,
+        implementerBinding?.sessionManager,
+        runtime,
+      );
+      sharedState.fullSuiteGateCost = fullSuiteGate.cost;
+      sharedState.fullSuiteGatePassed = fullSuiteGate.fullSuiteGatePassed;
 
-  if (!session2.success) {
-    needsHumanReview = true;
-    reviewReason = "Implementer session failed or violated isolation";
-    logger.warn("tdd", "[WARN] Implementer session failed", { storyId: story.id, reviewReason });
+      if (fullSuiteGate.status === "rectification-exhausted") {
+        const failureCategory: FailureCategory = "full-suite-gate-exhausted";
+        const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + fullSuiteGate.cost;
+        const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
+        const totalTokenUsage = sumTddTokenUsage(sessions);
+        const terminalReviewReason = "Full suite gate failed after rectification exhausted";
+        logger.warn("tdd", "Stopping before verifier because full-suite gate rectification exhausted", {
+          storyId: story.id,
+          attempts: fullSuiteGate.attempts,
+          failureCategory,
+        });
+        sharedState.earlyExitResult = {
+          success: false,
+          sessions,
+          needsHumanReview: true,
+          reviewReason: terminalReviewReason,
+          failureCategory,
+          totalCost,
+          totalDurationMs,
+          ...(totalTokenUsage && { totalTokenUsage }),
+          lite,
+          fullSuiteGatePassed: sharedState.fullSuiteGatePassed,
+        };
+        throw new Error("full-suite gate exhausted");
+      }
 
-    return {
-      success: false,
-      sessions,
-      needsHumanReview,
-      reviewReason,
-      failureCategory: "session-failure",
-      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0),
-      lite,
-    };
+      const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
+      const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
+      const session3 = await runTddSessionOp(
+        verifyTddOp,
+        options,
+        session3Ref,
+        verifierBundle,
+        getTddSessionBinding?.("verifier"),
+      );
+      sharedState.session3 = session3;
+      sessions.push(session3);
+      await recordTddSessionOutcome?.(session3);
+
+      return { output: session3, costUsd: session3.estimatedCostUsd + sharedState.fullSuiteGateCost };
+    },
+  });
+
+  // Construct CallContext for the builder
+  const callCtx = {
+    runtime:
+      (runtime as import("../runtime").NaxRuntime | undefined) ??
+      ({
+        configLoader: createConfigLoader(config),
+        agentManager,
+        sessionManager: {} as import("../session/types").ISessionManager,
+        projectDir: projectDir ?? workdir,
+        signal: new AbortController().signal,
+      } as import("../runtime").NaxRuntime),
+    packageView: (runtime as import("../runtime").NaxRuntime | undefined)?.packages?.repo() ?? {
+      packageDir: workdir,
+      relativeFromRoot: "",
+      config,
+      select<C>(selector: import("../config").ConfigSelector<C>): C {
+        return selector.select(config);
+      },
+    },
+    packageDir: workdir,
+    agentName: resolveDefaultAgent(config),
+  };
+
+  const plan: ExecutionPlan = builder.build(callCtx);
+  const result = await plan.run();
+
+  // Handle early exit from any slot
+  if (sharedState.earlyExitResult) {
+    await rollbackTddFailureIfNeeded(
+      shouldRollbackOnFailure,
+      workdir,
+      initialRef,
+      story.id,
+      sharedState.earlyExitResult.failureCategory as FailureCategory | undefined,
+    );
+    return sharedState.earlyExitResult;
   }
 
-  // Full-Suite Gate (v0.11 Rectification).
-  // Baseline must be green entering the run; the gate treats any post-implementer
-  // failure as story-caused (the file-modification filter from BUG-TC-001 was
-  // removed — see rectification-gate.ts header for the rationale).
-  const implementerBinding = getTddSessionBinding?.("implementer");
-  const fullSuiteGate = await runFullSuiteGate(
-    story,
-    config,
-    workdir,
-    agentManager,
-    implementerTier,
-    lite,
-    logger,
-    featureName,
-    projectDir,
-    implementerBinding?.sessionManager,
-    runtime,
-  );
-  const { cost: fullSuiteGateCost, fullSuiteGatePassed } = fullSuiteGate;
+  // AC7: Read phaseOutputs["verifier"] then apply readVerdict() and categorizeVerdict()
+  const verifierOutput = result.phaseOutputs["verifier"] as TddSessionResult | undefined;
 
-  if (fullSuiteGate.status === "rectification-exhausted") {
-    const failureCategory: FailureCategory = "full-suite-gate-exhausted";
-    const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + fullSuiteGateCost;
-    const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
-    const totalTokenUsage = sumTddTokenUsage(sessions);
-    const terminalReviewReason = "Full suite gate failed after rectification exhausted";
-    logger.warn("tdd", "Stopping before verifier because full-suite gate rectification exhausted", {
-      storyId: story.id,
-      attempts: fullSuiteGate.attempts,
-      failureCategory,
-    });
-    await rollbackTddFailureIfNeeded(shouldRollbackOnFailure, workdir, initialRef, story.id, failureCategory);
-    return {
-      success: false,
-      sessions,
-      needsHumanReview: true,
-      reviewReason: terminalReviewReason,
-      failureCategory,
-      totalCost,
-      totalDurationMs,
-      ...(totalTokenUsage && { totalTokenUsage }),
-      lite,
-      fullSuiteGatePassed,
-    };
-  }
-
-  // Session 3: Verifier
-  const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
-  const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
-  const session3 = await runTddSessionOp(
-    verifyTddOp,
-    options,
-    session3Ref,
-    verifierBundle,
-    getTddSessionBinding?.("verifier"),
-  );
-  sessions.push(session3);
-  await recordTddSessionOutcome?.(session3);
-
-  // T9: Verdict-based post-TDD verification
   const verdict = await readVerdict(workdir);
   await cleanupVerdict(workdir);
 
-  let allSuccessful = sessions.every((s) => s.success);
+  // Use verifier phase output as the primary success signal; fall back to session aggregate
+  let allSuccessful = verifierOutput !== undefined ? verifierOutput.success : sessions.every((s) => s.success);
   let finalFailureCategory: FailureCategory | undefined;
 
   if (verdict !== null) {
@@ -409,10 +477,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     }
   }
 
-  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + fullSuiteGateCost;
+  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0) + sharedState.fullSuiteGateCost;
   const totalDurationMs = sessions.reduce((sum, s) => sum + s.durationMs, 0);
   // #590: sum tokenUsage across all sessions so metrics.tracker emits a tokens block
-  // for TDD runs the same way single-session runs do.
   const totalTokenUsage = sumTddTokenUsage(sessions);
 
   logger.info("tdd", allSuccessful ? "[OK] Three-session TDD complete" : "[WARN] Three-session TDD needs review", {
@@ -425,56 +492,12 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     verdictAvailable: verdict !== null,
   });
 
-  // Package session results into an ExecutionPlan result for unified post-processing.
-  // The sessions ran above via runTddSessionOp; the builder here captures their
-  // outcomes via runner closures to produce a StoryOrchestratorResult.
-  // implementTddOp has narrower generic params than OrchestratorSlot<unknown>; runner overrides dispatch.
-  const plan: ExecutionPlan = new StoryOrchestratorBuilder()
-    .addImplementer({
-      op: implementTddOp as unknown as RunOperation<unknown, unknown, unknown>,
-      input: {},
-      runner: async (_ctx) => ({
-        output: { phaseOutputs: { "test-writer": session1, implementer: session2, verifier: session3 } },
-        costUsd: totalCost,
-      }),
-    })
-    .build({
-      // The runner override above returns pre-computed results so ctx fields are
-      // never accessed. Cast as NaxRuntime | undefined to safely handle the case
-      // where integration tests omit runtime (excluded from type-checking).
-      runtime:
-        (runtime as import("../runtime").NaxRuntime | undefined) ??
-        ({
-          configLoader: createConfigLoader(config),
-          agentManager,
-          sessionManager: {} as import("../session/types").ISessionManager,
-          projectDir: projectDir ?? workdir,
-          signal: new AbortController().signal,
-        } as import("../runtime").NaxRuntime),
-      packageView: (runtime as import("../runtime").NaxRuntime | undefined)?.packages.repo() ?? {
-        packageDir: workdir,
-        relativeFromRoot: "",
-        config,
-        select<C>(selector: import("../config").ConfigSelector<C>): C {
-          return selector.select(config);
-        },
-      },
-      packageDir: workdir,
-      agentName: resolveDefaultAgent(config),
-    });
-
-  const result = await plan.run();
-  const phaseOutputs = result.phaseOutputs;
-
-  // Verdict processing already done above (readVerdict + categorizeVerdict).
-  // result.success reflects whether the plan's runner threw.
+  // Rollback on failure if configured
   if (!result.success && config.tdd.rollbackOnFailure) {
     await rollbackToRef(workdir, initialRef);
   } else if (!allSuccessful && shouldRollbackOnFailure) {
     await rollbackTddFailureIfNeeded(true, workdir, initialRef, story.id, finalFailureCategory);
   }
-
-  void phaseOutputs;
 
   return {
     success: allSuccessful,
@@ -487,6 +510,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     totalDurationMs,
     ...(totalTokenUsage && { totalTokenUsage }),
     lite,
-    fullSuiteGatePassed,
+    fullSuiteGatePassed: sharedState.fullSuiteGatePassed,
   };
 }
