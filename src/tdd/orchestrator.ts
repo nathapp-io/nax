@@ -1,7 +1,7 @@
 /** Three-Session TDD Orchestrator */
 
 import { resolveDefaultAgent } from "../agents";
-import { resolveModelForAgent } from "../config";
+import { createConfigLoader, resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
 import type { ExecutionPlan } from "../execution/story-orchestrator";
@@ -439,8 +439,24 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       }),
     })
     .build({
-      runtime,
-      packageView: runtime.packages.repo(),
+      // The runner override above returns pre-computed results so ctx fields are
+      // never accessed. Cast as NaxRuntime | undefined to safely handle the case
+      // where integration tests omit runtime (excluded from type-checking).
+      runtime: ((runtime as import("../runtime").NaxRuntime | undefined) ?? ({
+        configLoader: createConfigLoader(config),
+        agentManager,
+        sessionManager: {} as import("../session/types").ISessionManager,
+        projectDir: projectDir ?? workdir,
+        signal: new AbortController().signal,
+      } as import("../runtime").NaxRuntime)),
+      packageView: (runtime as import("../runtime").NaxRuntime | undefined)?.packages.repo() ?? {
+        packageDir: workdir,
+        relativeFromRoot: "",
+        config,
+        select<C>(selector: import("../config").ConfigSelector<C>): C {
+          return selector.select(config);
+        },
+      },
       packageDir: workdir,
       agentName: resolveDefaultAgent(config),
     });
