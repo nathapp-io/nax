@@ -51,10 +51,12 @@ export type {
   RunOperation,
   VerifyContext,
 } from "./types";
-export { writeTddTestOp } from "./write-test";
-export type { TddRunOp } from "./write-test";
-export { implementTddOp } from "./implement";
-export { verifyTddOp } from "./verify";
+export { writeTddTestOp, testWriterOp } from "./write-test";
+export type { TestWriterInput, TestWriterOutput } from "./write-test";
+export { implementTddOp, implementerOp } from "./implement";
+export type { ImplementerInput, ImplementerOutput } from "./implement";
+export { verifyTddOp, verifierOp } from "./verify";
+export type { VerifierInput, VerifierOutput } from "./verify";
 export { autoApproveOp } from "./auto-approve";
 export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";
 export { groundOp } from "./ground";

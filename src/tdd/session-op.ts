@@ -1,28 +1,17 @@
-/**
- * TDD ops are minimal role tags consumed by runTddSession (src/tdd/session-runner.ts),
- * not full Operation<I, O, C> shapes. See ADR-020 Wave 3 §Step 5 — verify/recover
- * hooks live on Operation, so TDD's session-side recovery (when needed) belongs
- * in the orchestrator, not here. Migration to true callOp ops is deferred per
- * ADR-018 §5.3 amendment.
- */
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import type { ContextBundle } from "../context/engine";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
+import { implementTddOp, implementerOp, testWriterOp, verifierOp, verifyTddOp, writeTddTestOp } from "../operations";
 import type { UserStory } from "../prd";
+import type { NaxRuntime } from "../runtime";
+import type { SessionRole } from "../session/types";
 import { runTddSession } from "./session-runner";
 import type { TddSessionBinding } from "./session-runner";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
-/** Typed config object identifying which TDD session role to run */
-export interface TddRunOp {
-  readonly role: TddSessionRole;
-}
-
-export const writeTddTestOp: TddRunOp = { role: "test-writer" };
-export const implementTddOp: TddRunOp = { role: "implementer" };
-export const verifyTddOp: TddRunOp = { role: "verifier" };
+export { implementTddOp, implementerOp, verifyTddOp, verifierOp, writeTddTestOp, testWriterOp };
 
 /** Subset of ThreeSessionTddOptions needed by runTddSessionOp */
 export interface TddSessionOpOptions {
@@ -32,6 +21,8 @@ export interface TddSessionOpOptions {
   config: NaxConfig;
   workdir: string;
   modelTier: ModelTier;
+  /** Runtime for constructing CallContext when dispatching via callOp. */
+  runtime: NaxRuntime;
   featureName?: string;
   contextMarkdown?: string;
   featureContextMarkdown?: string;
@@ -43,13 +34,16 @@ export interface TddSessionOpOptions {
   dryRun?: boolean;
 }
 
+/** Op shape accepted by runTddSessionOp — matches RunOperation.session (uses broad SessionRole). */
+type TddSessionOp = { readonly session: { readonly role: SessionRole } };
+
 /**
  * Run a single TDD session for the given op (role).
  * Resolves per-role model tier, context inclusion, and isolation settings,
- * then delegates directly to runTddSession.
+ * then delegates to runTddSession.
  */
 export async function runTddSessionOp(
-  op: TddRunOp,
+  op: TddSessionOp,
   options: TddSessionOpOptions,
   beforeRef: string,
   contextBundle?: ContextBundle,
@@ -72,7 +66,7 @@ export async function runTddSessionOp(
     abortSignal,
   } = options;
 
-  const { role } = op;
+  const role = op.session.role as TddSessionRole;
 
   let tier: ModelTier;
   let includeContext: boolean;

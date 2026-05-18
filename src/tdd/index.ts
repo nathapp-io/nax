@@ -17,7 +17,6 @@ export { runThreeSessionTdd } from "./orchestrator";
 export { runThreeSessionTddFromCtx } from "./orchestrator-ctx";
 export { runFullSuiteGate } from "./rectification-gate";
 export { runTddSessionOp, writeTddTestOp, implementTddOp, verifyTddOp } from "./session-op";
-export type { TddRunOp } from "./session-op";
 export { cleanupProcessTree, getPgid } from "./cleanup";
 export type { VerifierVerdict, VerdictCategorization } from "./verdict";
 export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";
