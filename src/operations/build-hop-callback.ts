@@ -285,7 +285,11 @@ export function buildHopCallback(
       // STALE-RETRY: keep the handle open for the next attempt. The session stays
       // cached in _liveHandles; the subsequent hop (success, swap, or exhaustion)
       // either closes it in its own finally or SessionManager teardown handles it.
-      if (hopKind.kind !== "stale-retry") {
+      // keepOpen: callers that need session continuity across pipeline stages (e.g.
+      // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
+      // like implementerRectifyOp) set this flag so downstream stages can reuse the
+      // same ACP session via sessionManager.getLiveHandle().
+      if (hopKind.kind !== "stale-retry" && !resolvedRunOptions.keepOpen) {
         await sessionManager.closeSession(handle);
       }
     }
