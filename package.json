@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.67.0-canary.3",
+  "version": "0.67.0-canary.4",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -26,7 +26,7 @@
     "test": "AGENT=1 bun run scripts/run-tests.ts",
     "test:verbose": "bun run scripts/run-tests.ts",
     "test:bail": "AGENT=1 bun run scripts/run-tests.ts --bail",
-    "test:bail-verbose": "bun run scripts/run-tests.ts --bail",    
+    "test:bail-verbose": "bun run scripts/run-tests.ts --bail",
     "test:no-wrap": "bun test test/unit/ --timeout=5000 && bun test test/integration/ --timeout=5000 && bun test test/ui/ --timeout=5000",
     "test:watch": "bun test --watch",
     "test:unit": "bun test ./test/unit/ --timeout=60000",
