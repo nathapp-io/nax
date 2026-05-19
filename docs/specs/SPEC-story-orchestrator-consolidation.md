@@ -1,9 +1,9 @@
 # SPEC: Story Orchestrator Consolidation — One Builder Per Story
 
-**Parent spec:** [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (Phase 1 + Phase 2 / US-001–US-004)
+**Parent spec:** [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (Phase 1 + Phase 2 / US-001–US-004). Parent forward-references this spec from US-004 AC#9 (post-impl amendment, commit `3b35b5e9`).
 **Story ID:** US-005
 **Branch:** `refactor/story-orchestrator-consolidation`
-**Status:** Draft
+**Status:** Draft (revision 2 — addresses spec-review blockers, see §Revision History)
 
 ---
 
@@ -69,6 +69,15 @@ to `StoryOrchestratorBuilder`.
 - Short-circuit semantics: when `fullSuiteGateOp` returns `success: false`, `ExecutionPlan.run()`
   skips subsequent phases (verifier, review, rectification) — same rule as any phase returning
   `{ success: false }` under §2C/AC#5 of the parent spec.
+- **Internal rectification:** `fullSuiteGateOp` owns its own rectification loop in US-005
+  (preserved from current `runFullSuiteGate` behavior — calls `runRectificationLoop` on
+  attributable test failures). Folding this loop into the general post-implementer
+  rectification phase (so `runFixCycle` becomes the single rectification SSOT) is deferred
+  to US-006 — see [SPEC-rectification-unification.md](./SPEC-rectification-unification.md).
+  Rationale for the deferral: US-006 requires extending `addRectification`'s `cycle.validate`
+  to re-run the gate, a short-circuit carve-out, a `testFailure → Finding` adapter, and a
+  home for the gate's triage logic (defer-unattributable, counter-mismatch). Bundling that
+  into US-005 raises blast radius beyond "one builder per story."
 
 #### 1B. `addGreenfieldGate(input: GreenfieldGateInput)`
 
@@ -77,8 +86,19 @@ review when no tests exist (`tdd/orchestrator.ts:316-378`). Promote to a phase.
 
 - New op: `greenfieldGateOp: RunOperation<GreenfieldGateInput, GreenfieldGateOutput, TddConfig>`
   in `src/operations/greenfield-gate.ts`.
-- Input includes the test-writer's `filesChanged` (read from `phaseOutputs[testWriterOp.name]`
-  at slot-build time) and resolved test-file patterns.
+- **Input is self-contained — does NOT read prior phase outputs.** The gate's canonical
+  question is "do tests exist in the repo?" — answered by re-scanning the filesystem via
+  `isGreenfieldStory(story, workdir, patterns)` (`src/context/greenfield.ts:99`), not by
+  inspecting test-writer's `filesChanged`. The op runs after test-writer (positional), so
+  test-writer's disk effects are visible — same contract the verifier and full-suite gate
+  already rely on.
+  ```typescript
+  export interface GreenfieldGateInput {
+    readonly story: UserStory;
+    readonly workdir: string;
+    readonly resolvedTestPatterns: ResolvedTestPatterns;
+  }
+  ```
 - Output: `{ success: boolean, hasPreExistingTests: boolean, pauseReason?: string }`.
   `success: false` triggers the standard short-circuit; the wrapper inspects `pauseReason` to
   surface the human-review notification.
@@ -86,6 +106,12 @@ review when no tests exist (`tdd/orchestrator.ts:316-378`). Promote to a phase.
   ```
   test-writer → greenfield-gate → implementer → full-suite-gate → verifier → ...
   ```
+
+**Forward-compat note.** If a future phase truly requires structured upstream output (e.g.
+an acceptance-refinement phase consuming the implementer's exact diff), introduce an
+input-resolver slot variant at that point (Option A from the spec-review discussion).
+Until that need materialises, `OrchestratorSlot<I,O,C>` keeps its current shape — eager
+inputs only — and ops self-derive from filesystem/system state.
 
 After both gates land, `CANONICAL_ORDER` becomes the SSOT for canonical phase ordering — no
 wrapper executes phases in any other order.
@@ -95,17 +121,42 @@ wrapper executes phases in any other order.
 Replace the TDD branch in `pipeline/stages/execution.ts` with a strategy-driven builder
 configuration. Both `runThreeSessionTdd` and the single-session inline plan disappear.
 
+**Inputs envelope** — `buildPlanForStrategy` accepts a `PlanInputs` record. Each field is the
+typed input that the corresponding `addX` method expects (matches the `addX(input: I)`
+overload, not the `OrchestratorSlot` overload):
+
+```typescript
+export interface PlanInputs {
+  readonly testWriter: TestWriterInput;
+  readonly greenfieldGate: GreenfieldGateInput;
+  readonly implementer: ImplementerInput;
+  readonly fullSuiteGate: FullSuiteGateInput;
+  readonly verifier: VerifierInput;
+  readonly semanticReview: SemanticReviewInput;
+  readonly adversarialReview: AdversarialReviewInput;
+  readonly rectification: RectificationPhaseOptions;
+}
+```
+
+`testStrategy` is **not** on `NaxConfig` — it lives on `PipelineContext.routing.testStrategy`
+(`src/pipeline/types.ts:33`). The strategy is therefore passed in as a separate parameter,
+not derived from `config`.
+
 ```typescript
 // src/execution/build-plan-for-strategy.ts (new file)
+import type { ReviewCheckName } from "../review/types";
+import type { TestStrategy } from "../config/schema-types";
+import { shouldRunReview, shouldRunRectification } from "../operations/execution-gates";
+
 export function buildPlanForStrategy(
   ctx: CallContext,
   story: UserStory,
   config: NaxConfig,
+  testStrategy: TestStrategy,
   inputs: PlanInputs,
 ): ExecutionPlan {
   const b = new StoryOrchestratorBuilder();
-  const isTdd = config.testStrategy === "three-session-tdd"
-              || config.testStrategy === "three-session-tdd-lite";
+  const isTdd = testStrategy === "three-session-tdd" || testStrategy === "three-session-tdd-lite";
   const isRetry = (story.attempts ?? 0) > 0
               || (story.priorFailures ?? []).some((f) => f.stage === "review");
 
@@ -119,8 +170,11 @@ export function buildPlanForStrategy(
     b.addVerifier(inputs.verifier);
   }
   if (shouldRunReview(config)) {
-    if (config.review?.semantic?.enabled) b.addSemanticReview(inputs.semanticReview);
-    if (config.review?.adversarial?.enabled) b.addAdversarialReview(inputs.adversarialReview);
+    // Review check membership — not nested `.enabled` flags. `ReviewCheckName` includes
+    // "semantic" and "adversarial"; see src/review/types.ts:10.
+    const checks: readonly ReviewCheckName[] = config.review?.checks ?? [];
+    if (checks.includes("semantic")) b.addSemanticReview(inputs.semanticReview);
+    if (checks.includes("adversarial")) b.addAdversarialReview(inputs.adversarialReview);
   }
   if (shouldRunRectification(config)) {
     b.addRectification(inputs.rectification);
@@ -129,12 +183,16 @@ export function buildPlanForStrategy(
 }
 ```
 
-`pipeline/stages/execution.ts` collapses to:
+`pipeline/stages/execution.ts` collapses to (pseudocode — the helpers `assemblePlanInputs`,
+`applyPostRunInspection`, `decideStageAction` are introduced by US-005 in
+`src/execution/post-run.ts` and `src/execution/inputs.ts`):
 
 ```typescript
-const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, inputs);
+// PSEUDOCODE — helpers below land in US-005, not pre-existing.
+const inputs = assemblePlanInputs(ctx);
+const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);
 const result = await plan.run();
-applyPostRunInspection(ctx, result, isTdd);
+await applyPostRunInspection(ctx, result);
 return decideStageAction(result);
 ```
 
@@ -159,22 +217,35 @@ These are the only TDD-aware lines in the new wrapper. Everything else is strate
 
 US-005 retires the following:
 
-- `src/tdd/orchestrator.ts` — `runThreeSessionTdd` and `runTddSessionViaBuilder` are deleted.
-  The file may be kept as a thin re-export shim of `buildPlanForStrategy` for one release if
-  external callers exist; otherwise delete outright.
+- `src/tdd/orchestrator.ts` — `runThreeSessionTdd` and `runTddSessionViaBuilder` are deleted
+  outright; **no re-export shim**. Verified via grep on 2026-05-19: zero external consumers
+  (no `src/plugins/` imports, no `nax-dogfood` imports; only internal callers are
+  `src/tdd/orchestrator-ctx.ts` and `src/tdd/index.ts`, both of which are also being retired
+  or updated in US-005). Public API surface (`src/tdd/index.ts` barrel) loses the export in
+  the same commit.
 - `pipeline/stages/execution.ts` — the `if (isTddStrategy)` branch and the inline single-session
   plan construction are both replaced by the `buildPlanForStrategy` call.
-- `src/tdd/rectification-gate.ts` — `runFullSuiteGate` moves into `fullSuiteGateOp`'s `build` /
-  `parse` / `recover` triad. The file is deleted after migration.
+- `src/tdd/rectification-gate.ts` — `runFullSuiteGate`'s **detect + triage** logic moves into
+  `fullSuiteGateOp`'s `build` / `parse` / `recover` triad. The gate-internal **rectification
+  loop** (`runRectificationLoop` call site at `src/tdd/rectification-gate.ts:138`) is
+  preserved inside `fullSuiteGateOp` for US-005 — folding it into the general post-implementer
+  rectification phase is deferred to US-006 (see [SPEC-rectification-unification.md](./SPEC-rectification-unification.md)).
+  The file is deleted after migration.
 - `src/tdd/session-op.ts` `runTddSessionViaBuilder` legacy shim — already partially retired
   in US-003; finish removal.
 
 ### 5. Naming alignment
 
 After consolidation, the type `ThreeSessionTddResult` is misleading (there's no longer a
-TDD-specific result shape). Rename to `StoryExecutionResult` and move to
-`src/execution/types.ts`. The wrapper synthesises this from `StoryOrchestratorResult` +
-post-run inspection outputs.
+TDD-specific result shape). Rename to **`StoryRunResult`** and move to
+`src/execution/types.ts`. (`StoryRunResult` chosen over `StoryExecutionResult` to avoid
+visual collision with the builder's existing `StoryOrchestratorResult`.) The wrapper
+synthesises `StoryRunResult` from `StoryOrchestratorResult` + post-run inspection outputs.
+
+| Type | Owner | Purpose |
+|:---|:---|:---|
+| `StoryOrchestratorResult` | builder (`src/execution/story-orchestrator.ts`) | Raw phase dispatch result — `phaseOutputs`, `phaseCosts`, `success`, `durationMs` |
+| `StoryRunResult` | wrapper (`src/execution/types.ts`) | Wrapper-level result — adds `failureCategory`, `needsHumanReview`, `verdict`, `sessions`, etc. |
 
 ---
 
@@ -200,7 +271,9 @@ Implement Design §1–§5. Delete sites per §4.
 - `src/operations/full-suite-gate.ts` — new file
 - `src/operations/greenfield-gate.ts` — new file
 - `src/execution/build-plan-for-strategy.ts` — new file
-- `src/execution/types.ts` — `StoryExecutionResult` (renamed from `ThreeSessionTddResult`)
+- `src/execution/inputs.ts` — new file (`assemblePlanInputs(ctx): PlanInputs`)
+- `src/execution/post-run.ts` — new file (`applyPostRunInspection`, `decideStageAction`)
+- `src/execution/types.ts` — `StoryRunResult` (renamed from `ThreeSessionTddResult`); also `PlanInputs`
 - `src/operations/execution-gates.ts` — `shouldRunReview`, `shouldRunRectification` callers
 - `src/operations/{semantic,adversarial}-review.ts` — slot inputs unchanged from US-004
 - `src/findings/cycle.ts` — `runFixCycle` (consumed by §2D rectification; US-005 amendment 2
@@ -219,9 +292,11 @@ Implement Design §1–§5. Delete sites per §4.
 3. `ExecutionPlan.run()` short-circuits subsequent phases when any gate phase returns
    `{ success: false }` — verified by a unit test that adds a failing gate and asserts the
    verifier slot does not dispatch.
-4. `buildPlanForStrategy(ctx, story, config, inputs)` in `src/execution/build-plan-for-strategy.ts`
-   returns an `ExecutionPlan` whose configured slots match the strategy/config combination
-   per Design §2 — verified by table-driven tests over `(testStrategy, review.enabled,
+4. `buildPlanForStrategy(ctx, story, config, testStrategy, inputs)` in
+   `src/execution/build-plan-for-strategy.ts` returns an `ExecutionPlan` whose configured
+   slots match the strategy/config combination per Design §2. Review-slot gating reads
+   `config.review.checks: ReviewCheckName[]` membership (not nested `.enabled` flags).
+   Verified by table-driven tests over `(testStrategy, review.enabled, review.checks,
    rectification.enabled, isRetry)` permutations.
 5. `pipeline/stages/execution.ts` contains no `if (isTddStrategy)` branch that selects a
    sequencing implementation; the only strategy-dependent code is the input-construction +
@@ -234,11 +309,16 @@ Implement Design §1–§5. Delete sites per §4.
    concerns in Design §3 — verified by a grep test: no `await callOp(...)`, no
    `agentManager.*`, no `new SessionKeeper(...)` outside `buildPlanForStrategy` and op
    implementations.
-9. `ThreeSessionTddResult` is renamed to `StoryExecutionResult` and lives in
+9. `ThreeSessionTddResult` is renamed to `StoryRunResult` and lives in
    `src/execution/types.ts`. All importers updated; no `ThreeSessionTddResult` references remain.
-10. Adding a hypothetical new phase requires exactly two edits: (a) the new op file under
-    `src/operations/`, and (b) one `b.addX(...)` line in `buildPlanForStrategy`. Verified by
-    a documentation example in the SPEC plus a smoke test that exercises the example.
+10. Adding a new phase requires edits in **three places**, all in `src/execution/`: (a) the new
+    op file under `src/operations/<name>.ts`; (b) `StoryOrchestratorBuilder` — extend the
+    `PhaseKind` union, `InternalBuildState`, `CANONICAL_ORDER`, `collectOrderedPhases`, and
+    add the `addX` overload pair (single coordinated edit); (c) one `b.addX(...)` line in
+    `buildPlanForStrategy`. Verified by `test/unit/execution/builder-extensibility.test.ts`
+    that asserts these three sites are the only edit points (grep-based — fails if a new
+    phase appears in `tdd/orchestrator.ts` or `pipeline/stages/execution.ts`). Reducing this
+    to "two edits" via a registry-based builder is a separate follow-up (out of scope).
 
 ---
 
@@ -262,21 +342,30 @@ Implement Design §1–§5. Delete sites per §4.
 - **No changes to `SessionKeeper`, `callOp`, or middleware.** All retry / cost / session-reuse
   semantics inherit from US-002 / US-003.
 - **No changes to acceptance, plan, or decompose ops.** Out of scope.
-- **No new config keys.** Strategy resolution continues to read existing `testStrategy`,
-  `review.enabled`, `execution.rectification.enabled`.
+- **No new config keys.** Strategy resolution continues to read existing
+  `routing.testStrategy` (from `PipelineContext`), `review.enabled`, `review.checks`, and
+  `execution.rectification.enabled`.
 
 ---
 
 ## Open Questions
 
-1. **`addFullSuiteGate` strategy threading.** The current `runFullSuiteGate` accepts
-   rectification strategies. Should `fullSuiteGateOp` own its own rectification loop, or
-   should the gate phase emit failures into the post-implementer rectification phase that
-   already exists? Recommend: keep gate-internal rectification (it's about test-suite repair,
-   distinct from review-finding repair), document the boundary.
-2. **Re-export shim for `runThreeSessionTdd`.** Are there external nax consumers (plugins,
-   dogfood scripts) importing this symbol? If yes, keep a one-release deprecation shim. If
-   no, delete outright.
-3. **Naming: `StoryExecutionResult` vs `StoryOrchestratorResult`.** The builder already
-   returns `StoryOrchestratorResult`. The wrapper-level result needs a different name. Options:
-   `StoryRunResult`, `StoryWrapperResult`, `ExecutionStageResult`. Recommend `StoryRunResult`.
+1. ~~**`addFullSuiteGate` strategy threading.**~~ **Resolved (rev 3):** US-005 keeps
+   gate-internal rectification (Option α). Folding gate failures into the general
+   `addRectification` phase (Option β — single `runFixCycle` SSOT) is deferred to US-006
+   ([SPEC-rectification-unification.md](./SPEC-rectification-unification.md)). See §1A for
+   the deferral rationale.
+2. ~~**Re-export shim for `runThreeSessionTdd`.**~~ **Resolved (rev 3):** delete outright,
+   no shim. Verified zero external consumers via grep (see §4 first bullet).
+3. ~~**Naming: `StoryExecutionResult` vs `StoryOrchestratorResult`.**~~ **Resolved (rev 2):**
+   wrapper-level result is `StoryRunResult` (see §5).
+
+---
+
+## Revision History
+
+| Rev | Date | Change |
+|:---|:---|:---|
+| 1 | 2026-05-18 | Initial draft |
+| 2 | 2026-05-19 | Spec-review pass: greenfield gate self-derives from disk (Option F, no `phaseOutputs` read at slot-build time); review-slot gating uses `config.review.checks` membership (Option G, dropped nonexistent `.enabled` flags); `testStrategy` threaded as parameter (not on `NaxConfig`); `PlanInputs` typed explicitly; `assemblePlanInputs` / `applyPostRunInspection` / `decideStageAction` labelled as pseudocode (US-005 new code); AC#10 rewritten to match builder reality (3 edits, not 2); OQ3 resolved to `StoryRunResult`. |
+| 3 | 2026-05-19 | OQ1 resolved as α (US-005 keeps gate-internal rectification; β consolidation deferred to US-006 / SPEC-rectification-unification.md). OQ2 resolved as delete-no-shim (verified zero external consumers). |
