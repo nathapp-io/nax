@@ -3,7 +3,7 @@
   "feature": "story-orchestrator",
   "branchName": "refactor/story-orchestrator",
   "createdAt": "2026-05-18T06:48:30Z",
-  "updatedAt": "2026-05-19T01:39:16.444Z",
+  "updatedAt": "2026-05-19T03:14:02.196Z",
   "userStories": [
     {
       "id": "US-001",
@@ -170,9 +170,9 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 1,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "expert",

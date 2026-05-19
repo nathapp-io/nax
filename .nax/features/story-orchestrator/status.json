@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-19T01-39-16-340Z",
+    "feature": "story-orchestrator",
+    "startedAt": "2026-05-19T01:39:16.340Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 84992
+  },
+  "progress": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 4.675120390000001,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 1,
+  "updatedAt": "2026-05-19T03:14:31.648Z",
+  "durationMs": 5715308,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-19T03:14:30.849Z"
+    }
+  }
+}
