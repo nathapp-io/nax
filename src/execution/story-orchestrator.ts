@@ -10,7 +10,9 @@
 
 import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
-import type { FixStrategy } from "../findings";
+import { runFixCycle } from "../findings";
+import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
+import type { CallOpFn } from "../findings/cycle";
 import { getSafeLogger } from "../logger";
 import { callOp } from "../operations/call";
 import type { CallContext, RunOperation } from "../operations/types";
@@ -19,7 +21,7 @@ import { errorMessage } from "../utils/errors";
 
 // Captured at module init time so mock.module("@/operations") live-binding
 // updates (Bun 1.x global leak) cannot replace the reference used at runtime.
-export const _storyOrchestratorDeps = { callOp };
+export const _storyOrchestratorDeps = { callOp, runFixCycle };
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -271,73 +273,51 @@ async function runRectificationPhase(
   });
 
   try {
-    let attempts = 0;
-    let prevFailureCount = Number.POSITIVE_INFINITY;
+    // AC7: Delegate failure-type introspection to runFixCycle — the cycle is the
+    // single decision point for strategy selection, iteration counting, and bail predicates.
+    // abortOnIncreasingFailures is expressed as a bailWhen predicate on each strategy.
+    const strategies = opts.abortOnIncreasingFailures
+      ? opts.strategies.map((s) => ({
+          ...s,
+          bailWhen: (iterations: Iteration<Finding>[]) => {
+            const orig = s.bailWhen?.(iterations) ?? null;
+            if (orig !== null) return orig;
+            const last = iterations[iterations.length - 1];
+            if (!last) return null;
+            return last.findingsAfter.length > last.findingsBefore.length ? "failure count increased" : null;
+          },
+        }))
+      : opts.strategies;
 
-    while (attempts < opts.maxAttempts) {
-      const currentOutput = phaseOutputs[verifierOpName];
-      if (!isFailureOutput(currentOutput)) {
-        return true;
-      }
+    const cycle: FixCycle<Finding> = {
+      findings: extractFindings(phaseOutputs[verifierOpName]) as Finding[],
+      iterations: [],
+      strategies,
+      config: { maxAttemptsTotal: opts.maxAttempts, validatorRetries: 0 },
+      validate: async (_vCtx, _mode) => {
+        const verifierScope = ctx.runtime.costAggregator.openScope();
+        try {
+          const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
+          const newOutput = await _storyOrchestratorDeps.callOp(
+            verifierCtx,
+            verifierPhase.slot.op,
+            verifierPhase.slot.input,
+          );
+          phaseOutputs[verifierOpName] = newOutput;
+          phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
+          return extractFindings(newOutput) as Finding[];
+        } finally {
+          verifierScope.close();
+        }
+      },
+    };
 
-      const failures = extractFindings(currentOutput);
-      const failureCount = failures.length;
+    const cycleResult = await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "rectification", {
+      callOp: _storyOrchestratorDeps.callOp as CallOpFn,
+      logger,
+    });
 
-      if (opts.abortOnIncreasingFailures && failureCount > prevFailureCount) {
-        logger?.warn("story-orchestrator", "Aborting rectification: failure count increased", {
-          storyId: ctx.storyId,
-          prevFailureCount,
-          failureCount,
-        });
-        return false;
-      }
-
-      let strategiesRan = false;
-      for (const strategy of opts.strategies) {
-        const applicable = failures.filter((f) => strategy.appliesTo(f));
-        if (applicable.length === 0) continue;
-
-        const fixInput = strategy.buildInput(applicable, [], ctx as import("../findings").FixCycleContext);
-        await _storyOrchestratorDeps.callOp(ctx, strategy.fixOp as RunOperation<unknown, unknown, unknown>, fixInput);
-        strategiesRan = true;
-        break;
-      }
-
-      if (!strategiesRan) {
-        return false;
-      }
-
-      prevFailureCount = failureCount;
-      attempts++;
-
-      if (ctx.runtime.signal?.aborted) {
-        return false;
-      }
-
-      // Re-run verifier, tracking cost via a scoped aggregator.
-      const verifierScope = ctx.runtime.costAggregator.openScope();
-      try {
-        const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
-        const newOutput = await _storyOrchestratorDeps.callOp(
-          verifierCtx,
-          verifierPhase.slot.op,
-          verifierPhase.slot.input,
-        );
-        phaseOutputs[verifierOpName] = newOutput;
-        phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
-      } catch (err) {
-        logger?.error("story-orchestrator", "Verifier threw error during rectification", {
-          storyId: ctx.storyId,
-          phase: verifierOpName,
-          error: errorMessage(err),
-        });
-        return false;
-      } finally {
-        verifierScope.close();
-      }
-    }
-
-    return !isFailureOutput(phaseOutputs[verifierOpName]);
+    return cycleResult.exitReason === "resolved";
   } finally {
     await keeper.close();
   }
