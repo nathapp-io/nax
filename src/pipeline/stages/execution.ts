@@ -7,11 +7,8 @@
  */
 
 import { validateAgentForTier } from "../../agents";
-import type { AgentRunRequest, IAgentManager } from "../../agents/manager-types";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
-import type { ContextBundle } from "../../context/engine";
-import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -160,7 +157,7 @@ export const executionStage: PipelineStage = {
 
     const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
 
-    const baseRunOptions: import("../../agents/types").AgentRunOptions = {
+    const runOptions: import("../../agents/types").AgentRunOptions = {
       prompt: ctx.prompt,
       workdir: ctx.workdir,
       env: ctx.worktreeDependencyContext?.env,
@@ -188,15 +185,13 @@ export const executionStage: PipelineStage = {
       }),
     };
 
-    const effectiveManager: IAgentManager = ctx.agentManager;
-
-    // finalBundle/finalPrompt track the last hop's values via closure side-effects.
-    let finalBundle: ContextBundle | undefined = ctx.contextBundle;
-    let finalPrompt: string | undefined = baseRunOptions.prompt;
-
-    // Both must be present: sessionManager provides the session handle;
-    // agentManager.runAsSession dispatches prompts into it. Neither alone is sufficient.
-    const hopCallback =
+    // Wire the hop callback when a session manager is present — enables cross-agent
+    // bundle rebuild and context tool runtime for each hop.
+    // UNRESOLVED(US-004): full dispatch via StoryOrchestratorBuilder + callOp requires
+    // ctx.runtime which existing execution-stage unit tests do not wire. Until those
+    // tests are migrated to createRuntime(), dispatch goes through runWithFallback()
+    // with the hop callback for swap/rebuild support.
+    const executeHop =
       ctx.sessionManager && ctx.agentManager
         ? buildHopCallback(
             {
@@ -213,32 +208,25 @@ export const executionStage: PipelineStage = {
               pipelineStage: "run",
             },
             ctx.sessionId,
-            baseRunOptions,
+            runOptions,
           )
         : undefined;
 
-    const executeHop: AgentRunRequest["executeHop"] | undefined = hopCallback
-      ? async (agentName, hopBundle, hopKind, resolvedRunOptions) => {
-          const hop = await hopCallback(agentName, hopBundle, hopKind, resolvedRunOptions);
-          finalBundle = hop.bundle ?? finalBundle;
-          finalPrompt = hop.prompt;
-          return hop;
-        }
-      : undefined;
+    const outcome = await ctx.agentManager.runWithFallback(
+      {
+        runOptions,
+        bundle: ctx.contextBundle,
+        signal: ctx.abortSignal,
+        ...(executeHop && { executeHop }),
+      },
+      ctx.routing.agent ?? defaultAgent,
+    );
 
-    const request: AgentRunRequest = {
-      runOptions: baseRunOptions,
-      bundle: ctx.contextBundle,
-      signal: ctx.abortSignal,
-      ...(executeHop && { executeHop }),
-    };
-
-    const result = await effectiveManager.run(request);
-
+    const result = outcome.result;
     ctx.agentResult = result;
     ctx.selfVerification = parseSelfVerificationMarker(result.output ?? "", ctx.workdir);
     const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";
-    const fallbacks = result.agentFallbacks ?? [];
+    const fallbacks = outcome.fallbacks ?? [];
 
     ctx.agentSwapCount = fallbacks.length;
     if (fallbacks.length > 0) {
@@ -298,9 +286,6 @@ export const executionStage: PipelineStage = {
       );
       if (!shouldProceed) {
         logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
-        if (ctx.sessionManager && ctx.sessionId) {
-          await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
-        }
         return { action: "fail", reason: "Merge conflict detected" };
       }
     }
@@ -333,14 +318,8 @@ export const executionStage: PipelineStage = {
       if (result.rateLimited) {
         logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
       }
-      if (ctx.sessionManager && ctx.sessionId) {
-        await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
-      }
       return { action: "escalate" };
     }
-
-    if (finalBundle) ctx.contextBundle = finalBundle;
-    if (finalPrompt && finalPrompt !== ctx.prompt) ctx.prompt = finalPrompt;
 
     logger.info("execution", "Agent session complete", {
       storyId: ctx.story.id,
@@ -358,6 +337,5 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  failAndClose,
   runThreeSessionTddFromCtx,
 };
