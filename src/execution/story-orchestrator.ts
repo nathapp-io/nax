@@ -1,38 +1,24 @@
 import { NaxError } from "../errors";
-import type { FixCycleContext, FixStrategy } from "../findings";
+import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
+import { runFixCycle } from "../findings";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp, implementerOp, semanticReviewOp, testWriterOp, verifierOp } from "../operations";
 import type {
   AdversarialReviewInput,
   CallContext,
   ImplementerInput,
+  Operation,
   RunOperation,
   SemanticReviewInput,
   TestWriterInput,
   VerifierInput,
 } from "../operations";
 import { callOp } from "../operations/call";
-import type { ReviewCheckResult } from "../review/types";
 import { errorMessage } from "../utils/errors";
-
-// Mirrors findings/cycle.ts:selectExecutionGroup — exclusive strategy wins,
-// otherwise all co-run-sequential strategies run in declaration order.
-function selectExecutionGroup(
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O are opaque here
-  strategies: readonly FixStrategy<any, unknown, unknown, unknown>[],
-  failures: readonly ReviewCheckResult[],
-  // biome-ignore lint/suspicious/noExplicitAny: see above
-): FixStrategy<any, unknown, unknown, unknown>[] {
-  const active = strategies.filter((strategy) => failures.some((failure) => strategy.appliesTo(failure)));
-  if (active.length === 0) return [];
-  const exclusive = active.find((strategy) => !strategy.coRun || strategy.coRun === "exclusive");
-  if (exclusive) return [exclusive];
-  return active.filter((strategy) => strategy.coRun === "co-run-sequential");
-}
 
 export const _storyOrchestratorDeps = {
   callOp,
-  selectExecutionGroup,
+  runFixCycle,
 };
 
 export interface OrchestratorSlot<I, O, C> {
@@ -42,8 +28,8 @@ export interface OrchestratorSlot<I, O, C> {
 
 export interface RectificationPhaseOptions {
   readonly maxAttempts: number;
-  // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous here
-  readonly strategies: FixStrategy<any, unknown, unknown, unknown>[];
+  // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous over their fixOp input/output
+  readonly strategies: FixStrategy<Finding, any, any, any>[];
   readonly abortOnIncreasingFailures: boolean;
 }
 
@@ -125,50 +111,37 @@ function phasePassed(output: unknown): boolean {
   return true;
 }
 
-function collectReviewFailures(output: unknown, check: ReviewCheckResult["check"]): ReviewCheckResult[] {
+/**
+ * Extract structured Findings from a phase output. Each op produces `findings: Finding[]`
+ * in its parsed envelope (verifierOp / semanticReviewOp / adversarialReviewOp all conform);
+ * we only need to read the array when the phase did not pass.
+ */
+function extractPhaseFindings(output: unknown): Finding[] {
   if (output === null || output === undefined || typeof output !== "object") {
     return [];
   }
-
   const record = output as Record<string, unknown>;
-  const findings = Array.isArray(record.findings) ? record.findings : [];
+  const findings = Array.isArray(record.findings) ? (record.findings as Finding[]) : [];
   const success =
     "success" in record ? record.success === true : "passed" in record ? record.passed === true : findings.length === 0;
-
-  if (success) {
-    return [];
-  }
-
-  return [
-    {
-      check,
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: "",
-      durationMs: typeof record.durationMs === "number" ? record.durationMs : 0,
-      findings: findings as ReviewCheckResult["findings"],
-    },
-  ];
+  return success ? [] : findings;
 }
 
-function gatherRectificationFailures(
+function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
   verifierPhase: InternalPhase,
   semanticPhase: InternalPhase | undefined,
   adversarialPhase: InternalPhase | undefined,
-): ReviewCheckResult[] {
-  const failures: ReviewCheckResult[] = [];
-
-  failures.push(...collectReviewFailures(phaseOutputs[verifierPhase.slot.op.name], "test"));
+): Finding[] {
+  const findings: Finding[] = [];
+  findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
   if (semanticPhase) {
-    failures.push(...collectReviewFailures(phaseOutputs[semanticPhase.slot.op.name], "semantic"));
+    findings.push(...extractPhaseFindings(phaseOutputs[semanticPhase.slot.op.name]));
   }
   if (adversarialPhase) {
-    failures.push(...collectReviewFailures(phaseOutputs[adversarialPhase.slot.op.name], "adversarial"));
+    findings.push(...extractPhaseFindings(phaseOutputs[adversarialPhase.slot.op.name]));
   }
-
-  return failures;
+  return findings;
 }
 
 async function runPhase(
@@ -193,17 +166,48 @@ async function runPhase(
 }
 
 /**
- * Run the rectification loop.
+ * Wrap each strategy with a bailWhen predicate that fires when the last iteration's
+ * findingsAfter count exceeds its findingsBefore count. Preserves user-supplied bailWhen
+ * if present (user predicate wins). Returns the unchanged strategies when the option is off.
+ */
+function withIncreasingFailuresBail(
+  strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
+  enabled: boolean,
+): FixStrategy<Finding, unknown, unknown, unknown>[] {
+  if (!enabled) return strategies;
+  return strategies.map((strategy) => ({
+    ...strategy,
+    bailWhen: (iterations: Iteration<Finding>[]): string | null => {
+      const userReason = strategy.bailWhen?.(iterations) ?? null;
+      if (userReason !== null) return userReason;
+      const last = iterations[iterations.length - 1];
+      if (last && last.findingsAfter.length > last.findingsBefore.length) {
+        return `failure count increased: ${last.findingsBefore.length} -> ${last.findingsAfter.length}`;
+      }
+      return null;
+    },
+  }));
+}
+
+/**
+ * Run the rectification loop via `runFixCycle` (findings/cycle.ts) — the SSOT for
+ * strategy selection, per-strategy attempt caps, bail predicates, outcome
+ * classification, and iteration record-keeping. Replaces the ported
+ * `selectExecutionGroup` that previously lived here (silent-drift risk vs ADR-022).
  *
  * Per spec §2D:
- *  - Failures aggregate verifier + semantic + adversarial outputs (fed to strategies).
- *  - Termination/abort math keys on the verifier slot only — semantic/adversarial
- *    outputs are stale between iterations (only the verifier is re-run), so mixing
- *    them into the abort heuristic produced false positives (H4).
+ *  - Failures aggregate verifier + semantic + adversarial findings on entry (fed to
+ *    runFixCycle as initial `cycle.findings`).
+ *  - `cycle.validate` re-runs the verifier only — semantic/adversarial outputs are
+ *    stale between iterations, so the validator returns verifier-only findings to
+ *    drive termination math.
+ *  - `abortOnIncreasingFailures` is expressed as a per-strategy `bailWhen` wrapper
+ *    so runFixCycle exits with reason "bail-when" when failures regress.
  *  - Implementer warm-lifetime handle reuse is owned by callOp middleware via
  *    `implementerOp.session.lifetime === "warm"`; the orchestrator does not manage
- *    a separate SessionKeeper (the previous one was dead code — H3).
- *  - Strategy selection mirrors findings/cycle.ts:selectExecutionGroup (H2/M3).
+ *    a separate SessionKeeper.
+ *  - Each fix-op + verifier dispatch is wrapped in `runPhase` so per-phase cost and
+ *    phaseOutputs stay coherent with the rest of the plan.
  */
 async function runRectification(
   ctx: CallContext,
@@ -216,55 +220,52 @@ async function runRectification(
   if (!rectification || !verifierPhase) {
     return;
   }
-
-  const countVerifierFailures = (): number =>
-    collectReviewFailures(phaseOutputs[verifierPhase.slot.op.name], "test").length;
-
-  let priorVerifierFailureCount = countVerifierFailures();
-  let attempts = 0;
-
-  while (attempts < rectification.maxAttempts) {
-    if (ctx.runtime.signal?.aborted) {
-      return;
-    }
-
-    const failures = gatherRectificationFailures(
-      phaseOutputs,
-      verifierPhase,
-      state.semanticReview,
-      state.adversarialReview,
-    );
-    if (failures.length === 0) {
-      return;
-    }
-
-    const group = _storyOrchestratorDeps.selectExecutionGroup(rectification.strategies, failures);
-    if (group.length === 0) {
-      return;
-    }
-
-    for (const strategy of group) {
-      const relevant = failures.filter((failure) => strategy.appliesTo(failure));
-      const input = strategy.buildInput(relevant, [], ctx as FixCycleContext);
-      const fixPhase: InternalPhase = {
-        kind: "implementer",
-        slot: { op: strategy.fixOp as RunOperation<unknown, unknown, unknown>, input },
-      };
-      await runPhase(ctx, fixPhase, phaseCosts, phaseOutputs);
-    }
-    attempts += 1;
-
-    const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
-    if (phasePassed(verifierOutput)) {
-      return;
-    }
-
-    const nextVerifierFailureCount = countVerifierFailures();
-    if (rectification.abortOnIncreasingFailures && nextVerifierFailureCount > priorVerifierFailureCount) {
-      return;
-    }
-    priorVerifierFailureCount = nextVerifierFailureCount;
+  if (ctx.runtime.signal?.aborted) {
+    return;
   }
+
+  const initialFindings = gatherRectificationFindings(
+    phaseOutputs,
+    verifierPhase,
+    state.semanticReview,
+    state.adversarialReview,
+  );
+  if (initialFindings.length === 0) {
+    return;
+  }
+  if (!ctx.storyId) {
+    // runFixCycle requires storyId for parallel-log correlation.
+    return;
+  }
+
+  const wrappedCallOp = async <I, O, C>(cycleCtx: FixCycleContext, op: Operation<I, O, C>, input: I): Promise<O> => {
+    const phase: InternalPhase = {
+      kind: "implementer",
+      // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
+      // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
+      slot: { op: op as unknown as RunOperation<unknown, unknown, unknown>, input },
+    };
+    return (await runPhase(cycleCtx, phase, phaseCosts, phaseOutputs)) as O;
+  };
+
+  const cycle: FixCycle<Finding> = {
+    findings: [...initialFindings],
+    iterations: [],
+    strategies: withIncreasingFailuresBail(
+      rectification.strategies as FixStrategy<Finding, unknown, unknown, unknown>[],
+      rectification.abortOnIncreasingFailures,
+    ),
+    config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
+    validate: async (_validateCtx) => {
+      if (ctx.runtime.signal?.aborted) return [];
+      await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
+      return extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]);
+    },
+  };
+
+  await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "story-orchestrator-rectification", {
+    callOp: wrappedCallOp,
+  });
 }
 
 export class ExecutionPlan {

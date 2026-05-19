@@ -409,12 +409,16 @@ export interface RectificationPhaseOptions {
    `abortOnIncreasingFailures && newFailureCount > prevFailureCount`, or when the abort
    signal fires.
 
-**Session lifecycle:** the rectification phase owns **one** `SessionKeeper` instance for the
-implementer session, constructed at phase entry and closed in `.finally()`. The keeper is
-threaded into each iteration's `callOp` via the implementer op's warm-lifetime session
-(`implementerOp.session.lifetime === "warm"` causes `callOp` to set `keepOpen: true` —
-session-keeper reuses the live handle via `getLiveHandle`). The verifier and test-writer
-ops are `fresh` and open/close their own sessions per iteration.
+**Session lifecycle:** implementer session reuse across rectification iterations is owned by
+`callOp` middleware via `implementerOp.session.lifetime === "warm"`. The orchestrator does
+**not** construct a `SessionKeeper` — adding one in the builder duplicates the warm-lifetime
+contract already enforced at the operations layer and violates §2C ("builder is a pure
+dispatcher over ops"). The verifier and test-writer ops are `fresh` and open/close their own
+sessions per iteration via the same callOp middleware.
+
+`SessionKeeper` remains the SSOT for the legacy `rectification-loop.ts` and
+`rectification-gate.ts` call sites (per US-002). Those sites do not flow through `callOp` and
+therefore manage their own handle lifecycle.
 
 **Verdict consumption:** the rectification phase reads `phaseOutputs["verifier"]` for its
 fix decision but does not call `readVerdict()` or `categorizeVerdict()` — those remain in
@@ -657,6 +661,6 @@ Keep behaviour tests:
 - `ExecutionPlan.run()` returns `StoryOrchestratorResult.success === false` (no throw) when any op returns `{ success: false }`; thrown errors are logged with `{ storyId, phase: op.name, error }` and propagated
 - `StoryOrchestratorResult` captures per-slot costs in `phaseCosts` (keyed by `op.name`), their sum as `totalCostUsd`, and parsed phase outputs in `phaseOutputs` (keyed by `op.name`, typed as `Record<string, unknown>` with read-site narrowing)
 - `addRectification(opts)` loops per §2D: reads failures from `phaseOutputs[verifierOp.name]`, resolves the fix via `runFixCycle(opts.strategies, …)`, dispatches the chosen op via `callOp`, re-runs the verifier, and terminates on success / `maxAttempts` / `abortOnIncreasingFailures` / abort signal
-- The rectification phase owns one `SessionKeeper` instance for the implementer session (constructed at phase entry, closed in `.finally()`); reuses the warm-lifetime implementer handle across iterations
-- Both `execution.ts` and `tdd/orchestrator.ts` replace their internal session loops with `StoryOrchestratorBuilder` — no residual `if (isTddStrategy)` branch
+- The rectification phase does **not** construct a `SessionKeeper`; implementer session reuse across iterations is owned by `callOp` middleware via `implementerOp.session.lifetime === "warm"` (see §2D Session lifecycle). `SessionKeeper` remains the SSOT for the legacy `rectification-loop.ts` / `rectification-gate.ts` call sites per US-002
+- Both `execution.ts` (single-session) and `tdd/orchestrator.ts` (TDD) dispatch every agent phase through `StoryOrchestratorBuilder`. The `if (isTddStrategy)` branch in `pipeline/stages/execution.ts` is retained as a wrapper-selection switch — it routes to the appropriate wrapper, neither wrapper bypasses the builder. Eliminating the branch entirely is tracked separately as [SPEC-story-orchestrator-consolidation.md](./SPEC-story-orchestrator-consolidation.md) (US-005)
 - `tdd/orchestrator.ts` retains rollback, verdict reading, isolation surfacing, greenfield-no-tests detection, `priorFailures` review-escalation skip, and the full-suite gate — none of these appear inside the builder or any op
