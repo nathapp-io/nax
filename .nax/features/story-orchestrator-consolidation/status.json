@@ -1,36 +1,37 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-19T09-30-08-119Z",
+    "id": "run-2026-05-19T09-43-50-572Z",
     "feature": "story-orchestrator-consolidation",
-    "startedAt": "2026-05-19T09:30:08.119Z",
+    "startedAt": "2026-05-19T09:43:50.572Z",
     "status": "failed",
     "dryRun": false,
-    "pid": 14136
+    "pid": 21405
   },
   "progress": {
     "total": 5,
-    "passed": 1,
+    "passed": 4,
     "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 0
   },
   "cost": {
-    "spent": 0.48693844000000003,
+    "spent": 14.554208030000003,
     "limit": 50
   },
   "current": null,
-  "iterations": 2,
-  "updatedAt": "2026-05-19T09:38:47.774Z",
-  "durationMs": 519655,
+  "iterations": 6,
+  "updatedAt": "2026-05-19T12:56:48.062Z",
+  "durationMs": 11577490,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-19T09:38:46.914Z"
+      "skipped": true,
+      "lastRunAt": "2026-05-19T12:56:47.135Z"
     }
   }
 }

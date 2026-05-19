@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T12:38:39.197Z",
+  "updatedAt": "2026-05-19T12:56:46.354Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -238,9 +238,9 @@
       "dependencies": [
         "US-005.S4"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [
         {
           "fromTier": "balanced",
