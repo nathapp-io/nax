@@ -11,8 +11,7 @@ export {
   VerdictCategorization,
   VerifierVerdict,
 } from "./api-surface";
-// ThreeSessionTddResult is kept as a type-only re-export for any remaining
-// callers; it is intentionally absent from the runtime module.
+// ThreeSessionTddResult kept as a type-only backward-compat re-export; absent from the runtime module.
 export type { ThreeSessionTddResult } from "./types";
 export { isTestFile } from "../test-runners";
 export {

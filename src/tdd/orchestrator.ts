@@ -21,10 +21,10 @@ import { assembleTddSessionResult } from "./session-op";
 import { rollbackToRef, truncateTestOutput } from "./session-runner";
 import type {
   FailureCategory,
+  ThreeSessionTddResult as StoryRunResult,
   TddSessionResult,
   TddSessionRole,
   ThreeSessionTddOptions,
-  ThreeSessionTddResult,
 } from "./types";
 import { sumTddTokenUsage } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
@@ -143,7 +143,7 @@ async function runTddSessionViaBuilder<I, O, C>(
 /**
  * Run the full three-session TDD pipeline for a user story.
  */
-export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<ThreeSessionTddResult> {
+export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<StoryRunResult> {
   const {
     agent: _agent,
     story,

@@ -4,12 +4,12 @@ import type { PipelineContext } from "../pipeline/types";
 import { appendScratchEntry, readDigestFile, writeDigestFile } from "../session/scratch-writer";
 import { errorMessage } from "../utils/errors";
 import { runThreeSessionTdd } from "./orchestrator";
-import type { TddSessionRole, ThreeSessionTddOptions, ThreeSessionTddResult } from "./types";
+import type { ThreeSessionTddResult as StoryRunResult, TddSessionRole, ThreeSessionTddOptions } from "./types";
 
 export async function runThreeSessionTddFromCtx(
   ctx: PipelineContext,
   opts: { agent: AgentAdapter; dryRun?: boolean; lite?: boolean },
-): Promise<ThreeSessionTddResult> {
+): Promise<StoryRunResult> {
   let tddContextBundles: ThreeSessionTddOptions["tddContextBundles"];
   let getTddContextBundle: ThreeSessionTddOptions["getTddContextBundle"];
   let recordTddSessionOutcome: ThreeSessionTddOptions["recordTddSessionOutcome"];
