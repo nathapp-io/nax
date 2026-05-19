@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T09:43:50.677Z",
+  "updatedAt": "2026-05-19T09:52:43.444Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -72,14 +72,21 @@
       ],
       "status": "pending",
       "passes": false,
-      "attempts": 2,
-      "escalations": [],
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC3 requires `assemblePlanInputs` to throw when resolved test patterns are missing, but the test at `test/unit/execution/plan-inputs.test.ts:212-220` explicitly asserts the function succeeds without test patterns (comment: \"Test pattern validation is deferred to downstream orchestrator setup\"). These two requirements are mutually exclusive and cannot both be satisfied without modifying test behavior.",
+          "timestamp": "2026-05-19T09:52:41.409Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/inputs.ts",
@@ -87,8 +94,41 @@
         "src/pipeline/types.ts",
         "src/errors.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 3 failed with model tier: balanced: Reviewer contradiction: AC3 requires `assemblePlanInputs` to throw when resolved test patterns are missing, but the test at `test/unit/execution/plan-inputs.test.ts:212-220` explicitly asserts the function succeeds without test patterns (comment: \"Test pattern validation is deferred to downstream orchestrator setup\"). These two requirements are mutually exclusive and cannot both be satisfied without modifying test behavior."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 3,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/execution/plan-inputs.ts",
+              "line": 59,
+              "message": "AC3 requires that missing resolved test patterns produce a deterministic structured failure. The implementation explicitly defers test pattern validation to the downstream orchestrator (line 59: 'Test pattern validation is deferred to the downstream orchestrator'). The function returns a valid PlanInputs even when no test patterns have been resolved, producing no failure. The unit test at plan-inputs.test.ts:82-86 confirms this: 'Test pattern validation is deferred to downstream orchestrator setup — assemblePlanInputs validates only the boundary contract.' This is an intentional design deviation from the AC.",
+              "suggestion": "Either add explicit validation for resolved test patterns (e.g., accept them as a parameter and throw NaxError when missing), or update the AC to reflect the deferred design.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "read src/execution/plan-inputs.ts",
+                  "file": "src/execution/plan-inputs.ts",
+                  "line": 59,
+                  "observed": " * Test pattern validation is deferred to the downstream orchestrator (see AC3 rationale in\n * the test file)."
+                },
+                "acQuote": "Missing resolved test patterns produces a deterministic structured failure (no implicit non-null assertion behavior).",
+                "acIndex": 3
+              }
+            }
+          ],
+          "cost": 0.46875522000000003,
+          "timestamp": "2026-05-19T09:52:41.409Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "497b8c20130efea5363546e6e419eca22314fdd9"
     },
