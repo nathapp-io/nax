@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T12:59:28.699Z",
+  "updatedAt": "2026-05-19T14:15:29.230Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -238,9 +238,9 @@
       "dependencies": [
         "US-005.S4"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 1,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "complex",
@@ -269,7 +269,8 @@
         }
       ],
       "storyPoints": 1,
-      "storyGitRef": "9c4449a60aa6eeafb78077cff948bf4cc70e7a03"
+      "storyGitRef": "9c4449a60aa6eeafb78077cff948bf4cc70e7a03",
+      "failureStage": "autofix"
     }
   ],
   "analysis": "This PRD uses PRD-CD as the baseline architecture and consolidation direction, while importing two safeguards from PRD-CC: (1) preserve richer full-suite gate failure status taxonomy and recovery semantics for accurate triage, and (2) explicitly validate PlanInputs assembly boundaries to prevent null/undefined propagation using a canonical NaxError contract. Work is split into 5 incremental, mergeable slices to reduce blast radius: gate promotion, input validation boundary, strategy plan builder, execution-stage collapse, and legacy-surface retirement/test cleanup."
