@@ -2,10 +2,20 @@ import { NaxError } from "../errors";
 import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
 import { runFixCycle } from "../findings";
 import { getSafeLogger } from "../logger";
-import { adversarialReviewOp, implementerOp, semanticReviewOp, testWriterOp, verifierOp } from "../operations";
+import {
+  adversarialReviewOp,
+  fullSuiteGateOp,
+  greenfieldGateOp,
+  implementerOp,
+  semanticReviewOp,
+  testWriterOp,
+  verifierOp,
+} from "../operations";
 import type {
   AdversarialReviewInput,
   CallContext,
+  FullSuiteGateInput,
+  GreenfieldGateInput,
   ImplementerInput,
   Operation,
   RunOperation,
@@ -41,7 +51,14 @@ export interface StoryOrchestratorResult {
   readonly phaseOutputs: Record<string, unknown>;
 }
 
-type PhaseKind = "test-writer" | "implementer" | "verifier" | "semantic-review" | "adversarial-review";
+type PhaseKind =
+  | "test-writer"
+  | "greenfield-gate"
+  | "implementer"
+  | "full-suite-gate"
+  | "verifier"
+  | "semantic-review"
+  | "adversarial-review";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
 type AnySlot = { op: RunOperation<any, any, any>; input: unknown };
 
@@ -53,6 +70,8 @@ interface InternalPhase {
 interface InternalBuildState {
   implementer?: InternalPhase;
   testWriter?: InternalPhase;
+  greenfieldGate?: InternalPhase;
+  fullSuiteGate?: InternalPhase;
   verifier?: InternalPhase;
   semanticReview?: InternalPhase;
   adversarialReview?: InternalPhase;
@@ -61,7 +80,9 @@ interface InternalBuildState {
 
 const CANONICAL_ORDER: readonly PhaseKind[] = [
   "test-writer",
+  "greenfield-gate",
   "implementer",
+  "full-suite-gate",
   "verifier",
   "semantic-review",
   "adversarial-review",
@@ -79,7 +100,9 @@ function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
 
 function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): void {
   if (kind === "test-writer") state.testWriter = { kind, slot };
+  else if (kind === "greenfield-gate") state.greenfieldGate = { kind, slot };
   else if (kind === "implementer") state.implementer = { kind, slot };
+  else if (kind === "full-suite-gate") state.fullSuiteGate = { kind, slot };
   else if (kind === "verifier") state.verifier = { kind, slot };
   else if (kind === "semantic-review") state.semanticReview = { kind, slot };
   else state.adversarialReview = { kind, slot };
@@ -88,7 +111,9 @@ function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): vo
 function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
   return CANONICAL_ORDER.flatMap((kind) => {
     if (kind === "test-writer" && state.testWriter) return [state.testWriter];
+    if (kind === "greenfield-gate" && state.greenfieldGate) return [state.greenfieldGate];
     if (kind === "implementer" && state.implementer) return [state.implementer];
+    if (kind === "full-suite-gate" && state.fullSuiteGate) return [state.fullSuiteGate];
     if (kind === "verifier" && state.verifier) return [state.verifier];
     if (kind === "semantic-review" && state.semanticReview) return [state.semanticReview];
     if (kind === "adversarial-review" && state.adversarialReview) return [state.adversarialReview];
@@ -291,6 +316,15 @@ export class ExecutionPlan {
         });
         throw error;
       }
+
+      // Short-circuit on gate failures (AC2: gates and other phases that return success=false halt execution)
+      if (
+        (phase.kind === "greenfield-gate" || phase.kind === "full-suite-gate") &&
+        !phasePassed(phaseOutputs[phase.slot.op.name])
+      ) {
+        // Gate failed, stop executing remaining phases
+        break;
+      }
     }
 
     await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
@@ -328,10 +362,24 @@ export class StoryOrchestratorBuilder {
     return this;
   }
 
+  addGreenfieldGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addGreenfieldGate(input: GreenfieldGateInput): this;
+  addGreenfieldGate(value: GreenfieldGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "greenfield-gate", isSlot(value) ? value : { op: greenfieldGateOp, input: value });
+    return this;
+  }
+
   addVerifier<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
   addVerifier(input: VerifierInput): this;
   addVerifier(value: VerifierInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "verifier", isSlot(value) ? value : { op: verifierOp, input: value });
+    return this;
+  }
+
+  addFullSuiteGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addFullSuiteGate(input: FullSuiteGateInput): this;
+  addFullSuiteGate(value: FullSuiteGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "full-suite-gate", isSlot(value) ? value : { op: fullSuiteGateOp, input: value });
     return this;
   }
 

@@ -71,3 +71,7 @@ export {
   shouldRunRectification,
   executionGatesConfigSelector,
 } from "./execution-gates";
+export { greenfieldGateOp } from "./greenfield-gate";
+export type { GreenfieldGateInput, GreenfieldGateOutput } from "./greenfield-gate";
+export { fullSuiteGateOp } from "./full-suite-gate";
+export type { FullSuiteGateInput, FullSuiteGateOutput, FullSuiteGateStatus } from "./full-suite-gate";
