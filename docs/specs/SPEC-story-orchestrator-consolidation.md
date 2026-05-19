@@ -3,7 +3,7 @@
 **Parent spec:** [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (Phase 1 + Phase 2 / US-001–US-004). Parent forward-references this spec from US-004 AC#9 (post-impl amendment, commit `3b35b5e9`).
 **Story ID:** US-005
 **Branch:** `refactor/story-orchestrator-consolidation`
-**Status:** Draft (revision 2 — addresses spec-review blockers, see §Revision History)
+**Status:** Draft (revision 4 — see §Revision History)
 
 ---
 
@@ -70,8 +70,8 @@ to `StoryOrchestratorBuilder`.
   skips subsequent phases (verifier, review, rectification) — same rule as any phase returning
   `{ success: false }` under §2C/AC#5 of the parent spec.
 - **Internal rectification:** `fullSuiteGateOp` owns its own rectification loop in US-005
-  (preserved from current `runFullSuiteGate` behavior — calls `runRectificationLoop` on
-  attributable test failures). Folding this loop into the general post-implementer
+  (preserved from current `runFullSuiteGate` behavior — the `runRectificationLoop` call site
+  in `src/tdd/rectification-gate.ts`). Folding this loop into the general post-implementer
   rectification phase (so `runFixCycle` becomes the single rectification SSOT) is deferred
   to US-006 — see [SPEC-rectification-unification.md](./SPEC-rectification-unification.md).
   Rationale for the deferral: US-006 requires extending `addRectification`'s `cycle.validate`
@@ -218,16 +218,37 @@ These are the only TDD-aware lines in the new wrapper. Everything else is strate
 US-005 retires the following:
 
 - `src/tdd/orchestrator.ts` — `runThreeSessionTdd` and `runTddSessionViaBuilder` are deleted
-  outright; **no re-export shim**. Verified via grep on 2026-05-19: zero external consumers
-  (no `src/plugins/` imports, no `nax-dogfood` imports; only internal callers are
-  `src/tdd/orchestrator-ctx.ts` and `src/tdd/index.ts`, both of which are also being retired
-  or updated in US-005). Public API surface (`src/tdd/index.ts` barrel) loses the export in
+  outright; **no re-export shim**. Consumer surface audit (grep on 2026-05-19 at HEAD
+  `a697ae07`):
+  - **Zero external consumers** — no `src/plugins/` imports, no `nax-dogfood` imports.
+  - **Internal production callers** (2 files) — `src/tdd/orchestrator-ctx.ts`,
+    `src/tdd/index.ts`. Both retired or updated in this story.
+  - **Internal test consumers** (9 files, ~68 references):
+    - `test/helpers/runtime.ts` — comment + example only; update docstring.
+    - `test/integration/tdd/tdd-orchestrator-core.test.ts`
+    - `test/integration/tdd/tdd-orchestrator-verdict.test.ts`
+    - `test/integration/tdd/tdd-orchestrator-lite.test.ts`
+    - `test/integration/tdd/tdd-orchestrator-failureCategory.test.ts`
+    - `test/integration/tdd/tdd-orchestrator-fallback.test.ts`
+    - `test/integration/tdd/rectification-gate-orchestrator.test.ts` — path-specific shape
+      assertion (`.toBeDefined()` on `runThreeSessionTdd`); **retire** outright.
+    - `test/unit/tdd/orchestrator-totals.test.ts`
+    - `test/unit/pipeline/storyid-events.test.ts`
+
+    Behavior tests (verdict semantics, failure categories, totals, lite mode, fallback,
+    story-id event emission) must be **ported** against `buildPlanForStrategy` — the same
+    behaviors still exist, only the entry point changes. Path-specific shape tests
+    (asserting the existence/signature of `runThreeSessionTdd` as an API) must be
+    **retired** per the test-architecture rule (parallel to the US-004 cleanup that retired
+    `execution-*.test.ts` files testing the removed dispatch path).
+
+  Public API surface (`src/tdd/index.ts` barrel) loses the `runThreeSessionTdd` export in
   the same commit.
 - `pipeline/stages/execution.ts` — the `if (isTddStrategy)` branch and the inline single-session
   plan construction are both replaced by the `buildPlanForStrategy` call.
 - `src/tdd/rectification-gate.ts` — `runFullSuiteGate`'s **detect + triage** logic moves into
   `fullSuiteGateOp`'s `build` / `parse` / `recover` triad. The gate-internal **rectification
-  loop** (`runRectificationLoop` call site at `src/tdd/rectification-gate.ts:138`) is
+  loop** (the `runRectificationLoop` call site in `src/tdd/rectification-gate.ts`) is
   preserved inside `fullSuiteGateOp` for US-005 — folding it into the general post-implementer
   rectification phase is deferred to US-006 (see [SPEC-rectification-unification.md](./SPEC-rectification-unification.md)).
   The file is deleted after migration.
@@ -302,7 +323,11 @@ Implement Design §1–§5. Delete sites per §4.
    sequencing implementation; the only strategy-dependent code is the input-construction +
    slot-add decisions inside `buildPlanForStrategy`.
 6. `runThreeSessionTdd` and `runTddSessionViaBuilder` are deleted from `src/tdd/orchestrator.ts`
-   (or the file is deleted entirely if no re-export shim is needed).
+   (or the file is deleted entirely; no re-export shim). The `runThreeSessionTdd` barrel
+   export is removed from `src/tdd/index.ts`. The 9 test files enumerated in §4 are
+   migrated: behavior tests rewritten against `buildPlanForStrategy`, path-specific shape
+   tests (e.g. `rectification-gate-orchestrator.test.ts`) retired. `grep -rn
+   "runThreeSessionTdd" src/ test/` returns zero matches after the story lands.
 7. `runFullSuiteGate` is deleted from `src/tdd/rectification-gate.ts`; the file is deleted
    after migration. All call sites route through `fullSuiteGateOp`.
 8. Wrapper post-run inspection is read-only over `phaseOutputs` and limited to the four
@@ -369,3 +394,4 @@ Implement Design §1–§5. Delete sites per §4.
 | 1 | 2026-05-18 | Initial draft |
 | 2 | 2026-05-19 | Spec-review pass: greenfield gate self-derives from disk (Option F, no `phaseOutputs` read at slot-build time); review-slot gating uses `config.review.checks` membership (Option G, dropped nonexistent `.enabled` flags); `testStrategy` threaded as parameter (not on `NaxConfig`); `PlanInputs` typed explicitly; `assemblePlanInputs` / `applyPostRunInspection` / `decideStageAction` labelled as pseudocode (US-005 new code); AC#10 rewritten to match builder reality (3 edits, not 2); OQ3 resolved to `StoryRunResult`. |
 | 3 | 2026-05-19 | OQ1 resolved as α (US-005 keeps gate-internal rectification; β consolidation deferred to US-006 / SPEC-rectification-unification.md). OQ2 resolved as delete-no-shim (verified zero external consumers). |
+| 4 | 2026-05-19 | Spec-review rev-3 fixes: §4 first bullet expanded with full consumer-surface audit (9 test files, ~68 references previously omitted — internal test consumers, not external; categorized into behavior tests to port vs path-specific shape tests to retire). AC#6 strengthened to require zero `runThreeSessionTdd` matches post-merge and to call out the test-file migration. Dropped brittle line-number cite in §1A (`src/tdd/rectification-gate.ts:138` → symbol cite). |
