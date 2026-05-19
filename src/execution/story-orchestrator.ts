@@ -8,11 +8,13 @@
  * session lifecycle (rectification SessionKeeper), and cost aggregation.
  */
 
+import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
 import type { FixStrategy } from "../findings";
 import { getSafeLogger } from "../logger";
 import { callOp } from "../operations/call";
 import type { CallContext, RunOperation } from "../operations/types";
+import { SessionKeeper, formatSessionName } from "../session";
 import { errorMessage } from "../utils/errors";
 
 // Captured at module init time so mock.module("@/operations") live-binding
@@ -163,22 +165,26 @@ async function runExecutionPlan(
 
   for (const phase of orderedPhases) {
     const opName = phase.slot.op.name;
-    phaseCosts[opName] = 0;
-
+    const scope = ctx.runtime.costAggregator.openScope();
     try {
-      const output = await _storyOrchestratorDeps.callOp(ctx, phase.slot.op, phase.slot.input);
+      const opCtx = { ...ctx, scopeId: scope.scopeId };
+      const output = await _storyOrchestratorDeps.callOp(opCtx, phase.slot.op, phase.slot.input);
+      phaseCosts[opName] = scope.snapshot().totalCostUsd;
       phaseOutputs[opName] = output;
 
       if (isFailureOutput(output)) {
         overallSuccess = false;
       }
     } catch (err) {
+      phaseCosts[opName] = scope.snapshot().totalCostUsd;
       logger?.error("story-orchestrator", "Phase threw unexpected error", {
         storyId: ctx.storyId,
         phase: opName,
         error: errorMessage(err),
       });
       throw err;
+    } finally {
+      scope.close();
     }
   }
 
@@ -244,65 +250,97 @@ async function runRectificationPhase(
     return false;
   }
 
-  let attempts = 0;
-  let prevFailureCount = Number.POSITIVE_INFINITY;
+  // AC8: one SessionKeeper for the implementer session, constructed at phase entry, closed in finally.
+  const config = ctx.runtime.configLoader.current();
+  const defaultAgent = ctx.runtime.agentManager.getDefault();
+  const keeper = new SessionKeeper(ctx.runtime.sessionManager, ctx.runtime.agentManager, {
+    sessionName: formatSessionName({
+      workdir: ctx.packageDir,
+      featureName: ctx.featureName ?? "",
+      storyId: ctx.storyId ?? "",
+      role: "implementer",
+    }),
+    defaultAgent,
+    role: "implementer",
+    pipelineStage: "rectification",
+    storyId: ctx.storyId ?? "",
+    workdir: ctx.packageDir,
+    modelDef: resolveModelForAgent(config.models, defaultAgent, "balanced", defaultAgent),
+    timeoutSeconds: config.execution?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
+    signal: ctx.runtime.signal,
+  });
 
-  while (attempts < opts.maxAttempts) {
-    const currentOutput = phaseOutputs[verifierOpName];
-    if (!isFailureOutput(currentOutput)) {
-      return true;
+  try {
+    let attempts = 0;
+    let prevFailureCount = Number.POSITIVE_INFINITY;
+
+    while (attempts < opts.maxAttempts) {
+      const currentOutput = phaseOutputs[verifierOpName];
+      if (!isFailureOutput(currentOutput)) {
+        return true;
+      }
+
+      const failures = extractFindings(currentOutput);
+      const failureCount = failures.length;
+
+      if (opts.abortOnIncreasingFailures && failureCount > prevFailureCount) {
+        logger?.warn("story-orchestrator", "Aborting rectification: failure count increased", {
+          storyId: ctx.storyId,
+          prevFailureCount,
+          failureCount,
+        });
+        return false;
+      }
+
+      let strategiesRan = false;
+      for (const strategy of opts.strategies) {
+        const applicable = failures.filter((f) => strategy.appliesTo(f));
+        if (applicable.length === 0) continue;
+
+        const fixInput = strategy.buildInput(applicable, [], ctx as import("../findings").FixCycleContext);
+        await _storyOrchestratorDeps.callOp(ctx, strategy.fixOp as RunOperation<unknown, unknown, unknown>, fixInput);
+        strategiesRan = true;
+        break;
+      }
+
+      if (!strategiesRan) {
+        return false;
+      }
+
+      prevFailureCount = failureCount;
+      attempts++;
+
+      if (ctx.runtime.signal?.aborted) {
+        return false;
+      }
+
+      // Re-run verifier, tracking cost via a scoped aggregator.
+      const verifierScope = ctx.runtime.costAggregator.openScope();
+      try {
+        const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
+        const newOutput = await _storyOrchestratorDeps.callOp(
+          verifierCtx,
+          verifierPhase.slot.op,
+          verifierPhase.slot.input,
+        );
+        phaseOutputs[verifierOpName] = newOutput;
+        phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
+      } catch (err) {
+        logger?.error("story-orchestrator", "Verifier threw error during rectification", {
+          storyId: ctx.storyId,
+          phase: verifierOpName,
+          error: errorMessage(err),
+        });
+        return false;
+      } finally {
+        verifierScope.close();
+      }
     }
 
-    const failures = extractFindings(currentOutput);
-    const failureCount = failures.length;
-
-    if (opts.abortOnIncreasingFailures && failureCount > prevFailureCount) {
-      logger?.warn("story-orchestrator", "Aborting rectification: failure count increased", {
-        storyId: ctx.storyId,
-        prevFailureCount,
-        failureCount,
-      });
-      return false;
-    }
-
-    let strategiesRan = false;
-    for (const strategy of opts.strategies) {
-      const applicable = failures.filter((f) => strategy.appliesTo(f));
-      if (applicable.length === 0) continue;
-
-      const fixInput = strategy.buildInput(applicable, [], ctx as import("../findings").FixCycleContext);
-      await _storyOrchestratorDeps.callOp(ctx, strategy.fixOp as RunOperation<unknown, unknown, unknown>, fixInput);
-      strategiesRan = true;
-      break;
-    }
-
-    if (!strategiesRan) {
-      return false;
-    }
-
-    prevFailureCount = failureCount;
-    attempts++;
-
-    if (ctx.runtime.signal?.aborted) {
-      return false;
-    }
-
-    // Re-run verifier.
-    try {
-      const newOutput = await _storyOrchestratorDeps.callOp(ctx, verifierPhase.slot.op, verifierPhase.slot.input);
-      phaseOutputs[verifierOpName] = newOutput;
-      phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + 0;
-    } catch (err) {
-      logger?.error("story-orchestrator", "Verifier threw error during rectification", {
-        storyId: ctx.storyId,
-        phase: verifierOpName,
-        error: errorMessage(err),
-      });
-      return false;
-    }
+    return !isFailureOutput(phaseOutputs[verifierOpName]);
+  } finally {
+    await keeper.close();
   }
-
-  return !isFailureOutput(phaseOutputs[verifierOpName]);
 }
 
 function extractFindings(output: unknown): unknown[] {

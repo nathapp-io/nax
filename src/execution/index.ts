@@ -37,6 +37,7 @@ export {
 } from "./lifecycle";
 export {
   StoryOrchestratorBuilder,
+  ExecutionPlan,
   _storyOrchestratorDeps,
   type OrchestratorSlot,
   type RectificationPhaseOptions,
