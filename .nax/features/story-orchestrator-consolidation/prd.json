@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T08:53:15.019Z",
+  "updatedAt": "2026-05-19T09:14:08.046Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -73,13 +73,20 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": [],
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: The AC4 finding asks to validate \"routing config, test command configuration, model tier mappings, TDD settings\" — but NaxConfigSchema applies Zod `.default()` to all of those fields, making them structurally guaranteed non-null in any properly-parsed NaxConfig. Adding those validations would (a) never trigger in practice, (b) contradict the Zod-schema-as-boundary principle, and (c) add untestable code paths (existing tests pass `context: undefined` and similar partial configs; no test exercises routing/quality/TDD as missing, and I cannot add tests). `agent.default` is the sole exception and is already validated.",
+          "timestamp": "2026-05-19T09:14:06.014Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/inputs.ts",
@@ -87,8 +94,41 @@
         "src/pipeline/types.ts",
         "src/errors.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: The AC4 finding asks to validate \"routing config, test command configuration, model tier mappings, TDD settings\" — but NaxConfigSchema applies Zod `.default()` to all of those fields, making them structurally guaranteed non-null in any properly-parsed NaxConfig. Adding those validations would (a) never trigger in practice, (b) contradict the Zod-schema-as-boundary principle, and (c) add untestable code paths (existing tests pass `context: undefined` and similar partial configs; no test exercises routing/quality/TDD as missing, and I cannot add tests). `agent.default` is the sole exception and is already validated."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/execution/plan-inputs.ts",
+              "line": 75,
+              "message": "AC4 still-blocking: Only config.agent.default is validated via a single guard (line 75). No validation exists for any other config fields required for slot input derivation — e.g., routing configuration (autoMode, routing), test command configuration (quality.commands.test), model tier mappings, execution limits, or TDD settings that downstream orchestrators consume. The JSDoc narrows the thrown contract to 'if config.agent.default is not set', which contradicts the AC's requirement for broader config validation related to slot input derivation.",
+              "suggestion": "Broaden config validation to cover all fields required for slot input derivation — e.g., validate routing strategy presence, test command configuration, model tier mappings, and any other config consumed by orchestrator slots. Fail with deterministic NaxError code and stage='execution-inputs' on each.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "read src/execution/plan-inputs.ts",
+                  "file": "src/execution/plan-inputs.ts",
+                  "line": 75,
+                  "observed": "  if (!config.agent?.default) {\n    throw new NaxError(\"Configuration error: agent.default is required\", \"CONFIG_INVALID\", {"
+                },
+                "acQuote": "Invalid or missing config required for slot input derivation produces a deterministic structured failure.",
+                "acIndex": 4
+              }
+            }
+          ],
+          "cost": 1.09299546,
+          "timestamp": "2026-05-19T09:14:06.014Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "497b8c20130efea5363546e6e419eca22314fdd9"
     },
