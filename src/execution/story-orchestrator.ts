@@ -1,6 +1,7 @@
 import { NaxError } from "../errors";
 import type { FixCycleContext, FixStrategy } from "../findings";
 import { getSafeLogger } from "../logger";
+import { resolveModelForAgent } from "../config";
 import { adversarialReviewOp, implementerOp, semanticReviewOp, testWriterOp, verifierOp } from "../operations";
 import type {
   AdversarialReviewInput,
@@ -13,6 +14,8 @@ import type {
 } from "../operations";
 import { callOp } from "../operations/call";
 import type { ReviewCheckResult } from "../review/types";
+import { formatSessionName } from "../runtime/session-name";
+import { SessionKeeper } from "../session/session-keeper";
 import { errorMessage } from "../utils/errors";
 
 type RectificationSelection = { op: RunOperation<unknown, unknown, unknown>; input: unknown } | null;
@@ -217,6 +220,29 @@ async function runRectification(
     return;
   }
 
+  const config = ctx.runtime.configLoader.current();
+  const defaultAgent = ctx.runtime.agentManager.getDefault();
+  const keeper = new SessionKeeper(ctx.runtime.sessionManager, ctx.runtime.agentManager, {
+    sessionName: formatSessionName({
+      workdir: ctx.packageDir,
+      featureName: ctx.featureName,
+      storyId: ctx.storyId,
+      role: "implementer",
+    }),
+    defaultAgent,
+    role: "implementer",
+    pipelineStage: "rectification",
+    storyId: ctx.storyId ?? "",
+    featureName: ctx.featureName,
+    workdir: ctx.packageDir,
+    projectDir: ctx.runtime.projectDir,
+    modelDef: resolveModelForAgent(config.models, ctx.agentName, "balanced", defaultAgent),
+    timeoutSeconds: config.execution.sessionTimeoutSeconds,
+    signal: ctx.runtime.signal,
+    maxTurns: config.agent?.maxInteractionTurns,
+  });
+
+  try {
   let priorFailureCount = gatherRectificationFailures(
     phaseOutputs,
     verifierPhase,
@@ -267,6 +293,9 @@ async function runRectification(
       return;
     }
     priorFailureCount = nextFailureCount;
+  }
+  } finally {
+    await keeper.close();
   }
 }
 

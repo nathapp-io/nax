@@ -8,13 +8,13 @@
 
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
-import { resolveModelForAgent } from "../../config";
 import { failAndClose } from "../../execution/session-manager-runtime";
+import { StoryOrchestratorBuilder } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
-import { buildHopCallback } from "../../operations/build-hop-callback";
-import { shouldKeepSessionOpen } from "../../operations/execution-gates";
+import type { CallContext } from "../../operations/types";
+import { implementerOp } from "../../operations/implement";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
 import { runThreeSessionTddFromCtx } from "../../tdd";
@@ -156,109 +156,74 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    const keepOpen = shouldKeepSessionOpen(ctx.config, "implementer");
-
-    const runOptions: import("../../agents/types").AgentRunOptions = {
-      prompt: ctx.prompt,
-      workdir: ctx.workdir,
-      env: ctx.worktreeDependencyContext?.env,
-      modelTier: effectiveTier,
-      modelDef: resolveModelForAgent(
-        ctx.rootConfig.models,
-        ctx.routing.agent ?? defaultAgent,
-        effectiveTier,
-        defaultAgent,
-      ),
-      timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      pipelineStage: "run",
-      config: ctx.config,
-      projectDir: ctx.projectDir,
-      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
-      abortSignal: ctx.abortSignal,
+    const interactionBridge = buildInteractionBridge(ctx.interaction, {
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
-      sessionRole: "implementer",
-      keepOpen,
-      interactionBridge: buildInteractionBridge(ctx.interaction, {
-        featureName: ctx.prd.feature,
-        storyId: ctx.story.id,
-        stage: "execution",
-      }),
+      stage: "execution",
+    });
+    if (!ctx.packageView) {
+      return { action: "fail", reason: "Package view unavailable for execution dispatch" };
+    }
+
+    const callCtx: CallContext = {
+      runtime: ctx.runtime,
+      packageView: ctx.packageView,
+      packageDir: ctx.workdir,
+      agentName: ctx.routing.agent ?? defaultAgent,
+      storyId: ctx.story.id,
+      featureName: ctx.prd.feature,
+      story: ctx.story,
+      ...(interactionBridge ? { interactionBridge } : {}),
     };
 
-    // Wire the hop callback when a session manager is present — enables cross-agent
-    // bundle rebuild and context tool runtime for each hop.
-    // UNRESOLVED(US-004): full dispatch via StoryOrchestratorBuilder + callOp requires
-    // ctx.runtime which existing execution-stage unit tests do not wire. Until those
-    // tests are migrated to createRuntime(), dispatch goes through runWithFallback()
-    // with the hop callback for swap/rebuild support.
-    let latestBundle = ctx.contextBundle;
-    let latestPrompt = ctx.prompt;
+    let capturedTokenUsage: import("../../agents/cost").TokenUsage | undefined;
+    let capturedResponse = "";
+    let capturedCostUsd = 0;
+    const unsubscribe =
+      ctx.runtime.dispatchEvents?.onDispatch((event) => {
+        if (event.tokenUsage) capturedTokenUsage = event.tokenUsage;
+        if (event.response) capturedResponse = event.response;
+        if (event.exactCostUsd !== undefined) capturedCostUsd += event.exactCostUsd;
+        else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
+      }) ?? (() => {});
 
-    const rawExecuteHop =
-      ctx.sessionManager && ctx.agentManager
-        ? buildHopCallback(
-            {
-              sessionManager: ctx.sessionManager,
-              agentManager: ctx.agentManager,
-              story: ctx.story,
-              config: ctx.config,
-              projectDir: ctx.projectDir,
-              featureName: ctx.prd.feature,
-              workdir: ctx.workdir,
-              effectiveTier,
-              defaultAgent,
-              contextToolRunCounter: ctx.contextToolRunCounter,
-              pipelineStage: "run",
-            },
-            ctx.sessionId,
-            runOptions,
-          )
-        : undefined;
-
-    const executeHop = rawExecuteHop
-      ? async (...args: Parameters<NonNullable<typeof rawExecuteHop>>) => {
-          const hopOutcome = await rawExecuteHop(...args);
-          latestBundle = hopOutcome.bundle ?? latestBundle;
-          latestPrompt = hopOutcome.prompt ?? latestPrompt;
-          return hopOutcome;
-        }
-      : undefined;
-
-    const outcome = await ctx.agentManager.runWithFallback(
-      {
-        runOptions,
-        bundle: ctx.contextBundle,
-        signal: ctx.abortSignal,
-        ...(executeHop && { executeHop }),
-      },
-      ctx.routing.agent ?? defaultAgent,
-    );
-
-    const result = outcome.result;
-    if (outcome.finalBundle ?? latestBundle) {
-      ctx.contextBundle = outcome.finalBundle ?? latestBundle;
+    let planResult: { phaseOutputs: Record<string, unknown>; phaseCosts: Record<string, number>; durationMs: number };
+    try {
+      const plan = new StoryOrchestratorBuilder()
+        .addImplementer({
+          op: implementerOp,
+          input: {
+            story: ctx.story,
+            contextMarkdown: ctx.prompt,
+            featureContextMarkdown: ctx.featureContextMarkdown,
+            constitution: ctx.constitution?.content,
+          },
+        })
+        .build(callCtx);
+      planResult = await plan.run();
+    } finally {
+      unsubscribe();
     }
-    if (outcome.finalPrompt ?? latestPrompt) {
-      ctx.prompt = outcome.finalPrompt ?? latestPrompt;
-    }
+
+    const implementerOutput = planResult.phaseOutputs[implementerOp.name] as {
+      success: boolean;
+      filesChanged?: string[];
+      estimatedCostUsd?: number;
+      durationMs?: number;
+    };
+    const result: AgentResult = {
+      success: implementerOutput?.success ?? false,
+      estimatedCostUsd: capturedCostUsd || planResult.phaseCosts[implementerOp.name] || 0,
+      rateLimited: false,
+      output: capturedResponse,
+      exitCode: implementerOutput?.success ? 0 : 1,
+      durationMs: implementerOutput?.durationMs ?? planResult.durationMs,
+      ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+    };
     ctx.agentResult = result;
     ctx.selfVerification = parseSelfVerificationMarker(result.output ?? "", ctx.workdir);
     const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";
-    const fallbacks = outcome.fallbacks ?? [];
-
-    ctx.agentSwapCount = fallbacks.length;
-    if (fallbacks.length > 0) {
-      ctx.agentFallbacks = fallbacks.map((f) => ({
-        storyId: f.storyId ?? ctx.story.id,
-        priorAgent: f.priorAgent,
-        newAgent: f.newAgent,
-        outcome: f.outcome,
-        category: f.category,
-        hop: f.hop,
-        costUsd: f.costUsd,
-      }));
-    }
+    ctx.agentSwapCount = 0;
 
     if (ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
       try {
