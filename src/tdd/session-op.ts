@@ -29,9 +29,111 @@ import type { NaxRuntime } from "../runtime";
 import type { SessionRole } from "../session/types";
 import { _sessionRunnerDeps } from "./session-runner";
 import type { TddSessionBinding } from "./session-runner";
-import type { TddSessionResult, TddSessionRole } from "./types";
+import type { IsolationCheck, TddSessionResult, TddSessionRole } from "./types";
 
 export { implementTddOp, implementerOp, verifyTddOp, verifierOp, writeTddTestOp, testWriterOp };
+
+/** Inputs for the shared post-dispatch TDD result assembler. */
+export interface AssembleTddSessionResultInput {
+  readonly role: TddSessionRole;
+  readonly story: UserStory;
+  readonly workdir: string;
+  readonly config: NaxConfig;
+  readonly beforeRef: string;
+  readonly lite: boolean;
+  readonly opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
+  readonly capturedResponse: string;
+  readonly capturedTokenUsage?: import("../agents/cost").TokenUsage;
+  readonly capturedCostUsd: number;
+  readonly startTime: number;
+  /** Builder path: prefer phase-reported duration; falls back to wall-clock. */
+  readonly planDurationMs?: number;
+}
+
+/**
+ * Shared post-dispatch chain consumed by both `runTddSessionOp` (legacy direct
+ * dispatch) and `runTddSessionViaBuilder` (StoryOrchestrator builder path):
+ *
+ *  1. autoCommitIfDirty so uncommitted agent edits land in git.
+ *  2. Isolation check (skipped in lite mode for test-writer/implementer).
+ *  3. selfVerification marker parse (skipped for verifier).
+ *  4. TddSessionResult assembly.
+ */
+export async function assembleTddSessionResult(input: AssembleTddSessionResultInput): Promise<TddSessionResult> {
+  const {
+    role,
+    story,
+    workdir,
+    config,
+    beforeRef,
+    lite,
+    opOutput,
+    capturedResponse,
+    capturedTokenUsage,
+    capturedCostUsd,
+    startTime,
+    planDurationMs,
+  } = input;
+
+  await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
+
+  const skipIsolation = lite && role !== "verifier";
+  const testFilePatterns =
+    typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
+      ? config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+
+  let isolation: IsolationCheck | undefined;
+  if (!skipIsolation) {
+    if (role === "test-writer") {
+      const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
+        workdir,
+        beforeRef,
+        allowedPaths,
+        testFilePatterns,
+      );
+    } else if (role === "implementer" || role === "verifier") {
+      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, beforeRef, testFilePatterns);
+    }
+  }
+
+  // Verifier inherits any isolation surfaced via the op's recover path
+  // (verifierOp.recover reads .nax-verifier-verdict.json).
+  if (!isolation && "isolation" in opOutput && opOutput.isolation) {
+    isolation = opOutput.isolation;
+  }
+
+  const filesChanged =
+    opOutput.filesChanged.length > 0
+      ? [...opOutput.filesChanged]
+      : await _sessionRunnerDeps.getChangedFiles(workdir, beforeRef);
+
+  const selfVerificationResult =
+    role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, workdir);
+  const selfVerificationFailed =
+    selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
+
+  if (isolation && !isolation.passed) {
+    getLogger().error("tdd", "Isolation violated", {
+      storyId: story.id,
+      role,
+      description: isolation.description,
+      violations: isolation.violations,
+    });
+  }
+
+  return {
+    role,
+    success: opOutput.success && (!isolation || isolation.passed) && !selfVerificationFailed,
+    filesChanged: filesChanged ?? [],
+    estimatedCostUsd: capturedCostUsd || opOutput.estimatedCostUsd,
+    durationMs: opOutput.durationMs || planDurationMs || Date.now() - startTime,
+    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+    ...(isolation ? { isolation } : {}),
+    ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
+  };
+}
 
 /** Subset of ThreeSessionTddOptions needed by runTddSessionOp */
 export interface TddSessionOpOptions {
@@ -146,69 +248,19 @@ export async function runTddSessionOp(
       opOutput = await callOp(ctx, verifierOp, input);
     }
 
-    // Post-dispatch checks: mirror the legacy `runTddSession` path so callOp
-    // dispatch produces equivalent TddSessionResults. Without these, isolation
-    // violations, uncommitted agent edits, and self-verification markers are
-    // silently dropped.
-    await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
-
-    const lite = options.lite ?? false;
-    const skipIsolation = lite && role !== "verifier";
-    const testFilePatterns =
-      typeof options.config.execution?.smartTestRunner === "object"
-        ? options.config.execution.smartTestRunner?.testFilePatterns
-        : undefined;
-
-    let isolation: import("./types").IsolationCheck | undefined;
-    if (!skipIsolation) {
-      if (role === "test-writer") {
-        const allowedPaths = options.config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
-        isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
-          workdir,
-          _beforeRef,
-          allowedPaths,
-          testFilePatterns,
-        );
-      } else if (role === "implementer" || role === "verifier") {
-        isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, _beforeRef, testFilePatterns);
-      }
-    }
-
-    // Verifier inherits any isolation surfaced via the op's recover path
-    // (verifierOp.recover reads .nax-verifier-verdict.json).
-    if (!isolation && "isolation" in opOutput && opOutput.isolation) {
-      isolation = opOutput.isolation;
-    }
-
-    const filesChanged =
-      opOutput.filesChanged.length > 0
-        ? opOutput.filesChanged
-        : await _sessionRunnerDeps.getChangedFiles(workdir, _beforeRef);
-
-    const selfVerificationResult =
-      role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, workdir);
-    const selfVerificationFailed =
-      selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
-
-    if (isolation && !isolation.passed) {
-      getLogger().error("tdd", "Isolation violated", {
-        storyId: story.id,
-        role,
-        description: isolation.description,
-        violations: isolation.violations,
-      });
-    }
-
-    return {
+    return await assembleTddSessionResult({
       role,
-      success: opOutput.success && (!isolation || isolation.passed) && !selfVerificationFailed,
-      filesChanged,
-      estimatedCostUsd: capturedCostUsd || opOutput.estimatedCostUsd,
-      durationMs: opOutput.durationMs || Date.now() - startTime,
-      ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
-      ...(isolation ? { isolation } : {}),
-      ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
-    };
+      story,
+      workdir,
+      config: options.config,
+      beforeRef: _beforeRef,
+      lite: options.lite ?? false,
+      opOutput,
+      capturedResponse,
+      ...(capturedTokenUsage ? { capturedTokenUsage } : {}),
+      capturedCostUsd,
+      startTime,
+    });
   } finally {
     unsubscribe();
     scope?.close();

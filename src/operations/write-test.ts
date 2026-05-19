@@ -13,7 +13,7 @@ export interface TestWriterInput {
 
 export interface TestWriterOutput {
   readonly success: boolean;
-  readonly filesChanged: string[];
+  readonly filesChanged: readonly string[];
   readonly estimatedCostUsd: number;
   readonly durationMs: number;
 }
@@ -37,16 +37,11 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
     };
   },
   parse(output, _input, _ctx): TestWriterOutput {
+    // Graceful degradation — parseSessionJsonOutput returns success=false on
+    // empty/unparseable output, so callers always see a valid envelope without
+    // requiring verify/recover.
     const envelope = parseSessionJsonOutput(output);
     return { ...envelope, estimatedCostUsd: 0, durationMs: 0 };
-  },
-  async verify(parsed, _input, _ctx): Promise<TestWriterOutput | null> {
-    // Signal to recover when parse produced no usable value (success=false).
-    return parsed.success ? parsed : null;
-  },
-  async recover(_input, _ctx): Promise<TestWriterOutput | null> {
-    // No standard disk artifact for test-writer sessions; recovery deferred to caller.
-    return null;
   },
 };
 

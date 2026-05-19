@@ -6,7 +6,7 @@
  */
 export interface SessionOutputEnvelope {
   readonly success: boolean;
-  readonly filesChanged: string[];
+  readonly filesChanged: readonly string[];
 }
 
 const EMPTY: SessionOutputEnvelope = { success: false, filesChanged: [] };

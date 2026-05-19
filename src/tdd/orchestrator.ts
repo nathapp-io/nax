@@ -10,7 +10,6 @@ import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { CallContext, RunOperation } from "../operations";
 import { implementerOp, testWriterOp, verifierOp } from "../operations";
-import { parseSelfVerificationMarker } from "../quality";
 import { createRuntime } from "../runtime";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
@@ -18,10 +17,10 @@ import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
-import { _sessionRunnerDeps, rollbackToRef, truncateTestOutput } from "./session-runner";
+import { assembleTddSessionResult } from "./session-op";
+import { rollbackToRef, truncateTestOutput } from "./session-runner";
 import type {
   FailureCategory,
-  IsolationCheck,
   TddSessionResult,
   TddSessionRole,
   ThreeSessionTddOptions,
@@ -78,6 +77,10 @@ async function runTddSessionViaBuilder<I, O, C>(
   },
 ): Promise<TddSessionResult> {
   const { runtime } = ctx;
+  // Cost precedence: planResult.phaseCosts is authoritative (scoped via
+  // costAggregator.openScope() inside the orchestrator). This unscoped
+  // dispatchEvents subscription captures response/tokenUsage for the TDD
+  // result envelope; capturedCostUsd is a best-effort fallback only.
   let capturedTokenUsage: import("../agents/cost").TokenUsage | undefined;
   let capturedResponse = "";
   let capturedCostUsd = 0;
@@ -91,86 +94,50 @@ async function runTddSessionViaBuilder<I, O, C>(
       else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
     }) ?? (() => {});
 
-  let phaseOutput:
-    | {
-        success: boolean;
-        filesChanged: string[];
-        estimatedCostUsd: number;
-        durationMs: number;
-        isolation?: IsolationCheck;
-      }
-    | undefined;
+  type PhaseShape = {
+    success: boolean;
+    filesChanged: readonly string[];
+    estimatedCostUsd: number;
+    durationMs: number;
+    isolation?: import("./types").IsolationCheck;
+  };
+  let phaseOutput: PhaseShape | undefined;
   let opCostUsd = 0;
   let planDurationMs = 0;
 
   try {
     const plan: ExecutionPlan = new StoryOrchestratorBuilder().addImplementer({ op, input }).build(ctx);
     const planResult = await plan.run();
-    phaseOutput = planResult.phaseOutputs[op.name] as typeof phaseOutput;
+    phaseOutput = planResult.phaseOutputs[op.name] as PhaseShape | undefined;
     opCostUsd = planResult.phaseCosts[op.name] ?? 0;
     planDurationMs = planResult.durationMs;
   } finally {
     unsubscribe();
   }
 
-  await _sessionRunnerDeps.autoCommitIfDirty(opts.workdir, "tdd", role, opts.story.id);
-
-  const skipIsolation = opts.lite && role !== "verifier";
-  const testFilePatterns =
-    typeof opts.config.execution?.smartTestRunner === "object" && opts.config.execution.smartTestRunner !== null
-      ? opts.config.execution.smartTestRunner.testFilePatterns
-      : undefined;
-
-  let isolation: IsolationCheck | undefined;
-  if (!skipIsolation) {
-    if (role === "test-writer") {
-      const allowedPaths = opts.config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
-      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
-        opts.workdir,
-        beforeRef,
-        allowedPaths,
-        testFilePatterns,
-      );
-    } else if (role === "implementer" || role === "verifier") {
-      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(opts.workdir, beforeRef, testFilePatterns);
-    }
-  }
-
-  if (!isolation && phaseOutput && "isolation" in phaseOutput && phaseOutput.isolation) {
-    isolation = phaseOutput.isolation;
-  }
-
-  const filesChanged =
-    phaseOutput && phaseOutput.filesChanged.length > 0
-      ? phaseOutput.filesChanged
-      : await _sessionRunnerDeps.getChangedFiles(opts.workdir, beforeRef);
-
-  const selfVerificationResult =
-    role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, opts.workdir);
-  const selfVerificationFailed =
-    selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
-
-  if (isolation && !isolation.passed) {
-    getLogger().error("tdd", "Isolation violated", {
-      storyId: opts.story.id,
-      role,
-      description: isolation.description,
-      violations: isolation.violations,
-    });
-  }
-
-  const success = (phaseOutput?.success ?? false) && (!isolation || isolation.passed) && !selfVerificationFailed;
-
-  return {
-    role,
-    success,
-    filesChanged: filesChanged ?? [],
-    estimatedCostUsd: capturedCostUsd || opCostUsd || (phaseOutput?.estimatedCostUsd ?? 0),
-    durationMs: phaseOutput?.durationMs || planDurationMs || Date.now() - startTime,
-    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
-    ...(isolation ? { isolation } : {}),
-    ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
+  // Synthesise an empty envelope when the plan returned no parsed output for
+  // this op (e.g. callOp recover paths returned null).
+  const opOutput: PhaseShape = phaseOutput ?? {
+    success: false,
+    filesChanged: [],
+    estimatedCostUsd: 0,
+    durationMs: 0,
   };
+
+  return assembleTddSessionResult({
+    role,
+    story: opts.story,
+    workdir: opts.workdir,
+    config: opts.config,
+    beforeRef,
+    lite: opts.lite,
+    opOutput,
+    capturedResponse,
+    ...(capturedTokenUsage ? { capturedTokenUsage } : {}),
+    capturedCostUsd: capturedCostUsd || opCostUsd,
+    startTime,
+    planDurationMs,
+  });
 }
 
 /**

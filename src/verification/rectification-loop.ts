@@ -20,7 +20,7 @@ import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
-import { formatSessionName } from "../session/naming";
+import { formatSessionName } from "../runtime/session-name";
 import { SessionKeeper } from "../session/session-keeper";
 import { buildFailureRecords } from "./failure-records";
 import { parseTestOutput } from "./parser";

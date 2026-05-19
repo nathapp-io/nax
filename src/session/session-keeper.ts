@@ -115,7 +115,7 @@ export class SessionKeeper {
         const isRetryable = Boolean((err as { retryable?: unknown })?.retryable === true);
         if (isRetryable) {
           if (retryStrategy) {
-            const decision = await retryStrategy.shouldRetry(err, this.retryAttempts, {
+            const decision = await retryStrategy.shouldRetry(err as Error, this.retryAttempts, {
               site: "run",
               agentName: defaultAgent,
               stage: pipelineStage,

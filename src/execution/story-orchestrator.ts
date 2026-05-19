@@ -1,4 +1,3 @@
-import { resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
 import type { FixCycleContext, FixStrategy } from "../findings";
 import { getSafeLogger } from "../logger";
@@ -14,38 +13,26 @@ import type {
 } from "../operations";
 import { callOp } from "../operations/call";
 import type { ReviewCheckResult } from "../review/types";
-import { formatSessionName } from "../runtime/session-name";
-import { SessionKeeper } from "../session/session-keeper";
 import { errorMessage } from "../utils/errors";
 
-type RectificationSelection = { op: RunOperation<unknown, unknown, unknown>; input: unknown } | null;
-
-async function selectFixOperation(
-  // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous here
+// Mirrors findings/cycle.ts:selectExecutionGroup — exclusive strategy wins,
+// otherwise all co-run-sequential strategies run in declaration order.
+function selectExecutionGroup(
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O are opaque here
   strategies: readonly FixStrategy<any, unknown, unknown, unknown>[],
   failures: readonly ReviewCheckResult[],
-  ctx: CallContext,
-): Promise<RectificationSelection> {
+  // biome-ignore lint/suspicious/noExplicitAny: see above
+): FixStrategy<any, unknown, unknown, unknown>[] {
   const active = strategies.filter((strategy) => failures.some((failure) => strategy.appliesTo(failure)));
-  const exclusive = active.find((strategy) => strategy.coRun !== "co-run-sequential");
-  const chosen = exclusive ?? active[0];
-  if (!chosen) {
-    return null;
-  }
-
-  return {
-    op: chosen.fixOp as RunOperation<unknown, unknown, unknown>,
-    input: chosen.buildInput(
-      failures.filter((failure) => chosen.appliesTo(failure)),
-      [],
-      ctx as FixCycleContext,
-    ),
-  };
+  if (active.length === 0) return [];
+  const exclusive = active.find((strategy) => !strategy.coRun || strategy.coRun === "exclusive");
+  if (exclusive) return [exclusive];
+  return active.filter((strategy) => strategy.coRun === "co-run-sequential");
 }
 
 export const _storyOrchestratorDeps = {
   callOp,
-  runFixCycle: selectFixOperation,
+  selectExecutionGroup,
 };
 
 export interface OrchestratorSlot<I, O, C> {
@@ -67,9 +54,6 @@ export interface StoryOrchestratorResult {
   readonly durationMs: number;
   readonly phaseOutputs: Record<string, unknown>;
 }
-
-// biome-ignore lint/suspicious/noExplicitAny: sentinel export for compatibility with existing tests
-export const StoryOrchestratorResult: any = {};
 
 type PhaseKind = "test-writer" | "implementer" | "verifier" | "semantic-review" | "adversarial-review";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
@@ -208,6 +192,19 @@ async function runPhase(
   }
 }
 
+/**
+ * Run the rectification loop.
+ *
+ * Per spec §2D:
+ *  - Failures aggregate verifier + semantic + adversarial outputs (fed to strategies).
+ *  - Termination/abort math keys on the verifier slot only — semantic/adversarial
+ *    outputs are stale between iterations (only the verifier is re-run), so mixing
+ *    them into the abort heuristic produced false positives (H4).
+ *  - Implementer warm-lifetime handle reuse is owned by callOp middleware via
+ *    `implementerOp.session.lifetime === "warm"`; the orchestrator does not manage
+ *    a separate SessionKeeper (the previous one was dead code — H3).
+ *  - Strategy selection mirrors findings/cycle.ts:selectExecutionGroup (H2/M3).
+ */
 async function runRectification(
   ctx: CallContext,
   state: InternalBuildState,
@@ -220,82 +217,53 @@ async function runRectification(
     return;
   }
 
-  const config = ctx.runtime.configLoader.current();
-  const defaultAgent = ctx.runtime.agentManager.getDefault();
-  const keeper = new SessionKeeper(ctx.runtime.sessionManager, ctx.runtime.agentManager, {
-    sessionName: formatSessionName({
-      workdir: ctx.packageDir,
-      featureName: ctx.featureName,
-      storyId: ctx.storyId,
-      role: "implementer",
-    }),
-    defaultAgent,
-    role: "implementer",
-    pipelineStage: "rectification",
-    storyId: ctx.storyId ?? "",
-    featureName: ctx.featureName,
-    workdir: ctx.packageDir,
-    projectDir: ctx.runtime.projectDir,
-    modelDef: resolveModelForAgent(config.models, ctx.agentName, "balanced", defaultAgent),
-    timeoutSeconds: config.execution.sessionTimeoutSeconds,
-    signal: ctx.runtime.signal,
-    maxTurns: config.agent?.maxInteractionTurns,
-  });
+  const countVerifierFailures = (): number =>
+    collectReviewFailures(phaseOutputs[verifierPhase.slot.op.name], "test").length;
 
-  try {
-    let priorFailureCount = gatherRectificationFailures(
+  let priorVerifierFailureCount = countVerifierFailures();
+  let attempts = 0;
+
+  while (attempts < rectification.maxAttempts) {
+    if (ctx.runtime.signal?.aborted) {
+      return;
+    }
+
+    const failures = gatherRectificationFailures(
       phaseOutputs,
       verifierPhase,
       state.semanticReview,
       state.adversarialReview,
-    ).length;
-    let attempts = 0;
+    );
+    if (failures.length === 0) {
+      return;
+    }
 
-    while (attempts < rectification.maxAttempts) {
-      if (ctx.runtime.signal?.aborted) {
-        return;
-      }
+    const group = _storyOrchestratorDeps.selectExecutionGroup(rectification.strategies, failures);
+    if (group.length === 0) {
+      return;
+    }
 
-      const failures = gatherRectificationFailures(
-        phaseOutputs,
-        verifierPhase,
-        state.semanticReview,
-        state.adversarialReview,
-      );
-      if (failures.length === 0) {
-        return;
-      }
-
-      const selection = await _storyOrchestratorDeps.runFixCycle(rectification.strategies, failures, ctx);
-      if (!selection) {
-        return;
-      }
-
+    for (const strategy of group) {
+      const relevant = failures.filter((failure) => strategy.appliesTo(failure));
+      const input = strategy.buildInput(relevant, [], ctx as FixCycleContext);
       const fixPhase: InternalPhase = {
         kind: "implementer",
-        slot: { op: selection.op, input: selection.input },
+        slot: { op: strategy.fixOp as RunOperation<unknown, unknown, unknown>, input },
       };
       await runPhase(ctx, fixPhase, phaseCosts, phaseOutputs);
-      attempts += 1;
-
-      const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
-      if (phasePassed(verifierOutput)) {
-        return;
-      }
-
-      const nextFailureCount = gatherRectificationFailures(
-        phaseOutputs,
-        verifierPhase,
-        state.semanticReview,
-        state.adversarialReview,
-      ).length;
-      if (rectification.abortOnIncreasingFailures && nextFailureCount > priorFailureCount) {
-        return;
-      }
-      priorFailureCount = nextFailureCount;
     }
-  } finally {
-    await keeper.close();
+    attempts += 1;
+
+    const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
+    if (phasePassed(verifierOutput)) {
+      return;
+    }
+
+    const nextVerifierFailureCount = countVerifierFailures();
+    if (rectification.abortOnIncreasingFailures && nextVerifierFailureCount > priorVerifierFailureCount) {
+      return;
+    }
+    priorVerifierFailureCount = nextVerifierFailureCount;
   }
 }
 
@@ -326,7 +294,10 @@ export class ExecutionPlan {
 
     await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
 
-    const success = collectOrderedPhases(this.state).every((phase) => phasePassed(phaseOutputs[phase.slot.op.name]));
+    // Aggregate success across every op that produced output, including fix-ops
+    // dispatched during rectification (spec §2C / AC: "success === false when
+    // any op returns { success: false }").
+    const success = Object.values(phaseOutputs).every((output) => phasePassed(output));
     const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
 
     return {

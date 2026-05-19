@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
@@ -11,7 +12,7 @@ export interface VerifierInput {
 
 export interface VerifierOutput {
   readonly success: boolean;
-  readonly filesChanged: string[];
+  readonly filesChanged: readonly string[];
   readonly estimatedCostUsd: number;
   readonly durationMs: number;
   /** Isolation check result, populated when isolation was run. */
@@ -44,7 +45,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   },
   async recover(_input, verifyCtx): Promise<VerifierOutput | null> {
     // Derive outcome from the verdict file the verifier agent writes to disk (AC-5).
-    const verdictPath = `${verifyCtx.packageView.packageDir}/.nax-verifier-verdict.json`;
+    const verdictPath = join(verifyCtx.packageView.packageDir, ".nax-verifier-verdict.json");
     const content = await verifyCtx.readFile(verdictPath);
     if (!content) return null;
     try {

@@ -15,8 +15,8 @@ import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import { resolveQualityTestCommands } from "../quality/command-resolver";
+import { formatSessionName } from "../runtime/session-name";
 import type { ISessionManager } from "../session";
-import { formatSessionName } from "../session/naming";
 import { SessionKeeper } from "../session/session-keeper";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {

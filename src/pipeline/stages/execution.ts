@@ -15,7 +15,6 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { implementerOp } from "../../operations/implement";
-import { shouldKeepSessionOpen } from "../../operations/execution-gates";
 import type { CallContext } from "../../operations/types";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
@@ -177,8 +176,13 @@ export const executionStage: PipelineStage = {
       story: ctx.story,
       ...(interactionBridge ? { interactionBridge } : {}),
     };
-    const keepImplementerSessionOpen = shouldKeepSessionOpen(ctx.config, "implementer");
+    // Implementer warm-lifetime handle reuse is owned by callOp middleware via
+    // `implementerOp.session.lifetime === "warm"` — no extra gating here.
 
+    // Cost precedence: the orchestrator scopes phaseCosts authoritatively via
+    // costAggregator.openScope(). This dispatchEvents subscription is unscoped
+    // and captures response/tokenUsage for self-verification + metrics; we
+    // prefer planResult.phaseCosts for the actual cost number below.
     let capturedTokenUsage: import("../../agents/cost").TokenUsage | undefined;
     let capturedResponse = "";
     let capturedCostUsd = 0;
@@ -203,9 +207,6 @@ export const executionStage: PipelineStage = {
           },
         })
         .build(callCtx);
-      if (keepImplementerSessionOpen) {
-        logger.debug("execution", "Implementer session warm policy enabled", { storyId: ctx.story.id });
-      }
       planResult = await plan.run();
     } finally {
       unsubscribe();
