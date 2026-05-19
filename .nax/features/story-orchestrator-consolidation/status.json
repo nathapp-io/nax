@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-19T08-15-37-154Z",
+    "feature": "story-orchestrator-consolidation",
+    "startedAt": "2026-05-19T08:15:37.154Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 88773
+  },
+  "progress": {
+    "total": 5,
+    "passed": 1,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 3
+  },
+  "cost": {
+    "spent": 5.90336952,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-05-19T09:26:49.015Z",
+  "durationMs": 4271861,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-19T09:26:48.112Z"
+    }
+  }
+}
