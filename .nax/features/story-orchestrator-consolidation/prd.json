@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T12:56:46.354Z",
+  "updatedAt": "2026-05-19T12:59:28.699Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -238,23 +238,16 @@
       "dependencies": [
         "US-005.S4"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
-      "escalations": [
-        {
-          "fromTier": "balanced",
-          "toTier": "powerful",
-          "reason": "Reviewer contradiction: The adversarial finding at test/unit/tdd/retire-legacy-surfaces.test.ts:63 identifies a misleading test name (\"StoryRunResult type has correct shape fields\" asserts only `toBeDefined()`). Fixing it requires renaming the test block text or adding assertions — both are prohibited by the test-file edit rules and none of the four exceptions apply. No src/ change can address a misleading test description. The test-writer must rename the test to \"StoryRunResult runtime sentinel exists in barrel\" or add real shape assertions.",
-          "timestamp": "2026-05-19T12:38:37.162Z"
-        }
-      ],
+      "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "powerful"
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/tdd/index.ts",
@@ -263,37 +256,14 @@
         "src/tdd/types.ts",
         "test/integration/tdd/tdd-orchestrator-core.test.ts"
       ],
-      "priorErrors": [
-        "Attempt 1 failed with model tier: balanced: Reviewer contradiction: The adversarial finding at test/unit/tdd/retire-legacy-surfaces.test.ts:63 identifies a misleading test name (\"StoryRunResult type has correct shape fields\" asserts only `toBeDefined()`). Fixing it requires renaming the test block text or adding assertions — both are prohibited by the test-file edit rules and none of the four exceptions apply. No src/ change can address a misleading test description. The test-writer must rename the test to \"StoryRunResult runtime sentinel exists in barrel\" or add real shape assertions."
-      ],
+      "priorErrors": [],
       "priorFailures": [
         {
           "attempt": 1,
           "modelTier": "balanced",
           "stage": "review",
           "summary": "Failed with tier balanced, escalating to next tier",
-          "reviewFindings": [
-            {
-              "source": "semantic-review",
-              "severity": "error",
-              "category": "",
-              "file": "src/tdd/orchestrator.ts",
-              "line": 27,
-              "message": "Slice D: StoryRunResult was introduced as a type alias in api-surface.ts and exported from the barrel, but ZERO callers in src/ use it. The orchestrator (line 27, line 146) and orchestrator-ctx (line 7, line 12) still import and use ThreeSessionTddResult directly. No production code outside api-surface.ts and index.ts references StoryRunResult. The barrel comment at index.ts:14-15 acknowledges incomplete migration: \"ThreeSessionTddResult is kept as a type-only re-export for any remaining callers.\"",
-              "suggestion": "Update callers in orchestrator.ts and orchestrator-ctx.ts to import/use StoryRunResult instead of ThreeSessionTddResult, or remove the 'callers are updated' language from AC4 if this alias-only approach is acceptable for the incremental slice.",
-              "fixTarget": "source",
-              "meta": {
-                "verifiedBy": {
-                  "command": "grep StoryRunResult --include '*.ts' src/ | grep -v api-surface | grep -v 'index.ts'",
-                  "file": "src/tdd/orchestrator.ts",
-                  "line": 27,
-                  "observed": "  ThreeSessionTddResult,\n} from \"./types\";"
-                },
-                "acQuote": "ThreeSessionTddResult is renamed/migrated to StoryRunResult and callers are updated.",
-                "acIndex": 4
-              }
-            }
-          ],
+          "reviewFindings": [],
           "cost": 4.0396344200000005,
           "timestamp": "2026-05-19T12:38:37.162Z"
         }
