@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T08:20:00Z",
+  "updatedAt": "2026-05-19T08:17:49.928Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -33,7 +33,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "docs/specs/SPEC-story-orchestrator.md",
@@ -41,7 +43,11 @@
         "src/tdd/rectification-gate.ts",
         "src/tdd/orchestrator.ts",
         "src/context/greenfield.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1278da1307b6fdc0542e5e76578ed0ea4a0c1376"
     },
     {
       "id": "US-005.S2",
@@ -78,7 +84,10 @@
         "src/pipeline/stages/execution.ts",
         "src/pipeline/types.ts",
         "src/errors.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005.S3",
@@ -115,7 +124,10 @@
         "src/operations/execution-gates.ts",
         "src/review/types.ts",
         "src/config/schema-types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005.S4",
@@ -151,7 +163,10 @@
         "src/execution/post-run.ts",
         "src/execution/inputs.ts",
         "src/execution/build-plan-for-strategy.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005.S5",
@@ -189,7 +204,10 @@
         "src/tdd/rectification-gate.ts",
         "src/tdd/types.ts",
         "test/integration/tdd/tdd-orchestrator-core.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This PRD uses PRD-CD as the baseline architecture and consolidation direction, while importing two safeguards from PRD-CC: (1) preserve richer full-suite gate failure status taxonomy and recovery semantics for accurate triage, and (2) explicitly validate PlanInputs assembly boundaries to prevent null/undefined propagation using a canonical NaxError contract. Work is split into 5 incremental, mergeable slices to reduce blast radius: gate promotion, input validation boundary, strategy plan builder, execution-stage collapse, and legacy-surface retirement/test cleanup."
