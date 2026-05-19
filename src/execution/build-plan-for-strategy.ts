@@ -8,6 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
+import { shouldRunRectification } from "../operations/execution-gates";
 import type { UserStory } from "../prd/types";
 
 export interface BuildPlanForStrategyOptions {
@@ -28,6 +29,18 @@ export interface PlanForStrategy {
   readonly rectification?: boolean;
 }
 
+const TDD_STRATEGIES = new Set<TestStrategy>(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
+
+function isTddStrategy(strategy: TestStrategy): boolean {
+  return TDD_STRATEGIES.has(strategy);
+}
+
+function hasReviewCheck(config: NaxConfig, check: "semantic" | "adversarial"): boolean {
+  if (config.review?.enabled !== true) return false;
+  const checks = config.review?.checks;
+  return Array.isArray(checks) && checks.includes(check);
+}
+
 /**
  * Build a plan object that specifies which slots should be included in execution
  * based on the test strategy and configuration.
@@ -40,18 +53,18 @@ export interface PlanForStrategy {
  * AC6: Slot composition logic covered with table-driven tests
  */
 export function buildPlanForStrategy(options: BuildPlanForStrategyOptions): PlanForStrategy {
-  const { story: _story, config: _config, testStrategy: _testStrategy, isFreshRun: _isFreshRun = true } = options;
+  const { config, testStrategy, isFreshRun = true } = options;
 
-  // Stub implementation — to be filled by implementer
-  // This will return an object with boolean flags for each slot
+  const isTdd = isTddStrategy(testStrategy);
+
   return {
-    testWriter: undefined,
-    greenfieldGate: undefined,
-    implementer: undefined,
-    fullSuiteGate: undefined,
-    verifier: undefined,
-    semanticReview: undefined,
-    adversarialReview: undefined,
-    rectification: undefined,
+    testWriter: isTdd && isFreshRun,
+    greenfieldGate: isTdd && isFreshRun,
+    implementer: true,
+    fullSuiteGate: isTdd,
+    verifier: isTdd,
+    semanticReview: hasReviewCheck(config, "semantic"),
+    adversarialReview: hasReviewCheck(config, "adversarial"),
+    rectification: shouldRunRectification(config),
   };
 }

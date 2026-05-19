@@ -22,7 +22,7 @@ const AutoModeConfigSchema = z.object({
 });
 
 const RectificationConfigSchema = z.object({
-  enabled: z.boolean().default(true),
+  enabled: z.boolean().default(false),
   maxRetries: z.number().int().min(0).max(10).default(2),
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),

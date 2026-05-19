@@ -107,7 +107,7 @@ export const NaxConfigSchema = z
       verificationTimeoutSeconds: 600,
       maxStoriesPerFeature: 500,
       rectification: {
-        enabled: true,
+        enabled: false,
         maxRetries: 2,
         fullSuiteTimeoutSeconds: 300,
         maxFailureSummaryChars: 2000,
