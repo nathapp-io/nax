@@ -41,8 +41,8 @@ export interface AutoModeConfig {
 
 /** Rectification config (v0.11) */
 export interface RectificationConfig {
-  /** Enable rectification loop (retry failed tests with failure context) */
-  enabled: boolean;
+  /** Enable rectification loop (retry failed tests with failure context). Undefined means unset (treated as disabled). */
+  enabled?: boolean;
   /** Max retry attempts per story (default: 2) */
   maxRetries: number;
   /** Timeout for full test suite run in seconds (default: 120) */

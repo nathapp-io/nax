@@ -91,12 +91,11 @@ export async function runFullSuiteGate(
   sessionManager: ISessionManager | undefined,
   runtime: import("../runtime").NaxRuntime,
 ): Promise<FullSuiteGateResult> {
-  const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!rectificationEnabled) {
+  const rectificationConfig = config.execution.rectification;
+  if (rectificationConfig?.enabled === false) {
     return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "disabled" };
   }
-
-  const rectificationConfig = config.execution.rectification;
+  const rectificationEnabled = rectificationConfig?.enabled === true;
   const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
 
   // Resolve test commands via SSOT — handles priority, {{package}}, and orchestrator promotion.
@@ -133,6 +132,10 @@ export async function runFullSuiteGate(
           outputTail: fullSuiteResult.output.slice(-200),
         });
         return { passed: true, cost: 0, fullSuiteGatePassed: false, status: "deferred-unattributable" };
+      }
+
+      if (!rectificationEnabled) {
+        return { passed: false, cost: 0, fullSuiteGatePassed: false, status: "execution-failed" };
       }
 
       return await runRectificationLoop(
