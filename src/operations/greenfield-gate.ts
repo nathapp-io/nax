@@ -8,6 +8,7 @@
 import { pickSelector } from "../config";
 import type { UserStory } from "../prd";
 import type { ResolvedTestPatterns } from "../test-runners";
+import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
 
 /**
@@ -48,8 +49,9 @@ export const greenfieldGateOp: RunOperation<GreenfieldGateInput, GreenfieldGateO
     },
     task: { id: "detect", content: "Scan project for test files", overridable: false },
   }),
-  parse: (): GreenfieldGateOutput => {
-    // Stub: will be implemented in next phase
-    return { success: false, isGreenfield: false };
+  parse: (output: string): GreenfieldGateOutput => {
+    const parsed = tryParseLLMJson<{ isGreenfield?: unknown }>(output);
+    const isGreenfield = Boolean(parsed?.isGreenfield);
+    return { success: true, isGreenfield };
   },
 };

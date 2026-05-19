@@ -8,6 +8,7 @@
 
 import { rectificationGateConfigSelector } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
 
 /**
@@ -20,6 +21,14 @@ export type FullSuiteGateStatus =
   | "disabled"
   | "execution-failed"
   | "inconclusive";
+
+const VALID_STATUSES: ReadonlySet<FullSuiteGateStatus> = new Set([
+  "passed",
+  "rectification-exhausted",
+  "disabled",
+  "execution-failed",
+  "inconclusive",
+]);
 
 /**
  * Input for the full-suite gate.
@@ -37,11 +46,11 @@ export interface FullSuiteGateInput {
  * Includes status classification and optional rectification attempts.
  */
 export interface FullSuiteGateOutput {
-  readonly success: boolean; // false when gate fails; true when passed or disabled
+  readonly success: boolean; // true when passed; false on any failure or disabled
   readonly passed: boolean; // true only when tests actually passed
   readonly status: FullSuiteGateStatus;
   readonly cost: number;
-  readonly attempts?: number; // populated when rectification runs
+  readonly attempts?: number; // populated when rectification runs or disabled (0)
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -81,13 +90,28 @@ export const fullSuiteGateOp: RunOperation<
       overridable: false,
     },
   }),
-  parse: (): FullSuiteGateOutput => {
-    // Stub: will be implemented in next phase
-    return {
-      success: false,
-      passed: false,
-      status: "disabled",
-      cost: 0,
+  parse: (output, _input, ctx): FullSuiteGateOutput => {
+    if (!(ctx.config.execution.rectification?.enabled ?? false)) {
+      return { success: false, passed: false, status: "disabled", cost: 0, attempts: 0 };
+    }
+    const parsed = tryParseLLMJson<Record<string, unknown>>(output);
+    if (!parsed) {
+      return { success: false, passed: false, status: "inconclusive", cost: 0 };
+    }
+    const status: FullSuiteGateStatus = VALID_STATUSES.has(parsed.status as FullSuiteGateStatus)
+      ? (parsed.status as FullSuiteGateStatus)
+      : "inconclusive";
+    const passed = Boolean(parsed.passed);
+    const cost = typeof parsed.cost === "number" ? parsed.cost : 0;
+    const baseResult: FullSuiteGateOutput = {
+      success: passed && status === "passed",
+      passed,
+      status,
+      cost,
     };
+    if (typeof parsed.attempts === "number") {
+      return { ...baseResult, attempts: parsed.attempts };
+    }
+    return baseResult;
   },
 };
