@@ -9,6 +9,7 @@
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { resolveModelForAgent } from "../../config";
+import { failAndClose } from "../../execution/session-manager-runtime";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -286,6 +287,9 @@ export const executionStage: PipelineStage = {
       );
       if (!shouldProceed) {
         logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
+        if (ctx.sessionManager && ctx.sessionId) {
+          await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
+        }
         return { action: "fail", reason: "Merge conflict detected" };
       }
     }
@@ -318,6 +322,9 @@ export const executionStage: PipelineStage = {
       if (result.rateLimited) {
         logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
       }
+      if (ctx.sessionManager && ctx.sessionId) {
+        await _executionDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
+      }
       return { action: "escalate" };
     }
 
@@ -338,4 +345,5 @@ export const _executionDeps = {
   isAmbiguousOutput,
   checkStoryAmbiguity,
   runThreeSessionTddFromCtx,
+  failAndClose,
 };

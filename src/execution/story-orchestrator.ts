@@ -4,11 +4,10 @@
  *
  * Dispatches each phase slot via callOp(ctx, op, input) in canonical order.
  * Wrapper responsibilities (rollback, verdict reading, greenfield detection)
- * remain in tdd/orchestrator.ts — this builder owns ONLY phase dispatch,
- * session lifecycle (rectification SessionKeeper), and cost aggregation.
+ * remain in tdd/orchestrator.ts — this builder owns ONLY phase dispatch
+ * and cost aggregation.
  */
 
-import { DEFAULT_CONFIG, resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
 import { runFixCycle } from "../findings";
 import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
@@ -16,7 +15,6 @@ import type { CallOpFn } from "../findings/cycle";
 import { getSafeLogger } from "../logger";
 import { callOp } from "../operations/call";
 import type { CallContext, RunOperation } from "../operations/types";
-import { SessionKeeper, formatSessionName } from "../session";
 import { errorMessage } from "../utils/errors";
 
 // Captured at module init time so mock.module("@/operations") live-binding
@@ -252,75 +250,51 @@ async function runRectificationPhase(
     return false;
   }
 
-  // AC8: one SessionKeeper for the implementer session, constructed at phase entry, closed in finally.
-  const config = ctx.runtime.configLoader.current();
-  const defaultAgent = ctx.runtime.agentManager.getDefault();
-  const keeper = new SessionKeeper(ctx.runtime.sessionManager, ctx.runtime.agentManager, {
-    sessionName: formatSessionName({
-      workdir: ctx.packageDir,
-      featureName: ctx.featureName ?? "",
-      storyId: ctx.storyId ?? "",
-      role: "implementer",
-    }),
-    defaultAgent,
-    role: "implementer",
-    pipelineStage: "rectification",
-    storyId: ctx.storyId ?? "",
-    workdir: ctx.packageDir,
-    modelDef: resolveModelForAgent(config.models, defaultAgent, "balanced", defaultAgent),
-    timeoutSeconds: config.execution?.sessionTimeoutSeconds ?? DEFAULT_CONFIG.execution.sessionTimeoutSeconds,
-    signal: ctx.runtime.signal,
+  // AC7: Delegate failure-type introspection to runFixCycle — the cycle is the
+  // single decision point for strategy selection, iteration counting, and bail predicates.
+  // abortOnIncreasingFailures is expressed as a bailWhen predicate on each strategy.
+  const strategies = opts.abortOnIncreasingFailures
+    ? opts.strategies.map((s) => ({
+        ...s,
+        bailWhen: (iterations: Iteration<Finding>[]) => {
+          const orig = s.bailWhen?.(iterations) ?? null;
+          if (orig !== null) return orig;
+          const last = iterations[iterations.length - 1];
+          if (!last) return null;
+          return last.findingsAfter.length > last.findingsBefore.length ? "failure count increased" : null;
+        },
+      }))
+    : opts.strategies;
+
+  const cycle: FixCycle<Finding> = {
+    findings: extractFindings(phaseOutputs[verifierOpName]) as Finding[],
+    iterations: [],
+    strategies,
+    config: { maxAttemptsTotal: opts.maxAttempts, validatorRetries: 0 },
+    validate: async (_vCtx, _mode) => {
+      const verifierScope = ctx.runtime.costAggregator.openScope();
+      try {
+        const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
+        const newOutput = await _storyOrchestratorDeps.callOp(
+          verifierCtx,
+          verifierPhase.slot.op,
+          verifierPhase.slot.input,
+        );
+        phaseOutputs[verifierOpName] = newOutput;
+        phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
+        return extractFindings(newOutput) as Finding[];
+      } finally {
+        verifierScope.close();
+      }
+    },
+  };
+
+  const cycleResult = await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "rectification", {
+    callOp: _storyOrchestratorDeps.callOp as CallOpFn,
+    logger,
   });
 
-  try {
-    // AC7: Delegate failure-type introspection to runFixCycle — the cycle is the
-    // single decision point for strategy selection, iteration counting, and bail predicates.
-    // abortOnIncreasingFailures is expressed as a bailWhen predicate on each strategy.
-    const strategies = opts.abortOnIncreasingFailures
-      ? opts.strategies.map((s) => ({
-          ...s,
-          bailWhen: (iterations: Iteration<Finding>[]) => {
-            const orig = s.bailWhen?.(iterations) ?? null;
-            if (orig !== null) return orig;
-            const last = iterations[iterations.length - 1];
-            if (!last) return null;
-            return last.findingsAfter.length > last.findingsBefore.length ? "failure count increased" : null;
-          },
-        }))
-      : opts.strategies;
-
-    const cycle: FixCycle<Finding> = {
-      findings: extractFindings(phaseOutputs[verifierOpName]) as Finding[],
-      iterations: [],
-      strategies,
-      config: { maxAttemptsTotal: opts.maxAttempts, validatorRetries: 0 },
-      validate: async (_vCtx, _mode) => {
-        const verifierScope = ctx.runtime.costAggregator.openScope();
-        try {
-          const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
-          const newOutput = await _storyOrchestratorDeps.callOp(
-            verifierCtx,
-            verifierPhase.slot.op,
-            verifierPhase.slot.input,
-          );
-          phaseOutputs[verifierOpName] = newOutput;
-          phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
-          return extractFindings(newOutput) as Finding[];
-        } finally {
-          verifierScope.close();
-        }
-      },
-    };
-
-    const cycleResult = await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "rectification", {
-      callOp: _storyOrchestratorDeps.callOp as CallOpFn,
-      logger,
-    });
-
-    return cycleResult.exitReason === "resolved";
-  } finally {
-    await keeper.close();
-  }
+  return cycleResult.exitReason === "resolved";
 }
 
 function extractFindings(output: unknown): unknown[] {
