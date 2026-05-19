@@ -47,12 +47,15 @@ export interface PlanInputs {
  * AC4: Invalid or missing config produces deterministic structured failure.
  * AC5: Failures use NaxError with machine-readable code and context.stage='execution-inputs'.
  *
+ * Test pattern validation is deferred to the downstream orchestrator setup; this function
+ * validates only the minimum boundary contract required to begin plan assembly.
+ *
  * @param story - The story to validate
  * @param config - The config to validate
  * @returns Valid PlanInputs or throws NaxError with stage='execution-inputs'
- * @throws NaxError with code 'TEST_PATTERNS_UNRESOLVED' if test patterns cannot be resolved
- * @throws NaxError with code 'CONFIG_INVALID' if config is invalid
- * @throws NaxError with code 'STORY_ID_INVALID' if story.id is invalid
+ * @throws NaxError with code 'STORY_ID_INVALID' if story.id is missing or blank
+ * @throws NaxError with code 'STORY_TITLE_MISSING' if story.title is missing or blank
+ * @throws NaxError with code 'CONFIG_INVALID' if config.agent.default is not set
  */
 export function assemblePlanInputs(story: UserStory, config: NaxConfig): PlanInputs {
   // Stub: will be implemented in next phase
