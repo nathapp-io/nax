@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T09:52:43.444Z",
+  "updatedAt": "2026-05-19T10:12:08.684Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -70,8 +70,8 @@
       "dependencies": [
         "US-005.S1"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -160,7 +160,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/build-plan-for-strategy.ts",
@@ -170,7 +172,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a8aefa2724b92bfe9f4806f5ddd5570c59ee6f25"
     },
     {
       "id": "US-005.S4",
