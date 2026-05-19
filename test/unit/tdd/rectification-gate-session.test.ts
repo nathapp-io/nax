@@ -5,9 +5,10 @@
  * permanent module replacement that contaminates other test files.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
-import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
+import { _rectificationGateDeps } from "../../../src/tdd/rectification-gate";
+import type { runFullSuiteGate as _RunFullSuiteGate } from "../../../src/tdd/rectification-gate";
 import { makeMockAgentManager } from "../../helpers/mock-agent-manager";
 import { makeStory } from "../../helpers";
 
@@ -53,6 +54,11 @@ function makeRuntime(handleOverrides: Record<string, unknown> = {}) {
     handle,
   };
 }
+
+let runFullSuiteGate: typeof _RunFullSuiteGate;
+beforeAll(async () => {
+  ({ runFullSuiteGate } = await import("../../../src/tdd/rectification-gate"));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock injectable deps instead of using mock.module()

@@ -6,7 +6,7 @@
  * Uses mocks — does NOT spawn nax processes.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../../src/logger";
@@ -21,7 +21,7 @@ const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
 import { verifyStage } from "../../../src/pipeline/stages/verify";
 import { _executionDeps, executionStage } from "../../../src/pipeline/stages/execution";
-import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
 
 // ── Mock agent ────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,13 @@ const mockAgent = makeAgentAdapter({
   run: mockAgentRun,
   isInstalled: async () => true,
   buildCommand: () => ["claude"],
+});
+
+// ── Dynamic access to legacy orchestrator (import removed from static surface) ─
+
+let runThreeSessionTdd: typeof _RunThreeSessionTdd;
+beforeAll(async () => {
+  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
 });
 
 // ── Capture originals for afterEach restoration ───────────────────────────────

@@ -1,14 +1,20 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
-import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
+import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
+
+let runThreeSessionTdd: typeof _RunThreeSessionTdd;
+beforeAll(async () => {
+  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
+});
 
 let saved: SavedDeps;
 

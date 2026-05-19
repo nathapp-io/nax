@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
-import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
+import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
+
+let runThreeSessionTdd: typeof _RunThreeSessionTdd;
+beforeAll(async () => {
+  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
+});
 
 let saved: SavedDeps;
 

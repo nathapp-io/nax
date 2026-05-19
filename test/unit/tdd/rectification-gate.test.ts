@@ -5,8 +5,9 @@
  * Uses injectable _rectificationGateDeps to avoid mock.module() contamination.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _rectificationGateDeps } from "../../../src/tdd/rectification-gate";
+import type { runFullSuiteGate as _RunFullSuiteGate } from "../../../src/tdd/rectification-gate";
 import { makeMockAgentManager, makeMockRuntime, makeNaxConfig, makeStory } from "../../helpers";
 
 const SILENT_LOGGER = {
@@ -15,6 +16,11 @@ const SILENT_LOGGER = {
   error: () => {},
   debug: () => {},
 } as any;
+
+let runFullSuiteGate: typeof _RunFullSuiteGate;
+beforeAll(async () => {
+  ({ runFullSuiteGate } = await import("../../../src/tdd/rectification-gate"));
+});
 
 let origDeps: typeof _rectificationGateDeps;
 

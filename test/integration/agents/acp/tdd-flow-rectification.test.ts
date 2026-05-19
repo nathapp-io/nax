@@ -6,7 +6,7 @@
  * - AC3: TDD rectification gate works with AcpAgentAdapter
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { withDepsRestore } from "../../../helpers/deps";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
@@ -16,7 +16,8 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
 import { _isolationDeps } from "../../../../src/tdd/isolation";
-import { _rectificationGateDeps, runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
+import { _rectificationGateDeps } from "../../../../src/tdd/rectification-gate";
+import type { runFullSuiteGate as _RunFullSuiteGate } from "../../../../src/tdd/rectification-gate";
 import { _sessionRunnerDeps } from "../../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../../src/utils/git";
 import { _executorDeps } from "../../../../src/verification/executor";
@@ -124,6 +125,11 @@ function makeFakeRuntime(adapter: AcpAgentAdapter) {
     // biome-ignore lint/suspicious/noExplicitAny: test mock — partial runtime
   } as any;
 }
+
+let runFullSuiteGate: typeof _RunFullSuiteGate;
+beforeAll(async () => {
+  ({ runFullSuiteGate } = await import("../../../../src/tdd/rectification-gate"));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deps restore

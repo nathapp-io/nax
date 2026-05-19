@@ -9,12 +9,15 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { AgentResult } from "../../../src/agents/types";
 import type { UserStory } from "../../../src/prd";
+import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
 import { _isolationDeps } from "../../../src/tdd/isolation";
-import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../src/utils/git";
 import { makeNaxConfig, makeMockRuntime } from "../../helpers";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
+
+let runThreeSessionTdd: typeof _RunThreeSessionTdd;
 
 // Mock spawn-based deps so the post-dispatch isolation/getChangedFiles/autoCommit
 // helpers don't try to invoke real `git`. This test asserts on token aggregation;
@@ -29,7 +32,8 @@ function emptySpawn(): unknown {
 let savedIsolation: typeof _isolationDeps.spawn;
 let savedSessionRunner: typeof _sessionRunnerDeps.spawn;
 let savedGit: typeof _gitDeps.spawn;
-beforeAll(() => {
+beforeAll(async () => {
+  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
   savedIsolation = _isolationDeps.spawn;
   savedSessionRunner = _sessionRunnerDeps.spawn;
   savedGit = _gitDeps.spawn;
