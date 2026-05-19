@@ -192,7 +192,10 @@ export const executionStage: PipelineStage = {
     // ctx.runtime which existing execution-stage unit tests do not wire. Until those
     // tests are migrated to createRuntime(), dispatch goes through runWithFallback()
     // with the hop callback for swap/rebuild support.
-    const executeHop =
+    let latestBundle = ctx.contextBundle;
+    let latestPrompt = ctx.prompt;
+
+    const rawExecuteHop =
       ctx.sessionManager && ctx.agentManager
         ? buildHopCallback(
             {
@@ -213,6 +216,15 @@ export const executionStage: PipelineStage = {
           )
         : undefined;
 
+    const executeHop = rawExecuteHop
+      ? async (...args: Parameters<NonNullable<typeof rawExecuteHop>>) => {
+          const hopOutcome = await rawExecuteHop(...args);
+          latestBundle = hopOutcome.bundle ?? latestBundle;
+          latestPrompt = hopOutcome.prompt ?? latestPrompt;
+          return hopOutcome;
+        }
+      : undefined;
+
     const outcome = await ctx.agentManager.runWithFallback(
       {
         runOptions,
@@ -224,6 +236,12 @@ export const executionStage: PipelineStage = {
     );
 
     const result = outcome.result;
+    if (outcome.finalBundle ?? latestBundle) {
+      ctx.contextBundle = outcome.finalBundle ?? latestBundle;
+    }
+    if (outcome.finalPrompt ?? latestPrompt) {
+      ctx.prompt = outcome.finalPrompt ?? latestPrompt;
+    }
     ctx.agentResult = result;
     ctx.selfVerification = parseSelfVerificationMarker(result.output ?? "", ctx.workdir);
     const selfVerificationFailed = ctx.selfVerification.lint === "fail" || ctx.selfVerification.typecheck === "fail";
