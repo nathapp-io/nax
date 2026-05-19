@@ -92,9 +92,16 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
     ? mock((prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!("claude", prompt, completeOpts))
     : mock(() => Promise.resolve({ output: "", tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult));
 
-  // When runAsSessionFn is provided, the mock's runWithFallback invokes it so
-  // tests can intercept per-sessionRole dispatch without wiring real sessions.
+  // buildRunWithFallback priority: runWithFallbackFn > runAsSessionFn > default.
+  // runWithFallbackFn must take priority because it wires req.executeHop, which
+  // is required for callOp's retry logic. runAsSessionFn is only used as the
+  // hop transport when no explicit runWithFallbackFn is set.
   const buildRunWithFallback = () => {
+    if (opts.runWithFallbackFn) {
+      return mock((req: AgentRunRequest, primaryAgentOverride?: string) =>
+        opts.runWithFallbackFn!(req, primaryAgentOverride),
+      );
+    }
     if (opts.runAsSessionFn) {
       return mock(async (req: AgentRunRequest) => {
         if (opts.openSessionFn) {
@@ -113,11 +120,6 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         };
         return { result, fallbacks: [] };
       });
-    }
-    if (opts.runWithFallbackFn) {
-      return mock((req: AgentRunRequest, primaryAgentOverride?: string) =>
-        opts.runWithFallbackFn!(req, primaryAgentOverride),
-      );
     }
     return mock(() => Promise.resolve({ result: DEFAULT_RESULT, fallbacks: [] }));
   };
@@ -156,10 +158,10 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
         ? mock((name: string, prompt: string, completeOpts?: CompleteOptions) => opts.completeFn!(name, prompt, completeOpts))
         : mock((name: string, _p: string, _o?: CompleteOptions) => Promise.resolve({ output: `output from ${name}`, tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 } satisfies CompleteResult)),
     runAsSession: opts.runAsSessionFn
-      ? mock((_agentName: string, _handle: SessionHandle, _prompt: string, sessionOpts: RunAsSessionOpts) => {
-          const fakeOpts = { sessionRole: sessionOpts.sessionRole } as AgentRunOptions;
-          return opts.runAsSessionFn!(fakeOpts, (t: TurnResult) => t);
-        })
+      ? mock((agentName: string, handle: SessionHandle, prompt: string, sessionOpts: RunAsSessionOpts) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (opts.runAsSessionFn as any)(agentName, handle, prompt, sessionOpts),
+        )
       : mock(
           (_agentName: string, _handle: SessionHandle, _prompt: string, _sessionOpts: RunAsSessionOpts) =>
             Promise.resolve({

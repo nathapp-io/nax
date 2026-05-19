@@ -32,6 +32,7 @@ import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
 import type { ReviewCheckResult } from "@/findings";
 import { NaxError } from "@/errors";
+import { _storyOrchestratorDeps } from "@/execution";
 
 // ============================================================================
 // Test Helper: Mock Operations
@@ -424,22 +425,19 @@ describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
 describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
   test("dispatches via callOp (not agentManager.runWithFallback)", async () => {
     const config = makeNaxConfig();
-    let callOpCalled = false;
 
-    // Mock callOp to track calls
-    const originalCallOp = require("@/operations").callOp;
     let callOpInvoked = false;
-    mock.module("@/operations", () => ({
-      callOp: async () => {
-        callOpInvoked = true;
-        return { success: true };
-      },
-      ...originalCallOp,
-    }));
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async () => {
+      callOpInvoked = true;
+      return { success: true } as unknown as ReturnType<typeof origCallOp>;
+    });
 
-    runtime = makeTestRuntime({ config });
+    const mockAgentManager = makeMockAgentManager();
+    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
 
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const { StoryOrchestratorBuilder } = require("@/execution/story-orchestrator");
+    const builder = new StoryOrchestratorBuilder()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
 
     const ctx: CallContext = {
@@ -451,8 +449,12 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
     };
 
     const plan = builder.build(ctx);
-    // Note: actual implementation will call callOp
-    expect(plan).toBeDefined();
+    await plan.run();
+
+    expect(callOpInvoked).toBe(true);
+    expect(mockAgentManager.runWithFallback).not.toHaveBeenCalled();
+
+    _storyOrchestratorDeps.callOp = origCallOp;
   });
 
   test("does not use agentManager.runWithFallback", async () => {
