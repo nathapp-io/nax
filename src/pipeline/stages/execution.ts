@@ -10,10 +10,12 @@ import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { failAndClose } from "../../execution/session-manager-runtime";
 import { StoryOrchestratorBuilder } from "../../execution/story-orchestrator";
+import type { ExecutionPlan } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { implementerOp } from "../../operations/implement";
+import { shouldKeepSessionOpen } from "../../operations/execution-gates";
 import type { CallContext } from "../../operations/types";
 import { parseSelfVerificationMarker } from "../../quality";
 import { appendScratchEntry } from "../../session/scratch-writer";
@@ -175,6 +177,7 @@ export const executionStage: PipelineStage = {
       story: ctx.story,
       ...(interactionBridge ? { interactionBridge } : {}),
     };
+    const keepImplementerSessionOpen = shouldKeepSessionOpen(ctx.config, "implementer");
 
     let capturedTokenUsage: import("../../agents/cost").TokenUsage | undefined;
     let capturedResponse = "";
@@ -189,7 +192,7 @@ export const executionStage: PipelineStage = {
 
     let planResult: { phaseOutputs: Record<string, unknown>; phaseCosts: Record<string, number>; durationMs: number };
     try {
-      const plan = new StoryOrchestratorBuilder()
+      const plan: ExecutionPlan = new StoryOrchestratorBuilder()
         .addImplementer({
           op: implementerOp,
           input: {
@@ -200,6 +203,9 @@ export const executionStage: PipelineStage = {
           },
         })
         .build(callCtx);
+      if (keepImplementerSessionOpen) {
+        logger.debug("execution", "Implementer session warm policy enabled", { storyId: ctx.story.id });
+      }
       planResult = await plan.run();
     } finally {
       unsubscribe();

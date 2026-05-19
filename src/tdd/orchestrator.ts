@@ -5,6 +5,7 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
+import type { ExecutionPlan } from "../execution/story-orchestrator";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { CallContext, RunOperation } from "../operations";
@@ -103,7 +104,7 @@ async function runTddSessionViaBuilder<I, O, C>(
   let planDurationMs = 0;
 
   try {
-    const plan = new StoryOrchestratorBuilder().addImplementer({ op, input }).build(ctx);
+    const plan: ExecutionPlan = new StoryOrchestratorBuilder().addImplementer({ op, input }).build(ctx);
     const planResult = await plan.run();
     phaseOutput = planResult.phaseOutputs[op.name] as typeof phaseOutput;
     opCostUsd = planResult.phaseCosts[op.name] ?? 0;

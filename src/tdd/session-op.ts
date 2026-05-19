@@ -60,7 +60,7 @@ type TddSessionOp = { readonly session: { readonly role: SessionRole } };
 /**
  * Run a single TDD session for the given op (role).
  * Dispatches via callOp to implementerOp, testWriterOp, or verifierOp based on
- * op.session.role. Does not call runTddSession() directly.
+ * op.session.role. Does not call the legacy direct session runner.
  */
 export async function runTddSessionOp(
   op: TddSessionOp,

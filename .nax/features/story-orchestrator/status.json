@@ -1,32 +1,38 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-19T01-39-16-340Z",
+    "id": "run-2026-05-19T04-56-14-156Z",
     "feature": "story-orchestrator",
-    "startedAt": "2026-05-19T01:39:16.340Z",
-    "status": "failed",
+    "startedAt": "2026-05-19T04:56:14.156Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 84992
+    "pid": 44458
   },
   "progress": {
     "total": 4,
-    "passed": 3,
-    "failed": 1,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 4.675120390000001,
+    "spent": 0,
     "limit": 50
   },
   "current": null,
-  "iterations": 1,
-  "updatedAt": "2026-05-19T03:14:31.648Z",
-  "durationMs": 5715308,
+  "iterations": 2,
+  "updatedAt": "2026-05-19T05:49:25.409Z",
+  "durationMs": 3191253,
   "postRun": {
     "acceptance": {
-      "status": "not-run"
+      "status": "passed",
+      "lastRunAt": "2026-05-19T05:49:24.676Z"
+    },
+    "regression": {
+      "status": "passed",
+      "skipped": true,
+      "lastRunAt": "2026-05-19T05:49:24.677Z"
     }
   }
 }

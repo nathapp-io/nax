@@ -387,7 +387,7 @@ export class StoryOrchestratorBuilder {
       throw new NaxError(
         "StoryOrchestratorBuilder.build(): addImplementer() must be called before build()",
         "ORCHESTRATOR_NO_IMPLEMENTER",
-        { stage: "run" },
+        { stage: "execution" },
       );
     }
 

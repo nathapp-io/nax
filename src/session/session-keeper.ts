@@ -7,7 +7,6 @@
 
 import type { IAgentManager } from "../agents/manager-types";
 import type { RetryStrategy } from "../agents/retry";
-import { SessionTurnError } from "../agents/types";
 import type { SessionHandle, TurnResult } from "../agents/types";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema";
@@ -78,7 +77,7 @@ export class SessionKeeper {
 
     while (true) {
       if (!this.heldHandle) {
-        const existing = this.sessionManager.getLiveHandle?.(sessionName);
+        const existing = await this.sessionManager.getLiveHandle?.(sessionName);
         if (existing && existing.agentName === defaultAgent) {
           this.heldHandle = existing;
         } else {
@@ -113,9 +112,10 @@ export class SessionKeeper {
         this.heldHandle = undefined;
         await this.sessionManager.closeSession(stale).catch(() => {});
 
-        if (err instanceof SessionTurnError && err.retryable) {
+        const isRetryable = Boolean((err as { retryable?: unknown })?.retryable === true);
+        if (isRetryable) {
           if (retryStrategy) {
-            const decision = retryStrategy.shouldRetry(err, this.retryAttempts, {
+            const decision = await retryStrategy.shouldRetry(err, this.retryAttempts, {
               site: "run",
               agentName: defaultAgent,
               stage: pipelineStage,
