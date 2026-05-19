@@ -1,7 +1,7 @@
+import { resolveModelForAgent } from "../config";
 import { NaxError } from "../errors";
 import type { FixCycleContext, FixStrategy } from "../findings";
 import { getSafeLogger } from "../logger";
-import { resolveModelForAgent } from "../config";
 import { adversarialReviewOp, implementerOp, semanticReviewOp, testWriterOp, verifierOp } from "../operations";
 import type {
   AdversarialReviewInput,
@@ -243,57 +243,57 @@ async function runRectification(
   });
 
   try {
-  let priorFailureCount = gatherRectificationFailures(
-    phaseOutputs,
-    verifierPhase,
-    state.semanticReview,
-    state.adversarialReview,
-  ).length;
-  let attempts = 0;
-
-  while (attempts < rectification.maxAttempts) {
-    if (ctx.runtime.signal?.aborted) {
-      return;
-    }
-
-    const failures = gatherRectificationFailures(
-      phaseOutputs,
-      verifierPhase,
-      state.semanticReview,
-      state.adversarialReview,
-    );
-    if (failures.length === 0) {
-      return;
-    }
-
-    const selection = await _storyOrchestratorDeps.runFixCycle(rectification.strategies, failures, ctx);
-    if (!selection) {
-      return;
-    }
-
-    const fixPhase: InternalPhase = {
-      kind: "implementer",
-      slot: { op: selection.op, input: selection.input },
-    };
-    await runPhase(ctx, fixPhase, phaseCosts, phaseOutputs);
-    attempts += 1;
-
-    const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
-    if (phasePassed(verifierOutput)) {
-      return;
-    }
-
-    const nextFailureCount = gatherRectificationFailures(
+    let priorFailureCount = gatherRectificationFailures(
       phaseOutputs,
       verifierPhase,
       state.semanticReview,
       state.adversarialReview,
     ).length;
-    if (rectification.abortOnIncreasingFailures && nextFailureCount > priorFailureCount) {
-      return;
+    let attempts = 0;
+
+    while (attempts < rectification.maxAttempts) {
+      if (ctx.runtime.signal?.aborted) {
+        return;
+      }
+
+      const failures = gatherRectificationFailures(
+        phaseOutputs,
+        verifierPhase,
+        state.semanticReview,
+        state.adversarialReview,
+      );
+      if (failures.length === 0) {
+        return;
+      }
+
+      const selection = await _storyOrchestratorDeps.runFixCycle(rectification.strategies, failures, ctx);
+      if (!selection) {
+        return;
+      }
+
+      const fixPhase: InternalPhase = {
+        kind: "implementer",
+        slot: { op: selection.op, input: selection.input },
+      };
+      await runPhase(ctx, fixPhase, phaseCosts, phaseOutputs);
+      attempts += 1;
+
+      const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
+      if (phasePassed(verifierOutput)) {
+        return;
+      }
+
+      const nextFailureCount = gatherRectificationFailures(
+        phaseOutputs,
+        verifierPhase,
+        state.semanticReview,
+        state.adversarialReview,
+      ).length;
+      if (rectification.abortOnIncreasingFailures && nextFailureCount > priorFailureCount) {
+        return;
+      }
+      priorFailureCount = nextFailureCount;
     }
-    priorFailureCount = nextFailureCount;
-  }
   } finally {
     await keeper.close();
   }
