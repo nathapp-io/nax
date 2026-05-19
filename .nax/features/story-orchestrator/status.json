@@ -27,10 +27,6 @@
   "postRun": {
     "acceptance": {
       "status": "not-run"
-    },
-    "regression": {
-      "status": "passed",
-      "lastRunAt": "2026-05-19T03:14:30.849Z"
     }
   }
 }

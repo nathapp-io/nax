@@ -1,73 +1,89 @@
-/**
- * StoryOrchestratorBuilder — pure callOp dispatcher that unifies execution
- * and TDD orchestration (US-004).
- *
- * Dispatches each phase slot via callOp(ctx, op, input) in canonical order.
- * Wrapper responsibilities (rollback, verdict reading, greenfield detection)
- * remain in tdd/orchestrator.ts — this builder owns ONLY phase dispatch
- * and cost aggregation.
- */
-
 import { NaxError } from "../errors";
-import { runFixCycle } from "../findings";
-import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
-import type { CallOpFn } from "../findings/cycle";
+import type { FixCycleContext, FixStrategy } from "../findings";
 import { getSafeLogger } from "../logger";
+import { adversarialReviewOp, implementerOp, semanticReviewOp, testWriterOp, verifierOp } from "../operations";
+import type {
+  AdversarialReviewInput,
+  CallContext,
+  ImplementerInput,
+  RunOperation,
+  SemanticReviewInput,
+  TestWriterInput,
+  VerifierInput,
+} from "../operations";
 import { callOp } from "../operations/call";
-import type { CallContext, RunOperation } from "../operations/types";
+import type { ReviewCheckResult } from "../review/types";
 import { errorMessage } from "../utils/errors";
 
-// Captured at module init time so mock.module("@/operations") live-binding
-// updates (Bun 1.x global leak) cannot replace the reference used at runtime.
-export const _storyOrchestratorDeps = { callOp, runFixCycle };
+type RectificationSelection = { op: RunOperation<unknown, unknown, unknown>; input: unknown } | null;
 
-// ─── Public types ─────────────────────────────────────────────────────────────
+async function selectFixOperation(
+  // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous here
+  strategies: readonly FixStrategy<any, unknown, unknown, unknown>[],
+  failures: readonly ReviewCheckResult[],
+  ctx: CallContext,
+): Promise<RectificationSelection> {
+  const active = strategies.filter((strategy) => failures.some((failure) => strategy.appliesTo(failure)));
+  const exclusive = active.find((strategy) => strategy.coRun !== "co-run-sequential");
+  const chosen = exclusive ?? active[0];
+  if (!chosen) {
+    return null;
+  }
 
-/**
- * Generic slot — typed per call so add* methods accept the exact op+input
- * without requiring callers to cast (AC1).
- */
+  return {
+    op: chosen.fixOp as RunOperation<unknown, unknown, unknown>,
+    input: chosen.buildInput(
+      failures.filter((failure) => chosen.appliesTo(failure)),
+      [],
+      ctx as FixCycleContext,
+    ),
+  };
+}
+
+export const _storyOrchestratorDeps = {
+  callOp,
+  runFixCycle: selectFixOperation,
+};
+
 export interface OrchestratorSlot<I, O, C> {
   readonly op: RunOperation<I, O, C>;
   readonly input: I;
 }
 
 export interface RectificationPhaseOptions {
-  /** Max rectification attempts. From config.execution.rectification.maxRetries. */
   readonly maxAttempts: number;
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategies share a cycle; I/O types are opaque here
+  // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous here
   readonly strategies: FixStrategy<any, unknown, unknown, unknown>[];
-  /** Abort if failure count increases between iterations. */
   readonly abortOnIncreasingFailures: boolean;
 }
 
 export interface StoryOrchestratorResult {
   readonly success: boolean;
-  /** Per-phase costs keyed by op.name. */
   readonly phaseCosts: Record<string, number>;
   readonly totalCostUsd: number;
   readonly durationMs: number;
-  /**
-   * Per-phase parsed outputs, keyed by op.name. Typed Record<string, unknown>
-   * with read-site narrowing — wrappers must narrow adjacent to the named op.
-   */
   readonly phaseOutputs: Record<string, unknown>;
 }
 
-// ─── Sentinel exports for test introspection (AC9) ───────────────────────────
-
-// biome-ignore lint/suspicious/noExplicitAny: sentinel for runtime typeof check in tests
+// biome-ignore lint/suspicious/noExplicitAny: sentinel export for compatibility with existing tests
 export const StoryOrchestratorResult: any = {};
 
-// ─── Internal types ───────────────────────────────────────────────────────────
-
-type AnySlot = OrchestratorSlot<unknown, unknown, unknown>;
-
 type PhaseKind = "test-writer" | "implementer" | "verifier" | "semantic-review" | "adversarial-review";
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
+type AnySlot = { op: RunOperation<any, any, any>; input: unknown };
 
 interface InternalPhase {
   readonly kind: PhaseKind;
   readonly slot: AnySlot;
+}
+
+interface InternalBuildState {
+  implementer?: InternalPhase;
+  testWriter?: InternalPhase;
+  verifier?: InternalPhase;
+  semanticReview?: InternalPhase;
+  adversarialReview?: InternalPhase;
+  rectification?: RectificationPhaseOptions;
 }
 
 const CANONICAL_ORDER: readonly PhaseKind[] = [
@@ -78,60 +94,267 @@ const CANONICAL_ORDER: readonly PhaseKind[] = [
   "adversarial-review",
 ];
 
-// ─── ExecutionPlanImpl ────────────────────────────────────────────────────────
+function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "op" in value &&
+    "input" in value &&
+    typeof (value as { op?: { kind?: string } }).op?.kind === "string"
+  );
+}
 
-export class ExecutionPlan {
-  constructor(
-    private readonly _ctx: CallContext,
-    private readonly _orderedPhases: readonly InternalPhase[],
-    private readonly _verifierPhase: InternalPhase | undefined,
-    private readonly _rectificationOpts: RectificationPhaseOptions | undefined,
-  ) {}
+function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): void {
+  if (kind === "test-writer") state.testWriter = { kind, slot };
+  else if (kind === "implementer") state.implementer = { kind, slot };
+  else if (kind === "verifier") state.verifier = { kind, slot };
+  else if (kind === "semantic-review") state.semanticReview = { kind, slot };
+  else state.adversarialReview = { kind, slot };
+}
 
-  run(): Promise<StoryOrchestratorResult> {
-    return runExecutionPlan(this._ctx, this._orderedPhases, this._verifierPhase, this._rectificationOpts);
+function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
+  return CANONICAL_ORDER.flatMap((kind) => {
+    if (kind === "test-writer" && state.testWriter) return [state.testWriter];
+    if (kind === "implementer" && state.implementer) return [state.implementer];
+    if (kind === "verifier" && state.verifier) return [state.verifier];
+    if (kind === "semantic-review" && state.semanticReview) return [state.semanticReview];
+    if (kind === "adversarial-review" && state.adversarialReview) return [state.adversarialReview];
+    return [];
+  });
+}
+
+function phasePassed(output: unknown): boolean {
+  if (output === null || output === undefined || typeof output !== "object") {
+    return true;
+  }
+
+  const record = output as Record<string, unknown>;
+  if ("success" in record) {
+    return record.success !== false;
+  }
+  if ("passed" in record) {
+    return record.passed !== false;
+  }
+  return true;
+}
+
+function collectReviewFailures(output: unknown, check: ReviewCheckResult["check"]): ReviewCheckResult[] {
+  if (output === null || output === undefined || typeof output !== "object") {
+    return [];
+  }
+
+  const record = output as Record<string, unknown>;
+  const findings = Array.isArray(record.findings) ? record.findings : [];
+  const success =
+    "success" in record ? record.success === true : "passed" in record ? record.passed === true : findings.length === 0;
+
+  if (success) {
+    return [];
+  }
+
+  return [
+    {
+      check,
+      success: false,
+      command: "",
+      exitCode: 1,
+      output: "",
+      durationMs: typeof record.durationMs === "number" ? record.durationMs : 0,
+      findings: findings as ReviewCheckResult["findings"],
+    },
+  ];
+}
+
+function gatherRectificationFailures(
+  phaseOutputs: Record<string, unknown>,
+  verifierPhase: InternalPhase,
+  semanticPhase: InternalPhase | undefined,
+  adversarialPhase: InternalPhase | undefined,
+): ReviewCheckResult[] {
+  const failures: ReviewCheckResult[] = [];
+
+  failures.push(...collectReviewFailures(phaseOutputs[verifierPhase.slot.op.name], "test"));
+  if (semanticPhase) {
+    failures.push(...collectReviewFailures(phaseOutputs[semanticPhase.slot.op.name], "semantic"));
+  }
+  if (adversarialPhase) {
+    failures.push(...collectReviewFailures(phaseOutputs[adversarialPhase.slot.op.name], "adversarial"));
+  }
+
+  return failures;
+}
+
+async function runPhase(
+  ctx: CallContext,
+  phase: InternalPhase,
+  phaseCosts: Record<string, number>,
+  phaseOutputs: Record<string, unknown>,
+): Promise<unknown> {
+  const scope = ctx.runtime.costAggregator.openScope();
+  try {
+    const output = await _storyOrchestratorDeps.callOp(
+      { ...ctx, scopeId: scope.scopeId },
+      phase.slot.op,
+      phase.slot.input,
+    );
+    phaseOutputs[phase.slot.op.name] = output;
+    return output;
+  } finally {
+    phaseCosts[phase.slot.op.name] = (phaseCosts[phase.slot.op.name] ?? 0) + scope.snapshot().totalCostUsd;
+    scope.close();
   }
 }
 
-// ─── StoryOrchestratorBuilder ─────────────────────────────────────────────────
+async function runRectification(
+  ctx: CallContext,
+  state: InternalBuildState,
+  phaseCosts: Record<string, number>,
+  phaseOutputs: Record<string, unknown>,
+): Promise<void> {
+  const rectification = state.rectification;
+  const verifierPhase = state.verifier;
+  if (!rectification || !verifierPhase) {
+    return;
+  }
+
+  let priorFailureCount = gatherRectificationFailures(
+    phaseOutputs,
+    verifierPhase,
+    state.semanticReview,
+    state.adversarialReview,
+  ).length;
+  let attempts = 0;
+
+  while (attempts < rectification.maxAttempts) {
+    if (ctx.runtime.signal?.aborted) {
+      return;
+    }
+
+    const failures = gatherRectificationFailures(
+      phaseOutputs,
+      verifierPhase,
+      state.semanticReview,
+      state.adversarialReview,
+    );
+    if (failures.length === 0) {
+      return;
+    }
+
+    const selection = await _storyOrchestratorDeps.runFixCycle(rectification.strategies, failures, ctx);
+    if (!selection) {
+      return;
+    }
+
+    const fixPhase: InternalPhase = {
+      kind: "implementer",
+      slot: { op: selection.op, input: selection.input },
+    };
+    await runPhase(ctx, fixPhase, phaseCosts, phaseOutputs);
+    attempts += 1;
+
+    const verifierOutput = await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
+    if (phasePassed(verifierOutput)) {
+      return;
+    }
+
+    const nextFailureCount = gatherRectificationFailures(
+      phaseOutputs,
+      verifierPhase,
+      state.semanticReview,
+      state.adversarialReview,
+    ).length;
+    if (rectification.abortOnIncreasingFailures && nextFailureCount > priorFailureCount) {
+      return;
+    }
+    priorFailureCount = nextFailureCount;
+  }
+}
+
+export class ExecutionPlan {
+  constructor(
+    private readonly ctx: CallContext,
+    private readonly state: InternalBuildState,
+  ) {}
+
+  async run(): Promise<StoryOrchestratorResult> {
+    const phaseCosts: Record<string, number> = {};
+    const phaseOutputs: Record<string, unknown> = {};
+    const startedAt = Date.now();
+    const logger = getSafeLogger();
+
+    for (const phase of collectOrderedPhases(this.state)) {
+      try {
+        await runPhase(this.ctx, phase, phaseCosts, phaseOutputs);
+      } catch (error) {
+        logger?.error("story-orchestrator", "Phase threw unexpected error", {
+          storyId: this.ctx.storyId,
+          phase: phase.slot.op.name,
+          error: errorMessage(error),
+        });
+        throw error;
+      }
+    }
+
+    await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+
+    const success = collectOrderedPhases(this.state).every((phase) => phasePassed(phaseOutputs[phase.slot.op.name]));
+    const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
+
+    return {
+      success,
+      phaseCosts,
+      totalCostUsd,
+      durationMs: Date.now() - startedAt,
+      phaseOutputs,
+    };
+  }
+}
 
 export class StoryOrchestratorBuilder {
-  private readonly _phases: InternalPhase[] = [];
-  private _rectificationOpts: RectificationPhaseOptions | undefined;
+  private readonly state: InternalBuildState = {};
 
-  addImplementer<I, O, C>(slot: OrchestratorSlot<I, O, C>): this {
-    this._phases.push({ kind: "implementer", slot: slot as AnySlot });
+  addImplementer<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addImplementer(input: ImplementerInput): this;
+  addImplementer(value: ImplementerInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "implementer", isSlot(value) ? value : { op: implementerOp, input: value });
     return this;
   }
 
-  addTestWriter<I, O, C>(slot: OrchestratorSlot<I, O, C>): this {
-    this._phases.push({ kind: "test-writer", slot: slot as AnySlot });
+  addTestWriter<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTestWriter(input: TestWriterInput): this;
+  addTestWriter(value: TestWriterInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "test-writer", isSlot(value) ? value : { op: testWriterOp, input: value });
     return this;
   }
 
-  addVerifier<I, O, C>(slot: OrchestratorSlot<I, O, C>): this {
-    this._phases.push({ kind: "verifier", slot: slot as AnySlot });
+  addVerifier<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addVerifier(input: VerifierInput): this;
+  addVerifier(value: VerifierInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "verifier", isSlot(value) ? value : { op: verifierOp, input: value });
     return this;
   }
 
-  addSemanticReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this {
-    this._phases.push({ kind: "semantic-review", slot: slot as AnySlot });
+  addSemanticReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addSemanticReview(input: SemanticReviewInput): this;
+  addSemanticReview(value: SemanticReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "semantic-review", isSlot(value) ? value : { op: semanticReviewOp, input: value });
     return this;
   }
 
-  addAdversarialReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this {
-    this._phases.push({ kind: "adversarial-review", slot: slot as AnySlot });
+  addAdversarialReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addAdversarialReview(input: AdversarialReviewInput): this;
+  addAdversarialReview(value: AdversarialReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "adversarial-review", isSlot(value) ? value : { op: adversarialReviewOp, input: value });
     return this;
   }
 
   addRectification(opts: RectificationPhaseOptions): this {
-    this._rectificationOpts = opts;
+    this.state.rectification = opts;
     return this;
   }
 
   build(ctx: CallContext): ExecutionPlan {
-    const hasImplementer = this._phases.some((p) => p.kind === "implementer");
-    if (!hasImplementer) {
+    if (!this.state.implementer) {
       throw new NaxError(
         "StoryOrchestratorBuilder.build(): addImplementer() must be called before build()",
         "ORCHESTRATOR_NO_IMPLEMENTER",
@@ -139,166 +362,6 @@ export class StoryOrchestratorBuilder {
       );
     }
 
-    const orderedPhases = CANONICAL_ORDER.map((kind) => this._phases.find((p) => p.kind === kind)).filter(
-      (p): p is InternalPhase => p !== undefined,
-    );
-
-    const verifierPhase = this._phases.find((p) => p.kind === "verifier");
-
-    return new ExecutionPlan(ctx, orderedPhases, verifierPhase, this._rectificationOpts);
+    return new ExecutionPlan(ctx, { ...this.state });
   }
-}
-
-// ─── Execution logic ──────────────────────────────────────────────────────────
-
-async function runExecutionPlan(
-  ctx: CallContext,
-  orderedPhases: readonly InternalPhase[],
-  verifierPhase: InternalPhase | undefined,
-  rectificationOpts: RectificationPhaseOptions | undefined,
-): Promise<StoryOrchestratorResult> {
-  const startTime = Date.now();
-  const phaseCosts: Record<string, number> = {};
-  const phaseOutputs: Record<string, unknown> = {};
-  let overallSuccess = true;
-  const logger = getSafeLogger();
-
-  for (const phase of orderedPhases) {
-    const opName = phase.slot.op.name;
-    const scope = ctx.runtime.costAggregator.openScope();
-    try {
-      const opCtx = { ...ctx, scopeId: scope.scopeId };
-      const output = await _storyOrchestratorDeps.callOp(opCtx, phase.slot.op, phase.slot.input);
-      phaseCosts[opName] = scope.snapshot().totalCostUsd;
-      phaseOutputs[opName] = output;
-
-      if (isFailureOutput(output)) {
-        overallSuccess = false;
-      }
-    } catch (err) {
-      phaseCosts[opName] = scope.snapshot().totalCostUsd;
-      logger?.error("story-orchestrator", "Phase threw unexpected error", {
-        storyId: ctx.storyId,
-        phase: opName,
-        error: errorMessage(err),
-      });
-      throw err;
-    } finally {
-      scope.close();
-    }
-  }
-
-  if (rectificationOpts && verifierPhase) {
-    const newSuccess = await runRectificationPhase(
-      ctx,
-      verifierPhase,
-      rectificationOpts,
-      phaseOutputs,
-      phaseCosts,
-      logger,
-    );
-    if (newSuccess) {
-      overallSuccess = true;
-    } else if (!overallSuccess) {
-      overallSuccess = false;
-    }
-  }
-
-  const totalCostUsd = Object.values(phaseCosts).reduce((sum, c) => sum + c, 0);
-
-  return {
-    success: overallSuccess,
-    phaseCosts,
-    totalCostUsd,
-    durationMs: Date.now() - startTime,
-    phaseOutputs,
-  };
-}
-
-/**
- * Returns true if output signals a phase failure.
- * Only checks for explicit `{ success: false }` — undefined or missing success
- * field does NOT trigger failure (the phase succeeded).
- */
-function isFailureOutput(output: unknown): boolean {
-  return (
-    output !== null &&
-    output !== undefined &&
-    typeof output === "object" &&
-    (output as Record<string, unknown>).success === false
-  );
-}
-
-async function runRectificationPhase(
-  ctx: CallContext,
-  verifierPhase: InternalPhase,
-  opts: RectificationPhaseOptions,
-  phaseOutputs: Record<string, unknown>,
-  phaseCosts: Record<string, number>,
-  logger: ReturnType<typeof getSafeLogger>,
-): Promise<boolean> {
-  const verifierOpName = verifierPhase.slot.op.name;
-  const verifierOutput = phaseOutputs[verifierOpName];
-
-  // If verifier already succeeded, no rectification needed.
-  if (!isFailureOutput(verifierOutput)) {
-    return true;
-  }
-
-  if (opts.strategies.length === 0) {
-    // No strategies to apply.
-    return false;
-  }
-
-  // AC7: Delegate failure-type introspection to runFixCycle — the cycle is the
-  // single decision point for strategy selection, iteration counting, and bail predicates.
-  // abortOnIncreasingFailures is expressed as a bailWhen predicate on each strategy.
-  const strategies = opts.abortOnIncreasingFailures
-    ? opts.strategies.map((s) => ({
-        ...s,
-        bailWhen: (iterations: Iteration<Finding>[]) => {
-          const orig = s.bailWhen?.(iterations) ?? null;
-          if (orig !== null) return orig;
-          const last = iterations[iterations.length - 1];
-          if (!last) return null;
-          return last.findingsAfter.length > last.findingsBefore.length ? "failure count increased" : null;
-        },
-      }))
-    : opts.strategies;
-
-  const cycle: FixCycle<Finding> = {
-    findings: extractFindings(phaseOutputs[verifierOpName]) as Finding[],
-    iterations: [],
-    strategies,
-    config: { maxAttemptsTotal: opts.maxAttempts, validatorRetries: 0 },
-    validate: async (_vCtx, _mode) => {
-      const verifierScope = ctx.runtime.costAggregator.openScope();
-      try {
-        const verifierCtx = { ...ctx, scopeId: verifierScope.scopeId };
-        const newOutput = await _storyOrchestratorDeps.callOp(
-          verifierCtx,
-          verifierPhase.slot.op,
-          verifierPhase.slot.input,
-        );
-        phaseOutputs[verifierOpName] = newOutput;
-        phaseCosts[verifierOpName] = (phaseCosts[verifierOpName] ?? 0) + verifierScope.snapshot().totalCostUsd;
-        return extractFindings(newOutput) as Finding[];
-      } finally {
-        verifierScope.close();
-      }
-    },
-  };
-
-  const cycleResult = await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "rectification", {
-    callOp: _storyOrchestratorDeps.callOp as CallOpFn,
-    logger,
-  });
-
-  return cycleResult.exitReason === "resolved";
-}
-
-function extractFindings(output: unknown): unknown[] {
-  if (output === null || output === undefined || typeof output !== "object") return [];
-  const findings = (output as Record<string, unknown>).findings;
-  return Array.isArray(findings) ? findings : [];
 }

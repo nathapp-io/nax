@@ -21,7 +21,7 @@ export interface VerifierOutput {
 export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
   kind: "run",
   name: "verifier",
-  stage: "run",
+  stage: "verify",
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
   build(input, _ctx) {

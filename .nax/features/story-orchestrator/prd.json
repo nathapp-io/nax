@@ -3,7 +3,7 @@
   "feature": "story-orchestrator",
   "branchName": "refactor/story-orchestrator",
   "createdAt": "2026-05-18T06:48:30Z",
-  "updatedAt": "2026-05-19T03:17:57.626Z",
+  "updatedAt": "2026-05-19T04:56:14.260Z",
   "userStories": [
     {
       "id": "US-001",
@@ -172,7 +172,7 @@
       ],
       "status": "pending",
       "passes": false,
-      "attempts": 2,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "expert",
@@ -200,9 +200,7 @@
         "src/config/permissions.ts",
         "docs/specs/SPEC-story-orchestrator.md"
       ],
-      "priorErrors": [
-        "Failed prior attempt at commit 5d3dea52 (archive tag archive/story-orchestrator-us004-attempt): builder degraded into decorative wrapper around path-specific logic. Used per-slot runner closures, outer-scope sharedState, exception-as-control-flow, and Layer 3 (agentManager.runWithFallback) which bypassed middleware, op.retry, op.recover, interactionBridge, and packageView.select. Issue #1061 captures the seven design gaps; this revision pins each."
-      ],
+      "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
       "storyGitRef": "14328e71621aa6844cc6bbec95d7c0ebcb31baca"

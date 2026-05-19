@@ -56,9 +56,6 @@ async function rollbackTddFailureIfNeeded(
   }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: generic op output; caller provides typed ops
-type AnyTddOp = RunOperation<unknown, any, unknown>;
-
 /**
  * Run a single TDD phase via StoryOrchestratorBuilder (AC9).
  * Subscribes to dispatch events around the plan run to capture tokenUsage and
@@ -66,11 +63,11 @@ type AnyTddOp = RunOperation<unknown, any, unknown>;
  * AC10 responsibilities (rollback, verdict, greenfield, full-suite gate) stay in
  * runThreeSessionTdd.
  */
-async function runTddSessionViaBuilder(
+async function runTddSessionViaBuilder<I, O, C>(
   role: TddSessionRole,
   ctx: CallContext,
-  op: AnyTddOp,
-  input: unknown,
+  op: RunOperation<I, O, C>,
+  input: I,
   beforeRef: string,
   opts: {
     story: import("../prd").UserStory;
@@ -316,7 +313,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     session1 = await runTddSessionViaBuilder(
       "test-writer",
       ctxWithBridge,
-      testWriterOp as unknown as AnyTddOp,
+      testWriterOp,
       {
         story,
         ...(options.contextMarkdown ? { contextMarkdown: options.contextMarkdown } : {}),
@@ -428,7 +425,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const session2 = await runTddSessionViaBuilder(
     "implementer",
     ctxWithBridge,
-    implementerOp as unknown as AnyTddOp,
+    implementerOp,
     {
       story,
       ...(options.contextMarkdown ? { contextMarkdown: options.contextMarkdown } : {}),
@@ -507,14 +504,12 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
   await getTddContextBundle?.("verifier");
 
-  const session3 = await runTddSessionViaBuilder(
-    "verifier",
-    baseCallCtx,
-    verifierOp as unknown as AnyTddOp,
-    { story },
-    session3Ref,
-    { story, workdir, config, lite },
-  );
+  const session3 = await runTddSessionViaBuilder("verifier", baseCallCtx, verifierOp, { story }, session3Ref, {
+    story,
+    workdir,
+    config,
+    lite,
+  });
   sessions.push(session3);
   await recordTddSessionOutcome?.(session3);
 
