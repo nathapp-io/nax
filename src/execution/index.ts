@@ -43,3 +43,4 @@ export {
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,
 } from "./story-orchestrator";
+export { assemblePlanInputs, type PlanInputs } from "./plan-inputs";
