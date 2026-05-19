@@ -1,9 +1,15 @@
 /** Three-Session TDD Orchestrator */
 
 import { resolveDefaultAgent } from "../agents";
+import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
+import { StoryOrchestratorBuilder } from "../execution/story-orchestrator";
+import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
+import type { CallContext, RunOperation } from "../operations";
+import { implementerOp, testWriterOp, verifierOp } from "../operations";
+import { parseSelfVerificationMarker } from "../quality";
 import { createRuntime } from "../runtime";
 import { isTestFile } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
@@ -11,9 +17,15 @@ import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
-import { implementTddOp, runTddSessionOp, verifyTddOp, writeTddTestOp } from "./session-op";
-import { rollbackToRef, truncateTestOutput } from "./session-runner";
-import type { FailureCategory, TddSessionResult, ThreeSessionTddOptions, ThreeSessionTddResult } from "./types";
+import { _sessionRunnerDeps, rollbackToRef, truncateTestOutput } from "./session-runner";
+import type {
+  FailureCategory,
+  IsolationCheck,
+  TddSessionResult,
+  TddSessionRole,
+  ThreeSessionTddOptions,
+  ThreeSessionTddResult,
+} from "./types";
 import { sumTddTokenUsage } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
@@ -44,18 +56,137 @@ async function rollbackTddFailureIfNeeded(
   }
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: generic op output; caller provides typed ops
+type AnyTddOp = RunOperation<unknown, any, unknown>;
+
+/**
+ * Run a single TDD phase via StoryOrchestratorBuilder (AC9).
+ * Subscribes to dispatch events around the plan run to capture tokenUsage and
+ * capturedResponse. Post-dispatch: autoCommitIfDirty, isolation, selfVerification.
+ * AC10 responsibilities (rollback, verdict, greenfield, full-suite gate) stay in
+ * runThreeSessionTdd.
+ */
+async function runTddSessionViaBuilder(
+  role: TddSessionRole,
+  ctx: CallContext,
+  op: AnyTddOp,
+  input: unknown,
+  beforeRef: string,
+  opts: {
+    story: import("../prd").UserStory;
+    workdir: string;
+    config: NaxConfig;
+    lite: boolean;
+  },
+): Promise<TddSessionResult> {
+  const { runtime } = ctx;
+  let capturedTokenUsage: import("../agents/cost").TokenUsage | undefined;
+  let capturedResponse = "";
+  let capturedCostUsd = 0;
+  const startTime = Date.now();
+
+  const unsubscribe =
+    runtime.dispatchEvents?.onDispatch((event) => {
+      if (event.tokenUsage) capturedTokenUsage = event.tokenUsage;
+      if (event.response) capturedResponse = event.response;
+      if (event.exactCostUsd !== undefined) capturedCostUsd += event.exactCostUsd;
+      else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
+    }) ?? (() => {});
+
+  let phaseOutput:
+    | {
+        success: boolean;
+        filesChanged: string[];
+        estimatedCostUsd: number;
+        durationMs: number;
+        isolation?: IsolationCheck;
+      }
+    | undefined;
+  let opCostUsd = 0;
+  let planDurationMs = 0;
+
+  try {
+    const plan = new StoryOrchestratorBuilder().addImplementer({ op, input }).build(ctx);
+    const planResult = await plan.run();
+    phaseOutput = planResult.phaseOutputs[op.name] as typeof phaseOutput;
+    opCostUsd = planResult.phaseCosts[op.name] ?? 0;
+    planDurationMs = planResult.durationMs;
+  } finally {
+    unsubscribe();
+  }
+
+  await _sessionRunnerDeps.autoCommitIfDirty(opts.workdir, "tdd", role, opts.story.id);
+
+  const skipIsolation = opts.lite && role !== "verifier";
+  const testFilePatterns =
+    typeof opts.config.execution?.smartTestRunner === "object" && opts.config.execution.smartTestRunner !== null
+      ? opts.config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+
+  let isolation: IsolationCheck | undefined;
+  if (!skipIsolation) {
+    if (role === "test-writer") {
+      const allowedPaths = opts.config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
+        opts.workdir,
+        beforeRef,
+        allowedPaths,
+        testFilePatterns,
+      );
+    } else if (role === "implementer" || role === "verifier") {
+      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(opts.workdir, beforeRef, testFilePatterns);
+    }
+  }
+
+  if (!isolation && phaseOutput && "isolation" in phaseOutput && phaseOutput.isolation) {
+    isolation = phaseOutput.isolation;
+  }
+
+  const filesChanged =
+    phaseOutput && phaseOutput.filesChanged.length > 0
+      ? phaseOutput.filesChanged
+      : await _sessionRunnerDeps.getChangedFiles(opts.workdir, beforeRef);
+
+  const selfVerificationResult =
+    role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, opts.workdir);
+  const selfVerificationFailed =
+    selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
+
+  if (isolation && !isolation.passed) {
+    getLogger().error("tdd", "Isolation violated", {
+      storyId: opts.story.id,
+      role,
+      description: isolation.description,
+      violations: isolation.violations,
+    });
+  }
+
+  const success = (phaseOutput?.success ?? false) && (!isolation || isolation.passed) && !selfVerificationFailed;
+
+  return {
+    role,
+    success,
+    filesChanged: filesChanged ?? [],
+    estimatedCostUsd: capturedCostUsd || opCostUsd || (phaseOutput?.estimatedCostUsd ?? 0),
+    durationMs: phaseOutput?.durationMs || planDurationMs || Date.now() - startTime,
+    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+    ...(isolation ? { isolation } : {}),
+    ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
+  };
+}
+
 /**
  * Run the full three-session TDD pipeline for a user story.
  */
 export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<ThreeSessionTddResult> {
   const {
-    agent,
+    agent: _agent,
     story,
     config,
     workdir,
     modelTier,
     featureName,
-    tddContextBundles,
+    tddContextBundles: _tddContextBundles,
     getTddContextBundle,
     recordTddSessionOutcome,
     getTddSessionBinding,
@@ -75,7 +206,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const runtime =
     (options.runtime as import("../runtime").NaxRuntime | undefined) ??
     createRuntime(config, workdir, { agentManager });
-  const effectiveOptions = { ...options, runtime };
 
   // MED-7: Recursion guard to prevent infinite loops
   const MAX_RECURSION_DEPTH = 2;
@@ -128,6 +258,28 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
+  // Base CallContext for builder dispatch (AC9). The builder stamps its own
+  // scopeId on each phase; we omit scopeId here so the builder controls it.
+  const packageView = runtime.packages.resolve(workdir);
+  const agentNameForCtx = resolveDefaultAgent(runtime.configLoader.current());
+  const baseCallCtx: CallContext = {
+    runtime,
+    packageView,
+    packageDir: workdir,
+    agentName: agentNameForCtx,
+    storyId: story.id,
+    featureName,
+    story,
+  };
+
+  // interactionBridge for test-writer and implementer (verifier omits it).
+  const sessionInteractionBridge = options.interactionChain
+    ? buildInteractionBridge(options.interactionChain, { featureName, storyId: story.id, stage: "execution" })
+    : undefined;
+  const ctxWithBridge: CallContext = sessionInteractionBridge
+    ? { ...baseCallCtx, interactionBridge: sessionInteractionBridge }
+    : baseCallCtx;
+
   const sessions: TddSessionResult[] = [];
   let needsHumanReview = false;
   let reviewReason: string | undefined;
@@ -157,13 +309,22 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   let session1: TddSessionResult | undefined;
 
   if (!isRetry) {
-    const testWriterBundle = (await getTddContextBundle?.("test-writer")) ?? tddContextBundles?.testWriter;
-    session1 = await runTddSessionOp(
-      writeTddTestOp,
-      effectiveOptions,
+    // v2 bundles passed to getTddContextBundle but session op ignores bundle context;
+    // keep the call so recordTddSessionOutcome triggers v2 digest writes.
+    await getTddContextBundle?.("test-writer");
+
+    session1 = await runTddSessionViaBuilder(
+      "test-writer",
+      ctxWithBridge,
+      testWriterOp as unknown as AnyTddOp,
+      {
+        story,
+        ...(options.contextMarkdown ? { contextMarkdown: options.contextMarkdown } : {}),
+        ...(options.featureContextMarkdown ? { featureContextMarkdown: options.featureContextMarkdown } : {}),
+        ...(options.constitution ? { constitution: options.constitution } : {}),
+      },
       initialRef,
-      testWriterBundle,
-      getTddSessionBinding?.("test-writer"),
+      { story, workdir, config, lite },
     );
     sessions.push(session1);
     await recordTddSessionOutcome?.(session1);
@@ -262,13 +423,20 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Session 2: Implementer
   const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
-  const implementerBundle = (await getTddContextBundle?.("implementer")) ?? tddContextBundles?.implementer;
-  const session2 = await runTddSessionOp(
-    implementTddOp,
-    effectiveOptions,
+  await getTddContextBundle?.("implementer");
+
+  const session2 = await runTddSessionViaBuilder(
+    "implementer",
+    ctxWithBridge,
+    implementerOp as unknown as AnyTddOp,
+    {
+      story,
+      ...(options.contextMarkdown ? { contextMarkdown: options.contextMarkdown } : {}),
+      ...(options.featureContextMarkdown ? { featureContextMarkdown: options.featureContextMarkdown } : {}),
+      ...(options.constitution ? { constitution: options.constitution } : {}),
+    },
     session2Ref,
-    implementerBundle,
-    getTddSessionBinding?.("implementer"),
+    { story, workdir, config, lite },
   );
   sessions.push(session2);
   await recordTddSessionOutcome?.(session2);
@@ -337,13 +505,15 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Session 3: Verifier
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
-  const verifierBundle = (await getTddContextBundle?.("verifier")) ?? tddContextBundles?.verifier;
-  const session3 = await runTddSessionOp(
-    verifyTddOp,
-    effectiveOptions,
+  await getTddContextBundle?.("verifier");
+
+  const session3 = await runTddSessionViaBuilder(
+    "verifier",
+    baseCallCtx,
+    verifierOp as unknown as AnyTddOp,
+    { story },
     session3Ref,
-    verifierBundle,
-    getTddSessionBinding?.("verifier"),
+    { story, workdir, config, lite },
   );
   sessions.push(session3);
   await recordTddSessionOutcome?.(session3);
