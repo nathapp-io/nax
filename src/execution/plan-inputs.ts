@@ -47,23 +47,26 @@ export interface PlanInputs {
  * AC4: Invalid or missing config produces deterministic structured failure.
  * AC5: Failures use NaxError with machine-readable code and context.stage='execution-inputs'.
  *
- * Validation scope rationale:
- * - Test pattern validation is deferred to the downstream orchestrator; this function
- *   validates only the minimum boundary contract required to begin plan assembly.
- * - Config fields such as routing, autoMode, quality, execution, tdd, and models are
- *   all covered by NaxConfigSchema Zod `.default()` values and are structurally guaranteed
- *   non-null in any properly-parsed NaxConfig. Re-validating them here would be redundant.
- * - config.agent.default is the sole exception: it defaults to "claude" at the schema level
- *   but Zod permits user overrides to "" (empty string), which passes schema parsing and
- *   would cause silent orchestration failure if not caught at this boundary.
+ * Validation scope:
+ * 1. story.id — required non-blank identifier for log correlation.
+ * 2. story.title — required non-blank for context injection into slot prompts.
+ * 3. config.agent.default — required non-blank; schema allows "" override and an empty
+ *    value causes silent agent-lookup failure in every orchestrator slot.
+ * 4. config.models[agent.default] — at least one tier mapping must exist for the chosen
+ *    agent; absent entries cause silent undefined returns during model-tier resolution
+ *    in every callOp invocation (hidden null propagation, AC4).
+ *
+ * Test pattern validation is deferred to the downstream orchestrator (see AC3 rationale in
+ * the test file).
  *
  * @param story - The story to validate
  * @param config - The config to validate; must have been parsed through NaxConfigSchema
  * @returns Valid PlanInputs or throws NaxError with stage='execution-inputs'
  * @throws NaxError with code 'STORY_ID_INVALID' if story.id is missing or blank
  * @throws NaxError with code 'STORY_TITLE_MISSING' if story.title is missing or blank
- * @throws NaxError with code 'CONFIG_INVALID' if config.agent.default is empty (the only
- *   config field that NaxConfigSchema allows to be set to "" and that breaks orchestration)
+ * @throws NaxError with code 'CONFIG_INVALID' if config.agent.default is empty
+ * @throws NaxError with code 'CONFIG_INVALID' if config.models has no tier mapping for the
+ *   default agent (field: "models")
  */
 export function assemblePlanInputs(story: UserStory, config: NaxConfig): PlanInputs {
   if (!story.id || story.id.trim() === "") {
@@ -86,6 +89,19 @@ export function assemblePlanInputs(story: UserStory, config: NaxConfig): PlanInp
       storyId: story.id,
       field: "agent.default",
     });
+  }
+
+  const agentName = config.agent.default;
+  if (!config.models?.[agentName] || Object.keys(config.models[agentName]).length === 0) {
+    throw new NaxError(
+      `Configuration error: no model tier mappings defined for agent "${agentName}" — slot input derivation requires at least one tier mapping`,
+      "CONFIG_INVALID",
+      {
+        stage: "execution-inputs",
+        storyId: story.id,
+        field: "models",
+      },
+    );
   }
 
   return {
