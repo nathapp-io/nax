@@ -1,22 +1,34 @@
-export type {
-  TddSessionRole,
+// API surface: each name is both a type alias AND a namespace (runtime sentinel).
+// Replaces separate `export type { X }` blocks so module reflection works
+// while `import type { X }` still resolves to the correct type.
+export {
   FailureCategory,
   IsolationCheck,
+  StoryRunResult,
   TddSessionResult,
+  TddSessionRole,
   ThreeSessionTddOptions,
-  ThreeSessionTddResult,
-} from "./types";
+  VerdictCategorization,
+  VerifierVerdict,
+} from "./api-surface";
+// ThreeSessionTddResult is kept as a type-only re-export for any remaining
+// callers; it is intentionally absent from the runtime module.
+export type { ThreeSessionTddResult } from "./types";
 export { isTestFile } from "../test-runners";
 export {
-  isSourceFile,
   getChangedFiles,
-  verifyTestWriterIsolation,
+  isSourceFile,
   verifyImplementerIsolation,
+  verifyTestWriterIsolation,
 } from "./isolation";
-export { runThreeSessionTdd } from "./orchestrator";
-export { runThreeSessionTddFromCtx } from "./orchestrator-ctx";
-export { runFullSuiteGate } from "./rectification-gate";
-export { runTddSessionOp, writeTddTestOp, implementTddOp, verifyTddOp } from "./session-op";
 export { cleanupProcessTree, getPgid } from "./cleanup";
-export type { VerifierVerdict, VerdictCategorization } from "./verdict";
-export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";
+export { VERDICT_FILE, categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
+export {
+  implementTddOp,
+  implementerOp,
+  runTddSessionOp,
+  testWriterOp,
+  verifyTddOp,
+  verifierOp,
+  writeTddTestOp,
+} from "./session-op";

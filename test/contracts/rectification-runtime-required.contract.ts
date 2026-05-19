@@ -5,7 +5,9 @@ import type { getLogger } from "@/logger";
 import type { PRD, UserStory } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import type { ISessionManager } from "@/session";
-import { runFullSuiteGate } from "@/tdd";
+// runFullSuiteGate is no longer part of the public @/tdd barrel (Slice C).
+// Import from the leaf module to continue verifying its runtime type contract.
+import { runFullSuiteGate } from "@/tdd/rectification-gate";
 import type { ThreeSessionTddOptions } from "@/tdd";
 import type { RectificationLoopOptions } from "@/verification/rectification-loop";
 
