@@ -58,8 +58,6 @@ export interface PlanInputs {
  * @throws NaxError with code 'CONFIG_INVALID' if config.agent.default is not set
  */
 export function assemblePlanInputs(story: UserStory, config: NaxConfig): PlanInputs {
-  // Stub: will be implemented in next phase
-  // For now, just validate and return the inputs for type checking
   if (!story.id || story.id.trim() === "") {
     throw new NaxError("Story ID is required and must be non-empty", "STORY_ID_INVALID", {
       stage: "execution-inputs",
