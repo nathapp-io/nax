@@ -1,0 +1,219 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "CANONICAL_ORDER includes greenfield-gate after test-writer and full-suite-gate after implementer.",
+    "refined": "CANONICAL_ORDER array contains 'greenfield-gate' at an index strictly greater than 'test-writer', and 'full-suite-gate' at an index strictly greater than 'implementer'",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-2",
+    "original": "ExecutionPlan.run() short-circuits remaining phases when either gate returns success=false.",
+    "refined": "When greenfield-gate or full-suite-gate returns {success: false}, ExecutionPlan.run() halts execution and does not invoke any phases scheduled after the failing gate in CANONICAL_ORDER",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-3",
+    "original": "fullSuiteGateOp output status supports: passed, rectification-exhausted, disabled, execution-failed, inconclusive.",
+    "refined": "fullSuiteGateOp return object contains a status field with value in the set ['passed', 'rectification-exhausted', 'disabled', 'execution-failed', 'inconclusive']",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When full-suite execution is skipped by config gate/feature toggle, output status is disabled with success=false and zeroed attempts.",
+    "refined": "fullSuiteGateOp returns {status: 'disabled', success: false, attempts: 0} when config.quality.gates.fullSuite.enabled === false or runtime feature toggle disables full-suite execution",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When full-suite command/process invocation fails before parseable test results, output status is execution-failed with success=false.",
+    "refined": "fullSuiteGateOp returns {status: 'execution-failed', success: false} when the full-suite test command exits with non-zero status code or process invocation throws an error before any test output is captured or parsed",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When full-suite output is present but cannot be confidently classified as pass/fail by parser/recover logic, output status is inconclusive with success=false.",
+    "refined": "fullSuiteGateOp returns {status: 'inconclusive', success: false} when test command output exists but parser returns an indeterminate result and all recovery strategies fail to resolve the output to a definitive pass/fail classification",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-7",
+    "original": "fullSuiteGateOp fallback/recover preserves structured failure output and does not collapse all failures to a single status.",
+    "refined": "fullSuiteGateOp recovery logic maintains granular failure details in the output object (e.g., array of failed test names, error categories) rather than reducing all failures to a single generic failure status string",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-8",
+    "original": "greenfieldGateOp input is self-contained (story, workdir, resolvedTestPatterns) and does not consume prior phase outputs.",
+    "refined": "greenfieldGateOp function signature accepts only {story, workdir, resolvedTestPatterns} parameters and contains no references to or dependencies on outputs from prior phases (test-writer, implementer, etc.) in its implementation",
+    "testable": true,
+    "storyId": "US-005.S1"
+  },
+  {
+    "acId": "AC-9",
+    "original": "PlanInputs includes testWriter, greenfieldGate, implementer, fullSuiteGate, verifier, semanticReview, adversarialReview, rectification.",
+    "refined": "PlanInputs type definition exports all 8 fields (testWriter, greenfieldGate, implementer, fullSuiteGate, verifier, semanticReview, adversarialReview, rectification) with correct types matching their respective operation types",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-10",
+    "original": "assemblePlanInputs validates required data before returning PlanInputs.",
+    "refined": "assemblePlanInputs calls validation logic before constructing and returning PlanInputs object; invalid inputs throw NaxError before PlanInputs is instantiated",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Missing resolved test patterns produces a deterministic structured failure (no implicit non-null assertion behavior).",
+    "refined": "assemblePlanInputs throws NaxError with code='TEST_PATTERNS_MISSING' when testPatterns argument is null/undefined/missing; error context includes stage='execution-inputs'; code does not use non-null assertion operator on testPatterns",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Invalid or missing config required for slot input derivation produces a deterministic structured failure.",
+    "refined": "For each of 8 slots, assemblePlanInputs throws NaxError with machine-readable code when required config is missing or invalid; validation occurs before that slot's operation is instantiated; minimum 8 distinct error codes for 8 slots",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Boundary validation failures use a canonical contract: throw NaxError with machine-readable code and context.stage='execution-inputs'.",
+    "refined": "Every error thrown by assemblePlanInputs is instanceof NaxError with properties: message (string), code (string, non-empty), context.stage === 'execution-inputs'; no plain Error or generic exceptions",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Validation behavior is covered by targeted unit tests.",
+    "refined": "Unit test file test/unit/execution/assemblePlanInputs.test.ts exists with minimum 9 test cases: 1 for missing testPatterns + 1 per slot validation failure + 1 for valid inputs; each test verifies NaxError shape and code property",
+    "testable": true,
+    "storyId": "US-005.S2"
+  },
+  {
+    "acId": "AC-15",
+    "original": "buildPlanForStrategy accepts testStrategy as an explicit parameter and does not read it from NaxConfig.",
+    "refined": "Function signature buildPlanForStrategy(testStrategy, config, ...) accepts testStrategy as a required positional parameter; implementation does not access config.tdd or any NaxConfig property to retrieve testStrategy",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Fresh TDD run includes test-writer and greenfield-gate; retry run omits both and still runs implementer.",
+    "refined": "For runType='fresh': returned plan array includes slots 'test-writer' and 'greenfield-gate' and 'implementer'; for runType='retry': returned plan array omits 'test-writer' and 'greenfield-gate' but includes 'implementer'",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-17",
+    "original": "TDD strategies include full-suite-gate and verifier; non-TDD strategies omit them.",
+    "refined": "When testStrategy.type is 'tdd' (or TDD variant): plan includes 'full-suite-gate' and 'verifier' slots; when testStrategy.type is not a TDD variant: plan does not include either slot",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Review phase selection is controlled by config.review.checks membership (semantic/adversarial), not nested enabled flags.",
+    "refined": "Review plugins are loaded by checking membership in config.review.checks array: 'semantic' in config.review.checks triggers semantic review plugin load; 'adversarial' in config.review.checks triggers adversarial review plugin load; nested boolean flags like config.review.semantic.enabled are not consulted",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Rectification slot inclusion is gated by shouldRunRectification(config).",
+    "refined": "Function shouldRunRectification(config) returns boolean; rectification slots ('rectification', 'autofix') are included in plan if and only if shouldRunRectification(config) returns true",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Slot composition logic is covered with table-driven tests.",
+    "refined": "Test file contains test.each() or parameterized table-driven test pattern with minimum 8 cases covering combinations of: runType (fresh/retry), testStrategy.type (tdd/non-tdd), config.review.checks membership (empty/semantic/adversarial/both), and shouldRunRectification (true/false)",
+    "testable": true,
+    "storyId": "US-005.S3"
+  },
+  {
+    "acId": "AC-21",
+    "original": "execution stage builds exactly one plan and executes exactly one plan.run().",
+    "refined": "execution stage calls plan.build() exactly once and plan.run() exactly once per invocation, regardless of story type or prior state.",
+    "testable": true,
+    "storyId": "US-005.S4"
+  },
+  {
+    "acId": "AC-22",
+    "original": "execution stage contains no sequencing branch that chooses between TDD and non-TDD orchestration implementations.",
+    "refined": "src/pipeline/stages/execution.ts contains zero conditional branches (if/switch/ternary) that dispatch to different orchestration code paths based on isTDD flag or story type; all execution paths converge to single plan-build and plan-run sequence.",
+    "testable": true,
+    "storyId": "US-005.S4"
+  },
+  {
+    "acId": "AC-23",
+    "original": "post-run inspection handles verdict extraction, failure categorization, rollback trigger, isolation surfacing, and pauseReason handling.",
+    "refined": "post-run inspection phase successfully extracts verdict from plan result, assigns failure category (test/compile/runtime/other), evaluates rollback conditions, reads isolation state from context, and extracts pauseReason string if present.",
+    "testable": true,
+    "storyId": "US-005.S4"
+  },
+  {
+    "acId": "AC-24",
+    "original": "pauseReason produces interaction notify and stage action pause when interaction is enabled.",
+    "refined": "when pauseReason is non-empty string AND interaction.isEnabled() returns true, stage returns exactly one pause action and calls interaction.notify(pauseReason) exactly once.",
+    "testable": true,
+    "storyId": "US-005.S4"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Source guard: src/pipeline/stages/execution.ts contains no direct orchestration dispatch calls (no callOp, no runWithFallback, no SessionKeeper constructor) outside plan-run helper paths.",
+    "refined": "grep search of src/pipeline/stages/execution.ts returns zero matches for callOp\\(|runWithFallback\\(|new SessionKeeper outside of helper function implementations explicitly named for plan construction/execution.",
+    "testable": true,
+    "storyId": "US-005.S4"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Slice A: behavior tests are migrated to consolidated entrypoints and pass without changing expected semantics.",
+    "refined": "All test files in test/unit/tdd/ that exercise legacy TDD orchestration (runThreeSessionTdd, runFullSuiteGate, ThreeSessionTddResult) are moved to consolidated entrypoints (e.g., src/tdd/consolidated.ts or equivalent). All migrated tests pass with identical assertions; no test expectations are modified during migration. Test output and behavior under the new API surface matches the old API surface identically.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Slice B: path-specific shape tests for removed internal APIs are retired.",
+    "refined": "All test files that verify the internal shape or structure of removed APIs (legacy lifecycle hooks, internal orchestrator classes, removed context builders) are deleted from test/. Grep for references to deleted test files returns zero results. No test file contains assertions that depend on the internal structure of removed TDD orchestration APIs.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Slice C: runThreeSessionTdd and runFullSuiteGate exports/usages are removed from src and test trees.",
+    "refined": "Grep for 'runThreeSessionTdd' in src/ returns zero results. Grep for 'runFullSuiteGate' in src/ returns zero results. Grep for both symbols in test/ returns zero results. Both symbols are removed from all barrel exports (index.ts files) in src/tdd/ and related modules. TypeScript compilation succeeds with no unused export warnings.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Slice D: ThreeSessionTddResult is renamed/migrated to StoryRunResult and callers are updated.",
+    "refined": "Grep for 'ThreeSessionTddResult' in src/ returns zero results. All type annotations that previously referenced ThreeSessionTddResult are updated to use StoryRunResult. All imports of ThreeSessionTddResult are removed or replaced. TypeScript compilation succeeds with no type errors and no references to ThreeSessionTddResult. All call sites that consumed ThreeSessionTddResult objects now receive and handle StoryRunResult objects.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Slice E: cleanup of obsolete helpers/imports/docstrings is completed with no lingering references in src/ and test/.",
+    "refined": "All imports of removed TDD orchestration helpers (legacy lifecycle hooks, deprecated context builders, removed verification strategies) are deleted from src/ and test/. Grep for 'import.*from.*tdd.*legacy' or similar patterns returns zero results. All docstrings and comments referencing removed TDD surfaces are updated or deleted. Biome lint passes with zero warnings about unused imports or unreachable code in modified files.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Each slice is independently mergeable and keeps main branch green (typecheck, lint, targeted tests).",
+    "refined": "Each slice (A–E) independently passes: `bun run typecheck` (no type errors), `bun run lint` (no linting violations), and `timeout 30 bun test test/unit/tdd --timeout=5000` (all TDD unit tests pass). No slice modifies files touched by another slice (no file-level conflicts). Each slice PR can be merged to main without wait-blocking on other slices. Git status on main after each slice merge is clean with all prior slices integrated.",
+    "testable": true,
+    "storyId": "US-005.S5"
+  }
+]
