@@ -19,6 +19,7 @@ import type {
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import type { ResolvedTestPatterns } from "../test-runners";
+import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
  * PlanInputs contains the typed boundary for all orchestrator slots.
@@ -39,7 +40,7 @@ export interface PlanInputs {
   readonly verifier?: VerifierInput;
   readonly semanticReview?: SemanticReviewInput;
   readonly adversarialReview?: AdversarialReviewInput;
-  readonly rectification?: unknown; // Placeholder for rectification options
+  readonly rectification?: RectificationPhaseOptions;
 }
 
 /**

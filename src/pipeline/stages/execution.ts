@@ -10,9 +10,8 @@
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter, AgentResult } from "../../agents/types";
 import { buildPlanForStrategy } from "../../execution/build-plan-for-strategy";
-import type { PlanForStrategy } from "../../execution/build-plan-for-strategy";
+import type { PlanInputs } from "../../execution/plan-inputs";
 import { failAndClose } from "../../execution/session-manager-runtime";
-import { StoryOrchestratorBuilder } from "../../execution/story-orchestrator";
 import type { StoryOrchestratorResult } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
@@ -175,13 +174,9 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    // Determine plan slots — single source of truth for all strategies
-    const planSlots = buildPlanForStrategy({
-      story: ctx.story,
-      config: ctx.config,
-      testStrategy: ctx.routing.testStrategy,
-      isFreshRun,
-    });
+    // Assemble typed plan inputs and build the execution plan
+    const planInputs = await _executionDeps.buildPlanInputsFromPipelineCtx(ctx, isFreshRun, isTdd);
+    const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, planInputs);
 
     // Capture initial git ref for TDD rollback before any writes
     const initialRef = isTdd ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
@@ -189,7 +184,7 @@ export const executionStage: PipelineStage = {
 
     let planResult: StoryOrchestratorResult;
     try {
-      planResult = await _executionDeps.buildAndRunPlan(callCtx, ctx, planSlots);
+      planResult = await plan.run();
     } finally {
       unsubscribe();
     }
@@ -437,54 +432,69 @@ async function inspectPlanResult(
   return { action: "continue" };
 }
 
-/** Build and run a single plan based on the slot mask. Separated for testability. */
-async function buildAndRunPlan(
-  callCtx: CallContext,
+/**
+ * Assemble typed PlanInputs from the current pipeline context.
+ * Populates all slots that are eligible for the given strategy + run phase.
+ * Separated for testability via _executionDeps injection.
+ *
+ * Note: Full extraction of this assembly into assemblePlanInputs() is Task 2.
+ * For now this is an inline helper that replaces buildAndRunPlan's slot assembly.
+ */
+async function buildPlanInputsFromPipelineCtx(
   ctx: PipelineContext,
-  planSlots: PlanForStrategy,
-): Promise<StoryOrchestratorResult> {
-  const builder = new StoryOrchestratorBuilder();
+  isFreshRun: boolean,
+  isTdd: boolean,
+): Promise<PlanInputs> {
+  const story = ctx.story;
+  const config = ctx.config;
 
-  if (planSlots.testWriter) {
-    builder.addTestWriter({
-      story: ctx.story,
-      contextMarkdown: ctx.prompt,
-      featureContextMarkdown: ctx.featureContextMarkdown,
-      constitution: ctx.constitution?.content,
-    });
-  }
+  const testWriterInput =
+    isTdd && isFreshRun
+      ? {
+          story,
+          contextMarkdown: ctx.prompt,
+          featureContextMarkdown: ctx.featureContextMarkdown,
+          constitution: ctx.constitution?.content,
+        }
+      : undefined;
 
-  if (planSlots.greenfieldGate) {
-    const resolvedTestPatterns = await resolveTestFilePatterns(ctx.config, ctx.workdir);
-    builder.addGreenfieldGate({
-      story: ctx.story,
+  let greenfieldGateInput: import("../../execution/plan-inputs").PlanInputs["greenfieldGate"] = undefined;
+  if (isTdd && isFreshRun) {
+    const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.workdir);
+    greenfieldGateInput = {
+      story,
       workdir: ctx.workdir,
       resolvedTestPatterns,
-    });
+    };
   }
 
-  builder.addImplementer({
-    story: ctx.story,
+  const implementerInput = {
+    story,
     contextMarkdown: ctx.prompt,
     featureContextMarkdown: ctx.featureContextMarkdown,
     constitution: ctx.constitution?.content,
-  });
+  };
 
-  if (planSlots.fullSuiteGate) {
-    builder.addFullSuiteGate({
-      story: ctx.story,
-      workdir: ctx.workdir,
-      featureName: ctx.prd.feature,
-      projectDir: ctx.projectDir,
-    });
-  }
+  const fullSuiteGateInput = isTdd
+    ? {
+        story,
+        workdir: ctx.workdir,
+        featureName: ctx.prd.feature,
+        projectDir: ctx.projectDir,
+      }
+    : undefined;
 
-  if (planSlots.verifier) {
-    builder.addVerifier({ story: ctx.story });
-  }
+  const verifierInput = isTdd ? { story } : undefined;
 
-  const plan = builder.build(callCtx);
-  return plan.run();
+  return {
+    story,
+    config,
+    testWriter: testWriterInput,
+    greenfieldGate: greenfieldGateInput,
+    implementer: implementerInput,
+    fullSuiteGate: fullSuiteGateInput,
+    verifier: verifierInput,
+  };
 }
 
 /** Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x). */
@@ -498,5 +508,5 @@ export const _executionDeps = {
   failAndClose,
   captureGitRef,
   rollbackToRef,
-  buildAndRunPlan,
+  buildPlanInputsFromPipelineCtx,
 };

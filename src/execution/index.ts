@@ -44,8 +44,4 @@ export {
   type StoryOrchestratorResult,
 } from "./story-orchestrator";
 export { assemblePlanInputs, type PlanInputs } from "./plan-inputs";
-export {
-  buildPlanForStrategy,
-  type BuildPlanForStrategyOptions,
-  type PlanForStrategy,
-} from "./build-plan-for-strategy";
+export { buildPlanForStrategy } from "./build-plan-for-strategy";

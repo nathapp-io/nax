@@ -299,6 +299,19 @@ export class ExecutionPlan {
     private readonly state: InternalBuildState,
   ) {}
 
+  /**
+   * Returns the names of all phases in canonical execution order.
+   * Phase names correspond to op.name on each RunOperation.
+   * When rectification is configured, the sentinel "rectification" appears last.
+   */
+  phaseNames(): readonly string[] {
+    const names = collectOrderedPhases(this.state).map((p) => p.slot.op.name);
+    if (this.state.rectification) {
+      return [...names, "rectification"];
+    }
+    return names;
+  }
+
   async run(): Promise<StoryOrchestratorResult> {
     const phaseCosts: Record<string, number> = {};
     const phaseOutputs: Record<string, unknown> = {};

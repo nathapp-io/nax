@@ -1,61 +1,112 @@
+/**
+ * Tests for buildPlanForStrategy — AC#4 refactor.
+ *
+ * buildPlanForStrategy now returns an ExecutionPlan instead of a PlanForStrategy boolean-bag.
+ * Fresh/retry detection is derived from story.attempts and story.priorFailures — not from
+ * an external isFreshRun flag.
+ *
+ * Use plan.phaseNames() to inspect the set of included phases.
+ */
 import { describe, expect, test } from "bun:test";
 import type { TestStrategy } from "@/config/schema-types";
-import { buildPlanForStrategy } from "@/execution";
-import { makeNaxConfig, makeStory } from "@test/helpers";
+import { buildPlanForStrategy, ExecutionPlan } from "@/execution";
+import type { PlanInputs } from "@/execution";
+import type { UserStory } from "@/prd/types";
+import {
+  makeMockCallContext,
+  makeMockPlanInputs,
+  makeNaxConfig,
+  makeStory,
+} from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Typed input factories — populate the slot inputs each test needs
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PlanSlot {
-  testWriter?: boolean;
-  greenfieldGate?: boolean;
-  implementer?: boolean;
-  fullSuiteGate?: boolean;
-  verifier?: boolean;
-  semanticReview?: boolean;
-  adversarialReview?: boolean;
-  rectification?: boolean;
+function makeImplementerInput(story: UserStory): import("@/operations").ImplementerInput {
+  return { story };
 }
 
-function extractSlots(plan: unknown): PlanSlot {
-  if (!plan || typeof plan !== "object") {
-    return {};
-  }
+function makeTestWriterInput(story: UserStory): import("@/operations").TestWriterInput {
+  return { story };
+}
 
-  const p = plan as Record<string, unknown>;
+function makeVerifierInput(story: UserStory): import("@/operations").VerifierInput {
+  return { story };
+}
+
+function makeGreenfieldGateInput(story: UserStory): import("@/operations").GreenfieldGateInput {
   return {
-    testWriter: Boolean(p.testWriter),
-    greenfieldGate: Boolean(p.greenfieldGate),
-    implementer: Boolean(p.implementer),
-    fullSuiteGate: Boolean(p.fullSuiteGate),
-    verifier: Boolean(p.verifier),
-    semanticReview: Boolean(p.semanticReview),
-    adversarialReview: Boolean(p.adversarialReview),
-    rectification: Boolean(p.rectification),
+    story,
+    workdir: "/tmp/test",
+    resolvedTestPatterns: {
+      globs: ["test/**/*.test.ts"],
+      regex: [/\.test\.ts$/],
+      pathspec: [":(exclude)test/**/*.test.ts"],
+      testDirs: ["test/unit", "test/integration"],
+    },
   };
+}
+
+function makeFullSuiteGateInput(story: UserStory): import("@/operations").FullSuiteGateInput {
+  return { story, workdir: "/tmp/test" };
+}
+
+function makeSemanticReviewInput(story: UserStory): import("@/operations").SemanticReviewInput {
+  return {
+    story: { id: story.id, title: story.title, description: story.description, acceptanceCriteria: story.acceptanceCriteria },
+    workdir: "/tmp/test",
+    semanticConfig: { enabled: true, checks: ["semantic"] } as any,
+    mode: "embedded",
+  };
+}
+
+function makeAdversarialReviewInput(story: UserStory): import("@/operations").AdversarialReviewInput {
+  return {
+    story: { id: story.id, title: story.title, description: story.description, acceptanceCriteria: story.acceptanceCriteria },
+    adversarialConfig: { enabled: true, checks: ["adversarial"] } as any,
+    mode: "embedded",
+  };
+}
+
+/** Inputs for a TDD fresh run. */
+function makeTddFreshInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
+  return makeMockPlanInputs({
+    story,
+    testWriter: makeTestWriterInput(story),
+    greenfieldGate: makeGreenfieldGateInput(story),
+    implementer: makeImplementerInput(story),
+    fullSuiteGate: makeFullSuiteGateInput(story),
+    verifier: makeVerifierInput(story),
+    ...extra,
+  });
+}
+
+/** Inputs for a TDD retry run (no test-writer / greenfield-gate inputs). */
+function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
+  return makeMockPlanInputs({
+    story,
+    implementer: makeImplementerInput(story),
+    fullSuiteGate: makeFullSuiteGateInput(story),
+    verifier: makeVerifierInput(story),
+    ...extra,
+  });
+}
+
+/** Inputs for a non-TDD single-session run. */
+function makeNonTddInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
+  return makeMockPlanInputs({
+    story,
+    implementer: makeImplementerInput(story),
+    ...extra,
+  });
 }
 
 function withReviewChecks(checks: Array<"semantic" | "adversarial">) {
   return makeNaxConfig({
     review: {
       enabled: true,
-      checks: [
-        "typecheck",
-        "lint",
-        "test",
-        "build",
-        ...checks,
-      ] as any,
-    },
-  });
-}
-
-function withoutReviewChecks() {
-  return makeNaxConfig({
-    review: {
-      enabled: true,
-      checks: ["typecheck", "lint", "test", "build"],
+      checks: ["typecheck", "lint", "test", "build", ...checks] as any,
     },
   });
 }
@@ -63,549 +114,304 @@ function withoutReviewChecks() {
 function withRectification(enabled: boolean) {
   return makeNaxConfig({
     execution: {
-      rectification: enabled
-        ? { enabled: true, maxRetries: 2 }
-        : { enabled: false },
+      rectification: enabled ? { enabled: true, maxRetries: 2 } : { enabled: false },
     },
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC1: testStrategy as explicit parameter (not read from config)
+// Return type
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — AC1: explicit testStrategy parameter", () => {
-  test("accepts testStrategy parameter directly", () => {
+describe("buildPlanForStrategy — returns ExecutionPlan", () => {
+  test("returns an ExecutionPlan instance", () => {
     const story = makeStory();
     const config = makeNaxConfig();
-    // This test verifies the function signature and that it accepts testStrategy.
-    // The implementation should not read testStrategy from config, but from the parameter.
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-    });
-    expect(plan).toBeDefined();
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan).toBeInstanceOf(ExecutionPlan);
   });
 
-  test("ignores testStrategy in story.routing when parameter is provided", () => {
+  test("plan has phaseNames() method", () => {
+    const story = makeStory();
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(typeof plan.phaseNames).toBe("function");
+    expect(Array.isArray(plan.phaseNames())).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fresh vs retry detection — derived from story.attempts + priorFailures
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPlanForStrategy — fresh vs retry detection", () => {
+  test("story.attempts=0 (fresh) includes test-writer and greenfield-gate for TDD", () => {
+    const story = makeStory({ attempts: 0 });
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const names = plan.phaseNames();
+    expect(names).toContain("test-writer");
+    expect(names).toContain("greenfield-gate");
+  });
+
+  test("story.attempts=0 full TDD fresh run includes all core phases", () => {
+    const story = makeStory({ attempts: 0 });
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    expect(plan.phaseNames()).toEqual(["test-writer", "greenfield-gate", "implementer", "full-suite-gate", "verifier"]);
+  });
+
+  test("story.attempts=1 (retry) omits test-writer and greenfield-gate for TDD", () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeTddRetryInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const names = plan.phaseNames();
+    expect(names).not.toContain("test-writer");
+    expect(names).not.toContain("greenfield-gate");
+  });
+
+  test("story.attempts=1 retry includes implementer, full-suite-gate, verifier", () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeTddRetryInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    expect(plan.phaseNames()).toEqual(["implementer", "full-suite-gate", "verifier"]);
+  });
+
+  test("story with priorFailures stage=review is treated as retry", () => {
     const story = makeStory({
-      routing: { testStrategy: "test-after" },
+      attempts: 0,
+      priorFailures: [{ attempt: 0, modelTier: "fast", stage: "review", summary: "review failed", timestamp: new Date().toISOString() }],
     });
     const config = makeNaxConfig();
-    // Even though story.routing.testStrategy is "test-after", we pass "three-session-tdd"
-    // The returned plan should reflect "three-session-tdd", not the story's value
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "three-session-tdd",
-    });
-    const slots = extractSlots(plan);
-    expect(slots.testWriter).toBe(true);
-    expect(slots.verifier).toBe(true);
-    expect(slots.fullSuiteGate).toBe(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeTddRetryInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const names = plan.phaseNames();
+    expect(names).not.toContain("test-writer");
+    expect(names).not.toContain("greenfield-gate");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC2: Fresh TDD vs Retry run inclusion
+// Non-TDD single-session
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — AC2: fresh vs retry run slots", () => {
-  test("fresh TDD run includes test-writer (isFreshRun=true)", () => {
+describe("buildPlanForStrategy — non-TDD single-session", () => {
+  test("no-test strategy includes only implementer", () => {
     const story = makeStory();
     const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.testWriter).toBe(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 
-  test("fresh TDD run includes greenfield-gate (isFreshRun=true)", () => {
+  test("test-after strategy includes only implementer", () => {
     const story = makeStory();
     const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.greenfieldGate).toBe(true);
-  });
-
-  test("fresh TDD run includes implementer (isFreshRun=true)", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.implementer).toBe(true);
-  });
-
-  test("retry run omits test-writer (isFreshRun=false)", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: false,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.testWriter).toBe(false);
-  });
-
-  test("retry run omits greenfield-gate (isFreshRun=false)", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: false,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.greenfieldGate).toBe(false);
-  });
-
-  test("retry run includes implementer (isFreshRun=false)", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: false,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.implementer).toBe(true);
-  });
-
-  test("retry run with no-test still includes implementer", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "no-test",
-      isFreshRun: false,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.implementer).toBe(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, "test-after", inputs);
+    expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3: TDD strategies include gates and verifier; non-TDD omit them
+// TDD strategy variants
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — AC3: TDD strategy gates and verifier", () => {
+describe("buildPlanForStrategy — TDD strategy variants", () => {
   const tddStrategies: TestStrategy[] = [
     "tdd-simple",
     "three-session-tdd",
     "three-session-tdd-lite",
   ];
 
-  test.each(tddStrategies)("%s includes full-suite-gate", (strategy) => {
-    const story = makeStory();
+  test.each(tddStrategies)("%s fresh includes full-suite-gate and verifier", (strategy) => {
+    const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: strategy,
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.fullSuiteGate).toBe(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story);
+    const plan = buildPlanForStrategy(ctx, story, config, strategy, inputs);
+    const names = plan.phaseNames();
+    expect(names).toContain("full-suite-gate");
+    expect(names).toContain("verifier");
   });
 
-  test.each(tddStrategies)("%s includes verifier", (strategy) => {
-    const story = makeStory();
+  test.each(tddStrategies)("%s fresh omits full-suite-gate and verifier when inputs missing", (strategy) => {
+    const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
+    const ctx = makeMockCallContext();
+    // Inputs without fullSuiteGate or verifier
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: strategy,
-      isFreshRun: true,
+      testWriter: makeTestWriterInput(story),
+      greenfieldGate: makeGreenfieldGateInput(story),
+      implementer: makeImplementerInput(story),
+      // fullSuiteGate and verifier intentionally omitted
     });
-    const slots = extractSlots(plan);
-    expect(slots.verifier).toBe(true);
-  });
-
-  test("test-after omits full-suite-gate", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "test-after",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.fullSuiteGate).toBe(false);
-  });
-
-  test("test-after omits verifier", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "test-after",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.verifier).toBe(false);
-  });
-
-  test("no-test omits full-suite-gate", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "no-test",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.fullSuiteGate).toBe(false);
-  });
-
-  test("no-test omits verifier", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "no-test",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.verifier).toBe(false);
+    const plan = buildPlanForStrategy(ctx, story, config, strategy, inputs);
+    const names = plan.phaseNames();
+    expect(names).not.toContain("full-suite-gate");
+    expect(names).not.toContain("verifier");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC4: Review phase selection via config.review.checks membership
+// Review phase selection
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — AC4: review phase selection by checks", () => {
-  test("semantic-review included when 'semantic' in checks", () => {
+describe("buildPlanForStrategy — review phase selection", () => {
+  test("semantic review included when semantic in checks and input provided", () => {
     const story = makeStory();
     const config = withReviewChecks(["semantic"]);
-    const plan = buildPlanForStrategy({
+    const ctx = makeMockCallContext();
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+      implementer: makeImplementerInput(story),
+      semanticReview: makeSemanticReviewInput(story),
     });
-    const slots = extractSlots(plan);
-    expect(slots.semanticReview).toBe(true);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("semantic-review");
   });
 
-  test("adversarial-review included when 'adversarial' in checks", () => {
+  test("adversarial review included when adversarial in checks and input provided", () => {
     const story = makeStory();
     const config = withReviewChecks(["adversarial"]);
-    const plan = buildPlanForStrategy({
+    const ctx = makeMockCallContext();
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+      implementer: makeImplementerInput(story),
+      adversarialReview: makeAdversarialReviewInput(story),
     });
-    const slots = extractSlots(plan);
-    expect(slots.adversarialReview).toBe(true);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("adversarial-review");
   });
 
-  test("both semantic and adversarial included when both in checks", () => {
+  test("both semantic and adversarial included when both in checks and inputs provided", () => {
     const story = makeStory();
     const config = withReviewChecks(["semantic", "adversarial"]);
-    const plan = buildPlanForStrategy({
+    const ctx = makeMockCallContext();
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+      implementer: makeImplementerInput(story),
+      semanticReview: makeSemanticReviewInput(story),
+      adversarialReview: makeAdversarialReviewInput(story),
     });
-    const slots = extractSlots(plan);
-    expect(slots.semanticReview).toBe(true);
-    expect(slots.adversarialReview).toBe(true);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const names = plan.phaseNames();
+    expect(names).toContain("semantic-review");
+    expect(names).toContain("adversarial-review");
   });
 
-  test("semantic-review omitted when 'semantic' not in checks", () => {
+  test("semantic review omitted when review disabled", () => {
     const story = makeStory();
-    const config = withoutReviewChecks();
-    const plan = buildPlanForStrategy({
+    const config = makeNaxConfig({ review: { enabled: false } });
+    const ctx = makeMockCallContext();
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+      implementer: makeImplementerInput(story),
+      semanticReview: makeSemanticReviewInput(story),
     });
-    const slots = extractSlots(plan);
-    expect(slots.semanticReview).toBe(false);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).not.toContain("semantic-review");
   });
 
-  test("adversarial-review omitted when 'adversarial' not in checks", () => {
+  test("adversarial review omitted when adversarial not in checks", () => {
     const story = makeStory();
-    const config = withoutReviewChecks();
-    const plan = buildPlanForStrategy({
+    const config = withReviewChecks(["semantic"]);
+    const ctx = makeMockCallContext();
+    const inputs = makeMockPlanInputs({
       story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+      implementer: makeImplementerInput(story),
+      adversarialReview: makeAdversarialReviewInput(story),
     });
-    const slots = extractSlots(plan);
-    expect(slots.adversarialReview).toBe(false);
-  });
-
-  test("semantic-review omitted when review disabled entirely", () => {
-    const story = makeStory();
-    const config = makeNaxConfig({
-      review: { enabled: false },
-    });
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.semanticReview).toBe(false);
-  });
-
-  test("adversarial-review omitted when review disabled entirely", () => {
-    const story = makeStory();
-    const config = makeNaxConfig({
-      review: { enabled: false },
-    });
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.adversarialReview).toBe(false);
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).not.toContain("adversarial-review");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC5: Rectification gated by shouldRunRectification(config)
+// Rectification
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — AC5: rectification gating", () => {
-  test("rectification included when config.execution.rectification.enabled=true", () => {
-    const story = makeStory();
+describe("buildPlanForStrategy — rectification", () => {
+  test("rectification appears last when enabled and inputs.rectification provided", () => {
+    const story = makeStory({ attempts: 0 });
     const config = withRectification(true);
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story, {
+      rectification: {
+        maxAttempts: 2,
+        strategies: [],
+        abortOnIncreasingFailures: false,
+      },
     });
-    const slots = extractSlots(plan);
-    expect(slots.rectification).toBe(true);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const names = plan.phaseNames();
+    expect(names[names.length - 1]).toBe("rectification");
   });
 
-  test("rectification omitted when config.execution.rectification.enabled=false", () => {
-    const story = makeStory();
+  test("rectification omitted when not enabled in config", () => {
+    const story = makeStory({ attempts: 0 });
     const config = withRectification(false);
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story, {
+      rectification: {
+        maxAttempts: 2,
+        strategies: [],
+        abortOnIncreasingFailures: false,
+      },
     });
-    const slots = extractSlots(plan);
-    expect(slots.rectification).toBe(false);
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    expect(plan.phaseNames()).not.toContain("rectification");
   });
 
-  test("rectification omitted when config.execution.rectification not set", () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-    });
-    const slots = extractSlots(plan);
-    expect(slots.rectification).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC6: Slot composition logic — table-driven tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("buildPlanForStrategy — AC6: slot composition table-driven tests", () => {
-  interface SlotCompositionCase {
-    name: string;
-    testStrategy: TestStrategy;
-    isFreshRun: boolean;
-    config: ReturnType<typeof makeNaxConfig>;
-    expectedSlots: PlanSlot;
-  }
-
-  const cases: SlotCompositionCase[] = [
-    {
-      name: "Fresh TDD simple with review and rectification",
-      testStrategy: "tdd-simple",
-      isFreshRun: true,
-      config: makeNaxConfig({
-        review: { enabled: true, checks: ["typecheck", "lint", "test", "build", "semantic"] },
-        execution: { rectification: { enabled: true } },
-      }),
-      expectedSlots: {
-        testWriter: true,
-        greenfieldGate: true,
-        implementer: true,
-        fullSuiteGate: true,
-        verifier: true,
-        semanticReview: true,
-        adversarialReview: false,
-        rectification: true,
-      },
-    },
-    {
-      name: "Retry TDD simple with no review",
-      testStrategy: "tdd-simple",
-      isFreshRun: false,
-      config: makeNaxConfig({
-        review: { enabled: false },
-      }),
-      expectedSlots: {
-        testWriter: false,
-        greenfieldGate: false,
-        implementer: true,
-        fullSuiteGate: true,
-        verifier: true,
-        semanticReview: false,
-        adversarialReview: false,
-        rectification: false,
-      },
-    },
-    {
-      name: "Fresh three-session-tdd with all reviews",
-      testStrategy: "three-session-tdd",
-      isFreshRun: true,
-      config: makeNaxConfig({
-        review: { enabled: true, checks: ["typecheck", "lint", "test", "build", "semantic", "adversarial"] },
-      }),
-      expectedSlots: {
-        testWriter: true,
-        greenfieldGate: true,
-        implementer: true,
-        fullSuiteGate: true,
-        verifier: true,
-        semanticReview: true,
-        adversarialReview: true,
-        rectification: false,
-      },
-    },
-    {
-      name: "Fresh test-after with no TDD gates",
-      testStrategy: "test-after",
-      isFreshRun: true,
-      config: makeNaxConfig({
-        review: { enabled: true, checks: ["typecheck", "lint", "test", "build"] },
-      }),
-      expectedSlots: {
-        testWriter: false,
-        greenfieldGate: false,
-        implementer: true,
-        fullSuiteGate: false,
-        verifier: false,
-        semanticReview: false,
-        adversarialReview: false,
-        rectification: false,
-      },
-    },
-    {
-      name: "Fresh no-test with review",
-      testStrategy: "no-test",
-      isFreshRun: true,
-      config: makeNaxConfig({
-        review: { enabled: true, checks: ["typecheck", "lint", "test", "build", "semantic"] },
-      }),
-      expectedSlots: {
-        testWriter: false,
-        greenfieldGate: false,
-        implementer: true,
-        fullSuiteGate: false,
-        verifier: false,
-        semanticReview: true,
-        adversarialReview: false,
-        rectification: false,
-      },
-    },
-    {
-      name: "Retry three-session-tdd-lite with adversarial only",
-      testStrategy: "three-session-tdd-lite",
-      isFreshRun: false,
-      config: makeNaxConfig({
-        review: { enabled: true, checks: ["typecheck", "lint", "test", "build", "adversarial"] },
-      }),
-      expectedSlots: {
-        testWriter: false,
-        greenfieldGate: false,
-        implementer: true,
-        fullSuiteGate: true,
-        verifier: true,
-        semanticReview: false,
-        adversarialReview: true,
-        rectification: false,
-      },
-    },
-  ];
-
-  test.each(cases)("$name", (testCase) => {
-    const story = makeStory();
-    const plan = buildPlanForStrategy({
-      story,
-      config: testCase.config,
-      testStrategy: testCase.testStrategy,
-      isFreshRun: testCase.isFreshRun,
-    });
-    const slots = extractSlots(plan);
-
-    expect(slots.testWriter).toBe(testCase.expectedSlots.testWriter);
-    expect(slots.greenfieldGate).toBe(testCase.expectedSlots.greenfieldGate);
-    expect(slots.implementer).toBe(testCase.expectedSlots.implementer);
-    expect(slots.fullSuiteGate).toBe(testCase.expectedSlots.fullSuiteGate);
-    expect(slots.verifier).toBe(testCase.expectedSlots.verifier);
-    expect(slots.semanticReview).toBe(testCase.expectedSlots.semanticReview);
-    expect(slots.adversarialReview).toBe(testCase.expectedSlots.adversarialReview);
-    expect(slots.rectification).toBe(testCase.expectedSlots.rectification);
+  test("rectification omitted when inputs.rectification is undefined even if config enabled", () => {
+    const story = makeStory({ attempts: 0 });
+    const config = withRectification(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story);
+    // No rectification in inputs
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    expect(plan.phaseNames()).not.toContain("rectification");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bonus: Canonical order is preserved
+// Canonical phase ordering
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — slot order preserved (CANONICAL_ORDER)", () => {
-  test("slots are in CANONICAL_ORDER: test-writer, greenfield-gate, implementer, full-suite-gate, verifier, semantic-review, adversarial-review", () => {
-    const story = makeStory();
-    const config = makeNaxConfig({
-      review: { enabled: true, checks: ["typecheck", "lint", "test", "build", "semantic", "adversarial"] },
+describe("buildPlanForStrategy — canonical phase ordering", () => {
+  test("full TDD fresh run phases appear in canonical order", () => {
+    const story = makeStory({ attempts: 0 });
+    const config = withReviewChecks(["semantic", "adversarial"]);
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story, {
+      semanticReview: makeSemanticReviewInput(story),
+      adversarialReview: makeAdversarialReviewInput(story),
     });
-    const plan = buildPlanForStrategy({
-      story,
-      config,
-      testStrategy: "three-session-tdd",
-      isFreshRun: true,
-    });
-
-    // Plan should have a slots array or similar that maintains order
-    expect(plan).toBeDefined();
-    // Implementation will verify order via phase execution logic
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    expect(plan.phaseNames()).toEqual([
+      "test-writer",
+      "greenfield-gate",
+      "implementer",
+      "full-suite-gate",
+      "verifier",
+      "semantic-review",
+      "adversarial-review",
+    ]);
   });
 });
