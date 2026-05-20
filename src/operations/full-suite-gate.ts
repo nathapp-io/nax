@@ -47,6 +47,8 @@ export interface FullSuiteGateInput {
   readonly rectificationEnabled?: boolean; // undefined defaults to false
   readonly implementerTier?: ModelTier; // model tier for rectification agent session
   readonly lite?: boolean; // skip isolation checks during rectification
+  /** Optional pre-resolved test patterns to skip re-resolution inside the gate. */
+  readonly resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
 }
 
 /**

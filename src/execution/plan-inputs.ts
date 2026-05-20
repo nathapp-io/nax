@@ -166,6 +166,10 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const _isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
 
+  // Resolve once for the plan — reused by greenfieldGate and threaded into fullSuiteGate
+  // so the gate doesn't re-resolve. Per ADR-009 the resolver is the SSOT.
+  const resolvedTestPatterns = _isTdd ? await resolveTestFilePatterns(config, ctx.workdir) : undefined;
+
   const testWriterInput =
     _isTdd && _isFreshRun
       ? {
@@ -176,15 +180,10 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         }
       : undefined;
 
-  let greenfieldGateInput: PlanInputs["greenfieldGate"] = undefined;
-  if (_isTdd && _isFreshRun) {
-    const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.workdir);
-    greenfieldGateInput = {
-      story,
-      workdir: ctx.workdir,
-      resolvedTestPatterns,
-    };
-  }
+  const greenfieldGateInput: PlanInputs["greenfieldGate"] =
+    _isTdd && _isFreshRun && resolvedTestPatterns
+      ? { story, workdir: ctx.workdir, resolvedTestPatterns }
+      : undefined;
 
   const implementerInput = {
     story,
@@ -200,6 +199,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         featureName: ctx.prd.feature,
         projectDir: ctx.projectDir,
         rectificationEnabled: ctx.config.execution?.rectification?.enabled ?? false,
+        resolvedTestPatterns,
       }
     : undefined;
 
