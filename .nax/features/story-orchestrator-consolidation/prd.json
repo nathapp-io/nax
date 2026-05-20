@@ -3,7 +3,7 @@
   "feature": "story-orchestrator-consolidation",
   "branchName": "feat/story-orchestrator-consolidation",
   "createdAt": "2026-05-19T08:20:00Z",
-  "updatedAt": "2026-05-19T14:15:29.230Z",
+  "updatedAt": "2026-05-20T01:36:58.188Z",
   "userStories": [
     {
       "id": "US-005.S1",
@@ -238,7 +238,7 @@
       "dependencies": [
         "US-005.S4"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
       "attempts": 2,
       "escalations": [],
@@ -257,17 +257,7 @@
         "test/integration/tdd/tdd-orchestrator-core.test.ts"
       ],
       "priorErrors": [],
-      "priorFailures": [
-        {
-          "attempt": 1,
-          "modelTier": "balanced",
-          "stage": "review",
-          "summary": "Failed with tier balanced, escalating to next tier",
-          "reviewFindings": [],
-          "cost": 4.0396344200000005,
-          "timestamp": "2026-05-19T12:38:37.162Z"
-        }
-      ],
+      "priorFailures": [],
       "storyPoints": 1,
       "storyGitRef": "9c4449a60aa6eeafb78077cff948bf4cc70e7a03",
       "failureStage": "autofix"
