@@ -3,6 +3,8 @@
  */
 
 export { SessionManager, _sessionManagerDeps } from "./manager";
+export { SessionKeeper } from "./session-keeper";
+export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-keeper";
 export { formatSessionName } from "./naming";
 export type { ProtocolIds } from "../runtime/protocol-types";
 export type {

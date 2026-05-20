@@ -1,0 +1,267 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "story-orchestrator-consolidation",
+  "branchName": "feat/story-orchestrator-consolidation",
+  "createdAt": "2026-05-19T08:20:00Z",
+  "updatedAt": "2026-05-20T02:03:24.456Z",
+  "userStories": [
+    {
+      "id": "US-005.S1",
+      "title": "Promote greenfield and full-suite gates into StoryOrchestratorBuilder",
+      "description": "Promote greenfield and full-suite gates into first-class builder phases so phase ordering and short-circuit behavior are owned by StoryOrchestratorBuilder and CANONICAL_ORDER. Keep full-suite gate internal rectification behavior as-is for this story and defer unification to US-006.",
+      "acceptanceCriteria": [
+        "CANONICAL_ORDER includes greenfield-gate after test-writer and full-suite-gate after implementer.",
+        "ExecutionPlan.run() short-circuits remaining phases when either gate returns success=false.",
+        "fullSuiteGateOp output status supports: passed, rectification-exhausted, disabled, execution-failed, inconclusive.",
+        "When full-suite execution is skipped by config gate/feature toggle, output status is disabled with success=false and zeroed attempts.",
+        "When full-suite command/process invocation fails before parseable test results, output status is execution-failed with success=false.",
+        "When full-suite output is present but cannot be confidently classified as pass/fail by parser/recover logic, output status is inconclusive with success=false.",
+        "fullSuiteGateOp fallback/recover preserves structured failure output and does not collapse all failures to a single status.",
+        "greenfieldGateOp input is self-contained (story, workdir, resolvedTestPatterns) and does not consume prior phase outputs."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "orchestrator",
+        "tdd"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "docs/specs/SPEC-story-orchestrator.md",
+        "src/execution/story-orchestrator.ts",
+        "src/tdd/rectification-gate.ts",
+        "src/tdd/orchestrator.ts",
+        "src/context/greenfield.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1278da1307b6fdc0542e5e76578ed0ea4a0c1376"
+    },
+    {
+      "id": "US-005.S2",
+      "title": "Introduce PlanInputs assembly with explicit boundary validation",
+      "description": "Create PlanInputs and assemblePlanInputs as a typed boundary for all orchestrator slots. Add explicit validation behavior for missing/invalid context fields to prevent hidden null propagation during plan construction.",
+      "acceptanceCriteria": [
+        "PlanInputs includes testWriter, greenfieldGate, implementer, fullSuiteGate, verifier, semanticReview, adversarialReview, rectification.",
+        "assemblePlanInputs validates required data before returning PlanInputs.",
+        "Missing resolved test patterns produces a deterministic structured failure (no implicit non-null assertion behavior).",
+        "Invalid or missing config required for slot input derivation produces a deterministic structured failure.",
+        "Boundary validation failures use a canonical contract: throw NaxError with machine-readable code and context.stage='execution-inputs'.",
+        "Validation behavior is covered by targeted unit tests."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "inputs",
+        "validation"
+      ],
+      "dependencies": [
+        "US-005.S1"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Reviewer contradiction: AC3 requires `assemblePlanInputs` to throw when resolved test patterns are missing, but the test at `test/unit/execution/plan-inputs.test.ts:212-220` explicitly asserts the function succeeds without test patterns (comment: \"Test pattern validation is deferred to downstream orchestrator setup\"). These two requirements are mutually exclusive and cannot both be satisfied without modifying test behavior.",
+          "timestamp": "2026-05-19T09:52:41.409Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/inputs.ts",
+        "src/pipeline/stages/execution.ts",
+        "src/pipeline/types.ts",
+        "src/errors.ts"
+      ],
+      "priorErrors": [
+        "Attempt 3 failed with model tier: balanced: Reviewer contradiction: AC3 requires `assemblePlanInputs` to throw when resolved test patterns are missing, but the test at `test/unit/execution/plan-inputs.test.ts:212-220` explicitly asserts the function succeeds without test patterns (comment: \"Test pattern validation is deferred to downstream orchestrator setup\"). These two requirements are mutually exclusive and cannot both be satisfied without modifying test behavior."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 3,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "source": "semantic-review",
+              "severity": "error",
+              "category": "",
+              "file": "src/execution/plan-inputs.ts",
+              "line": 59,
+              "message": "AC3 requires that missing resolved test patterns produce a deterministic structured failure. The implementation explicitly defers test pattern validation to the downstream orchestrator (line 59: 'Test pattern validation is deferred to the downstream orchestrator'). The function returns a valid PlanInputs even when no test patterns have been resolved, producing no failure. The unit test at plan-inputs.test.ts:82-86 confirms this: 'Test pattern validation is deferred to downstream orchestrator setup — assemblePlanInputs validates only the boundary contract.' This is an intentional design deviation from the AC.",
+              "suggestion": "Either add explicit validation for resolved test patterns (e.g., accept them as a parameter and throw NaxError when missing), or update the AC to reflect the deferred design.",
+              "fixTarget": "source",
+              "meta": {
+                "verifiedBy": {
+                  "command": "read src/execution/plan-inputs.ts",
+                  "file": "src/execution/plan-inputs.ts",
+                  "line": 59,
+                  "observed": " * Test pattern validation is deferred to the downstream orchestrator (see AC3 rationale in\n * the test file)."
+                },
+                "acQuote": "Missing resolved test patterns produces a deterministic structured failure (no implicit non-null assertion behavior).",
+                "acIndex": 3
+              }
+            }
+          ],
+          "cost": 0.46875522000000003,
+          "timestamp": "2026-05-19T09:52:41.409Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "497b8c20130efea5363546e6e419eca22314fdd9"
+    },
+    {
+      "id": "US-005.S3",
+      "title": "Unify sequencing via buildPlanForStrategy",
+      "description": "Replace duplicated sequencing paths with a single strategy-driven plan builder. Strategy only controls slot inclusion; actual ordering remains owned by CANONICAL_ORDER and builder dispatch.",
+      "acceptanceCriteria": [
+        "buildPlanForStrategy accepts testStrategy as an explicit parameter and does not read it from NaxConfig.",
+        "Fresh TDD run includes test-writer and greenfield-gate; retry run omits both and still runs implementer.",
+        "TDD strategies include full-suite-gate and verifier; non-TDD strategies omit them.",
+        "Review phase selection is controlled by config.review.checks membership (semantic/adversarial), not nested enabled flags.",
+        "Rectification slot inclusion is gated by shouldRunRectification(config).",
+        "Slot composition logic is covered with table-driven tests."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "strategy",
+        "orchestrator"
+      ],
+      "dependencies": [
+        "US-005.S2"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/build-plan-for-strategy.ts",
+        "src/operations/execution-gates.ts",
+        "src/review/types.ts",
+        "src/config/schema-types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a8aefa2724b92bfe9f4806f5ddd5570c59ee6f25"
+    },
+    {
+      "id": "US-005.S4",
+      "title": "Collapse execution stage to single plan run plus post-run inspection",
+      "description": "Refactor execution stage to assemble inputs, build one plan, run once, then perform read-only post-run inspection for verdict/rollback/isolation/pause handling. Remove branch-level sequencing duplication.",
+      "acceptanceCriteria": [
+        "execution stage builds exactly one plan and executes exactly one plan.run().",
+        "execution stage contains no sequencing branch that chooses between TDD and non-TDD orchestration implementations.",
+        "post-run inspection handles verdict extraction, failure categorization, rollback trigger, isolation surfacing, and pauseReason handling.",
+        "pauseReason produces interaction notify and stage action pause when interaction is enabled.",
+        "Source guard: src/pipeline/stages/execution.ts contains no direct orchestration dispatch calls (no callOp, no runWithFallback, no SessionKeeper constructor) outside plan-run helper paths."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "pipeline",
+        "inspection"
+      ],
+      "dependencies": [
+        "US-005.S3"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/execution/post-run.ts",
+        "src/execution/inputs.ts",
+        "src/execution/build-plan-for-strategy.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e5861160e482fb9c15bbe84c98447b2ee0c003c1"
+    },
+    {
+      "id": "US-005.S5",
+      "title": "Retire legacy TDD surfaces and migrate tests in mergeable increments",
+      "description": "Remove legacy orchestration entrypoints and migrate tests in small, mergeable slices: behavior-preserving test ports first, API surface removals second, and type rename cleanup last.",
+      "acceptanceCriteria": [
+        "Slice A: behavior tests are migrated to consolidated entrypoints and pass without changing expected semantics.",
+        "Slice B: path-specific shape tests for removed internal APIs are retired.",
+        "Slice C: runThreeSessionTdd and runFullSuiteGate exports/usages are removed from src and test trees.",
+        "Slice D: ThreeSessionTddResult is renamed/migrated to StoryRunResult and callers are updated.",
+        "Slice E: cleanup of obsolete helpers/imports/docstrings is completed with no lingering references in src/ and test/.",
+        "Each slice is independently mergeable and keeps main branch green (typecheck, lint, targeted tests)."
+      ],
+      "tags": [
+        "feature",
+        "cleanup",
+        "tests",
+        "api"
+      ],
+      "dependencies": [
+        "US-005.S4"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 2,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/tdd/index.ts",
+        "src/tdd/orchestrator.ts",
+        "src/tdd/rectification-gate.ts",
+        "src/tdd/types.ts",
+        "test/integration/tdd/tdd-orchestrator-core.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9c4449a60aa6eeafb78077cff948bf4cc70e7a03",
+      "failureStage": "autofix"
+    }
+  ],
+  "analysis": "This PRD uses PRD-CD as the baseline architecture and consolidation direction, while importing two safeguards from PRD-CC: (1) preserve richer full-suite gate failure status taxonomy and recovery semantics for accurate triage, and (2) explicitly validate PlanInputs assembly boundaries to prevent null/undefined propagation using a canonical NaxError contract. Work is split into 5 incremental, mergeable slices to reduce blast radius: gate promotion, input validation boundary, strategy plan builder, execution-stage collapse, and legacy-surface retirement/test cleanup."
+}

@@ -13,7 +13,13 @@ export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manag
 export { makeLogger, type LogCall, type MockLogger } from "./mock-logger";
 export { makeNaxConfig, makeSparseNaxConfig } from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
-export { makeMockRuntime, makeTestRuntime, type MockRuntimeOptions, type TestRuntimeOptions } from "./runtime";
+export {
+  makeMockRuntime,
+  makeRuntimeWithFakeAgent,
+  makeTestRuntime,
+  type MockRuntimeOptions,
+  type TestRuntimeOptions,
+} from "./runtime";
 export { makeInProgressStory, makePRD, makePendingStory, makeStory } from "./mock-story";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";
 export {
@@ -24,3 +30,6 @@ export {
 } from "./review-audit";
 export { withDepsRestore } from "./deps";
 export { waitForCondition } from "./timeout";
+export { makeLinkWithCosts } from "./link-with-costs";
+export { makeMockCallContext } from "./call-context";
+export { makeMockPlanInputs } from "./plan-inputs";

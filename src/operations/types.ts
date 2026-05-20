@@ -244,4 +244,16 @@ export interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
  */
 export type OperationModel<I, C> = ConfiguredModel | ((input: I, ctx: BuildContext<C>) => ConfiguredModel | undefined);
 
-export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
+/**
+ * DeterministicOperation — runs a pure function/filesystem call without an LLM session.
+ * execute(input, ctx) is called directly by callOp, with no agent dispatch.
+ * No cost tracking (no LLM involved), no session management.
+ */
+export interface DeterministicOperation<I, O, C = NaxConfig>
+  extends Pick<OperationBase<I, O, C>, "name" | "stage" | "config"> {
+  readonly kind: "deterministic";
+  readonly timeoutMs?: never;
+  execute(input: I, ctx: CallContext): Promise<O>;
+}
+
+export type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C> | DeterministicOperation<I, O, C>;

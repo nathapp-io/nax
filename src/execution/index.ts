@@ -35,3 +35,23 @@ export {
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./lifecycle";
+export {
+  StoryOrchestratorBuilder,
+  ExecutionPlan,
+  _storyOrchestratorDeps,
+  type OrchestratorSlot,
+  type RectificationPhaseOptions,
+  type StoryOrchestratorResult,
+} from "./story-orchestrator";
+export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
+export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export type { StoryRunResult } from "./types";
+export {
+  applyPostRunInspection,
+  decideStageAction,
+  extractPauseReason,
+  deriveTddFailureCategory,
+  _postRunDeps,
+  type PostRunInspectionResult,
+  type InspectionOptions,
+} from "./post-run";

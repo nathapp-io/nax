@@ -47,14 +47,17 @@ export type {
   BuildContext,
   CallContext,
   CompleteOperation,
+  DeterministicOperation,
   Operation,
   RunOperation,
   VerifyContext,
 } from "./types";
-export { writeTddTestOp } from "./write-test";
-export type { TddRunOp } from "./write-test";
-export { implementTddOp } from "./implement";
-export { verifyTddOp } from "./verify";
+export { writeTddTestOp, testWriterOp } from "./write-test";
+export type { TestWriterInput, TestWriterOutput } from "./write-test";
+export { implementTddOp, implementerOp } from "./implement";
+export type { ImplementerInput, ImplementerOutput } from "./implement";
+export { verifyTddOp, verifierOp } from "./verify";
+export type { VerifierInput, VerifierOutput } from "./verify";
 export { autoApproveOp } from "./auto-approve";
 export type { AutoApproveInput, AutoApproveOutput, AutoApproveDecision } from "./auto-approve";
 export { groundOp } from "./ground";
@@ -63,3 +66,18 @@ export { planDraftOp, inspectDraftOutput } from "./plan-draft";
 export type { PlanDraftInput, PlanDraftOutput } from "./plan-draft";
 export { planCriticLlmOp, inspectCriticOutput } from "./plan-critic-llm";
 export type { PlanCriticLlmInput, PlanCriticLlmOutput } from "./plan-critic-llm";
+export {
+  shouldKeepSessionOpen,
+  shouldRunReview,
+  shouldRunRectification,
+  executionGatesConfigSelector,
+} from "./execution-gates";
+export { greenfieldGateOp } from "./greenfield-gate";
+export type { GreenfieldGateInput, GreenfieldGateOutput } from "./greenfield-gate";
+export { fullSuiteGateOp, _fullSuiteGateDeps } from "./full-suite-gate";
+export type {
+  FullSuiteGateInput,
+  FullSuiteGateOutput,
+  FullSuiteGateStatus,
+  FullSuiteGateDeps,
+} from "./full-suite-gate";

@@ -2,8 +2,11 @@
 /**
  * BUG-020: Verify storyId is present in JSONL event logger calls.
  *
- * Tests three key stages: verify, execution, tdd orchestrator.
+ * Tests two key stages: verify, execution.
  * Uses mocks — does NOT spawn nax processes.
+ *
+ * Note: The tdd orchestrator describe block was removed in US-005 (AC#6) because
+ * runThreeSessionTdd's dryRun behavior no longer exists in buildPlanForStrategy+plan.run().
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
@@ -21,7 +24,6 @@ const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
 import { verifyStage } from "../../../src/pipeline/stages/verify";
 import { _executionDeps, executionStage } from "../../../src/pipeline/stages/execution";
-import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 
 // ── Mock agent ────────────────────────────────────────────────────────────────
 
@@ -181,44 +183,6 @@ describe("storyId is present in JSONL event payloads", () => {
           requestedTier: "fast",
         }),
       );
-    });
-  });
-
-  // ── TDD orchestrator ────────────────────────────────────────────────────────
-
-  describe("tdd orchestrator", () => {
-    test("dry-run info log includes storyId", async () => {
-      const logger = getLogger();
-      const infoSpy = spyOn(logger, "info").mockImplementation(() => {});
-
-      const mockAgent = makeAgentAdapter({
-        name: "dry-run-agent",
-        capabilities: { supportedTiers: ["fast"] },
-        run: mock(async () => ({
-          success: true,
-          rateLimited: false,
-          estimatedCostUsd: 0,
-          output: "",
-          exitCode: 0,
-          durationMs: 0,
-        })),
-      });
-
-      await runThreeSessionTdd({
-        agent: mockAgent,
-        agentManager: fakeAgentManager(mockAgent),
-        story: mockStory,
-        config: makeCtx().config,
-        workdir: WORKDIR,
-        modelTier: "fast",
-        dryRun: true,
-      });
-
-      const dryRunCall = infoSpy.mock.calls.find(
-        ([, msg]) => msg === "[DRY RUN] Would run 3-session TDD",
-      );
-      expect(dryRunCall).toBeDefined();
-      expect(dryRunCall![2]).toEqual(expect.objectContaining({ storyId: STORY_ID }));
     });
   });
 });

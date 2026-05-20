@@ -64,7 +64,6 @@ const EXISTING_PRD: PRD = {
 
 const origReadFile = _planDeps.readFile;
 const origWriteFile = _planDeps.writeFile;
-const origScanCodebase = _planDeps.scanCodebase;
 const origCreateRuntime = _planDeps.createRuntime;
 const origReadPackageJson = _planDeps.readPackageJson;
 const origSpawnSync = _planDeps.spawnSync;
@@ -85,12 +84,6 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
     await Bun.write(outputPath, JSON.stringify(EXISTING_PRD, null, 2));
 
     // Stub infrastructure deps
-    _planDeps.scanCodebase = mock(async () => ({
-      fileTree: "└── src/\n    └── index.ts",
-      dependencies: {},
-      devDependencies: {},
-      testPatterns: [],
-    }));
     _planDeps.readPackageJson = mock(async () => ({ name: "my-project" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async (_path: string) => {});
@@ -114,8 +107,9 @@ describe("plan PRD preservation — issue #993 regression (AC1)", () => {
     mock.restore();
     _planDeps.readFile = origReadFile;
     _planDeps.writeFile = origWriteFile;
-    _planDeps.scanCodebase = origScanCodebase;
     _planDeps.createRuntime = origCreateRuntime;
+    // Pre-AC-14 stale property: ensure no scanCodebase leaks to subsequent tests
+    delete (_planDeps as { scanCodebase?: unknown }).scanCodebase;
     _planDeps.readPackageJson = origReadPackageJson;
     _planDeps.spawnSync = origSpawnSync;
     _planDeps.mkdirp = origMkdirp;

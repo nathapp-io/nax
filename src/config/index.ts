@@ -32,6 +32,7 @@ export type {
   ContextToolRuntimeConfig,
   PromptLoaderConfig,
   LlmRoutingConfig,
+  ExecutionGatesConfig,
 } from "./selectors";
 export {
   DEFAULT_CONFIG,
@@ -75,6 +76,7 @@ export {
   contextToolRuntimeConfigSelector,
   promptLoaderConfigSelector,
   llmRoutingConfigSelector,
+  executionGatesConfigSelector,
 } from "./selectors";
 export { createConfigLoader } from "./loader-runtime";
 export type { ConfigLoader } from "./loader-runtime";

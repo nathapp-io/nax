@@ -1,0 +1,282 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "shouldKeepSessionOpen(config, \"implementer\") returns true when config.review.enabled is true.",
+    "refined": "Calling shouldKeepSessionOpen(config, \"implementer\") with config.review.enabled === true returns boolean true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "shouldKeepSessionOpen(config, \"implementer\") returns true when config.execution.rectification.enabled is true.",
+    "refined": "Calling shouldKeepSessionOpen(config, \"implementer\") with config.execution.rectification.enabled === true returns boolean true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "shouldKeepSessionOpen(config, \"implementer\") returns false when both config.review.enabled and config.execution.rectification.enabled are absent or false.",
+    "refined": "Calling shouldKeepSessionOpen(config, \"implementer\") with config.review.enabled === false and config.execution.rectification.enabled === false returns boolean false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "shouldKeepSessionOpen(config, \"test-writer\") returns false regardless of config.review.enabled and config.execution.rectification.enabled values.",
+    "refined": "Calling shouldKeepSessionOpen(config, \"test-writer\") returns boolean false for any combination of config.review.enabled and config.execution.rectification.enabled values",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "shouldKeepSessionOpen(config, \"verifier\") returns false regardless of config.review.enabled and config.execution.rectification.enabled values.",
+    "refined": "Calling shouldKeepSessionOpen(config, \"verifier\") returns boolean false for any combination of config.review.enabled and config.execution.rectification.enabled values",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "shouldRunReview(config) returns true when config.review.enabled is true.",
+    "refined": "Calling shouldRunReview(config) with config.review.enabled === true returns boolean true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "shouldRunReview(config) returns false when config.review is absent.",
+    "refined": "Calling shouldRunReview(config) with config.review === undefined returns boolean false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "shouldRunRectification(config) returns true when config.execution.rectification.enabled is true.",
+    "refined": "Calling shouldRunRectification(config) with config.execution.rectification.enabled === true returns boolean true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "shouldRunRectification(config) returns false when config.execution.rectification is absent.",
+    "refined": "Calling shouldRunRectification(config) with config.execution.rectification === undefined returns boolean false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `src/tdd/session-runner.ts` is inspected after US-001, when locating keepOpen assignment, then the expression includes `shouldKeepSessionOpen(` and does not include the prior inline `role === \"implementer\" && (config.execution.rectification?.enabled ?? false)` expression.",
+    "refined": "File src/tdd/session-runner.ts contains string shouldKeepSessionOpen( in a keepOpen variable assignment and does not contain string role === \"implementer\" && (config.execution.rectification?.enabled ?? false) in that same assignment context",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `src/pipeline/stages/execution.ts` is inspected after US-001, when locating keepOpen assignment, then the expression includes `shouldKeepSessionOpen(` and does not include the prior inline `ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true` expression.",
+    "refined": "File src/pipeline/stages/execution.ts contains string shouldKeepSessionOpen( in a keepOpen variable assignment and does not contain string ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true in that same assignment context",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "SessionKeeper.send() returns the TurnResult from agentManager.runAsSession on success.",
+    "refined": "SessionKeeper.send() returns the exact TurnResult object received from agentManager.runAsSession when no error occurs",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "SessionKeeper.send() calls sessionManager.getLiveHandle(sessionName) before openSession, and when a live handle with matching agentName exists, SessionKeeper.send() reuses that handle.",
+    "refined": "When sessionManager.getLiveHandle(sessionName) returns a SessionHandle with agentName matching opts.defaultAgent, sessionManager.openSession is not called and the returned handle is passed to agentManager.runAsSession",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given no matching live handle exists, when SessionKeeper.send() runs, then it calls sessionManager.openSession and uses the returned handle.",
+    "refined": "When sessionManager.getLiveHandle(sessionName) returns null or a handle with non-matching agentName, sessionManager.openSession is called exactly once with opts.sessionName, and its returned handle is passed to agentManager.runAsSession",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given agentManager.runAsSession throws SessionTurnError with retryable: true, when retryStrategy.shouldRetry returns retry: true, then SessionKeeper.send() closes the stale handle and retries.",
+    "refined": "When agentManager.runAsSession throws SessionTurnError with retryable=true, retryStrategy.shouldRetry is called with the error; if it returns {retry:true}, sessionManager.closeSession is invoked on the stale handle.id and agentManager.runAsSession is called again with the same prompt",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given agentManager.runAsSession throws SessionTurnError with retryable: true, when retryStrategy is absent or returns retry: false, then SessionKeeper.send() re-throws the error.",
+    "refined": "When SessionTurnError with retryable=true is thrown and opts.retryStrategy is undefined, or retryStrategy.shouldRetry returns {retry:false}, the error is re-thrown to the caller without retry or recovery",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given agentManager.runAsSession throws SessionTurnError with retryable: false, when SessionKeeper.send() handles the error, then it re-throws immediately without calling retryStrategy.shouldRetry.",
+    "refined": "When SessionTurnError with retryable=false is thrown, retryStrategy.shouldRetry is never invoked and the error is re-thrown to the caller immediately",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "SessionKeeper.bindProtocolIds() calls sessionManager.bindHandle(heldHandle.id, sessionName, protocolIds) when heldHandle.protocolIds is defined.",
+    "refined": "When heldHandle is held and heldHandle.protocolIds is defined, bindProtocolIds() calls sessionManager.bindHandle exactly once with arguments (heldHandle.id, opts.sessionName, heldHandle.protocolIds)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "SessionKeeper.bindProtocolIds() performs no sessionManager.bindHandle call when heldHandle.protocolIds is undefined.",
+    "refined": "When heldHandle is held and heldHandle.protocolIds is undefined, sessionManager.bindHandle is not called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "SessionKeeper.close() calls sessionManager.closeSession for the held handle when one exists and does not throw when no handle is held.",
+    "refined": "SessionKeeper.close() calls sessionManager.closeSession(heldHandle.id) when a handle is held; when no handle is held, close() completes without throwing and without calling closeSession",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given `src/verification/rectification-loop.ts` is inspected after US-002, when searching for the previous session retry block, then the previous inline `while (true)` loop used for `getLiveHandle/openSession/runAsSession` is removed and SessionKeeper usage is present.",
+    "refined": "File src/verification/rectification-loop.ts does not contain the pattern `while (true)` or `while(true)` used for session retry/transport retry, and contains at least one instantiation of `new SessionKeeper` or `SessionKeeper` variable assignment",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given `src/tdd/rectification-gate.ts` is inspected after US-002, when searching for the previous session retry block, then the previous inline `while (true)` loop used for `getLiveHandle/openSession/runAsSession` is removed and SessionKeeper usage is present.",
+    "refined": "File src/tdd/rectification-gate.ts does not contain the pattern `while (true)` or `while(true)` used for session retry/transport retry, and contains at least one instantiation of `new SessionKeeper` or `SessionKeeper` variable assignment",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-23",
+    "original": "implementerOp.kind equals \"run\", implementerOp.session.role equals \"implementer\", and implementerOp.session.lifetime equals \"warm\".",
+    "refined": "implementerOp.kind === \"run\" AND implementerOp.session.role === \"implementer\" AND implementerOp.session.lifetime === \"warm\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "testWriterOp.session.role equals \"test-writer\" and testWriterOp.session.lifetime equals \"fresh\".",
+    "refined": "testWriterOp.session.role === \"test-writer\" AND testWriterOp.session.lifetime === \"fresh\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "verifierOp.session.role equals \"verifier\" and verifierOp.session.lifetime equals \"fresh\".",
+    "refined": "verifierOp.session.role === \"verifier\" AND verifierOp.session.lifetime === \"fresh\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given implementerOp.parse receives empty or unparseable output, when parse executes, then it returns ImplementerOutput with success: false and filesChanged: [].",
+    "refined": "implementerOp.parse(\"\", mockInput, mockCtx) returns { success: false, filesChanged: [], estimatedCostUsd: number, durationMs: number }",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given upgraded TDD op parse cannot produce a usable value and op-level recover can derive output from disk artifacts, when callOp post-parse flow runs, then it returns recovered output instead of throwing parse failure.",
+    "refined": "When implementerOp/testWriterOp/verifierOp.parse throws and op.recover returns valid output, callOp returns the recovered output without re-throwing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When runTddSessionOp routes by op.session.role, then it dispatches via callOp to implementerOp, testWriterOp, or verifierOp and does not call runTddSession() directly.",
+    "refined": "runTddSessionOp calls callOp(ctx, implementerOp/testWriterOp/verifierOp, input) for corresponding roles and never calls runTddSession() function",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given `src/operations/index.ts` is inspected after US-003, when reading exports, then `TddRunOp` is not exported.",
+    "refined": "grep -c \"export.*TddRunOp\" src/operations/index.ts returns 0 (no exports of TddRunOp)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given role-tag wiring tests are inspected after US-003, when checking `test/unit/tdd/session-op.test.ts`, then the file does not exist.",
+    "refined": "test/unit/tdd/session-op.test.ts does not exist on disk after completion",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "OrchestratorSlot<I, O, C> is generic; the typed add* methods accept the typed op + input without requiring callers to cast (no `as unknown as RunOperation<unknown, ...>` at call sites).",
+    "refined": "TypeScript strict mode compilation succeeds when calling builder.addImplementer(typedOp, typedInput), builder.addTestWriter(typedOp, typedInput), etc., without `as` casts. The builder's type parameters correctly infer and enforce input/output type matching for each add* method.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given addImplementer was never called, when StoryOrchestratorBuilder.build(ctx) is invoked, then it throws NaxError with code \"ORCHESTRATOR_NO_IMPLEMENTER\".",
+    "refined": "Calling StoryOrchestratorBuilder.build(ctx) without a prior addImplementer() call throws NaxError with message matching /ORCHESTRATOR_NO_IMPLEMENTER/ and context.stage=\"execution\".",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "ExecutionPlan.run() executes slots in canonical order: test-writer (if added) → implementer → verifier (if added) → semantic review (if added) → adversarial review (if added) → rectification (if added); any slot not added is skipped. addAdversarialReview uses the existing adversarialReviewOp / AdversarialReviewInput from src/operations/adversarial-review.ts; addSemanticReview uses the existing semanticReviewOp / SemanticReviewInput from src/operations/semantic-review.ts.",
+    "refined": "ExecutionPlan.run() calls callOp for each added slot in the order: testWriterOp, implementerOp, verifierOp, semanticReviewOp, adversarialReviewOp, rectification. Skipped slots are not called. addSemanticReview and addAdversarialReview reference the existing ops from src/operations/semantic-review.ts and src/operations/adversarial-review.ts (verified by op.name === \"semanticReviewOp\" and \"adversarialReviewOp\").",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "ExecutionPlan.run() dispatches every phase via callOp(ctx, slot.op, slot.input) — no calls to agentManager.runWithFallback, no per-slot runner closures, no outer-scope sharedState mutation.",
+    "refined": "ExecutionPlan.run() implementation contains calls to callOp for each phase (verified by grep/AST). Contains zero calls to agentManager.runWithFallback. OrchestratorSlot interface does not include a runner or closure field. No mutable sharedState variable is declared or mutated in ExecutionPlan.run().",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "ExecutionPlan.run() returns StoryOrchestratorResult.success === false (no throw) when any op returns { success: false }; thrown errors are logged with { storyId, phase: op.name, error } and propagated.",
+    "refined": "When callOp returns { success: false }, ExecutionPlan.run() continues and returns with success: false. When callOp throws, ExecutionPlan.run() logs with structure { storyId: ctx.story.id, phase: op.name, error: errorMessage(err) } and re-throws the error.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "StoryOrchestratorResult captures per-slot costs in phaseCosts (keyed by op.name), their sum as totalCostUsd, and parsed phase outputs in phaseOutputs (keyed by op.name, typed Record<string, unknown> with read-site narrowing).",
+    "refined": "StoryOrchestratorResult.phaseCosts is a Record<string, number> with keys equal to op.name of each dispatched phase. StoryOrchestratorResult.totalCostUsd equals the sum of all phaseCosts values. StoryOrchestratorResult.phaseOutputs is Record<string, unknown> with keys equal to op.name; type narrowing occurs at read sites adjacent to the named op.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "addRectification(opts) loops per §2D: reads failures from phaseOutputs[verifierOp.name], resolves the fix via runFixCycle(opts.strategies, ...), dispatches via callOp, re-runs the verifier, and terminates on success / maxAttempts / abortOnIncreasingFailures / abort signal.",
+    "refined": "Rectification loop: reads failures as ReviewCheckResult[] from phaseOutputs[verifierOp.name]; calls runFixCycle(opts.strategies, failures, ctx) to select a fix; dispatches the chosen op via callOp; re-runs verifierOp via callOp and overwrites phaseOutputs[verifierOp.name]; terminates when verifier returns success: true OR attempt count >= opts.maxAttempts OR (opts.abortOnIncreasingFailures && newFailureCount > prevFailureCount) OR ctx.abort signal fires.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-38",
+    "original": "The rectification phase owns one SessionKeeper instance for the implementer session (constructed at phase entry, closed in .finally()); reuses the warm-lifetime implementer handle across iterations.",
+    "refined": "Rectification phase constructs exactly one SessionKeeper instance at the start of the loop. The implementer op is dispatched with keepOpen: true, reusing the same SessionKeeper handle across all iterations. SessionKeeper.close() is called in a .finally() block that runs on exit (success, max attempts, abort, or error).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-39",
+    "original": "Both src/pipeline/stages/execution.ts and src/tdd/orchestrator.ts replace their internal session loops with StoryOrchestratorBuilder — no residual `if (isTddStrategy)` branch that duplicates session management.",
+    "refined": "Both src/pipeline/stages/execution.ts and src/tdd/orchestrator.ts call `const plan = new StoryOrchestratorBuilder().add...().build(ctx); const result = await plan.run()`. Neither file contains session-management logic (openSession, closeSession, or SessionKeeper instantiation outside the builder). No branching on TDD strategy for session management (verified by grep for `if.*isTddStrategy.*session` or similar patterns returning zero matches).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-40",
+    "original": "tdd/orchestrator.ts retains rollback, verdict reading (readVerdict + categorizeVerdict on phaseOutputs[verifierOp.name]), isolation surfacing, greenfield-no-tests detection, priorFailures review-escalation skip, and the full-suite gate — none of these appear inside the builder or any op.",
+    "refined": "src/tdd/orchestrator.ts contains calls to rollback, readVerdict, categorizeVerdict, isolation-surfacing logic, greenfield-no-tests check, priorFailures review-escalation skip, and full-suite gate. src/execution/story-orchestrator.ts (builder) contains zero references to rollback, readVerdict, categorizeVerdict, isolation, greenfield, priorFailures, or full-suite gate. No ops (implementerOp, verifierOp, etc.) in src/operations/ contain these responsibilities.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

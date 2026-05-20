@@ -1,28 +1,139 @@
-/**
- * TDD ops are minimal role tags consumed by runTddSession (src/tdd/session-runner.ts),
- * not full Operation<I, O, C> shapes. See ADR-020 Wave 3 §Step 5 — verify/recover
- * hooks live on Operation, so TDD's session-side recovery (when needed) belongs
- * in the orchestrator, not here. Migration to true callOp ops is deferred per
- * ADR-018 §5.3 amendment.
- */
 import type { AgentAdapter } from "../agents";
+import { resolveDefaultAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import type { ContextBundle } from "../context/engine";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
+import { getLogger } from "../logger";
+import {
+  callOp,
+  implementTddOp,
+  implementerOp,
+  testWriterOp,
+  verifierOp,
+  verifyTddOp,
+  writeTddTestOp,
+} from "../operations";
+import type {
+  CallContext,
+  ImplementerInput,
+  ImplementerOutput,
+  TestWriterInput,
+  TestWriterOutput,
+  VerifierInput,
+  VerifierOutput,
+} from "../operations";
 import type { UserStory } from "../prd";
-import { runTddSession } from "./session-runner";
+import { parseSelfVerificationMarker } from "../quality";
+import type { NaxRuntime } from "../runtime";
+import type { SessionRole } from "../session/types";
+import { _sessionRunnerDeps } from "./session-runner";
 import type { TddSessionBinding } from "./session-runner";
-import type { TddSessionResult, TddSessionRole } from "./types";
+import type { IsolationCheck, TddSessionResult, TddSessionRole } from "./types";
 
-/** Typed config object identifying which TDD session role to run */
-export interface TddRunOp {
+export { implementTddOp, implementerOp, verifyTddOp, verifierOp, writeTddTestOp, testWriterOp };
+
+/** Inputs for the shared post-dispatch TDD result assembler. */
+export interface AssembleTddSessionResultInput {
   readonly role: TddSessionRole;
+  readonly story: UserStory;
+  readonly workdir: string;
+  readonly config: NaxConfig;
+  readonly beforeRef: string;
+  readonly lite: boolean;
+  readonly opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
+  readonly capturedResponse: string;
+  readonly capturedTokenUsage?: import("../agents/cost").TokenUsage;
+  readonly capturedCostUsd: number;
+  readonly startTime: number;
+  /** Builder path: prefer phase-reported duration; falls back to wall-clock. */
+  readonly planDurationMs?: number;
 }
 
-export const writeTddTestOp: TddRunOp = { role: "test-writer" };
-export const implementTddOp: TddRunOp = { role: "implementer" };
-export const verifyTddOp: TddRunOp = { role: "verifier" };
+/**
+ * Shared post-dispatch chain consumed by `runTddSessionOp` (legacy direct
+ * dispatch via the TDD execution stage):
+ *
+ *  1. autoCommitIfDirty so uncommitted agent edits land in git.
+ *  2. Isolation check (skipped in lite mode for test-writer/implementer).
+ *  3. selfVerification marker parse (skipped for verifier).
+ *  4. TddSessionResult assembly.
+ */
+export async function assembleTddSessionResult(input: AssembleTddSessionResultInput): Promise<TddSessionResult> {
+  const {
+    role,
+    story,
+    workdir,
+    config,
+    beforeRef,
+    lite,
+    opOutput,
+    capturedResponse,
+    capturedTokenUsage,
+    capturedCostUsd,
+    startTime,
+    planDurationMs,
+  } = input;
+
+  await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
+
+  const skipIsolation = lite && role !== "verifier";
+  const testFilePatterns =
+    typeof config.execution?.smartTestRunner === "object" && config.execution.smartTestRunner !== null
+      ? config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+
+  let isolation: IsolationCheck | undefined;
+  if (!skipIsolation) {
+    if (role === "test-writer") {
+      const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(
+        workdir,
+        beforeRef,
+        allowedPaths,
+        testFilePatterns,
+      );
+    } else if (role === "implementer" || role === "verifier") {
+      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, beforeRef, testFilePatterns);
+    }
+  }
+
+  // Verifier inherits any isolation surfaced via the op's recover path
+  // (verifierOp.recover reads .nax-verifier-verdict.json).
+  if (!isolation && "isolation" in opOutput && opOutput.isolation) {
+    isolation = opOutput.isolation;
+  }
+
+  const filesChanged =
+    opOutput.filesChanged.length > 0
+      ? [...opOutput.filesChanged]
+      : await _sessionRunnerDeps.getChangedFiles(workdir, beforeRef);
+
+  const selfVerificationResult =
+    role === "verifier" || !capturedResponse ? undefined : parseSelfVerificationMarker(capturedResponse, workdir);
+  const selfVerificationFailed =
+    selfVerificationResult?.lint === "fail" || selfVerificationResult?.typecheck === "fail";
+
+  if (isolation && !isolation.passed) {
+    getLogger().error("tdd", "Isolation violated", {
+      storyId: story.id,
+      role,
+      description: isolation.description,
+      violations: isolation.violations,
+    });
+  }
+
+  return {
+    role,
+    success: opOutput.success && (!isolation || isolation.passed) && !selfVerificationFailed,
+    filesChanged: filesChanged ?? [],
+    estimatedCostUsd: capturedCostUsd || opOutput.estimatedCostUsd,
+    durationMs: opOutput.durationMs || planDurationMs || Date.now() - startTime,
+    ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
+    ...(isolation ? { isolation } : {}),
+    ...(selfVerificationResult ? { selfVerification: selfVerificationResult } : {}),
+  };
+}
 
 /** Subset of ThreeSessionTddOptions needed by runTddSessionOp */
 export interface TddSessionOpOptions {
@@ -32,6 +143,8 @@ export interface TddSessionOpOptions {
   config: NaxConfig;
   workdir: string;
   modelTier: ModelTier;
+  /** Runtime for constructing CallContext for callOp dispatch. */
+  runtime: NaxRuntime;
   featureName?: string;
   contextMarkdown?: string;
   featureContextMarkdown?: string;
@@ -43,84 +156,113 @@ export interface TddSessionOpOptions {
   dryRun?: boolean;
 }
 
+/** Op shape accepted by runTddSessionOp — matches RunOperation.session (uses broad SessionRole). */
+type TddSessionOp = { readonly session: { readonly role: SessionRole } };
+
 /**
  * Run a single TDD session for the given op (role).
- * Resolves per-role model tier, context inclusion, and isolation settings,
- * then delegates directly to runTddSession.
+ * Dispatches via callOp to implementerOp, testWriterOp, or verifierOp based on
+ * op.session.role. Does not call the legacy direct session runner.
  */
 export async function runTddSessionOp(
-  op: TddRunOp,
+  op: TddSessionOp,
   options: TddSessionOpOptions,
-  beforeRef: string,
-  contextBundle?: ContextBundle,
-  sessionBinding?: TddSessionBinding,
+  _beforeRef: string,
+  _contextBundle?: ContextBundle,
+  _sessionBinding?: TddSessionBinding,
 ): Promise<TddSessionResult> {
   const {
-    agent,
-    agentManager,
     story,
-    config,
     workdir,
-    modelTier,
     featureName,
     contextMarkdown,
     featureContextMarkdown,
     constitution,
-    lite = false,
     interactionChain,
-    projectDir,
-    abortSignal,
+    runtime,
   } = options;
 
-  const { role } = op;
+  const role = op.session.role as TddSessionRole;
 
-  let tier: ModelTier;
-  let includeContext: boolean;
-  let skipIsolation: boolean;
-
-  switch (role) {
-    case "test-writer":
-      tier = config.tdd.sessionTiers?.testWriter ?? "balanced";
-      includeContext = true;
-      skipIsolation = lite;
-      break;
-    case "implementer":
-      tier = config.tdd.sessionTiers?.implementer ?? modelTier;
-      includeContext = true;
-      skipIsolation = lite;
-      break;
-    case "verifier":
-      tier = config.tdd.sessionTiers?.verifier ?? "fast";
-      includeContext = false;
-      skipIsolation = false;
-      break;
-  }
+  const includeContext = role !== "verifier";
 
   const interactionBridge = includeContext
     ? buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" })
     : undefined;
 
-  const verifierLimitedContext = role === "verifier";
+  // Subscribe to dispatch events filtered by scopeId so we can surface this op's
+  // tokenUsage AND raw response on TddSessionResult. Per adapter-wiring.md
+  // Rule 6/7, cost/token data flows through DispatchEvent → middleware/listeners,
+  // never via a manager overlay or CallContext back-channel.
+  // Defensive: integration-test runtimes may omit costAggregator/dispatchEvents.
+  // When absent, tokenUsage is unrecoverable — TddSessionResult.tokenUsage stays
+  // undefined. The raw response is also unavailable, so selfVerification-marker
+  // parsing is skipped.
+  const scope = runtime.costAggregator?.openScope();
+  let capturedTokenUsage: import("../agents/cost").TokenUsage | undefined;
+  let capturedResponse = "";
+  let capturedCostUsd = 0;
+  const unsubscribe =
+    runtime.dispatchEvents && scope
+      ? runtime.dispatchEvents.onDispatch((event) => {
+          if (event.scopeId === scope.scopeId) {
+            if (event.tokenUsage) capturedTokenUsage = event.tokenUsage;
+            if (event.response) capturedResponse = event.response;
+            if (event.exactCostUsd !== undefined) capturedCostUsd += event.exactCostUsd;
+            else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
+          }
+        })
+      : () => {};
 
-  return runTddSession(
-    role,
-    agent,
-    agentManager,
-    story,
-    config,
-    workdir,
-    tier,
-    beforeRef,
-    includeContext ? contextMarkdown : undefined,
-    lite,
-    skipIsolation,
-    verifierLimitedContext ? undefined : constitution,
+  const packageView = runtime.packages.resolve(workdir);
+  const ctx: CallContext = {
+    runtime,
+    packageView,
+    packageDir: workdir,
+    agentName: resolveDefaultAgent(runtime.configLoader.current()),
+    storyId: story.id,
     featureName,
-    interactionBridge,
-    projectDir,
-    includeContext ? featureContextMarkdown : undefined,
-    verifierLimitedContext ? undefined : contextBundle,
-    sessionBinding,
-    abortSignal,
-  );
+    story,
+    ...(scope ? { scopeId: scope.scopeId } : {}),
+    ...(interactionBridge ? { interactionBridge } : {}),
+  };
+
+  const startTime = Date.now();
+
+  try {
+    let opOutput: ImplementerOutput | TestWriterOutput | VerifierOutput;
+    if (role === "test-writer") {
+      const input: TestWriterInput = {
+        story,
+        ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+      };
+      opOutput = await callOp(ctx, testWriterOp, input);
+    } else if (role === "implementer") {
+      const input: ImplementerInput = {
+        story,
+        ...(includeContext ? { contextMarkdown, featureContextMarkdown, constitution } : {}),
+      };
+      opOutput = await callOp(ctx, implementerOp, input);
+    } else {
+      const input: VerifierInput = { story };
+      opOutput = await callOp(ctx, verifierOp, input);
+    }
+
+    return await assembleTddSessionResult({
+      role,
+      story,
+      workdir,
+      config: options.config,
+      beforeRef: _beforeRef,
+      lite: options.lite ?? false,
+      opOutput,
+      capturedResponse,
+      ...(capturedTokenUsage ? { capturedTokenUsage } : {}),
+      capturedCostUsd,
+      startTime,
+    });
+  } finally {
+    unsubscribe();
+    scope?.close();
+  }
 }

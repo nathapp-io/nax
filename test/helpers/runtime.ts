@@ -1,10 +1,11 @@
 import { afterEach } from "bun:test";
-import type { IAgentManager } from "@/agents";
+import type { AgentAdapter, IAgentManager } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config";
 import { createRuntime, type CreateRuntimeOptions, type NaxRuntime } from "@/runtime";
 import type { IReviewAuditor } from "@/runtime";
 import type { ISessionManager } from "@/session/types";
+import { fakeAgentManager } from "./fake-agent-manager";
 import { makeMockAgentManager } from "./mock-agent-manager";
 import { makeSessionManager } from "./mock-session-manager";
 
@@ -77,17 +78,66 @@ export function makeTestRuntime(opts?: TestRuntimeOptions): NaxRuntime {
  */
 export interface MockRuntimeOptions {
   agentManager?: IAgentManager;
+  /**
+   * Factory variant — invoked after the runtime exists, receiving the runtime
+   * so the test can construct an agentManager wired to runtime.dispatchEvents.
+   * Useful for `fakeAgentManager(adapter, { dispatchEvents: runtime.dispatchEvents })`
+   * to faithfully emit session-turn events. Mutually exclusive with `agentManager`.
+   */
+  agentManagerFactory?: (runtime: NaxRuntime) => IAgentManager;
   sessionManager?: ISessionManager;
   reviewAuditor?: IReviewAuditor;
   config?: NaxConfig;
   workdir?: string;
 }
 
+/**
+ * Build a runtime + agentManager pair from a mock AgentAdapter, with the fake
+ * manager wired to emit `session-turn` dispatch events on the runtime's bus.
+ *
+ * Use when an integration test exercises `buildPlanForStrategy + plan.run()` (or any callOp
+ * path) and asserts on cost/tokenUsage/etc. — those values flow through the
+ * dispatch bus in production. Without this wiring, fake events are dropped.
+ *
+ * ```ts
+ * const { runtime, agentManager } = makeRuntimeWithFakeAgent(agent, { config });
+ * const callCtx = makeMockCallContext({ runtime });
+ * const plan = buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
+ * const result = await plan.run();
+ * ```
+ */
+export function makeRuntimeWithFakeAgent(
+  adapter: AgentAdapter,
+  opts: Pick<MockRuntimeOptions, "config" | "workdir" | "sessionManager"> = {},
+): { runtime: NaxRuntime; agentManager: IAgentManager } {
+  const runtime = makeMockRuntime({
+    config: opts.config,
+    workdir: opts.workdir,
+    sessionManager: opts.sessionManager,
+    agentManagerFactory: (rt) => fakeAgentManager(adapter, { dispatchEvents: rt.dispatchEvents }),
+  });
+  return { runtime, agentManager: runtime.agentManager };
+}
+
 export function makeMockRuntime(opts: MockRuntimeOptions = {}): NaxRuntime {
-  return trackRuntime(createRuntime(opts.config ?? DEFAULT_CONFIG, opts.workdir ?? "/tmp/test", {
-    agentManager: opts.agentManager ?? makeMockAgentManager(),
-    sessionManager: opts.sessionManager ?? makeSessionManager(),
-    reviewAuditor: opts.reviewAuditor,
-    featureName: "_test",
-  }));
+  // Default agentManager — used unless factory replaces it after createRuntime.
+  const placeholder = opts.agentManager ?? makeMockAgentManager();
+  const runtime = trackRuntime(
+    createRuntime(opts.config ?? DEFAULT_CONFIG, opts.workdir ?? "/tmp/test", {
+      agentManager: placeholder,
+      sessionManager: opts.sessionManager ?? makeSessionManager(),
+      reviewAuditor: opts.reviewAuditor,
+      featureName: "_test",
+    }),
+  );
+  if (opts.agentManagerFactory) {
+    // Swap the agentManager in-place — runtime holds a readonly reference but the
+    // surrounding mock context (callOp, etc.) reads runtime.agentManager each call.
+    Object.defineProperty(runtime, "agentManager", {
+      value: opts.agentManagerFactory(runtime),
+      writable: false,
+      configurable: true,
+    });
+  }
+  return runtime;
 }

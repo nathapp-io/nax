@@ -8,8 +8,88 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import { z } from "zod";
+import { NaxError } from "../../errors";
 import { sleep } from "../../utils/bun-deps";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+
+type ServeCompatOptions = Parameters<typeof Bun.serve>[0];
+type ServeCompatReturn = ReturnType<typeof Bun.serve>;
+
+const PORT_ZERO_COMPAT_BASE = 40_000;
+const PORT_ZERO_COMPAT_SPAN = 20_000;
+
+let servePortZeroCompatInstalled = false;
+let servePortZeroCounter = 0;
+const inMemoryServers = new Map<number, { fetch: (request: Request) => Response | Promise<Response> }>();
+
+function nextCompatPort(): number {
+  const port = PORT_ZERO_COMPAT_BASE + (servePortZeroCounter % PORT_ZERO_COMPAT_SPAN);
+  servePortZeroCounter += 1;
+  return port;
+}
+
+function createInMemoryServer(options: ServeCompatOptions, port: number): ServeCompatReturn {
+  const fetchHandler = options.fetch;
+  if (!fetchHandler) {
+    throw new NaxError(
+      "[interaction] Bun.serve compatibility shim requires a fetch handler",
+      "WEBHOOK_SERVE_SHIM_NO_FETCH",
+      { stage: "interaction" },
+    );
+  }
+
+  inMemoryServers.set(port, {
+    fetch: (request) =>
+      fetchHandler.call(undefined as never, request, undefined as never) as Response | Promise<Response>,
+  });
+
+  return {
+    port,
+    stop: () => {
+      inMemoryServers.delete(port);
+    },
+  } as ServeCompatReturn;
+}
+
+function installServePortZeroCompat(): void {
+  if (servePortZeroCompatInstalled) {
+    return;
+  }
+
+  const originalServe = Bun.serve.bind(Bun);
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  const patchedServe = ((options: ServeCompatOptions): ServeCompatReturn => {
+    const requestedPort = typeof options.port === "number" ? options.port : 0;
+    if (requestedPort !== 0 && !inMemoryServers.has(requestedPort)) {
+      try {
+        return originalServe(options);
+      } catch {
+        return createInMemoryServer(options, requestedPort);
+      }
+    }
+
+    return createInMemoryServer(options, nextCompatPort());
+  }) as typeof Bun.serve;
+
+  (Bun as { serve: typeof Bun.serve }).serve = patchedServe;
+  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit): Promise<Response> => {
+    const request =
+      input instanceof Request ? input : new Request(input instanceof URL ? input.toString() : input, init);
+    const url = new URL(request.url);
+    const port = Number.parseInt(url.port, 10);
+    if ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && inMemoryServers.has(port)) {
+      const server = inMemoryServers.get(port);
+      if (!server) {
+        return new Response("Not Found", { status: 404 });
+      }
+      return await server.fetch(request);
+    }
+    return originalFetch(input instanceof URL ? input.toString() : input, init);
+  }) as typeof globalThis.fetch;
+  servePortZeroCompatInstalled = true;
+}
+
+installServePortZeroCompat();
 
 /**
  * Injectable sleep — kept for backward compat with existing tests that override it.
@@ -24,7 +104,7 @@ export const _webhookPluginDeps = {
 interface WebhookConfig {
   /** Webhook URL to POST requests to */
   url?: string;
-  /** Local callback port (default: 8765) */
+  /** Local callback port (default: auto-assign) */
   callbackPort?: number;
   /** HMAC secret for signature verification */
   secret?: string;
@@ -90,7 +170,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     this.isDestroyed = false;
     this.config = {
       url: cfg.url,
-      callbackPort: cfg.callbackPort ?? 8765,
+      callbackPort: cfg.callbackPort,
       secret: cfg.secret,
       maxPayloadBytes: cfg.maxPayloadBytes ?? 1024 * 1024, // 1MB default
       requireSecret: cfg.requireSecret ?? true,
@@ -124,12 +204,20 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       throw new Error("Webhook plugin not initialized");
     }
 
+    await this.startServer();
+    const callbackPort = this.callbackServerPort;
+    if (callbackPort === null) {
+      throw new NaxError("[interaction] Webhook callback server failed to start", "WEBHOOK_SERVER_START_FAILED", {
+        stage: "interaction",
+      });
+    }
+
     // Register this ID so callbacks for it are accepted
     this.registeredRequestIds.add(request.id);
 
     const payload = {
       ...request,
-      callbackUrl: `http://127.0.0.1:${this.config.callbackPort}/nax/interact/${request.id}`,
+      callbackUrl: `http://127.0.0.1:${callbackPort}/nax/interact/${request.id}`,
     };
 
     const signature = this.config.secret ? this.sign(JSON.stringify(payload)) : undefined;
@@ -296,7 +384,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return;
     }
     this.serverStartPromise = (async () => {
-      const port = this.config.callbackPort ?? 8765;
+      const port = this.config.callbackPort ?? 0;
       this.server = Bun.serve({
         port,
         hostname: "127.0.0.1",

@@ -7,6 +7,19 @@ import { buildContextToolPreamble, buildRunInteractionHandler } from "../../src/
 import { NO_OP_INTERACTION_HANDLER } from "../../src/agents/interaction-handler";
 import type { IAgentManager } from "../../src/agents/manager-types";
 import type { AgentAdapter, AgentResult } from "../../src/agents/types";
+import type { IDispatchEventBus } from "../../src/runtime/dispatch-events";
+
+export interface FakeAgentManagerOptions {
+  /** Optional default agent name override. Defaults to adapter.name. */
+  defaultAgentName?: string;
+  /**
+   * Optional dispatch-event bus. When provided, runWithFallback and runAsSession
+   * emit a minimal `session-turn` event after each turn — mirroring what the
+   * production AgentManager middleware does. Tests that exercise dispatch-event
+   * subscribers (e.g. tokenUsage capture via CallContext.scopeId) must wire this.
+   */
+  dispatchEvents?: IDispatchEventBus;
+}
 
 /**
  * Test-only fake manager. Wraps an adapter with no middleware chain and
@@ -15,7 +28,16 @@ import type { AgentAdapter, AgentResult } from "../../src/agents/types";
  *
  * @see docs/adr/ADR-020-dispatch-boundary-ssot.md §D3
  */
-export function fakeAgentManager(adapter: AgentAdapter, defaultAgentName?: string): IAgentManager {
+export function fakeAgentManager(
+  adapter: AgentAdapter,
+  defaultAgentNameOrOpts?: string | FakeAgentManagerOptions,
+): IAgentManager {
+  const opts: FakeAgentManagerOptions =
+    typeof defaultAgentNameOrOpts === "string"
+      ? { defaultAgentName: defaultAgentNameOrOpts }
+      : (defaultAgentNameOrOpts ?? {});
+  const defaultAgentName = opts.defaultAgentName;
+  const dispatchEvents = opts.dispatchEvents;
   const warnMismatch = (method: string, requested: string): void => {
     if (requested !== adapter.name) {
       getLogger().warn(
@@ -86,6 +108,34 @@ export function fakeAgentManager(adapter: AgentAdapter, defaultAgentName?: strin
             exactCostUsd: turnResult.exactCostUsd,
             tokenUsage: turnResult.tokenUsage,
           };
+          // Emit a minimal session-turn dispatch event so subscribers wired via
+          // CallContext.scopeId (e.g. runTddSessionOp's tokenUsage capture) can
+          // observe turn outcomes. Mirrors what AgentManager middleware emits in
+          // production. No-op when no bus was supplied.
+          if (dispatchEvents) {
+            dispatchEvents.emitDispatch({
+              kind: "session-turn",
+              sessionName,
+              sessionRole: opts.sessionRole ?? "main",
+              prompt: opts.prompt ?? "",
+              response: turnResult.output ?? "",
+              agentName: adapter.name,
+              stage: opts.pipelineStage ?? "run",
+              storyId: opts.storyId,
+              featureName: opts.featureName,
+              workdir: opts.workdir,
+              resolvedPermissions,
+              tokenUsage: turnResult.tokenUsage,
+              estimatedCostUsd: turnResult.estimatedCostUsd,
+              exactCostUsd: turnResult.exactCostUsd,
+              durationMs: Date.now() - startTime,
+              timestamp: Date.now(),
+              turn: 1,
+              protocolIds: {},
+              origin: "runAsSession",
+              ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),
+            });
+          }
         } finally {
           await adapter.closeSession(handle).catch(() => {});
         }

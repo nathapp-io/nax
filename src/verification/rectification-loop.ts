@@ -10,26 +10,23 @@
 import type { IAgentManager } from "../agents";
 import { resolveDefaultAgent } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
-import { SessionTurnError } from "../agents/types";
-import type { SessionHandle } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveConfiguredModel, resolveModelForAgent } from "../config";
 import type { ModelDef } from "../config/schema";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { getSafeLogger } from "../logger";
-import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
-import { formatSessionName } from "../session/naming";
+import { formatSessionName } from "../runtime/session-name";
+import { SessionKeeper } from "../session/session-keeper";
 import { buildFailureRecords } from "./failure-records";
 import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
-import { type RectificationState, shouldRetryRectification } from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
-import { type RetryAttempt, type VerifyOutcome, runRetryLoop } from "./shared-rectification-loop";
+import { runRetryLoop } from "./shared-rectification-loop";
 
 /** Failure snapshot for the rectification retry loop. */
 export interface RectificationFailure {
@@ -214,9 +211,43 @@ export async function runRectificationLoop(
 
   // ADR-008 §6 / ADR-018 §7 Pattern B: hold the implementer session open across
   // all attempts in this rectification cycle so the agent retains conversation
-  // history between attempts. Opened lazily on first execute(), closed in the
-  // .finally() at loop exit.
-  let heldHandle: SessionHandle | undefined;
+  // history between attempts. SessionKeeper manages the handle lifecycle.
+  const keeper = new SessionKeeper(runtime.sessionManager, agentManager, {
+    sessionName: rectificationSessionName,
+    defaultAgent: resolveDefaultAgent(config),
+    role: "implementer",
+    pipelineStage: "rectification",
+    storyId: story.id,
+    featureName,
+    workdir,
+    projectDir,
+    modelDef: resolveModelForAgent(
+      config.models,
+      story.routing?.agent ?? resolveDefaultAgent(config),
+      config.autoMode.complexityRouting?.[story.routing?.complexity ?? "medium"] ||
+        config.autoMode.escalation.tierOrder[0]?.tier ||
+        "balanced",
+      resolveDefaultAgent(config),
+    ),
+    timeoutSeconds: config.execution.sessionTimeoutSeconds,
+    signal: runtime.signal,
+    maxTurns: config.agent?.maxInteractionTurns,
+    retryStrategy: {
+      shouldRetry(_err, attempt) {
+        const maxRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
+        if (attempt < maxRetries) {
+          getSafeLogger()?.warn("rectification", "fail-adapter-error: same-agent retry with fresh session", {
+            storyId: story.id,
+            attempt: attempt + 1,
+            maxAttempts: maxRetries,
+            retriable: true,
+          });
+          return { retry: true, delayMs: 0 };
+        }
+        return { retry: false };
+      },
+    },
+  });
 
   // Initial failure snapshot for the retry loop
   const initialFailure: RectificationFailure = {
@@ -233,7 +264,6 @@ export async function runRectificationLoop(
     previousAttempts: [],
     buildPrompt: (failure) => {
       currentAttempt++;
-      const diagnosisPrefix: string | null = null;
       const debateStageConfig = config.debate?.stages?.rectification;
       let debatePromise: Promise<string | null> = Promise.resolve(null);
 
@@ -292,100 +322,32 @@ export async function runRectificationLoop(
       })();
     },
     execute: async (prompt) => {
-      const defaultAgent = agentManager.getDefault();
-
-      const complexity = story.routing?.complexity ?? "medium";
-      const modelTier =
-        config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
-      const modelDef = resolveModelForAgent(
-        config.models,
-        story.routing?.agent ?? defaultAgent,
-        modelTier,
-        defaultAgent,
-      );
-
-      let agentResult!: import("../agents").AgentResult;
-      {
-        // ADR-008 §6 / ADR-018 §7 Pattern B: open the implementer session
-        // once and reuse across attempts. openSession is idempotent on a live
-        // handle (session/manager.ts:427) — it returns the existing handle when
-        // the session is still alive, and opens a fresh one (clearing the stale
-        // _liveHandles entry) when keepOpen left a completed descriptor behind.
-        // Always go through openSession rather than getLiveHandle so the terminal-
-        // state guard in openSession runs on every attempt.
-        //
-        // Transport retry: QUEUE_DISCONNECTED_BEFORE_COMPLETION is retryable (acpx
-        // signals retryable:true). The runtime path bypasses runWithFallback so we
-        // must handle it locally — mirrors the fail-adapter-error retry in manager.ts.
-        let transportRetries = 0;
-        const maxTransportRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
-        while (true) {
-          if (!heldHandle) {
-            heldHandle = await runtime.sessionManager.openSession(rectificationSessionName, {
-              agentName: defaultAgent,
-              role: "implementer",
-              workdir,
-              pipelineStage: "rectification",
-              modelDef,
-              timeoutSeconds: config.execution.sessionTimeoutSeconds,
-              featureName,
-              storyId: story.id,
-              signal: runtime.signal,
-            });
-          }
-          // ADR-020 single-emission invariant: each runAsSession emits one
-          // session-turn event for audit/cost subscribers, regardless of handle
-          // reuse across attempts.
-          try {
-            const turn = await agentManager.runAsSession(defaultAgent, heldHandle, prompt, {
-              storyId: story.id,
-              featureName,
-              workdir,
-              projectDir,
-              pipelineStage: "rectification",
-              sessionRole: "implementer",
-              signal: runtime.signal,
-              maxTurns: config.agent?.maxInteractionTurns,
-            });
-            agentResult = {
-              success: true,
-              exitCode: 0,
-              output: turn.output,
-              rateLimited: false,
-              durationMs: 0,
-              estimatedCostUsd: turn.estimatedCostUsd,
-              ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
-              ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
-              ...(heldHandle.protocolIds && { protocolIds: heldHandle.protocolIds }),
-            };
-            break;
-          } catch (err) {
-            // Discard the held handle — terminal/cancelled session. Next iteration reopens.
-            const stale = heldHandle;
-            heldHandle = undefined;
-            await runtime.sessionManager.closeSession(stale).catch(() => {});
-            if (err instanceof SessionTurnError && err.retryable && transportRetries < maxTransportRetries) {
-              transportRetries++;
-              getSafeLogger()?.warn("rectification", "fail-adapter-error: same-agent retry with fresh session", {
-                storyId: story.id,
-                attempt: transportRetries,
-                maxAttempts: maxTransportRetries,
-                retriable: true,
-              });
-              continue;
-            }
-            throw err;
-          }
-        }
-      }
+      // ADR-020 single-emission invariant: each runAsSession emits one
+      // session-turn event for audit/cost subscribers, regardless of handle
+      // reuse across attempts.
+      const turn = await keeper.send({ prompt });
+      const agentResult = {
+        success: true,
+        exitCode: 0,
+        output: turn.output,
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCostUsd: turn.estimatedCostUsd,
+        ...(turn.exactCostUsd !== undefined && { exactCostUsd: turn.exactCostUsd }),
+        ...(turn.tokenUsage && { tokenUsage: turn.tokenUsage }),
+      };
 
       costAccum += agentResult.estimatedCostUsd ?? 0;
 
       // G5: update session descriptor with latest protocolIds so the audit trail
       // reflects the session that actually ran (may differ after internal retries).
-      if (sessionId && agentResult.protocolIds) {
+      // Prefer turn.protocolIds (updated after internal session retries); fall
+      // back to heldHandle.protocolIds (from openSession) when the turn does
+      // not surface its own protocol binding.
+      const sessionProtocolIds = turn.protocolIds ?? keeper.heldProtocolIds;
+      if (sessionId && sessionProtocolIds) {
         try {
-          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, agentResult.protocolIds);
+          runtime.sessionManager.bindHandle(sessionId, rectificationSessionName, sessionProtocolIds);
         } catch {
           // Session may not exist in manager (e.g. v2 context disabled) — ignore.
         }
@@ -406,7 +368,7 @@ export async function runRectificationLoop(
       return {
         agentSuccess: agentResult.success,
         cost: agentResult.estimatedCostUsd ?? 0,
-        protocolIds: agentResult.protocolIds,
+        protocolIds: turn.protocolIds,
       };
     },
     shouldAbort: (failure) => {
@@ -415,7 +377,7 @@ export async function runRectificationLoop(
       }
       return false;
     },
-    verify: async (result) => {
+    verify: async (_result) => {
       const retryVerification = await _rectificationDeps.runVerification({
         workdir,
         expectedFiles: getExpectedFiles(story),
@@ -502,11 +464,7 @@ export async function runRectificationLoop(
     // ADR-008 §6: close the held implementer session at loop exit. Best-effort —
     // failures here must not mask the loop outcome. Tier escalation below opens
     // a fresh session via runAs, so we close before that branch fires.
-    if (heldHandle) {
-      const stale = heldHandle;
-      heldHandle = undefined;
-      await runtime.sessionManager.closeSession(stale).catch(() => {});
-    }
+    await keeper.close();
   });
 
   const succeeded = outcome.outcome === "fixed";

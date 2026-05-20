@@ -42,6 +42,7 @@ function makeConfig(rectificationEnabled: boolean) {
       },
     },
     agent: { default: "claude" },
+    review: { enabled: false },
     execution: {
       rectification: rectificationEnabled
         ? { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }
