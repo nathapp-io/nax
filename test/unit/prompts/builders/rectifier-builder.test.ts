@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { RectifierPromptBuilder } from "@/prompts";
 import type { ReviewCheckResult } from "@/review";
+import type { Finding } from "@/findings";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -867,5 +868,30 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
     // The semantic path uses formatCheckErrors (raw output), not structured findings
     // — the blocking filter applies when findings are rendered in check blocks
     expect(prompt).toContain("Semantic review failed");
+  });
+});
+
+describe("RectifierPromptBuilder.failingTestContext", () => {
+  test("returns a string containing test failure details", () => {
+    const findings: Finding[] = [
+      {
+        source: "test-runner",
+        severity: "error",
+        category: "failed-test",
+        rule: "should handle edge case",
+        file: "test/unit/foo.test.ts",
+        message: "Expected 1 but got 0",
+      },
+    ];
+    const result = RectifierPromptBuilder.failingTestContext(findings);
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain("should handle edge case");
+    expect(result).toContain("Expected 1 but got 0");
+  });
+
+  test("handles empty findings array", () => {
+    const result = RectifierPromptBuilder.failingTestContext([]);
+    expect(typeof result).toBe("string");
   });
 });

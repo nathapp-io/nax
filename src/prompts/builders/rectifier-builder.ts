@@ -13,6 +13,7 @@
  */
 
 import type { RectificationConfig } from "@/config";
+import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
@@ -811,5 +812,23 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 - Focus on fixing the source code to meet the test requirements.`);
 
     return parts.join("");
+  }
+
+  static failingTestContext(findings: Finding[]): string {
+    if (findings.length === 0) {
+      return "The full test suite has failing tests. Fix the implementation to make all tests pass.";
+    }
+    const lines: string[] = [
+      `Fix the following ${findings.length} failing test${findings.length === 1 ? "" : "s"}:\n`,
+    ];
+    for (const f of findings) {
+      const location = f.file ? `${f.file}` : "(unknown file)";
+      const rule = f.rule ? `  Test: ${f.rule}\n` : "";
+      lines.push(`- ${location}\n${rule}  Error: ${f.message}\n`);
+    }
+    lines.push(
+      "\nFix the implementation (not the tests) to make all failing tests pass. Run the test suite to verify after each change.",
+    );
+    return lines.join("\n");
   }
 }
