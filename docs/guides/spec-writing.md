@@ -66,6 +66,51 @@ Every AC must be **behavioral and independently testable**.
 - `validatePostRunAction()` returns `false` and logs warning when `postRunAction.execute` is not a function
 - When `action.execute()` throws, `cleanupRun()` logs at warn level and continues to the next action
 
+## `[verbatim]` ACs — preserve executable assertions through `nax plan`
+
+Any AC that contains a **shell command, grep pattern, file-existence check, or
+architectural-invariant test** must be prefixed `[verbatim]`. The marker
+signals to `nax plan` and the spec-review PRD-fidelity phase that the AC must
+appear character-for-character in `prd.json`. Without the marker, `nax plan`
+will paraphrase the assertion into prose, which strips the executable
+verification mechanism.
+
+> **Status:** the planner-side enforcement is a tracked follow-up (see
+> [`docs/findings/nax-plan-prd-fidelity.md`](../findings/nax-plan-prd-fidelity.md)
+> for the US-005 case study and the proposed contract). Until that lands,
+> `[verbatim]` ACs are enforced post-plan by spec-review phase 9 — run it
+> after every `nax plan` invocation.
+
+### When to mark `[verbatim]`
+
+| AC kind | Required? |
+|:---|:---|
+| `grep -rn "<symbol>" src/ test/` returns `0` | ✅ required |
+| `File path X does not exist after this story` | ✅ required |
+| `File path X exists and contains symbol Y` | ✅ required |
+| Architectural-invariant test (e.g. "only 3 edit points") | ✅ required |
+| Exact CLI exit code / stdout shape | ✅ required |
+| Behavioural assertion ("returns X when Y") | ❌ not needed |
+
+### Examples
+
+```markdown
+- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/ | wc -l` returns `0`
+- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story
+- [verbatim] `grep -rn "ThreeSessionTddResult" src/ test/ | wc -l` returns `0`
+- [verbatim] `test/unit/execution/builder-extensibility.test.ts` exits `0` and
+  asserts new-phase edits appear only in `src/operations/`, `src/execution/story-orchestrator.ts`,
+  and `src/execution/build-plan-for-strategy.ts`
+```
+
+### Rules
+
+1. Use full backtick-quoted commands, not English descriptions of commands.
+2. Pair `[verbatim]` with a behavioural AC where useful. Example: a behavioural
+   AC asserts "the new gate runs after implementer," a `[verbatim]` AC asserts
+   the grep guarding against regression of that ordering.
+3. Removal/migration ACs (see below) are almost always `[verbatim]`.
+
 ## Story Sizing
 
 | Size | ACs | LOC | Files | Guideline |
@@ -74,10 +119,24 @@ Every AC must be **behavioral and independently testable**.
 | Medium | 5-8 | 50-200 | 2-5 | Standard patterns, clear requirements |
 | Complex | 6-10 | 200-500 | 5+ | New abstractions, multiple modules |
 
-**Split if:**
-- More than 8 ACs per story
-- Story touches more than 5 files
+### Hard splitting rules (no exceptions)
+
+**Must split** — these are non-negotiable. The "single story with sub-deliverables"
+framing is banned (see Anti-Patterns); it licenses `nax plan` to re-decompose the
+spec freely and is the documented cause of the US-005 drift.
+
+- More than 8 ACs in one story
+- Story `Context Files` list has more than 5 entries
+- Story contains both additive ACs ("add X", "introduce Y") and destructive ACs
+  ("delete X", "remove Y", "rename X", "consolidate X into Y") — split the
+  destruction into a terminal story that depends on the additive one
 - Story has both "add new feature" and "refactor existing code"
+
+**Terminal-cleanup story rule.** When a spec includes any removal/rename/consolidation
+ACs, the last story must be **deletion-only** — no new code, only `[verbatim]`
+grep-zero checks, file deletions, caller migrations, and import removals. This
+prevents the well-known attractor where additive slices land green and cleanup
+is silently dropped.
 
 **Merge if:**
 - Two stories share the same module and have <4 ACs each
@@ -105,6 +164,92 @@ For new projects with no existing code, list the files the story will **create**
 - `src/validator.ts` — core validation logic (to be created)
 - `src/types.ts` — all interfaces defined in Design section (to be created)
 ```
+
+## Removal & Migration ACs
+
+When a story deletes, renames, consolidates, or replaces existing code, the
+ACs must include **negative assertions** — `[verbatim]` checks that the old
+thing is gone. Positive ACs alone let the agent ship scaffolding alongside the
+old code without removing it (US-005 drift cause #1).
+
+Every story whose summary or design contains "remove", "delete", "consolidate",
+"replace", "migrate", or "rename" must include at least one `[verbatim]`
+negative assertion. The terminal-cleanup story (see Story Sizing) should be
+composed almost entirely of these.
+
+### Example — removal story for `runThreeSessionTdd`
+
+```markdown
+- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/ | wc -l` returns `0`
+- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story
+- [verbatim] `src/tdd/index.ts` does not export `runThreeSessionTdd`
+- Behaviour previously covered by `runThreeSessionTdd` is now covered by
+  the migrated tests under `test/integration/execution/`
+```
+
+The last AC is behavioural (paired with the verbatim ones). Verbatim ACs alone
+prove the symbol is gone; the behavioural AC proves the capability is preserved.
+
+## Seams — wiring producer to consumer
+
+When a story produces a new exported symbol (e.g. `builder.addRectification`)
+and a consumer (e.g. `pipeline/stages/execution.ts`) is expected to call it,
+the spec must declare a **Seam** with a `[verbatim]` invariant. Without a seam
+AC, multi-slice execution drops the handoff: the producer slice adds the
+method, the consumer slice never wires the call, and both slices ship green.
+
+```markdown
+### Seams
+
+- [verbatim] [grep] `grep -n "buildPlanForStrategy(" src/pipeline/stages/execution.ts`
+  shows ≥1 call site after this story
+- [verbatim] [grep] `grep -n "fullSuiteGateOp" src/execution/build-plan-for-strategy.ts`
+  shows ≥1 reference after this story
+```
+
+Multi-story seams (producer in US-A, consumer in US-B) declare the invariant in
+US-B's ACs and tag both stories with the same seam ID for traceability.
+
+## Verification anchors — two-track ACs
+
+Every AC needs a verification mechanism. Tag each AC with one of:
+
+- `[grep]` — verified by a grep command embedded in the AC (almost always `[verbatim]`)
+- `[file]` — verified by file-existence or non-existence (`[verbatim]`)
+- `[unit]` — verified by a named unit test
+- `[integration]` — verified by a named integration test
+- `[cli]` — verified by running a CLI command and asserting exit code / output
+
+**The two-anchor rule:** ACs verified only by `[unit]` on an isolated function
+do not prove the production path is wired. They satisfy the agent's "make
+tests green" objective without integrating the change. Pair every `[unit]` AC
+that introduces a new exported symbol with either a `[grep]` or `[integration]`
+AC asserting the production caller invokes it.
+
+❌ **Insufficient (US-005 AC#3 pattern):**
+- `[unit]` "test adds a failing gate and asserts verifier slot does not dispatch"
+
+✅ **Two-track:**
+- `[unit]` "test adds a failing gate and asserts verifier slot does not dispatch"
+- `[verbatim] [grep]` `grep -n "fullSuiteGateOp" src/execution/build-plan-for-strategy.ts` returns ≥1
+
+## Meta-ACs (architectural invariants)
+
+ACs that assert architectural properties ("adding a new phase requires edits
+in three places," "wrapper is read-only over `phaseOutputs`") must spell out
+the exact executable check that verifies them. Without an executable backing,
+meta-ACs are aspirational prose that `nax plan` will paraphrase away.
+
+❌ **Aspirational:**
+- "Adding a new phase requires edits in three places"
+
+✅ **Executable:**
+- `[verbatim] [integration]` `bun test test/unit/execution/builder-extensibility.test.ts`
+  exits `0`. The test greps for `addX` overloads outside
+  `src/operations/`, `src/execution/story-orchestrator.ts`, and
+  `src/execution/build-plan-for-strategy.ts` and fails if any are found.
+
+If you cannot write the command in the AC, the AC is not behavioural — remove it.
 
 ## Dependencies
 
@@ -223,6 +368,14 @@ Without this, the agent either ignores errors entirely or adds overly defensive 
 | Too many stories | Overhead per story; tiny stories are fragile | Target 3-5 stories; merge if <4 ACs each |
 | Integration-only story | Duplicates ACs from earlier stories | Integration behavior belongs in the story that implements it |
 | Custom file format | Agent writes a fragile parser | Use JSON/YAML unless there's a strong reason not to |
+| "Single story with sub-deliverables" | `nax plan` re-decomposes freely and paraphrases load-bearing assertions (US-005 drift) | Pre-decompose into US-Xa/b/c with explicit dependencies — the planner becomes a verification step, not a decomposition step |
+| Additive + destructive ACs in one story | Agent ships additive half green, defers cleanup | Split deletions into a terminal-cleanup story that depends on the additive story |
+| Test-shape AC (`{ foo: true }` field assertions) | Agent reshapes API to be easy to assert | Write ACs against the contract (plan executes step N before M), not the object shape |
+| Mechanical assertion as English prose | `nax plan` strips the executable verification mechanism | Mark as `[verbatim]` and embed the literal grep / shell command |
+| Missing seam AC for producer/consumer pairs | Producer slice ships green; consumer slice never wires call | Add a `[verbatim] [grep]` seam AC asserting the call site exists |
+| `[unit]`-only AC for new exported symbol | Isolated test passes; production caller never invokes the symbol | Pair with a `[grep]` or `[integration]` AC asserting the production wiring |
+| Aspirational meta-AC ("only N edit points") | No executable check; paraphrased away | Spell out the exact grep test and the file that runs it |
+| Novel code shape with no codebase precedent | Agent defaults to nearest familiar template (pattern gravity) | Either cite an existing file with the same shape or include a complete worked skeleton in Design |
 
 ## Real Example
 
