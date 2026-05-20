@@ -15,7 +15,7 @@ import type { AgentResult } from "../agents/types";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
 import { fullSuiteGateOp, greenfieldGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
-import { isAmbiguousOutput } from "../pipeline/stages/execution-helpers";
+import { isAmbiguousOutput, routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 import { appendScratchEntry } from "../session/scratch-writer";
@@ -309,8 +309,6 @@ export async function decideStageAction(
       return { action: "pause", reason: `Human review needed: ${failureCategory ?? "unknown"}` };
     }
 
-    // Import routeTddFailure here to avoid circular dep via execution-helpers
-    const { routeTddFailure } = await import("../pipeline/stages/execution-helpers");
     return routeTddFailure(failureCategory, isLiteMode, ctx);
   }
 
