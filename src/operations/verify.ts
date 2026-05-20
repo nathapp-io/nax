@@ -1,8 +1,8 @@
-import { join } from "node:path";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
-import type { IsolationCheck } from "../tdd/types";
+import type { FailureCategory, IsolationCheck } from "../tdd/types";
+import { categorizeVerdict, cleanupVerdict, readVerdict } from "../tdd/verdict";
 import { parseSessionJsonOutput } from "./_session-output";
 import type { RunOperation } from "./types";
 
@@ -17,6 +17,10 @@ export interface VerifierOutput {
   readonly durationMs: number;
   /** Isolation check result, populated when isolation was run. */
   readonly isolation?: IsolationCheck;
+  /** Failure category from verifier verdict categorization. */
+  readonly failureCategory?: FailureCategory;
+  /** Human-readable reason for rejection from the verifier verdict. */
+  readonly reviewReason?: string;
 }
 
 export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
@@ -45,22 +49,23 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   },
   async recover(_input, verifyCtx): Promise<VerifierOutput | null> {
     // Derive outcome from the verdict file the verifier agent writes to disk (AC-5).
-    const verdictPath = join(verifyCtx.packageView.packageDir, ".nax-verifier-verdict.json");
-    const content = await verifyCtx.readFile(verdictPath);
-    if (!content) return null;
+    // Use try/finally to ensure verdict cleanup on every code path.
+    const packageDir = verifyCtx.packageView.packageDir;
     try {
-      const v = JSON.parse(content) as Record<string, unknown>;
-      if (typeof v.approved !== "boolean") return null;
-      const testsAllPassing =
-        v.tests !== null && typeof v.tests === "object" && (v.tests as Record<string, unknown>).allPassing === true;
+      const verdict = await readVerdict(packageDir);
+      if (!verdict) return null;
+      const testsAllPassing = verdict.tests.allPassing === true;
+      const categorization = categorizeVerdict(verdict, testsAllPassing);
       return {
-        success: v.approved === true && testsAllPassing,
+        success: categorization.success,
         filesChanged: [],
         estimatedCostUsd: 0,
         durationMs: 0,
+        ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
+        ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
       };
-    } catch {
-      return null;
+    } finally {
+      await cleanupVerdict(packageDir);
     }
   },
 };
