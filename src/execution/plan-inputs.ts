@@ -20,7 +20,7 @@ import type {
 import type { UserStory } from "../prd/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
-import { isTddStrategy } from "./build-plan-for-strategy";
+import { isThreeSessionStrategy } from "./build-plan-for-strategy";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
@@ -157,7 +157,7 @@ function hasReviewEscalation(story: UserStory): boolean {
  */
 export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types").PipelineContext): Promise<PlanInputs> {
   const { story, config } = ctx;
-  const _isTdd = isTddStrategy(ctx.routing.testStrategy);
+  const _isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
 
   const testWriterInput =

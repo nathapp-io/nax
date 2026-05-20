@@ -9,7 +9,7 @@
  *         — review-slot gating reads config.review.checks: ReviewCheckName[]
  *           membership (not nested .enabled flags); table-driven per
  *           (testStrategy, review.enabled, review.checks, rectification.enabled, isRetry)
- *   AC#5: pipeline/stages/execution.ts has no if (isTddStrategy) sequencing branch —
+ *   AC#5: pipeline/stages/execution.ts has no if (isThreeSessionStrategy) sequencing branch —
  *         this file is the SSOT for strategy-dependent slot decisions
  *
  * Inputs envelope shape: PlanInputs (./plan-inputs.ts) — each field matches the
@@ -24,10 +24,20 @@ import type { UserStory } from "../prd/types";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, StoryOrchestratorBuilder } from "./story-orchestrator";
 
-const TDD_STRATEGIES = new Set<TestStrategy>(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
+/**
+ * Strategies that use the three-session TDD orchestration (test-writer +
+ * implementer + verifier, with full-suite gate between implementer and verifier).
+ *
+ * `tdd-simple` is NOT in this set — it is a single-session strategy where one
+ * agent writes tests AND implements within the same session. The pre-US-005
+ * execution stage gated the three-session path on the same two strategies
+ * (see src/metrics/tracker.ts:142-143 and the archived single-session branch
+ * in execution.ts before commit d97e25ae).
+ */
+const THREE_SESSION_STRATEGIES = new Set<TestStrategy>(["three-session-tdd", "three-session-tdd-lite"]);
 
-export function isTddStrategy(strategy: TestStrategy): boolean {
-  return TDD_STRATEGIES.has(strategy);
+export function isThreeSessionStrategy(strategy: TestStrategy): boolean {
+  return THREE_SESSION_STRATEGIES.has(strategy);
 }
 
 /**
@@ -36,7 +46,7 @@ export function isTddStrategy(strategy: TestStrategy): boolean {
  * Extracted so pipeline/stages/execution.ts can stay strategy-blind beyond this call.
  */
 export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
-  return isTddStrategy(strategy);
+  return isThreeSessionStrategy(strategy);
 }
 
 function hasReviewCheck(config: NaxConfig, check: "semantic" | "adversarial"): boolean {
@@ -79,7 +89,7 @@ export function buildPlanForStrategy(
   testStrategy: TestStrategy,
   inputs: PlanInputs,
 ): ExecutionPlan {
-  const isTdd = isTddStrategy(testStrategy);
+  const isTdd = isThreeSessionStrategy(testStrategy);
   const freshRun = isFreshRun(story);
 
   const builder = new StoryOrchestratorBuilder();

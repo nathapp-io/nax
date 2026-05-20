@@ -154,7 +154,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).toContain("test-writer");
     expect(names).toContain("greenfield-gate");
@@ -165,7 +165,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual(["test-writer", "greenfield-gate", "implementer", "full-suite-gate", "verifier"]);
   });
 
@@ -174,7 +174,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("test-writer");
     expect(names).not.toContain("greenfield-gate");
@@ -185,7 +185,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual(["implementer", "full-suite-gate", "verifier"]);
   });
 
@@ -197,7 +197,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("test-writer");
     expect(names).not.toContain("greenfield-gate");
@@ -226,15 +226,29 @@ describe("buildPlanForStrategy — non-TDD single-session", () => {
     const plan = buildPlanForStrategy(ctx, story, config, "test-after", inputs);
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
+
+  test("tdd-simple strategy includes only implementer (single-session, no test-writer/verifier)", () => {
+    // tdd-simple is a SINGLE-SESSION strategy: one agent writes tests AND
+    // implements within the same session. It must NOT trigger the three-session
+    // orchestration (no test-writer, greenfield-gate, full-suite-gate, or verifier).
+    // See src/metrics/tracker.ts:142-143 for the canonical three-session list.
+    const story = makeStory({ attempts: 0 });
+    const config = makeNaxConfig();
+    const ctx = makeMockCallContext();
+    const inputs = makeTddFreshInputs(story); // even with all inputs available
+    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    expect(plan.phaseNames()).toEqual(["implementer"]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TDD strategy variants
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildPlanForStrategy — TDD strategy variants", () => {
+describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
+  // tdd-simple is NOT included — it is a single-session strategy that does not
+  // dispatch test-writer, full-suite-gate, or verifier slots.
   const tddStrategies: TestStrategy[] = [
-    "tdd-simple",
     "three-session-tdd",
     "three-session-tdd-lite",
   ];
@@ -359,7 +373,7 @@ describe("buildPlanForStrategy — rectification", () => {
         abortOnIncreasingFailures: false,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names[names.length - 1]).toBe("rectification");
   });
@@ -375,7 +389,7 @@ describe("buildPlanForStrategy — rectification", () => {
         abortOnIncreasingFailures: false,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("rectification");
   });
 
@@ -385,7 +399,7 @@ describe("buildPlanForStrategy — rectification", () => {
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
     // No rectification in inputs
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("rectification");
   });
 });

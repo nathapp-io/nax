@@ -156,8 +156,8 @@ describe("Unified Execution Stage — AC2: No strategy branching", () => {
 
   test("does not branch on ctx.routing.testStrategy at stage level", () => {
     // Verification that execution.ts does not contain:
-    // if (isTddStrategy) { ... runThreeSessionTddFromCtx() ... }
-    // if (!isTddStrategy) { ... implementerOp dispatch ... }
+    // if (isThreeSessionStrategy) { ... runThreeSessionTddFromCtx() ... }
+    // if (!isThreeSessionStrategy) { ... implementerOp dispatch ... }
     // Instead, strategy selection happens inside buildPlanForStrategy
     const ctx = makePipelineContext();
     expect(ctx.routing).toBeDefined();

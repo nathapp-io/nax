@@ -13,7 +13,7 @@ import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import {
   buildPlanForStrategy,
-  isTddStrategy,
+  isThreeSessionStrategy,
   requiresInitialRefCapture,
 } from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
@@ -88,7 +88,7 @@ export const executionStage: PipelineStage = {
         else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
       }) ?? (() => {});
 
-    const isTdd = isTddStrategy(ctx.routing.testStrategy);
+    const isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
     const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
     const needsInitialRef = requiresInitialRefCapture(ctx.routing.testStrategy);
     const initialRef = needsInitialRef ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
