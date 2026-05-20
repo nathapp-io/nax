@@ -4,9 +4,9 @@
 - [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (US-001..US-004 — builder + ops + ExecutionGates + SessionKeeper)
 - [SPEC-story-orchestrator-consolidation.md](./SPEC-story-orchestrator-consolidation.md) (US-005 — one builder per story; promotes full-suite gate + greenfield gate to phases)
 
-**Story ID:** US-006
+**Story IDs:** US-006a (additive) + US-006b (terminal cleanup)
 **Branch:** `refactor/rectification-unification`
-**Status:** Draft — **planned (do not start until US-005 lands)**
+**Status:** Draft — **planned (do not start until US-005 lands; US-006b blocks on US-006a)**
 
 ---
 
@@ -52,29 +52,77 @@ audit view.
 
 ## Design
 
+### 0. Extend `FullSuiteGateOutput` and remove internal rectification from the op
+
+`fullSuiteGateOp` is a `DeterministicOperation<FullSuiteGateInput, FullSuiteGateOutput, …>`
+with `execute(input, ctx)`. It has no `build()` or `parse()` methods and is **not** converted
+to `RunOperation` by this spec. Two targeted changes instead:
+
+**a. Add `findings: Finding[]` to `FullSuiteGateOutput`:**
+
+```typescript
+export interface FullSuiteGateOutput {
+  readonly success: boolean;
+  readonly passed: boolean;
+  readonly status: FullSuiteGateStatus;
+  readonly estimatedCostUsd: number;
+  readonly durationMs?: number;
+  readonly attempts?: number;
+  /**
+   * Structured test failures for the rectification phase.
+   * Empty when tests pass or when the parser returns no structured records
+   * (status: "execution-failed").
+   */
+  readonly findings: Finding[];
+}
+```
+
+`execute()` populates `findings` via `testSummaryToFindings(parsedSummary)` (§1 adapter) when
+tests fail. When tests pass, `findings: []`.
+
+**b. Retire `"rectification-exhausted"` and rename `"failed-no-rectification"` in `FullSuiteGateStatus`:**
+
+After US-006, the op no longer drives rectification — that moves to the general phase (§3). So:
+
+- `"rectification-exhausted"` is unreachable and is removed.
+- `"failed-no-rectification"` becomes `"failed"` (the `rectificationEnabled` input flag is
+  removed from `FullSuiteGateInput`; whether to run rectification is now a caller concern).
+
+```typescript
+export type FullSuiteGateStatus =
+  | "passed"
+  | "failed"           // tests failed; findings populated
+  | "execution-failed" // runner exited non-zero but parser found 0 structured failures
+  | "inconclusive";
+```
+
+The `_fullSuiteGateDeps.runRectificationLoop` dep and the `FullSuiteGateDeps.runRectificationLoop`
+interface method are removed. The `FullSuiteGateInput.rectificationEnabled` and
+`FullSuiteGateInput.implementerTier` fields are removed (no longer needed by the op).
+
+---
+
 ### 1. Test-failure → `Finding` adapter
 
 Add `src/findings/adapters/test-failure.ts`:
 
 ```typescript
+import type { TestFailure, TestSummary } from "../../test-runners";
 import type { Finding } from "../types";
-import type { TestSummary } from "../../verification/test-output-parser";
 
 /**
  * Convert a parsed test-suite failure into a Finding suitable for runFixCycle.
- * Each failed test becomes one Finding with source: "test", category: "failed-test",
- * and rule set to the test name when extractable.
+ * Each failed test becomes one Finding with source: "test-runner",
+ * category: "failed-test", and rule set to the test name.
  */
-export function testFailureToFinding(failure: TestSummary["failures"][number]): Finding {
+export function testFailureToFinding(failure: TestFailure): Finding {
   return {
-    source: "test",
+    source: "test-runner",
     severity: "error",
     category: "failed-test",
     rule: failure.testName,
     file: failure.file,
-    line: failure.line,
-    message: failure.message,
-    // ... per Finding shape contract
+    message: failure.error,
   };
 }
 
@@ -83,9 +131,11 @@ export function testSummaryToFindings(summary: TestSummary): Finding[] {
 }
 ```
 
-`Finding.source: "test"` requires extending `FindingSource` in `src/findings/types.ts` if
-`"test"` isn't already a member. (Likely needs verification — `"test"` may already exist for
-verifier output.)
+`Finding.source` uses `"test-runner"` — the existing `FindingSource` member for test runner
+output. **No extension to `FindingSource` is needed.** The `category: "failed-test"` discriminates
+this adapter's findings from the acceptance-diagnose adapter's `acFailureToFinding`
+(category `"assertion-failure"`). `TestFailure` has no `line` field; the `Finding.line` is
+left unset (it is optional).
 
 ### 2. Full-suite gate rectification strategy
 
@@ -94,16 +144,18 @@ Add `src/operations/full-suite-rectify.ts` (or extend `autofix-cycle.ts`):
 ```typescript
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
-import { implementerOp } from "./implement";
+import type { ImplementerInput, ImplementerOutput } from "./implement";
+import { implementerOp } from ".";
+import type { TddConfig } from "../config/selectors";
+import { RectifierPromptBuilder } from "../prompts";
 
 export const fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> = {
   name: "full-suite-rectify",
-  appliesTo: (finding) => finding.source === "test" && finding.category === "failed-test",
+  appliesTo: (finding) => finding.source === "test-runner" && finding.category === "failed-test",
   fixOp: implementerOp,
   buildInput: (findings, _iterations, ctx) => ({
     story: ctx.story,
-    // Prompt the implementer with failing-test context
-    contextMarkdown: renderFailingTests(findings),
+    contextMarkdown: RectifierPromptBuilder.failingTestContext(findings),
   }),
   extractApplied: (_output, _input) => ({ targetFiles: [], summary: "Fixed failing tests" }),
   maxAttempts: 3, // from config.execution.rectification.maxRetries
@@ -112,12 +164,15 @@ export const fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, Im
 ```
 
 The strategy reuses `implementerOp` — no new fix-op needed. Prompt construction
-(`renderFailingTests`) is the only new code in this strategy.
+(`RectifierPromptBuilder.failingTestContext`) must be added to
+`src/prompts/builders/rectifier-builder.ts` per the project's prompt-builder convention
+(all LLM prompt construction lives in `src/prompts/builders/`; inline prompt templates in
+strategy files are forbidden).
 
 ### 3. Extend `addRectification`'s validator
 
 `addRectification`'s `cycle.validate` callback in `src/execution/story-orchestrator.ts`
-currently re-runs the verifier only:
+currently re-runs the verifier only and ignores its second argument:
 
 ```typescript
 validate: async (_validateCtx) => {
@@ -126,21 +181,30 @@ validate: async (_validateCtx) => {
 },
 ```
 
-US-006 extends it to also re-run the full-suite gate (if present) and aggregate findings
-from **both**:
+US-006 extends it to (a) also re-run the full-suite gate (if present) and aggregate
+findings from **both**, and (b) honor the `opts.mode === "lite"` second argument that
+`runFixCycle` already passes on the terminal-exhausted branch (`src/findings/cycle.ts:309`).
+In lite mode, only the verifier re-runs — the full-suite gate is the expensive op and
+skipping it is the entire point of lite-validate. `fullSuiteGatePhase` is derived from
+`state.fullSuiteGate` at the top of `runRectification`:
 
 ```typescript
-validate: async (_validateCtx) => {
+validate: async (_validateCtx, opts) => {
   if (ctx.runtime.signal?.aborted) return [];
+  const lite = opts?.mode === "lite";
   // Re-run validators in canonical order: gate before verifier (matches phase order).
-  if (fullSuiteGatePhase) {
-    await runPhase(ctx, fullSuiteGatePhase, phaseCosts, phaseOutputs);
+  // Lite mode skips the full-suite gate to keep terminal exhausted re-validation cheap.
+  const fullSuiteGatePhase = state.fullSuiteGate;
+  if (fullSuiteGatePhase && !lite) {
+    await runPhase(ctx, fullSuiteGatePhase.slot, phaseCosts, phaseOutputs);
   }
-  await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
-  return [
-    ...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase?.slot.op.name ?? ""]),
-    ...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]),
-  ];
+  await runPhase(ctx, verifierPhase.slot, phaseCosts, phaseOutputs);
+  const findings: Finding[] = [];
+  if (fullSuiteGatePhase && !lite) {
+    findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase.slot.op.name]));
+  }
+  findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
+  return findings;
 },
 ```
 
@@ -153,18 +217,32 @@ expensive. Two mitigations:
 
 ### 4. Short-circuit carve-out
 
-Today, any phase returning `success: false` skips subsequent phases. After US-006, the
-full-suite gate's `success: false` MUST allow the post-implementer rectification phase to
-run — otherwise gate failures terminate the story without repair.
+**Today's behaviour.** `ExecutionPlan.run()` (`src/execution/story-orchestrator.ts:332-348`)
+loops over phases, runs each, and breaks on the first `!phasePassed`. After the loop —
+*regardless of whether it broke* — `runRectification` is called unconditionally. So
+rectification already runs after gate failure today; the bug US-006 fixes is *upstream*
+of that: when the loop breaks at the gate, the verifier never runs, and the
+existing single-source-validator pulls findings only from whatever phases completed
+before the break. The carve-out's purpose is therefore not "let rectification run" — it is
+**"let both the gate and the verifier emit findings into `phaseOutputs` before
+rectification consumes them, so the §3 multi-source validator has both sources to
+aggregate."**
+
+Without rectification configured, the exempt set must stay empty so a gate failure still
+halts the plan (no point continuing to the verifier if nothing will repair the failure).
 
 Add to `ExecutionPlan.run()`:
 
 ```typescript
-const shortCircuitExempt = new Set<string>([fullSuiteGateOp.name, verifierOp.name]);
+// Exempt gate + verifier from short-circuit only when rectification is configured
+// (it will consume their failures). Without rectification, failures still halt the plan.
+const shortCircuitExempt = this.state.rectification
+  ? new Set<string>([fullSuiteGateOp.name, verifierOp.name])
+  : new Set<string>();
 
 for (const phase of collectOrderedPhases(this.state)) {
-  await runPhase(this.ctx, phase, phaseCosts, phaseOutputs);
-  const passed = phasePassed(phaseOutputs[phase.slot.op.name]);
+  await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs);
+  const passed = phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name]);
   if (!passed && !shortCircuitExempt.has(phase.slot.op.name)) {
     break; // existing short-circuit
   }
@@ -174,31 +252,44 @@ for (const phase of collectOrderedPhases(this.state)) {
 
 Both the verifier (already exempt today by virtue of rectification consuming its failures)
 and the full-suite gate (newly exempt) flow into rectification when present. When
-rectification is NOT configured, both still short-circuit (no consumer for the failures).
+rectification is NOT configured, the exempt set is empty and both still short-circuit.
 
-### 5. Relocate triage logic
+### 5. Triage logic in `fullSuiteGateOp.execute()` (post-US-005 state)
 
-`runFullSuiteGate` today has three triage exits before reaching the rectification call:
+`fullSuiteGateOp.execute()` (US-005 implementation) already encodes the following decision
+tree. US-006 removes the internal rectification call and adds `findings` to the output; the
+rest of the triage stays unchanged.
 
-| Triage | Today's behavior | US-006 home |
+| Condition | Current status | US-006 change |
 |:---|:---|:---|
-| `deferred-unattributable` (parser found 0 failures) | Returns `{ passed: true, status: "deferred-unattributable" }`; defers to run-level regression gate | `fullSuiteGateOp.parse` returns `{ success: true, status: "deferred-unattributable", findings: [] }`. Empty findings → rectification phase no-ops on this gate output. |
-| `parser counter mismatch` (failed=0 but failures.length>0) | Returns `{ passed: false, status: "execution-failed" }` | `fullSuiteGateOp.parse` returns `{ success: false, status: "execution-failed", findings: [] }`. Empty findings means rectification has nothing to fix; gate's `success: false` flows out as a story failure. |
-| `disabled` (rectification.enabled=false) | Returns `{ passed: false, status: "disabled" }` | Gate phase still runs (detection is useful even without rectification); op output `{ success: false, status: "disabled" }` short-circuits naturally since no rectification phase consumes it. |
+| Tests pass | `{ success: true, status: "passed", findings: [] }` | None |
+| Tests fail, parser returns structured failures | `{ success: false, status: "failed-no-rectification" }` → loops into `runRectificationLoop` | Remove `runRectificationLoop`; rename status to `"failed"`; populate `findings: testSummaryToFindings(parsedSummary)` |
+| Tests fail, parser returns 0 structured failures (`failed > 0` but `failures.length === 0`) | `{ success: false, status: "execution-failed" }` | Add `findings: []`; no other change |
+| `rectificationEnabled = false` (tests failed) | `{ success: false, status: "failed-no-rectification" }` | Remove `rectificationEnabled` flag entirely — caller decides whether to wire rectification; status becomes `"failed"` |
 
-All triage moves from imperative early-returns to structured op output. The wrapper inspects
-`status` for run-level reporting (same way verdict categorization works today).
+After §0, `FullSuiteGateInput.rectificationEnabled` is gone. The op always runs tests and
+returns `findings`; whether to run rectification is now determined by whether the plan
+includes a rectification phase (§4 short-circuit carve-out handles the gateway).
 
 ### 6. Delete sites
 
 US-006 retires:
 
-- `src/verification/rectification-loop.ts` — `runRectificationLoop` deleted. Existing callers
-  (the `fullSuiteGateOp` migrated in US-005) are rewired to use `runFixCycle` via the
-  general rectification phase. SessionKeeper consumers (per US-002) remain in
-  `src/tdd/rectification-gate.ts` only — wait, that file was deleted in US-005. Confirm
-  SessionKeeper consumer audit before deletion (see §Open Questions OQ-1).
-- `fullSuiteGateOp`'s internal rectification call — replaced by the validator extension in §3.
+- `src/verification/rectification-loop.ts` — `runRectificationLoop` deleted. There are
+  **three** callers that must be addressed before deletion:
+
+  | Caller | Current import | Action |
+  |:---|:---|:---|
+  | `src/operations/full-suite-gate.ts` | `from "../tdd"` (tdd/rectification-runner.ts) | ✅ Already migrated in US-005; removed in §0 above |
+  | `src/pipeline/stages/rectify.ts:140` | `from "../../verification/rectification-loop"` | Rewire to use `runFixCycle` via the general rectification phase, or redirect import to `"../../tdd"` if the TDD version is semantically equivalent for this call-site |
+  | `src/execution/lifecycle/run-regression.ts:18` | `from "../../verification/rectification-loop"` | Same: rewire to `runFixCycle` or redirect to `"../../tdd"` |
+
+  AC-7's verification grep must confirm zero callers remain after all three are addressed.
+
+- `fullSuiteGateOp`'s internal rectification deps — `FullSuiteGateDeps.runRectificationLoop`
+  method, `FullSuiteGateInput.rectificationEnabled`, `FullSuiteGateInput.implementerTier`
+  (gate no longer drives rectification; see §0).
+
 - `test/unit/verification/rectification-loop*.test.ts` — replaced by rectification-phase tests
   that exercise the full-suite-failure path through `runFixCycle`.
 
@@ -206,69 +297,137 @@ US-006 retires:
 
 ## Stories
 
-Single story (US-006). Sub-deliverables align with §1-§6.
+Two stories. **US-006a** is additive — it stands up the replacement rectification path
+without removing the legacy one. **US-006b** is a terminal-cleanup story — pure deletions
+and grep-zero assertions over the artefacts US-006a obsoleted. Splitting per the
+spec-writing terminal-cleanup-story rule (additive and destructive ACs must not co-mingle).
 
-### US-006: Fold gate-internal rectification into the general rectification phase
+### US-006a: Wire full-suite rectification into the general rectification phase (additive)
 
 **Depends on:** US-005 (StoryOrchestratorBuilder consolidation must land first — gates must
 exist as phases, builder must dispatch them, before this story can rewire the rectification
 contract).
 
-Implement Design §1–§6. Delete sites per §6.
+Implement Design §0–§5 and the additive parts of §6 (rewire callers in
+`pipeline/stages/rectify.ts` and `execution/lifecycle/run-regression.ts`; do **not** delete
+`src/verification/rectification-loop.ts` yet — that lands in US-006b once all callers are
+proven gone).
+
+**Covers ACs:** 1, 2, 3, 4, 5, 6, 7.
 
 #### Context Files
 
-- `src/findings/cycle.ts` — `runFixCycle` SSOT
-- `src/findings/types.ts` — `Finding`, `FindingSource` (verify `"test"` membership)
+- `src/findings/cycle.ts` — `runFixCycle` SSOT (read-only reference for validator semantics)
+- `src/findings/types.ts` — `Finding`, `FindingSource` (no extension needed; `"test-runner"` already exists)
 - `src/findings/adapters/` — add `test-failure.ts`
 - `src/operations/full-suite-rectify.ts` — new file (strategy definition)
-- `src/operations/full-suite-gate.ts` — created in US-005; modified here to drop internal
-  rectification, surface findings via `parse()`
-- `src/execution/story-orchestrator.ts` — extend `addRectification` validator (§3);
-  add short-circuit carve-out (§4)
-- `src/verification/rectification-loop.ts` — to delete
-- `src/verification/test-output-parser.ts` — source of `TestSummary` for the adapter
+- `src/operations/full-suite-gate.ts` — created in US-005; modified in §0 to remove internal
+  rectification, extend `FullSuiteGateOutput` with `findings`, simplify `FullSuiteGateStatus`
+- `src/execution/story-orchestrator.ts` — extend `addRectification` validator (§3) to
+  re-run gate+verifier and honor `opts.mode === "lite"`; add short-circuit carve-out (§4)
+- `src/test-runners/types.ts` — source of `TestSummary` / `TestFailure` for the adapter
+- `src/prompts/builders/rectifier-builder.ts` — add `failingTestContext(findings: Finding[]): string`
 - `src/execution/build-plan-for-strategy.ts` — created in US-005; updated to include
   `fullSuiteRectifyStrategy` in the rectification strategies array
+- `src/pipeline/stages/rectify.ts` — rewire `runRectificationLoop` import (§6)
+- `src/execution/lifecycle/run-regression.ts` — rewire `runRectificationLoop` import (§6)
+
+### US-006b: Retire the legacy rectification loop (terminal cleanup, deletion-only)
+
+**Depends on:** US-006a (replacement path live; AC-7's grep proves the new strategy is
+wired; only then can the legacy loop and its tests be removed safely).
+
+Delete-only. No new logic, no new tests, no behavioural change beyond removal of dead code.
+
+**Covers ACs:** 8, 9, 10.
+
+#### Context Files
+
+- `src/verification/rectification-loop.ts` — to delete (no remaining callers after US-006a)
+- `src/verification/index.ts` — remove `runRectificationLoop` export
+- `test/unit/verification/rectification-loop*.test.ts` — to delete (replacement coverage
+  lives in the rectification-phase tests added in US-006a)
 
 ---
 
 ## Acceptance Criteria
 
-1. `testFailureToFinding(failure): Finding` and `testSummaryToFindings(summary): Finding[]`
-   exist in `src/findings/adapters/test-failure.ts` with the field mapping from §1.
-   `FindingSource` includes `"test"`.
-2. `fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, ImplementerOutput,
-   TddConfig>` exists in `src/operations/full-suite-rectify.ts`. `appliesTo` matches
-   `source: "test", category: "failed-test"`. `fixOp` references `implementerOp` (no new
-   fix-op created).
-3. `fullSuiteGateOp.parse()` returns `{ success, status, findings: Finding[] }` populated
-   from `testSummaryToFindings(parsedSummary)`. The op's `build()` constructs the test
-   command per current `runFullSuiteGate` resolution rules. No internal rectification loop
-   exists in the op.
-4. `addRectification`'s `cycle.validate` re-runs the full-suite gate (when present in the
-   plan) AND the verifier in canonical order, returning aggregated findings from both.
-   Verified by a unit test asserting `cycle.validate` triggers `runPhase` for both phases.
-5. `ExecutionPlan.run()` short-circuit logic exempts `fullSuiteGateOp.name` and
+### US-006a — Additive (no deletions)
+
+1. **[file]** `src/findings/adapters/test-failure.ts` exists and exports both
+   `testFailureToFinding(failure: TestFailure): Finding` and
+   `testSummaryToFindings(summary: TestSummary): Finding[]` with the field mapping from §1
+   (`failure.error → message`, `failure.testName → rule`, `failure.file → file`,
+   `source: "test-runner"`, `category: "failed-test"`). No changes to `FindingSource`.
+   **[verbatim] [grep]** `grep -nE 'export function testFailureToFinding\(failure: TestFailure\): Finding' src/findings/adapters/test-failure.ts` returns ≥1 match AND
+   `grep -nE 'export function testSummaryToFindings\(summary: TestSummary\): Finding\[\]' src/findings/adapters/test-failure.ts` returns ≥1 match.
+
+2. **[file]** `src/operations/full-suite-rectify.ts` exists and exports
+   `fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig>`.
+   `appliesTo` matches `source: "test-runner" && category: "failed-test"`. `fixOp`
+   references `implementerOp` (no new fix-op created). Prompt construction delegates to
+   `RectifierPromptBuilder.failingTestContext`.
+   **[verbatim] [grep]** `grep -nE 'export const fullSuiteRectifyStrategy: FixStrategy<' src/operations/full-suite-rectify.ts` returns ≥1 match AND
+   `grep -nE 'fixOp: implementerOp' src/operations/full-suite-rectify.ts` returns ≥1 match AND
+   `grep -nE 'RectifierPromptBuilder\.failingTestContext' src/operations/full-suite-rectify.ts` returns ≥1 match.
+
+3. **[unit]** `fullSuiteGateOp.execute()` returns `{ success, status, findings: Finding[] }`
+   populated from `testSummaryToFindings(parsedSummary)` when tests fail. Status is `"failed"`
+   (not `"failed-no-rectification"` / `"rectification-exhausted"`). No internal rectification
+   loop exists in the op; `FullSuiteGateInput.rectificationEnabled` is removed.
+   **[verbatim] [grep]** `grep -nE '"rectification-exhausted"|"failed-no-rectification"|rectificationEnabled' src/operations/full-suite-gate.ts` returns 0 lines AND
+   `grep -nE 'runRectificationLoop' src/operations/full-suite-gate.ts` returns 0 lines.
+
+4. **[unit]** `addRectification`'s `cycle.validate` re-runs the full-suite gate (when
+   present in the plan) AND the verifier in canonical order, returning aggregated findings
+   from both. Unit test asserts `cycle.validate` triggers `runPhase` for both phases when
+   `state.fullSuiteGate` is non-null, and only the verifier when null.
+
+5. **[unit]** `cycle.validate` honors the `opts.mode === "lite"` second argument. When
+   `mode: "lite"`, the validator skips re-running the full-suite gate (which is the
+   expensive op) and re-runs only the verifier — matching the lite-validate branch in
+   `runFixCycle` at `src/findings/cycle.ts:309`. Unit test passes `{ mode: "lite" }` and
+   asserts the gate's `runPhase` is NOT invoked.
+
+6. **[unit]** `ExecutionPlan.run()` short-circuit logic exempts `fullSuiteGateOp.name` and
    `verifierOp.name` from termination on `success: false` when a rectification phase is
-   present. When rectification is absent, both phases short-circuit as before. Verified by
-   table-driven test over `(gate-success, verifier-success, rectification-enabled)`.
-6. Triage statuses (`deferred-unattributable`, `execution-failed`, `disabled`) are surfaced
-   as `fullSuiteGateOp` output fields, not via early-return code paths. Wrapper post-run
-   inspection (per US-005 §3) reads `status` for run-level reporting.
-7. `src/verification/rectification-loop.ts` is deleted. `runRectificationLoop` has zero
-   call sites in the codebase.
-8. `runFixCycle` is the only rectification loop in the codebase. Verified by a grep test:
-   no `while`/`for` loop in `src/` with a `// rectification` comment outside `findings/cycle.ts`;
-   no function named `runRectification*` other than the orchestrator's `runRectification`
-   helper that calls `runFixCycle`.
+   present. When rectification is absent, the exempt set is empty and both phases
+   short-circuit as before. Table-driven test over
+   `(gate-success, verifier-success, rectification-enabled)` covers the 2×2×2 matrix.
+
+7. **[grep] [unit]** `fullSuiteRectifyStrategy` is wired into the rectification phase via
+   `build-plan-for-strategy.ts`. End-to-end unit test passes through the full path:
+   gate fails with structured findings → strategy fires → `implementerOp` dispatches.
+   **[verbatim] [grep]** `grep -nE 'fullSuiteRectifyStrategy' src/execution/build-plan-for-strategy.ts` returns ≥1 match.
+
+### US-006b — Terminal cleanup (deletion-only)
+
+**Depends on:** US-006a (all additive work landed; gate-internal rectification has a
+working replacement before the legacy loop is deleted).
+
+8. **[verbatim] [file]** `src/verification/rectification-loop.ts` does not exist
+   (`test -f src/verification/rectification-loop.ts && exit 1 || exit 0`).
+   **[verbatim] [grep]** `grep -rnE 'from ["'\''"]\.\./\.\./verification/rectification-loop["'\''"]\|from ["'\''"]\.\./verification/rectification-loop["'\''"]' src/` returns 0 lines (all three callers from §6 — `full-suite-gate.ts`, `pipeline/stages/rectify.ts`, `execution/lifecycle/run-regression.ts` — rewired or redirected).
+
+9. **[verbatim] [grep]** `runFixCycle` is the only rectification loop in the codebase.
+   `grep -rnE 'function runRectification[A-Za-z]*\(' src/ | grep -v 'src/execution/story-orchestrator.ts' | grep -v 'src/tdd/rectification-runner.ts'` returns 0 lines.
+   (The orchestrator's `runRectification` helper that wraps `runFixCycle` and the
+   `runRectificationLoop` symbol re-exported from `src/tdd/rectification-runner.ts` are the
+   only permitted matches — the latter is consumed by the legacy `full-suite-gate.ts`
+   pre-§0 only, and is removed by AC-8 above.)
+
+10. **[verbatim] [file]** Legacy test files removed:
+    `test -f test/unit/verification/rectification-loop.test.ts && exit 1 || exit 0` AND
+    `find test/unit/verification -name 'rectification-loop*.test.ts' | wc -l` returns `0`.
+    **[verbatim] [grep]** Replacement coverage exists in the rectification-phase test:
+    `grep -rnE 'full-suite-rectify|fullSuiteRectifyStrategy' test/unit/execution/ test/unit/findings/` returns ≥1 match.
 
 ---
 
 ## Failure Handling
 
 - **Test-suite parser returns malformed `TestSummary`** — `testSummaryToFindings` returns
-  `[]`. `fullSuiteGateOp.parse()` returns `{ success: false, status: "execution-failed",
+  `[]`. `fullSuiteGateOp.execute()` returns `{ success: false, status: "execution-failed",
   findings: [] }`. Rectification has no findings to fix; story fails through gate output.
 - **`fullSuiteRectifyStrategy.maxAttempts` exhausted** — `runFixCycle` exits with
   `exitReason: "max-attempts-per-strategy"`. Wrapper maps this to
@@ -280,9 +439,9 @@ Implement Design §1–§6. Delete sites per §6.
 
 ## Non-Goals
 
-- **No changes to `FindingSource` semantics** other than verifying/adding `"test"` membership.
+- **No changes to `FindingSource`** — `"test-runner"` is reused as-is.
 - **No changes to `runFixCycle` itself.** All US-006 work is in the validator callback,
-  the strategy definition, and the gate op's `parse()`.
+  the strategy definition, and the gate op's `execute()`.
 - **No changes to `StoryOrchestratorBuilder` API.** `addRectification` signature unchanged;
   callers pass an additional strategy in `RectificationPhaseOptions.strategies`.
 - **No new builder phases.** US-005's `CANONICAL_ORDER` is unchanged.
@@ -291,17 +450,20 @@ Implement Design §1–§6. Delete sites per §6.
 
 ## Open Questions
 
-1. **SessionKeeper consumer audit.** `src/verification/rectification-loop.ts` consumes
-   `SessionKeeper` per US-002. After deletion, is `rectification-gate.ts` (also deleted in
-   US-005) the only other consumer? If so, `SessionKeeper` becomes used only inside ops
-   wired through `callOp` middleware — confirm before removing exports from
-   `src/session/index.ts`.
+1. ~~**SessionKeeper consumer audit.**~~ **CLOSED.** `src/tdd/rectification-gate.ts` is
+   confirmed deleted by US-005 (not present on disk). After deleting
+   `src/verification/rectification-loop.ts`, `SessionKeeper` still has one caller:
+   `src/tdd/rectification-runner.ts`. Exports from `src/session/index.ts` must stay;
+   this is a no-op for US-006.
 
-2. **Performance: full-suite re-run cost per iteration.** Re-running `bun test` per
-   rectification iteration can multiply story wall-clock by 3-5x for slow suites. Design §3
-   mentions scoped-runner mitigation (already used by `runRectificationLoop`); should
-   US-006 default to scoped re-validate, full re-validate, or per-strategy choice? Recommend:
-   default to scoped (matches current behavior), with explicit config opt-in for full.
+2. ~~**Performance: full-suite re-run cost per iteration.**~~ **CLOSED.** Resolution: the
+   §3 validator honors `opts.mode === "lite"` and skips the full-suite gate on the
+   terminal-exhausted lite-validate branch (AC-5). For non-terminal iterations, the gate
+   re-runs in full — matching today's `runRectificationLoop` behaviour, which already
+   re-runs the suite per iteration. Scoped-runner integration is out of scope for US-006;
+   if cost regression is observed in practice, add a `rectificationValidateMode: "full"
+   | "scoped"` config key in a follow-up. Decision recorded so implementers don't
+   re-litigate during US-006a.
 
 3. **Strategy ordering when both `fullSuiteRectifyStrategy` and review-finding strategies
    match.** `runFixCycle`'s `selectExecutionGroup` picks the first exclusive strategy. If a
@@ -311,9 +473,11 @@ Implement Design §1–§6. Delete sites per §6.
    block downstream signal.
 
 4. **Backwards compat for `failureCategory: "full-suite-gate-exhausted"`.** This category
-   is currently emitted by `runFullSuiteGate` directly. After US-006, it must emerge from
-   `runFixCycle`'s exit reason → `FailureCategory` mapping in the wrapper. Confirm the
-   mapping doesn't drop the distinction (vs generic rectification exhaustion).
+   was previously emitted by `runFullSuiteGate` directly. After US-006, it must emerge from
+   `runFixCycle`'s `exitReason: "max-attempts-per-strategy"` → `FailureCategory` mapping in
+   the post-run wrapper. The wrapper should key on `exhaustedStrategy === "full-suite-rectify"`
+   to emit `"full-suite-gate-exhausted"` vs. the generic `"rectification-exhausted"` for
+   other strategy exhaustions. Confirm the mapping before marking AC-8 done.
 
 ---
 
@@ -322,3 +486,5 @@ Implement Design §1–§6. Delete sites per §6.
 | Rev | Date | Change |
 |:---|:---|:---|
 | 1 | 2026-05-19 | Initial draft — deferred from SPEC-story-orchestrator-consolidation.md OQ1. |
+| 2 | 2026-05-20 | Spec review fixes: add §0 (DeterministicOperation stays, extend FullSuiteGateOutput); fix TestFailure field names (error not message, no line field); switch FindingSource to "test-runner" (no extension needed); rewrite Design §5 against post-US-005 codebase; expand §6 deletion scope to all 3 callers; fix shortCircuitExempt guard; fix validate signature; add RectifierPromptBuilder.failingTestContext; fix Context Files (test-runners/types.ts); close OQ-1. |
+| 3 | 2026-05-20 | Second spec-review pass: tag every AC with `[file]` / `[grep]` / `[unit]` / `[verbatim]` mechanisms (Phase 7); add wiring AC for `fullSuiteRectifyStrategy` in `build-plan-for-strategy.ts` (was implicit in §6 Context Files, no AC); split single story into **US-006a** (additive, AC1–AC7) and **US-006b** (terminal cleanup, AC8–AC10) per deletion-isolation rule; add AC-5 for `opts.mode === "lite"` validator behaviour (§3 was silent on the second arg `runFixCycle` already passes); reword §4 to clarify the carve-out is about emission-into-`phaseOutputs`, not about whether rectification runs at all; close OQ-2 (lite-mode skip is the resolution, no new config key). |
