@@ -55,9 +55,10 @@ export interface FullSuiteGateInput {
  */
 export interface FullSuiteGateOutput {
   readonly success: boolean; // true when passed; false on any failure
-  readonly passed: boolean; // true only when tests actually passed
+  readonly passed: boolean; // true only when tests actually passed (kept for post-run ctx.fullSuiteGatePassed)
   readonly status: FullSuiteGateStatus;
-  readonly cost: number;
+  readonly estimatedCostUsd: number; // always 0; real cost flows through DispatchEvent → CostAggregator
+  readonly durationMs?: number; // populated when timing is available
   readonly attempts?: number; // populated when rectification runs (0 when tests pass directly)
 }
 
@@ -163,7 +164,7 @@ export const fullSuiteGateOp: DeterministicOperation<
 > = {
   kind: "deterministic",
   name: "full-suite-gate",
-  stage: "run",
+  stage: "verify",
   config: fullSuiteGateConfigSelector,
   async execute(
     input: FullSuiteGateInput,
@@ -175,14 +176,14 @@ export const fullSuiteGateOp: DeterministicOperation<
 
     // Step 2: Tests passed → done immediately
     if (testResult.passed) {
-      return { success: true, passed: true, status: "passed", cost: 0, attempts: 0 };
+      return { success: true, passed: true, status: "passed", estimatedCostUsd: 0, attempts: 0 };
     }
 
     // Step 3: Tests failed, rectification disabled → fail without rectification
     // Critical fix: old code returned "disabled" BEFORE running tests, causing the
     // TDD verifier to be skipped even when tests actually passed.
     if (!input.rectificationEnabled) {
-      return { success: false, passed: false, status: "failed-no-rectification", cost: 0, attempts: 0 };
+      return { success: false, passed: false, status: "failed-no-rectification", estimatedCostUsd: 0, attempts: 0 };
     }
 
     // Step 4: Tests failed, rectification enabled → run rectification loop
@@ -192,10 +193,10 @@ export const fullSuiteGateOp: DeterministicOperation<
         success: false,
         passed: false,
         status: "rectification-exhausted",
-        cost: 0,
+        estimatedCostUsd: 0,
         attempts: rectResult.attempts,
       };
     }
-    return { success: true, passed: true, status: "passed", cost: 0, attempts: rectResult.attempts };
+    return { success: true, passed: true, status: "passed", estimatedCostUsd: 0, attempts: rectResult.attempts };
   },
 };

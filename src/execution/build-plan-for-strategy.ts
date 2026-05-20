@@ -22,7 +22,7 @@ import { type ExecutionPlan, StoryOrchestratorBuilder } from "./story-orchestrat
 
 const TDD_STRATEGIES = new Set<TestStrategy>(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
 
-function isTddStrategy(strategy: TestStrategy): boolean {
+export function isTddStrategy(strategy: TestStrategy): boolean {
   return TDD_STRATEGIES.has(strategy);
 }
 

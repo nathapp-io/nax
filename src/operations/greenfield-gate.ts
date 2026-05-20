@@ -45,7 +45,7 @@ export const greenfieldGateOp: DeterministicOperation<GreenfieldGateInput, Green
   {
     kind: "deterministic",
     name: "greenfield-gate",
-    stage: "run",
+    stage: "verify",
     config: greenfieldGateConfigSelector,
     async execute(input: GreenfieldGateInput, _ctx: CallContext): Promise<GreenfieldGateOutput> {
       // isGreenfieldStory takes raw glob strings (readonly string[]), not ResolvedTestPatterns

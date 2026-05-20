@@ -331,12 +331,8 @@ export class ExecutionPlan {
         throw error;
       }
 
-      // Short-circuit on gate failures (AC2: gates and other phases that return success=false halt execution)
-      if (
-        (phase.kind === "greenfield-gate" || phase.kind === "full-suite-gate") &&
-        !phasePassed(phaseOutputs[phase.slot.op.name])
-      ) {
-        // Gate failed, stop executing remaining phases
+      // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
+      if (!phasePassed(phaseOutputs[phase.slot.op.name])) {
         break;
       }
     }

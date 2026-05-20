@@ -20,6 +20,7 @@ import type {
 import type { UserStory } from "../prd/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
+import { isTddStrategy } from "./build-plan-for-strategy";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
@@ -142,12 +143,6 @@ export function assemblePlanInputs(
 // ─────────────────────────────────────────────────────────────────────────────
 // Pipeline-context overload
 // ─────────────────────────────────────────────────────────────────────────────
-
-const TDD_STRATEGIES = new Set(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
-
-function isTddStrategy(strategy: string): boolean {
-  return TDD_STRATEGIES.has(strategy);
-}
 
 function hasReviewEscalation(story: UserStory): boolean {
   return (story.priorFailures ?? []).some((f: { stage?: string }) => f.stage === "review");

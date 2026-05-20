@@ -11,7 +11,7 @@
 
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
-import { buildPlanForStrategy } from "../../execution/build-plan-for-strategy";
+import { buildPlanForStrategy, isTddStrategy } from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
 import type { StoryOrchestratorResult } from "../../execution/story-orchestrator";
@@ -23,12 +23,6 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
 export { isAmbiguousOutput, resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
-
-const TDD_STRATEGIES = new Set(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
-
-function isTddStrategy(strategy: string): boolean {
-  return TDD_STRATEGIES.has(strategy);
-}
 
 export const executionStage: PipelineStage = {
   name: "execution",
