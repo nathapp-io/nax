@@ -185,21 +185,17 @@ function gatherRectificationFindings(
 
 async function runPhase(
   ctx: CallContext,
-  phase: InternalPhase,
+  slot: AnySlot,
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
 ): Promise<unknown> {
   const scope = ctx.runtime.costAggregator.openScope();
   try {
-    const output = await _storyOrchestratorDeps.callOp(
-      { ...ctx, scopeId: scope.scopeId },
-      phase.slot.op,
-      phase.slot.input,
-    );
-    phaseOutputs[phase.slot.op.name] = output;
+    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, slot.input);
+    phaseOutputs[slot.op.name] = output;
     return output;
   } finally {
-    phaseCosts[phase.slot.op.name] = (phaseCosts[phase.slot.op.name] ?? 0) + scope.snapshot().totalCostUsd;
+    phaseCosts[slot.op.name] = (phaseCosts[slot.op.name] ?? 0) + scope.snapshot().totalCostUsd;
     scope.close();
   }
 }
@@ -278,13 +274,10 @@ async function runRectification(
   }
 
   const wrappedCallOp = async <I, O, C>(cycleCtx: FixCycleContext, op: Operation<I, O, C>, input: I): Promise<O> => {
-    const phase: InternalPhase = {
-      kind: "implementer",
-      // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
-      // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
-      slot: { op: op as unknown as RunOperation<unknown, unknown, unknown>, input },
-    };
-    return (await runPhase(cycleCtx, phase, phaseCosts, phaseOutputs)) as O;
+    // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
+    // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
+    const slot: AnySlot = { op: op as unknown as RunOperation<unknown, unknown, unknown>, input };
+    return (await runPhase(cycleCtx, slot, phaseCosts, phaseOutputs)) as O;
   };
 
   const cycle: FixCycle<Finding> = {
@@ -297,7 +290,7 @@ async function runRectification(
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx) => {
       if (ctx.runtime.signal?.aborted) return [];
-      await runPhase(ctx, verifierPhase, phaseCosts, phaseOutputs);
+      await runPhase(ctx, verifierPhase.slot, phaseCosts, phaseOutputs);
       return extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]);
     },
   };
@@ -334,7 +327,7 @@ export class ExecutionPlan {
 
     for (const phase of collectOrderedPhases(this.state)) {
       try {
-        await runPhase(this.ctx, phase, phaseCosts, phaseOutputs);
+        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs);
       } catch (error) {
         logger?.error("story-orchestrator", "Phase threw unexpected error", {
           storyId: this.ctx.storyId,
