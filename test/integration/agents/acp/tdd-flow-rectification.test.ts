@@ -23,15 +23,22 @@ const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
 let origRunTests: typeof _fullSuiteGateDeps.runTests;
 let origRunRectificationLoop: typeof _fullSuiteGateDeps.runRectificationLoop;
+let origResolveGateContext: typeof _fullSuiteGateDeps.resolveGateContext;
 
 beforeEach(() => {
   origRunTests = _fullSuiteGateDeps.runTests;
   origRunRectificationLoop = _fullSuiteGateDeps.runRectificationLoop;
+  origResolveGateContext = _fullSuiteGateDeps.resolveGateContext;
+  // Stub config resolution — production resolver throws TEST_COMMAND_MISSING for
+  // temp dirs without .nax/config.json (US-005 M2: no silent "bun test" fallback).
+  _fullSuiteGateDeps.resolveGateContext = async () =>
+    ({ config: {} as any, testCmd: "bun test", fullSuiteTimeout: 60 }) as any;
 });
 
 afterEach(() => {
   _fullSuiteGateDeps.runTests = origRunTests;
   _fullSuiteGateDeps.runRectificationLoop = origRunRectificationLoop;
+  _fullSuiteGateDeps.resolveGateContext = origResolveGateContext;
   mock.restore();
 });
 

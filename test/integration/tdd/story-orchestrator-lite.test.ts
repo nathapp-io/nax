@@ -6,12 +6,13 @@ import type { ResolvedTestPatterns } from "../../../src/test-runners";
 import { makeMockCallContext } from "../../helpers/call-context";
 import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
+import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 
 beforeEach(() => {
   saved = saveDeps();
+  stubFullSuiteGateContext();
 });
 
 afterEach(() => {

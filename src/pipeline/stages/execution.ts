@@ -11,7 +11,11 @@
 
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
-import { buildPlanForStrategy, isTddStrategy } from "../../execution/build-plan-for-strategy";
+import {
+  buildPlanForStrategy,
+  isTddStrategy,
+  requiresInitialRefCapture,
+} from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
 import type { StoryOrchestratorResult } from "../../execution/story-orchestrator";
@@ -86,8 +90,9 @@ export const executionStage: PipelineStage = {
 
     const isTdd = isTddStrategy(ctx.routing.testStrategy);
     const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
-    const initialRef = isTdd ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
-    const shouldRollbackOnFailure = isTdd && (ctx.config.tdd?.rollbackOnFailure ?? true);
+    const needsInitialRef = requiresInitialRefCapture(ctx.routing.testStrategy);
+    const initialRef = needsInitialRef ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
+    const shouldRollbackOnFailure = needsInitialRef && (ctx.config.tdd?.rollbackOnFailure ?? true);
 
     const inputs = await _executionDeps.assemblePlanInputsFromCtx(ctx);
     const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);

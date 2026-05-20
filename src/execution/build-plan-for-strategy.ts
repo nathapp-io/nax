@@ -4,12 +4,16 @@
  * Builds an ExecutionPlan directly from strategy, story, config, and typed inputs.
  * Eliminates the PlanForStrategy boolean-bag and the two-sequencing-wrapper anti-pattern.
  *
- * AC4: buildPlanForStrategy(ctx, story, config, testStrategy, inputs): ExecutionPlan
- * AC1: testStrategy is an explicit parameter — never read from NaxConfig or story.routing
- * AC2: Fresh/retry detection is derived from story state — not from external isFreshRun flag
- * AC3: TDD strategies include full-suite-gate and verifier; non-TDD omit them
- * AC4: Review phase selection controlled by config.review.checks membership
- * AC5: Rectification gated by shouldRunRectification(config) + inputs.rectification presence
+ * Spec mapping (docs/specs/SPEC-story-orchestrator-consolidation.md):
+ *   AC#4: buildPlanForStrategy(ctx, story, config, testStrategy, inputs): ExecutionPlan
+ *         — review-slot gating reads config.review.checks: ReviewCheckName[]
+ *           membership (not nested .enabled flags); table-driven per
+ *           (testStrategy, review.enabled, review.checks, rectification.enabled, isRetry)
+ *   AC#5: pipeline/stages/execution.ts has no if (isTddStrategy) sequencing branch —
+ *         this file is the SSOT for strategy-dependent slot decisions
+ *
+ * Inputs envelope shape: PlanInputs (./plan-inputs.ts) — each field matches the
+ * addX(input: I) overload of StoryOrchestratorBuilder.
  */
 
 import type { NaxConfig } from "../config";
@@ -24,6 +28,15 @@ const TDD_STRATEGIES = new Set<TestStrategy>(["tdd-simple", "three-session-tdd",
 
 export function isTddStrategy(strategy: TestStrategy): boolean {
   return TDD_STRATEGIES.has(strategy);
+}
+
+/**
+ * Whether the wrapper must capture an initial git ref before the plan runs.
+ * Only TDD strategies require this — non-TDD strategies have no rollback path.
+ * Extracted so pipeline/stages/execution.ts can stay strategy-blind beyond this call.
+ */
+export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
+  return isTddStrategy(strategy);
 }
 
 function hasReviewCheck(config: NaxConfig, check: "semantic" | "adversarial"): boolean {

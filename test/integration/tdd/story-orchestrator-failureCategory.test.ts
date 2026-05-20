@@ -7,7 +7,7 @@ import type { ResolvedTestPatterns } from "../../../src/test-runners";
 import { makeMockCallContext } from "../../helpers/call-context";
 import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
+import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 let origRunTests: typeof _fullSuiteGateDeps.runTests;
@@ -15,6 +15,7 @@ let origRunRectification: typeof _fullSuiteGateDeps.runRectificationLoop;
 
 beforeEach(() => {
   saved = saveDeps();
+  stubFullSuiteGateContext();
   origRunTests = _fullSuiteGateDeps.runTests;
   origRunRectification = _fullSuiteGateDeps.runRectificationLoop;
 });

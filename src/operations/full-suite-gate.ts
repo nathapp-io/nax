@@ -16,8 +16,9 @@
  * 6. Loop exhausts → status: "rectification-exhausted", success: false
  */
 
-import type { ModelTier } from "../config";
+import type { ModelTier, NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
+import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
 import { runRectificationLoop } from "../tdd";
 import type { CallContext, DeterministicOperation } from "./types";
@@ -80,29 +81,61 @@ interface RunRectificationResult {
   readonly fixedAll?: boolean;
 }
 
+/**
+ * Resolved gate context — config + test command + timeout resolved once at op entry
+ * so runTests and runRectificationLoop share the same values without duplicating
+ * configLoader/resolveQualityTestCommands calls (US-005 review M3).
+ */
+export interface FullSuiteGateContext {
+  readonly config: NaxConfig;
+  readonly testCmd: string;
+  readonly fullSuiteTimeout: number;
+}
+
 export interface FullSuiteGateDeps {
-  runTests: (input: FullSuiteGateInput, ctx: CallContext) => Promise<RunTestsResult>;
+  resolveGateContext: (input: FullSuiteGateInput, ctx: CallContext) => Promise<FullSuiteGateContext>;
+  runTests: (input: FullSuiteGateInput, gateCtx: FullSuiteGateContext) => Promise<RunTestsResult>;
   runRectificationLoop: (
     input: FullSuiteGateInput,
     ctx: CallContext,
+    gateCtx: FullSuiteGateContext,
     testOutput: string,
   ) => Promise<RunRectificationResult>;
 }
 
 export const _fullSuiteGateDeps: FullSuiteGateDeps = {
-  runTests: async (input, ctx) => {
-    const { executeWithTimeout, parseTestOutput } = await import("../verification");
+  resolveGateContext: async (input, ctx) => {
     const { resolveQualityTestCommands } = await import("../quality/command-resolver");
     const config = ctx.runtime.configLoader.current();
-    const rectificationConfig = config.execution?.rectification;
-    const fullSuiteTimeout = rectificationConfig?.fullSuiteTimeoutSeconds ?? 60;
+    const fullSuiteTimeout = config.execution?.rectification?.fullSuiteTimeoutSeconds ?? 60;
     const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
       config,
       input.workdir,
       input.story.workdir,
     );
-    const effectiveTestCmd = resolvedTestCmd ?? "bun test";
-    const result = await executeWithTimeout(effectiveTestCmd, fullSuiteTimeout, undefined, { cwd: input.workdir });
+    // US-005 review M2: do not silently default to "bun test" — fail loudly when
+    // the package has no resolvable test command. The outermost pipeline boundary
+    // (run-regression.ts) is the only legal site for a `?? "bun test"` fallback.
+    if (!resolvedTestCmd) {
+      const pkg = input.story.workdir ?? input.workdir;
+      throw new NaxError(
+        `No test command configured for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
+        "TEST_COMMAND_MISSING",
+        {
+          stage: "full-suite-gate",
+          storyId: input.story.id,
+          packageDir: input.story.workdir,
+          workdir: input.workdir,
+        },
+      );
+    }
+    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout };
+  },
+  runTests: async (input, gateCtx) => {
+    const { executeWithTimeout, parseTestOutput } = await import("../verification");
+    const result = await executeWithTimeout(gateCtx.testCmd, gateCtx.fullSuiteTimeout, undefined, {
+      cwd: input.workdir,
+    });
     const parsed = parseTestOutput(result.output ?? "");
     return {
       passed: result.success && result.exitCode === 0,
@@ -110,29 +143,19 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       output: result.output ?? "",
     };
   },
-  runRectificationLoop: async (input, ctx, testOutput) => {
+  runRectificationLoop: async (input, ctx, gateCtx, testOutput) => {
     const { parseTestOutput } = await import("../verification");
-    const { resolveQualityTestCommands } = await import("../quality/command-resolver");
-    const config = ctx.runtime.configLoader.current();
-    const rectificationConfig = config.execution?.rectification;
-    const fullSuiteTimeout = rectificationConfig?.fullSuiteTimeoutSeconds ?? 60;
-    const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
-      config,
-      input.workdir,
-      input.story.workdir,
-    );
-    const testCmd = resolvedTestCmd ?? "bun test";
     const testSummary = parseTestOutput(testOutput);
     const result = await runRectificationLoop({
       story: input.story,
-      config,
+      config: gateCtx.config,
       workdir: input.workdir,
       agentManager: ctx.runtime.agentManager,
       implementerTier: input.implementerTier ?? "balanced",
       lite: input.lite ?? false,
       testSummary,
-      testCmd,
-      fullSuiteTimeout,
+      testCmd: gateCtx.testCmd,
+      fullSuiteTimeout: gateCtx.fullSuiteTimeout,
       testOutput,
       runtime: ctx.runtime,
       featureName: input.featureName,
@@ -171,8 +194,11 @@ export const fullSuiteGateOp: DeterministicOperation<
     ctx: CallContext,
     deps: FullSuiteGateDeps = _fullSuiteGateDeps,
   ): Promise<FullSuiteGateOutput> {
+    // Resolve config + test command once; both runTests and runRectificationLoop reuse.
+    const gateCtx = await deps.resolveGateContext(input, ctx);
+
     // Step 1: Run tests (always — NEVER short-circuit based on rectification config)
-    const testResult = await deps.runTests(input, ctx);
+    const testResult = await deps.runTests(input, gateCtx);
 
     // Step 2: Tests passed → done immediately
     if (testResult.passed) {
@@ -187,7 +213,7 @@ export const fullSuiteGateOp: DeterministicOperation<
     }
 
     // Step 4: Tests failed, rectification enabled → run rectification loop
-    const rectResult = await deps.runRectificationLoop(input, ctx, testResult.output);
+    const rectResult = await deps.runRectificationLoop(input, ctx, gateCtx, testResult.output);
     if (rectResult.exhausted) {
       return {
         success: false,

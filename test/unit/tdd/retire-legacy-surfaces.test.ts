@@ -49,26 +49,24 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
   });
 
   /**
-   * Slice D: Verify that StoryRunResult is exported from the tdd barrel
-   * and the old type name does not exist in the public API
+   * Slice D: Verify that StoryRunResult is type-exported from the tdd barrel
+   * and the old type name does not exist in the public API.
+   *
+   * Types are erased at compile time, so runtime reflection (`X in tddIndex`)
+   * cannot prove type re-exports. Compile-time verification lives in
+   * `story-run-result-shape.test.ts`. Here we only check that the old runtime
+   * namespace trick is gone and no runtime symbol leaks.
    */
   describe("Slice D: Type export (StoryRunResult in tdd barrel)", () => {
-    test("StoryRunResult type is exported from the tdd barrel", () => {
-      // The unified result type should be available via backward-compat re-export
-      expect((tddIndex as any).StoryRunResult).toBeDefined();
-    });
-
-    test("old type name is not exported from tdd barrel", () => {
-      // Old name should be removed from public API
+    test("old type name is not exported from tdd barrel as runtime value", () => {
       const oldKey = ["Three", "SessionTdd", "Result"].join("");
       expect((tddIndex as any)[oldKey]).toBeUndefined();
     });
 
-    test("StoryRunResult type has correct shape fields", () => {
-      // Verify the type structure is preserved in the new name
-      // After implementation, this type should have the required fields
-      const storyRunResult = (tddIndex as any).StoryRunResult;
-      expect(storyRunResult).toBeDefined();
+    test("StoryRunResult does not leak as a runtime value", () => {
+      // Post-US-005-cleanup: api-surface.ts namespace trick is gone.
+      // Types are compile-time only — no runtime sentinel.
+      expect((tddIndex as any).StoryRunResult).toBeUndefined();
     });
   });
 
@@ -169,8 +167,10 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(hasOldType).toBe(false);
     });
 
-    test("Export statements are updated to use only stable surface", () => {
-      // All type exports should be present
+    test("Type re-exports do not leak as runtime values", () => {
+      // Types are erased at compile time. After api-surface.ts deletion, none
+      // of these should appear as runtime properties of the barrel.
+      // Compile-time presence is verified by tsc + story-run-result-shape.test.ts.
       const typeExports = [
         "TddSessionRole",
         "FailureCategory",
@@ -179,15 +179,12 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
         "ThreeSessionTddOptions",
         "VerifierVerdict",
         "VerdictCategorization",
+        "StoryRunResult",
       ];
 
       for (const typeExport of typeExports) {
-        const hasExport = typeExport in tddIndex;
-        expect(hasExport).toBe(true);
+        expect((tddIndex as any)[typeExport]).toBeUndefined();
       }
-
-      // New unified result type should be exported
-      expect("StoryRunResult" in tddIndex).toBe(true);
     });
   });
 
@@ -208,13 +205,12 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(hasOldApiOnly).toBe(false);
     });
 
-    test("Type system is updated: StoryRunResult available, old type name removed", () => {
-      const hasNewType = "StoryRunResult" in tddIndex;
+    test("Type system is updated: old type name has no runtime leak", () => {
+      // Types are erased at compile time; we only verify no runtime leak.
+      // Compile-time presence of StoryRunResult is verified by story-run-result-shape.test.ts.
       const oldName = ["Three", "SessionTddResult"].join("");
-      const hasOldType = oldName in tddIndex;
-
-      expect(hasNewType).toBe(true);
-      expect(hasOldType).toBe(false);
+      expect((tddIndex as any)[oldName]).toBeUndefined();
+      expect((tddIndex as any).StoryRunResult).toBeUndefined();
     });
 
     test("All consolidated operations are exported for use in orchestration", () => {

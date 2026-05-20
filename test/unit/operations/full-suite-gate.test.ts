@@ -4,9 +4,16 @@ import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
 // Helper to create a mock CallContext
 const mockCtx = { runtime: {}, storyId: "US-001" } as any;
 
-// Helper to make test deps that mock the test runner and rectification loop
+// Helper to make test deps that mock the test runner and rectification loop.
+// resolveGateContext is mocked to return a constant gate context so execute()
+// does not touch real config or test-command resolution in unit tests.
 function makeDeps(overrides = {}) {
   return {
+    resolveGateContext: async () => ({
+      config: {} as any,
+      testCmd: "bun test",
+      fullSuiteTimeout: 60,
+    }),
     runTests: async () => ({ passed: true, failed: 0, output: "" }),
     runRectificationLoop: async () => ({ exhausted: false, attempts: 0, fixedAll: true }),
     ...overrides,
@@ -114,7 +121,8 @@ describe("fullSuiteGateOp — test execution logic", () => {
 });
 
 describe("fullSuiteGateOp — _fullSuiteGateDeps exported for testability", () => {
-  test("_fullSuiteGateDeps is exported and has runTests and runRectificationLoop", () => {
+  test("_fullSuiteGateDeps is exported and has resolveGateContext, runTests, runRectificationLoop", () => {
+    expect(typeof _fullSuiteGateDeps.resolveGateContext).toBe("function");
     expect(typeof _fullSuiteGateDeps.runTests).toBe("function");
     expect(typeof _fullSuiteGateDeps.runRectificationLoop).toBe("function");
   });

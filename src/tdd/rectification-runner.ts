@@ -125,7 +125,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
       shouldRetry(_err, attempt) {
         const maxRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
         if (attempt < maxRetries) {
-          getSafeLogger()?.warn("tdd", "fail-adapter-error: same-agent retry with fresh session", {
+          logger?.warn("tdd", "fail-adapter-error: same-agent retry with fresh session", {
             storyId: story.id,
             attempt: attempt + 1,
             maxAttempts: maxRetries,
@@ -185,7 +185,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
 
       const editReasonMatch = rectifyResult.output?.match(/TEST_EDIT_REASON:\s*(\w+)/);
       if (editReasonMatch) {
-        getSafeLogger()?.info("tdd", "test_edit_declared", {
+        logger?.info("tdd", "test_edit_declared", {
           storyId: story.id,
           reason: editReasonMatch[1],
         });
@@ -193,7 +193,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
 
       gateCostAccum += rectifyResult.estimatedCostUsd ?? 0;
 
-      getSafeLogger()?.info("tdd", "Rectification agent session complete", {
+      logger?.info("tdd", "Rectification agent session complete", {
         storyId: story.id,
         cost: rectifyResult.estimatedCostUsd,
       });
@@ -231,7 +231,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
         cwd: workdir,
       });
       if (retryFullSuite.success && retryFullSuite.exitCode === 0) {
-        getSafeLogger()?.info("tdd", "Full suite gate passed after rectification!", {
+        logger?.info("tdd", "Full suite gate passed after rectification!", {
           storyId: story.id,
         });
         return { passed: true };
@@ -258,9 +258,10 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
     return { exhausted: false, attempts: outcome.attempts, cost: gateCostAccum };
   }
 
-  getSafeLogger()?.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
+  logger?.warn("tdd", "Full suite gate failed after rectification exhausted", {
     storyId: story.id,
     attempts: outcome.attempts,
+    maxAttempts: rectificationConfig.maxRetries,
   });
 
   return { exhausted: true, attempts: outcome.attempts, cost: gateCostAccum };

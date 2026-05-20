@@ -20,11 +20,11 @@ import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { rollbackToRef } from "../tdd/session-runner";
-import type { FailureCategory } from "../tdd/types";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { failAndClose } from "./session-manager-runtime";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
+import type { FailureCategory } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -114,6 +114,23 @@ export function deriveTddFailureCategory(phaseOutputs: Record<string, unknown>):
   }
 
   return undefined;
+}
+
+/**
+ * Wrapper-level session teardown on failure.
+ *
+ * Complements rollback (spec §3 wrapper side-effect): when the wrapper decides
+ * to fail or escalate a story, any legacy ctx.sessionId tied to upstream
+ * resources must be closed. Per-phase sessions opened inside the plan are
+ * closed by their own SessionKeeper.finally — this is for the wrapper-owned
+ * session handle only.
+ *
+ * Consolidated into one site (was two — see US-005 review H2) so the
+ * sessionManager reach is contained.
+ */
+async function cleanupSessionOnFailure(ctx: PipelineContext): Promise<void> {
+  if (!ctx.sessionManager || !ctx.sessionId) return;
+  await _postRunDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,9 +319,7 @@ export async function decideStageAction(
     );
     if (!shouldProceed) {
       logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
-      if (ctx.sessionManager && ctx.sessionId) {
-        await _postRunDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
-      }
+      await cleanupSessionOnFailure(ctx);
       return { action: "fail", reason: "Merge conflict detected" };
     }
   }
@@ -318,9 +333,7 @@ export async function decideStageAction(
     if (agentResult.rateLimited) {
       logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
     }
-    if (ctx.sessionManager && ctx.sessionId) {
-      await _postRunDeps.failAndClose(ctx.sessionManager, ctx.sessionId, ctx.agentGetFn);
-    }
+    await cleanupSessionOnFailure(ctx);
     return { action: "escalate" };
   }
 

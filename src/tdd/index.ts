@@ -1,16 +1,18 @@
-// API surface: each name is both a type alias AND a namespace (runtime sentinel).
-// Replaces separate `export type { X }` blocks so module reflection works
-// while `import type { X }` still resolves to the correct type.
-export {
+// Type re-exports. Canonical owners:
+//   - Wrapper types (FailureCategory, IsolationCheck, TddSessionResult,
+//     TddSessionRole, StoryRunResult): src/execution/types
+//   - Verdict types: src/tdd/verdict
+//   - Strategy options (ThreeSessionTddOptions): src/tdd/types
+export type {
   FailureCategory,
   IsolationCheck,
   StoryRunResult,
   TddSessionResult,
   TddSessionRole,
-  ThreeSessionTddOptions,
-  VerdictCategorization,
-  VerifierVerdict,
-} from "./api-surface";
+} from "../execution/types";
+export type { ThreeSessionTddOptions } from "./types";
+export type { VerdictCategorization, VerifierVerdict } from "./verdict";
+
 export { isTestFile } from "../test-runners";
 export {
   getChangedFiles,

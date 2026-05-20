@@ -1,77 +1,22 @@
-/** TDD session role */
-export type TddSessionRole = "test-writer" | "implementer" | "verifier";
+/**
+ * TDD-strategy-specific types.
+ *
+ * Wrapper-level types (TddSessionRole, FailureCategory, IsolationCheck,
+ * TddSessionResult) are re-exported from src/execution/types — the canonical
+ * owner is the wrapper layer (US-005 §5).
+ */
 
-/** Failure categories for TDD orchestrator results */
-export type FailureCategory =
-  /** Test-writer violated file isolation or created no test files */
-  | "isolation-violation"
-  /** A session crashed, timed out, or the agent failed to produce usable output */
-  | "session-failure"
-  /** Tests were written and implemented but still fail after all sessions */
-  | "tests-failing"
-  /** Full-suite gate failed and rectification retries exhausted before verifier */
-  | "full-suite-gate-exhausted"
-  /** Verifier explicitly rejected the implementation */
-  | "verifier-rejected"
-  /** Greenfield project with no test files — TDD not applicable (BUG-010) */
-  | "greenfield-no-tests"
-  /** Worktree dependency preparation failed before pipeline execution started */
-  | "dependency-prep"
-  | "runtime-crash";
+import type { TokenUsage } from "../agents/cost";
+import type { TddSessionResult } from "../execution/types";
 
-/** Isolation verification result */
-export interface IsolationCheck {
-  /** Whether isolation passed (no hard violations) */
-  passed: boolean;
-  /** Hard violation files (files that must not be modified) */
-  violations: string[];
-  /** Soft violation files (allowed-path overrides, warning only) */
-  softViolations?: string[];
-  /** Warning files (e.g., implementer touching test files slightly) */
-  warnings?: string[];
-  /** Human-readable description of what was checked */
-  description?: string;
-}
+export type {
+  FailureCategory,
+  IsolationCheck,
+  TddSessionResult,
+  TddSessionRole,
+} from "../execution/types";
 
-/** Result of a single TDD session */
-export interface TddSessionResult {
-  /** Session role */
-  role: TddSessionRole;
-  /** Whether session completed successfully */
-  success: boolean;
-  /** Isolation check results (if applicable) */
-  isolation?: IsolationCheck;
-  /** Cost of this session (USD) */
-  estimatedCostUsd: number;
-  /**
-   * Token usage for this session (fixes #590).
-   * Undefined when the adapter did not report usage (e.g. pre-first-turn
-   * failure, or a mock adapter in tests).
-   */
-  tokenUsage?: import("../agents/cost").TokenUsage;
-  /** Files changed by this session (from git diff) */
-  filesChanged: string[];
-  /** Duration of this session in milliseconds */
-  durationMs: number;
-  /** Git branch created/used (optional legacy field) */
-  branch?: string;
-  /** ISO timestamp (optional legacy field) */
-  timestamp?: string;
-  /** Error message (if success=false) */
-  error?: string;
-  /** Tail of the agent output for cross-session continuity/debugging */
-  outputTail?: string;
-  /** Agent-declared self-verification status (Issue #928). */
-  selfVerification?: import("../quality").SelfVerificationResult;
-  /** Number of tests written/passed/failed */
-  tests?: {
-    total: number;
-    passed: number;
-    failed: number;
-  };
-}
-
-/** Options for three-session TDD */
+/** Options for three-session TDD. Strategy-specific — stays in src/tdd. */
 export interface ThreeSessionTddOptions {
   agent: import("../agents").AgentAdapter;
   story: import("../prd").UserStory;
@@ -97,7 +42,9 @@ export interface ThreeSessionTddOptions {
    * Lazy bundle hook used by the v2 path so each TDD session can assemble
    * after the previous one has already produced scratch/digest output.
    */
-  getTddContextBundle?: (role: TddSessionRole) => Promise<import("../context/engine").ContextBundle | undefined>;
+  getTddContextBundle?: (
+    role: import("../execution/types").TddSessionRole,
+  ) => Promise<import("../context/engine").ContextBundle | undefined>;
   /** Persist per-session outcomes (scratch, digests, metrics) as soon as they exist. */
   recordTddSessionOutcome?: (result: TddSessionResult) => Promise<void>;
   /**
@@ -105,7 +52,9 @@ export interface ThreeSessionTddOptions {
    * Returns `{ sessionManager, sessionId }` when the orchestrator has a descriptor
    * for this role; undefined when no sessionManager is configured.
    */
-  getTddSessionBinding?: (role: TddSessionRole) => import("./session-runner").TddSessionBinding | undefined;
+  getTddSessionBinding?: (
+    role: import("../execution/types").TddSessionRole,
+  ) => import("./session-runner").TddSessionBinding | undefined;
   constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
@@ -130,8 +79,8 @@ export interface ThreeSessionTddOptions {
  * Returns undefined when no session reported usage — mirrors the adapter
  * contract so `metrics.tracker` can emit a tokens block only when real data exists.
  */
-export function sumTddTokenUsage(sessions: TddSessionResult[]): import("../agents/cost").TokenUsage | undefined {
-  const usages = sessions.map((s) => s.tokenUsage).filter((u): u is import("../agents/cost").TokenUsage => !!u);
+export function sumTddTokenUsage(sessions: TddSessionResult[]): TokenUsage | undefined {
+  const usages = sessions.map((s) => s.tokenUsage).filter((u): u is TokenUsage => !!u);
   if (usages.length === 0) return undefined;
   const total = {
     inputTokens: 0,

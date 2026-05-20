@@ -7,10 +7,11 @@
  */
 import { mock } from "bun:test";
 import type { AgentAdapter, AgentResult } from "../../../src/agents";
+import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
 import { _isolationDeps } from "../../../src/tdd/isolation";
-import { _executorDeps } from "../../../src/verification/executor";
-import { _gitDeps } from "../../../src/utils/git";
 import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
+import { _gitDeps } from "../../../src/utils/git";
+import { _executorDeps } from "../../../src/verification/executor";
 
 /** Saved originals for teardown */
 export interface SavedDeps {
@@ -18,6 +19,7 @@ export interface SavedDeps {
   executorSpawn: typeof _executorDeps.spawn;
   gitSpawn: typeof _gitDeps.spawn;
   sessionRunnerSpawn: typeof _sessionRunnerDeps.spawn;
+  fullSuiteGateResolveCtx: typeof _fullSuiteGateDeps.resolveGateContext;
 }
 
 /** Save current deps state */
@@ -27,6 +29,7 @@ export function saveDeps(): SavedDeps {
     executorSpawn: _executorDeps.spawn,
     gitSpawn: _gitDeps.spawn,
     sessionRunnerSpawn: _sessionRunnerDeps.spawn,
+    fullSuiteGateResolveCtx: _fullSuiteGateDeps.resolveGateContext,
   };
 }
 
@@ -36,6 +39,22 @@ export function restoreDeps(saved: SavedDeps): void {
   _executorDeps.spawn = saved.executorSpawn;
   _gitDeps.spawn = saved.gitSpawn;
   _sessionRunnerDeps.spawn = saved.sessionRunnerSpawn;
+  _fullSuiteGateDeps.resolveGateContext = saved.fullSuiteGateResolveCtx;
+}
+
+/**
+ * Stub `_fullSuiteGateDeps.resolveGateContext` for integration tests that exercise
+ * the full-suite gate without a real .nax/config.json. The TEST_COMMAND_MISSING
+ * NaxError thrown by the production resolver is intentional at runtime — tests
+ * bypass it by short-circuiting config resolution.
+ */
+export function stubFullSuiteGateContext(testCmd = "bun test"): void {
+  _fullSuiteGateDeps.resolveGateContext = async () =>
+    ({
+      config: {} as any,
+      testCmd,
+      fullSuiteTimeout: 60,
+    }) as any;
 }
 
 /** Create a mock agent that returns sequential results */
