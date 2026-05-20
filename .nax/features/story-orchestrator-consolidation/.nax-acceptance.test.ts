@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { UserStory } from "../../../src/prd";
-import { ExecutionPlan, StoryOrchestratorBuilder } from "../../../src/execution/story-orchestrator";
+import { ExecutionPlan, StoryOrchestratorBuilder, _storyOrchestratorDeps } from "../../../src/execution/story-orchestrator";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { CallContext } from "../../../src/operations";
@@ -102,25 +102,20 @@ describe("AC-2: ExecutionPlan.run() halts execution when gates fail", () => {
     const config = makeNaxConfig();
     const ctx = makeMinimalCallContext(story, config);
 
-    // Add only implementer for simpler test
     builder.addImplementer({ story, config });
     const plan = builder.build(ctx);
 
-    // Mock implementer to fail
-    const mockFailingCtx = {
-      ...ctx,
-      agentManager: makeMockAgentManager({
-        completeAs: async () => {
-          throw new Error("Agent unavailable");
-        },
-      }),
-    } as CallContext;
-
+    const original = _storyOrchestratorDeps.callOp;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _storyOrchestratorDeps.callOp = (async () => { throw new Error("Agent unavailable"); }) as any;
     try {
       await plan.run();
+      expect(false).toBe(true); // unreachable
     } catch (err) {
       expect(err).toBeTruthy();
       expect((err as Error).message).toMatch(/Agent/);
+    } finally {
+      _storyOrchestratorDeps.callOp = original;
     }
   });
 
@@ -133,10 +128,17 @@ describe("AC-2: ExecutionPlan.run() halts execution when gates fail", () => {
     builder.addImplementer({ story, config });
     const plan = builder.build(ctx);
 
-    const result = await plan.run();
-    expect(result.success).toBeDefined();
-    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0);
-    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    const original = _storyOrchestratorDeps.callOp;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _storyOrchestratorDeps.callOp = async () => ({ success: true }) as any;
+    try {
+      const result = await plan.run();
+      expect(result.success).toBeDefined();
+      expect(result.totalCostUsd).toBeGreaterThanOrEqual(0);
+      expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      _storyOrchestratorDeps.callOp = original;
+    }
   });
 });
 
@@ -493,8 +495,15 @@ describe("AC-21: Execution stage orchestration pattern", () => {
     builder.addImplementer({ story, config });
     const plan = builder.build(ctx);
 
-    const result = await plan.run();
-    expect(result.success).toBeDefined();
+    const original = _storyOrchestratorDeps.callOp;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _storyOrchestratorDeps.callOp = async () => ({ success: true }) as any;
+    try {
+      const result = await plan.run();
+      expect(result.success).toBeDefined();
+    } finally {
+      _storyOrchestratorDeps.callOp = original;
+    }
   });
 });
 
@@ -525,11 +534,18 @@ describe("AC-23: Post-run inspection phase extracts plan verdict and failure cat
     builder.addImplementer({ story, config });
     const plan = builder.build(ctx);
 
-    const result = await plan.run();
-    expect("success" in result).toBe(true);
-    expect("totalCostUsd" in result).toBe(true);
-    expect("durationMs" in result).toBe(true);
-    expect("phaseOutputs" in result).toBe(true);
+    const original = _storyOrchestratorDeps.callOp;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    _storyOrchestratorDeps.callOp = async () => ({ success: true }) as any;
+    try {
+      const result = await plan.run();
+      expect("success" in result).toBe(true);
+      expect("totalCostUsd" in result).toBe(true);
+      expect("durationMs" in result).toBe(true);
+      expect("phaseOutputs" in result).toBe(true);
+    } finally {
+      _storyOrchestratorDeps.callOp = original;
+    }
   });
 });
 
