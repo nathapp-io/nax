@@ -45,6 +45,7 @@ export {
 } from "./story-orchestrator";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export type { StoryRunResult } from "./types";
 export {
   applyPostRunInspection,
   decideStageAction,

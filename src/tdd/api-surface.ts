@@ -39,8 +39,8 @@ export namespace ThreeSessionTddOptions {
   export const _s = null;
 }
 
-// ─── StoryRunResult (renamed from ThreeSessionTddResult, Slice D) ─────────────
-export type StoryRunResult = import("./types").ThreeSessionTddResult;
+// ─── StoryRunResult (lives in src/execution/types.ts, re-exported here for backward compat) ─────
+export type StoryRunResult = import("../execution/types").StoryRunResult;
 export namespace StoryRunResult {
   export const _s = null;
 }

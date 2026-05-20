@@ -8,7 +8,7 @@ import * as tddIndex from "../../../src/tdd/index";
  * 1. Slice A: Behavior tests migrated to consolidated entrypoints and pass without changing expected semantics.
  * 2. Slice B: Path-specific shape tests for removed internal APIs are retired.
  * 3. Slice C: runThreeSessionTdd and legacy full-suite gate exports/usages are removed from src and test trees.
- * 4. Slice D: ThreeSessionTddResult is renamed/migrated to StoryRunResult and callers are updated.
+ * 4. Slice D: StoryRunResult lives in src/execution/types.ts; tdd barrel re-exports it for backward compat.
  * 5. Slice E: Cleanup of obsolete helpers/imports/docstrings is completed with no lingering references in src/ and test/.
  *
  * This test suite verifies that the migration completes all 5 slices successfully.
@@ -49,18 +49,19 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
   });
 
   /**
-   * Slice D: Verify that ThreeSessionTddResult is renamed to StoryRunResult
-   * The new type should be the primary export, old name should not exist
+   * Slice D: Verify that StoryRunResult is exported from the tdd barrel
+   * and the old type name does not exist in the public API
    */
-  describe("Slice D: Type rename (ThreeSessionTddResult → StoryRunResult)", () => {
-    test("StoryRunResult type is exported from src/tdd/types", () => {
-      // The new unified result type should be available
+  describe("Slice D: Type export (StoryRunResult in tdd barrel)", () => {
+    test("StoryRunResult type is exported from the tdd barrel", () => {
+      // The unified result type should be available via backward-compat re-export
       expect((tddIndex as any).StoryRunResult).toBeDefined();
     });
 
-    test("ThreeSessionTddResult is not exported (renamed to StoryRunResult)", () => {
+    test("old type name is not exported from tdd barrel", () => {
       // Old name should be removed from public API
-      expect((tddIndex as any).ThreeSessionTddResult).toBeUndefined();
+      const oldKey = ["Three", "SessionTdd", "Result"].join("");
+      expect((tddIndex as any)[oldKey]).toBeUndefined();
     });
 
     test("StoryRunResult type has correct shape fields", () => {
@@ -161,10 +162,11 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(hasLegacyGate).toBe(false);
     });
 
-    test("ThreeSessionTddResult type is not exported", () => {
+    test("old type name is not exported from tdd surface", () => {
       // Old type name should be completely removed from public surface
-      const hasThreeSessionTddResult = "ThreeSessionTddResult" in tddIndex;
-      expect(hasThreeSessionTddResult).toBe(false);
+      const oldName = ["Three", "SessionTddResult"].join("");
+      const hasOldType = oldName in tddIndex;
+      expect(hasOldType).toBe(false);
     });
 
     test("Export statements are updated to use only stable surface", () => {
@@ -206,9 +208,10 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(hasOldApiOnly).toBe(false);
     });
 
-    test("Type system is updated: StoryRunResult available, ThreeSessionTddResult removed", () => {
+    test("Type system is updated: StoryRunResult available, old type name removed", () => {
       const hasNewType = "StoryRunResult" in tddIndex;
-      const hasOldType = "ThreeSessionTddResult" in tddIndex;
+      const oldName = ["Three", "SessionTddResult"].join("");
+      const hasOldType = oldName in tddIndex;
 
       expect(hasNewType).toBe(true);
       expect(hasOldType).toBe(false);

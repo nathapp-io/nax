@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { StoryRunResult } from "@/tdd";
+import type { StoryRunResult } from "@/execution";
 
 /**
- * Slice D shape verification: StoryRunResult (renamed from ThreeSessionTddResult)
- * preserves all required and optional fields after the type rename.
+ * Slice D shape verification: StoryRunResult (src/execution/types.ts)
+ * preserves all required and optional fields.
  *
  * These tests construct concrete conforming values using the public StoryRunResult
  * type alias and assert on each field, providing the shape verification that
