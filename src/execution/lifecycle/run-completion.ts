@@ -77,32 +77,6 @@ export interface RunCompletionResult {
 }
 
 /**
- * Check if deferred regression should be skipped (RL-006).
- *
- * Smart-skip applies when:
- * 1. All stories have fullSuiteGatePassed === true
- * 2. Execution is sequential (or defaults to sequential when not specified)
- * 3. There is at least one story metric
- */
-function shouldSkipDeferredRegression(allStoryMetrics: StoryMetrics[], isSequential: boolean | undefined): boolean {
-  // Default to sequential mode
-  const effectiveSequential = isSequential !== false;
-
-  // Must be sequential mode
-  if (!effectiveSequential) {
-    return false;
-  }
-
-  // Must have at least one story metric
-  if (allStoryMetrics.length === 0) {
-    return false;
-  }
-
-  // All stories must have fullSuiteGatePassed === true
-  return allStoryMetrics.every((m) => m.fullSuiteGatePassed === true);
-}
-
-/**
  * Handle final run completion: save metrics, log summary, update status
  */
 export async function handleRunCompletion(options: RunCompletionOptions): Promise<RunCompletionResult> {
@@ -121,7 +95,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     statusWriter,
     config,
     hooksConfig,
-    isSequential,
   } = options;
 
   // Run deferred regression gate before final metrics
@@ -129,128 +102,116 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   if (options.skipRegression) {
     // Regression phase already passed on a prior run — skip
   } else if (regressionMode === "deferred" && config.quality.commands.test) {
-    if (shouldSkipDeferredRegression(allStoryMetrics, isSequential)) {
-      logger?.info(
-        "regression",
-        "Smart-skip: skipping deferred regression (all stories passed full-suite gate in sequential mode)",
-      );
-      statusWriter.setPostRunPhase("regression", {
-        status: "passed",
-        skipped: true,
-        lastRunAt: new Date().toISOString(),
-      });
+    statusWriter.setPostRunPhase("regression", { status: "running" });
+
+    const regressionResult = await _runCompletionDeps.runDeferredRegression({
+      config,
+      prd,
+      workdir,
+      runtime: options.runtime,
+    });
+
+    const lastRunAt = new Date().toISOString();
+
+    logger?.info("regression", "Deferred regression gate completed", {
+      success: regressionResult.success,
+      failedTests: regressionResult.failedTests,
+      affectedStories: regressionResult.affectedStories,
+    });
+
+    if (regressionResult.success) {
+      statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
     } else {
-      statusWriter.setPostRunPhase("regression", { status: "running" });
-
-      const regressionResult = await _runCompletionDeps.runDeferredRegression({
-        config,
-        prd,
-        workdir,
-        runtime: options.runtime,
-      });
-
-      const lastRunAt = new Date().toISOString();
-
-      logger?.info("regression", "Deferred regression gate completed", {
-        success: regressionResult.success,
-        failedTests: regressionResult.failedTests,
+      statusWriter.setPostRunPhase("regression", {
+        status: "failed",
+        failedTests: regressionResult.failedTestFiles,
         affectedStories: regressionResult.affectedStories,
+        lastRunAt,
       });
 
-      if (regressionResult.success) {
-        statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
-      } else {
-        statusWriter.setPostRunPhase("regression", {
-          status: "failed",
-          failedTests: regressionResult.failedTestFiles,
-          affectedStories: regressionResult.affectedStories,
-          lastRunAt,
-        });
-
-        // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
-        // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
-        // setPostRunPhase("regression", { status: "failed" }) above. On rerun, runner-completion.ts
-        // reads getPostRunStatus().regression.status from status.json and re-runs the regression
-        // phase when it is not "passed". Saving this to prd.json is unnecessary and would require
-        // prdPath to be threaded into handleRunCompletion. See PR #254 / issue #250.
-        for (const storyId of regressionResult.affectedStories) {
-          const story = prd.userStories.find((s) => s.id === storyId);
-          if (story) {
-            story.status = "regression-failed";
-          }
-        }
-        // Reflect regression gate failure in run status (RL-004)
-        statusWriter.setRunStatus("failed");
-
-        if (hooksConfig) {
-          await _runCompletionDeps.fireHook(
-            hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
-            "on-final-regression-fail",
-            {
-              event: "on-final-regression-fail",
-              feature,
-              status: "failed",
-              failedTests: regressionResult.failedTests,
-              affectedStories: regressionResult.affectedStories,
-            },
-            workdir,
-          );
+      // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
+      // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
+      // setPostRunPhase("regression", { status: "failed" }) above. On rerun, runner-completion.ts
+      // reads getPostRunStatus().regression.status from status.json and re-runs the regression
+      // phase when it is not "passed". Saving this to prd.json is unnecessary and would require
+      // prdPath to be threaded into handleRunCompletion. See PR #254 / issue #250.
+      for (const storyId of regressionResult.affectedStories) {
+        const story = prd.userStories.find((s) => s.id === storyId);
+        if (story) {
+          story.status = "regression-failed";
         }
       }
+      // Reflect regression gate failure in run status (RL-004)
+      statusWriter.setRunStatus("failed");
 
-      // Back-fill or merge storyMetrics for stories rectified by the regression gate (issue #679).
-      // Two cases:
-      //   1. Story has no existing entry (prior run-resume or earlier execution batch): inject a
-      //      synthetic "rectification" entry so cost and outcome show up in run.complete analytics.
-      //   2. Story already has an entry (normal execution loop + regression-gate rectification in
-      //      the same run): fold the rectification cost + duration into the existing entry so the
-      //      regression-gate effort isn't silently dropped.
-      const regressionStoryCosts = regressionResult.storyCosts ?? {};
-      const regressionStoryDurations = regressionResult.storyDurations ?? {};
-      const regressionStoryOutcomes = regressionResult.storyOutcomes ?? {};
-      if (Object.keys(regressionStoryCosts).length > 0) {
-        const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
-        const rectCompletedAt = new Date().toISOString();
-        const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
-        for (const [storyId, storyCost] of Object.entries(regressionStoryCosts)) {
-          const storyDuration = regressionStoryDurations[storyId] ?? 0;
-          // Per-story outcome; fall back to the overall regression result only when missing
-          // (e.g. older mocks emit storyCosts without storyOutcomes).
-          const storySuccess = regressionStoryOutcomes[storyId] ?? regressionResult.success;
-          const existingIdx = existingIndex.get(storyId);
-          if (existingIdx === undefined) {
-            const regrStory = prd.userStories.find((s) => s.id === storyId);
-            allStoryMetrics.push({
-              storyId,
-              complexity: regrStory?.routing?.complexity ?? "medium",
-              modelTier: "balanced",
-              modelUsed: defaultAgent,
-              attempts: 1,
-              finalTier: "balanced",
-              success: storySuccess,
-              cost: storyCost,
-              durationMs: storyDuration,
-              firstPassSuccess: false,
-              startedAt: rectCompletedAt,
-              completedAt: rectCompletedAt,
-              source: "rectification" as const,
-              rectificationCost: storyCost,
-              fullSuiteGatePassed: false,
-              runtimeCrashes: 0,
-            });
-          } else {
-            const existing = allStoryMetrics[existingIdx];
-            allStoryMetrics[existingIdx] = {
-              ...existing,
-              cost: existing.cost + storyCost,
-              durationMs: existing.durationMs + storyDuration,
-              rectificationCost: (existing.rectificationCost ?? 0) + storyCost,
-              // A story that needed regression-gate rectification was not a clean first pass.
-              firstPassSuccess: false,
-              // Preserve the normal-loop success flag unless the regression attempt actually failed.
-              success: existing.success && storySuccess,
-            };
-          }
+      if (hooksConfig) {
+        await _runCompletionDeps.fireHook(
+          hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
+          "on-final-regression-fail",
+          {
+            event: "on-final-regression-fail",
+            feature,
+            status: "failed",
+            failedTests: regressionResult.failedTests,
+            affectedStories: regressionResult.affectedStories,
+          },
+          workdir,
+        );
+      }
+    }
+
+    // Back-fill or merge storyMetrics for stories rectified by the regression gate (issue #679).
+    // Two cases:
+    //   1. Story has no existing entry (prior run-resume or earlier execution batch): inject a
+    //      synthetic "rectification" entry so cost and outcome show up in run.complete analytics.
+    //   2. Story already has an entry (normal execution loop + regression-gate rectification in
+    //      the same run): fold the rectification cost + duration into the existing entry so the
+    //      regression-gate effort isn't silently dropped.
+    const regressionStoryCosts = regressionResult.storyCosts ?? {};
+    const regressionStoryDurations = regressionResult.storyDurations ?? {};
+    const regressionStoryOutcomes = regressionResult.storyOutcomes ?? {};
+    if (Object.keys(regressionStoryCosts).length > 0) {
+      const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
+      const rectCompletedAt = new Date().toISOString();
+      const defaultAgent = options.agentManager?.getDefault() ?? resolveDefaultAgent(config);
+      for (const [storyId, storyCost] of Object.entries(regressionStoryCosts)) {
+        const storyDuration = regressionStoryDurations[storyId] ?? 0;
+        // Per-story outcome; fall back to the overall regression result only when missing
+        // (e.g. older mocks emit storyCosts without storyOutcomes).
+        const storySuccess = regressionStoryOutcomes[storyId] ?? regressionResult.success;
+        const existingIdx = existingIndex.get(storyId);
+        if (existingIdx === undefined) {
+          const regrStory = prd.userStories.find((s) => s.id === storyId);
+          allStoryMetrics.push({
+            storyId,
+            complexity: regrStory?.routing?.complexity ?? "medium",
+            modelTier: "balanced",
+            modelUsed: defaultAgent,
+            attempts: 1,
+            finalTier: "balanced",
+            success: storySuccess,
+            cost: storyCost,
+            durationMs: storyDuration,
+            firstPassSuccess: false,
+            startedAt: rectCompletedAt,
+            completedAt: rectCompletedAt,
+            source: "rectification" as const,
+            rectificationCost: storyCost,
+            fullSuiteGatePassed: false,
+            runtimeCrashes: 0,
+          });
+        } else {
+          const existing = allStoryMetrics[existingIdx];
+          allStoryMetrics[existingIdx] = {
+            ...existing,
+            cost: existing.cost + storyCost,
+            durationMs: existing.durationMs + storyDuration,
+            rectificationCost: (existing.rectificationCost ?? 0) + storyCost,
+            // A story that needed regression-gate rectification was not a clean first pass.
+            firstPassSuccess: false,
+            // Preserve the normal-loop success flag unless the regression attempt actually failed.
+            success: existing.success && storySuccess,
+          };
         }
       }
     }

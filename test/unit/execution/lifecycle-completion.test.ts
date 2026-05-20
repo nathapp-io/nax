@@ -299,7 +299,7 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
 });
 
 // ---------------------------------------------------------------------------
-// handleRunCompletion - smart-skip deferred regression (RL-006)
+// handleRunCompletion - deferred regression always runs in deferred mode
 // ---------------------------------------------------------------------------
 
 let mockRunDeferredRegression: ReturnType<typeof mock>;
@@ -316,8 +316,8 @@ beforeEach(() => {
     mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
 });
 
-describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => {
-  test("skips regression when all stories have fullSuiteGatePassed=true in sequential mode", async () => {
+describe("handleRunCompletion - deferred regression is not smart-skipped", () => {
+  test("runs regression when all stories have fullSuiteGatePassed=true in sequential mode", async () => {
     const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -331,7 +331,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
       }),
     );
 
-    expect(mockRunDeferredRegression).not.toHaveBeenCalled();
+    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
   test("does NOT skip regression when at least one story has fullSuiteGatePassed=false", async () => {
@@ -412,7 +412,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
-  test("skips regression with a single story with fullSuiteGatePassed=true in sequential mode", async () => {
+  test("runs regression with a single story with fullSuiteGatePassed=true in sequential mode", async () => {
     const metrics = [makeStoryMetrics("US-001", true)];
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
@@ -423,10 +423,10 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
       }),
     );
 
-    expect(mockRunDeferredRegression).not.toHaveBeenCalled();
+    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
-  test("skip applies when isSequential is not provided (defaults to sequential)", async () => {
+  test("still runs regression when isSequential is not provided", async () => {
     const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -440,10 +440,10 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
 
     await handleRunCompletion(opts);
 
-    expect(mockRunDeferredRegression).not.toHaveBeenCalled();
+    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
-  test("result has correct shape even when regression is skipped", async () => {
+  test("result has correct shape when regression runs despite prior full-suite-gate passes", async () => {
     const metrics = [makeStoryMetrics("US-001", true)];
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
