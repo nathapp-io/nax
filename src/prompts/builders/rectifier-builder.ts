@@ -818,9 +818,7 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
     if (findings.length === 0) {
       return "The full test suite has failing tests. Fix the implementation to make all tests pass.";
     }
-    const lines: string[] = [
-      `Fix the following ${findings.length} failing test${findings.length === 1 ? "" : "s"}:\n`,
-    ];
+    const lines: string[] = [`Fix the following ${findings.length} failing test${findings.length === 1 ? "" : "s"}:\n`];
     for (const f of findings) {
       const location = f.file ? `${f.file}` : "(unknown file)";
       const rule = f.rule ? `  Test: ${f.rule}\n` : "";

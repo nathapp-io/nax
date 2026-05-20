@@ -13,13 +13,13 @@
  * 4. Tests fail but parser found 0 structured records → status: "execution-failed", findings: []
  */
 
+import type { NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
+import { NaxError } from "../errors";
 import { testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
-import { NaxError } from "../errors";
 import type { UserStory } from "../prd";
 import type { TestSummary } from "../test-runners";
-import type { NaxConfig } from "../config";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -29,7 +29,7 @@ import type { CallContext, DeterministicOperation } from "./types";
  */
 export type FullSuiteGateStatus =
   | "passed"
-  | "failed"           // tests failed; findings populated
+  | "failed" // tests failed; findings populated
   | "execution-failed" // runner exited non-zero but parser found 0 structured failures
   | "inconclusive";
 
@@ -169,7 +169,14 @@ export const fullSuiteGateOp: DeterministicOperation<
     const findings = testSummaryToFindings(testResult.parsedSummary);
     if (findings.length === 0) {
       // Runner exited non-zero but parser found 0 structured failures — environmental failure.
-      return { success: false, passed: false, status: "execution-failed", estimatedCostUsd: 0, attempts: 0, findings: [] };
+      return {
+        success: false,
+        passed: false,
+        status: "execution-failed",
+        estimatedCostUsd: 0,
+        attempts: 0,
+        findings: [],
+      };
     }
 
     return { success: false, passed: false, status: "failed", estimatedCostUsd: 0, attempts: 0, findings };
