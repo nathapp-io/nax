@@ -19,7 +19,7 @@
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
 import { shouldRunRectification } from "../operations/execution-gates";
-import { fullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
+import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
 import type { PlanInputs } from "./plan-inputs";
@@ -128,7 +128,7 @@ export function buildPlanForStrategy(
   // When TDD with full-suite gate is configured, prepend fullSuiteRectifyStrategy so
   // test-failure findings from the gate take priority over review-finding strategies.
   if (shouldRunRectification(config) && inputs.rectification) {
-    const gateStrategies = isTdd && inputs.fullSuiteGate ? [fullSuiteRectifyStrategy] : [];
+    const gateStrategies = isTdd && inputs.fullSuiteGate ? [makeFullSuiteRectifyStrategy(story)] : [];
     const rectOpts: RectificationPhaseOptions = {
       ...inputs.rectification,
       strategies: [...gateStrategies, ...inputs.rectification.strategies],

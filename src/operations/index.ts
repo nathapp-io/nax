@@ -81,4 +81,4 @@ export type {
   FullSuiteGateStatus,
   FullSuiteGateDeps,
 } from "./full-suite-gate";
-export { fullSuiteRectifyStrategy } from "./full-suite-rectify";
+export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";

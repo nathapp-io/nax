@@ -282,11 +282,15 @@ async function runRectification(
     return;
   }
 
+  // Separate map for fix-op outputs so intermediate implementer results don't contaminate
+  // the final phaseOutputs success aggregation. The validate callback continues to write
+  // gate/verifier re-run results into phaseOutputs so they ARE reflected in the final success.
+  const fixOpPhaseOutputs: Record<string, unknown> = {};
   const wrappedCallOp = async <I, O, C>(cycleCtx: FixCycleContext, op: Operation<I, O, C>, input: I): Promise<O> => {
     // runFixCycle dispatches fixOps, which are Operation<I,O,C> (run or complete). The
     // builder's runPhase wrapper only needs op.name + dispatch, so widening the cast is safe.
     const slot: AnySlot = { op: op as unknown as RunOperation<unknown, unknown, unknown>, input };
-    return (await runPhase(cycleCtx, slot, phaseCosts, phaseOutputs)) as O;
+    return (await runPhase(cycleCtx, slot, phaseCosts, fixOpPhaseOutputs)) as O;
   };
 
   const fullSuiteGatePhase = state.fullSuiteGate;
@@ -316,9 +320,20 @@ async function runRectification(
     },
   };
 
-  await _storyOrchestratorDeps.runFixCycle(cycle, ctx as FixCycleContext, "story-orchestrator-rectification", {
-    callOp: wrappedCallOp,
-  });
+  const cycleResult = await _storyOrchestratorDeps.runFixCycle(
+    cycle,
+    ctx as FixCycleContext,
+    "story-orchestrator-rectification",
+    { callOp: wrappedCallOp },
+  );
+  // "validator-error" means runPhase threw during re-validation (e.g. session failure).
+  // runFixCycle demotes it to a clean exit rather than throwing, so we surface it here
+  // to prevent the failure from being completely silent.
+  if (cycleResult.exitReason === "validator-error") {
+    getSafeLogger()?.warn("story-orchestrator", "rectification cycle aborted — validator infrastructure error", {
+      storyId: ctx.storyId,
+    });
+  }
 }
 
 export class ExecutionPlan {
@@ -348,8 +363,13 @@ export class ExecutionPlan {
 
     // Exempt gate + verifier from short-circuit only when rectification is configured
     // (it will consume their failures). Without rectification, failures still halt the plan.
+    // Use the registered slot op names — a custom slot may register a different op whose
+    // name differs from the default op constant (fullSuiteGateOp.name / verifierOp.name).
     const shortCircuitExempt = this.state.rectification
-      ? new Set<string>([fullSuiteGateOp.name, verifierOp.name])
+      ? new Set<string>([
+          ...(this.state.fullSuiteGate ? [this.state.fullSuiteGate.slot.op.name] : []),
+          ...(this.state.verifier ? [this.state.verifier.slot.op.name] : []),
+        ])
       : new Set<string>();
 
     for (const phase of collectOrderedPhases(this.state)) {
