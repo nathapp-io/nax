@@ -402,6 +402,30 @@ describe("buildPlanForStrategy — rectification", () => {
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("rectification");
   });
+
+  test("AC-7: TDD with fullSuiteGate + rectification includes rectification phase", () => {
+    // When isTdd && inputs.fullSuiteGate, buildPlanForStrategy prepends fullSuiteRectifyStrategy.
+    // phaseNames() confirms the rectification phase is wired.
+    const story = makeStory({ attempts: 1 }); // retry — no test-writer
+    const config = withRectification(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 3, strategies: [], abortOnIncreasingFailures: true },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    expect(plan.phaseNames()).toContain("rectification");
+  });
+
+  test("AC-7: non-TDD with rectification still includes rectification phase (no gate strategy prepended)", () => {
+    const story = makeStory();
+    const config = withRectification(true);
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("rectification");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
