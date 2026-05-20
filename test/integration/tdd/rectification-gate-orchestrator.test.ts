@@ -30,6 +30,7 @@ describe("TDD ops API surface (US-005.S5)", () => {
   test("fullSuiteGateOp is exported from src/operations barrel", async () => {
     const opsModule = await import("../../../src/operations");
     expect(opsModule.fullSuiteGateOp).toBeDefined();
-    expect(opsModule.fullSuiteGateOp.kind).toBe("run");
+    // US-005 AC#1: fullSuiteGateOp was converted from RunOperation to DeterministicOperation
+    expect(opsModule.fullSuiteGateOp.kind).toBe("deterministic");
   });
 });

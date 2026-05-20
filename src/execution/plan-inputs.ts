@@ -198,6 +198,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         workdir: ctx.workdir,
         featureName: ctx.prd.feature,
         projectDir: ctx.projectDir,
+        rectificationEnabled: ctx.config.execution?.rectification?.enabled ?? false,
       }
     : undefined;
 

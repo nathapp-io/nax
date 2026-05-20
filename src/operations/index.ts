@@ -74,5 +74,10 @@ export {
 } from "./execution-gates";
 export { greenfieldGateOp } from "./greenfield-gate";
 export type { GreenfieldGateInput, GreenfieldGateOutput } from "./greenfield-gate";
-export { fullSuiteGateOp } from "./full-suite-gate";
-export type { FullSuiteGateInput, FullSuiteGateOutput, FullSuiteGateStatus } from "./full-suite-gate";
+export { fullSuiteGateOp, _fullSuiteGateDeps } from "./full-suite-gate";
+export type {
+  FullSuiteGateInput,
+  FullSuiteGateOutput,
+  FullSuiteGateStatus,
+  FullSuiteGateDeps,
+} from "./full-suite-gate";
