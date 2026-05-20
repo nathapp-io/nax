@@ -1,8 +1,11 @@
 /**
  * SessionKeeper — session reuse + transport retry abstraction.
  *
- * Encapsulates the getLiveHandle → openSession → try/catch transport retry →
- * bindHandle pattern duplicated in rectification-loop.ts and rectification-runner.ts.
+ * Encapsulates the openSession → try/catch transport retry → bindHandle pattern
+ * duplicated in rectification-loop.ts and rectification-runner.ts. Always goes
+ * through openSession (PR #1060) so the terminal-state guard runs on every
+ * attempt — stale COMPLETED descriptors left by closeStory get cleared and a
+ * fresh session is opened.
  */
 
 import type { IAgentManager } from "../agents/manager-types";
@@ -77,22 +80,23 @@ export class SessionKeeper {
 
     while (true) {
       if (!this.heldHandle) {
-        const existing = await this.sessionManager.getLiveHandle?.(sessionName);
-        if (existing && existing.agentName === defaultAgent) {
-          this.heldHandle = existing;
-        } else {
-          this.heldHandle = await this.sessionManager.openSession(sessionName, {
-            agentName: defaultAgent,
-            role,
-            workdir,
-            pipelineStage,
-            modelDef,
-            timeoutSeconds,
-            featureName,
-            storyId,
-            signal,
-          });
-        }
+        // Always call openSession (no getLiveHandle shortcut) so the terminal-state
+        // guard in session/manager.ts:openSession runs on every attempt. PR #1060:
+        // closeStory marks sessions COMPLETED after main execution, so deferred
+        // rectification could grab a stale handle and crash on sendPrompt. openSession
+        // is idempotent on a live handle and recovers stale _liveHandles entries
+        // automatically when keepOpen left a completed descriptor behind.
+        this.heldHandle = await this.sessionManager.openSession(sessionName, {
+          agentName: defaultAgent,
+          role,
+          workdir,
+          pipelineStage,
+          modelDef,
+          timeoutSeconds,
+          featureName,
+          storyId,
+          signal,
+        });
       }
 
       try {

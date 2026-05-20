@@ -73,21 +73,53 @@ describe("SessionKeeper.send()", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // AC-2: Calls getLiveHandle before openSession
+  // AC-2: Always calls openSession (no getLiveHandle shortcut — PR #1060)
+  //
+  // The previous AC-2 spec said "calls getLiveHandle before openSession" and
+  // "reuses live handle when getLiveHandle returns a matching handle". That
+  // shortcut was removed because closeStory marks sessions COMPLETED after main
+  // execution, so deferred rectification could grab a stale handle that
+  // crashed on sendPrompt. SessionKeeper now always goes through openSession
+  // (which is idempotent on a live handle and recovers stale entries via the
+  // terminal-state guard).
   // ─────────────────────────────────────────────────────────────────────────────
 
-  describe("AC-2: calls getLiveHandle before openSession", () => {
-    test("calls sessionManager.getLiveHandle with session name on every send", async () => {
+  describe("AC-2: always calls openSession (PR #1060 stale-handle fix)", () => {
+    test("calls sessionManager.openSession on every send (no getLiveHandle shortcut)", async () => {
+      const sessionName = "nax-test-session";
+      let openSessionCalled = false;
+      let openSessionName: string | undefined;
+
+      const sessionManager = makeSessionManager({
+        openSession: mock(async (name: string) => {
+          openSessionCalled = true;
+          openSessionName = name;
+          return makeSessionHandle({ agentName: "claude" });
+        }),
+        closeSession: mock(async () => {}),
+      });
+
+      const agentManager = makeMockAgentManager({
+        runAsSessionFn: mock(async () => makeTurnResult()),
+      });
+
+      const keeper = new SessionKeeper(sessionManager, agentManager, makeOpts({ sessionName }));
+      await keeper.send({ prompt: "test" });
+      expect(openSessionCalled).toBe(true);
+      expect(openSessionName).toBe(sessionName);
+    });
+
+    test("does NOT consult getLiveHandle even when a live handle would match", async () => {
+      // Regression guard: PR #1060 — closeStory left COMPLETED handles in _liveHandles,
+      // so reusing them by name caused terminal-state errors on sendPrompt.
       const sessionName = "nax-test-session";
       let getLiveHandleCalled = false;
       let openSessionCalled = false;
 
       const sessionManager = makeSessionManager({
-        getLiveHandle: mock((name: string) => {
-          expect(name).toBe(sessionName);
+        getLiveHandle: mock(() => {
           getLiveHandleCalled = true;
-          expect(openSessionCalled).toBe(false);
-          return undefined;
+          return makeSessionHandle({ agentName: "claude" });
         }),
         openSession: mock(async () => {
           openSessionCalled = true;
@@ -102,30 +134,8 @@ describe("SessionKeeper.send()", () => {
 
       const keeper = new SessionKeeper(sessionManager, agentManager, makeOpts({ sessionName }));
       await keeper.send({ prompt: "test" });
-      expect(getLiveHandleCalled).toBe(true);
-    });
-
-    test("reuses live handle when getLiveHandle returns a matching handle with correct agentName", async () => {
-      const sessionName = "nax-test-session";
-      const liveHandle = makeSessionHandle({ agentName: "claude" });
-      let openSessionCalled = false;
-
-      const sessionManager = makeSessionManager({
-        getLiveHandle: mock(() => liveHandle),
-        openSession: mock(async () => {
-          openSessionCalled = true;
-          return makeSessionHandle({ agentName: "claude" });
-        }),
-        closeSession: mock(async () => {}),
-      });
-
-      const agentManager = makeMockAgentManager({
-        runAsSessionFn: mock(async () => makeTurnResult()),
-      });
-
-      const keeper = new SessionKeeper(sessionManager, agentManager, makeOpts({ sessionName }));
-      await keeper.send({ prompt: "test" });
-      expect(openSessionCalled).toBe(false);
+      expect(getLiveHandleCalled).toBe(false);
+      expect(openSessionCalled).toBe(true);
     });
   });
 
@@ -191,12 +201,15 @@ describe("SessionKeeper.send()", () => {
       let closeSessionCalledWithHandle: SessionHandle | undefined;
       let retryAttempts = 0;
 
+      let openCalls = 0;
       const sessionManager = makeSessionManager({
-        getLiveHandle: mock(() => failingHandle),
         closeSession: mock(async (h: SessionHandle) => {
           closeSessionCalledWithHandle = h;
         }),
-        openSession: mock(async () => retriedHandle),
+        openSession: mock(async () => {
+          openCalls++;
+          return openCalls === 1 ? failingHandle : retriedHandle;
+        }),
       });
 
       const retryableError = new SessionTurnError("Session lost", false, true);
@@ -229,18 +242,18 @@ describe("SessionKeeper.send()", () => {
       const failingHandle = makeSessionHandle({ id: "sess-stale" });
       const retriedHandle = makeSessionHandle({ id: "sess-new" });
       const closedHandles: SessionHandle[] = [];
-      let closedOnce = false;
 
+      let openCalls = 0;
       const sessionManager = makeSessionManager({
-        getLiveHandle: mock(() => {
-          if (closedOnce) return undefined;
-          return failingHandle;
-        }),
         closeSession: mock(async (h: SessionHandle) => {
           closedHandles.push(h);
-          closedOnce = true;
         }),
-        openSession: mock(async () => retriedHandle),
+        openSession: mock(async () => {
+          openCalls++;
+          // First attempt: return the handle that will fail.
+          // Second attempt (after stale handle is closed): return the fresh handle.
+          return openCalls === 1 ? failingHandle : retriedHandle;
+        }),
       });
 
       const retryableError = new SessionTurnError("stale", false, true);
