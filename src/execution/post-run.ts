@@ -88,9 +88,13 @@ export function deriveTddFailureCategory(phaseOutputs: Record<string, unknown>):
     return "session-failure";
   }
 
-  // Greenfield gate detected → greenfield-no-tests
-  const greenfieldOutput = phaseOutputs[greenfieldGateOp.name] as { isGreenfield?: boolean } | undefined;
-  if (greenfieldOutput?.isGreenfield === true) {
+  // Greenfield gate: when success=false + pauseReason="greenfield-no-tests", the pause
+  // handler in extractPauseReason fires first. deriveTddFailureCategory also checks it so
+  // the failureCategory is set correctly for non-pause paths (e.g. tests that bypass pause).
+  const greenfieldOutput = phaseOutputs[greenfieldGateOp.name] as
+    | { success?: boolean; pauseReason?: string }
+    | undefined;
+  if (greenfieldOutput?.success === false && greenfieldOutput?.pauseReason === "greenfield-no-tests") {
     return "greenfield-no-tests";
   }
 

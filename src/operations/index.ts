@@ -47,6 +47,7 @@ export type {
   BuildContext,
   CallContext,
   CompleteOperation,
+  DeterministicOperation,
   Operation,
   RunOperation,
   VerifyContext,

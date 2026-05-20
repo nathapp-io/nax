@@ -14,6 +14,7 @@ import {
 import type {
   AdversarialReviewInput,
   CallContext,
+  DeterministicOperation,
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
@@ -60,7 +61,7 @@ type PhaseKind =
   | "semantic-review"
   | "adversarial-review";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
-type AnySlot = { op: RunOperation<any, any, any>; input: unknown };
+type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any>; input: unknown };
 
 interface InternalPhase {
   readonly kind: PhaseKind;

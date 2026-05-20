@@ -1,89 +1,98 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { greenfieldGateOp } from "@/operations";
-import { DEFAULT_CONFIG } from "@/config";
+import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
 
-const ctx = {
-  packageView: {} as any,
-  config: DEFAULT_CONFIG,
-};
-
-const input = {
-  story: { id: "US-001" } as any,
-  workdir: "/tmp/test",
-  resolvedTestPatterns: { globs: ["**/*.test.ts"] } as any,
-};
-
-describe("greenfieldGateOp — RunOperation shape", () => {
-  test("exports as a RunOperation with kind=run", () => {
-    expect(greenfieldGateOp).toBeDefined();
-    expect(greenfieldGateOp.kind).toBe("run");
+describe("greenfieldGateOp — deterministic filesystem detection", () => {
+  test("kind is deterministic (no LLM session)", () => {
+    expect(greenfieldGateOp.kind).toBe("deterministic");
   });
 
   test("name is greenfield-gate", () => {
     expect(greenfieldGateOp.name).toBe("greenfield-gate");
   });
 
-  test("session role is main and lifetime is fresh", () => {
-    expect(greenfieldGateOp.session.role).toBe("main");
-    expect(greenfieldGateOp.session.lifetime).toBe("fresh");
+  test("has execute() function, not build()/parse()", () => {
+    expect(typeof (greenfieldGateOp as any).execute).toBe("function");
+    expect((greenfieldGateOp as any).build).toBeUndefined();
+    expect((greenfieldGateOp as any).parse).toBeUndefined();
   });
 
-  test("has build and parse functions", () => {
-    expect(typeof greenfieldGateOp.build).toBe("function");
-    expect(typeof greenfieldGateOp.parse).toBe("function");
-  });
-});
-
-describe("greenfieldGateOp.parse — isGreenfield detection (AC8)", () => {
-  test("returns isGreenfield=true and success=true when agent reports no test files", () => {
-    const result = greenfieldGateOp.parse('{"isGreenfield":true}', input, ctx);
-    expect(result.isGreenfield).toBe(true);
-    expect(result.success).toBe(true);
-  });
-
-  test("returns isGreenfield=false and success=true when agent reports test files exist", () => {
-    const result = greenfieldGateOp.parse('{"isGreenfield":false}', input, ctx);
-    expect(result.isGreenfield).toBe(false);
-    expect(result.success).toBe(true);
-  });
-
-  test("returns isGreenfield=false and success=true on unparseable output (safe fallback)", () => {
-    const result = greenfieldGateOp.parse("not json at all", input, ctx);
-    expect(result.isGreenfield).toBe(false);
-    expect(result.success).toBe(true);
-  });
-
-  test("returns isGreenfield=false and success=true on empty string (safe fallback)", () => {
-    const result = greenfieldGateOp.parse("", input, ctx);
-    expect(result.isGreenfield).toBe(false);
-    expect(result.success).toBe(true);
+  test("returns hasPreExistingTests=true when test files exist", async () => {
+    const dir = makeTempDir();
+    try {
+      // Use a flat file in workdir root so scanForTestFiles (which tests entry.name) finds it
+      await writeFile(join(dir, "example.test.ts"), "");
+      const ctx = { runtime: {} } as any;
+      const out = await (greenfieldGateOp as any).execute(
+        {
+          story: { id: "s1" } as any,
+          workdir: dir,
+          // **/*.test.ts produces a regex that matches on filename alone
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [],
+            testDirs: ["test"],
+          },
+        },
+        ctx,
+      );
+      expect(out.success).toBe(true);
+      expect(out.hasPreExistingTests).toBe(true);
+      expect(out.pauseReason).toBeUndefined();
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 
-  test("extracts isGreenfield from markdown-fenced JSON", () => {
-    const fencedOutput = "```json\n{\"isGreenfield\":true}\n```";
-    const result = greenfieldGateOp.parse(fencedOutput, input, ctx);
-    expect(result.isGreenfield).toBe(true);
-    expect(result.success).toBe(true);
+  test("returns success=false, pauseReason='greenfield-no-tests' when no test files exist", async () => {
+    const dir = makeTempDir();
+    try {
+      const ctx = { runtime: {} } as any;
+      const out = await (greenfieldGateOp as any).execute(
+        {
+          story: { id: "s2" } as any,
+          workdir: dir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [],
+            testDirs: ["test"],
+          },
+        },
+        ctx,
+      );
+      expect(out.success).toBe(false);
+      expect(out.hasPreExistingTests).toBe(false);
+      expect(out.pauseReason).toBe("greenfield-no-tests");
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 
-  test("returns isGreenfield=false when isGreenfield field is missing from JSON", () => {
-    const result = greenfieldGateOp.parse('{"otherField":"value"}', input, ctx);
-    expect(result.isGreenfield).toBe(false);
-    expect(result.success).toBe(true);
-  });
-
-  test("treats truthy non-boolean isGreenfield values as true", () => {
-    const result = greenfieldGateOp.parse('{"isGreenfield":1}', input, ctx);
-    expect(result.isGreenfield).toBe(true);
-    expect(result.success).toBe(true);
-  });
-
-  test("always returns success=true — gate is informational, never blocks execution", () => {
-    const withTrue = greenfieldGateOp.parse('{"isGreenfield":true}', input, ctx);
-    const withFalse = greenfieldGateOp.parse('{"isGreenfield":false}', input, ctx);
-    const withError = greenfieldGateOp.parse("bad input", input, ctx);
-    expect(withTrue.success).toBe(true);
-    expect(withFalse.success).toBe(true);
-    expect(withError.success).toBe(true);
+  test("returns success=true (safe fallback) when workdir does not exist (isGreenfieldStory absorbs error)", async () => {
+    const ctx = { runtime: {} } as any;
+    const out = await (greenfieldGateOp as any).execute(
+      {
+        story: { id: "s3" } as any,
+        workdir: "/tmp/nax-test-nonexistent-dir-xyz-99999",
+        resolvedTestPatterns: {
+          globs: ["**/*.test.ts"],
+          regex: [/\.test\.ts$/],
+          pathspec: [],
+          testDirs: ["test"],
+        },
+      },
+      ctx,
+    );
+    // isGreenfieldStory catches filesystem errors from the root call and re-throws,
+    // then the outer try-catch in isGreenfieldStory's wrapper returns false (not greenfield).
+    // Wait — actually looking at the code: scanForTestFiles throws for root call,
+    // and isGreenfieldStory catches all errors and returns false (= not greenfield = has tests).
+    // So success=true, hasPreExistingTests=true.
+    expect(out.success).toBe(true);
+    expect(out.hasPreExistingTests).toBe(true);
   });
 });
