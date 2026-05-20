@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { applyPostRunInspection } from "../../../src/execution/post-run";
 import { testWriterOp, verifierOp } from "../../../src/operations";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { makeMockAgentManager, cleanupTempDir, makeTempDir } from "../../helpers";
 
 describe("applyPostRunInspection — per-role scratch entries", () => {
   test("writes tdd-session entries for test-writer and verifier roles", async () => {
@@ -13,7 +13,7 @@ describe("applyPostRunInspection — per-role scratch entries", () => {
         story: { id: "S1", title: "t" },
         config: { context: { v2: { enabled: true } } },
         sessionScratchDir: scratchDir,
-        agentManager: { getDefault: () => "claude" },
+        agentManager: makeMockAgentManager(),
         routing: { agent: "claude", testStrategy: "three-session-tdd" },
         selfVerification: undefined,
       } as any;
