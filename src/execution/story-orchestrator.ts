@@ -135,18 +135,17 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
   });
 }
 
-function phasePassed(output: unknown): boolean {
+function phasePassed(opName: string, output: unknown): boolean {
   if (output === null || output === undefined || typeof output !== "object") {
     return true;
   }
-
-  const record = output as Record<string, unknown>;
-  if ("success" in record) {
-    return record.success !== false;
-  }
-  if ("passed" in record) {
-    return record.passed !== false;
-  }
+  const r = output as Record<string, unknown>;
+  if ("success" in r) return r.success !== false;
+  if ("passed" in r) return r.passed !== false;
+  getSafeLogger()?.warn("story-orchestrator", "Phase output has neither 'success' nor 'passed' — treating as pass", {
+    storyId: undefined,
+    phase: opName,
+  });
   return true;
 }
 
@@ -338,7 +337,7 @@ export class ExecutionPlan {
       }
 
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
-      if (!phasePassed(phaseOutputs[phase.slot.op.name])) {
+      if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name])) {
         break;
       }
     }
@@ -348,7 +347,7 @@ export class ExecutionPlan {
     // Aggregate success across every op that produced output, including fix-ops
     // dispatched during rectification (spec §2C / AC: "success === false when
     // any op returns { success: false }").
-    const success = Object.values(phaseOutputs).every((output) => phasePassed(output));
+    const success = Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output));
     const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
 
     return {
