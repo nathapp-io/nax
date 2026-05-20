@@ -82,6 +82,19 @@ describe("buildIsolationSection — single-session role", () => {
   });
 });
 
+describe("buildIsolationSection — no-test role", () => {
+  test("returns empty string for no-test prompts", () => {
+    const result = buildIsolationSection("no-test");
+    expect(result).toBe("");
+  });
+
+  test("does not emit isolation header for no-test prompts", () => {
+    const result = buildIsolationSection("no-test", undefined, "bun test");
+    expect(result).not.toContain("# Isolation Rules");
+    expect(result).not.toContain("bun test");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // TS-002: tdd-simple isolation tests (RED phase — will fail until implemented)
 // ---------------------------------------------------------------------------

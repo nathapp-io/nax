@@ -58,7 +58,8 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    if (!ctx.packageView) return { action: "fail", reason: "Package view unavailable for execution dispatch" };
+    const packageView = ctx.packageView ?? ctx.runtime?.packages?.resolve(ctx.workdir);
+    if (!packageView) return { action: "fail", reason: "Package view unavailable for execution dispatch" };
 
     const interactionBridge = buildInteractionBridge(ctx.interaction, {
       featureName: ctx.prd.feature,
@@ -68,7 +69,7 @@ export const executionStage: PipelineStage = {
 
     const callCtx: CallContext = {
       runtime: ctx.runtime,
-      packageView: ctx.packageView,
+      packageView,
       packageDir: ctx.workdir,
       agentName: ctx.routing.agent ?? defaultAgent,
       storyId: ctx.story.id,

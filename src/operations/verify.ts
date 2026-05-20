@@ -8,6 +8,7 @@ import type { RunOperation } from "./types";
 
 export interface VerifierInput {
   readonly story: UserStory;
+  readonly promptMarkdown?: string;
 }
 
 export interface VerifierOutput {
@@ -15,6 +16,7 @@ export interface VerifierOutput {
   readonly filesChanged: readonly string[];
   readonly estimatedCostUsd: number;
   readonly durationMs: number;
+  readonly output: string;
   /** Isolation check result, populated when isolation was run. */
   readonly isolation?: IsolationCheck;
   /** Failure category from verifier verdict categorization. */
@@ -30,6 +32,12 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
   build(input, _ctx) {
+    if (input.promptMarkdown?.trim()) {
+      return {
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input.promptMarkdown, overridable: false },
+      };
+    }
     return {
       role: { id: "role", content: "", overridable: false },
       task: {
@@ -61,6 +69,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
         filesChanged: [],
         estimatedCostUsd: 0,
         durationMs: 0,
+        output: "",
         ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
         ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
       };

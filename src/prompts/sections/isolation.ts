@@ -54,7 +54,7 @@ export function buildIsolationSection(
   const footer = `\n\n${buildTestFilterRule(testCmd)}`;
 
   if (role === "no-test") {
-    return `${header}\n\nisolation scope: Implement changes in src/ and other non-test directories. Do NOT create or modify any files in the test/ directory.${footer}`;
+    return "";
   }
 
   if (role === "test-writer") {

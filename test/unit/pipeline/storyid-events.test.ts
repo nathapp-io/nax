@@ -15,7 +15,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
-import { makeAgentAdapter } from "../../../test/helpers";
+import { makeAgentAdapter, makeNaxConfig } from "../../../test/helpers";
 import { fakeAgentManager } from "../../helpers/fake-agent-manager";
 
 const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
@@ -67,8 +67,7 @@ function makeCtx(
   qualityOverrides: Partial<{ requireTests: boolean; testCommand: string | undefined }> = {},
 ): PipelineContext {
   const { requireTests = false, testCommand = undefined } = qualityOverrides;
-  return {
-    config: {
+  const config = makeNaxConfig({
       quality: {
         requireTests,
         commands: { test: testCommand },
@@ -77,7 +76,6 @@ function makeCtx(
       execution: {
         sessionTimeoutSeconds: 60,
         verificationTimeoutSeconds: 60,
-        dangerouslySkipPermissions: false,
         costLimit: 10,
         maxIterations: 50,
         iterationDelayMs: 0,
@@ -91,8 +89,9 @@ function makeCtx(
       },
       agent: { default: "claude" },
       tdd: { rollbackOnFailure: false },
-      routing: { strategy: "complexity", llm: { mode: "per-story" } },
-    } as unknown as NaxConfig,
+  });
+  return {
+    config,
     story: mockStory,
     stories: [mockStory],
     routing: {

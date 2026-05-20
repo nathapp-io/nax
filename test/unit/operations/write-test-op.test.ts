@@ -8,9 +8,11 @@ import type { NaxConfig } from "@/config";
  * AC-2: testWriterOp.session.role equals "test-writer" and
  * testWriterOp.session.lifetime equals "fresh".
  *
- * AC-4: Given testWriterOp.parse receives empty or unparseable output, when
- * parse executes, then it returns TestWriterOutput with success: false and
- * filesChanged: [].
+ * AC-4: Given testWriterOp.parse receives empty output, when parse executes,
+ * then it returns TestWriterOutput with success: false and filesChanged: [].
+ * Given a valid JSON envelope with success:true, parse returns success: true.
+ * Given non-JSON or malformed output (e.g. buildHopCallback error strings),
+ * parse returns success: false — agent failure must not be masked as success.
  */
 
 describe("testWriterOp — RunOperation shape", () => {
@@ -78,7 +80,7 @@ describe("testWriterOp.parse — error handling", () => {
     expect(result.filesChanged).toEqual([]);
   });
 
-  test("returns TestWriterOutput with success=false when output is unparseable", async () => {
+  test("returns TestWriterOutput with success=false when output is non-JSON (e.g. buildHopCallback error string)", async () => {
     const { testWriterOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
@@ -91,7 +93,7 @@ describe("testWriterOp.parse — error handling", () => {
       story: { id: "US-001" } as any,
     };
 
-    const result = testWriterOp.parse("garbage output", input, ctx);
+    const result = testWriterOp.parse('Agent "mock" failed: Agent failed', input, ctx);
 
     expect(result.success).toBe(false);
     expect(result.filesChanged).toEqual([]);
@@ -114,6 +116,26 @@ describe("testWriterOp.parse — error handling", () => {
 
     expect(result.success).toBe(false);
     expect(result.filesChanged).toEqual([]);
+  });
+
+  test("returns TestWriterOutput with success=true when output is valid JSON envelope", async () => {
+    const { testWriterOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const ctx = {
+      packageView: {} as any,
+      config: DEFAULT_CONFIG,
+    };
+
+    const input = {
+      story: { id: "US-001" } as any,
+    };
+
+    const result = testWriterOp.parse('{"success":true,"filesChanged":["test/foo.test.ts"]}', input, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.filesChanged).toEqual(["test/foo.test.ts"]);
+    expect(result.output).toBe('{"success":true,"filesChanged":["test/foo.test.ts"]}');
   });
 
   test("returns TestWriterOutput with all required fields on parse failure", async () => {
@@ -176,5 +198,6 @@ describe("testWriterOp input/output types", () => {
     expect("filesChanged" in output).toBe(true);
     expect("estimatedCostUsd" in output).toBe(true);
     expect("durationMs" in output).toBe(true);
+    expect("output" in output).toBe(true);
   });
 });

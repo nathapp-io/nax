@@ -36,4 +36,15 @@ describe("buildSelfVerificationSection", () => {
     expect(section).toContain("Keep the no-test contract");
     expect(section).not.toContain("RED phase");
   });
+
+  test("allows minimal package-local prerequisite fixes when needed for the story ACs", () => {
+    const section = buildSelfVerificationSection("no-test", {
+      packageDir: "/repo",
+      language: "typescript",
+      lintCommand: "bun run lint",
+      typecheckCommand: "bun run typecheck",
+    });
+    expect(section).toContain("smallest package-local fix");
+    expect(section).toContain("do not edit unrelated sibling files");
+  });
 });

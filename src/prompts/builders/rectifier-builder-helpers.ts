@@ -7,6 +7,7 @@
 
 import type { UserStory } from "@/prd";
 import type { ReviewCheckResult } from "@/review/types";
+import { buildIsolationSection } from "../sections";
 
 /**
  * Reviewer contradiction escape hatch (REVIEW-003).
@@ -62,10 +63,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -90,6 +92,38 @@ Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
 - FILES must list real test files. Each path must exist and be a test file.`;
+
+/** Exception 4 is only valid for three-session TDD flows that have a test-writer. */
+const EXCEPTION_4_MOCK_HANDOFF = `
+### Exception 4 — Mock-structure handoff
+
+Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
+that does NOT fit Exception 2. Examples: mocks reference primitives the new code
+bypasses; assertion topology must change to match a new dispatch shape.
+
+Declare with:
+\`\`\`
+TEST_EDIT_REASON: mock_structure
+FILES: <comma-separated test file paths>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+\`\`\`
+
+Rules:
+- Do NOT make any edits yourself; the test-writer will fulfill.
+- Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
+- FILES must list real test files. Each path must exist and be a test file.`;
+
+const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
+
+function escapeHatchFor(story: UserStory): string {
+  const isTdd = THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "");
+  return isTdd ? CONTRADICTION_ESCAPE_HATCH : CONTRADICTION_ESCAPE_HATCH.replace(EXCEPTION_4_MOCK_HANDOFF, "");
+}
+
+function noTestIsolationBlock(story: UserStory): string {
+  if (story.routing?.testStrategy !== "no-test") return "";
+  return `\n\n${buildIsolationSection("no-test")}`;
+}
 
 export function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");
@@ -116,7 +150,7 @@ ${errors}
 
 Do NOT change test files or test behavior — see the three narrow exceptions appended below.
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
 
 export function adversarialRectification(
@@ -143,7 +177,7 @@ ${errors}
 3. Do NOT add keys, functions, or imports that already exist — check first
 
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
 
 export function combinedLlmRectification(
@@ -175,7 +209,7 @@ ${adversarialErrors}
 3. Do NOT add keys, functions, or imports that already exist — check first
 
 Do NOT add new features — only fix valid issues.
-Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
 
 export function mechanicalRectification(
@@ -195,5 +229,5 @@ ${errors}
 
 Fix all errors listed above that are within this story's scope — see the three narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.
 Do NOT add new features — only fix the quality check errors.
-After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
+After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }

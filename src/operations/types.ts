@@ -173,6 +173,12 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
     readonly lifetime: "fresh" | "warm";
   };
   /**
+   * Optional resolver for whether the session should remain open after the
+   * turn. When omitted, callOp derives this from `session.lifetime`
+   * (`warm` => keepOpen, `fresh` => close after turn).
+   */
+  readonly keepOpen?: (input: I, ctx: BuildContext<C>) => boolean;
+  /**
    * When true, callOp wraps the adapter as a fallback-less manager so the op
    * runs single-agent. Used by TDD ops to preserve the established
    * `fallbacks: []` invariant. ADR-018 §5.2.

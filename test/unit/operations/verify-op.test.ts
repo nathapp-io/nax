@@ -135,6 +135,7 @@ describe("verifierOp.parse — error handling", () => {
     expect(result.filesChanged).toBeDefined();
     expect(typeof result.estimatedCostUsd).toBe("number");
     expect(typeof result.durationMs).toBe("number");
+    expect(typeof result.output).toBe("string");
   });
 });
 
@@ -178,6 +179,7 @@ describe("verifierOp output type", () => {
     expect("filesChanged" in result).toBe(true);
     expect("estimatedCostUsd" in result).toBe(true);
     expect("durationMs" in result).toBe(true);
+    expect("output" in result).toBe(true);
   });
 
   test("verifierOp output may include optional isolation field", async () => {

@@ -20,7 +20,19 @@ function makeCtx(configOverride: Partial<NaxConfig> = {}) {
     },
   } as NaxConfig;
   return {
-    story: { id: "S1", title: "T", workdir: "" },
+    story: {
+      id: "S1",
+      title: "T",
+      description: "story",
+      acceptanceCriteria: ["ac"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      workdir: "",
+    },
     config,
     workdir: "/tmp/repo",
     routing: { testStrategy: "three-session-tdd", agent: "claude" },
@@ -33,6 +45,26 @@ function makeCtx(configOverride: Partial<NaxConfig> = {}) {
 }
 
 describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
+  test("prebuilds three-session prompts for test-writer, implementer, and verifier", async () => {
+    const ctx = makeCtx();
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.testWriter?.promptMarkdown).toContain("# Role: Test-Writer");
+    expect(inputs.implementer?.promptMarkdown).toContain("# Role: Implementer");
+    expect(inputs.verifier?.promptMarkdown).toContain("# Role: Verifier");
+  });
+
+  test("uses the existing single-session prompt for non-TDD implementer plans", async () => {
+    const ctx = {
+      ...makeCtx(),
+      routing: { testStrategy: "test-after", agent: "claude" },
+      prompt: "single-session prompt",
+    } as any;
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.testWriter).toBeUndefined();
+    expect(inputs.implementer?.promptMarkdown).toBe("single-session prompt");
+    expect(inputs.verifier).toBeUndefined();
+  });
+
   test("populates semanticReview when inlineReview && checks includes 'semantic'", async () => {
     const ctx = makeCtx({
       execution: { ...DEFAULT_CONFIG.execution, inlineReview: true },
