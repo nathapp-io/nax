@@ -43,5 +43,14 @@ export {
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,
 } from "./story-orchestrator";
-export { assemblePlanInputs, type PlanInputs } from "./plan-inputs";
+export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
+export {
+  applyPostRunInspection,
+  decideStageAction,
+  extractPauseReason,
+  deriveTddFailureCategory,
+  _postRunDeps,
+  type PostRunInspectionResult,
+  type InspectionOptions,
+} from "./post-run";

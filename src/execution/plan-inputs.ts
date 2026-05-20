@@ -19,6 +19,7 @@ import type {
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import type { ResolvedTestPatterns } from "../test-runners";
+import { resolveTestFilePatterns } from "../test-runners/resolver";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
@@ -135,5 +136,80 @@ export function assemblePlanInputs(
     story,
     config,
     ...(resolvedTestPatterns !== undefined ? { resolvedTestPatterns } : {}),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline-context overload
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TDD_STRATEGIES = new Set(["tdd-simple", "three-session-tdd", "three-session-tdd-lite"]);
+
+function isTddStrategy(strategy: string): boolean {
+  return TDD_STRATEGIES.has(strategy);
+}
+
+function hasReviewEscalation(story: UserStory): boolean {
+  return (story.priorFailures ?? []).some((f: { stage?: string }) => f.stage === "review");
+}
+
+/**
+ * Assemble typed PlanInputs from the current pipeline context.
+ * Populates all slots eligible for the given strategy + run phase.
+ *
+ * Use this from pipeline stages; use assemblePlanInputs() for
+ * simple story+config assembly without context.
+ */
+export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types").PipelineContext): Promise<PlanInputs> {
+  const { story, config } = ctx;
+  const _isTdd = isTddStrategy(ctx.routing.testStrategy);
+  const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
+
+  const testWriterInput =
+    _isTdd && _isFreshRun
+      ? {
+          story,
+          contextMarkdown: ctx.prompt,
+          featureContextMarkdown: ctx.featureContextMarkdown,
+          constitution: ctx.constitution?.content,
+        }
+      : undefined;
+
+  let greenfieldGateInput: PlanInputs["greenfieldGate"] = undefined;
+  if (_isTdd && _isFreshRun) {
+    const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.workdir);
+    greenfieldGateInput = {
+      story,
+      workdir: ctx.workdir,
+      resolvedTestPatterns,
+    };
+  }
+
+  const implementerInput = {
+    story,
+    contextMarkdown: ctx.prompt,
+    featureContextMarkdown: ctx.featureContextMarkdown,
+    constitution: ctx.constitution?.content,
+  };
+
+  const fullSuiteGateInput = _isTdd
+    ? {
+        story,
+        workdir: ctx.workdir,
+        featureName: ctx.prd.feature,
+        projectDir: ctx.projectDir,
+      }
+    : undefined;
+
+  const verifierInput = _isTdd ? { story } : undefined;
+
+  return {
+    story,
+    config,
+    testWriter: testWriterInput,
+    greenfieldGate: greenfieldGateInput,
+    implementer: implementerInput,
+    fullSuiteGate: fullSuiteGateInput,
+    verifier: verifierInput,
   };
 }
