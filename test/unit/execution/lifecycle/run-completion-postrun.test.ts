@@ -7,7 +7,7 @@
  * AC4: calls setPostRunPhase("regression", { status: "running" }) before runDeferredRegression()
  * AC5: calls setPostRunPhase("regression", { status: "passed", lastRunAt }) on success
  * AC6: calls setPostRunPhase("regression", { status: "failed", affectedStories, lastRunAt }) on failure
- * AC7: calls setPostRunPhase("regression", { status: "passed", skipped: true, lastRunAt }) on smart-skip
+ * AC7: deferred regression is not smart-skipped when stories previously passed full-suite gates
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -409,11 +409,11 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC7: setPostRunPhase("regression", { status: "passed", skipped: true, lastRunAt }) on smart-skip
+// AC7: deferred regression still runs after acceptance/hardening changes
 // ---------------------------------------------------------------------------
 
-describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-skip", () => {
-  test("calls setPostRunPhase('regression', { status: 'passed', skipped: true, lastRunAt }) when smart-skipped", async () => {
+describe("handleRunCompletion - AC7: deferred regression is not smart-skipped", () => {
+  test("still calls runDeferredRegression when all stories report fullSuiteGatePassed=true", async () => {
     const regressionCalls: Array<Record<string, unknown>> = [];
 
     const statusWriter = makeStatusWriter();
@@ -438,15 +438,9 @@ describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-ski
       }),
     );
 
-    // runDeferredRegression should NOT have been called (smart-skip)
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-
-    // But setPostRunPhase should have been called with skipped=true
-    const skippedCall = regressionCalls.find((u) => u.skipped === true);
-    expect(skippedCall).toBeDefined();
-    expect(skippedCall?.status).toBe("passed");
-    expect(typeof skippedCall?.lastRunAt).toBe("string");
-    expect(new Date(skippedCall?.lastRunAt as string).toISOString()).toBe(skippedCall?.lastRunAt);
+    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalledTimes(1);
+    expect(regressionCalls.some((u) => u.status === "running")).toBe(true);
+    expect(regressionCalls.some((u) => u.skipped === true)).toBe(false);
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -471,7 +465,7 @@ describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-ski
     expect(capturedArgs?.agentManager).toBeUndefined();
   });
 
-  test("smart-skip: setPostRunPhase is called even though runDeferredRegression is not", async () => {
+  test("setPostRunPhase tracks running then terminal status when all stories previously passed full-suite gates", async () => {
     const setPostRunPhaseCalls: Array<[string, Record<string, unknown>]> = [];
 
     const statusWriter = makeStatusWriter();
@@ -493,9 +487,10 @@ describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-ski
 
     const regressionCalls = setPostRunPhaseCalls.filter(([p]) => p === "regression");
     expect(regressionCalls.length).toBeGreaterThan(0);
+    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
-  test("smart-skip: setPostRunPhase skipped call is separate from running call", async () => {
+  test("records running before passed instead of emitting a skipped status", async () => {
     const callOrder: string[] = [];
 
     const statusWriter = makeStatusWriter();
@@ -517,7 +512,8 @@ describe("handleRunCompletion - AC7: sets regression passed+skipped on smart-ski
       }),
     );
 
-    // Should have at least: running, then skipped-passed
-    expect(callOrder).toContain("skipped-passed");
+    expect(callOrder.indexOf("running")).toBeGreaterThanOrEqual(0);
+    expect(callOrder.indexOf("passed")).toBeGreaterThan(callOrder.indexOf("running"));
+    expect(callOrder).not.toContain("skipped-passed");
   });
 });
