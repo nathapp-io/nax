@@ -173,10 +173,14 @@ function extractPhaseFindings(output: unknown): Finding[] {
 function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
   verifierPhase: InternalPhase,
+  fullSuiteGatePhase: InternalPhase | undefined,
   semanticPhase: InternalPhase | undefined,
   adversarialPhase: InternalPhase | undefined,
 ): Finding[] {
   const findings: Finding[] = [];
+  if (fullSuiteGatePhase) {
+    findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase.slot.op.name]));
+  }
   findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
   if (semanticPhase) {
     findings.push(...extractPhaseFindings(phaseOutputs[semanticPhase.slot.op.name]));
@@ -266,6 +270,7 @@ async function runRectification(
   const initialFindings = gatherRectificationFindings(
     phaseOutputs,
     verifierPhase,
+    state.fullSuiteGate,
     state.semanticReview,
     state.adversarialReview,
   );
@@ -284,6 +289,7 @@ async function runRectification(
     return (await runPhase(cycleCtx, slot, phaseCosts, phaseOutputs)) as O;
   };
 
+  const fullSuiteGatePhase = state.fullSuiteGate;
   const cycle: FixCycle<Finding> = {
     findings: [...initialFindings],
     iterations: [],
@@ -292,10 +298,21 @@ async function runRectification(
       rectification.abortOnIncreasingFailures,
     ),
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
-    validate: async (_validateCtx) => {
+    validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return [];
+      const lite = opts?.mode === "lite";
+      // Re-run validators in canonical order: gate before verifier (matches phase order).
+      // Lite mode skips the full-suite gate to keep terminal exhausted re-validation cheap.
+      if (fullSuiteGatePhase && !lite) {
+        await runPhase(ctx, fullSuiteGatePhase.slot, phaseCosts, phaseOutputs);
+      }
       await runPhase(ctx, verifierPhase.slot, phaseCosts, phaseOutputs);
-      return extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]);
+      const findings: Finding[] = [];
+      if (fullSuiteGatePhase && !lite) {
+        findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase.slot.op.name]));
+      }
+      findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
+      return findings;
     },
   };
 
@@ -329,6 +346,12 @@ export class ExecutionPlan {
     const startedAt = Date.now();
     const logger = getSafeLogger();
 
+    // Exempt gate + verifier from short-circuit only when rectification is configured
+    // (it will consume their failures). Without rectification, failures still halt the plan.
+    const shortCircuitExempt = this.state.rectification
+      ? new Set<string>([fullSuiteGateOp.name, verifierOp.name])
+      : new Set<string>();
+
     for (const phase of collectOrderedPhases(this.state)) {
       try {
         await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs);
@@ -342,8 +365,11 @@ export class ExecutionPlan {
       }
 
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
+      // Exception: phases in shortCircuitExempt continue so rectification can consume their findings.
       if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name])) {
-        break;
+        if (!shortCircuitExempt.has(phase.slot.op.name)) {
+          break;
+        }
       }
     }
 
