@@ -24,7 +24,7 @@ import type { CallContext, DeterministicOperation } from "./types";
 
 /**
  * Full-Suite Gate execution status.
- * "disabled", "failed-no-rectification", and "rectification-exhausted" removed in US-006.
+ * Statuses disabled/failed-no-rectification/rectification-exhausted removed in US-006.
  * Rectification is now handled externally by the general runFixCycle phase.
  */
 export type FullSuiteGateStatus =
