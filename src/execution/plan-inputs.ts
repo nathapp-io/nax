@@ -18,6 +18,7 @@ import type {
   VerifierInput,
 } from "../operations";
 import type { UserStory } from "../prd/types";
+import type { SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { isThreeSessionStrategy } from "./build-plan-for-strategy";
@@ -200,6 +201,57 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const verifierInput = _isTdd ? { story } : undefined;
 
+  // Build review + rectification inputs only when inlineReview is enabled.
+  // Default (false) preserves legacy behavior where review/rectify run as standalone stages.
+  const inlineReviewEnabled = ctx.config.execution?.inlineReview === true;
+
+  const semanticStory: SemanticStory = {
+    id: story.id,
+    title: story.title,
+    description: story.description ?? "",
+    acceptanceCriteria: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria : [],
+  };
+
+  const semanticConfig = ctx.config.review?.semantic;
+  const semanticReviewInput: SemanticReviewInput | undefined =
+    inlineReviewEnabled &&
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("semantic") &&
+    semanticConfig !== undefined
+      ? {
+          workdir: ctx.workdir,
+          story: semanticStory,
+          semanticConfig,
+          mode: semanticConfig.diffMode ?? "ref",
+          storyGitRef: ctx.storyGitRef,
+          blockingThreshold: ctx.config.review.blockingThreshold,
+        }
+      : undefined;
+
+  const adversarialConfig = ctx.config.review?.adversarial;
+  const adversarialReviewInput: AdversarialReviewInput | undefined =
+    inlineReviewEnabled &&
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("adversarial") &&
+    adversarialConfig !== undefined
+      ? {
+          story: semanticStory,
+          adversarialConfig,
+          mode: adversarialConfig.diffMode ?? "ref",
+          storyGitRef: ctx.storyGitRef,
+          blockingThreshold: ctx.config.review.blockingThreshold,
+        }
+      : undefined;
+
+  const rectificationInput: RectificationPhaseOptions | undefined =
+    inlineReviewEnabled && ctx.config.execution?.rectification?.enabled === true
+      ? {
+          maxAttempts: ctx.config.execution.rectification.maxRetries ?? 2,
+          strategies: [],
+          abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures ?? true,
+        }
+      : undefined;
+
   return {
     story,
     config,
@@ -208,5 +260,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     implementer: implementerInput,
     fullSuiteGate: fullSuiteGateInput,
     verifier: verifierInput,
+    semanticReview: semanticReviewInput,
+    adversarialReview: adversarialReviewInput,
+    rectification: rectificationInput,
   };
 }

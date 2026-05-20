@@ -163,6 +163,12 @@ export interface ExecutionConfig {
    * Default: "shared"
    */
   storyIsolation: "shared" | "worktree";
+  /**
+   * When true, semantic/adversarial review and rectification run inside the story
+   * orchestrator's ExecutionPlan instead of the standalone review/rectify stages.
+   * Default false preserves legacy behavior.
+   */
+  inlineReview?: boolean;
 }
 
 /** Quality gate config */
