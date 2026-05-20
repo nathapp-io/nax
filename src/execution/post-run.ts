@@ -203,6 +203,61 @@ export async function applyPostRunInspection(
     }
   }
 
+  // Write per-role tdd-session scratch entries for test-writer and verifier.
+  // The implementer's self-verification entry was written above; these restore
+  // the per-role context coverage that the three-session strategy previously provided.
+  if (isTdd && ctx.config.context?.v2?.enabled && ctx.sessionScratchDir) {
+    const writtenByAgent =
+      (ctx.routing as { agent?: string } | undefined)?.agent ?? ctx.agentManager?.getDefault() ?? "claude";
+    const writerOut = planResult.phaseOutputs[testWriterOp.name] as
+      | { success?: boolean; filesChanged?: string[]; output?: string }
+      | undefined;
+    if (writerOut) {
+      try {
+        await appendScratchEntry(ctx.sessionScratchDir, {
+          kind: "tdd-session",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: "execution",
+          role: "test-writer",
+          success: writerOut.success === true,
+          filesChanged: writerOut.filesChanged ?? [],
+          outputTail: (writerOut.output ?? "").slice(-500),
+          writtenByAgent,
+        });
+      } catch (err) {
+        logger.warn("execution", "Failed to write test-writer scratch entry", {
+          storyId: ctx.story.id,
+          error: errorMessage(err),
+        });
+      }
+    }
+
+    const verifierOut = planResult.phaseOutputs[verifierOp.name] as
+      | { success?: boolean; filesChanged?: string[]; output?: string }
+      | undefined;
+    if (verifierOut) {
+      try {
+        await appendScratchEntry(ctx.sessionScratchDir, {
+          kind: "tdd-session",
+          timestamp: new Date().toISOString(),
+          storyId: ctx.story.id,
+          stage: "execution",
+          role: "verifier",
+          success: verifierOut.success === true,
+          filesChanged: verifierOut.filesChanged ?? [],
+          outputTail: (verifierOut.output ?? "").slice(-500),
+          writtenByAgent,
+        });
+      } catch (err) {
+        logger.warn("execution", "Failed to write verifier scratch entry", {
+          storyId: ctx.story.id,
+          error: errorMessage(err),
+        });
+      }
+    }
+  }
+
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
   const failureCategory = isTdd && !planResult.success ? deriveTddFailureCategory(planResult.phaseOutputs) : undefined;
   const needsHumanReview = failureCategory === "session-failure";
