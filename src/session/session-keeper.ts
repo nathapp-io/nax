@@ -2,7 +2,7 @@
  * SessionKeeper — session reuse + transport retry abstraction.
  *
  * Encapsulates the getLiveHandle → openSession → try/catch transport retry →
- * bindHandle pattern duplicated in rectification-loop.ts and rectification-gate.ts.
+ * bindHandle pattern duplicated in rectification-loop.ts and rectification-runner.ts.
  */
 
 import type { IAgentManager } from "../agents/manager-types";

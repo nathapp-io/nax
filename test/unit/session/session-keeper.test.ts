@@ -483,22 +483,4 @@ describe("SessionKeeper integration with rectification files", () => {
       expect(source).not.toMatch(/openSession.*runAsSession.*getLiveHandle/s);
     });
   });
-
-  describe("AC-11: rectification-gate.ts uses SessionKeeper", () => {
-    test("src/tdd/rectification-gate.ts imports and uses SessionKeeper", async () => {
-      const source = await Bun.file(
-        new URL("../../../src/tdd/rectification-gate.ts", import.meta.url),
-      ).text();
-      expect(source).toContain("SessionKeeper");
-      expect(source).toContain("session-keeper");
-    });
-
-    test("src/tdd/rectification-gate.ts does not contain old inline while(true) getLiveHandle/openSession/runAsSession pattern", async () => {
-      const source = await Bun.file(
-        new URL("../../../src/tdd/rectification-gate.ts", import.meta.url),
-      ).text();
-      expect(source).not.toMatch(/getLiveHandle.*openSession.*runAsSession/s);
-      expect(source).not.toMatch(/openSession.*runAsSession.*getLiveHandle/s);
-    });
-  });
 });

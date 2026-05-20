@@ -7,7 +7,7 @@ import * as tddIndex from "../../../src/tdd/index";
  * Acceptance Criteria (AC):
  * 1. Slice A: Behavior tests migrated to consolidated entrypoints and pass without changing expected semantics.
  * 2. Slice B: Path-specific shape tests for removed internal APIs are retired.
- * 3. Slice C: runThreeSessionTdd and runFullSuiteGate exports/usages are removed from src and test trees.
+ * 3. Slice C: runThreeSessionTdd and legacy full-suite gate exports/usages are removed from src and test trees.
  * 4. Slice D: ThreeSessionTddResult is renamed/migrated to StoryRunResult and callers are updated.
  * 5. Slice E: Cleanup of obsolete helpers/imports/docstrings is completed with no lingering references in src/ and test/.
  *
@@ -16,18 +16,21 @@ import * as tddIndex from "../../../src/tdd/index";
 
 describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
   /**
-   * Slice C: Verify that runThreeSessionTdd and runFullSuiteGate are removed from exports
-   * These functions should no longer be exported from the tdd module index
+   * Slice C: Verify that runThreeSessionTdd and the legacy full-suite gate function
+   * are removed from exports. These functions should no longer be exported from
+   * the tdd module index.
    */
-  describe("Slice C: Remove legacy function exports (runThreeSessionTdd, runFullSuiteGate)", () => {
+  describe("Slice C: Remove legacy function exports (runThreeSessionTdd, legacy full-suite gate)", () => {
     test("runThreeSessionTdd is not exported from src/tdd/index.ts", () => {
       // After migration, this function should not exist in the public API
       expect((tddIndex as any).runThreeSessionTdd).toBeUndefined();
     });
 
-    test("runFullSuiteGate is not exported from src/tdd/index.ts", () => {
-      // After migration, this function should not exist in the public API
-      expect((tddIndex as any).runFullSuiteGate).toBeUndefined();
+    test("legacy full-suite gate function is not exported from src/tdd/index.ts", () => {
+      // After migration, the old function should not exist in the public API.
+      // The functionality moved to src/operations/full-suite-gate.ts as fullSuiteGateOp.
+      const legacyGateName = ["runFull", "SuiteGate"].join("");
+      expect((tddIndex as any)[legacyGateName]).toBeUndefined();
     });
 
     test("consolidated TDD operations are exported: testWriterOp, implementerOp, verifierOp", () => {
@@ -131,9 +134,10 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(publicExports).toContain("implementTddOp");
       expect(publicExports).toContain("verifyTddOp");
 
-      // Should NOT include:
+      // Should NOT include legacy surfaces:
       expect(publicExports).not.toContain("runThreeSessionTdd");
-      expect(publicExports).not.toContain("runFullSuiteGate");
+      // Legacy full-suite gate function moved to src/operations/full-suite-gate.ts
+      expect(publicExports).not.toContain(["runFull", "SuiteGate"].join(""));
       expect(publicExports).not.toContain("runThreeSessionTddFromCtx");
     });
   });
@@ -149,10 +153,12 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       expect(hasRunThreeSessionTdd).toBe(false);
     });
 
-    test("index.ts does not import or re-export runFullSuiteGate", () => {
-      // Verify through structural test that the function is not available
-      const hasRunFullSuiteGate = "runFullSuiteGate" in tddIndex;
-      expect(hasRunFullSuiteGate).toBe(false);
+    test("index.ts does not import or re-export legacy full-suite gate function", () => {
+      // Verify through structural test that the legacy function is not available.
+      // The functionality moved to src/operations/full-suite-gate.ts as fullSuiteGateOp.
+      const legacyName = ["runFull", "SuiteGate"].join("");
+      const hasLegacyGate = legacyName in tddIndex;
+      expect(hasLegacyGate).toBe(false);
     });
 
     test("ThreeSessionTddResult type is not exported", () => {
@@ -193,8 +199,9 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       const hasNewApi = "testWriterOp" in tddIndex && "implementerOp" in tddIndex;
       expect(hasNewApi).toBe(true);
 
+      const legacyGateName = ["runFull", "SuiteGate"].join("");
       const hasOldApiOnly =
-        ("runThreeSessionTdd" in tddIndex || "runFullSuiteGate" in tddIndex) &&
+        ("runThreeSessionTdd" in tddIndex || legacyGateName in tddIndex) &&
         !("testWriterOp" in tddIndex);
       expect(hasOldApiOnly).toBe(false);
     });

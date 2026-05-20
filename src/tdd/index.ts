@@ -29,3 +29,4 @@ export {
   verifierOp,
   writeTddTestOp,
 } from "./session-op";
+export { _rectificationRunnerDeps, runRectificationLoop } from "./rectification-runner";

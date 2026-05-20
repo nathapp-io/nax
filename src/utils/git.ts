@@ -213,7 +213,7 @@ export function detectMergeConflict(output: string): boolean {
  * automatically. Prevents the review stage from failing with "uncommitted
  * changes" errors. No-op when the working tree is clean.
  *
- * Used by session-runner.ts (TDD sessions), rectification-gate.ts, and
+ * Used by session-runner.ts (TDD sessions), rectification-runner.ts, and
  * execution.ts (single-session / test-after).
  *
  * @param workdir - Working directory (git repo root)

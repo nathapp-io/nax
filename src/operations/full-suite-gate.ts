@@ -16,8 +16,10 @@
  * 6. Loop exhausts → status: "rectification-exhausted", success: false
  */
 
+import type { ModelTier } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { runRectificationLoop } from "../tdd";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -42,6 +44,8 @@ export interface FullSuiteGateInput {
   readonly featureName?: string;
   readonly projectDir?: string;
   readonly rectificationEnabled?: boolean; // undefined defaults to false
+  readonly implementerTier?: ModelTier; // model tier for rectification agent session
+  readonly lite?: boolean; // skip isolation checks during rectification
 }
 
 /**
@@ -85,20 +89,19 @@ export interface FullSuiteGateDeps {
 }
 
 export const _fullSuiteGateDeps: FullSuiteGateDeps = {
-  runTests: async (input, _ctx) => {
-    // Production: call executeWithTimeout then parse output
+  runTests: async (input, ctx) => {
     const { executeWithTimeout, parseTestOutput } = await import("../verification");
     const { resolveQualityTestCommands } = await import("../quality/command-resolver");
-    // Attempt to resolve the test command from config — fall back to "bun test" if unavailable
-    const effectiveTestCmd = "bun test";
-    try {
-      // We don't have full config here; lean on the simple fallback
-      // The full config resolution happens in rectification-gate.ts for the legacy path
-      // TODO (Task 6): wire config through input when rectification-gate.ts is deleted
-    } catch {
-      // ignore — use fallback
-    }
-    const result = await executeWithTimeout(effectiveTestCmd, 60, undefined, { cwd: input.workdir });
+    const config = ctx.runtime.configLoader.current();
+    const rectificationConfig = config.execution?.rectification;
+    const fullSuiteTimeout = rectificationConfig?.fullSuiteTimeoutSeconds ?? 60;
+    const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
+      config,
+      input.workdir,
+      input.story.workdir,
+    );
+    const effectiveTestCmd = resolvedTestCmd ?? "bun test";
+    const result = await executeWithTimeout(effectiveTestCmd, fullSuiteTimeout, undefined, { cwd: input.workdir });
     const parsed = parseTestOutput(result.output ?? "");
     return {
       passed: result.success && result.exitCode === 0,
@@ -106,13 +109,36 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       output: result.output ?? "",
     };
   },
-  runRectificationLoop: async (_input, _ctx, _testOutput) => {
-    // Production bridge: this will be replaced in Task 6 when rectification-gate.ts is merged in.
-    // For now, return a placeholder that marks not-exhausted so callers can detect
-    // the temporary wiring. Real wiring requires full config + agentManager which are
-    // not available in the op layer without threading through CallContext.
-    // TODO (Task 6): implement full rectification loop here.
-    return { exhausted: false, attempts: 0, fixedAll: false };
+  runRectificationLoop: async (input, ctx, testOutput) => {
+    const { parseTestOutput } = await import("../verification");
+    const { resolveQualityTestCommands } = await import("../quality/command-resolver");
+    const config = ctx.runtime.configLoader.current();
+    const rectificationConfig = config.execution?.rectification;
+    const fullSuiteTimeout = rectificationConfig?.fullSuiteTimeoutSeconds ?? 60;
+    const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
+      config,
+      input.workdir,
+      input.story.workdir,
+    );
+    const testCmd = resolvedTestCmd ?? "bun test";
+    const testSummary = parseTestOutput(testOutput);
+    const result = await runRectificationLoop({
+      story: input.story,
+      config,
+      workdir: input.workdir,
+      agentManager: ctx.runtime.agentManager,
+      implementerTier: input.implementerTier ?? "balanced",
+      lite: input.lite ?? false,
+      testSummary,
+      testCmd,
+      fullSuiteTimeout,
+      testOutput,
+      runtime: ctx.runtime,
+      featureName: input.featureName,
+      projectDir: input.projectDir,
+      sessionManager: ctx.runtime.sessionManager,
+    });
+    return { exhausted: result.exhausted, attempts: result.attempts, fixedAll: !result.exhausted };
   },
 };
 
