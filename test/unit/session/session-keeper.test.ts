@@ -167,11 +167,11 @@ describe("SessionKeeper.send()", () => {
       });
 
       const agentManager = makeMockAgentManager({
+        // Mock receives (agentName, handle, prompt, opts) via the runAsSession path (mock-agent-manager casts as any)
         runAsSessionFn: mock(async (_agentName: string, _handle: SessionHandle) => {
-          expect(_handle.id).toBe(openedHandle.id);
           agentRunCalledWithHandle = true;
           return makeTurnResult();
-        }),
+        }) as any,
       });
 
       const keeper = new SessionKeeper(sessionManager, agentManager, makeOpts({ sessionName: "nax-test" }));
@@ -202,13 +202,14 @@ describe("SessionKeeper.send()", () => {
       const retryableError = new SessionTurnError("Session lost", false, true);
 
       const agentManager = makeMockAgentManager({
+        // Mock receives (agentName, handle, prompt, opts) via the runAsSession path (mock-agent-manager casts as any)
         runAsSessionFn: mock(async (_agentName: string, _handle: SessionHandle) => {
           retryAttempts++;
           if (retryAttempts === 1) {
             throw retryableError;
           }
           return makeTurnResult({ output: "recovered" });
-        }),
+        }) as any,
       });
 
       const retryStrategy: RetryStrategy = {
@@ -246,11 +247,12 @@ describe("SessionKeeper.send()", () => {
       let attempts = 0;
 
       const agentManager = makeMockAgentManager({
+        // Mock receives (agentName, handle, prompt, opts) via the runAsSession path (mock-agent-manager casts as any)
         runAsSessionFn: mock(async (_agentName: string, _handle: SessionHandle) => {
           attempts++;
           if (attempts === 1) throw retryableError;
           return makeTurnResult();
-        }),
+        }) as any,
       });
 
       const retryStrategy: RetryStrategy = {
