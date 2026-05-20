@@ -157,6 +157,7 @@ function hasReviewEscalation(story: UserStory): boolean {
  */
 export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types").PipelineContext): Promise<PlanInputs> {
   const { story, config } = ctx;
+  assemblePlanInputs(story, config);
   const _isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
 
