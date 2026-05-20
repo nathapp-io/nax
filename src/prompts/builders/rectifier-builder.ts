@@ -702,7 +702,7 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
    * Prompt for implementing rectification when tests fail after implementation.
    *
    * Used when the full test suite reveals failures — either during the TDD
-   * full-suite gate (rectification-runner.ts via full-suite-gate.ts) or post-verify rectification
+   * full-suite gate (via fullSuiteRectifyStrategy) or post-verify rectification
    * (rectification-loop.ts). Demand is explicit: agents must run the FULL
    * test command, not just the listed failures.
    *

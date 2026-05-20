@@ -2,7 +2,7 @@
  * SessionKeeper — session reuse + transport retry abstraction.
  *
  * Encapsulates the openSession → try/catch transport retry → bindHandle pattern
- * duplicated in rectification-loop.ts and rectification-runner.ts. Always goes
+ * duplicated in rectification-loop.ts. Always goes
  * through openSession (PR #1060) so the terminal-state guard runs on every
  * attempt — stale COMPLETED descriptors left by closeStory get cleared and a
  * fresh session is opened.
