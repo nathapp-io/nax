@@ -30,14 +30,18 @@ import type { FailureCategory } from "./types";
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface TddMode {
+  readonly isLite: boolean;
+  readonly rollbackEnabled: boolean;
+}
+
 export interface InspectionOptions {
   capturedTokenUsage?: import("../agents/cost").TokenUsage;
   capturedResponse: string;
   capturedCostUsd: number;
-  isTdd: boolean;
-  isLiteMode: boolean;
+  /** Null when this is not a TDD strategy; otherwise carries TDD-specific opts. */
+  tddMode: TddMode | null;
   initialRef: string | null;
-  shouldRollbackOnFailure: boolean;
 }
 
 export interface PostRunInspectionResult {
@@ -149,7 +153,8 @@ export async function applyPostRunInspection(
   opts: InspectionOptions,
 ): Promise<PostRunInspectionResult> {
   const logger = getLogger();
-  const { capturedTokenUsage, capturedResponse, capturedCostUsd, isTdd } = opts;
+  const { capturedTokenUsage, capturedResponse, capturedCostUsd } = opts;
+  const isTdd = opts.tddMode !== null;
 
   // Extract implementer output → ctx.agentResult
   const implementerOutput = planResult.phaseOutputs[implementerOp.name] as
@@ -225,7 +230,9 @@ export async function decideStageAction(
   opts: InspectionOptions,
 ): Promise<StageResult> {
   const logger = getLogger();
-  const { isTdd, isLiteMode } = opts;
+  const isTdd = opts.tddMode !== null;
+  const isLiteMode = opts.tddMode?.isLite ?? false;
+  const shouldRollback = opts.tddMode?.rollbackEnabled === true;
   const { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput } =
     inspection;
 
@@ -269,7 +276,7 @@ export async function decideStageAction(
   if (isTdd && !planResult.success) {
     ctx.tddFailureCategory = failureCategory;
 
-    if (opts.shouldRollbackOnFailure && opts.initialRef) {
+    if (shouldRollback && opts.initialRef) {
       try {
         await _postRunDeps.rollbackToRef(ctx.workdir, opts.initialRef);
         logger.info("execution", "Rolled back git changes due to TDD failure", {

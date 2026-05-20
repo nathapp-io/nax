@@ -29,10 +29,8 @@ describe("applyPostRunInspection — TDD verdict cleanup", () => {
     await applyPostRunInspection(ctx, planResult, {
       capturedResponse: "",
       capturedCostUsd: 0,
-      isTdd: true,
-      isLiteMode: false,
+      tddMode: { isLite: false, rollbackEnabled: false },
       initialRef: null,
-      shouldRollbackOnFailure: false,
     });
 
     const stillExists = await Bun.file(verdictPath).exists();

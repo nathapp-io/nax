@@ -18,6 +18,7 @@ import {
 } from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
+import type { TddMode } from "../../execution/post-run";
 import type { StoryOrchestratorResult } from "../../execution/story-orchestrator";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { getLogger } from "../../logger";
@@ -88,11 +89,14 @@ export const executionStage: PipelineStage = {
         else if (event.estimatedCostUsd !== undefined) capturedCostUsd += event.estimatedCostUsd;
       }) ?? (() => {});
 
-    const isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
-    const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
     const needsInitialRef = requiresInitialRefCapture(ctx.routing.testStrategy);
-    const initialRef = needsInitialRef ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
-    const shouldRollbackOnFailure = needsInitialRef && (ctx.config.tdd?.rollbackOnFailure ?? true);
+    const tddMode: TddMode | null = isThreeSessionStrategy(ctx.routing.testStrategy)
+      ? {
+          isLite: ctx.routing.testStrategy === "three-session-tdd-lite",
+          rollbackEnabled: needsInitialRef && (ctx.config.tdd?.rollbackOnFailure ?? true),
+        }
+      : null;
+    const initialRef = tddMode ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
 
     const inputs = await _executionDeps.assemblePlanInputsFromCtx(ctx);
     const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);
@@ -108,10 +112,8 @@ export const executionStage: PipelineStage = {
       capturedTokenUsage,
       capturedResponse,
       capturedCostUsd,
-      isTdd,
-      isLiteMode,
+      tddMode,
       initialRef,
-      shouldRollbackOnFailure,
     };
     const inspection = await _executionDeps.applyPostRunInspection(ctx, planResult, opts);
     return _executionDeps.decideStageAction(ctx, planResult, inspection, opts);
