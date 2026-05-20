@@ -80,11 +80,7 @@ export interface PlanInputs {
  *   default agent (field: "models")
  * @throws NaxError with code 'TEST_PATTERNS_MISSING' if resolvedTestPatterns is explicitly null
  */
-export function assemblePlanInputs(
-  story: UserStory,
-  config: NaxConfig,
-  resolvedTestPatterns?: ResolvedTestPatterns | null,
-): PlanInputs {
+export function validatePlanInputs(story: UserStory, config: NaxConfig): void {
   if (!story.id || story.id.trim() === "") {
     throw new NaxError("Story ID is required and must be non-empty", "STORY_ID_INVALID", {
       stage: "execution-inputs",
@@ -119,6 +115,14 @@ export function assemblePlanInputs(
       },
     );
   }
+}
+
+export function assemblePlanInputs(
+  story: UserStory,
+  config: NaxConfig,
+  resolvedTestPatterns?: ResolvedTestPatterns | null,
+): PlanInputs {
+  validatePlanInputs(story, config);
 
   // AC3: explicit null signals that patterns were required but could not be resolved.
   // Failing here with a structured error prevents null propagation into test-slot inputs.
@@ -158,7 +162,7 @@ function hasReviewEscalation(story: UserStory): boolean {
  */
 export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types").PipelineContext): Promise<PlanInputs> {
   const { story, config } = ctx;
-  assemblePlanInputs(story, config);
+  validatePlanInputs(story, config);
   const _isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
 
