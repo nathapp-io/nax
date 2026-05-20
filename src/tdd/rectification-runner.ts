@@ -10,8 +10,8 @@ import { resolveModelForAgent } from "../config";
 import type { ModelTier } from "../config";
 import type { RectificationGateConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
-import { RectifierPromptBuilder } from "../prompts";
 import type { UserStory } from "../prd";
+import { RectifierPromptBuilder } from "../prompts";
 import { formatSessionName } from "../runtime/session-name";
 import type { ISessionManager } from "../session";
 import { SessionKeeper } from "../session/session-keeper";
@@ -68,9 +68,7 @@ export const _rectificationRunnerDeps = {
 };
 
 /** Run the rectification retry loop when full suite gate detects regressions. */
-export async function runRectificationLoop(
-  opts: RunRectificationLoopOptions,
-): Promise<RunRectificationLoopResult> {
+export async function runRectificationLoop(opts: RunRectificationLoopOptions): Promise<RunRectificationLoopResult> {
   const {
     story,
     config,
@@ -89,7 +87,7 @@ export async function runRectificationLoop(
   } = opts;
 
   const logger = getSafeLogger();
-  const rectificationConfig = config.execution.rectification!;
+  const rectificationConfig = config.execution?.rectification ?? {};
 
   logger?.warn("tdd", "Full suite gate detected regressions", {
     storyId: story.id,
