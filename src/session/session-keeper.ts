@@ -36,6 +36,12 @@ export interface SessionKeeperOptions {
   readonly retryStrategy?: RetryStrategy;
   readonly signal?: AbortSignal;
   readonly maxTurns?: number;
+  /**
+   * Cost-aggregator scope id. Forwarded on every runAsSession call so the cost
+   * middleware attributes turn cost to the caller's scope (e.g. story-orchestrator
+   * per-phase scope). Omit when no scope is active.
+   */
+  readonly scopeId?: string;
 }
 
 export interface SessionKeeperSendOptions {
@@ -76,6 +82,7 @@ export class SessionKeeper {
       signal,
       maxTurns,
       retryStrategy,
+      scopeId,
     } = this.opts;
 
     while (true) {
@@ -109,6 +116,7 @@ export class SessionKeeper {
           sessionRole: role,
           signal,
           maxTurns,
+          scopeId,
         });
         return turn;
       } catch (err) {

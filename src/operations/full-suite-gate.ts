@@ -161,6 +161,7 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       featureName: input.featureName,
       projectDir: input.projectDir,
       sessionManager: ctx.runtime.sessionManager,
+      scopeId: ctx.scopeId,
     });
     return { exhausted: result.exhausted, attempts: result.attempts, fixedAll: !result.exhausted };
   },

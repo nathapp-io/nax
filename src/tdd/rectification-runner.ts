@@ -53,6 +53,8 @@ export interface RunRectificationLoopOptions {
   featureName?: string;
   projectDir?: string;
   sessionManager?: ISessionManager;
+  /** Cost scope id propagated to SessionKeeper for cost attribution. */
+  scopeId?: string;
 }
 
 export interface RunRectificationLoopResult {
@@ -84,6 +86,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
     featureName,
     projectDir,
     sessionManager,
+    scopeId,
   } = opts;
 
   const logger = getSafeLogger();
@@ -121,6 +124,7 @@ export async function runRectificationLoop(opts: RunRectificationLoopOptions): P
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     signal: runtime.signal,
     maxTurns: config.agent?.maxInteractionTurns,
+    scopeId,
     retryStrategy: {
       shouldRetry(_err, attempt) {
         const maxRetries = config.execution?.sessionErrorRetryableMaxRetries ?? 3;
