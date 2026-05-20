@@ -147,20 +147,31 @@ import type { Finding } from "../findings/types";
 import type { ImplementerInput, ImplementerOutput } from "./implement";
 import { implementerOp } from ".";
 import type { TddConfig } from "../config/selectors";
+import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
 
-export const fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> = {
-  name: "full-suite-rectify",
-  appliesTo: (finding) => finding.source === "test-runner" && finding.category === "failed-test",
-  fixOp: implementerOp,
-  buildInput: (findings, _iterations, ctx) => ({
-    story: ctx.story,
-    contextMarkdown: RectifierPromptBuilder.failingTestContext(findings),
-  }),
-  extractApplied: (_output, _input) => ({ targetFiles: [], summary: "Fixed failing tests" }),
-  maxAttempts: 3, // from config.execution.rectification.maxRetries
-  coRun: "exclusive",
-};
+/**
+ * Factory so buildInput closes over `story` rather than reading ctx.story
+ * (optional on CallContext; unsafe outside pipeline invocations).
+ * Per cycle-types.ts §buildInput: "Captures closure context — do not thread
+ * extras through FixCycleContext."
+ */
+export function makeFullSuiteRectifyStrategy(
+  story: UserStory,
+): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> {
+  return {
+    name: "full-suite-rectify",
+    appliesTo: (finding) => finding.source === "test-runner" && finding.category === "failed-test",
+    fixOp: implementerOp,
+    buildInput: (findings) => ({
+      story,
+      contextMarkdown: RectifierPromptBuilder.failingTestContext(findings),
+    }),
+    extractApplied: () => ({ targetFiles: [], summary: "Fixed failing tests" }),
+    maxAttempts: 3, // from config.execution.rectification.maxRetries
+    coRun: "exclusive",
+  };
+}
 ```
 
 The strategy reuses `implementerOp` — no new fix-op needed. Prompt construction
@@ -363,11 +374,14 @@ Delete-only. No new logic, no new tests, no behavioural change beyond removal of
    `grep -nE 'export function testSummaryToFindings\(summary: TestSummary\): Finding\[\]' src/findings/adapters/test-failure.ts` returns ≥1 match.
 
 2. **[file]** `src/operations/full-suite-rectify.ts` exists and exports
-   `fullSuiteRectifyStrategy: FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig>`.
+   `makeFullSuiteRectifyStrategy(story: UserStory): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig>`.
+   The factory closes over `story` so `buildInput` never reads `ctx.story` (optional on
+   `CallContext`; unsafe outside pipeline invocations). Per `cycle-types.ts` §buildInput:
+   "Captures closure context — do not thread extras through FixCycleContext."
    `appliesTo` matches `source: "test-runner" && category: "failed-test"`. `fixOp`
    references `implementerOp` (no new fix-op created). Prompt construction delegates to
    `RectifierPromptBuilder.failingTestContext`.
-   **[verbatim] [grep]** `grep -nE 'export const fullSuiteRectifyStrategy: FixStrategy<' src/operations/full-suite-rectify.ts` returns ≥1 match AND
+   **[verbatim] [grep]** `grep -nE 'export function makeFullSuiteRectifyStrategy' src/operations/full-suite-rectify.ts` returns ≥1 match AND
    `grep -nE 'fixOp: implementerOp' src/operations/full-suite-rectify.ts` returns ≥1 match AND
    `grep -nE 'RectifierPromptBuilder\.failingTestContext' src/operations/full-suite-rectify.ts` returns ≥1 match.
 
@@ -395,10 +409,10 @@ Delete-only. No new logic, no new tests, no behavioural change beyond removal of
    short-circuit as before. Table-driven test over
    `(gate-success, verifier-success, rectification-enabled)` covers the 2×2×2 matrix.
 
-7. **[grep] [unit]** `fullSuiteRectifyStrategy` is wired into the rectification phase via
+7. **[grep] [unit]** `makeFullSuiteRectifyStrategy` is wired into the rectification phase via
    `build-plan-for-strategy.ts`. End-to-end unit test passes through the full path:
    gate fails with structured findings → strategy fires → `implementerOp` dispatches.
-   **[verbatim] [grep]** `grep -nE 'fullSuiteRectifyStrategy' src/execution/build-plan-for-strategy.ts` returns ≥1 match.
+   **[verbatim] [grep]** `grep -nE 'makeFullSuiteRectifyStrategy' src/execution/build-plan-for-strategy.ts` returns ≥1 match.
 
 ### US-006b — Terminal cleanup (deletion-only)
 
