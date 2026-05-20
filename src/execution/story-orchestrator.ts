@@ -99,14 +99,27 @@ function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
   );
 }
 
+const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState> = {
+  "test-writer": "testWriter",
+  "greenfield-gate": "greenfieldGate",
+  implementer: "implementer",
+  "full-suite-gate": "fullSuiteGate",
+  verifier: "verifier",
+  "semantic-review": "semanticReview",
+  "adversarial-review": "adversarialReview",
+};
+
 function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): void {
-  if (kind === "test-writer") state.testWriter = { kind, slot };
-  else if (kind === "greenfield-gate") state.greenfieldGate = { kind, slot };
-  else if (kind === "implementer") state.implementer = { kind, slot };
-  else if (kind === "full-suite-gate") state.fullSuiteGate = { kind, slot };
-  else if (kind === "verifier") state.verifier = { kind, slot };
-  else if (kind === "semantic-review") state.semanticReview = { kind, slot };
-  else state.adversarialReview = { kind, slot };
+  const key = PHASE_KIND_TO_STATE_KEY[kind];
+  if (state[key] !== undefined) {
+    throw new NaxError(
+      `StoryOrchestratorBuilder: addX was called twice for phase "${kind}"`,
+      "ORCHESTRATOR_PHASE_DUPLICATE",
+      { stage: "execution", kind },
+    );
+  }
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot widened intentionally
+  (state as any)[key] = { kind, slot };
 }
 
 function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
