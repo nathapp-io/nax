@@ -170,7 +170,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         workdir: ctx.workdir,
         featureName: ctx.prd.feature,
         projectDir: ctx.projectDir,
-        rectificationEnabled: ctx.config.execution?.rectification?.enabled ?? false,
         resolvedTestPatterns,
       }
     : undefined;
@@ -223,7 +222,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     inlineReviewEnabled && ctx.config.execution?.rectification?.enabled === true
       ? {
           maxAttempts: ctx.config.execution.rectification.maxRetries ?? 2,
-          strategies: [],
+          strategies: [], // base — buildPlanForStrategy prepends makeFullSuiteRectifyStrategy(story) for TDD+gate plans
           abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures ?? true,
         }
       : undefined;

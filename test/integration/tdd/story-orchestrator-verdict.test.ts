@@ -49,7 +49,7 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
     config: DEFAULT_CONFIG,
     testWriter: { story: storyArg },
     implementer: { story: storyArg },
-    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test" },
     verifier: { story: storyArg },
   };
 }
@@ -171,7 +171,7 @@ describe("buildPlanForStrategy — three-session-tdd verdict", () => {
       config: configNoRectification,
       testWriter: { story },
       implementer: { story },
-      fullSuiteGate: { story, workdir: "/tmp/test", rectificationEnabled: false },
+      fullSuiteGate: { story, workdir: "/tmp/test" },
       verifier: { story },
     };
     const plan = buildPlanForStrategy(callCtx, story, configNoRectification, "three-session-tdd", inputs);

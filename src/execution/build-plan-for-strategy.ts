@@ -19,10 +19,11 @@
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
 import { shouldRunRectification } from "../operations/execution-gates";
+import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
 import type { PlanInputs } from "./plan-inputs";
-import { type ExecutionPlan, StoryOrchestratorBuilder } from "./story-orchestrator";
+import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
 
 /**
  * Strategies that use the three-session TDD orchestration (test-writer +
@@ -123,9 +124,16 @@ export function buildPlanForStrategy(
     builder.addAdversarialReview(inputs.adversarialReview);
   }
 
-  // Rectification: requires both config gate and typed inputs
+  // Rectification: requires both config gate and typed inputs.
+  // When TDD with full-suite gate is configured, prepend fullSuiteRectifyStrategy so
+  // test-failure findings from the gate take priority over review-finding strategies.
   if (shouldRunRectification(config) && inputs.rectification) {
-    builder.addRectification(inputs.rectification);
+    const gateStrategies = isTdd && inputs.fullSuiteGate ? [makeFullSuiteRectifyStrategy(story)] : [];
+    const rectOpts: RectificationPhaseOptions = {
+      ...inputs.rectification,
+      strategies: [...gateStrategies, ...inputs.rectification.strategies],
+    };
+    builder.addRectification(rectOpts);
   }
 
   return builder.build(ctx);

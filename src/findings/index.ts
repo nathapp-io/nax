@@ -28,6 +28,8 @@ export {
   lintDiagnosticToFinding,
   pluginToFinding,
   reviewFindingToFinding,
+  testFailureToFinding,
+  testSummaryToFindings,
   tscDiagnosticToFinding,
 } from "./adapters";
 export { rebaseToWorkdir } from "./path-utils";

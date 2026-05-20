@@ -3,27 +3,23 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
 import type { PlanInputs } from "../../../src/execution/plan-inputs";
 import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
-import type { ResolvedTestPatterns } from "../../../src/test-runners";
 import { makeMockCallContext } from "../../helpers/call-context";
 import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
+import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps, stubFullSuiteGateContext } from "./_tdd-test-helpers";
 
 let saved: SavedDeps;
 let origRunTests: typeof _fullSuiteGateDeps.runTests;
-let origRunRectification: typeof _fullSuiteGateDeps.runRectificationLoop;
 
 beforeEach(() => {
   saved = saveDeps();
   stubFullSuiteGateContext();
   origRunTests = _fullSuiteGateDeps.runTests;
-  origRunRectification = _fullSuiteGateDeps.runRectificationLoop;
 });
 
 afterEach(() => {
   restoreDeps(saved);
   _fullSuiteGateDeps.runTests = origRunTests;
-  _fullSuiteGateDeps.runRectificationLoop = origRunRectification;
 });
 
 const story: UserStory = {
@@ -45,7 +41,7 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story, overrides: Part
     config: DEFAULT_CONFIG,
     testWriter: { story: storyArg },
     implementer: { story: storyArg },
-    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test" },
     verifier: { story: storyArg },
     ...overrides,
   };
@@ -134,17 +130,13 @@ describe("buildPlanForStrategy — failure scenarios", () => {
     expect(result.success).toBe(true);
   });
 
-  test("full-suite gate failure (rectification exhausted) → success=false", async () => {
-    // Mock full-suite gate to always fail tests and exhaust rectification
+  test("full-suite gate failure (tests fail, findings returned) → success=false", async () => {
+    // Mock full-suite gate to always fail tests with structured failures
     _fullSuiteGateDeps.runTests = mock(async (_input, _ctx) => ({
       passed: false,
       failed: 1,
       output: "forced suite failure\n",
-    }));
-    _fullSuiteGateDeps.runRectificationLoop = mock(async (_input, _ctx, _output) => ({
-      exhausted: true,
-      attempts: 2,
-      fixedAll: false,
+      parsedSummary: { passed: 0, failed: 1, failures: [{ file: "test/a.test.ts", testName: "test A", error: "err A", stackTrace: [] }] },
     }));
 
     mockGitSpawn({
@@ -180,7 +172,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
       config,
       testWriter: { story },
       implementer: { story },
-      fullSuiteGate: { story, workdir: "/tmp/test", rectificationEnabled: true },
+      fullSuiteGate: { story, workdir: "/tmp/test" },
       verifier: { story },
     };
     const plan = buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
@@ -220,10 +212,11 @@ describe("buildPlanForStrategy — failure scenarios", () => {
             regex: [/\.test\.ts$/],
             pathspec: [":(exclude)**/*.test.ts"],
             testDirs: ["test/unit", "test/integration"],
+            resolution: "fallback" as const,
           },
         },
         implementer: { story },
-        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
       const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);

@@ -19,7 +19,7 @@
 
 import { afterEach, describe, test, expect, mock } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { CallContext, RunOperation, CompleteOperation } from "@/operations";
+import type { CallContext, RunOperation, CompleteOperation, DeterministicOperation } from "@/operations";
 import { pickSelector } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
 import {
@@ -1135,5 +1135,189 @@ describe("StoryOrchestratorBuilder — AC10: TDD wrapper retains responsibilitie
     const plan = builder.build(ctx);
     expect(plan).toBeDefined();
     // Isolation surfacing should be in TDD wrapper
+  });
+});
+
+// ============================================================================
+// US-006: Short-circuit carve-out and validate callback
+// ============================================================================
+
+function makeDeterministicOp(
+  name: string,
+  result: { success: boolean; findings?: unknown[] },
+): DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> {
+  return {
+    kind: "deterministic",
+    name,
+    stage: "verify",
+    config: testSel,
+    execute: async () => ({ ...result, estimatedCostUsd: 0, passed: result.success }),
+  };
+}
+
+describe("AC-6: short-circuit carve-out for gate + verifier when rectification configured", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("when rectification configured: gate failure does NOT halt verifier (both run)", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let verifierRan = false;
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }] });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "verifier") verifierRan = true;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      // Run ops (implementer): return success so they don't short-circuit before gate/verifier
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async () => ({ iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 });
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+      expect(verifierRan).toBe(true);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("when rectification NOT configured: gate failure halts verifier (short-circuit)", async () => {
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    let verifierRan = false;
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "verifier") verifierRan = true;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .build(ctx);
+      await plan.run();
+      expect(verifierRan).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+});
+
+describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skips gate", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("AC-4: validate re-runs BOTH gate and verifier (mode=full)", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateRunCount = { n: 0 };
+    const verifierRunCount = { n: 0 };
+    let capturedCycle: any = null;
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const verOp = makeDeterministicOp("verifier", { success: false });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "full-suite-gate") gateRunCount.n++;
+      if (op.name === "verifier") verifierRunCount.n++;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycle = cycle;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      if (capturedCycle) {
+        const beforeGate = gateRunCount.n;
+        const beforeVerifier = verifierRunCount.n;
+        await capturedCycle.validate(ctx, { mode: "full" });
+        expect(gateRunCount.n).toBeGreaterThan(beforeGate);
+        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier);
+      }
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC-5: validate skips gate when mode=lite", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateRunCount = { n: 0 };
+    const verifierRunCount = { n: 0 };
+    let capturedCycle: any = null;
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const verOp = makeDeterministicOp("verifier", { success: false });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "full-suite-gate") gateRunCount.n++;
+      if (op.name === "verifier") verifierRunCount.n++;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycle = cycle;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      if (capturedCycle) {
+        const beforeGate = gateRunCount.n;
+        const beforeVerifier = verifierRunCount.n;
+        await capturedCycle.validate(ctx, { mode: "lite" });
+        expect(gateRunCount.n).toBe(beforeGate);         // gate NOT re-run
+        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier); // verifier IS re-run
+      }
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
   });
 });
