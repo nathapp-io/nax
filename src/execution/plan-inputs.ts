@@ -222,7 +222,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     inlineReviewEnabled && ctx.config.execution?.rectification?.enabled === true
       ? {
           maxAttempts: ctx.config.execution.rectification.maxRetries ?? 2,
-          strategies: [], // US-006b will populate review-finding strategies; Phase 1 wires only gate strategies via buildPlanForStrategy
+          strategies: [], // base — buildPlanForStrategy prepends makeFullSuiteRectifyStrategy(story) for TDD+gate plans
           abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures ?? true,
         }
       : undefined;
