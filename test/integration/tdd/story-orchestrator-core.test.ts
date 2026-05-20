@@ -53,7 +53,7 @@ function makePlanInputsNoGreenfield(storyOverride: UserStory = story, overrides:
     config: DEFAULT_CONFIG,
     testWriter: { story: storyOverride },
     implementer: { story: storyOverride },
-    fullSuiteGate: { story: storyOverride, workdir: "/tmp/test", rectificationEnabled: false },
+    fullSuiteGate: { story: storyOverride, workdir: "/tmp/test" },
     verifier: { story: storyOverride },
     ...overrides,
   };
@@ -69,7 +69,7 @@ function makePlanInputsWithGreenfield(tmpDir: string, storyOverride: UserStory =
     testWriter: { story: storyOverride },
     greenfieldGate: { story: storyOverride, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
     implementer: { story: storyOverride },
-    fullSuiteGate: { story: storyOverride, workdir: tmpDir, rectificationEnabled: false },
+    fullSuiteGate: { story: storyOverride, workdir: tmpDir },
     verifier: { story: storyOverride },
   };
 }

@@ -48,7 +48,7 @@ function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
     config: DEFAULT_CONFIG,
     testWriter: { story: storyArg },
     implementer: { story: storyArg },
-    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test" },
     verifier: { story: storyArg },
   };
 }
@@ -80,7 +80,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         testWriter: { story },
         greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
         implementer: { story },
-        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
       const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
@@ -112,7 +112,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         testWriter: { story },
         greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
         implementer: { story },
-        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
       const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", inputs);
@@ -146,7 +146,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         testWriter: { story },
         greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
         implementer: { story },
-        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
       const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
@@ -191,7 +191,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         testWriter: { story },
         greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
         implementer: { story },
-        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
       const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
