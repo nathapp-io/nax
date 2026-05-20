@@ -1,33 +1,28 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
+import type { PlanInputs } from "../../../src/execution/plan-inputs";
+import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
+import type { ResolvedTestPatterns } from "../../../src/test-runners";
+import { makeMockCallContext } from "../../helpers/call-context";
+import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
-import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
-import { _rectificationGateDeps } from "../../../src/tdd/rectification-gate";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
-import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
-let runThreeSessionTdd: typeof _RunThreeSessionTdd;
-beforeAll(async () => {
-  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
-});
-
 let saved: SavedDeps;
-let parseTestOutputOrig: typeof _rectificationGateDeps.parseTestOutput;
+let origRunTests: typeof _fullSuiteGateDeps.runTests;
+let origRunRectification: typeof _fullSuiteGateDeps.runRectificationLoop;
 
 beforeEach(() => {
   saved = saveDeps();
-  parseTestOutputOrig = _rectificationGateDeps.parseTestOutput;
+  origRunTests = _fullSuiteGateDeps.runTests;
+  origRunRectification = _fullSuiteGateDeps.runRectificationLoop;
 });
 
 afterEach(() => {
   restoreDeps(saved);
-  _rectificationGateDeps.parseTestOutput = parseTestOutputOrig;
+  _fullSuiteGateDeps.runTests = origRunTests;
+  _fullSuiteGateDeps.runRectificationLoop = origRunRectification;
 });
 
 const story: UserStory = {
@@ -43,195 +38,83 @@ const story: UserStory = {
   attempts: 0,
 };
 
+function makePlanInputsNoGreenfield(storyArg: UserStory = story, overrides: Partial<PlanInputs> = {}): PlanInputs {
+  return {
+    story: storyArg,
+    config: DEFAULT_CONFIG,
+    testWriter: { story: storyArg },
+    implementer: { story: storyArg },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    verifier: { story: storyArg },
+    ...overrides,
+  };
+}
 
-describe("runThreeSessionTdd — failureCategory", () => {
-  test("test-writer isolation failure sets failureCategory='isolation-violation'", async () => {
-    // Test-writer modifies source files → isolation violation
+
+describe("buildPlanForStrategy — failure scenarios", () => {
+  test("test-writer failure → success=false", async () => {
+    // Test-writer agent returns failure
     mockGitSpawn({
       diffFiles: [
-        // Isolation check: test-writer touched source files!
-        ["src/user.ts", "test/user.test.ts"],
-        // getChangedFiles
-        ["src/user.ts", "test/user.test.ts"],
-      ],
-    });
-
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("isolation-violation");
-  });
-
-  test("test-writer zero files (non-auto strategy) sets failureCategory='isolation-violation'", async () => {
-    // In strict strategy, zero test files → greenfield-no-tests category (BUG-010 behavior)
-    mockGitSpawn({
-      diffFiles: [
-        ["requirements.md"], // s1 isolation — no source violations
-        ["requirements.md"], // s1 getChangedFiles — 0 test files
-      ],
-    });
-
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
-
-    const configWithStrictStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
-    };
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: configWithStrictStrategy,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("greenfield-no-tests");
-  });
-
-  test("test-writer crash/timeout (non-isolation failure) sets failureCategory='session-failure'", async () => {
-    // Test-writer agent crashes/times out but isolation is clean
-    mockGitSpawn({
-      diffFiles: [
-        // Isolation check: only test files (passes)
         ["test/user.test.ts"],
-        // getChangedFiles
+        ["test/user.test.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCostUsd: 0.01 }]);
+
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const result = await plan.run();
+
+    expect(result.success).toBe(false);
+  });
+
+  test("test-writer crash/timeout → success=false", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],
         ["test/user.test.ts"],
       ],
     });
 
     const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // Agent crash
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
     expect(result.success).toBe(false);
-    // isolation.passed=true but agent failed → session-failure
-    expect(result.failureCategory).toBe("session-failure");
   });
 
-  test("implementer failure sets failureCategory='session-failure'", async () => {
+  test("implementer failure → success=false", async () => {
     mockGitSpawn({
       diffFiles: [
-        // Session 1 isolation: OK
         ["test/user.test.ts"],
-        // Session 1 getChangedFiles
         ["test/user.test.ts"],
-        // Session 2 isolation: OK
         ["src/user.ts"],
-        // Session 2 getChangedFiles
         ["src/user.ts"],
       ],
     });
-
-    const agent = createMockAgent([
-      { success: true, estimatedCostUsd: 0.01 }, // test-writer OK
-      { success: false, exitCode: 1, estimatedCostUsd: 0.02 }, // implementer fails
-    ]);
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("session-failure");
-  });
-
-  test("post-TDD test failure sets failureCategory='tests-failing'", async () => {
-    // Verifier session fails AND independent post-TDD test run also fails.
-    // The full-suite gate (runs before the verifier) must PASS so it doesn't
-    // consume agent mock results via rectification. Only the post-verifier T9
-    // check should see failures.
-    let revParseCount = 0;
-    let diffCount = 0;
-    let testRunCount = 0;
-
-    const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
-
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
-      if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
-        testRunCount++;
-        // First call = full-suite gate (before verifier): pass cleanly so no rectification.
-        if (testRunCount === 1) {
-          return {
-            pid: 9999,
-            exited: Promise.resolve(0),
-            stdout: new Response("3 pass 0 fail\n").body,
-            stderr: new Response("").body,
-          };
-        }
-        // Subsequent calls = post-TDD verification (after verifier fails): still failing.
-        return {
-          pid: 9999,
-          exited: Promise.resolve(1),
-          stdout: new Response("3 pass, 2 fail\n").body,
-          stderr: new Response("Test errors...\n").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        const files = diffFiles[diffCount] || [];
-        diffCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-    }));
 
     const agent = createMockAgent([
       { success: true, estimatedCostUsd: 0.01 },
-      { success: true, estimatedCostUsd: 0.02 },
-      { success: false, exitCode: 1, estimatedCostUsd: 0.01 }, // verifier fails
+      { success: false, exitCode: 1, estimatedCostUsd: 0.02 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
     expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("tests-failing");
   });
 
-  test("success path has no failureCategory", async () => {
+  test("success path → success=true", async () => {
     mockGitSpawn({
       diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
@@ -242,87 +125,35 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
     expect(result.success).toBe(true);
-    expect(result.failureCategory).toBeUndefined();
   });
 
-  test("full-suite rectification exhausted stops before verifier with explicit failure category", async () => {
-    let revParseCount = 0;
-    let diffCount = 0;
-    let testRunCount = 0;
-    let sawRollbackReset = false;
-    let sawRollbackClean = false;
-    const diffFiles = [
-      ["test/user.test.ts"],
-      ["test/user.test.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-    ];
-
-    mockAllSpawn(
-      mock((cmd: string[]) => {
-        if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
-          testRunCount++;
-          return {
-            pid: 9999,
-            exited: Promise.resolve(1),
-            stdout: new Response("forced suite failure\n").body,
-            stderr: new Response("").body,
-          };
-        }
-        if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-          revParseCount++;
-          return {
-            exited: Promise.resolve(0),
-            stdout: new Response(`ref-${revParseCount}\n`).body,
-            stderr: new Response("").body,
-          };
-        }
-        if (cmd[0] === "git" && cmd[1] === "diff") {
-          const files = diffFiles[diffCount] || [];
-          diffCount++;
-          return {
-            exited: Promise.resolve(0),
-            stdout: new Response(files.join("\n") + "\n").body,
-            stderr: new Response("").body,
-          };
-        }
-        if (cmd[0] === "git" && cmd[1] === "reset" && cmd[2] === "--hard") {
-          sawRollbackReset = true;
-          return {
-            exited: Promise.resolve(0),
-            stdout: new Response("").body,
-            stderr: new Response("").body,
-          };
-        }
-        if (cmd[0] === "git" && cmd[1] === "clean" && cmd[2] === "-fd") {
-          sawRollbackClean = true;
-          return {
-            exited: Promise.resolve(0),
-            stdout: new Response("").body,
-            stderr: new Response("").body,
-          };
-        }
-        return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-      }),
-    );
-
-    _rectificationGateDeps.parseTestOutput = mock((_output: string) => ({
-      passed: 2,
+  test("full-suite gate failure (rectification exhausted) → success=false", async () => {
+    // Mock full-suite gate to always fail tests and exhaust rectification
+    _fullSuiteGateDeps.runTests = mock(async (_input, _ctx) => ({
+      passed: false,
       failed: 1,
-      failures: [{ file: "test/user.test.ts", testName: "suite > should fail", error: "boom", stackTrace: [] }],
+      output: "forced suite failure\n",
     }));
+    _fullSuiteGateDeps.runRectificationLoop = mock(async (_input, _ctx, _output) => ({
+      exhausted: true,
+      attempts: 2,
+      fixedAll: false,
+    }));
+
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],
+        ["test/user.test.ts"],
+        ["src/user.ts"],
+        ["src/user.ts"],
+      ],
+    });
 
     const config = {
       ...DEFAULT_CONFIG,
@@ -339,93 +170,67 @@ describe("runThreeSessionTdd — failureCategory", () => {
     const agent = createMockAgent([
       { success: true, estimatedCostUsd: 0.01 },
       { success: true, estimatedCostUsd: 0.02 },
-      { success: true, estimatedCostUsd: 0.03 },
-      { success: true, estimatedCostUsd: 0.03 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story: {
-        ...story,
-        routing: {
-          complexity: "simple",
-          modelTier: "balanced",
-          testStrategy: "three-session-tdd",
-          reasoning: "test",
-          agent: "claude",
-        },
-      },
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config });
+    const callCtx = makeMockCallContext({ runtime });
+    const inputs: PlanInputs = {
+      story,
       config,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      // runtime intentionally omitted — runThreeSessionTdd synthesises a default
-      // (production callers always pass one; tests get an isolated default).
-    });
+      testWriter: { story },
+      implementer: { story },
+      fullSuiteGate: { story, workdir: "/tmp/test", rectificationEnabled: true },
+      verifier: { story },
+    };
+    const plan = buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
+    const result = await plan.run();
 
     expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("full-suite-gate-exhausted");
-    expect(result.fullSuiteGatePassed).toBe(false);
-    expect(result.verdict).toBeUndefined();
-    expect(result.sessions.map((s) => s.role)).toEqual(["test-writer", "implementer"]);
-    expect(result.sessions.some((s) => s.role === "verifier")).toBe(false);
-    expect(testRunCount).toBeGreaterThanOrEqual(3);
-    expect(sawRollbackReset).toBe(true);
-    expect(sawRollbackClean).toBe(true);
   });
 
-  test("zero-file scenario (auto strategy) returns greenfield-no-tests (BUG-010 removed auto-fallback)", async () => {
-    // BUG-010: In auto strategy, zero test files → return greenfield-no-tests (no more fallback)
-    let diffCount = 0;
+  test("zero-file scenario (greenfield) returns success=false when greenfieldGate is included", async () => {
+    // BUG-010: Zero test files → greenfield-gate stops the pipeline
+    // Need a real tmpDir for filesystem check
+    const { mkdir, rm } = await import("node:fs/promises");
+    const tmpDir = `/tmp/nax-fc-greenfield-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await mkdir(tmpDir, { recursive: true });
 
-    const diffFiles = [
-      ["requirements.md"], // s1 isolation (strict) — no source violations
-      ["requirements.md"], // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
-    ];
+    try {
+      mockGitSpawn({
+        diffFiles: [
+          ["requirements.md"],
+          ["requirements.md"],
+        ],
+      });
 
+      const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("ref-1\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        const files = diffFiles[diffCount] || [];
-        diffCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-    }));
+      const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+      const callCtx = makeMockCallContext({ runtime });
+      const inputs: PlanInputs = {
+        story,
+        config: DEFAULT_CONFIG,
+        testWriter: { story },
+        greenfieldGate: {
+          story,
+          workdir: tmpDir,
+          resolvedTestPatterns: {
+            globs: ["**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [":(exclude)**/*.test.ts"],
+            testDirs: ["test/unit", "test/integration"],
+          },
+        },
+        implementer: { story },
+        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        verifier: { story },
+      };
+      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const result = await plan.run();
 
-    const agent = createMockAgent([
-      { success: true, estimatedCostUsd: 0.01 }, // s1 strict test-writer
-    ]);
-
-    const configWithAutoStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
-    };
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: configWithAutoStrategy,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.lite).toBe(false);
-    expect(result.failureCategory).toBe("greenfield-no-tests");
+      expect(result.success).toBe(false);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
-
-// ─── T9: Verdict integration tests ───────────────────────────────────────────

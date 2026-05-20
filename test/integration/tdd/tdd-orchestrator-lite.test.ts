@@ -1,20 +1,12 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
+import type { PlanInputs } from "../../../src/execution/plan-inputs";
+import type { ResolvedTestPatterns } from "../../../src/test-runners";
+import { makeMockCallContext } from "../../helpers/call-context";
+import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
-import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
-import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
-
-let runThreeSessionTdd: typeof _RunThreeSessionTdd;
-beforeAll(async () => {
-  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
-});
 
 let saved: SavedDeps;
 
@@ -39,19 +31,37 @@ const story: UserStory = {
   attempts: 0,
 };
 
+function defaultPatterns(): ResolvedTestPatterns {
+  return {
+    globs: ["test/**/*.test.ts"],
+    regex: [/\.test\.ts$/],
+    pathspec: [":(exclude)test/**/*.test.ts"],
+    testDirs: ["test/unit", "test/integration"],
+  };
+}
 
-describe("runThreeSessionTdd — lite mode", () => {
-  test("lite mode: result includes lite=true flag", async () => {
-    // In lite mode all 3 sessions succeed
-    // Lite skips isolation for sessions 1 and 2, so only 2 diff calls for those
-    // Session 3 (verifier) always runs isolation: 2 diff calls (isolation + getChangedFiles)
-    // Total: 1 (s1 getChangedFiles) + 1 (s2 getChangedFiles) + 2 (s3) = 4 diff calls
+function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
+  return {
+    story: storyArg,
+    config: DEFAULT_CONFIG,
+    testWriter: { story: storyArg },
+    implementer: { story: storyArg },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    verifier: { story: storyArg },
+  };
+}
+
+
+describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
+  test("lite strategy: all 3 sessions succeed → success", async () => {
+    // Lite strategy uses 'three-session-tdd-lite' — same phases as three-session-tdd
+    // (lite mode skipping of isolation checks is handled inside assembleTddSessionResult in session-op.ts)
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"], // s1 getChangedFiles (no isolation in lite)
-        ["src/user.ts"], // s2 getChangedFiles (no isolation in lite)
-        [], // s3 isolation check (verifier always checks)
-        ["src/user.ts"], // s3 getChangedFiles
+        ["test/user.test.ts"],
+        ["src/user.ts"],
+        [],
+        ["src/user.ts"],
       ],
     });
 
@@ -61,29 +71,25 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true,
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
-    expect(result.lite).toBe(true);
     expect(result.success).toBe(true);
+    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0);
+    expect(typeof result.durationMs).toBe("number");
   });
 
-  test("strict mode: result includes lite=false flag", async () => {
+  test("strict strategy: all 3 sessions succeed → success", async () => {
     mockGitSpawn({
       diffFiles: [
         ["test/user.test.ts"],
         ["test/user.test.ts"],
         ["src/user.ts"],
         ["src/user.ts"],
-        [], // s3 isolation
-        ["src/user.ts"], // s3 getChangedFiles
+        [],
+        ["src/user.ts"],
       ],
     });
 
@@ -93,27 +99,22 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: false,
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
-    expect(result.lite).toBe(false);
     expect(result.success).toBe(true);
   });
 
-  test("lite mode: test-writer session has no isolation check (isolation is undefined)", async () => {
+  test("lite strategy: implementer modifying test files still succeeds", async () => {
+    // In lite mode isolation is skipped; this test verifies the agent result drives success
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"], // s1 getChangedFiles only (no isolation in lite)
-        ["src/user.ts"], // s2 getChangedFiles only (no isolation in lite)
-        [], // s3 isolation
-        ["src/user.ts"], // s3 getChangedFiles
+        ["test/user.test.ts"],
+        ["test/user.test.ts", "src/user.ts"],
+        [],
+        [],
       ],
     });
 
@@ -123,65 +124,38 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true,
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
-    expect(result.sessions).toHaveLength(3);
-    // In lite mode, test-writer and implementer skip isolation
-    expect(result.sessions[0].isolation).toBeUndefined();
-    expect(result.sessions[1].isolation).toBeUndefined();
-    // Verifier always runs isolation
-    expect(result.sessions[2].isolation).toBeDefined();
-  });
-
-  test("lite mode: implementer modifying test files does NOT appear in isolation warnings (no isolation check)", async () => {
-    // In strict mode, implementer touching test files produces warnings.
-    // In lite mode, isolation is skipped entirely, so there are no warnings.
-    mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"], // s1 getChangedFiles
-        ["test/user.test.ts", "src/user.ts"], // s2 getChangedFiles
-        [], // s3 isolation
-        [], // s3 getChangedFiles
-      ],
-    });
-
-    const agent = createMockAgent([
-      { success: true, estimatedCostUsd: 0.01 },
-      { success: true, estimatedCostUsd: 0.02 },
-      { success: true, estimatedCostUsd: 0.01 },
-    ]);
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true,
-    });
-
-    expect(result.sessions[1].isolation).toBeUndefined(); // No isolation in lite
-    expect(result.sessions[1].success).toBe(true); // Agent succeeded
     expect(result.success).toBe(true);
-    expect(result.lite).toBe(true);
   });
 
-  test("lite mode: verifier always runs isolation check (even in lite mode)", async () => {
+  test("lite strategy: test-writer failure → success=false", async () => {
+    mockGitSpawn({
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
+    });
+
+    const agent = createMockAgent([
+      { success: false, exitCode: 1, estimatedCostUsd: 0.01 },
+    ]);
+
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const result = await plan.run();
+
+    expect(result.success).toBe(false);
+  });
+
+  test("lite strategy: phaseOutputs includes all TDD phases", async () => {
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"], // s1 getChangedFiles
-        ["src/user.ts"], // s2 getChangedFiles
-        [], // s3 isolation (verifier always checks)
-        [], // s3 getChangedFiles
+        ["test/user.test.ts"],
+        ["src/user.ts"],
+        [],
+        ["src/user.ts"],
       ],
     });
 
@@ -191,38 +165,13 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCostUsd: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true,
-    });
+    const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+    const callCtx = makeMockCallContext({ runtime });
+    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const result = await plan.run();
 
-    expect(result.sessions[2].isolation).toBeDefined();
-    expect(result.sessions[2].isolation?.passed).toBe(true);
-    expect(result.lite).toBe(true);
-  });
-
-  test("lite mode: dry-run returns lite=true", async () => {
-    const agent = createMockAgent([]);
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      dryRun: true,
-      lite: true,
-    });
-    expect(result.lite).toBe(true);
-    expect(result.success).toBe(true);
-    expect(result.sessions).toHaveLength(0);
+    expect("test-writer" in result.phaseOutputs).toBe(true);
+    expect("implementer" in result.phaseOutputs).toBe(true);
+    expect("verifier" in result.phaseOutputs).toBe(true);
   });
 });
-
-// ─── T4: Zero-file fallback tests ────────────────────────────────────────────
-

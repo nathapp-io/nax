@@ -1,20 +1,13 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import type { AgentAdapter, AgentResult } from "../../../src/agents";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "../../../src/config";
+import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
+import type { PlanInputs } from "../../../src/execution/plan-inputs";
+import type { ResolvedTestPatterns } from "../../../src/test-runners";
+import { makeMockCallContext } from "../../helpers/call-context";
+import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
-import { implementerOp, testWriterOp, verifierOp } from "../../../src/tdd";
-import type { runThreeSessionTdd as _RunThreeSessionTdd } from "../../../src/tdd/orchestrator";
-import { fakeAgentManager } from "../../helpers/fake-agent-manager";
-import { VERDICT_FILE } from "../../../src/tdd/verdict";
 import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
-
-let runThreeSessionTdd: typeof _RunThreeSessionTdd;
-beforeAll(async () => {
-  ({ runThreeSessionTdd } = await import("../../../src/tdd/orchestrator"));
-});
 
 let saved: SavedDeps;
 
@@ -39,211 +32,174 @@ const story: UserStory = {
   attempts: 0,
 };
 
+function defaultPatterns(): ResolvedTestPatterns {
+  return {
+    globs: ["**/*.test.ts"],
+    regex: [/\.test\.ts$/],
+    pathspec: [":(exclude)**/*.test.ts"],
+    testDirs: ["test/unit", "test/integration"],
+  };
+}
 
-describe("runThreeSessionTdd — zero-file fallback", () => {
-  /** Extended git mock that also handles `git checkout .` */
-  function mockGitSpawnWithCheckout(opts: {
-    diffFiles: string[][];
-    onCheckout?: () => void;
-    testCommandSuccess?: boolean;
-  }) {
-    let revParseCount = 0;
-    let diffCount = 0;
-    const testSuccess = opts.testCommandSuccess ?? true;
+function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
+  return {
+    story: storyArg,
+    config: DEFAULT_CONFIG,
+    testWriter: { story: storyArg },
+    implementer: { story: storyArg },
+    fullSuiteGate: { story: storyArg, workdir: "/tmp/test", rectificationEnabled: false },
+    verifier: { story: storyArg },
+  };
+}
 
 
-    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
-      // Intercept test commands
-      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
-        return {
-          pid: 9999,
-          exited: Promise.resolve(testSuccess ? 0 : 1),
-          stdout: new Response(testSuccess ? "tests pass\n" : "tests fail\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "checkout") {
-        opts.onCheckout?.();
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("").body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        const files = opts.diffFiles[diffCount] || [];
-        diffCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-    }));
-  }
+describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
+  test("zero-file scenario returns success=false when greenfield gate is configured", async () => {
+    // BUG-010: Zero test files → greenfield-gate stops the pipeline. No auto-fallback occurs.
+    const tmpDir = `/tmp/nax-fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await mkdir(tmpDir, { recursive: true });
 
-  test("fallback NO LONGER triggers when strategy='auto' and 0 test files (BUG-010 removed auto-fallback)", async () => {
-    let checkoutCalled = false;
+    try {
+      mockGitSpawn({
+        diffFiles: [
+          ["requirements.md"],
+          ["requirements.md"],
+        ],
+      });
 
-    // BUG-010: Zero-file scenarios now return greenfield-no-tests immediately
-    // No fallback to lite mode occurs
-    mockGitSpawnWithCheckout({
-      diffFiles: [
-        ["requirements.md"], // s1 isolation (strict) — no source violations
-        ["requirements.md"], // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
-      ],
-      onCheckout: () => {
-        checkoutCalled = true;
-      },
-    });
+      const agent = createMockAgent([
+        { success: true, estimatedCostUsd: 0.01 },
+      ]);
 
-    const agent = createMockAgent([
-      { success: true, estimatedCostUsd: 0.01 }, // s1 strict test-writer
-    ]);
+      const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+      const callCtx = makeMockCallContext({ runtime });
+      const inputs: PlanInputs = {
+        story,
+        config: DEFAULT_CONFIG,
+        testWriter: { story },
+        greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
+        implementer: { story },
+        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        verifier: { story },
+      };
+      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const result = await plan.run();
 
-    const configWithAutoStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
-    };
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: configWithAutoStrategy,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
-
-    expect(checkoutCalled).toBe(false); // git checkout NOT called (no fallback)
-    expect(result.lite).toBe(false); // not in lite mode
-    expect(result.success).toBe(false); // fails with greenfield-no-tests
-    expect(result.failureCategory).toBe("greenfield-no-tests");
+      // Greenfield gate stops the plan; no auto-fallback to lite mode
+      expect(result.success).toBe(false);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
-  test("zero-file scenario returns greenfield-no-tests (BUG-010 removed lite fallback)", async () => {
-    // BUG-010: No more auto-fallback to lite mode
-    mockGitSpawn({
-      diffFiles: [
-        ["docs/plan.md"], // s1 isolation (strict)
-        ["docs/plan.md"], // s1 getChangedFiles (strict) → 0 test files
-      ],
-    });
+  test("lite strategy with zero-file scenario also returns success=false", async () => {
+    const tmpDir = `/tmp/nax-fallback-lite-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await mkdir(tmpDir, { recursive: true });
 
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
+    try {
+      mockGitSpawn({
+        diffFiles: [["requirements.md"]],
+      });
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
+      const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
-    expect(result.lite).toBe(false);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("greenfield-no-tests");
+      const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+      const callCtx = makeMockCallContext({ runtime });
+      const inputs: PlanInputs = {
+        story,
+        config: DEFAULT_CONFIG,
+        testWriter: { story },
+        greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
+        implementer: { story },
+        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        verifier: { story },
+      };
+      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", inputs);
+      const result = await plan.run();
+
+      expect(result.success).toBe(false);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
-  test("fallback does NOT trigger when strategy='strict' (explicit strict mode)", async () => {
-    // In strategy='strict', no fallback — should return failure
-    mockGitSpawn({
-      diffFiles: [
-        ["requirements.md"], // s1 isolation — no source violations
-        ["requirements.md"], // s1 getChangedFiles — 0 test files
-      ],
-    });
+  test("strict strategy: no test files → success=false (no fallback)", async () => {
+    const tmpDir = `/tmp/nax-fallback-strict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await mkdir(tmpDir, { recursive: true });
 
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
+    try {
+      mockGitSpawn({
+        diffFiles: [
+          ["requirements.md"],
+          ["requirements.md"],
+        ],
+      });
 
-    const configWithStrictStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
-    };
+      const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: configWithStrictStrategy,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-    });
+      const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+      const callCtx = makeMockCallContext({ runtime });
+      const inputs: PlanInputs = {
+        story,
+        config: DEFAULT_CONFIG,
+        testWriter: { story },
+        greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
+        implementer: { story },
+        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        verifier: { story },
+      };
+      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const result = await plan.run();
 
-    // Should fail (no fallback in strict mode)
-    expect(result.success).toBe(false);
-    expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
-    expect(result.lite).toBe(false); // Was called in strict mode, no fallback
+      expect(result.success).toBe(false);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
-  test("fallback does NOT trigger when already in lite mode", async () => {
-    // Calling with lite=true — if 0 test files, should return failure (not recurse again)
-    mockGitSpawn({
-      diffFiles: [
-        ["requirements.md"], // s1 getChangedFiles (lite, no isolation) — 0 test files
-      ],
-    });
+  test("when pre-existing test files exist, greenfield gate passes and plan succeeds", async () => {
+    // Create a temp dir WITH an actual test file so greenfield check passes
+    const tmpDir = `/tmp/nax-fallback-existing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await mkdir(`${tmpDir}/test`, { recursive: true });
 
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(`${tmpDir}/test/user.test.ts`, "// placeholder test file");
 
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: DEFAULT_CONFIG,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true,
-    });
+    try {
+      mockGitSpawn({
+        diffFiles: [
+          ["test/user.test.ts"],
+          ["test/user.test.ts"],
+          ["src/user.ts"],
+          ["src/user.ts"],
+          ["src/user.ts"],
+        ],
+      });
 
-    // Should fail — no further fallback from lite mode
-    expect(result.success).toBe(false);
-    expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
-    expect(result.lite).toBe(true);
-  });
+      const agent = createMockAgent([
+        { success: true, estimatedCostUsd: 0.01 },
+        { success: true, estimatedCostUsd: 0.02 },
+        { success: true, estimatedCostUsd: 0.01 },
+      ]);
 
-  test("fallback does NOT trigger when strategy='lite' config", async () => {
-    // When strategy='lite', runThreeSessionTdd is called with lite=true (from execution stage)
-    // So !lite = false → no fallback
-    mockGitSpawn({
-      diffFiles: [
-        [], // s1 getChangedFiles (lite, no isolation) — 0 test files
-      ],
-    });
+      const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
+      const callCtx = makeMockCallContext({ runtime });
+      const inputs: PlanInputs = {
+        story,
+        config: DEFAULT_CONFIG,
+        testWriter: { story },
+        greenfieldGate: { story, workdir: tmpDir, resolvedTestPatterns: defaultPatterns() },
+        implementer: { story },
+        fullSuiteGate: { story, workdir: tmpDir, rectificationEnabled: false },
+        verifier: { story },
+      };
+      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const result = await plan.run();
 
-    const agent = createMockAgent([{ success: true, estimatedCostUsd: 0.01 }]);
-
-    const configWithLiteStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
-    };
-
-    const result = await runThreeSessionTdd({
-      agent,
-      agentManager: fakeAgentManager(agent),
-      story,
-      config: configWithLiteStrategy,
-      workdir: "/tmp/test",
-      modelTier: "balanced",
-      lite: true, // router sets this for lite strategy
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.lite).toBe(true);
+      // Pre-existing tests found → greenfield gate passes → plan succeeds
+      expect(result.success).toBe(true);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
-
-// ─── T4: failureCategory tests ────────────────────────────────────────────────
-

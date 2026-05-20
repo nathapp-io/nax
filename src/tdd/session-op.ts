@@ -51,8 +51,8 @@ export interface AssembleTddSessionResultInput {
 }
 
 /**
- * Shared post-dispatch chain consumed by both `runTddSessionOp` (legacy direct
- * dispatch) and `runTddSessionViaBuilder` (StoryOrchestrator builder path):
+ * Shared post-dispatch chain consumed by `runTddSessionOp` (legacy direct
+ * dispatch via the TDD execution stage):
  *
  *  1. autoCommitIfDirty so uncommitted agent edits land in git.
  *  2. Isolation check (skipped in lite mode for test-writer/implementer).
