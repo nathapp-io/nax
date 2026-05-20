@@ -268,7 +268,7 @@ export async function applyPostRunInspection(
   // still be on disk. Best-effort — ignored failures.
   if (isTdd) {
     const { cleanupVerdict } = await import("../tdd/verdict");
-    await cleanupVerdict((ctx as unknown as { packageDir?: string }).packageDir ?? ctx.workdir).catch(() => undefined);
+    await cleanupVerdict(ctx.workdir).catch(() => undefined);
   }
 
   return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };

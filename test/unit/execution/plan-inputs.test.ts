@@ -14,146 +14,52 @@
 import { describe, test, expect } from "bun:test";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs, type PlanInputs } from "@/execution";
+import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeStory, makeNaxConfig } from "@test/helpers";
 
-// AC1: PlanInputs type with all required slots
+const FAKE_PATTERNS: ResolvedTestPatterns = {
+  globs: [],
+  regex: [],
+  pathspec: [],
+  testDirs: [],
+  resolution: "fallback",
+};
+
+// AC1: PlanInputs includes all required slot keys
 describe("PlanInputs type", () => {
-  test("PlanInputs is a valid TypeScript type that includes all slots", () => {
+  test("minimal PlanInputs requires only story and config", () => {
     const story = makeStory({ id: "US-001" });
     const config = makeNaxConfig();
-
-    // This creates a minimal valid PlanInputs
-    const inputs: PlanInputs = {
-      story,
-      config,
-    };
-
-    expect(inputs).toBeDefined();
+    const inputs: PlanInputs = { story, config };
     expect(inputs.story).toBe(story);
     expect(inputs.config).toBe(config);
+    expect(inputs.testWriter).toBeUndefined();
+    expect(inputs.greenfieldGate).toBeUndefined();
+    expect(inputs.implementer).toBeUndefined();
+    expect(inputs.fullSuiteGate).toBeUndefined();
+    expect(inputs.verifier).toBeUndefined();
+    expect(inputs.semanticReview).toBeUndefined();
+    expect(inputs.adversarialReview).toBeUndefined();
+    expect(inputs.rectification).toBeUndefined();
   });
 
-  test("PlanInputs can include testWriter slot when provided", () => {
+  test("PlanInputs accepts correctly-typed slot inputs", () => {
     const story = makeStory({ id: "US-001" });
     const config = makeNaxConfig();
-
     const inputs: PlanInputs = {
       story,
       config,
-      testWriter: {
-        story,
-        contextMarkdown: "test context",
-      },
+      testWriter: { story, contextMarkdown: "ctx" },
+      greenfieldGate: { story, workdir: "/tmp", resolvedTestPatterns: FAKE_PATTERNS },
+      implementer: { story, contextMarkdown: "ctx" },
+      fullSuiteGate: { story, workdir: "/tmp" },
+      verifier: { story },
+      rectification: { maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false },
     };
-
-    expect(inputs.testWriter).toBeDefined();
-  });
-
-  test("PlanInputs can include greenfieldGate slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      greenfieldGate: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.greenfieldGate).toBeDefined();
-  });
-
-  test("PlanInputs can include implementer slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      implementer: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.implementer).toBeDefined();
-  });
-
-  test("PlanInputs can include fullSuiteGate slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      fullSuiteGate: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.fullSuiteGate).toBeDefined();
-  });
-
-  test("PlanInputs can include verifier slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      verifier: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.verifier).toBeDefined();
-  });
-
-  test("PlanInputs can include semanticReview slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      semanticReview: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.semanticReview).toBeDefined();
-  });
-
-  test("PlanInputs can include adversarialReview slot when provided", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputs: PlanInputs = {
-      story,
-      config,
-      adversarialReview: {
-        story,
-        contextMarkdown: "test context",
-      },
-    };
-
-    expect(inputs.adversarialReview).toBeDefined();
-  });
-
-  test("PlanInputs rectification slot is optional", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-
-    const inputsWithout: PlanInputs = { story, config };
-    expect(inputsWithout.rectification).toBeUndefined();
-
-    const inputsWith: PlanInputs = { story, config, rectification: {} };
-    expect(inputsWith.rectification).toBeDefined();
+    expect(inputs.greenfieldGate?.workdir).toBe("/tmp");
+    expect(inputs.fullSuiteGate?.workdir).toBe("/tmp");
+    expect(inputs.verifier?.story).toBe(story);
+    expect(inputs.rectification?.maxAttempts).toBe(3);
   });
 });
 

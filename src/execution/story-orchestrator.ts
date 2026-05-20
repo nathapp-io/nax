@@ -136,9 +136,14 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
 }
 
 function phasePassed(opName: string, output: unknown): boolean {
-  if (output === null || output === undefined || typeof output !== "object") {
+  if (output === null || output === undefined) {
+    getSafeLogger()?.warn("story-orchestrator", "Phase produced no output — treating as pass", {
+      storyId: undefined,
+      phase: opName,
+    });
     return true;
   }
+  if (typeof output !== "object") return true;
   const r = output as Record<string, unknown>;
   if ("success" in r) return r.success !== false;
   if ("passed" in r) return r.passed !== false;

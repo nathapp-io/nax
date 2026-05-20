@@ -47,38 +47,12 @@ export interface PlanInputs {
 }
 
 /**
- * Assemble and validate PlanInputs from story and config.
+ * Validate story and config fields required by every plan, regardless of strategy.
  *
- * AC2: Validates required data before returning PlanInputs.
- * AC3: Missing resolved test patterns produces deterministic structured failure.
- * AC4: Invalid or missing config produces deterministic structured failure.
- * AC5: Failures use NaxError with machine-readable code and context.stage='execution-inputs'.
- *
- * Validation scope:
- * 1. story.id — required non-blank identifier for log correlation.
- * 2. story.title — required non-blank for context injection into slot prompts.
- * 3. config.agent.default — required non-blank; schema allows "" override and an empty
- *    value causes silent agent-lookup failure in every orchestrator slot.
- * 4. config.models[agent.default] — at least one tier mapping must exist for the chosen
- *    agent; absent entries cause silent undefined returns during model-tier resolution
- *    in every callOp invocation (hidden null propagation, AC4).
- * 5. resolvedTestPatterns — when the caller explicitly passes `null` (meaning patterns were
- *    required but could not be resolved), throws deterministically rather than propagating
- *    null through test-slot input derivation (AC3).
- *    Pass `undefined` or omit the argument when test patterns are not needed for the plan.
- *
- * @param story - The story to validate
- * @param config - The config to validate; must have been parsed through NaxConfigSchema
- * @param resolvedTestPatterns - Resolved test file patterns; pass `null` when patterns were
- *   required but could not be resolved (triggers deterministic failure per AC3). Omit or
- *   pass `undefined` when test patterns are not needed for this plan.
- * @returns Valid PlanInputs or throws NaxError with stage='execution-inputs'
  * @throws NaxError with code 'STORY_ID_INVALID' if story.id is missing or blank
  * @throws NaxError with code 'STORY_TITLE_MISSING' if story.title is missing or blank
  * @throws NaxError with code 'CONFIG_INVALID' if config.agent.default is empty
- * @throws NaxError with code 'CONFIG_INVALID' if config.models has no tier mapping for the
- *   default agent (field: "models")
- * @throws NaxError with code 'TEST_PATTERNS_MISSING' if resolvedTestPatterns is explicitly null
+ * @throws NaxError with code 'CONFIG_INVALID' if config.models has no tier mapping for the default agent
  */
 export function validatePlanInputs(story: UserStory, config: NaxConfig): void {
   if (!story.id || story.id.trim() === "") {
@@ -181,9 +155,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       : undefined;
 
   const greenfieldGateInput: PlanInputs["greenfieldGate"] =
-    _isTdd && _isFreshRun && resolvedTestPatterns
-      ? { story, workdir: ctx.workdir, resolvedTestPatterns }
-      : undefined;
+    _isTdd && _isFreshRun && resolvedTestPatterns ? { story, workdir: ctx.workdir, resolvedTestPatterns } : undefined;
 
   const implementerInput = {
     story,
