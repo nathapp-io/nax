@@ -203,6 +203,14 @@ export async function applyPostRunInspection(
   const needsHumanReview = failureCategory === "session-failure";
   const combinedOutput = (agentResult.output ?? "") + ((agentResult as { stderr?: string }).stderr ?? "");
 
+  // Belt-and-suspenders: verifierOp.recover cleans up on its happy path, but if the
+  // verifier never ran (short-circuit before verify) the file from a prior story may
+  // still be on disk. Best-effort — ignored failures.
+  if (isTdd) {
+    const { cleanupVerdict } = await import("../tdd/verdict");
+    await cleanupVerdict((ctx as unknown as { packageDir?: string }).packageDir ?? ctx.workdir).catch(() => undefined);
+  }
+
   return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };
 }
 
