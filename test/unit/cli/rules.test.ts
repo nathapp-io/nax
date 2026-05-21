@@ -155,20 +155,15 @@ describe("rulesExportCommand", () => {
     expect((threw as NaxError).code).toBe("RULES_EXPORT_NO_CANONICAL_RULES");
   });
 
-  test("writes CLAUDE.md for agent=claude", async () => {
-    _rulesCLIDeps.loadCanonicalRules = async () => [
-      { fileName: "coding-style.md", content: "## Style\n\nUse immutable data." },
-    ];
-    await rulesExportCommand({ dir: "/project", agent: "claude" });
-    expect("/project/CLAUDE.md" in written).toBe(true);
-  });
-
-  test("writes AGENTS.md for agent=codex", async () => {
+  test.each([
+    ["claude", "/project/CLAUDE.md"],
+    ["codex", "/project/AGENTS.md"],
+  ] as const)("writes correct shim file for agent=%s", async (agent, expectedPath) => {
     _rulesCLIDeps.loadCanonicalRules = async () => [
       { fileName: "style.md", content: "## Style\n\nContent." },
     ];
-    await rulesExportCommand({ dir: "/project", agent: "codex" });
-    expect("/project/AGENTS.md" in written).toBe(true);
+    await rulesExportCommand({ dir: "/project", agent });
+    expect(expectedPath in written).toBe(true);
   });
 
   test("shim content includes auto-generated header", async () => {
@@ -229,18 +224,14 @@ describe("rulesMigrateCommand", () => {
     expect("/project/.nax/rules/testing.md" in written).toBe(true);
   });
 
-  test("skips existing files unless --force", async () => {
+  test.each([
+    [false, false],
+    [true, true],
+  ] as const)("force=%s: existing file written=%s", async (force, expectedWritten) => {
     _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
-    await rulesMigrateCommand({ dir: "/project" });
-    expect("/project/.nax/rules/project-conventions.md" in written).toBe(false);
-  });
-
-  test("overwrites existing files when --force", async () => {
-    _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md" || p === "/project/.nax/rules/project-conventions.md";
-    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
-    await rulesMigrateCommand({ dir: "/project", force: true });
-    expect("/project/.nax/rules/project-conventions.md" in written).toBe(true);
+    await rulesMigrateCommand({ dir: "/project", ...(force ? { force } : {}) });
+    expect("/project/.nax/rules/project-conventions.md" in written).toBe(expectedWritten);
   });
 
   test("applies neutralization during migration", async () => {
