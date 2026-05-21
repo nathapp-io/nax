@@ -384,30 +384,22 @@ describe("SessionManager.sweepOrphans()", () => {
     expect(mgr.sweepOrphans(0)).toBe(0);
   });
 
-  test("removes terminal sessions older than ttl", () => {
+  test("removes terminal sessions older than ttl, keeps newer ones", () => {
     const mgr = new SessionManager();
-    // Set time to old timestamp
     _sessionManagerDeps.now = () => new Date(Date.now() - 10_000).toISOString();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
+    const oldSess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr.transition(oldSess.id, "RUNNING");
+    mgr.transition(oldSess.id, "COMPLETED");
 
-    // Sweep with ttl=1ms (anything older than 1ms is an orphan)
+    _sessionManagerDeps.now = () => new Date().toISOString();
+    const newSess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr.transition(newSess.id, "RUNNING");
+    mgr.transition(newSess.id, "COMPLETED");
+
     const removed = mgr.sweepOrphans(1);
     expect(removed).toBe(1);
-    expect(mgr.get(sess.id)).toBeNull();
-  });
-
-  test("keeps terminal sessions newer than ttl", () => {
-    // Reset mock to current time so lastActivityAt is "now"
-    _sessionManagerDeps.now = () => new Date().toISOString();
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
-    // Use max safe integer TTL — the session was just completed so it can't be older
-    const removed = mgr.sweepOrphans(Number.MAX_SAFE_INTEGER);
-    expect(removed).toBe(0);
+    expect(mgr.get(oldSess.id)).toBeNull();
+    expect(mgr.get(newSess.id)).not.toBeNull();
   });
 });
 
@@ -416,7 +408,7 @@ describe("SessionManager.sweepOrphans()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.getForStory()", () => {
-  test("returns all sessions matching the given storyId", () => {
+  test("returns matching sessions and empty array when no match", () => {
     const mgr = new SessionManager();
     const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     const s2 = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
@@ -425,11 +417,6 @@ describe("SessionManager.getForStory()", () => {
     const results = mgr.getForStory("US-001");
     expect(results).toHaveLength(2);
     expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
-  });
-
-  test("returns empty array when no sessions match", () => {
-    const mgr = new SessionManager();
-    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     expect(mgr.getForStory("US-999")).toHaveLength(0);
   });
 
@@ -463,16 +450,12 @@ describe("SessionManager.getForStory()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.handoff()", () => {
-  test("updates the session's agent owner", () => {
+  test("updates agent owner; throws NaxError for unknown session", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     const updated = mgr.handoff(sess.id, "codex", "fail-quota");
     expect(updated.agent).toBe("codex");
     expect(mgr.get(sess.id)?.agent).toBe("codex");
-  });
-
-  test("handoff on unknown session throws NaxError", () => {
-    const mgr = new SessionManager();
     expect(() => mgr.handoff("sess-unknown", "codex", "fail-quota")).toThrow(NaxError);
   });
 });
