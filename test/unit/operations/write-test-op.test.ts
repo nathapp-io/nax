@@ -181,6 +181,105 @@ describe("testWriterOp.parse — error handling", () => {
   });
 });
 
+describe("testWriterOp.verify — isolation", () => {
+  test("attaches isolation result when beforeRef provided and only test files changed", async () => {
+    const { testWriterOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("test/foo.test.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["test/foo.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await testWriterOp.verify!(parsed, input, ctx as any);
+
+      expect(result).not.toBeNull();
+      expect(result!.isolation).toBeDefined();
+      expect(result!.isolation!.passed).toBe(true);
+      expect(result!.isolation!.violations).toEqual([]);
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("attaches isolation result with violations when source files changed", async () => {
+    const { testWriterOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts", "test/foo.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await testWriterOp.verify!(parsed, input, ctx as any);
+
+      expect(result!.isolation!.passed).toBe(false);
+      expect(result!.isolation!.violations).toContain("src/foo.ts");
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("returns parsed unchanged when beforeRef absent (skip isolation)", async () => {
+    const { testWriterOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const parsed = {
+      success: true,
+      filesChanged: [],
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: "ok",
+    };
+    const input = { story: { id: "US-001" } as any }; // no beforeRef
+    const ctx = {
+      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+      config: DEFAULT_CONFIG.tdd,
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+
+    const result = await testWriterOp.verify!(parsed, input, ctx as any);
+    expect(result).toEqual(parsed);
+  });
+});
+
 describe("testWriterOp.recover — disk artifact recovery", () => {
   test("testWriterOp has an optional recover function", async () => {
     const { testWriterOp } = await import("@/operations");

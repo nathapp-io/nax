@@ -1,8 +1,12 @@
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { _isolationDeps, verifyTestWriterIsolation } from "../tdd/isolation";
+import type { IsolationCheck } from "../tdd/types";
 import { parseSessionJsonOutput } from "./_session-output";
 import type { RunOperation } from "./types";
+
+void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
 
 export interface TestWriterInput {
   readonly story: UserStory;
@@ -10,6 +14,12 @@ export interface TestWriterInput {
   readonly contextMarkdown?: string;
   readonly featureContextMarkdown?: string;
   readonly constitution?: string;
+  /**
+   * Git ref captured by the orchestrator just before this phase dispatches.
+   * When present, the op's `verify` hook runs test-writer isolation against this ref.
+   * Absent in legacy / ad-hoc callers — isolation is then skipped.
+   */
+  readonly beforeRef?: string;
 }
 
 export interface TestWriterOutput {
@@ -18,6 +28,8 @@ export interface TestWriterOutput {
   readonly estimatedCostUsd: number;
   readonly durationMs: number;
   readonly output: string;
+  /** Populated by `verify` when input.beforeRef was supplied. */
+  readonly isolation?: IsolationCheck;
 }
 
 export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddConfig> = {
@@ -62,6 +74,22 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
       durationMs: 0,
       output: envelope.output,
     };
+  },
+  async verify(parsed, input, ctx): Promise<TestWriterOutput | null> {
+    if (!input.beforeRef) return parsed;
+    const allowedPaths = ctx.config.tdd?.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+    const testFilePatterns =
+      typeof ctx.packageView.config.execution?.smartTestRunner === "object" &&
+      ctx.packageView.config.execution.smartTestRunner !== null
+        ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
+        : undefined;
+    const isolation = await verifyTestWriterIsolation(
+      ctx.packageView.packageDir,
+      input.beforeRef,
+      allowedPaths,
+      testFilePatterns,
+    );
+    return { ...parsed, isolation };
   },
 };
 
