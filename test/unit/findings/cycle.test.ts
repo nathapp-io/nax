@@ -87,50 +87,18 @@ beforeEach(() => {
 // ─── classifyOutcome ──────────────────────────────────────────────────────────
 
 describe("classifyOutcome", () => {
-  test("resolved — both empty", () => {
-    expect(classifyOutcome([], [])).toBe("resolved");
-  });
-
-  test("resolved — before non-empty, after empty", () => {
-    expect(classifyOutcome([lintA], [])).toBe("resolved");
-  });
-
-  test("unchanged — same finding key", () => {
-    expect(classifyOutcome([lintA], [lintA])).toBe("unchanged");
-  });
-
-  test("partial — one resolved, one remains", () => {
-    const before = [lintA, lintB];
-    const after = [lintA];
-    expect(classifyOutcome(before, after)).toBe("partial");
-  });
-
-  test("regressed — before empty, after has new findings (not regressed-different-source)", () => {
-    expect(classifyOutcome([], [lintA])).toBe("regressed");
-  });
-
-  test("regressed — new finding appears in same source", () => {
-    const before = [lintA];
-    const after = [lintA, lintB];
-    expect(classifyOutcome(before, after)).toBe("regressed");
-  });
-
-  test("regressed — all before resolved but new same-source finding appeared", () => {
-    const before = [lintA];
-    const after = [lintB]; // lintA resolved but lintB appeared (same source)
-    expect(classifyOutcome(before, after)).toBe("regressed");
-  });
-
-  test("regressed-different-source — source disappears, new source appears", () => {
-    const before = [lintA];
-    const after = [typecheckC];
-    expect(classifyOutcome(before, after)).toBe("regressed-different-source");
-  });
-
-  test("regressed-different-source — before has lint, after has lint + typecheck", () => {
-    const before = [lintA];
-    const after = [lintA, typecheckC];
-    expect(classifyOutcome(before, after)).toBe("regressed-different-source");
+  test.each([
+    [[], [], "resolved"],
+    [[lintA], [], "resolved"],
+    [[lintA], [lintA], "unchanged"],
+    [[lintA, lintB], [lintA], "partial"],
+    [[], [lintA], "regressed"],
+    [[lintA], [lintA, lintB], "regressed"],
+    [[lintA], [lintB], "regressed"],
+    [[lintA], [typecheckC], "regressed-different-source"],
+    [[lintA], [lintA, typecheckC], "regressed-different-source"],
+  ])("classifyOutcome($before, $after) → $expected", (before, after, expected) => {
+    expect(classifyOutcome(before, after)).toBe(expected);
   });
 });
 
