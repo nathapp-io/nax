@@ -116,52 +116,19 @@ describe("validatePlanOutput — valid input", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — missing required fields", () => {
-  test("throws when userStories is missing", () => {
-    expect(() => validatePlanOutput({}, "feat", "branch")).toThrow(/userStories/);
-  });
-
-  test("throws when userStories is empty array", () => {
-    expect(() => validatePlanOutput({ userStories: [] }, "feat", "branch")).toThrow(/userStories/);
-  });
-
-  test("throws when story id is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: undefined })]), "feat", "branch")).toThrow(/id/);
-  });
-
-  test("throws when story id is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: "" })]), "feat", "branch")).toThrow(/id/);
-  });
-
-  test("throws when story title is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ title: undefined })]), "feat", "branch")).toThrow(/title/);
-  });
-
-  test("throws when story title is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ title: "" })]), "feat", "branch")).toThrow(/title/);
-  });
-
-  test("throws when story description is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ description: undefined })]), "feat", "branch")).toThrow(
-      /description/,
-    );
-  });
-
-  test("throws when story description is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ description: "" })]), "feat", "branch")).toThrow(
-      /description/,
-    );
-  });
-
-  test("throws when acceptanceCriteria is missing", () => {
-    expect(() =>
-      validatePlanOutput(makeInput([makeStory({ acceptanceCriteria: undefined })]), "feat", "branch"),
-    ).toThrow(/acceptanceCriteria/);
-  });
-
-  test("throws when acceptanceCriteria is empty array", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ acceptanceCriteria: [] })]), "feat", "branch")).toThrow(
-      /acceptanceCriteria/,
-    );
+  test.each([
+    ["userStories missing", {}, /userStories/],
+    ["userStories empty array", { userStories: [] }, /userStories/],
+    ["story id missing", makeInput([makeStory({ id: undefined })]), /id/],
+    ["story id empty string", makeInput([makeStory({ id: "" })]), /id/],
+    ["story title missing", makeInput([makeStory({ title: undefined })]), /title/],
+    ["story title empty string", makeInput([makeStory({ title: "" })]), /title/],
+    ["story description missing", makeInput([makeStory({ description: undefined })]), /description/],
+    ["story description empty string", makeInput([makeStory({ description: "" })]), /description/],
+    ["acceptanceCriteria missing", makeInput([makeStory({ acceptanceCriteria: undefined })]), /acceptanceCriteria/],
+    ["acceptanceCriteria empty array", makeInput([makeStory({ acceptanceCriteria: [] })]), /acceptanceCriteria/],
+  ])("throws when %s", (_, input, pattern) => {
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 });
 
