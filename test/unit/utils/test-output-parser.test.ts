@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type TestFailure, formatFailureSummary, parseTestOutput } from "../../../src/verification/parser";
+import { type TestFailure, formatFailureSummary, parseTestOutput } from "../../../src/test-runners";
 
 describe("parseTestOutput", () => {
   test("parses passing output (0 failures)", () => {

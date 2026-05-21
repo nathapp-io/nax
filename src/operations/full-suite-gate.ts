@@ -117,7 +117,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
     return { config, testCmd: resolvedTestCmd, fullSuiteTimeout };
   },
   runTests: async (input, gateCtx) => {
-    const { executeWithTimeout, parseTestOutput } = await import("../verification");
+    const { executeWithTimeout } = await import("../verification");
+    const { parseTestOutput } = await import("../test-runners");
     const result = await executeWithTimeout(gateCtx.testCmd, gateCtx.fullSuiteTimeout, undefined, {
       cwd: input.workdir,
     });

@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { RectificationConfig } from "../../../src/config";
 import { RectifierPromptBuilder } from "../../../src/prompts";
 import { type RectificationState, shouldRetryRectification } from "../../../src/verification/rectification";
-import type { TestFailure } from "../../../src/verification/parser";
+import type { TestFailure } from "../../../src/test-runners";
 import type { UserStory } from "../../../src/prd";
 
 describe("shouldRetryRectification", () => {

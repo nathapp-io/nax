@@ -13,8 +13,8 @@ import { getSafeLogger } from "../../logger";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import type { NaxRuntime } from "../../runtime";
+import { parseTestOutput } from "../../test-runners";
 import { hasCommitsForStory } from "../../utils/git";
-import { parseTestOutput } from "../../verification";
 import { runRectificationLoop } from "../../verification/rectification-loop";
 import { fullSuite } from "../../verification/runners";
 

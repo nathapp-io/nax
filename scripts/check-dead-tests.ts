@@ -21,8 +21,6 @@ interface TestInfo {
 
 // Features that have been removed from the codebase
 const REMOVED_FEATURES = [
-  "worktree",
-  "dispatcher",
   "tdd-orchestrator-prompts",
   "verification v0.21",
   "verification v0.22.0",
@@ -37,11 +35,14 @@ export function parseTestFile(content: string, filePath: string): TestInfo {
   const testNames: string[] = [];
   const describes: string[] = [];
 
-  // Extract imports: import ... from "path"
-  const importRegex = /import\s+.*?\s+from\s+["']([^"']+)["']/g;
+  // Only scan imports before the first describe/test/it block to avoid
+  // matching fixture strings inside template literals in test bodies.
+  const firstBlockIdx = content.search(/^(?:describe|test|it)\s*\(/m);
+  const importSection = firstBlockIdx >= 0 ? content.slice(0, firstBlockIdx) : content;
+  const importRegex = /^\s*import\s+.*?\s+from\s+["']([^"']+)["']/gm;
   let match: RegExpExecArray | null;
 
-  while ((match = importRegex.exec(content)) !== null) {
+  while ((match = importRegex.exec(importSection)) !== null) {
     const importPath = match[1];
     // Skip non-src imports
     if (!importPath.startsWith("src/") && !importPath.includes("/src/")) {

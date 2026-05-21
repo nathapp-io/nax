@@ -7,9 +7,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { analyzeTestExitCode } from "../test-runners";
 import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
-import { analyzeTestExitCode } from "./parser";
 import type { AssetVerificationResult, VerificationGateOptions, VerificationResult } from "./types";
 
 /** Verify all expected files exist before running tests. */

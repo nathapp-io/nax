@@ -120,13 +120,13 @@ describe("findDeadTestReferences", () => {
     const testInfo = {
       path: "test/unit/example.test.ts",
       imports: [],
-      testNames: ["dispatcher integration", "worktree cleanup", "normal test"],
+      testNames: ["tdd-orchestrator-prompts integration", "verification v0.21 cleanup", "normal test"],
       describes: [],
     };
 
     const deadRefs = findDeadTestReferences(testInfo);
-    expect(deadRefs).toContain("dispatcher");
-    expect(deadRefs).toContain("worktree");
+    expect(deadRefs).toContain("tdd-orchestrator-prompts");
+    expect(deadRefs).toContain("verification v0.21");
     expect(deadRefs).not.toContain("normal test");
   });
 
@@ -148,7 +148,7 @@ describe("findDeadTestReferences", () => {
     const testInfo = {
       path: "test/unit/example.test.ts",
       imports: [],
-      testNames: ["Dispatcher handling", "WORKTREE setup"],
+      testNames: ["TDD-orchestrator-prompts handling", "Verification v0.21 setup"],
       describes: [],
     };
 
@@ -219,7 +219,7 @@ describe("scanTestDirectory", () => {
     writeFileSync(
       join(tempDir, "test", "unit", "old.test.ts"),
       `
-      describe("dispatcher integration", () => {
+      describe("tdd-orchestrator-prompts integration", () => {
         test("test", () => {});
       });
     `

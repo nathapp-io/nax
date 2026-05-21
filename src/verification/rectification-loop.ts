@@ -22,9 +22,8 @@ import { RectifierPromptBuilder } from "../prompts";
 import type { FailureRecord } from "../prompts";
 import { formatSessionName } from "../runtime/session-name";
 import { SessionKeeper } from "../session/session-keeper";
+import { formatFailureSummary, parseTestOutput } from "../test-runners";
 import { buildFailureRecords } from "./failure-records";
-import { parseTestOutput } from "./parser";
-import { formatFailureSummary } from "./parser";
 import { fullSuite as _fullSuite } from "./runners";
 import { runRetryLoop } from "./shared-rectification-loop";
 

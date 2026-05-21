@@ -17,7 +17,7 @@ import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
-import { formatFailureSummary } from "@/verification";
+import { formatFailureSummary } from "@/test-runners";
 import type { TestFailure } from "@/verification";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
