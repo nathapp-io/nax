@@ -361,37 +361,27 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — workdir validation (MW-001)", () => {
-  test("valid relative workdir is accepted and preserved", () => {
-    const input = makeInput([makeStory({ workdir: "packages/api" })]);
+  test.each([
+    ["valid relative path", "packages/api"],
+    ["nested relative path", "packages/api/src"],
+  ])("accepts %s", (_, workdir) => {
+    const input = makeInput([makeStory({ workdir })]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBe("packages/api");
+    expect(prd.userStories[0]!.workdir).toBe(workdir);
+  });
+
+  test.each([
+    ["leading slash (absolute path)", "/packages/api", /leading \//],
+    ["contains '..'", "../sibling-package", /\.\./],
+    ["not a string", 42, /workdir.*string/],
+  ])("throws when workdir %s", (_, workdir, pattern) => {
+    const input = makeInput([makeStory({ workdir })]);
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 
   test("workdir is optional — omitting it leaves field undefined", () => {
-    const input = makeInput([makeStory()]);
-    const prd = validatePlanOutput(input, "feat", "branch");
+    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "branch");
     expect(prd.userStories[0]!.workdir).toBeUndefined();
-  });
-
-  test("throws when workdir has leading slash (absolute path)", () => {
-    const input = makeInput([makeStory({ workdir: "/packages/api" })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/leading \//);
-  });
-
-  test("throws when workdir contains '..'", () => {
-    const input = makeInput([makeStory({ workdir: "../sibling-package" })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/\.\./);
-  });
-
-  test("throws when workdir is not a string", () => {
-    const input = makeInput([makeStory({ workdir: 42 })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/workdir.*string/);
-  });
-
-  test("nested workdir path is valid", () => {
-    const input = makeInput([makeStory({ workdir: "packages/api/src" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBe("packages/api/src");
   });
 });
 
