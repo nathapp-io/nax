@@ -201,19 +201,61 @@ async function runPhase(
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
 ): Promise<unknown> {
+  const logger = getSafeLogger();
   const opName = slot.op.name;
   const isTddPhase = TDD_OP_NAMES.has(opName);
 
+  // Pre-phase: capture git ref for TDD phases; emit phase-begin log.
   const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
   const dispatchInput =
     isTddPhase && beforeRef
       ? { ...(slot.input as Record<string, unknown>), beforeRef }
       : slot.input;
 
+  if (isTddPhase) {
+    logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName });
+  } else if (opName === "full-suite-gate") {
+    logger?.info("tdd", "-> Running full test suite gate (before Verifier)", { storyId: ctx.storyId });
+  }
+
+  const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
   try {
     const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
+
+    // Post-phase logs (TDD phases only).
+    if (isTddPhase) {
+      const durationMs = Date.now() - phaseStartedAt;
+      logger?.info("tdd", `Session complete: ${opName}`, {
+        storyId: ctx.storyId,
+        role: opName,
+        durationMs,
+      });
+
+      const filesChanged = (output as { filesChanged?: readonly string[] })?.filesChanged ?? [];
+      if (opName === "test-writer" && filesChanged.length > 0) {
+        logger?.info("tdd", "Created test files", {
+          storyId: ctx.storyId,
+          testFilesCount: filesChanged.length,
+          testFiles: [...filesChanged],
+        });
+      }
+
+      const isolation = (output as { isolation?: { passed: boolean; violations: string[] } })?.isolation;
+      if (isolation) {
+        if (isolation.passed) {
+          logger?.info("tdd", "Isolation maintained", { storyId: ctx.storyId, role: opName });
+        } else {
+          logger?.error("tdd", "Isolation violated", {
+            storyId: ctx.storyId,
+            role: opName,
+            violations: isolation.violations,
+          });
+        }
+      }
+    }
+
     return output;
   } finally {
     phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd;
