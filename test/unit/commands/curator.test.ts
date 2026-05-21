@@ -176,17 +176,13 @@ describe("curatorStatus", () => {
   });
 
   describe("no runs", () => {
-    test("reports no runs when runs directory is empty", async () => {
+    test.each([
+      ["empty runs directory", false],
+      ["missing runs directory", true],
+    ] as const)("reports no runs when %s", async (_label, removeDir) => {
+      if (removeDir) rmSync(join(outputDir, "runs"), { recursive: true, force: true });
       await curatorStatus({});
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("No runs found");
-    });
-
-    test("reports no runs when runs directory does not exist", async () => {
-      rmSync(join(outputDir, "runs"), { recursive: true, force: true });
-      await curatorStatus({});
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("No runs found");
+      expect(capturedOutput.join("\n")).toContain("No runs found");
     });
   });
 
