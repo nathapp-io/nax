@@ -266,13 +266,17 @@ describe("splitFindingsByScope — structured findings path", () => {
     expect(sourceFindings!.findings!.map((f) => f.file)).toEqual(["src/auth.ts", "src/utils.ts"]);
   });
 
-  test("finding with file:undefined is treated as source-file (non-test)", () => {
-    const finding: ReviewFinding = { ruleId: "r", severity: "error", file: undefined as any, line: 1, message: "m" };
-    const check = makeAdversarialCheck([finding]);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
-    expect(sourceFindings!.findings).toHaveLength(1);
+  test("file:undefined routes to sourceFindings (non-test-gap) or testFindings (test-gap)", () => {
+    const nonGap: ReviewFinding = { ruleId: "r", severity: "error", file: undefined as any, line: 1, message: "m" };
+    const { testFindings: t1, sourceFindings: s1 } = splitFindingsByScope(makeAdversarialCheck([nonGap]));
+    expect(t1).toBeNull();
+    expect(s1).not.toBeNull();
+    expect(s1!.findings).toHaveLength(1);
+
+    const gap: ReviewFinding = { ruleId: "r", severity: "error", file: undefined as any, line: 1, message: "m", category: "test-gap" };
+    const { testFindings: t2, sourceFindings: s2 } = splitFindingsByScope(makeAdversarialCheck([gap]));
+    expect(t2).not.toBeNull();
+    expect(s2).toBeNull();
   });
 
   test("scoped checks inherit exitCode and raw output from parent check", () => {
@@ -312,20 +316,6 @@ describe("splitFindingsByScope — structured findings path", () => {
     expect(testFindings!.findings!.map((f) => f.category)).toEqual(["test-gap", "convention"]);
   });
 
-  test("test-gap with undefined file routes to testFindings", () => {
-    const finding: ReviewFinding = {
-      ruleId: "r",
-      severity: "error",
-      file: undefined as any,
-      line: 1,
-      message: "m",
-      category: "test-gap",
-    };
-    const check = makeAdversarialCheck([finding]);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).not.toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -536,7 +526,7 @@ Found 2 errors.
     expect(filtered).not.toContain("Found 2 errors.");
   });
 
-  test("strips summary lines that appear before the next block", () => {
+  test("strips summary lines that appear before next block; returns null when target files absent", () => {
     const output = `
 src/service.ts:10:3 lint/style/useConst
   ✖ Use const.
@@ -549,17 +539,13 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
     expect(sourceOnly).not.toBeNull();
     expect(sourceOnly).toContain("src/service.ts:10:3");
     expect(sourceOnly).not.toContain("Found 1 error.");
-  });
 
-  test("returns null when target files are absent", () => {
-    const output = "src/service.ts:10:3 lint/style/useConst";
-    const filtered = filterLintOutputToFiles(output, new Set(["src/other.ts"]));
-    expect(filtered).toBeNull();
+    expect(filterLintOutputToFiles("src/service.ts:10:3 lint/style/useConst", new Set(["src/other.ts"]))).toBeNull();
   });
 });
 
 describe("filterTypecheckOutputToFiles", () => {
-  test("filters tsc blocks to target file only", () => {
+  test("filters tsc blocks to target file; returns null when absent", () => {
     const output = `
 src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
 
@@ -571,12 +557,9 @@ Found 2 errors in 2 files.
     expect(filtered).toContain("src/service.test.ts(5,1)");
     expect(filtered).not.toContain("src/service.ts(10,3)");
     expect(filtered).not.toContain("Found 2 errors in 2 files.");
-  });
 
-  test("returns null when target files are absent", () => {
-    const output = "src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.";
-    const filtered = filterTypecheckOutputToFiles(output, new Set(["src/other.ts"]), "tsc");
-    expect(filtered).toBeNull();
+    const absent = filterTypecheckOutputToFiles("src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.", new Set(["src/other.ts"]), "tsc");
+    expect(absent).toBeNull();
   });
 });
 
