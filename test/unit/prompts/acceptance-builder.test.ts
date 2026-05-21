@@ -56,14 +56,13 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
   });
 
   describe("structural contract", () => {
-    test("includes feature name", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).toContain(`"${FEATURE}" feature`);
-    });
-
-    test("includes acceptance criteria list", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).toContain(CRITERIA_LIST);
+    test.each([
+      ["feature name", `"${FEATURE}" feature`],
+      ["acceptance criteria list", CRITERIA_LIST],
+      ["target test file path", TARGET_PATH],
+      ["file output requirement", "File output (REQUIRED)"],
+    ])("includes %s", (_label, expected) => {
+      expect(builder.buildGeneratorFromPRDPrompt(base)).toContain(expected);
     });
 
     test("includes step headers", () => {
@@ -71,16 +70,6 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
       expect(result).toContain("## Step 1");
       expect(result).toContain("## Step 2");
       expect(result).toContain("## Step 3");
-    });
-
-    test("includes target test file path in path anchor", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).toContain(TARGET_PATH);
-    });
-
-    test("includes file output requirement", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).toContain("File output (REQUIRED)");
     });
 
     test("includes implementation context when provided", () => {
@@ -121,26 +110,17 @@ describe("builder.buildGeneratorFromSpecPrompt()", () => {
   });
 
   describe("structural contract", () => {
-    test("includes feature name", () => {
-      expect(builder.buildGeneratorFromSpecPrompt(base)).toContain(`"${FEATURE}" feature`);
-    });
-
-    test("includes criteria list", () => {
-      expect(builder.buildGeneratorFromSpecPrompt(base)).toContain(CRITERIA_LIST);
-    });
-
-    test("includes raw code output instruction", () => {
-      expect(builder.buildGeneratorFromSpecPrompt(base)).toContain("Output raw code only");
-    });
-
-    test("includes resolved test path in path anchor", () => {
-      const result = builder.buildGeneratorFromSpecPrompt(base);
-      expect(result).toContain(RESOLVED_TEST_PATH);
+    test.each([
+      ["feature name", `"${FEATURE}" feature`],
+      ["criteria list", CRITERIA_LIST],
+      ["raw code output instruction", "Output raw code only"],
+      ["resolved test path", RESOLVED_TEST_PATH],
+    ])("includes %s", (_label, expected) => {
+      expect(builder.buildGeneratorFromSpecPrompt(base)).toContain(expected);
     });
 
     test("does NOT include file output (REQUIRED) directive (raw output mode)", () => {
-      const result = builder.buildGeneratorFromSpecPrompt(base);
-      expect(result).not.toContain("File output (REQUIRED)");
+      expect(builder.buildGeneratorFromSpecPrompt(base)).not.toContain("File output (REQUIRED)");
     });
   });
 });
@@ -172,9 +152,12 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
   });
 
   describe("structural contract", () => {
-    test("includes test output", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).toContain(base.truncatedOutput);
+    test.each([
+      ["test output", () => base.truncatedOutput],
+      ["source files section", () => base.sourceFilesSection],
+      ["maxFileLines header", () => `up to ${base.maxFileLines} lines each`],
+    ])("includes %s", (_label, getExpected) => {
+      expect(builder.buildDiagnosisPromptTemplate(base)).toContain(getExpected());
     });
 
     test("references acceptance test path (Bug 6 — no embedded body)", () => {
@@ -184,18 +167,7 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
     });
 
     test("instructs agent to use Read on the test path", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).toContain("Read");
-    });
-
-    test("includes source files section", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).toContain(base.sourceFilesSection);
-    });
-
-    test("includes maxFileLines in source files header", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
-      expect(result).toContain(`up to ${base.maxFileLines} lines each`);
+      expect(builder.buildDiagnosisPromptTemplate(base)).toContain("Read");
     });
 
     test("includes JSON response schema", () => {
@@ -240,17 +212,12 @@ describe("builder.buildSourceFixPrompt()", () => {
     expect(result).not.toContain("```typescript");
   });
 
-  test("references acceptance test path", () => {
-    expect(builder.buildSourceFixPrompt(base)).toContain(base.acceptanceTestPath);
-  });
-
-  test("instructs agent to Read the test file", () => {
-    const result = builder.buildSourceFixPrompt(base);
-    expect(result).toContain("Read the test file at the path above");
-  });
-
-  test("includes diagnosis reasoning", () => {
-    expect(builder.buildSourceFixPrompt(base)).toContain(base.diagnosisReasoning);
+  test.each([
+    ["acceptance test path", () => base.acceptanceTestPath],
+    ["Read instruction", () => "Read the test file at the path above"],
+    ["diagnosis reasoning", () => base.diagnosisReasoning],
+  ])("buildSourceFixPrompt includes %s", (_label, getExpected) => {
+    expect(builder.buildSourceFixPrompt(base)).toContain(getExpected());
   });
 
   test("includes prior iterations block when provided", () => {
@@ -296,18 +263,12 @@ describe("builder.buildTestFixPrompt()", () => {
     expect(result).toContain("Expected 1 got 0");
   });
 
-  test("references acceptance test path", () => {
-    expect(builder.buildTestFixPrompt(base)).toContain(base.acceptanceTestPath);
-  });
-
-  test("instructs agent to Read the test file", () => {
-    const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain("Read the test file at the path above");
-  });
-
-  test("includes diagnosis reasoning", () => {
-    const result = builder.buildTestFixPrompt(base);
-    expect(result).toContain(base.diagnosisReasoning);
+  test.each([
+    ["acceptance test path", () => base.acceptanceTestPath],
+    ["Read instruction", () => "Read the test file at the path above"],
+    ["diagnosis reasoning", () => base.diagnosisReasoning],
+  ])("buildTestFixPrompt includes %s", (_label, getExpected) => {
+    expect(builder.buildTestFixPrompt(base)).toContain(getExpected());
   });
 
   test("includes prior iterations block when provided", () => {
