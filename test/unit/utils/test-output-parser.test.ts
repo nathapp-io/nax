@@ -393,60 +393,33 @@ describe("formatFailureSummary", () => {
     expect(result).toContain("at /path/to/file.ts:10:15");
   });
 
-  test("formats multiple failures", () => {
+  test("formats multiple failures with numbering and blank line separation", () => {
     const failures: TestFailure[] = [
-      {
-        file: "test/file1.test.ts",
-        testName: "test 1",
-        error: "Error 1",
-        stackTrace: ["at /path/file1.ts:5:10"],
-      },
-      {
-        file: "test/file2.test.ts",
-        testName: "test 2",
-        error: "Error 2",
-        stackTrace: ["at /path/file2.ts:15:20"],
-      },
+      { file: "test/file1.test.ts", testName: "test 1", error: "Error 1", stackTrace: ["at /path/file1.ts:5:10"] },
+      { file: "test/file2.test.ts", testName: "test 2", error: "Error 2", stackTrace: ["at /path/file2.ts:15:20"] },
     ];
-
     const result = formatFailureSummary(failures);
-
     expect(result).toContain("1. test/file1.test.ts > test 1");
     expect(result).toContain("Error: Error 1");
     expect(result).toContain("2. test/file2.test.ts > test 2");
     expect(result).toContain("Error: Error 2");
+    expect(result.split("\n").filter((l) => l.trim() === "").length).toBeGreaterThan(0);
   });
 
-  test("respects maxChars limit", () => {
-    const failures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
+  test("truncates at explicit maxChars and at default 2000", () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({
       file: `test/file${i}.test.ts`,
       testName: `test ${i}`,
       error: `Error message ${i}`,
       stackTrace: [`at /path/file${i}.ts:${i}:${i}`],
     }));
-
-    const result = formatFailureSummary(failures, 300);
-
-    expect(result.length).toBeLessThanOrEqual(350); // Some buffer for truncation message
-    expect(result).toContain("... and");
-    expect(result).toContain("more failure(s) (truncated)");
-  });
-
-  test("handles failure without stack trace", () => {
-    const failures: TestFailure[] = [
-      {
-        file: "test/nostack.test.ts",
-        testName: "no stack",
-        error: "Error without stack",
-        stackTrace: [],
-      },
-    ];
-
-    const result = formatFailureSummary(failures);
-
-    expect(result).toContain("1. test/nostack.test.ts > no stack");
-    expect(result).toContain("Error: Error without stack");
-    expect(result).not.toContain("at ");
+    const small = formatFailureSummary(many.slice(0, 10), 300);
+    expect(small.length).toBeLessThanOrEqual(350);
+    expect(small).toContain("... and");
+    expect(small).toContain("more failure(s) (truncated)");
+    const full = formatFailureSummary(many);
+    expect(full.length).toBeLessThanOrEqual(2100);
+    expect(full).toContain("(truncated)");
   });
 
   test("handles nested test names", () => {
@@ -465,58 +438,18 @@ describe("formatFailureSummary", () => {
     expect(result).toContain("Error: Nested test error");
   });
 
-  test("includes only first stack trace line", () => {
-    const failures: TestFailure[] = [
-      {
-        file: "test/multi.test.ts",
-        testName: "multi stack",
-        error: "Error with multiple stack lines",
-        stackTrace: ["at /path/file.ts:10:5", "at /path/file.ts:20:10", "at /path/file.ts:30:15"],
-      },
-    ];
+  test("handles failure without stack trace and includes only first of multiple stack lines", () => {
+    const noStack: TestFailure[] = [{ file: "test/nostack.test.ts", testName: "no stack", error: "Error without stack", stackTrace: [] }];
+    const r1 = formatFailureSummary(noStack);
+    expect(r1).toContain("1. test/nostack.test.ts > no stack");
+    expect(r1).toContain("Error: Error without stack");
+    expect(r1).not.toContain("at ");
 
-    const result = formatFailureSummary(failures);
-
-    expect(result).toContain("at /path/file.ts:10:5");
-    expect(result).not.toContain("at /path/file.ts:20:10");
-    expect(result).not.toContain("at /path/file.ts:30:15");
+    const multiStack: TestFailure[] = [{ file: "test/multi.test.ts", testName: "multi stack", error: "Error with multiple stack lines", stackTrace: ["at /path/file.ts:10:5", "at /path/file.ts:20:10", "at /path/file.ts:30:15"] }];
+    const r2 = formatFailureSummary(multiStack);
+    expect(r2).toContain("at /path/file.ts:10:5");
+    expect(r2).not.toContain("at /path/file.ts:20:10");
+    expect(r2).not.toContain("at /path/file.ts:30:15");
   });
 
-  test("separates failures with blank lines", () => {
-    const failures: TestFailure[] = [
-      {
-        file: "test/a.test.ts",
-        testName: "test a",
-        error: "Error A",
-        stackTrace: ["at a.ts:1:1"],
-      },
-      {
-        file: "test/b.test.ts",
-        testName: "test b",
-        error: "Error B",
-        stackTrace: ["at b.ts:2:2"],
-      },
-    ];
-
-    const result = formatFailureSummary(failures);
-
-    // Check that there's proper separation between failures
-    const lines = result.split("\n");
-    const blankLines = lines.filter((line) => line.trim() === "");
-    expect(blankLines.length).toBeGreaterThan(0);
-  });
-
-  test("uses default maxChars of 2000", () => {
-    const failures: TestFailure[] = Array.from({ length: 50 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error message ${i}`,
-      stackTrace: [`at /path/file${i}.ts:${i}:${i}`],
-    }));
-
-    const result = formatFailureSummary(failures); // No maxChars argument
-
-    expect(result.length).toBeLessThanOrEqual(2100); // Some buffer
-    expect(result).toContain("(truncated)");
-  });
 });
