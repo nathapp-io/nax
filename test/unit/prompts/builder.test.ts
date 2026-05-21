@@ -146,41 +146,20 @@ describe("PromptBuilder section order", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder non-overridable sections", () => {
-  test("story context always included even when override is set", async () => {
+  test("override preserves story context, conventions footer order, and isolation rules", async () => {
     const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# Custom override body\nThis replaces the template.");
+    writeFileSync(overridePath, "# Custom override body");
 
     const story = makeStory({ title: "NON_OVERRIDABLE_STORY" });
     const prompt = await PromptBuilder.for("test-writer").story(story).override(overridePath).build();
 
     expect(prompt).toContain("NON_OVERRIDABLE_STORY");
-  });
-
-  test("conventions footer always last even when override is set", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
-    const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# Custom override body");
-
-    const prompt = await PromptBuilder.for("implementer").story(makeStory()).override(overridePath).build();
-
-    // Conventions footer must exist and be after the override content
     const overrideIdx = prompt.indexOf("Custom override body");
     const conventionsIdx = prompt.lastIndexOf("conventions");
     expect(conventionsIdx).toBeGreaterThan(overrideIdx);
-  });
-
-  test("isolation rules always present even when override is set", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
-    const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# My custom template");
-
-    const prompt = await PromptBuilder.for("test-writer").story(makeStory()).override(overridePath).build();
-
-    // Isolation rules must appear somewhere in the final prompt
     const lowerPrompt = prompt.toLowerCase();
-    const hasIsolation = lowerPrompt.includes("isolation") || lowerPrompt.includes("isolat");
-    expect(hasIsolation).toBe(true);
+    expect(lowerPrompt.includes("isolation") || lowerPrompt.includes("isolat")).toBe(true);
   });
 
   test("story context not removable via override for each role", async () => {
@@ -366,20 +345,12 @@ describe("src/prompts/types exports — tdd-simple", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — batch role: .stories() method", () => {
-  test(".stories() is chainable", () => {
-    const builder = PromptBuilder.for("batch").stories([makeStory()]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".stories() accepts an array of UserStory", () => {
-    const stories = [makeStory({ id: "B-001" }), makeStory({ id: "B-002" })];
-    const builder = PromptBuilder.for("batch").stories(stories);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".stories() accepts an empty array without error", () => {
-    const builder = PromptBuilder.for("batch").stories([]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
+  test.each([
+    ["single story", [makeStory()]],
+    ["multiple stories", [makeStory({ id: "B-001" }), makeStory({ id: "B-002" })]],
+    ["empty array", [] as UserStory[]],
+  ])(".stories() with %s is chainable", (_label, stories) => {
+    expect(PromptBuilder.for("batch").stories(stories)).toBeInstanceOf(PromptBuilder);
   });
 });
 
@@ -395,14 +366,10 @@ describe("PromptBuilder — batch role: build()", () => {
     expect(prompt.length).toBeGreaterThan(0);
   });
 
-  test("uses buildBatchStorySection: includes all story IDs", async () => {
+  test("uses buildBatchStorySection: includes all story IDs and Story N headings", async () => {
     const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt).toContain("BP-001");
     expect(prompt).toContain("BP-002");
-  });
-
-  test("uses batch story section with '## Story N:' headings", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt).toContain("## Story 1:");
     expect(prompt).toContain("## Story 2:");
   });
@@ -474,21 +441,13 @@ describe("PromptBuilder — acceptanceContext() method (US-001 AC4)", () => {
     expect(builder).toBeInstanceOf(PromptBuilder);
   });
 
-  test("build() includes acceptance test content when acceptanceContext() is called", async () => {
-    const entries = [{ testPath: "test/acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
+  test("build() includes acceptance test content and test file path when acceptanceContext() is called", async () => {
+    const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
     const prompt = await PromptBuilder.for("implementer")
       .story(makeStory())
       .acceptanceContext(entries)
       .build();
     expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
-  });
-
-  test("build() includes the test file path heading when acceptanceContext() is called", async () => {
-    const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "// test" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
     expect(prompt).toContain("test/unit/my-feature.test.ts");
   });
 
