@@ -141,30 +141,17 @@ describe("mergePackageConfig", () => {
   });
 
   describe("review field overrides", () => {
-    test("overrides review.enabled per package", () => {
+    test("overrides review.enabled and review.checks independently", () => {
       const root: NaxConfig = {
         ...makeRoot(),
         review: { enabled: true, checks: ["typecheck", "lint"], commands: {}, pluginMode: "per-story" },
       };
-      const result = mergePackageConfig(root, {
-        review: { enabled: false } as Partial<NaxConfig["review"]>,
-      } as Partial<NaxConfig>);
+      const withEnabled = mergePackageConfig(root, { review: { enabled: false } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
+      expect(withEnabled.review.enabled).toBe(false);
+      expect(withEnabled.review.checks).toEqual(["typecheck", "lint"]);
 
-      expect(result.review.enabled).toBe(false);
-      // Other review fields preserved
-      expect(result.review.checks).toEqual(["typecheck", "lint"]);
-    });
-
-    test("overrides review.checks per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        review: { enabled: true, checks: ["typecheck", "lint"], commands: {}, pluginMode: "per-story" },
-      };
-      const result = mergePackageConfig(root, {
-        review: { checks: ["lint"] } as Partial<NaxConfig["review"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.review.checks).toEqual(["lint"]);
+      const withChecks = mergePackageConfig(root, { review: { checks: ["lint"] } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
+      expect(withChecks.review.checks).toEqual(["lint"]);
     });
 
     test("deep merges review.commands per package", () => {
@@ -197,46 +184,23 @@ describe("mergePackageConfig", () => {
       expect(result.review.pluginMode).toBe("deferred");
     });
 
-    test("deep merges review.semantic per package", () => {
-      const root: NaxConfig = {
+    test("deep merges review.semantic: rules override and modelTier override both preserve other field", () => {
+      const makeSemanticRoot = (semantic: NaxConfig["review"]["semantic"]) => ({
         ...makeRoot(),
-        review: {
-          enabled: true,
-          checks: ["typecheck", "semantic"],
-          commands: {},
-          pluginMode: "per-story",
-          semantic: { modelTier: "balanced", rules: ["rule1"] },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        review: { semantic: { rules: ["rule1", "rule2"] } } as Partial<
-          NaxConfig["review"]
-        >,
+        review: { enabled: true, checks: ["semantic"], commands: {}, pluginMode: "per-story" as const, semantic },
+      });
+
+      const rulesResult = mergePackageConfig(makeSemanticRoot({ modelTier: "balanced", rules: ["rule1"] }), {
+        review: { semantic: { rules: ["rule1", "rule2"] } } as Partial<NaxConfig["review"]>,
       } as Partial<NaxConfig>);
+      expect(rulesResult.review.semantic?.modelTier).toBe("balanced");
+      expect(rulesResult.review.semantic?.rules).toEqual(["rule1", "rule2"]);
 
-      expect(result.review.semantic?.modelTier).toBe("balanced");
-      expect(result.review.semantic?.rules).toEqual(["rule1", "rule2"]);
-    });
-
-    test("overrides review.semantic.modelTier per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        review: {
-          enabled: true,
-          checks: ["semantic"],
-          commands: {},
-          pluginMode: "per-story",
-          semantic: { modelTier: "balanced", rules: [] },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        review: { semantic: { modelTier: "powerful" } } as Partial<
-          NaxConfig["review"]
-        >,
+      const tierResult = mergePackageConfig(makeSemanticRoot({ modelTier: "balanced", rules: [] }), {
+        review: { semantic: { modelTier: "powerful" } } as Partial<NaxConfig["review"]>,
       } as Partial<NaxConfig>);
-
-      expect(result.review.semantic?.modelTier).toBe("powerful");
-      expect(result.review.semantic?.rules).toEqual([]);
+      expect(tierResult.review.semantic?.modelTier).toBe("powerful");
+      expect(tierResult.review.semantic?.rules).toEqual([]);
     });
 
     describe("PKG-006: quality.commands bridged to review.commands", () => {
