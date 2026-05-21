@@ -15,81 +15,46 @@ import { classifyComplexity, complexityToModelTier, determineTestStrategy, route
 import { makeNaxConfig } from "../../helpers";
 
 describe("classifyComplexity", () => {
-  test("simple: no complexity keywords", () => {
-    expect(classifyComplexity("Fix typo", "Fix a typo in error message", ["Typo is fixed"], [])).toBe("simple");
-  });
-
-  test("complex: security keyword in tag", () => {
-    expect(classifyComplexity("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"])).toBe(
+  test.each([
+    ["simple: no complexity keywords", "Fix typo", "Fix a typo in error message", ["Typo is fixed"], [], "simple"],
+    [
+      "complex: security keyword in tag",
+      "Auth refactor",
+      "Refactor JWT authentication",
+      ["Token works"],
+      ["security"],
       "complex",
-    );
-  });
-
-  test("complex: complex keyword in title", () => {
-    expect(classifyComplexity("Refactor auth module", "", ["AC1"], [])).toBe("complex");
-  });
-
-  test("expert: distributed keyword", () => {
-    expect(classifyComplexity("Real-time sync", "Real-time distributed consensus", ["Sync works"], [])).toBe("expert");
-  });
-
-  // #408: AC count no longer drives complexity — content (keywords) is the only signal.
-  // These tests replace the BUG-19 regression tests which verified AC-count thresholds
-  // that have been intentionally removed.
-  test("many ACs without complexity keywords → simple (#408)", () => {
-    const complexity = classifyComplexity(
+    ],
+    ["complex: complex keyword in title", "Refactor auth module", "", ["AC1"], [], "complex"],
+    ["expert: distributed keyword", "Real-time sync", "Real-time distributed consensus", ["Sync works"], [], "expert"],
+    // #408: AC count no longer drives complexity — content (keywords) is the only signal.
+    [
+      "many ACs without keywords → simple (#408)",
       "Add validation",
       "Add comprehensive input validation",
       ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
       [],
-    );
-    expect(complexity).toBe("simple");
-  });
-
-  test("few ACs with complex keyword → complex (#408)", () => {
-    const complexity = classifyComplexity("Refactor validation module", "", ["AC1", "AC2"], []);
-    expect(complexity).toBe("complex");
+      "simple",
+    ],
+    ["few ACs with complex keyword → complex (#408)", "Refactor validation module", "", ["AC1", "AC2"], [], "complex"],
+  ] as const)("%s", (_label, title, desc, acs, tags, expected) => {
+    expect(classifyComplexity(title, desc, [...acs], [...tags])).toBe(expected);
   });
 });
 
 describe("determineTestStrategy", () => {
-  test("simple → tdd-simple", () => {
-    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("tdd-simple");
-  });
-
-  // #408: medium now routes to tdd-simple (was three-session-tdd-lite)
-  test("medium → tdd-simple (#408)", () => {
-    expect(determineTestStrategy("medium", "Add schema fields", "Add DTO fields", [])).toBe("tdd-simple");
-  });
-
-  // #408: complex now routes to three-session-tdd-lite (was three-session-tdd)
-  test("complex → three-session-tdd-lite (#408)", () => {
-    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [])).toBe("three-session-tdd-lite");
-  });
-
-  test("expert → three-session-tdd", () => {
-    expect(determineTestStrategy("expert", "Redesign architecture", "Architectural overhaul", [])).toBe(
-      "three-session-tdd",
-    );
-  });
-
-  test("security keyword → three-session-tdd even if simple", () => {
-    expect(determineTestStrategy("simple", "Fix auth bypass", "Security fix for JWT token", ["security"])).toBe(
-      "three-session-tdd",
-    );
-  });
-
-  test("public api keyword → three-session-tdd even if simple", () => {
-    expect(determineTestStrategy("simple", "Add endpoint", "New public api endpoint for users", [])).toBe(
-      "three-session-tdd",
-    );
-  });
-
-  // security keyword overrides complex → still three-session-tdd, not three-session-tdd-lite
-  test("security keyword on complex → three-session-tdd (override wins)", () => {
-    expect(determineTestStrategy("complex", "Auth UI", "JWT token security screen", ["security"], "auto")).toBe(
-      "three-session-tdd",
-    );
+  test.each([
+    // #408: medium now routes to tdd-simple; complex to three-session-tdd-lite
+    ["simple → tdd-simple", "simple", "Fix typo", "Fix a typo", [], undefined, "tdd-simple"],
+    ["medium → tdd-simple (#408)", "medium", "Add schema fields", "Add DTO fields", [], undefined, "tdd-simple"],
+    ["complex → three-session-tdd-lite (#408)", "complex", "Refactor module", "Complex refactor", [], undefined, "three-session-tdd-lite"],
+    ["expert → three-session-tdd", "expert", "Redesign architecture", "Architectural overhaul", [], undefined, "three-session-tdd"],
+    ["security keyword on simple → three-session-tdd", "simple", "Fix auth bypass", "Security fix for JWT token", ["security"], undefined, "three-session-tdd"],
+    ["public api keyword on simple → three-session-tdd", "simple", "Add endpoint", "New public api endpoint for users", [], undefined, "three-session-tdd"],
+    // security keyword overrides complex → still three-session-tdd, not three-session-tdd-lite
+    ["security keyword on complex → three-session-tdd (override wins)", "complex", "Auth UI", "JWT token security screen", ["security"], "auto", "three-session-tdd"],
+  ] as const)("%s", (_label, complexity, title, desc, tags, strategy, expected) => {
+    expect(determineTestStrategy(complexity, title, desc, [...tags], strategy)).toBe(expected);
   });
 
   describe("tddStrategy overrides", () => {
@@ -122,20 +87,6 @@ describe("determineTestStrategy", () => {
 });
 
 describe("routeTask", () => {
-  test("routes simple task to fast model with tdd-simple (TS-001)", () => {
-    const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
-    expect(result.complexity).toBe("simple");
-    expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("tdd-simple");
-  });
-
-  test("routes security task to powerful with three-session-tdd", () => {
-    const result = routeTask("Auth fix", "Fix JWT auth bypass", ["Auth works"], ["security"], DEFAULT_CONFIG);
-    expect(result.complexity).toBe("complex");
-    expect(result.modelTier).toBe("powerful");
-    expect(result.testStrategy).toBe("three-session-tdd");
-  });
-
   // #408: keyword fallback no longer produces "medium" — AC count removed.
   // medium only comes from the plan LLM. Keyword fallback: simple | complex | expert.
   test("routes all keyword-detectable complexity levels correctly (#408)", () => {
@@ -167,25 +118,15 @@ describe("routeTask", () => {
     expect(expertResult.testStrategy).toBe("three-session-tdd");
   });
 
-  // #408: many ACs without complexity keywords → simple (AC count no longer drives complexity)
-  test("many ACs without keywords → simple, not complex (#408)", () => {
-    const result = routeTask(
-      "Add fields",
-      "Add schema fields",
-      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
-      [],
-      DEFAULT_CONFIG,
-    );
-    expect(result.complexity).toBe("simple");
-    expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("tdd-simple");
-  });
-
-  // #408: complex without security keyword → three-session-tdd-lite (not three-session-tdd)
-  test("complex story without security keyword → three-session-tdd-lite (#408)", () => {
-    const result = routeTask("Refactor module", "Refactor core module", ["AC1"], [], DEFAULT_CONFIG);
-    expect(result.complexity).toBe("complex");
-    expect(result.testStrategy).toBe("three-session-tdd-lite");
+  // #408: many ACs without keywords → simple; complex without security → tdd-lite
+  test.each([
+    ["many ACs without keywords → simple (#408)", "Add fields", "Add schema fields", ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"], [], "simple", "fast", "tdd-simple"],
+    ["complex without security keyword → three-session-tdd-lite (#408)", "Refactor module", "Refactor core module", ["AC1"], [], "complex", undefined, "three-session-tdd-lite"],
+  ] as const)("%s", (_label, title, desc, acs, tags, complexity, modelTier, strategy) => {
+    const result = routeTask(title, desc, [...acs], [...tags], DEFAULT_CONFIG);
+    expect(result.complexity).toBe(complexity);
+    if (modelTier !== undefined) expect(result.modelTier).toBe(modelTier);
+    expect(result.testStrategy).toBe(strategy);
   });
 
   describe("tddStrategy config integration", () => {
@@ -194,16 +135,13 @@ describe("routeTask", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy },
     });
 
-    test("config.tdd.strategy='strict' forces three-session-tdd on simple task", () => {
-      const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], makeConfig("strict"));
-      expect(result.testStrategy).toBe("three-session-tdd");
-      expect(result.reasoning).toContain("strategy:strict");
-    });
-
-    test("config.tdd.strategy='lite' forces three-session-tdd-lite on any task", () => {
-      const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], makeConfig("lite"));
-      expect(result.testStrategy).toBe("three-session-tdd-lite");
-      expect(result.reasoning).toContain("strategy:lite");
+    test.each([
+      ["strict", "Fix typo", "Fix a typo", ["Typo fixed"], [], "three-session-tdd", "strategy:strict"],
+      ["lite", "Fix typo", "Fix a typo", ["Typo fixed"], [], "three-session-tdd-lite", "strategy:lite"],
+    ] as const)("strategy='%s' forces correct testStrategy and reasoning", (strategy, title, desc, acs, tags, expectedStrategy, expectedReasoning) => {
+      const result = routeTask(title, desc, [...acs], [...tags], makeConfig(strategy));
+      expect(result.testStrategy).toBe(expectedStrategy);
+      expect(result.reasoning).toContain(expectedReasoning);
     });
 
     test("config.tdd.strategy='off' forces test-after even on complex/security tasks", () => {
@@ -234,16 +172,12 @@ describe("escalateTier", () => {
     { tier: "powerful", attempts: 2 },
   ];
 
-  test("escalates fast → balanced", () => {
-    expect(escalateTier("fast", defaultTiers)).toEqual({ tier: "balanced", agent: undefined });
-  });
-
-  test("escalates balanced → powerful", () => {
-    expect(escalateTier("balanced", defaultTiers)).toEqual({ tier: "powerful", agent: undefined });
-  });
-
-  test("escalates powerful → null (max reached)", () => {
-    expect(escalateTier("powerful", defaultTiers)).toBeNull();
+  test.each([
+    ["fast → balanced", "fast", { tier: "balanced", agent: undefined }],
+    ["balanced → powerful", "balanced", { tier: "powerful", agent: undefined }],
+    ["powerful → null (max reached)", "powerful", null],
+  ] as const)("escalates %s", (_label, from, expected) => {
+    expect(escalateTier(from, defaultTiers)).toEqual(expected);
   });
 
   test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
@@ -259,7 +193,7 @@ describe("escalateTier", () => {
 });
 
 describe("routing — stripped config (issue #745 Phase 4d)", () => {
-  test("complexityToModelTier accepts Pick<NaxConfig, routing|autoMode|tdd>", () => {
+  test("complexityToModelTier and routeTask accept Pick<NaxConfig, routing|autoMode|tdd>", () => {
     // Config typed as the narrowed slice — proves the signature accepts it without casting.
     const strippedConfig: Pick<NaxConfig, "routing" | "autoMode" | "tdd"> = makeNaxConfig({
       autoMode: { complexityRouting: { simple: "fast", complex: "balanced", expert: "powerful" } },
@@ -270,14 +204,6 @@ describe("routing — stripped config (issue #745 Phase 4d)", () => {
     expect(complexityToModelTier("simple", strippedConfig)).toBe("fast");
     expect(complexityToModelTier("complex", strippedConfig)).toBe("balanced");
     expect(complexityToModelTier("expert", strippedConfig)).toBe("powerful");
-  });
-
-  test("routeTask accepts Pick<NaxConfig, routing|autoMode|tdd>", () => {
-    const strippedConfig: Pick<NaxConfig, "routing" | "autoMode" | "tdd"> = makeNaxConfig({
-      autoMode: { complexityRouting: { simple: "fast", complex: "balanced", expert: "powerful" } },
-      tdd: { strategy: "auto" },
-      routing: { strategy: "keyword" },
-    });
 
     const decision = routeTask("Fix typo", "Fix a typo", ["Typo is gone"], [], strippedConfig);
     expect(decision.modelTier).toBe("fast");
