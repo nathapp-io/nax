@@ -215,39 +215,12 @@ describe("ContextOrchestrator.assemble() — agent profile ceiling (AC-32)", () 
 });
 
 describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)", () => {
-  test("conservative default profile (supportsToolCalls=false) surfaces zero pull tools", async () => {
-    // Pull-tool gate is orthogonal to provider registration — use an empty
-    // test-override providerIds list so AC-16 validation does not trip on the
-    // tdd-test-writer stage config (which references providers not registered here).
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...BASE_REQUEST,
-      stage: "tdd-test-writer",
-      providerIds: [],
-      agentId: "some-unknown-agent", // → conservative default → supportsToolCalls=false
-      pullConfig: {
-        enabled: true,
-        allowedTools: [],
-        maxCallsPerSession: 5,
-      },
-    });
-    expect(bundle.pullTools).toHaveLength(0);
-  });
-
-  test("claude profile surfaces configured pull tools", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...BASE_REQUEST,
-      stage: "tdd-test-writer",
-      providerIds: [],
-      agentId: "claude",
-      pullConfig: {
-        enabled: true,
-        allowedTools: [],
-        maxCallsPerSession: 5,
-      },
-    });
-    expect(bundle.pullTools.length).toBeGreaterThan(0);
+  test("conservative profile (unknown agent) surfaces 0 pull tools; claude profile surfaces configured pull tools", async () => {
+    const base = { ...BASE_REQUEST, stage: "tdd-test-writer" as const, providerIds: [], pullConfig: { enabled: true, allowedTools: [] as string[], maxCallsPerSession: 5 } };
+    const conservative = await new ContextOrchestrator([]).assemble({ ...base, agentId: "some-unknown-agent" });
+    expect(conservative.pullTools).toHaveLength(0);
+    const claudeBundle = await new ContextOrchestrator([]).assemble({ ...base, agentId: "claude" });
+    expect(claudeBundle.pullTools.length).toBeGreaterThan(0);
   });
 });
 
@@ -306,15 +279,6 @@ describe("Phase 4: pull tools", () => {
     expect(bundle.pullTools).toEqual([]);
   });
 
-  test("pullTools contains query_neighbor descriptor for tdd-implementer when enabled", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
-  });
 
   test("pullTools items are ToolDescriptor objects; maxCallsPerSession reflects pullConfig override", async () => {
     const orch = new ContextOrchestrator([]);
@@ -341,13 +305,14 @@ describe("Phase 4: pull tools", () => {
     expect(bundle.pullTools).toEqual([]);
   });
 
-  test("empty allowedTools means all stage-configured tools are allowed", async () => {
+  test("empty allowedTools means all stage-configured tools are allowed; tdd-implementer has query_neighbor", async () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...TDD_IMPLEMENTER_REQUEST,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
     expect(bundle.pullTools.length).toBeGreaterThan(0);
+    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
   });
 
   test("stage with no pullToolNames returns empty pullTools even when enabled", async () => {
@@ -432,37 +397,24 @@ describe("Phase 5: review stage pull tools", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60/AC-61)", () => {
-  test("AC-54/AC-60: accepts repoRoot + packageDir and manifest records them", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/repo",
-      packageDir: "/repo/packages/api",
-      stage: "execution",
-      role: "implementer",
-      budgetTokens: 4_000,
-      providerIds: [],
+  test("AC-54/AC-60/AC-61: manifest records repoRoot+packageDir for monorepo and non-monorepo", async () => {
+    // Monorepo: packageDir differs from repoRoot
+    const monoBundle = await new ContextOrchestrator([]).assemble({
+      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo/packages/api",
+      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: [],
     });
-    expect(bundle).toBeDefined();
-    expect(bundle.manifest.repoRoot).toBe("/repo");
-    expect(bundle.manifest.packageDir).toBe("/repo/packages/api");
-  });
+    expect(monoBundle.manifest.repoRoot).toBe("/repo");
+    expect(monoBundle.manifest.packageDir).toBe("/repo/packages/api");
 
-  test("AC-61: non-monorepo — packageDir equals repoRoot, behavior unchanged", async () => {
+    // Non-monorepo: packageDir equals repoRoot
     const provider = makeProvider("p1", makeChunkResult({ id: "chunk:nm" }));
-    const orch = new ContextOrchestrator([provider]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/repo",
-      packageDir: "/repo",
-      stage: "execution",
-      role: "implementer",
-      budgetTokens: 4_000,
-      providerIds: ["p1"],
+    const singleBundle = await new ContextOrchestrator([provider]).assemble({
+      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo",
+      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: ["p1"],
     });
-    expect(bundle.manifest.repoRoot).toBe("/repo");
-    expect(bundle.manifest.packageDir).toBe("/repo");
-    expect(bundle.chunks.some((c) => c.id === "chunk:nm")).toBe(true);
+    expect(singleBundle.manifest.repoRoot).toBe("/repo");
+    expect(singleBundle.manifest.packageDir).toBe("/repo");
+    expect(singleBundle.chunks.some((c) => c.id === "chunk:nm")).toBe(true);
   });
 
   test("AC-60: rebuildForAgent preserves repoRoot and packageDir from prior manifest", async () => {
