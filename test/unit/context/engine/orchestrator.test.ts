@@ -273,27 +273,14 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
     const provider: IContextProvider = {
       id: "p1",
       kind: "feature",
-      fetch: async () => {
-        fetchCount++;
-        return makeChunkResult({ id: "c:1" });
-      },
+      fetch: async () => { fetchCount++; return makeChunkResult({ id: "c:1" }); },
     };
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
     expect(fetchCount).toBe(1);
 
     const rebuilt = orch.rebuildForAgent(original);
-    // No additional fetch
-    expect(fetchCount).toBe(1);
-    // Same chunks
-    expect(rebuilt.chunks).toHaveLength(original.chunks.length);
-  });
-
-  test("rebuilt bundle has same chunks as original", async () => {
-    const provider = makeProvider("p1", makeChunkResult({ id: "chunk:xyz" }));
-    const orch = new ContextOrchestrator([provider]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent(original);
+    expect(fetchCount).toBe(1); // no additional fetch
     expect(rebuilt.chunks.map((c) => c.id)).toEqual(original.chunks.map((c) => c.id));
   });
 
@@ -430,33 +417,14 @@ describe("Phase 5: review stage pull tools", () => {
     providerIds: [],
   };
 
-  test("review-semantic with pullConfig enabled returns query_feature_context", async () => {
+  test.each(["review-semantic", "review-adversarial"] as const)("%s with pullConfig enabled returns query_feature_context", async (stage) => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...REVIEW_REQUEST,
+      stage,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
     expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
-  });
-
-  test("review-adversarial with pullConfig enabled returns query_feature_context", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...REVIEW_REQUEST,
-      stage: "review-adversarial",
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
-  });
-
-  test("review-semantic pull tool descriptor matches QUERY_FEATURE_CONTEXT_DESCRIPTOR name", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...REVIEW_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
     expect(bundle.pullTools[0]?.name).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name);
   });
 
