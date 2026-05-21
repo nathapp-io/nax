@@ -97,20 +97,14 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
     expect(result.chunks).toHaveLength(2);
   });
 
-  test("canonical chunk has static kind, project scope, role all", async () => {
-    setupCanonical([{ fileName: "style.md", content: "## Style\n\nContent." }]);
+  test("canonical chunk has static kind, project scope, role all, score 1.0, and ### fileName prefix", async () => {
+    setupCanonical([{ fileName: "coding-style.md", content: "Use async/await." }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks[0]?.kind).toBe("static");
     expect(result.chunks[0]?.scope).toBe("project");
     expect(result.chunks[0]?.role).toContain("all");
     expect(result.chunks[0]?.rawScore).toBe(1.0);
-  });
-
-  test("canonical chunk content is prefixed with ### <fileName>", async () => {
-    setupCanonical([{ fileName: "coding-style.md", content: "Use async/await." }]);
-    const provider = new StaticRulesProvider();
-    const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks[0]?.content).toMatch(/### coding-style\.md/);
     expect(result.chunks[0]?.content).toContain("Use async/await.");
   });
@@ -199,9 +193,11 @@ describe("StaticRulesProvider — canonical store (Phase 5.1)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StaticRulesProvider — allowLegacyClaudeMd", () => {
-  test("returns empty when allowLegacyClaudeMd is false and no canonical rules", async () => {
+  test.each([
+    ["false", new StaticRulesProvider({ allowLegacyClaudeMd: false })],
+    ["unset (default)", new StaticRulesProvider()],
+  ])("returns empty when allowLegacyClaudeMd is %s and no canonical rules", async (_label, provider) => {
     setupLegacyFiles({ "/project/CLAUDE.md": "Legacy rules." });
-    const provider = new StaticRulesProvider({ allowLegacyClaudeMd: false });
     const result = await provider.fetch(BASE_REQUEST);
     expect(result.chunks).toHaveLength(0);
   });
@@ -216,13 +212,6 @@ describe("StaticRulesProvider — allowLegacyClaudeMd", () => {
     expect(result.chunks).toHaveLength(2);
     expect(result.chunks.map((c) => c.content).join("\n")).toContain("Use bun.");
     expect(result.chunks.map((c) => c.content).join("\n")).toContain("Always write tests.");
-  });
-
-  test("default allowLegacyClaudeMd is false — no legacy fallback without opt-in", async () => {
-    setupLegacyFiles({ "/project/CLAUDE.md": "# Project Rules\n\nLegacy." });
-    const provider = new StaticRulesProvider(); // no option — defaults to false
-    const result = await provider.fetch(BASE_REQUEST);
-    expect(result.chunks).toHaveLength(0);
   });
 });
 
@@ -254,20 +243,15 @@ describe("StaticRulesProvider — legacy path", () => {
     expect(result.chunks[0]?.rawScore).toBe(1.0);
   });
 
-  test("chunk ID is stable for same content", async () => {
+  test("chunk ID is stable for same content and changes when content changes", async () => {
     const content = "# Rules\n\nDo not mutate.";
     setupLegacyFiles({ "/project/CLAUDE.md": content });
     const r1 = await provider.fetch(BASE_REQUEST);
     const r2 = await provider.fetch(BASE_REQUEST);
     expect(r1.chunks[0]?.id).toBe(r2.chunks[0]?.id);
-  });
-
-  test("chunk ID changes when content changes", async () => {
-    setupLegacyFiles({ "/project/CLAUDE.md": "version 1" });
-    const r1 = await provider.fetch(BASE_REQUEST);
     setupLegacyFiles({ "/project/CLAUDE.md": "version 2" });
-    const r2 = await provider.fetch(BASE_REQUEST);
-    expect(r1.chunks[0]?.id).not.toBe(r2.chunks[0]?.id);
+    const r3 = await provider.fetch(BASE_REQUEST);
+    expect(r1.chunks[0]?.id).not.toBe(r3.chunks[0]?.id);
   });
 
   test("skips CLAUDE.md if empty, falls through to .cursorrules", async () => {
@@ -392,37 +376,25 @@ describe("StaticRulesProvider — AC-57 per-package overlay", () => {
     expect(contents).not.toContain("Repo style.");
   });
 
-  test("monorepo: NeutralityLintError from repo-level rules propagates without fallback", async () => {
-    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
-      if (workdir === "/repo") {
-        throw new NeutralityLintError([
-          { file: "bad.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific" },
-        ]);
-      }
-      return [];
-    };
+  test.each([
+    [
+      "repo-level",
+      (workdir: string) => {
+        if (workdir === "/repo") throw new NeutralityLintError([{ file: "bad.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific" }]);
+        return [];
+      },
+    ],
+    [
+      "package-level",
+      (workdir: string) => {
+        if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
+        if (workdir === "/repo/packages/api") throw new NeutralityLintError([{ file: "pkg.md", lineNumber: 2, line: "AGENTS.md", ruleId: "codex-reference", pattern: "agent-specific" }]);
+        return [];
+      },
+    ],
+  ] as const)("monorepo: NeutralityLintError from %s rules propagates", async (_level, loadFn) => {
+    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => loadFn(workdir) as CanonicalRule[];
     setupLegacyFiles({ "/repo/CLAUDE.md": "Legacy." });
-    const provider = new StaticRulesProvider();
-    let threw: unknown;
-    try {
-      await provider.fetch(MONOREPO_REQUEST);
-    } catch (e) {
-      threw = e;
-    }
-    expect(threw).toBeInstanceOf(NeutralityLintError);
-    expect((threw as NaxError).code).toBe("NEUTRALITY_LINT_FAILED");
-  });
-
-  test("monorepo: NeutralityLintError from package-level rules propagates", async () => {
-    _staticRulesDeps.loadCanonicalRules = async (workdir: string) => {
-      if (workdir === "/repo") return [{ fileName: "style.md", content: "Repo style." }];
-      if (workdir === "/repo/packages/api") {
-        throw new NeutralityLintError([
-          { file: "pkg.md", lineNumber: 2, line: "AGENTS.md", ruleId: "codex-reference", pattern: "agent-specific" },
-        ]);
-      }
-      return [];
-    };
     const provider = new StaticRulesProvider();
     let threw: unknown;
     try {
