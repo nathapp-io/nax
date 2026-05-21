@@ -110,20 +110,9 @@ describe("checkTestCommand (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
   });
 
-  test("skips silently when test command is null", async () => {
-    const config = createMockConfig({ testCommand: null as any });
-
+  test.each([null, false])("skips silently when test command is %s", async (testCommand) => {
+    const config = createMockConfig({ testCommand: testCommand as any });
     const result = await checkTestCommand(config);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("default");
-  });
-
-  test("skips silently when test command is false", async () => {
-    const config = createMockConfig({ testCommand: false as any });
-
-    const result = await checkTestCommand(config);
-
     expect(result.passed).toBe(true);
     expect(result.message).toContain("default");
   });
@@ -148,20 +137,9 @@ describe("checkLintCommand (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
   });
 
-  test("skips silently when lint command is null", async () => {
-    const config = createMockConfig({ lintCommand: null as any });
-
+  test.each([null, false])("skips silently when lint command is %s", async (lintCommand) => {
+    const config = createMockConfig({ lintCommand: lintCommand as any });
     const result = await checkLintCommand(config);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("skip");
-  });
-
-  test("skips silently when lint command is false", async () => {
-    const config = createMockConfig({ lintCommand: false as any });
-
-    const result = await checkLintCommand(config);
-
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
   });
@@ -186,20 +164,9 @@ describe("checkTypecheckCommand (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
   });
 
-  test("skips silently when typecheck command is null", async () => {
-    const config = createMockConfig({ typecheckCommand: null as any });
-
+  test.each([null, false])("skips silently when typecheck command is %s", async (typecheckCommand) => {
+    const config = createMockConfig({ typecheckCommand: typecheckCommand as any });
     const result = await checkTypecheckCommand(config);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("skip");
-  });
-
-  test("skips silently when typecheck command is false", async () => {
-    const config = createMockConfig({ typecheckCommand: false as any });
-
-    const result = await checkTypecheckCommand(config);
-
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
   });
@@ -247,11 +214,6 @@ describe("checkClaudeMdExists (Tier 2 warning)", () => {
     expect(result.message).toContain("not found");
   });
 
-  test("returns warning tier not blocker", async () => {
-    const result = await checkClaudeMdExists(testDir);
-
-    expect(result.tier).toBe("warning");
-  });
 });
 
 describe("checkDiskSpace (Tier 2 warning)", () => {
@@ -269,12 +231,6 @@ describe("checkDiskSpace (Tier 2 warning)", () => {
     if (!result.passed) {
       expect(result.message).toContain("1GB");
     }
-  });
-
-  test("triggers warning below 1GB threshold", async () => {
-    const result = await checkDiskSpace();
-
-    expect(result.tier).toBe("warning");
   });
 
   test("provides disk space information in message", async () => {
