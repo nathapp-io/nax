@@ -596,15 +596,11 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
     cleanupTempDir(tmpDir);
   });
 
-  test("excludes node_modules/, .nax/, and nested .nax/ from glob results", () => {
+  test("excludes node_modules/,.nax/,nested .nax/ and includes lib/ and src/ files", () => {
     const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
     expect(files.some((f) => f.startsWith(".nax/"))).toBe(false);
     expect(files.some((f) => f.includes("/.nax/"))).toBe(false);
-  });
-
-  test("includes files in lib/ (non-src/ layout) and src/ (standard layout)", () => {
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files).toContain("lib/utils.ts");
     expect(files).toContain("src/main.ts");
   });
