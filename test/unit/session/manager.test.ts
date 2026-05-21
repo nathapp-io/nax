@@ -22,18 +22,13 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.create()", () => {
-  test("returns a descriptor with CREATED state", () => {
+  test("returns a descriptor with CREATED state, correct fields, and empty protocolIds/completedStages", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.state).toBe("CREATED");
     expect(desc.role).toBe("main");
     expect(desc.agent).toBe("claude");
     expect(desc.id).toMatch(/^sess-[0-9a-f-]{36}$/);
-  });
-
-  test("initialises protocolIds as null and completedStages as empty", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.protocolIds.recordId).toBeNull();
     expect(desc.protocolIds.sessionId).toBeNull();
     expect(desc.completedStages).toHaveLength(0);
@@ -313,16 +308,11 @@ describe("SessionManager — descriptor re-persistence on mutation", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.get()", () => {
-  test("returns null for unknown id", () => {
+  test("returns null for unknown id; returns descriptor after create", () => {
     const mgr = new SessionManager();
     expect(mgr.get("sess-unknown")).toBeNull();
-  });
-
-  test("returns descriptor after create", () => {
-    const mgr = new SessionManager();
     const created = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
-    const fetched = mgr.get(created.id);
-    expect(fetched?.id).toBe(created.id);
+    expect(mgr.get(created.id)?.id).toBe(created.id);
   });
 });
 
@@ -349,22 +339,16 @@ describe("SessionManager.transition()", () => {
     expect(makeCall(mgr, sess.id)).toThrow(NaxError);
   });
 
-  test("protocolIds updated via options", () => {
+  test("protocolIds and completedStage updated via transition options", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr.transition(sess.id, "RUNNING");
-    const updated = mgr.transition(sess.id, "COMPLETED", {
+    const updated = mgr.transition(sess.id, "PAUSED", {
       protocolIds: { recordId: "rec-123", sessionId: "sid-456" },
+      completedStage: "verify",
     });
     expect(updated.protocolIds.recordId).toBe("rec-123");
     expect(updated.protocolIds.sessionId).toBe("sid-456");
-  });
-
-  test("completedStage appended via options", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    const updated = mgr.transition(sess.id, "PAUSED", { completedStage: "verify" });
     expect(updated.completedStages).toContain("verify");
   });
 
