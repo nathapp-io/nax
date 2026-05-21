@@ -70,41 +70,18 @@ describe("lintForNeutrality", () => {
     expect(violations).toHaveLength(0);
   });
 
-  test("flags <system-reminder> tag", () => {
-    const violations = lintForNeutrality("<system-reminder>Do this.</system-reminder>", "rules.md");
+  test.each([
+    ["<system-reminder>Do this.</system-reminder>", "XML tag", null],
+    ["See CLAUDE.md for more info.", "CLAUDE.md", "claude-reference"],
+    ["Rules are in .claude/rules/.", "directory", null],
+    ["Use the Grep tool to search files.", "tool-name phrasing", null],
+    ["IMPORTANT: Never mutate objects.", "IMPORTANT:", null],
+    ["Always write tests 🎯", "emoji", null],
+  ])("flags banned pattern in %j", (content: string, patternSubstr: string, ruleId: string | null) => {
+    const violations = lintForNeutrality(content, "rules.md");
     expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("XML tag");
-  });
-
-  test("flags CLAUDE.md reference", () => {
-    const violations = lintForNeutrality("See CLAUDE.md for more info.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("CLAUDE.md");
-    expect(violations[0]?.ruleId).toBe("claude-reference");
-  });
-
-  test("flags .claude/ directory reference", () => {
-    const violations = lintForNeutrality("Rules are in .claude/rules/.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("directory");
-  });
-
-  test("flags 'the Grep tool' phrasing", () => {
-    const violations = lintForNeutrality("Use the Grep tool to search files.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("tool-name phrasing");
-  });
-
-  test("flags 'IMPORTANT:' shout", () => {
-    const violations = lintForNeutrality("IMPORTANT: Never mutate objects.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("IMPORTANT:");
-  });
-
-  test("flags emoji character", () => {
-    const violations = lintForNeutrality("Always write tests 🎯", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("emoji");
+    expect(violations[0]?.pattern).toContain(patternSubstr);
+    if (ruleId) expect(violations[0]?.ruleId).toBe(ruleId);
   });
 
   test("reports correct line number", () => {
