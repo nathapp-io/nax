@@ -12,7 +12,7 @@
 
 import { getLogger } from "@/logger";
 import { parseTestOutput } from "@/test-runners";
-import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners/conventions";
+import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners";
 import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { regression } from "../runners";

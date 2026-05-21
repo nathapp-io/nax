@@ -15,8 +15,7 @@ import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import { hasCommitsForStory } from "@/utils/git";
-import { runRectificationLoop } from "@/verification/rectification-loop";
-import { fullSuite } from "@/verification/runners";
+import { fullSuite, runRectificationLoop } from "@/verification";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
