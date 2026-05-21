@@ -942,32 +942,15 @@ describe("buildPlanComposition()", () => {
     expect(result).toBe(input);
   });
 
-  test("AC-1: injects preDebatePhase grounder when evidenceMode is 'asymmetric'", () => {
+  test.each([
+    ["preDebatePhase grounder", (r: ReturnType<typeof buildPlanComposition>) => r.preDebatePhase, { kind: "grounder" }],
+    ["proposers constraints", (r: ReturnType<typeof buildPlanComposition>) => r.proposers, { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 }],
+    ["sessionMode stateful", (r: ReturnType<typeof buildPlanComposition>) => r.sessionMode, "stateful"],
+    ["verifier-pick selector", (r: ReturnType<typeof buildPlanComposition>) => r.selector, { kind: "verifier-pick", patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 } }],
+    ["plan-checklist postDebateVerifier", (r: ReturnType<typeof buildPlanComposition>) => r.postDebateVerifier, { kind: "plan-checklist" }],
+  ])("AC-1: injects %s when evidenceMode is 'asymmetric'", (_label, getField, expected) => {
     const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.preDebatePhase).toEqual({ kind: "grounder" });
-  });
-
-  test("AC-1: injects proposers constraints when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.proposers).toEqual({ citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 });
-  });
-
-  test("AC-1: sets sessionMode to stateful when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.sessionMode).toBe("stateful");
-  });
-
-  test("AC-1: sets verifier-pick selector with patch when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.selector).toEqual({
-      kind: "verifier-pick",
-      patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 },
-    });
-  });
-
-  test("AC-1: injects plan-checklist postDebateVerifier when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.postDebateVerifier).toEqual({ kind: "plan-checklist" });
+    expect(getField(result)).toEqual(expected);
   });
 
   test("AC-2: user-specified preDebatePhase overrides asymmetric default", () => {
@@ -1196,30 +1179,21 @@ describe("runPlanPipeline (US-005)", () => {
   });
 
   describe("AC11: Critic passes → write prd.json to .nax/features/<feature>/prd.json", () => {
-    test("writes verdict.prd to .nax/features/<feature>/prd.json when critic passes", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      const expectedPath = join(tempWorkdir, ".nax", "features", "test-feature", "prd.json");
-      expect(capturedPipelineWrites.length).toBeGreaterThan(0);
-      expect(capturedPipelineWrites[capturedPipelineWrites.length - 1][0]).toBe(expectedPath);
-    });
-
-    test("returns the path to the written prd.json", async () => {
+    test("writes and returns .nax/features/<feature>/prd.json when critic passes", async () => {
       const agentManager = makePipelineAgentManager();
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
       const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
 
-      expect(result).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
+      const expectedPath = join(tempWorkdir, ".nax", "features", "test-feature", "prd.json");
+      expect(result).toBe(expectedPath);
+      expect(capturedPipelineWrites.length).toBeGreaterThan(0);
+      expect(capturedPipelineWrites[capturedPipelineWrites.length - 1][0]).toBe(expectedPath);
     });
   });
 
   describe("AC12: Critic fails → throw NaxError with PLAN_CRITIC_BLOCKED", () => {
-    test("throws NaxError with code === 'PLAN_CRITIC_BLOCKED' when critic fails", async () => {
-      // planDraftOp returns a PRD with a nonexistent contextFile → checkFilesExist produces a blocker
+    test("throws NaxError with PLAN_CRITIC_BLOCKED and specDeltasPath when critic fails", async () => {
       const blockerPrd = makePRD({
         feature: "test-feature",
         userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
@@ -1231,47 +1205,12 @@ describe("runPlanPipeline (US-005)", () => {
 
       expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).code).toBe("PLAN_CRITIC_BLOCKED");
-    });
-
-    test("NaxError context contains specDeltasPath equal to the verdict's specDeltasPath", async () => {
-      const blockerPrd = makePRD({
-        feature: "test-feature",
-        userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
-      });
-      const agentManager = makePipelineAgentManager({ draftPrd: blockerPrd });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
-
-      expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).context?.specDeltasPath).toBeDefined();
     });
   });
 
   describe("AC13: groundOp throws → wrap as NaxError with PLAN_PIPELINE_GROUND_FAILED", () => {
-    test("catches error from groundOp and wraps as NaxError", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("groundOp network failure"); },
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      await expect(
-        runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }),
-      ).rejects.toBeInstanceOf(NaxError);
-    });
-
-    test("wrapped error has code === 'PLAN_PIPELINE_GROUND_FAILED'", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("groundOp network failure"); },
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
-
-      expect((err as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
-    });
-
-    test("wrapped error context.cause contains original error", async () => {
+    test("wraps groundOp failure as NaxError with PLAN_PIPELINE_GROUND_FAILED and cause", async () => {
       const originalError = new Error("the original groundOp failure");
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async () => { throw originalError; },
@@ -1280,29 +1219,18 @@ describe("runPlanPipeline (US-005)", () => {
 
       const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
 
+      expect(err).toBeInstanceOf(NaxError);
+      expect((err as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
       expect((err as NaxError).context?.cause).toBe(originalError);
     });
   });
 
   describe("AC14: Finally block closes runtime", () => {
-    test("closes createPlanRuntime via rt.close() in finally block on success", async () => {
-      const agentManager = makePipelineAgentManager();
-      const mockRt = makeMockRuntime({ agentManager, workdir: tempWorkdir });
-      let closeCallCount = 0;
-      const realClose = mockRt.close.bind(mockRt);
-      mockRt.close = async () => { closeCallCount++; await realClose(); };
-      _planDeps.createRuntime = mock(() => mockRt);
-
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      expect(closeCallCount).toBe(1);
-    });
-
-    test("closes createPlanRuntime via rt.close() in finally block on failure", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("simulated groundOp failure"); },
-      });
-      const mockRt = makeMockRuntime({ agentManager, workdir: tempWorkdir });
+    test.each([
+      ["on success", () => makeMockRuntime({ agentManager: makePipelineAgentManager(), workdir: tempWorkdir })],
+      ["on failure", () => makeMockRuntime({ agentManager: makeMockAgentManager({ runWithFallbackFn: async () => { throw new Error("simulated groundOp failure"); } }), workdir: tempWorkdir })],
+    ])("closes runtime via rt.close() in finally block %s", async (_label, makeRt) => {
+      const mockRt = makeRt();
       let closeCallCount = 0;
       const realClose = mockRt.close.bind(mockRt);
       mockRt.close = async () => { closeCallCount++; await realClose(); };
