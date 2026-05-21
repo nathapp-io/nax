@@ -119,22 +119,16 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
-  test("includes sibling test even when src file does not exist on disk", async () => {
-    // src/ files always get a sibling test neighbor derived from their path
+  test("includes sibling test for src/ files regardless of disk existence", async () => {
     setupDeps({ globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/missing.ts"] }));
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("test/unit/missing.test.ts");
-  });
+    const r1 = await provider.fetch(makeRequest({ touchedFiles: ["src/missing.ts"] }));
+    expect(r1.chunks).toHaveLength(1);
+    expect(r1.chunks[0]?.content).toContain("test/unit/missing.test.ts");
 
-  test("includes sibling test file in neighbors", async () => {
-    setupDeps({
-      files: { "src/foo/bar.ts": 'import "./dep"' },
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo/bar.ts"] }));
-    expect(result.chunks).toHaveLength(1);
-    expect(result.chunks[0]?.content).toContain("test/unit/foo/bar.test.ts");
+    setupDeps({ files: { "src/foo/bar.ts": 'import "./dep"' }, globFiles: [] });
+    const r2 = await provider.fetch(makeRequest({ touchedFiles: ["src/foo/bar.ts"] }));
+    expect(r2.chunks).toHaveLength(1);
+    expect(r2.chunks[0]?.content).toContain("test/unit/foo/bar.test.ts");
   });
 
   test("chunk has expected metadata", async () => {
