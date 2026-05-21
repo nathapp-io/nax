@@ -245,45 +245,22 @@ describe("assemblePlanInputs - NaxError contract", () => {
     }).toThrow(NaxError);
   });
 
-  test("NaxError has machine-readable code on story id failure", () => {
-    const story = makeStory({ id: "" });
-    const config = makeNaxConfig();
-
+  test.each([
+    ["story id", { id: "" }, undefined, "STORY_ID_INVALID"],
+    ["story title", { id: "US-001", title: "" }, undefined, "STORY_TITLE_MISSING"],
+    ["config", { id: "US-001" }, { agent: { default: "", fallback: { map: {} } } }, "CONFIG_INVALID"],
+  ])("NaxError has machine-readable code on %s failure", (_label: string, storyOverrides: any, configOverrides: any, expectedCode: string) => {
+    const story = makeStory(storyOverrides as any);
+    const config = configOverrides ? makeNaxConfig(configOverrides) : makeNaxConfig();
     try {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
-      expect((err as NaxError).code).toBe("STORY_ID_INVALID");
+      expect((err as NaxError).code).toBe(expectedCode);
     }
   });
 
-  test("NaxError has machine-readable code on story title failure", () => {
-    const story = makeStory({ id: "US-001", title: "" });
-    const config = makeNaxConfig();
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      expect((err as NaxError).code).toBe("STORY_TITLE_MISSING");
-    }
-  });
-
-  test("NaxError has machine-readable code on config failure", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: { default: "", fallback: { map: {} } },
-    });
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      expect((err as NaxError).code).toBe("CONFIG_INVALID");
-    }
-  });
-
-  test("NaxError context includes stage='execution-inputs'", () => {
+  test("NaxError context includes stage and story metadata", () => {
     const story = makeStory({ id: "" });
     const config = makeNaxConfig();
 
@@ -292,17 +269,6 @@ describe("assemblePlanInputs - NaxError contract", () => {
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect((err as NaxError).context?.stage).toBe("execution-inputs");
-    }
-  });
-
-  test("NaxError context includes story metadata for correlation", () => {
-    const story = makeStory({ id: "" });
-    const config = makeNaxConfig();
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
       expect((err as NaxError).context?.storyId).toBeDefined();
     }
   });
@@ -337,48 +303,20 @@ describe("assemblePlanInputs - NaxError contract", () => {
 
 // AC6: Validation behavior covered by targeted unit tests
 describe("assemblePlanInputs - edge cases", () => {
-  test("handles story with optional workdir (single-package)", () => {
-    const story = makeStory({ id: "US-001", title: "Test", workdir: undefined });
+  test.each([
+    ["undefined workdir (single-package)", { workdir: undefined }, "workdir", undefined],
+    ["workdir (monorepo)", { workdir: "packages/api" }, "workdir", "packages/api"],
+    ["empty dependencies", { dependencies: [] }, "dependencies", []],
+    ["filled dependencies", { dependencies: ["US-005"] }, "dependencies", ["US-005"]],
+  ])("handles story with %s", (_label: string, overrides: any, field: string, expected: any) => {
+    const story = makeStory({ id: "US-001", title: "Test", ...overrides });
     const config = makeNaxConfig();
-
     const result = assemblePlanInputs(story, config);
-    expect(result.story.workdir).toBeUndefined();
-  });
-
-  test("handles story with workdir (monorepo)", () => {
-    const story = makeStory({
-      id: "US-001",
-      title: "Test",
-      workdir: "packages/api",
-    });
-    const config = makeNaxConfig();
-
-    const result = assemblePlanInputs(story, config);
-    expect(result.story.workdir).toBe("packages/api");
-  });
-
-  test("handles story with optional dependencies (empty)", () => {
-    const story = makeStory({
-      id: "US-001",
-      title: "Test",
-      dependencies: [],
-    });
-    const config = makeNaxConfig();
-
-    const result = assemblePlanInputs(story, config);
-    expect(result.story.dependencies).toEqual([]);
-  });
-
-  test("handles story with optional dependencies (filled)", () => {
-    const story = makeStory({
-      id: "US-001",
-      title: "Test",
-      dependencies: ["US-005"],
-    });
-    const config = makeNaxConfig();
-
-    const result = assemblePlanInputs(story, config);
-    expect(result.story.dependencies).toEqual(["US-005"]);
+    if (expected === undefined) {
+      expect((result.story as any)[field]).toBeUndefined();
+    } else {
+      expect((result.story as any)[field]).toEqual(expected);
+    }
   });
 
   test("handles config with nested optional fields", () => {
