@@ -12,10 +12,10 @@
  */
 
 import type { AgentResult } from "../agents/types";
-import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../interaction/triggers";
+import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
 import { fullSuiteGateOp, greenfieldGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
-import { isAmbiguousOutput, routeTddFailure } from "../pipeline/stages/execution-helpers";
+import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 import { appendScratchEntry } from "../session/scratch-writer";
@@ -60,8 +60,6 @@ export interface PostRunInspectionResult {
 export const _postRunDeps = {
   detectMergeConflict,
   checkMergeConflict,
-  isAmbiguousOutput,
-  checkStoryAmbiguity,
   failAndClose,
   rollbackToRef,
   autoCommitIfDirty,
@@ -416,24 +414,6 @@ export async function decideStageAction(
     }
     await cleanupSessionOnFailure(ctx);
     return { action: "escalate" };
-  }
-
-  // Story-ambiguity trigger
-  if (
-    agentResult.success &&
-    _postRunDeps.isAmbiguousOutput(combinedOutput) &&
-    ctx.interaction &&
-    isTriggerEnabled("story-ambiguity", ctx.config)
-  ) {
-    const shouldContinue = await _postRunDeps.checkStoryAmbiguity(
-      { featureName: ctx.prd.feature, storyId: ctx.story.id, reason: "Agent output suggests ambiguity" },
-      ctx.config,
-      ctx.interaction,
-    );
-    if (!shouldContinue) {
-      logger.warn("execution", "Story ambiguity detected — escalating story", { storyId: ctx.story.id });
-      return { action: "escalate", reason: "Story ambiguity detected — needs clarification" };
-    }
   }
 
   // Non-TDD success → auto-commit

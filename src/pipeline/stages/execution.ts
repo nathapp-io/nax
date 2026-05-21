@@ -27,7 +27,7 @@ import { captureGitRef } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
-export { isAmbiguousOutput, resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
+export { resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
 
 export const executionStage: PipelineStage = {
   name: "execution",

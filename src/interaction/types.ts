@@ -84,7 +84,6 @@ export type TriggerName =
   | "pre-merge" // escalate (yellow) — before merging to main
   | "human-review" // skip (yellow) — human review required on max retries / critical failure
   | "story-oversized" // continue (yellow) — story has too many acceptance criteria
-  | "story-ambiguity" // continue (green) — story requirements unclear
   | "review-gate"; // continue (green) — code review checkpoint
 
 /** Trigger configuration */
@@ -156,11 +155,6 @@ export const TRIGGER_METADATA: Record<TriggerName, TriggerMetadata> = {
     safety: "yellow",
     defaultSummary:
       "Story {{storyId}} is oversized ({{criteriaCount}} acceptance criteria) — decompose into smaller stories?",
-  },
-  "story-ambiguity": {
-    defaultFallback: "continue",
-    safety: "green",
-    defaultSummary: "Story {{storyId}} requirements unclear — continue with best effort?",
   },
   "review-gate": {
     defaultFallback: "continue",

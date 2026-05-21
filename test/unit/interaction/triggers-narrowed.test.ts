@@ -13,7 +13,6 @@ import {
   checkCostWarning,
   checkMaxRetries,
   checkPreMerge,
-  checkStoryAmbiguity,
   checkReviewGate,
   type TriggerContext,
 } from "../../../src/interaction/triggers";
@@ -186,20 +185,6 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
     test("returns true when no trigger configured", async () => {
       const config = makeSlicedConfig({});
       const result = await checkPreMerge({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe("checkStoryAmbiguity", () => {
-    test("returns true when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "story-ambiguity": false });
-      const result = await checkStoryAmbiguity({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
-    });
-
-    test("returns true when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkStoryAmbiguity({ featureName: "f" }, config, mockChain);
       expect(result).toBe(true);
     });
   });

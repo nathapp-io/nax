@@ -204,20 +204,6 @@ export async function checkPreMerge(
 }
 
 /**
- * Check story-ambiguity trigger (continue with best effort)
- */
-export async function checkStoryAmbiguity(
-  context: TriggerContext,
-  config: InteractionConfig,
-  chain: InteractionChain,
-): Promise<boolean> {
-  if (!isTriggerEnabled("story-ambiguity", config)) return true;
-
-  const response = await executeTrigger("story-ambiguity", context, config, chain);
-  return response.action === "approve";
-}
-
-/**
  * Check review-gate trigger (proceed with review)
  */
 export async function checkReviewGate(

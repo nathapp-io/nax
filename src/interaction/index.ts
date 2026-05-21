@@ -52,7 +52,6 @@ export {
   checkCostWarning,
   checkMaxRetries,
   checkPreMerge,
-  checkStoryAmbiguity,
   checkReviewGate,
 } from "./triggers";
 export type { TriggerContext } from "./triggers";
