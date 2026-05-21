@@ -370,27 +370,22 @@ describe("initContext — creates context.md from template", () => {
     });
   });
 
-  test("does not overwrite existing context.md without --force", async () => {
+  test.each([
+    [false, true],
+    [true, false],
+  ] as const)("force=%s: content unchanged=%s when context.md exists", async (force, contentUnchanged) => {
     await withTempDir(async (dir) => {
       const contextPath = join(dir, ".nax", "context.md");
       await Bun.write(contextPath, "EXISTING_CONTENT");
 
-      await initContext(dir, { ai: false });
+      await initContext(dir, { ai: false, ...(force ? { force } : {}) });
 
       const content = await Bun.file(contextPath).text();
-      expect(content).toBe("EXISTING_CONTENT");
-    });
-  });
-
-  test("overwrites existing context.md with --force", async () => {
-    await withTempDir(async (dir) => {
-      const contextPath = join(dir, ".nax", "context.md");
-      await Bun.write(contextPath, "EXISTING_CONTENT");
-
-      await initContext(dir, { ai: false, force: true });
-
-      const content = await Bun.file(contextPath).text();
-      expect(content).not.toBe("EXISTING_CONTENT");
+      if (contentUnchanged) {
+        expect(content).toBe("EXISTING_CONTENT");
+      } else {
+        expect(content).not.toBe("EXISTING_CONTENT");
+      }
     });
   });
 
