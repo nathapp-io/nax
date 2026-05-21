@@ -287,53 +287,19 @@ describe("mergePackageConfig", () => {
     });
 
     describe("PKG-006: quality.commands bridged to review.commands", () => {
-      test("quality.commands.lint bridges to review.commands.lint when review.commands not set", () => {
+      test.each([
+        ["lint", "lint", "bun run lint", { lint: "bunx turbo lint" } as NaxConfig["review"]["commands"]],
+        ["typecheck", "typecheck", "bun run type-check", { typecheck: "bunx turbo type-check" } as NaxConfig["review"]["commands"]],
+        ["lintScoped", "lintScoped", "biome check {{files}}", { lint: "bunx turbo lint", lintScoped: "eslint {{files}}" } as NaxConfig["review"]["commands"]],
+      ] as const)("quality.commands.%s bridges to review.commands.%s", (_label, key, newCmd, rootReviewCmds) => {
         const root: NaxConfig = {
           ...makeRoot(),
-          review: { enabled: true, checks: ["lint"], commands: { lint: "bunx turbo lint" }, pluginMode: "per-story" },
+          review: { enabled: true, checks: ["lint"], commands: rootReviewCmds, pluginMode: "per-story" },
         };
         const result = mergePackageConfig(root, {
-          quality: { commands: { lint: "bun run lint" } },
+          quality: { commands: { [key]: newCmd } },
         } as Partial<NaxConfig>);
-
-        // Per-package quality.commands.lint overrides root review.commands.lint
-        expect(result.review.commands.lint).toBe("bun run lint");
-        // quality.commands also updated
-        expect(result.quality.commands.lint).toBe("bun run lint");
-      });
-
-      test("quality.commands.typecheck bridges to review.commands.typecheck", () => {
-        const root: NaxConfig = {
-          ...makeRoot(),
-          review: {
-            enabled: true,
-            checks: ["typecheck"],
-            commands: { typecheck: "bunx turbo type-check" },
-            pluginMode: "per-story",
-          },
-        };
-        const result = mergePackageConfig(root, {
-          quality: { commands: { typecheck: "bun run type-check" } },
-        } as Partial<NaxConfig>);
-
-        expect(result.review.commands.typecheck).toBe("bun run type-check");
-      });
-
-      test("quality.commands.lintScoped bridges to review.commands.lintScoped", () => {
-        const root: NaxConfig = {
-          ...makeRoot(),
-          review: {
-            enabled: true,
-            checks: ["lint"],
-            commands: { lint: "bunx turbo lint", lintScoped: "eslint {{files}}" },
-            pluginMode: "per-story",
-          },
-        };
-        const result = mergePackageConfig(root, {
-          quality: { commands: { lintScoped: "biome check {{files}}" } },
-        } as Partial<NaxConfig>);
-
-        expect(result.review.commands.lintScoped).toBe("biome check {{files}}");
+        expect(result.review.commands[key]).toBe(newCmd);
       });
 
       test("quality scoped fix commands bridge to review scoped fix commands", () => {
@@ -435,40 +401,17 @@ describe("mergePackageConfig", () => {
   });
 
   describe("acceptance field overrides", () => {
-    test("overrides acceptance.enabled per package", () => {
+    test.each([
+      ["enabled", (a: NaxConfig["acceptance"]) => a.enabled, true, { enabled: false } as Partial<NaxConfig["acceptance"]>, false],
+      ["testPath", (a: NaxConfig["acceptance"]) => a.testPath, "acceptance.test.ts", { testPath: "e2e/acceptance.test.ts" } as Partial<NaxConfig["acceptance"]>, "e2e/acceptance.test.ts"],
+      ["generateTests", (a: NaxConfig["acceptance"]) => a.generateTests, true, { generateTests: false } as Partial<NaxConfig["acceptance"]>, false],
+    ] as const)("overrides acceptance.%s per package", (_field, getField, rootVal, override, expected) => {
       const root: NaxConfig = {
         ...makeRoot(),
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true },
+        acceptance: { ...DEFAULT_CONFIG.acceptance, ...override, ...({ [_field]: rootVal } as object) },
       };
-      const result = mergePackageConfig(root, {
-        acceptance: { enabled: false } as Partial<NaxConfig["acceptance"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.acceptance.enabled).toBe(false);
-    });
-
-    test("overrides acceptance.testPath per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        acceptance: { ...DEFAULT_CONFIG.acceptance, testPath: "acceptance.test.ts" },
-      };
-      const result = mergePackageConfig(root, {
-        acceptance: { testPath: "e2e/acceptance.test.ts" } as Partial<NaxConfig["acceptance"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.acceptance.testPath).toBe("e2e/acceptance.test.ts");
-    });
-
-    test("overrides acceptance.generateTests per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        acceptance: { ...DEFAULT_CONFIG.acceptance, generateTests: true },
-      };
-      const result = mergePackageConfig(root, {
-        acceptance: { generateTests: false } as Partial<NaxConfig["acceptance"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.acceptance.generateTests).toBe(false);
+      const result = mergePackageConfig(root, { acceptance: override } as Partial<NaxConfig>);
+      expect(getField(result.acceptance)).toEqual(expected);
     });
   });
 
