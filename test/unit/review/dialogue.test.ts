@@ -113,89 +113,31 @@ describe("ReviewDialogueConfigSchema — field definitions and defaults", () => 
     expect(ReviewDialogueConfigSchema).toBeDefined();
   });
 
-  test("default parse produces enabled: false", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({});
+  test.each([
+    ["enabled: false by default", { enabled: false }, "enabled", false],
+    ["maxClarificationsPerAttempt: 2 by default", {}, "maxClarificationsPerAttempt", 2],
+    ["maxDialogueMessages: 20 by default", {}, "maxDialogueMessages", 20],
+    ["enabled accepts boolean true", { enabled: true }, "enabled", true],
+    ["maxClarificationsPerAttempt accepts boundary 0", { maxClarificationsPerAttempt: 0 }, "maxClarificationsPerAttempt", 0],
+    ["maxClarificationsPerAttempt accepts boundary 10", { maxClarificationsPerAttempt: 10 }, "maxClarificationsPerAttempt", 10],
+    ["maxDialogueMessages accepts boundary 5", { maxDialogueMessages: 5 }, "maxDialogueMessages", 5],
+    ["maxDialogueMessages accepts boundary 100", { maxDialogueMessages: 100 }, "maxDialogueMessages", 100],
+  ])("%s", (_label, input, field, expected) => {
+    const result = ReviewDialogueConfigSchema.safeParse(input);
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect((result.data as Record<string, unknown>).enabled).toBe(false);
+    expect((result.data as Record<string, unknown>)[field]).toBe(expected);
   });
 
-  test("default parse produces maxClarificationsPerAttempt: 2", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxClarificationsPerAttempt).toBe(2);
-  });
-
-  test("default parse produces maxDialogueMessages: 20", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxDialogueMessages).toBe(20);
-  });
-
-  test("enabled accepts boolean true", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ enabled: true });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).enabled).toBe(true);
-  });
-
-  test("maxClarificationsPerAttempt rejects value below 0", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxClarificationsPerAttempt: -1 });
-    expect(result.success).toBe(false);
-  });
-
-  test("maxClarificationsPerAttempt rejects value above 10", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxClarificationsPerAttempt: 11 });
-    expect(result.success).toBe(false);
-  });
-
-  test("maxClarificationsPerAttempt accepts boundary value 0", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxClarificationsPerAttempt: 0 });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxClarificationsPerAttempt).toBe(0);
-  });
-
-  test("maxClarificationsPerAttempt accepts boundary value 10", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxClarificationsPerAttempt: 10 });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxClarificationsPerAttempt).toBe(10);
-  });
-
-  test("maxDialogueMessages rejects value below 5", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxDialogueMessages: 4 });
-    expect(result.success).toBe(false);
-  });
-
-  test("maxDialogueMessages rejects value above 100", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxDialogueMessages: 101 });
-    expect(result.success).toBe(false);
-  });
-
-  test("maxDialogueMessages accepts boundary value 5", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxDialogueMessages: 5 });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxDialogueMessages).toBe(5);
-  });
-
-  test("maxDialogueMessages accepts boundary value 100", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxDialogueMessages: 100 });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect((result.data as Record<string, unknown>).maxDialogueMessages).toBe(100);
-  });
-
-  test("maxClarificationsPerAttempt rejects non-integer float", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxClarificationsPerAttempt: 1.5 });
-    expect(result.success).toBe(false);
-  });
-
-  test("maxDialogueMessages rejects non-integer float", () => {
-    const result = ReviewDialogueConfigSchema.safeParse({ maxDialogueMessages: 10.5 });
+  test.each([
+    ["maxClarificationsPerAttempt rejects below 0", { maxClarificationsPerAttempt: -1 }],
+    ["maxClarificationsPerAttempt rejects above 10", { maxClarificationsPerAttempt: 11 }],
+    ["maxDialogueMessages rejects below 5", { maxDialogueMessages: 4 }],
+    ["maxDialogueMessages rejects above 100", { maxDialogueMessages: 101 }],
+    ["maxClarificationsPerAttempt rejects non-integer float", { maxClarificationsPerAttempt: 1.5 }],
+    ["maxDialogueMessages rejects non-integer float", { maxDialogueMessages: 10.5 }],
+  ])("%s", (_label, input) => {
+    const result = ReviewDialogueConfigSchema.safeParse(input);
     expect(result.success).toBe(false);
   });
 });
@@ -205,27 +147,15 @@ describe("ReviewDialogueConfigSchema — field definitions and defaults", () => 
 // ---------------------------------------------------------------------------
 
 describe("ReviewConfigSchema — dialogue field integration", () => {
-  test("DEFAULT_CONFIG.review.dialogue exists", () => {
+  test.each([
+    ["dialogue exists", "dialogue", (v: unknown) => expect(v).toBeDefined()],
+    ["dialogue.enabled is false", "dialogue.enabled", (v: unknown) => expect(v).toBe(false)],
+    ["dialogue.maxClarificationsPerAttempt is 2", "dialogue.maxClarificationsPerAttempt", (v: unknown) => expect(v).toBe(2)],
+    ["dialogue.maxDialogueMessages is 20", "dialogue.maxDialogueMessages", (v: unknown) => expect(v).toBe(20)],
+  ])("DEFAULT_CONFIG.review.%s", (_label, path, assertFn) => {
     const review = (DEFAULT_CONFIG as unknown as { review: Record<string, unknown> }).review;
-    expect(review.dialogue).toBeDefined();
-  });
-
-  test("DEFAULT_CONFIG.review.dialogue.enabled resolves to false", () => {
-    const review = (DEFAULT_CONFIG as unknown as { review: Record<string, unknown> }).review;
-    const dialogue = review.dialogue as Record<string, unknown>;
-    expect(dialogue.enabled).toBe(false);
-  });
-
-  test("DEFAULT_CONFIG.review.dialogue.maxClarificationsPerAttempt resolves to 2", () => {
-    const review = (DEFAULT_CONFIG as unknown as { review: Record<string, unknown> }).review;
-    const dialogue = review.dialogue as Record<string, unknown>;
-    expect(dialogue.maxClarificationsPerAttempt).toBe(2);
-  });
-
-  test("DEFAULT_CONFIG.review.dialogue.maxDialogueMessages resolves to 20", () => {
-    const review = (DEFAULT_CONFIG as unknown as { review: Record<string, unknown> }).review;
-    const dialogue = review.dialogue as Record<string, unknown>;
-    expect(dialogue.maxDialogueMessages).toBe(20);
+    const value = path.split(".").reduce((obj: unknown, k) => (obj as Record<string, unknown>)?.[k], review);
+    assertFn(value);
   });
 
   test("NaxConfigSchema.safeParse accepts dialogue override", () => {

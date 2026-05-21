@@ -2,44 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { buildRoleTaskSection } from "../../../../src/prompts/sections/role-task";
 
 describe("buildRoleTaskSection — implementer role", () => {
-  test("standard variant says 'make failing tests pass'", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
-    expect(result).toContain("make failing tests pass");
-  });
-
-  test("standard variant says 'Do NOT modify test files'", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
-    expect(result).toContain("Do NOT modify test files");
-  });
-
-  test("standard variant includes explicit git commit -m instruction", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
-    expect(result).toContain("git commit -m");
-  });
-
-  test("standard variant includes commit instruction with feat: prefix", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
-    expect(result).toContain('feat: <description>');
-  });
-
-  test("lite variant acknowledges test-writer session", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
-    expect(result).toContain("test-writer session");
-  });
-
-  test("lite variant says 'implement'", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
-    expect(result).toContain("implement");
-  });
-
-  test("lite variant includes explicit git commit -m instruction", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
-    expect(result).toContain("git commit -m");
-  });
-
-  test("lite variant includes commit instruction with feat: prefix", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
-    expect(result).toContain('feat: <description>');
+  test.each([
+    ["standard says 'make failing tests pass'", "standard", "make failing tests pass"],
+    ["standard says 'Do NOT modify test files'", "standard", "Do NOT modify test files"],
+    ["standard includes explicit git commit -m instruction", "standard", "git commit -m"],
+    ["standard includes commit instruction with feat: prefix", "standard", "feat: <description>"],
+    ["lite acknowledges test-writer session", "lite", "test-writer session"],
+    ["lite says 'implement'", "lite", "implement"],
+    ["lite includes explicit git commit -m instruction", "lite", "git commit -m"],
+    ["lite includes commit instruction with feat: prefix", "lite", 'feat: <description>'],
+  ])("%s", (_label, variant, needle) => {
+    const result = buildRoleTaskSection("implementer", variant as "standard" | "lite");
+    expect(result).toContain(needle);
   });
 
   test("standard and lite have different content", () => {
