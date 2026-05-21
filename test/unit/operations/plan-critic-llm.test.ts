@@ -82,30 +82,21 @@ describe("KNOWN_SESSION_ROLES — AC1", () => {
 // AC2: planCriticLlmOp identity properties
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp — identity (AC2)", () => {
-  test("kind is 'run'", () => {
+  test.each([
+    ["kind is 'run'", (op: any) => op.kind, "run"],
+    ["name is 'plan-critic-llm'", (op: any) => op.name, "plan-critic-llm"],
+    ["stage is 'plan'", (op: any) => op.stage, "plan"],
+    ["session.lifetime is 'fresh'", (op: any) => op.session.lifetime, "fresh"],
+    ["noFallback is true", (op: any) => op.noFallback, true],
+  ])("%s", (_label, accessor, expected) => {
     expect(planCriticLlmOp).toBeDefined();
-    expect(planCriticLlmOp.kind).toBe("run");
-  });
-
-  test("name is 'plan-critic-llm'", () => {
-    expect(planCriticLlmOp.name).toBe("plan-critic-llm");
-  });
-
-  test("stage is 'plan'", () => {
-    expect(planCriticLlmOp.stage).toBe("plan");
+    expect(accessor(planCriticLlmOp)).toBe(expected);
   });
 
   test("session.role is 'plan-critic'", () => {
+    expect(planCriticLlmOp).toBeDefined();
     expect(planCriticLlmOp.session).toBeDefined();
     expect(planCriticLlmOp.session.role).toBe("plan-critic");
-  });
-
-  test("session.lifetime is 'fresh'", () => {
-    expect(planCriticLlmOp.session.lifetime).toBe("fresh");
-  });
-
-  test("noFallback is true", () => {
-    expect(planCriticLlmOp.noFallback).toBe(true);
   });
 });
 

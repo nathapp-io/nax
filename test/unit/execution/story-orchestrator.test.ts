@@ -210,70 +210,17 @@ afterEach(async () => {
 });
 
 describe("StoryOrchestratorBuilder — AC1: Generic OrchestratorSlot<I, O, C>", () => {
-  test("addImplementer accepts typed op + input without casting", async () => {
+  test.each([
+    ["addImplementer", (b: any) => b.addImplementer({ op: mockImplementerOp, input: { code: "test" } })],
+    ["addTestWriter", (b: any) => b.addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })],
+    ["addVerifier", (b: any) => b.addVerifier({ op: mockVerifierOp, input: { code: "test" } })],
+    ["addSemanticReview", (b: any) => b.addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })],
+    ["addAdversarialReview", (b: any) => b.addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })],
+  ])("%s accepts typed op + input without casting", async (_label, addFn) => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
-
-    // This should compile without requiring `as unknown as` casts.
-    // The type system ensures I, O, C align.
-    const result = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({
-        op: mockImplementerOp,
-        input: { code: "test" },
-      });
-
-    expect(result).toBeDefined();
-  });
-
-  test("addTestWriter accepts typed op + input without casting", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const result = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addTestWriter({
-        op: mockTestWriterOp,
-        input: { story: "test" },
-      });
-
-    expect(result).toBeDefined();
-  });
-
-  test("addVerifier accepts typed op + input without casting", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const result = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addVerifier({
-        op: mockVerifierOp,
-        input: { code: "test" },
-      });
-
-    expect(result).toBeDefined();
-  });
-
-  test("addSemanticReview accepts typed op + input without casting", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const result = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addSemanticReview({
-        op: mockSemanticReviewOp,
-        input: { code: "test" },
-      });
-
-    expect(result).toBeDefined();
-  });
-
-  test("addAdversarialReview accepts typed op + input without casting", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const result = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addAdversarialReview({
-        op: mockAdversarialReviewOp,
-        input: { code: "test" },
-      });
-
+    const StoryOrchestratorBuilder = require("@/execution/story-orchestrator").StoryOrchestratorBuilder;
+    const result = addFn(new StoryOrchestratorBuilder());
     expect(result).toBeDefined();
   });
 });
