@@ -147,29 +147,20 @@ describe("runSemanticReview — LLM prompt construction", () => {
     return capturedPrompt;
   }
 
-  test("prompt includes story title", async () => {
+  test("prompt includes story metadata, numbered ACs, AC-focused criteria, and diff constraint", async () => {
     const prompt = await capturePrompt();
     expect(prompt).toContain(STORY.title);
-  });
-
-  test("prompt includes story description", async () => {
-    const prompt = await capturePrompt();
     expect(prompt).toContain(STORY.description);
-  });
-
-  test("prompt includes all acceptance criteria as numbered list", async () => {
-    const prompt = await capturePrompt();
     STORY.acceptanceCriteria.forEach((ac, idx) => {
       expect(prompt).toContain(`${idx + 1}.`);
       expect(prompt).toContain(ac);
     });
-  });
-
-  test("prompt includes AC-focused review criteria", async () => {
-    const prompt = await capturePrompt();
     expect(prompt).toContain("acceptance criterion");
     expect(prompt).toContain("dead paths");
     expect(prompt).toContain("wired into callers");
+    expect(prompt).toContain("production code only");
+    expect(prompt).toContain("Do NOT flag");
+    expect(prompt).toContain("lint handles");
   });
 
   test("prompt includes custom rules from semanticConfig.rules", async () => {
@@ -198,12 +189,6 @@ describe("runSemanticReview — LLM prompt construction", () => {
     expect(prompt.length).toBeGreaterThan(100);
   });
 
-  test("prompt states diff is production code only", async () => {
-    const prompt = await capturePrompt();
-    expect(prompt).toContain("production code only");
-    expect(prompt).toContain("Do NOT flag");
-    expect(prompt).toContain("lint handles");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -243,7 +228,7 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
     expect(result.success).toBe(false);
   });
 
-  test("output contains finding's file", async () => {
+  test("output contains all finding properties (file, line, severity, issue, suggestion)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
     const agentManager = makeAgentManager(FAILING_LLM_RESPONSE);
     const result = await runSemanticReview({
@@ -255,61 +240,9 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
       runtime: makeMockRuntime({ agentManager }),
     });
     expect(result.output).toContain("src/review/semantic.ts");
-  });
-
-  test("output contains finding's line number", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
     expect(result.output).toContain("42");
-  });
-
-  test("output contains finding's severity", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
     expect(result.output).toContain("error");
-  });
-
-  test("output contains finding's issue description", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
     expect(result.output).toContain("Function is a stub");
-  });
-
-  test("output contains finding's suggestion", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager(FAILING_LLM_RESPONSE);
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
     expect(result.output).toContain("Implement the function");
   });
 
@@ -375,9 +308,13 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
     _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
-  test("returns success=true when LLM returns invalid JSON", async () => {
+  test.each([
+    ["invalid JSON", "this is not json at all }{"],
+    ["empty string", ""],
+    ["JSON missing 'passed' field", JSON.stringify({ findings: [] })],
+  ] as const)("returns success=true when LLM returns %s", async (_label, llmResponse) => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager("this is not json at all }{");
+    const agentManager = makeAgentManager(llmResponse);
     const result = await runSemanticReview({
       workdir: "/tmp/wd",
       storyGitRef: "abc123",
@@ -387,48 +324,7 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
       runtime: makeMockRuntime({ agentManager }),
     });
     expect(result.success).toBe(true);
-  });
-
-  test("returns success=true when LLM returns empty string", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager("");
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test("returns success=true when LLM returns JSON missing 'passed' field", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager(JSON.stringify({ findings: [] }));
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test("result check is 'semantic' on invalid JSON", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const agentManager = makeAgentManager("not json");
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
-    expect(result.check).toBe("semantic");
+    if (_label === "invalid JSON") expect(result.check).toBe("semantic");
   });
 });
 
@@ -525,25 +421,9 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
     _diffUtilsDeps.getMergeBase = origGetMergeBase;
   });
 
-  test("parses JSON wrapped in ```json fences", async () => {
+  test.each(["```json", "```"] as const)("parses JSON wrapped in %s fences", async (fence) => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const fencedResponse = "```json\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
-    const agentManager = makeAgentManager(fencedResponse);
-    const result = await runSemanticReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      semanticConfig: DEFAULT_SEMANTIC_CONFIG,
-      agentManager,
-      runtime: makeMockRuntime({ agentManager }),
-    });
-    expect(result.success).toBe(true);
-    expect(result.output).not.toContain("could not parse");
-  });
-
-  test("parses JSON wrapped in plain ``` fences", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("some diff", 0);
-    const fencedResponse = "```\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const fencedResponse = `${fence}\n${JSON.stringify({ passed: true, findings: [] })}\n\`\`\``;
     const agentManager = makeAgentManager(fencedResponse);
     const result = await runSemanticReview({
       workdir: "/tmp/wd",
