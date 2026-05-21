@@ -691,22 +691,14 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     return `${taskContext}\n\n${outputFormat}`;
   }
 
-  test("prompt has Step 1 — understand the spec", () => {
+  test.each([
+    ["Step 1", "Understand the Spec"],
+    ["Step 2", "Analyze"],
+    ["Step 3", "Generate Implementation Stories"],
+  ])("prompt has %s", (step, text) => {
     const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 1");
-    expect(prompt).toContain("Understand the Spec");
-  });
-
-  test("prompt has Step 2 — analyze", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 2");
-    expect(prompt).toContain("Analyze");
-  });
-
-  test("prompt has Step 3 — generate stories", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 3");
-    expect(prompt).toContain("Generate Implementation Stories");
+    expect(prompt).toContain(step);
+    expect(prompt).toContain(text);
   });
 
   test("prompt handles greenfield guidance", () => {
@@ -714,14 +706,8 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     expect(prompt).toContain("greenfield project");
   });
 
-  test("output schema includes analysis field", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain('"analysis"');
-  });
-
-  test("output schema includes contextFiles field", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain('"contextFiles"');
+  test.each(['"analysis"', '"contextFiles"'])("output schema includes %s field", (field) => {
+    expect(fullPrompt(spec, ctx)).toContain(field);
   });
 
   test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
@@ -769,9 +755,13 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
     expect(taskContext).not.toContain("Preserve spec ACs");
   });
 
-  test("taskContext tells planner to put invented ACs in suggestedCriteria", () => {
+  test.each([
+    ["suggestedCriteria"],
+    ["Never silently drop"],
+    ["story scope"],
+  ])("taskContext with spec contains '%s'", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("suggestedCriteria");
+    expect(taskContext).toContain(text);
   });
 
   test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
@@ -782,16 +772,6 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
     const { outputFormat } = new PlanPromptBuilder().build("", ctx);
     expect(outputFormat).not.toContain("suggestedCriteria");
-  });
-
-  test("taskContext instructs planner to never drop a spec AC", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("Never silently drop");
-  });
-
-  test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("story scope");
   });
 });
 
@@ -954,14 +934,10 @@ describe("buildPlanComposition()", () => {
     debaters: [{ agent: "claude" }, { agent: "opencode" }],
   };
 
-  test("AC-1: returns config unchanged when evidenceMode is 'current'", () => {
-    const input = { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const };
-    const result = buildPlanComposition(input);
-    expect(result).toBe(input);
-  });
-
-  test("AC-1: returns config unchanged when evidenceMode is absent", () => {
-    const input = { ...baseConfig, sessionMode: "one-shot" as const };
+  test.each([
+    ["'current'", { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const }],
+    ["absent", { ...baseConfig, sessionMode: "one-shot" as const }],
+  ] as const)("AC-1: returns config unchanged when evidenceMode is %s", (_label, input) => {
     const result = buildPlanComposition(input as any);
     expect(result).toBe(input);
   });
