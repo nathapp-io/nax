@@ -90,19 +90,11 @@ describe("DebatePromptBuilder slot methods", () => {
 // ─── buildProposalPrompt ─────────────────────────────────────────────────────
 
 describe("buildProposalPrompt()", () => {
-  test("includes taskContext", () => {
-    const builder = makeBuilder("the task spec", "json schema");
-    expect(builder.buildProposalPrompt(0)).toContain("the task spec");
-  });
-
-  test("includes outputFormat", () => {
-    const builder = makeBuilder("task ctx", "json output format");
-    expect(builder.buildProposalPrompt(0)).toContain("json output format");
-  });
-
-  test("outputFormat appears after taskContext", () => {
+  test("includes taskContext and outputFormat in correct order", () => {
     const builder = makeBuilder("TASK_CTX", "OUTPUT_FMT");
     const prompt = builder.buildProposalPrompt(0);
+    expect(prompt).toContain("TASK_CTX");
+    expect(prompt).toContain("OUTPUT_FMT");
     expect(prompt.indexOf("TASK_CTX")).toBeLessThan(prompt.indexOf("OUTPUT_FMT"));
   });
 
@@ -158,11 +150,6 @@ describe("buildCritiquePrompt()", () => {
     expect(prompt).not.toContain("proposal from B");
   });
 
-  test("includes taskContext", () => {
-    const builder = makeBuilder("evaluate this code", "format", debaters);
-    expect(builder.buildCritiquePrompt(0, proposals)).toContain("evaluate this code");
-  });
-
   test.each<[string, Debater[], Proposal[], boolean]>([
     ["has persona", [makeDebater("claude", "security"), makeDebater("gpt")], [makeProposal("claude", "p1"), makeProposal("gpt", "p2")], true],
     ["no persona", debaters, proposals, false],
@@ -177,9 +164,10 @@ describe("buildCritiquePrompt()", () => {
     }
   });
 
-  test("returns a non-empty string", () => {
-    const builder = makeBuilder("task", "format", debaters);
+  test("includes taskContext and returns non-empty string", () => {
+    const builder = makeBuilder("evaluate this code", "format", debaters);
     const result = builder.buildCritiquePrompt(0, proposals);
+    expect(result).toContain("evaluate this code");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
@@ -417,42 +405,17 @@ describe("buildResolverPrompt()", () => {
     expect(prompt).not.toContain("Critiques");
   });
 
-  test("ref mode production diff uses provided exclusion pathspec", () => {
+  test("ref mode production diff uses resolver-provided pathspec, omits TypeScript literals", () => {
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(
+    const prompt = makeBuilder().buildResolverPrompt(
       LABELED_PROPOSALS,
       CRITIQUES_STRINGS,
-      {
-        mode: "ref" as const,
-        storyGitRef: "abc123",
-        stat: "1 file changed",
-        productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"],
-      },
+      { mode: "ref" as const, storyGitRef: "abc123", stat: "1 file changed", productionExcludePatterns: [":!*_test.go", ":!tests/test_*.py"] },
       REVIEW_STORY,
       ctx,
     );
-
     expect(prompt).toContain(":!*_test.go");
     expect(prompt).toContain(":!tests/test_*.py");
-  });
-
-  test("ref mode production diff omits hardcoded TypeScript exclusion literals", () => {
-    const ctx: DebateResolverContext = { resolverType: "synthesis" };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(
-      LABELED_PROPOSALS,
-      CRITIQUES_STRINGS,
-      {
-        mode: "ref" as const,
-        storyGitRef: "abc123",
-        stat: "1 file changed",
-        productionExcludePatterns: [":!*_test.go"],
-      },
-      REVIEW_STORY,
-      ctx,
-    );
-
     expect(prompt).not.toContain(":!*.test.ts");
     expect(prompt).not.toContain(":!*.spec.ts");
   });
