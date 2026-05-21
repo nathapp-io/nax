@@ -538,44 +538,38 @@ describe("planCommand", () => {
   // AC-12: scanSourceRoots is invoked and rendered section is passed to builder
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-12: runPlanCommand invokes _planDeps.scanSourceRoots(workdir)", async () => {
+  test("AC-12: invokes scanSourceRoots(workdir) and renders the section in the prompt", async () => {
+    const origScanSourceRoots = _planDeps.scanSourceRoots;
+    const origCreateRuntime = _planDeps.createRuntime;
+
+    // Scenario 1: verify invocation
     let scanSourceRootsWasCalled = false;
     let scanSourceRootsArg: string | undefined;
-
-    const origScanSourceRoots = _planDeps.scanSourceRoots;
     _planDeps.scanSourceRoots = mock(async (workdir: string) => {
       scanSourceRootsWasCalled = true;
       scanSourceRootsArg = workdir;
       return [];
     });
-
     try {
       await planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
       });
-
       expect(scanSourceRootsWasCalled).toBe(true);
       expect(scanSourceRootsArg).toBe(tmpDir);
     } finally {
-      if (origScanSourceRoots) _planDeps.scanSourceRoots = origScanSourceRoots;
+      _planDeps.scanSourceRoots = origScanSourceRoots;
     }
-  });
 
-  test("AC-12: renders source roots section and passes as codebaseContext to PlanPromptBuilder", async () => {
+    // Scenario 2: verify content rendered in codebaseContext
     let capturedCodebaseContext: string | undefined;
-
-    const origCreateRuntime = _planDeps.createRuntime;
-    _planDeps.createRuntime = mock((cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async (req) => {
             const prompt = req.runOptions.prompt;
-            // The codebaseContext is passed to PlanPromptBuilder.build() and becomes part of taskContext
-            if (prompt) {
-              capturedCodebaseContext = prompt;
-            }
+            if (prompt) capturedCodebaseContext = prompt;
             return {
               result: {
                 success: true,
@@ -592,22 +586,20 @@ describe("planCommand", () => {
         }),
       }),
     );
-
     _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
       { path: "packages/api", language: "typescript", framework: "NestJS", testRunner: "jest" },
     ]);
-
     try {
       await planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
       });
-
       expect(capturedCodebaseContext).toContain("## Source Roots");
       expect(capturedCodebaseContext).toContain("packages/api");
     } finally {
-      if (origCreateRuntime) _planDeps.createRuntime = origCreateRuntime;
+      _planDeps.createRuntime = origCreateRuntime;
+      _planDeps.scanSourceRoots = origScanSourceRoots;
     }
   });
 });
@@ -747,10 +739,8 @@ describe("assertIsValidPrd guard (#993)", () => {
     });
   }
 
-  test("chat-ack on all retry attempts with no prd.json on disk throws PLAN_ENVELOPE_LEAK", async () => {
-    // op.recover reads Bun.file(outputPath) — file not on real disk → returns null.
-    // callOp returns lastRetryTurn (envelope). assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
-    // No prd.json → catch block re-throws.
+  test("chat-ack on all retry attempts throws PLAN_ENVELOPE_LEAK when no prd.json; recovers from disk when present", async () => {
+    // Scenario 1: no prd.json on disk → catch block re-throws PLAN_ENVELOPE_LEAK
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
@@ -761,13 +751,9 @@ describe("assertIsValidPrd guard (#993)", () => {
         feature: "url-shortener",
       }),
     ).rejects.toThrow("envelope-shaped object");
-  });
 
-  test("chat-ack on all retry attempts triggers _planDeps disk recovery when existsSync is true", async () => {
-    // op.recover reads Bun.file(outputPath) — real file absent → returns null.
-    // callOp returns lastRetryTurn (TurnResult envelope).
-    // assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
-    // planCommand catch: existsSync → true; _planDeps.readFile returns valid PRD → recovered.
+    // Scenario 2: prd.json on disk → planCommand catch block reads it and recovers
+    capturedWrites993 = [];
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
     _planDeps.existsSync = mock((p: string) => p.endsWith(".nax") || p.endsWith("prd.json"));
     _planDeps.readFile = mock(async (p: string) => {
@@ -782,8 +768,6 @@ describe("assertIsValidPrd guard (#993)", () => {
 
     expect(result).toContain("url-shortener");
     expect(result).toContain("prd.json");
-    // Field-equality on stable identity fields — validatePlanOutput may transform
-    // routing.reasoning, so compare id/title rather than the full object.
     expect(capturedWrites993.length).toBeGreaterThan(0);
     const written = JSON.parse(capturedWrites993[capturedWrites993.length - 1]?.[1] ?? "{}");
     const writtenIds = (written.userStories as Array<{ id: string; title: string }>).map((s) => s.id);
@@ -999,36 +983,26 @@ describe("runPlanPipeline (US-005)", () => {
   });
 
   describe("AC9: planDraftOp receives manifest from groundOp + citationThreshold", () => {
-    test("calls callOp with manifest from groundOp result", async () => {
-      const capturedPrompts: string[] = [];
-      // groundOp returns a manifest with a distinctive marker in repoFacts[0].summary;
-      // renderManifestSection(manifest) includes it in the planDraftOp prompt.
+    test("passes manifest from groundOp to planDraftOp; uses citationThreshold 0.5 default", async () => {
+      // Scenario 1: manifest marker forwarded to planDraftOp prompt
+      let capturedPrompts: string[] = [];
       const distinctiveManifest = {
         repoFacts: [{ id: "F-001", kind: "file", evidence: "src/index.ts:1", summary: "DISTINCTIVE_MANIFEST_MARKER_XY9Z" }],
         specClaims: [],
         gaps: [],
       };
-      const agentManager = makePipelineAgentManager({
-        groundManifestOverride: distinctiveManifest,
-        capturedPrompts,
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
+      _planDeps.createRuntime = mock(() =>
+        makeMockRuntime({ agentManager: makePipelineAgentManager({ groundManifestOverride: distinctiveManifest, capturedPrompts }), workdir: tempWorkdir }),
+      );
       await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // capturedPrompts[1] is the planDraftOp prompt; must contain the manifest content
       expect(capturedPrompts[1]).toContain("DISTINCTIVE_MANIFEST_MARKER_XY9Z");
-    });
 
-    test("uses config.plan?.citationThreshold ?? 0.5 as default", async () => {
-      const capturedPrompts: string[] = [];
-      const agentManager = makePipelineAgentManager({ capturedPrompts });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      // No citationThreshold in config — must default to 0.5
+      // Scenario 2: no citationThreshold in config → defaults to 0.5 in planDraftOp prompt
+      capturedPrompts = [];
+      _planDeps.createRuntime = mock(() =>
+        makeMockRuntime({ agentManager: makePipelineAgentManager({ capturedPrompts }), workdir: tempWorkdir }),
+      );
       await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // The planDraftOp prompt (index 1) must include "0.5" as the citation rate
       expect(capturedPrompts[1]).toContain("0.5");
     });
   });
