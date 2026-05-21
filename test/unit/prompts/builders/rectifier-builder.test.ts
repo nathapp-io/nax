@@ -76,23 +76,13 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("### typecheck (exit 2)");
   });
 
-  test("contains maxAttempts count in singular form when maxAttempts === 1", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      1,
-    );
-
-    expect(prompt).toContain("1 attempt");
-    expect(prompt).not.toContain("1 attempts");
-  });
-
-  test("contains maxAttempts count in plural form when maxAttempts > 1", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      3,
-    );
-
-    expect(prompt).toContain("3 attempts");
+  test.each([
+    [1, "1 attempt", "1 attempts"],
+    [3, "3 attempts", null],
+  ] as const)("maxAttempts=%s uses correct plural form", (maxAttempts, shouldContain, shouldNotContain) => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], maxAttempts);
+    expect(prompt).toContain(shouldContain);
+    if (shouldNotContain) expect(prompt).not.toContain(shouldNotContain);
   });
 
   test("truncates long output to 4000 chars per check", () => {
@@ -422,32 +412,18 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     expect(prompt).toContain("test/unit/bar.test.ts");
   });
 
-  test("adversarial check: uses adversarial opener and section label", () => {
+  test("adversarial check: uses adversarial opener, section label, and spec instruction", () => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
 
     expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
     expect(prompt).toContain("### Test File Findings (adversarial review)");
     expect(prompt).toContain("Do NOT delete a failing test");
+    expect(prompt).toContain("SPECIFICATION");
+    expect(prompt).toContain("not the current behavior");
   });
 
-  test("lint-only check: uses lint opener and section label", () => {
-    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
-      check: "lint",
-      success: false,
-      command: "bun run lint",
-      exitCode: 1,
-      output: "apps/api/test/unit/foo.test.ts:10:5 error — Unexpected console statement",
-      durationMs: 100,
-    };
-    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
-
-    expect(prompt).toContain("You are fixing test file lint errors.");
-    expect(prompt).toContain("### Test File Findings (lint)");
-    expect(prompt).not.toContain("adversarial");
-  });
-
-  test("lint-only check: includes raw output in findings section", () => {
+  test("lint-only check: uses lint opener, includes raw output, and simplified note", () => {
     const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
       check: "lint",
       success: false,
@@ -458,20 +434,10 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     };
     const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
 
+    expect(prompt).toContain("You are fixing test file lint errors.");
+    expect(prompt).toContain("### Test File Findings (lint)");
+    expect(prompt).not.toContain("adversarial");
     expect(prompt).toContain("foo.test.ts:5 error — some lint error");
-  });
-
-  test("lint-only check: uses simplified important note without verify-findings step", () => {
-    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
-      check: "lint",
-      success: false,
-      command: "bun run lint",
-      exitCode: 1,
-      output: "some lint output",
-      durationMs: 100,
-    };
-    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
-
     expect(prompt).toContain("Fix the lint errors");
     expect(prompt).not.toContain("verify each finding is a real issue");
   });
@@ -486,12 +452,6 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     expect(prompt).toContain(expected);
   });
 
-  test("adversarial check: instructs to encode spec not current behavior", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-    expect(prompt).toContain("SPECIFICATION");
-    expect(prompt).toContain("not the current behavior");
-  });
 });
 
 // D2 — write-failing-test mode (#897)
@@ -630,18 +590,20 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     };
   }
 
-  test("dispatches to mock-restructure renderer when mode is 'mock-restructure'", () => {
+  test.each([
+    ["renderer opener", "You are restructuring test mocks"],
+    ["source file constraint", "Do NOT modify any source file"],
+    ["story id", "US-003"],
+    ["story title", "Restructure mocks"],
+    ["acceptance criteria heading", "Acceptance Criteria"],
+    ["first AC", "AC-1: Mocks align with dispatch shape"],
+  ])("mock-restructure: includes %s", (_label, expected) => {
     const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "adversarial output")],
+      [makeCheck("adversarial", "output")],
       makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "The adapter now uses callOp instead of direct run()",
-        handoffFiles: ["test/unit/agents/adapter.test.ts"],
-      },
+      { mode: "mock-restructure", handoffReason: "reason", handoffFiles: ["test/unit/foo.test.ts"] },
     );
-
-    expect(prompt).toContain("You are restructuring test mocks");
+    expect(prompt).toContain(expected);
   });
 
   test("returned prompt contains the verbatim handoffReason text", () => {
@@ -677,20 +639,6 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     }
   });
 
-  test("returned prompt contains 'Do NOT modify any source file'", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("Do NOT modify any source file");
-  });
-
   test("returned prompt references assertion keywords to indicate assertion sites are forbidden", () => {
     const prompt = RectifierPromptBuilder.testWriterRectification(
       [makeCheck("adversarial", "output")],
@@ -722,36 +670,6 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     expect(withoutMode).toBe(withExplicitDefault);
   });
 
-  test("mock-restructure prompt includes story id and title", () => {
-    const story = makeStory();
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      story,
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("US-003");
-    expect(prompt).toContain("Restructure mocks");
-  });
-
-  test("mock-restructure prompt includes acceptance criteria", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("Acceptance Criteria");
-    expect(prompt).toContain("AC-1: Mocks align with dispatch shape");
-  });
 });
 
 describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
