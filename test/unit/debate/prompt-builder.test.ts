@@ -275,42 +275,23 @@ describe("buildSynthesisPrompt()", () => {
   ];
   const critiques = [makeRebuttal("agent-a", "critique X"), makeRebuttal("agent-b", "critique Y")];
 
-  test("includes all proposals", () => {
-    const builder = makeBuilder("task", "format");
-    const result = builder.buildSynthesisPrompt(proposals, []);
-    expect(result).toContain("proposal A");
-    expect(result).toContain("proposal B");
-  });
-
-  test("includes all critiques", () => {
+  test("includes all proposals and critiques", () => {
     const builder = makeBuilder("task", "format");
     const result = builder.buildSynthesisPrompt(proposals, critiques);
+    expect(result).toContain("proposal A");
+    expect(result).toContain("proposal B");
     expect(result).toContain("critique X");
     expect(result).toContain("critique Y");
   });
 
-  test("works when critiques is empty", () => {
+  test("handles empty critiques, optional suffix, and returns non-empty string", () => {
     const builder = makeBuilder("task", "format");
-    const result = builder.buildSynthesisPrompt(proposals, []);
-    expect(typeof result).toBe("string");
-    expect(result).toContain("proposal A");
-  });
-
-  test("appends promptSuffix when provided", () => {
-    const builder = makeBuilder("task", "format");
-    const result = builder.buildSynthesisPrompt(proposals, [], "UNIQUE_SUFFIX");
-    expect(result).toContain("UNIQUE_SUFFIX");
-  });
-
-  test("no promptSuffix when not provided", () => {
-    const builder = makeBuilder("task", "format");
-    const result = builder.buildSynthesisPrompt(proposals, []);
-    expect(result).not.toContain("undefined");
-  });
-
-  test("returns a non-empty string", () => {
-    const builder = makeBuilder("task", "format");
-    expect(builder.buildSynthesisPrompt(proposals, []).length).toBeGreaterThan(0);
+    const base = builder.buildSynthesisPrompt(proposals, []);
+    expect(typeof base).toBe("string");
+    expect(base.length).toBeGreaterThan(0);
+    expect(base).toContain("proposal A");
+    expect(base).not.toContain("undefined");
+    expect(builder.buildSynthesisPrompt(proposals, [], "UNIQUE_SUFFIX")).toContain("UNIQUE_SUFFIX");
   });
 });
 
@@ -392,31 +373,16 @@ const CRITIQUES_STRINGS = ["Proposal 1 missed edge case X", "Proposal 2 looks go
 // ─── buildReviewPrompt ──────────────────────────────────────────────────────
 
 describe("buildReviewPrompt()", () => {
-  test("includes story id and title", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
-    expect(prompt).toContain("US-001");
-    expect(prompt).toContain("Add debate resolver dialogue");
-  });
-
-  test("includes acceptance criteria", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
-    expect(prompt).toContain("AC-1: resolveDebate() works");
-    expect(prompt).toContain("AC-2: reReviewDebate() references prior findings");
-  });
-
-  test("includes the diff", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
-    expect(prompt).toContain(DIFF);
-  });
-
-  test("asks for JSON response with passed + findings", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
-    expect(prompt).toContain("passed");
-    expect(prompt).toContain("findings");
+  test.each([
+    ["story id", "US-001"],
+    ["story title", "Add debate resolver dialogue"],
+    ["AC-1", "AC-1: resolveDebate() works"],
+    ["AC-2", "AC-2: reReviewDebate() references prior findings"],
+    ["the diff", DIFF],
+    ["JSON 'passed' key", "passed"],
+    ["JSON 'findings' key", "findings"],
+  ])("includes %s", (_label, expected) => {
+    expect(makeBuilder().buildReviewPrompt(DIFF, REVIEW_STORY)).toContain(expected);
   });
 });
 
@@ -531,39 +497,20 @@ describe("buildResolverPrompt()", () => {
     expect(prompt).toContain("AC-1: resolveDebate() works");
   });
 
-  test("synthesis type: instructs to synthesize", () => {
-    const ctx: DebateResolverContext = { resolverType: "synthesis" };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
-    expect(prompt.toLowerCase()).toContain("synthes");
+  test.each([
+    ["synthesis", { resolverType: "synthesis" as const }, /synthes/i],
+    ["custom", { resolverType: "custom" as const }, /judge/i],
+  ])("resolverType=%s uses correct framing", (_type, ctx, pattern) => {
+    const prompt = makeBuilder().buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
+    expect(prompt.toLowerCase()).toMatch(pattern);
   });
 
-  test("custom type: instructs judge framing", () => {
-    const ctx: DebateResolverContext = { resolverType: "custom" };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
-    expect(prompt.toLowerCase()).toContain("judge");
-  });
-
-  test("majority-fail-closed: includes vote tally", () => {
-    const ctx: DebateResolverContext = {
-      resolverType: "majority-fail-closed",
-      majorityVote: { passed: false, passCount: 1, failCount: 1 },
-    };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
-    expect(prompt).toContain("1 passed");
-    expect(prompt).toContain("1 failed");
-  });
-
-  test("majority-fail-open: includes vote tally with fail-open note", () => {
-    const ctx: DebateResolverContext = {
-      resolverType: "majority-fail-open",
-      majorityVote: { passed: true, passCount: 2, failCount: 0 },
-    };
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
-    expect(prompt).toContain("2 passed");
+  test.each([
+    ["majority-fail-closed", { resolverType: "majority-fail-closed" as const, majorityVote: { passed: false, passCount: 1, failCount: 1 } }, ["1 passed", "1 failed"]],
+    ["majority-fail-open", { resolverType: "majority-fail-open" as const, majorityVote: { passed: true, passCount: 2, failCount: 0 } }, ["2 passed"]],
+  ] as const)("%s: includes vote tally", (_label, ctx, expectedPhrases) => {
+    const prompt = makeBuilder().buildResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
+    for (const phrase of expectedPhrases) expect(prompt).toContain(phrase);
   });
 
   test("asks for JSON response with passed + findings", () => {
