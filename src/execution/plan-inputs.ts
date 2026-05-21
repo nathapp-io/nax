@@ -156,6 +156,19 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
   const isLite = ctx.routing.testStrategy === "three-session-tdd-lite";
 
+  // Non-TDD strategies feed ctx.prompt (built by promptStage) into implementerInput.
+  // TDD strategies build per-role prompts internally below, so promptStage is skipped
+  // for them. Validate here — this is the single site that knows which strategies
+  // depend on ctx.prompt — so executionStage doesn't need a leaky "prompt-missing"
+  // guard that duplicates the predicate.
+  if (!_isTdd && !ctx.prompt?.trim()) {
+    throw new NaxError(
+      `Prompt missing for strategy "${ctx.routing.testStrategy}" — non-TDD strategies require ctx.prompt`,
+      "PROMPT_NOT_BUILT",
+      { stage: "plan-inputs", storyId: story.id, testStrategy: ctx.routing.testStrategy },
+    );
+  }
+
   // Resolve once for the plan — reused by greenfieldGate and threaded into fullSuiteGate
   // so the gate doesn't re-resolve. Per ADR-009 the resolver is the SSOT.
   const resolvedTestPatterns = _isTdd ? await resolveTestFilePatterns(config, ctx.workdir) : undefined;
@@ -165,7 +178,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         buildThreeSessionPrompt("implementer", ctx, isLite),
         buildThreeSessionPrompt("verifier", ctx, isLite),
       ])
-    : ["", ctx.prompt ?? "", ""];
+    : ["", ctx.prompt as string, ""];
 
   const testWriterInput =
     _isTdd && _isFreshRun

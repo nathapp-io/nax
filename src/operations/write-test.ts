@@ -46,8 +46,22 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   },
   parse(output, _input, _ctx): TestWriterOutput {
     if (!output) return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output: "" };
+    // buildHopCallback injects 'Agent "xxx" failed: ...' when all hops fail.
+    if (output.startsWith('Agent "')) {
+      return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output };
+    }
+    // Mirror implementerOp: the test-writer does not reliably emit the JSON
+    // envelope (some agents reply in prose). Treat non-empty, non-error output
+    // as success — downstream greenfieldGate / fullSuiteGate / verifier catch
+    // the real failure modes (no tests written, tests don't fail in RED, etc.).
     const envelope = parseSessionJsonOutput(output);
-    return { ...envelope, estimatedCostUsd: 0, durationMs: 0 };
+    return {
+      success: envelope.parsed ? envelope.success : true,
+      filesChanged: envelope.filesChanged,
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: envelope.output,
+    };
   },
 };
 

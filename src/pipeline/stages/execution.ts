@@ -41,8 +41,8 @@ export const executionStage: PipelineStage = {
     const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(defaultAgent);
     if (!agent) return { action: "fail", reason: `Agent "${defaultAgent}" not found` };
 
-    // HARD FAILURE: Missing prompt indicates pipeline misconfiguration
-    if (!ctx.prompt) return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
+    // Prompt presence is validated inside assemblePlanInputsFromCtx — it knows
+    // which strategies depend on ctx.prompt vs. build per-role prompts internally.
 
     // Validate agent supports the requested tier; clamp to first supported if not (issue #369)
     let effectiveTier = ctx.routing.modelTier;

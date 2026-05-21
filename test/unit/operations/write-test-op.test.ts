@@ -99,7 +99,9 @@ describe("testWriterOp.parse — error handling", () => {
     expect(result.filesChanged).toEqual([]);
   });
 
-  test("returns TestWriterOutput with success=false when output is malformed JSON", async () => {
+  test("returns TestWriterOutput with success=true when output is non-error prose (no JSON envelope)", async () => {
+    // Mirrors implementerOp: agents that reply in prose instead of the JSON
+    // envelope are treated as successful — downstream gates catch real failures.
     const { testWriterOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
@@ -112,7 +114,26 @@ describe("testWriterOp.parse — error handling", () => {
       story: { id: "US-001" } as any,
     };
 
-    const result = testWriterOp.parse('{"success": ', input, ctx);
+    const result = testWriterOp.parse("Tests added to src/calc.test.ts — RED as expected.", input, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.filesChanged).toEqual([]);
+  });
+
+  test("returns TestWriterOutput with success=false when output is an injected agent-failure marker", async () => {
+    const { testWriterOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const ctx = {
+      packageView: {} as any,
+      config: DEFAULT_CONFIG,
+    };
+
+    const input = {
+      story: { id: "US-001" } as any,
+    };
+
+    const result = testWriterOp.parse('Agent "opencode" failed: timeout', input, ctx);
 
     expect(result.success).toBe(false);
     expect(result.filesChanged).toEqual([]);
