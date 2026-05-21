@@ -76,40 +76,15 @@ describe("assemblePlanInputs validation", () => {
     expect(result.config).toBe(config);
   });
 
-  test("throws NaxError when story.id is empty", () => {
-    const story = makeStory({ id: "" });
+  test.each([
+    ["story.id empty", { id: "", title: "Test" }],
+    ["story.title empty", { id: "US-001", title: "" }],
+    ["story.id whitespace", { id: "   ", title: "Test" }],
+    ["story.title whitespace", { id: "US-001", title: "   " }],
+  ])("throws NaxError when %s", (_label, storyOverrides) => {
+    const story = makeStory(storyOverrides as any);
     const config = makeNaxConfig();
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("throws NaxError when story.title is empty", () => {
-    const story = makeStory({ id: "US-001", title: "" });
-    const config = makeNaxConfig();
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("validates story.id is non-empty string", () => {
-    const story = makeStory({ id: "   " }); // Whitespace only
-    const config = makeNaxConfig();
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("validates story.title is non-empty string", () => {
-    const story = makeStory({ id: "US-001", title: "   " }); // Whitespace only
-    const config = makeNaxConfig();
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
+    expect(() => { assemblePlanInputs(story, config); }).toThrow(NaxError);
   });
 });
 
