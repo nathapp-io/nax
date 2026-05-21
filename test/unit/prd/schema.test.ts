@@ -125,16 +125,11 @@ describe("validatePlanOutput — missing required fields", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — complexity validation", () => {
-  test("throws on invalid complexity with valid options in message", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ complexity: "easy" })]), "feat", "branch")).toThrow(
-      /simple|medium|complex|expert/,
-    );
-  });
-
-  test("throws when complexity is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ complexity: undefined })]), "feat", "branch")).toThrow(
-      /complexity/,
-    );
+  test.each([
+    ["invalid value 'easy'", makeInput([makeStory({ complexity: "easy" })]), /simple|medium|complex|expert/],
+    ["missing", makeInput([makeStory({ complexity: undefined })]), /complexity/],
+  ])("throws when complexity is %s", (_, input, pattern) => {
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 });
 
@@ -318,18 +313,14 @@ describe("validatePlanOutput — workdir validation (MW-001)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
-  test("throws descriptive error for malformed JSON string", () => {
+  test("throws descriptive error with json/parse context for malformed JSON string", () => {
     expect(() => validatePlanOutput("{not valid json}", "feat", "branch")).toThrow();
-  });
-
-  test("error message contains context about parse failure", () => {
     let errorMessage = "";
     try {
       validatePlanOutput("{bad: json}", "feat", "branch");
     } catch (err) {
       errorMessage = (err as Error).message;
     }
-    // Should contain some indication it's a parse/JSON error
     expect(errorMessage.toLowerCase()).toMatch(/json|parse/);
   });
 });
@@ -339,16 +330,12 @@ describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
-  test("preserves top-level analysis field when present", () => {
+  test("preserves top-level analysis field and trims whitespace", () => {
     const input = makeInput([makeStory()]);
     const prd = validatePlanOutput({ ...input, analysis: "Codebase analysis: auth uses passport-jwt" }, "feat", "feat/feat");
     expect(prd.analysis).toBe("Codebase analysis: auth uses passport-jwt");
-  });
-
-  test("trims whitespace from analysis field", () => {
-    const input = makeInput([makeStory()]);
-    const prd = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
-    expect(prd.analysis).toBe("some analysis");
+    const prdTrimmed = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
+    expect(prdTrimmed.analysis).toBe("some analysis");
   });
 
   test.each([
@@ -394,16 +381,13 @@ describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(pattern);
   });
 
-  test("accepts valid relative contextFiles paths", () => {
+  test("accepts valid relative contextFiles paths including nested without traversal", () => {
     const story = makeStory({ contextFiles: ["src/auth.ts", "test/auth.test.ts"] });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(prd.userStories[0].contextFiles).toEqual(["src/auth.ts", "test/auth.test.ts"]);
-  });
-
-  test("accepts nested relative paths without traversal", () => {
-    const story = makeStory({ contextFiles: ["packages/api/src/index.ts"] });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].contextFiles).toEqual(["packages/api/src/index.ts"]);
+    const nested = makeStory({ contextFiles: ["packages/api/src/index.ts"] });
+    const prd2 = validatePlanOutput(makeInput([nested]), "feat", "feat/feat");
+    expect(prd2.userStories[0].contextFiles).toEqual(["packages/api/src/index.ts"]);
   });
 });
 
