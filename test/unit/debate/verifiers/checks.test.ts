@@ -91,24 +91,14 @@ const intentUnverifiedClaim = (id: string): FactsManifest["specClaims"][0] => ({
 // ---------------------------------------------------------------------------
 
 describe("checks.ts exports (AC1)", () => {
-  test("checkFilesExist is a function", () => {
-    expect(typeof checkFilesExist).toBe("function");
-  });
-
-  test("checkAcAnchored is a function", () => {
-    expect(typeof checkAcAnchored).toBe("function");
-  });
-
-  test("checkClaimsCited is a function", () => {
-    expect(typeof checkClaimsCited).toBe("function");
-  });
-
-  test("checkNoContradictions is a function", () => {
-    expect(typeof checkNoContradictions).toBe("function");
-  });
-
-  test("checkSpecCoverage is a function", () => {
-    expect(typeof checkSpecCoverage).toBe("function");
+  test.each<[string, CallableFunction]>([
+    ["checkFilesExist", checkFilesExist],
+    ["checkAcAnchored", checkAcAnchored],
+    ["checkClaimsCited", checkClaimsCited],
+    ["checkNoContradictions", checkNoContradictions],
+    ["checkSpecCoverage", checkSpecCoverage],
+  ])("%s is a function", (_name, fn) => {
+    expect(typeof fn).toBe("function");
   });
 });
 
