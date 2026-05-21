@@ -220,40 +220,18 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
     expect(caught?.code).toBe("DECOMPOSE_VALIDATION_FAILED");
   });
 
-  test("includes entry index 0 in error context for first entry with missing id", () => {
-    const story = makeDecomposedStory({ id: "" });
+  test.each<[string, DecomposedStory[], number]>([
+    ["first", [makeDecomposedStory({ id: "" })], 0],
+    ["second", [makeDecomposedStory({ id: "US-001-A" }), makeDecomposedStory({ id: "" })], 1],
+    ["third", [makeDecomposedStory({ id: "US-001-A" }), makeDecomposedStory({ id: "US-001-B" }), makeDecomposedStory({ id: "" })], 2],
+  ])("includes entry index in error context for %s entry with missing id", (_pos, stories, expectedIndex) => {
     let caught: NaxError | undefined;
     try {
-      mapDecomposedStoriesToUserStories([story], "US-001");
+      mapDecomposedStoriesToUserStories(stories, "US-001");
     } catch (err) {
       caught = err as NaxError;
     }
-    expect(caught?.context?.entryIndex).toBe(0);
-  });
-
-  test("includes entry index 1 in error context when second entry has missing id", () => {
-    const valid = makeDecomposedStory({ id: "US-001-A" });
-    const invalid = makeDecomposedStory({ id: "" });
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories([valid, invalid], "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.context?.entryIndex).toBe(1);
-  });
-
-  test("includes entry index 2 in error context when third entry has missing id", () => {
-    const a = makeDecomposedStory({ id: "US-001-A" });
-    const b = makeDecomposedStory({ id: "US-001-B" });
-    const c = makeDecomposedStory({ id: "" });
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories([a, b, c], "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.context?.entryIndex).toBe(2);
+    expect(caught?.context?.entryIndex).toBe(expectedIndex);
   });
 });
 
@@ -278,39 +256,17 @@ describe("mapDecomposedStoriesToUserStories — validation: empty contextFiles",
     expect(caught?.code).toBe("DECOMPOSE_VALIDATION_FAILED");
   });
 
-  test("includes entry index 0 in error context for first entry with empty contextFiles", () => {
-    const story = makeDecomposedStory({ contextFiles: [] });
+  test.each<[string, DecomposedStory[], number]>([
+    ["first", [makeDecomposedStory({ contextFiles: [] })], 0],
+    ["second", [makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/x.ts"] }), makeDecomposedStory({ id: "US-001-B", contextFiles: [] })], 1],
+    ["third", [makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/a.ts"] }), makeDecomposedStory({ id: "US-001-B", contextFiles: ["src/b.ts"] }), makeDecomposedStory({ id: "US-001-C", contextFiles: [] })], 2],
+  ])("includes entry index in error context for %s entry with empty contextFiles", (_pos, stories, expectedIndex) => {
     let caught: NaxError | undefined;
     try {
-      mapDecomposedStoriesToUserStories([story], "US-001");
+      mapDecomposedStoriesToUserStories(stories, "US-001");
     } catch (err) {
       caught = err as NaxError;
     }
-    expect(caught?.context?.entryIndex).toBe(0);
-  });
-
-  test("includes entry index 2 in error context when third entry has empty contextFiles", () => {
-    const a = makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/a.ts"] });
-    const b = makeDecomposedStory({ id: "US-001-B", contextFiles: ["src/b.ts"] });
-    const c = makeDecomposedStory({ id: "US-001-C", contextFiles: [] });
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories([a, b, c], "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.context?.entryIndex).toBe(2);
-  });
-
-  test("includes entry index 1 when second entry has empty contextFiles", () => {
-    const valid = makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/x.ts"] });
-    const invalid = makeDecomposedStory({ id: "US-001-B", contextFiles: [] });
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories([valid, invalid], "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.context?.entryIndex).toBe(1);
+    expect(caught?.context?.entryIndex).toBe(expectedIndex);
   });
 });
