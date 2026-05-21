@@ -314,7 +314,7 @@ describe("AC-5: When strategy is 'implement-only', skips diagnosis and calls exe
 // ---------------------------------------------------------------------------
 
 describe("AC-6: Fix retries respect config.acceptance.fix.maxRetries (separate from acceptance.maxRetries)", () => {
-  test("config.acceptance.fix.maxRetries is a separate config path from config.acceptance.maxRetries", () => {
+  test("fix.maxRetries is a separate config path from acceptance.maxRetries (defaults to 2)", () => {
     const config = makeMinimalConfig();
     expect(config.acceptance.maxRetries).toBeDefined();
     expect(config.acceptance.fix?.maxRetries).toBeDefined();
@@ -322,31 +322,20 @@ describe("AC-6: Fix retries respect config.acceptance.fix.maxRetries (separate f
     expect(config.acceptance.fix?.maxRetries).toBe(2);
   });
 
-  test("fix.maxRetries defaults to 2", () => {
-    const config = makeMinimalConfig();
-    expect(config.acceptance.fix?.maxRetries).toBe(2);
-  });
-
-  test("fix retries use fix.maxRetries, not acceptance.maxRetries", () => {
+  test.each([
+    ["fix.maxRetries=3 with acceptance.maxRetries=5", 3, 5, 5, 3],
+    ["custom fix.maxRetries=5", 5, 3, 3, 5],
+  ] as const)("%s", (_label, fixMaxRetries, acceptanceMaxRetries, expectedAcceptance, expectedFix) => {
     const customFixConfig = makeFixConfig("diagnose-first");
-    customFixConfig.maxRetries = 3;
+    customFixConfig.maxRetries = fixMaxRetries;
 
     const config = makeMinimalConfig({
-      maxRetries: 5,
+      maxRetries: acceptanceMaxRetries,
       fix: customFixConfig,
     });
 
-    // Fix retries should use fix.maxRetries (3), not acceptance.maxRetries (5)
-    expect(config.acceptance.maxRetries).toBe(5);
-    expect(config.acceptance.fix?.maxRetries).toBe(3);
-  });
-
-  test("custom fix.maxRetries is respected", () => {
-    const customFixConfig = makeFixConfig("diagnose-first");
-    customFixConfig.maxRetries = 5;
-
-    const config = makeMinimalConfig({ fix: customFixConfig });
-    expect(config.acceptance.fix?.maxRetries).toBe(5);
+    expect(config.acceptance.maxRetries).toBe(expectedAcceptance);
+    expect(config.acceptance.fix?.maxRetries).toBe(expectedFix);
   });
 });
 
@@ -355,56 +344,14 @@ describe("AC-6: Fix retries respect config.acceptance.fix.maxRetries (separate f
 // ---------------------------------------------------------------------------
 
 describe("AC-7: JSONL event with stage 'acceptance.diagnosis' emitted containing verdict and confidence", () => {
-  test("emits acceptance.diagnosis event with verdict field", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
+  test("diagnosis event contains verdict and confidence fields", async () => {
+    const diagnosisSourceBug: DiagnosisResult = { verdict: "source_bug", reasoning: "null pointer", confidence: 0.9 };
+    const diagnosisTestBug: DiagnosisResult = { verdict: "test_bug", reasoning: "wrong assertion", confidence: 0.85 };
+    const diagnosisBoth: DiagnosisResult = { verdict: "both", reasoning: "multiple issues", confidence: 0.75 };
 
-    const diagnosis: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "null pointer",
-      confidence: 0.9,
-    };
-
-    // When diagnosis is performed, an event should be emitted
-    // Event structure should include verdict
-    expect(diagnosis.verdict).toBe("source_bug");
-  });
-
-  test("emits acceptance.diagnosis event with confidence field", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const diagnosis: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "wrong assertion",
-      confidence: 0.85,
-    };
-
-    // Event should include confidence
-    expect(diagnosis.confidence).toBe(0.85);
-  });
-
-  test("diagnosis event is emitted after diagnoseAcceptanceFailure completes", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const diagnosis: DiagnosisResult = {
-      verdict: "both",
-      reasoning: "multiple issues",
-      confidence: 0.75,
-    };
-
-    // Event should be emitted with the diagnosis result
-    expect(diagnosis.verdict).toBe("both");
+    expect(diagnosisSourceBug.verdict).toBe("source_bug");
+    expect(diagnosisTestBug.confidence).toBe(0.85);
+    expect(diagnosisBoth.verdict).toBe("both");
   });
 });
 
@@ -413,53 +360,15 @@ describe("AC-7: JSONL event with stage 'acceptance.diagnosis' emitted containing
 // ---------------------------------------------------------------------------
 
 describe("AC-8: JSONL event with stage 'acceptance.source-fix' emitted containing cost and success fields", () => {
-  test("emits acceptance.source-fix event with success field", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
+  test("source-fix event contains success and cost fields", async () => {
+    const fixSuccess = { success: true, cost: 0.05 };
+    const fixFailure = { success: false, cost: 0.12 };
+    const fixWithBoth = { success: true, cost: 0.08 };
 
-    const fixResult = {
-      success: true,
-      cost: 0.05,
-    };
-
-    // When source fix completes, an event should be emitted with success
-    expect(fixResult.success).toBe(true);
-  });
-
-  test("emits acceptance.source-fix event with cost field", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const fixResult = {
-      success: false,
-      cost: 0.12,
-    };
-
-    // Event should include cost from the fix execution
-    expect(fixResult.cost).toBe(0.12);
-  });
-
-  test("source-fix event is emitted after executeSourceFix completes", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const fixResult = {
-      success: true,
-      cost: 0.08,
-    };
-
-    // Event should be emitted with the fix result
-    expect(fixResult.success).toBe(true);
-    expect(fixResult.cost).toBe(0.08);
+    expect(fixSuccess.success).toBe(true);
+    expect(fixFailure.cost).toBe(0.12);
+    expect(fixWithBoth.success).toBe(true);
+    expect(fixWithBoth.cost).toBe(0.08);
   });
 });
 
@@ -468,49 +377,12 @@ describe("AC-8: JSONL event with stage 'acceptance.source-fix' emitted containin
 // ---------------------------------------------------------------------------
 
 describe("AC-9: JSONL event with stage 'acceptance.test-regen' emitted containing outcome field", () => {
-  test("emits acceptance.test-regen event with outcome field", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
+  test("test-regen event contains outcome field for success and failure", async () => {
+    const regenSuccess = { outcome: "success" as const };
+    const regenFailure = { outcome: "failure" as const };
 
-    const regenResult = {
-      outcome: "success" as const,
-    };
-
-    // When test regeneration completes, an event should be emitted with outcome
-    expect(regenResult.outcome).toBe("success");
-  });
-
-  test("emits acceptance.test-regen event with failure outcome", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const regenResult = {
-      outcome: "failure" as const,
-    };
-
-    // Event should handle both success and failure outcomes
-    expect(regenResult.outcome).toBe("failure");
-  });
-
-  test("test-regen event is emitted after regenerateAcceptanceTest completes", async () => {
-    const mockEmitter = {
-      emit: mock((event: string, data: Record<string, unknown>) => {
-        return;
-      }),
-    } as unknown as PipelineEventEmitter;
-
-    const regenResult = {
-      outcome: "success" as const,
-    };
-
-    // Event should be emitted after regeneration
-    expect(regenResult.outcome).toBe("success");
+    expect(regenSuccess.outcome).toBe("success");
+    expect(regenFailure.outcome).toBe("failure");
   });
 });
 
@@ -519,38 +391,23 @@ describe("AC-9: JSONL event with stage 'acceptance.test-regen' emitted containin
 // ---------------------------------------------------------------------------
 
 describe("Integration: Full routing logic in runAcceptanceLoop", () => {
-  test("diagnose-first + source_bug routes to executeSourceFix", async () => {
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
-    const verdict: DiagnosisResult["verdict"] = "source_bug";
+  test.each([
+    ["diagnose-first + source_bug", "diagnose-first" as const, "source_bug" as const, "executeSourceFix"],
+    ["diagnose-first + test_bug", "diagnose-first" as const, "test_bug" as const, "regenerateAcceptanceTest"],
+    ["diagnose-first + both", "diagnose-first" as const, "both" as const, "executeSourceFixThenRegenerate"],
+  ])("%s routes correctly", (_label, strategy, verdict, expectedDecision) => {
+    const config = makeMinimalConfig({ fix: makeFixConfig(strategy) });
 
     const routingDecision =
-      config.acceptance.fix?.strategy === "diagnose-first" && verdict === "source_bug" ? "executeSourceFix" : "other";
+      config.acceptance.fix?.strategy === "diagnose-first" && verdict === "source_bug"
+        ? "executeSourceFix"
+        : config.acceptance.fix?.strategy === "diagnose-first" && verdict === "test_bug"
+          ? "regenerateAcceptanceTest"
+          : config.acceptance.fix?.strategy === "diagnose-first" && verdict === "both"
+            ? "executeSourceFixThenRegenerate"
+            : "other";
 
-    expect(routingDecision).toBe("executeSourceFix");
-  });
-
-  test("diagnose-first + test_bug routes to regenerateAcceptanceTest", async () => {
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
-    const verdict: DiagnosisResult["verdict"] = "test_bug";
-
-    const routingDecision =
-      config.acceptance.fix?.strategy === "diagnose-first" && verdict === "test_bug"
-        ? "regenerateAcceptanceTest"
-        : "other";
-
-    expect(routingDecision).toBe("regenerateAcceptanceTest");
-  });
-
-  test("diagnose-first + both routes to executeSourceFix then regenerateAcceptanceTest", async () => {
-    const config = makeMinimalConfig({ fix: makeFixConfig("diagnose-first") });
-    const verdict: DiagnosisResult["verdict"] = "both";
-
-    const routingDecision =
-      config.acceptance.fix?.strategy === "diagnose-first" && verdict === "both"
-        ? "executeSourceFixThenRegenerate"
-        : "other";
-
-    expect(routingDecision).toBe("executeSourceFixThenRegenerate");
+    expect(routingDecision).toBe(expectedDecision);
   });
 
   test("implement-only skips diagnosis and routes to executeSourceFix directly", async () => {
@@ -568,49 +425,25 @@ describe("Integration: Full routing logic in runAcceptanceLoop", () => {
 // ---------------------------------------------------------------------------
 
 describe("Edge cases for routing logic", () => {
-  test("handles low confidence diagnosis (< 0.5)", async () => {
-    const diagnosis: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "unclear issue",
-      confidence: 0.3,
-    };
-
-    // Low confidence should still route based on verdict
-    expect(diagnosis.verdict).toBe("source_bug");
-    expect(diagnosis.confidence).toBeLessThan(0.5);
-  });
-
-  test("handles zero confidence (fallback diagnosis)", async () => {
-    const diagnosis: DiagnosisResult = {
+  test("low and zero confidence still route based on verdict", async () => {
+    const lowConfidence: DiagnosisResult = { verdict: "source_bug", reasoning: "unclear issue", confidence: 0.3 };
+    const zeroConfidence: DiagnosisResult = {
       verdict: "source_bug",
       reasoning: "diagnosis failed — falling back to source fix",
       confidence: 0,
     };
 
-    // Zero confidence is returned on parse/agent failure - should still route to source fix
-    expect(diagnosis.verdict).toBe("source_bug");
-    expect(diagnosis.confidence).toBe(0);
+    expect(lowConfidence.verdict).toBe("source_bug");
+    expect(lowConfidence.confidence).toBeLessThan(0.5);
+    expect(zeroConfidence.verdict).toBe("source_bug");
+    expect(zeroConfidence.confidence).toBe(0);
   });
 
-  test("handles missing featureName in diagnosis context", async () => {
-    const diagnosis: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "bug found",
-      confidence: 0.9,
-    };
-
-    // featureName is optional - should work without it
-    expect(diagnosis.verdict).toBe("source_bug");
-  });
-
-  test("handles missing storyId in diagnosis context", async () => {
-    const diagnosis: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "test issue",
-      confidence: 0.85,
-    };
-
-    // storyId is optional - should work without it
-    expect(diagnosis.verdict).toBe("test_bug");
+  test.each([
+    ["featureName", "source_bug" as const, "bug found", 0.9],
+    ["storyId", "test_bug" as const, "test issue", 0.85],
+  ] as const)("handles missing %s in diagnosis context", (_label, verdict, reasoning, confidence) => {
+    const diagnosis: DiagnosisResult = { verdict, reasoning, confidence };
+    expect(diagnosis.verdict).toBe(verdict);
   });
 });

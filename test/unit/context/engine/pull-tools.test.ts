@@ -66,15 +66,9 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_NEIGHBOR_DESCRIPTOR", () => {
-  test("has name 'query_neighbor'", () => {
+  test("has expected name, description, and inputSchema", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.name).toBe("query_neighbor");
-  });
-
-  test("has a non-empty description", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.description.length).toBeGreaterThan(0);
-  });
-
-  test("inputSchema requires filePath", () => {
     const schema = QUERY_NEIGHBOR_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toContain("filePath");
   });
@@ -284,15 +278,9 @@ describe("handleQueryNeighbor", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
-  test("has name 'query_feature_context'", () => {
+  test("has expected name, description, and inputSchema (filter is optional)", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name).toBe("query_feature_context");
-  });
-
-  test("has a non-empty description", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.description.length).toBeGreaterThan(0);
-  });
-
-  test("inputSchema has no required fields (filter is optional)", () => {
     const schema = QUERY_FEATURE_CONTEXT_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toBeUndefined();
   });
