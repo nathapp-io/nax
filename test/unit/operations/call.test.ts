@@ -895,24 +895,6 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     expect(result).toBe(recovered);
   });
 
-  test("(b) op.recover undefined — falls through to envelope passthrough with warn log", async () => {
-    // Uses hop-invoking mock so sendWithParseRetry actually runs and sets lastRetryTurn.
-    const agentManager = makeHopInvokingAgentManager();
-    const sessionManager = makeSessionManager();
-    runtime = makeTestRuntime({ agentManager, sessionManager });
-
-    const op = makeStrictRunOp(); // no recover
-
-    // Should not throw; returns the TurnResult-shaped last turn (envelope passthrough)
-    const result = await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-      op,
-      { id: "f1" },
-    ) as unknown as { output: string };
-
-    expect(typeof result).toBe("object");
-    expect("output" in result).toBe(true);
-  });
 
   test("(c) both exhaustedFallback and op.recover — exhaustedFallback wins", async () => {
     // Uses hop-invoking mock so sendWithParseRetry runs and retryFallback is set.
@@ -942,21 +924,19 @@ describe("callOp — run-kind op.recover invocation on retry exhaustion (#993)",
     expect(recoverCalled).toHaveLength(0);
   });
 
-  test("(d) op.recover returns null — falls through to envelope passthrough", async () => {
-    // Uses hop-invoking mock so sendWithParseRetry runs and sets lastRetryTurn.
+  test.each([
+    ["(b) op.recover undefined — falls through to envelope passthrough", makeStrictRunOp()],
+    ["(d) op.recover returns null — falls through to envelope passthrough", makeStrictRunOp({ recover: async () => null })],
+  ] as const)("%s", async (_label, op) => {
     const agentManager = makeHopInvokingAgentManager();
     const sessionManager = makeSessionManager();
     runtime = makeTestRuntime({ agentManager, sessionManager });
-
-    const op = makeStrictRunOp({ recover: async () => null });
-
     const result = await callOp(
       { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
       op,
       { id: "f1" },
     ) as unknown as { output: string };
-
-    // Falls through to envelope passthrough
+    expect(typeof result).toBe("object");
     expect("output" in result).toBe(true);
   });
 
