@@ -124,25 +124,13 @@ describe("lintForNeutrality", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("NeutralityLintError", () => {
-  test("is a NaxError", () => {
-    const err = new NeutralityLintError([{
-      file: "a.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file",
-    }]);
+  test("is a NaxError, exposes violations array, and includes file+line in message", () => {
+    const violation = { file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file" };
+    const err = new NeutralityLintError([violation]);
     expect(err).toBeInstanceOf(NaxError);
     expect(err.code).toBe("NEUTRALITY_LINT_FAILED");
-  });
-
-  test("exposes violations array", () => {
-    const violation = { file: "a.md", lineNumber: 5, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting" };
-    const err = new NeutralityLintError([violation]);
     expect(err.violations).toHaveLength(1);
     expect(err.violations[0]).toEqual(violation);
-  });
-
-  test("message includes file and line number", () => {
-    const err = new NeutralityLintError([{
-      file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific",
-    }]);
     expect(err.message).toContain("coding.md");
     expect(err.message).toContain("12");
   });
@@ -268,18 +256,11 @@ Only for agent files.`,
     expect(rules[0]?.paths).toEqual(["packages/api/**"]);
   });
 
-  test("throws RulesFrontmatterError when paths: is empty string", async () => {
-    setupFiles({ "/project/.nax/rules/bad.md": `---\npaths: ""\n---\nContent.` });
-    await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
-  });
-
-  test("throws RulesFrontmatterError on malformed frontmatter", async () => {
-    setupFiles({
-      "/project/.nax/rules/bad.md": `---
-priority: [not-a-number]
----
-Broken`,
-    });
+  test.each([
+    ["empty string paths", `---\npaths: ""\n---\nContent.`],
+    ["malformed frontmatter", `---\npriority: [not-a-number]\n---\nBroken`],
+  ] as const)("throws RulesFrontmatterError for %s", async (_label, content) => {
+    setupFiles({ "/project/.nax/rules/bad.md": content });
     await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
   });
 
