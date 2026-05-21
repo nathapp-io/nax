@@ -67,50 +67,27 @@ describe("PromptBuilder fluent API", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder section order", () => {
-  test("constitution appears before role task", async () => {
+  test("constitution before role task; story before footer; context before footer; isolation present", async () => {
+    const ctxMarker = "CONTEXT_MARKDOWN_MARKER";
     const prompt = await PromptBuilder.for("test-writer")
-      .story(makeStory())
+      .story(makeStory({ title: "STORY_TITLE_MARKER" }))
       .constitution("CONSTITUTION_MARKER")
+      .context(ctxMarker)
       .build();
-
     const constitutionIdx = prompt.indexOf("CONSTITUTION_MARKER");
     const roleTaskIdx = prompt.indexOf("# Role:");
-
+    const storyIdx = prompt.indexOf("STORY_TITLE_MARKER");
+    const ctxIdx = prompt.indexOf(ctxMarker);
+    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length - 1;
+    const isolationIdx = prompt.indexOf("isolation") !== -1 ? prompt.indexOf("isolation") : prompt.indexOf("ISOLATION");
     expect(constitutionIdx).toBeGreaterThanOrEqual(0);
     expect(roleTaskIdx).toBeGreaterThanOrEqual(0);
     expect(constitutionIdx).toBeLessThan(roleTaskIdx);
-  });
-
-  test("story context appears before conventions footer", async () => {
-    const story = makeStory({ title: "STORY_TITLE_MARKER" });
-    const prompt = await PromptBuilder.for("implementer").story(story).build();
-
-    const storyIdx = prompt.indexOf("STORY_TITLE_MARKER");
-    // Conventions footer is always last — it contains "conventions" or appears after story
-    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length - 1;
-
     expect(storyIdx).toBeGreaterThanOrEqual(0);
     expect(storyIdx).toBeLessThan(footerIdx);
-  });
-
-  test("isolation rules appear after role task body", async () => {
-    const prompt = await PromptBuilder.for("test-writer").story(makeStory()).build();
-
-    // Isolation rules section — comes after the main role task body
-    const isolationIdx = prompt.indexOf("isolation") !== -1 ? prompt.indexOf("isolation") : prompt.indexOf("ISOLATION");
-
-    expect(isolationIdx).toBeGreaterThanOrEqual(0);
-  });
-
-  test("context markdown appears before conventions footer", async () => {
-    const ctxMarker = "CONTEXT_MARKDOWN_MARKER";
-    const prompt = await PromptBuilder.for("verifier").story(makeStory()).context(ctxMarker).build();
-
-    const ctxIdx = prompt.indexOf(ctxMarker);
-    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length;
-
     expect(ctxIdx).toBeGreaterThanOrEqual(0);
     expect(ctxIdx).toBeLessThan(footerIdx);
+    expect(isolationIdx).toBeGreaterThanOrEqual(0);
   });
 
   describe("section order for each role", () => {
@@ -273,30 +250,21 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(storyIdx).toBeLessThan(conventionsIdx);
   });
 
-  test("single-story prompt repeats acceptance criteria in the final reminder", async () => {
-    const story = makeStory({
-      acceptanceCriteria: ["UNIQUE_TOP_AND_BOTTOM_AC_ONE", "UNIQUE_TOP_AND_BOTTOM_AC_TWO"],
-    });
-    const prompt = await PromptBuilder.for("tdd-simple").story(story).build();
-
-    for (const criterion of story.acceptanceCriteria) {
-      expect(prompt.indexOf(criterion)).toBeGreaterThanOrEqual(0);
-      expect(prompt.lastIndexOf(criterion)).toBeGreaterThan(prompt.indexOf(criterion));
-    }
-  });
-
-  test("story reminder remains the final prompt section", async () => {
+  test("single-story prompt repeats acceptance criteria in the final reminder, which is the final section", async () => {
     const criterion = "UNIQUE_FINAL_REMINDER_AC";
+    const story = makeStory({ acceptanceCriteria: [criterion, "UNIQUE_TOP_AND_BOTTOM_AC_TWO"] });
     const prompt = await PromptBuilder.for("tdd-simple")
-      .story(makeStory({ acceptanceCriteria: [criterion] }))
+      .story(story)
       .constitution("REMINDER_ORDER_CONSTITUTION")
       .context("REMINDER_ORDER_CONTEXT")
       .hermeticConfig({ hermetic: true })
       .build();
-
+    for (const ac of story.acceptanceCriteria) {
+      expect(prompt.indexOf(ac)).toBeGreaterThanOrEqual(0);
+      expect(prompt.lastIndexOf(ac)).toBeGreaterThan(prompt.indexOf(ac));
+    }
     const conventionsIdx = prompt.lastIndexOf("conventions");
     const finalCriterionIdx = prompt.lastIndexOf(criterion);
-
     expect(conventionsIdx).toBeGreaterThanOrEqual(0);
     expect(finalCriterionIdx).toBeGreaterThan(conventionsIdx);
     expect(prompt.trim().endsWith("<!-- END USER-SUPPLIED DATA -->")).toBe(true);
@@ -389,19 +357,11 @@ describe("src/prompts/types exports — batch", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — acceptanceContext() method (US-001 AC4)", () => {
-  test(".acceptanceContext() is chainable", () => {
-    const builder = PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext([{ testPath: "test/a.test.ts", content: "// test" }]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test("build() includes acceptance test content and test file path when acceptanceContext() is called", async () => {
+  test(".acceptanceContext() is chainable and build() includes acceptance test content and path", async () => {
     const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
+    const builder = PromptBuilder.for("implementer").story(makeStory()).acceptanceContext(entries);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+    const prompt = await builder.build();
     expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
     expect(prompt).toContain("test/unit/my-feature.test.ts");
   });
@@ -448,17 +408,10 @@ describe("PromptBuilder — acceptanceContext() method (US-001 AC4)", () => {
 });
 
 describe("PromptBuilder — no acceptance section when acceptanceContext() not called (US-001 AC5)", () => {
-  test("build() output has no acceptance section marker when acceptanceContext() is not called", async () => {
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .build();
-    // The acceptance section includes fenced typescript blocks with file paths — none expected
-    expect(prompt).not.toContain("[truncated — full file at");
-  });
-
-  test("build() output is deterministic when acceptanceContext() is not called", async () => {
+  test("build() without acceptanceContext() has no truncated marker and is deterministic", async () => {
     const story = makeStory({ title: "BASELINE_STORY_AC5" });
     const promptA = await PromptBuilder.for("implementer").story(story).build();
+    expect(promptA).not.toContain("[truncated — full file at");
     const promptB = await PromptBuilder.for("implementer").story(story).build();
     expect(promptA).toBe(promptB);
   });
