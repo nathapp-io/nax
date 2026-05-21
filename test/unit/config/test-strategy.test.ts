@@ -17,16 +17,12 @@ describe("resolveTestStrategy", () => {
     expect(resolveTestStrategy("three-session-tdd-lite")).toBe("three-session-tdd-lite");
   });
 
-  test("legacy 'tdd' maps to 'tdd-simple'", () => {
-    expect(resolveTestStrategy("tdd")).toBe("tdd-simple");
-  });
-
-  test("legacy 'three-session' maps to 'three-session-tdd'", () => {
-    expect(resolveTestStrategy("three-session")).toBe("three-session-tdd");
-  });
-
-  test("legacy 'tdd-lite' maps to 'three-session-tdd-lite'", () => {
-    expect(resolveTestStrategy("tdd-lite")).toBe("three-session-tdd-lite");
+  test.each([
+    ["tdd", "tdd-simple"],
+    ["three-session", "three-session-tdd"],
+    ["tdd-lite", "three-session-tdd-lite"],
+  ])("legacy '%s' maps to '%s'", (input: string, expected: string) => {
+    expect(resolveTestStrategy(input as any)).toBe(expected as any);
   });
 
   test("unknown value falls back to 'test-after'", () => {
@@ -78,46 +74,31 @@ describe("TEST_STRATEGY_GUIDE", () => {
 
 describe("getAcQualityRules", () => {
   describe("language-specific patterns", () => {
-    test("returns Go AC pattern when language is 'go'", () => {
-      const result = getAcQualityRules({ language: "go" });
-      expect(result).toContain("[function] returns (value, error) where error is [specific error type]");
+    test.each<[string, string]>([
+      ["go", "[function] returns (value, error) where error is [specific error type]"],
+      ["python", "raises [ExceptionType] with message containing"],
+      ["rust", "Result<[Ok type], [Err type]>"],
+    ])("returns language-specific pattern for '%s'", (language: string, expected: string) => {
+      const result = getAcQualityRules({ language: language as any });
+      expect(result).toContain(expected);
     });
 
-    test("returns Python AC pattern when language is 'python'", () => {
-      const result = getAcQualityRules({ language: "python" });
-      expect(result).toContain("raises [ExceptionType] with message containing");
-    });
-
-    test("returns Rust AC pattern when language is 'rust'", () => {
-      const result = getAcQualityRules({ language: "rust" });
-      expect(result).toContain("Result<[Ok type], [Err type]>");
-    });
-
-    test("returns default rules unchanged when language is 'typescript'", () => {
-      const result = getAcQualityRules({ language: "typescript" });
-      expect(result).toBe(AC_QUALITY_RULES);
-    });
-
-    test("returns default rules when language is unknown/unsupported", () => {
-      const result = getAcQualityRules({ language: "javascript" });
-      expect(result).toBe(AC_QUALITY_RULES);
-    });
+    test.each<[string]>([["typescript"], ["javascript"]])(
+      "returns default rules when language is '%s'",
+      (language: string) => {
+        expect(getAcQualityRules({ language: language as any })).toBe(AC_QUALITY_RULES);
+      },
+    );
   });
 
   describe("type-specific patterns", () => {
-    test("returns web AC pattern when type is 'web'", () => {
-      const result = getAcQualityRules({ type: "web" });
-      expect(result).toContain("When user clicks [element], component renders");
-    });
-
-    test("returns API AC pattern when type is 'api'", () => {
-      const result = getAcQualityRules({ type: "api" });
-      expect(result).toContain("POST /[endpoint] with [body] returns [status code]");
-    });
-
-    test("returns CLI AC pattern when type is 'cli'", () => {
-      const result = getAcQualityRules({ type: "cli" });
-      expect(result).toContain("exit code is [0/1] and stdout contains");
+    test.each<[string, string]>([
+      ["web", "When user clicks [element], component renders"],
+      ["api", "POST /[endpoint] with [body] returns [status code]"],
+      ["cli", "exit code is [0/1] and stdout contains"],
+    ])("returns type-specific pattern for '%s'", (type, expected) => {
+      const result = getAcQualityRules({ type });
+      expect(result).toContain(expected);
     });
 
     test("returns default rules when type is unknown", () => {
@@ -141,21 +122,16 @@ describe("getAcQualityRules", () => {
   });
 
   describe("undefined / backward compatibility", () => {
-    test("returns the same content as AC_QUALITY_RULES when called with undefined", () => {
-      expect(getAcQualityRules(undefined)).toBe(AC_QUALITY_RULES);
-    });
-
     test("returns the same content as AC_QUALITY_RULES when called with no argument", () => {
       expect(getAcQualityRules()).toBe(AC_QUALITY_RULES);
     });
 
-    test("AC_QUALITY_RULES exported constant equals getAcQualityRules(undefined)", () => {
-      expect(AC_QUALITY_RULES).toBe(getAcQualityRules(undefined));
-    });
-
-    test("returns default rules when profile is empty object", () => {
-      expect(getAcQualityRules({})).toBe(AC_QUALITY_RULES);
-    });
+    test.each([[undefined], [{}]])(
+      "returns AC_QUALITY_RULES for profile %j",
+      (profile) => {
+        expect(getAcQualityRules(profile as Parameters<typeof getAcQualityRules>[0])).toBe(AC_QUALITY_RULES);
+      },
+    );
   });
 });
 
