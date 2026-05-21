@@ -106,18 +106,18 @@ describe("buildProposalPrompt()", () => {
     expect(prompt.indexOf("TASK_CTX")).toBeLessThan(prompt.indexOf("OUTPUT_FMT"));
   });
 
-  test("injects ## Your Role block when debater has persona", () => {
-    const debater = makeDebater("claude", "challenger");
+  test.each([
+    ["has persona", makeDebater("claude", "challenger"), true],
+    ["no persona", makeDebater("claude"), false],
+  ] as const)("## Your Role block when debater %s", (_label, debater, shouldInclude) => {
     const builder = makeBuilder("task", "format", [debater]);
     const prompt = builder.buildProposalPrompt(0);
-    expect(prompt).toContain("## Your Role");
-    expect(prompt).toContain(PERSONA_FRAGMENTS.challenger.identity);
-  });
-
-  test("no ## Your Role block when debater has no persona", () => {
-    const debater = makeDebater("claude");
-    const builder = makeBuilder("task", "format", [debater]);
-    expect(builder.buildProposalPrompt(0)).not.toContain("## Your Role");
+    if (shouldInclude) {
+      expect(prompt).toContain("## Your Role");
+      expect(prompt).toContain(PERSONA_FRAGMENTS.challenger.identity);
+    } else {
+      expect(prompt).not.toContain("## Your Role");
+    }
   });
 
   test("persona block appears between taskContext and outputFormat", () => {
@@ -163,18 +163,18 @@ describe("buildCritiquePrompt()", () => {
     expect(builder.buildCritiquePrompt(0, proposals)).toContain("evaluate this code");
   });
 
-  test("injects ## Your Role block when debater has persona", () => {
-    const debs = [makeDebater("claude", "security"), makeDebater("gpt")];
-    const props = [makeProposal("claude", "p1"), makeProposal("gpt", "p2")];
+  test.each<[string, Debater[], Proposal[], boolean]>([
+    ["has persona", [makeDebater("claude", "security"), makeDebater("gpt")], [makeProposal("claude", "p1"), makeProposal("gpt", "p2")], true],
+    ["no persona", debaters, proposals, false],
+  ])("## Your Role block when debater %s", (_label, debs, props, shouldInclude) => {
     const builder = makeBuilder("task", "format", debs);
     const prompt = builder.buildCritiquePrompt(0, props);
-    expect(prompt).toContain("## Your Role");
-    expect(prompt).toContain(PERSONA_FRAGMENTS.security.identity);
-  });
-
-  test("no ## Your Role block when debater has no persona", () => {
-    const builder = makeBuilder("task", "format", debaters);
-    expect(builder.buildCritiquePrompt(0, proposals)).not.toContain("## Your Role");
+    if (shouldInclude) {
+      expect(prompt).toContain("## Your Role");
+      expect(prompt).toContain(PERSONA_FRAGMENTS.security.identity);
+    } else {
+      expect(prompt).not.toContain("## Your Role");
+    }
   });
 
   test("returns a non-empty string", () => {
@@ -215,14 +215,14 @@ describe("buildRebuttalPrompt()", () => {
     expect(result).toContain("rebuttal 2");
   });
 
-  test("stateful mode: does NOT include taskContext", () => {
-    const builder = makeBuilder("unique-task-context-string", "fmt", [], "stateful");
-    expect(builder.buildRebuttalPrompt(0, proposals, [])).not.toContain("unique-task-context-string");
-  });
-
-  test("one-shot mode: DOES include taskContext", () => {
-    const builder = makeBuilder("unique-task-context-string", "fmt", [], "one-shot");
-    expect(builder.buildRebuttalPrompt(0, proposals, [])).toContain("unique-task-context-string");
+  test.each([
+    ["stateful", "stateful" as const, false],
+    ["one-shot", "one-shot" as const, true],
+  ])("%s mode: taskContext included=%s", (_mode, sessionMode, shouldInclude) => {
+    const builder = makeBuilder("unique-task-context-string", "fmt", [], sessionMode);
+    const result = builder.buildRebuttalPrompt(0, proposals, []);
+    if (shouldInclude) expect(result).toContain("unique-task-context-string");
+    else expect(result).not.toContain("unique-task-context-string");
   });
 
   test.each([
@@ -251,21 +251,18 @@ describe("buildRebuttalPrompt()", () => {
     expect(result).toContain("gpt");
   });
 
-  test("injects ## Your Role block when current debater has persona", () => {
-    const debs = [makeDebater("claude", "completionist"), makeDebater("gpt")];
-    const props: Proposal[] = [
-      makeProposal("claude", "p1", "completionist"),
-      makeProposal("gpt", "p2"),
-    ];
+  test.each<[string, Debater[], Proposal[], boolean]>([
+    ["has persona", [makeDebater("claude", "completionist"), makeDebater("gpt")], [makeProposal("claude", "p1", "completionist"), makeProposal("gpt", "p2")], true],
+    ["no persona", [makeDebater("claude")], proposals, false],
+  ])("## Your Role block when rebuttal debater %s", (_label, debs, props, shouldInclude) => {
     const builder = makeBuilder("ctx", "fmt", debs, "stateful");
     const result = builder.buildRebuttalPrompt(0, props, []);
-    expect(result).toContain("## Your Role");
-    expect(result).toContain(PERSONA_FRAGMENTS.completionist.identity);
-  });
-
-  test("no ## Your Role block when debater has no persona", () => {
-    const builder = makeBuilder("ctx", "fmt", [makeDebater("claude")], "stateful");
-    expect(builder.buildRebuttalPrompt(0, proposals, [])).not.toContain("## Your Role");
+    if (shouldInclude) {
+      expect(result).toContain("## Your Role");
+      expect(result).toContain(PERSONA_FRAGMENTS.completionist.identity);
+    } else {
+      expect(result).not.toContain("## Your Role");
+    }
   });
 });
 
@@ -445,16 +442,11 @@ describe("buildReReviewPrompt()", () => {
     expect(prompt).toContain("(none)");
   });
 
-  test("includes updated diff", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
-    expect(prompt).toContain(DIFF);
-  });
-
-  test("asks for deltaSummary in JSON", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReReviewPrompt(DIFF, [FINDING]);
-    expect(prompt).toContain("deltaSummary");
+  test.each([
+    ["updated diff", DIFF],
+    ["deltaSummary in JSON", "deltaSummary"],
+  ])("buildReReviewPrompt includes %s", (_label, expected) => {
+    expect(makeBuilder().buildReReviewPrompt(DIFF, [FINDING])).toContain(expected);
   });
 });
 
@@ -623,18 +615,12 @@ describe("buildReResolverPrompt()", () => {
     expect(prompt).toContain("opencode");
   });
 
-  test("includes updated diff", () => {
+  test.each([
+    ["updated diff", DIFF],
+    ["deltaSummary in JSON", "deltaSummary"],
+  ])("buildReResolverPrompt includes %s", (_label, expected) => {
     const ctx: DebateResolverContext = { resolverType: "synthesis" };
-    const builder = makeBuilder();
-    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, [FINDING], ctx);
-    expect(prompt).toContain(DIFF);
-  });
-
-  test("asks for deltaSummary in JSON", () => {
-    const ctx: DebateResolverContext = { resolverType: "synthesis" };
-    const builder = makeBuilder();
-    const prompt = builder.buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, [FINDING], ctx);
-    expect(prompt).toContain("deltaSummary");
+    expect(makeBuilder().buildReResolverPrompt(LABELED_PROPOSALS, CRITIQUES_STRINGS, { mode: "embedded" as const, diff: DIFF }, [FINDING], ctx)).toContain(expected);
   });
 });
 
