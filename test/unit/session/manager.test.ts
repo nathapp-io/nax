@@ -31,16 +31,11 @@ describe("SessionManager.create()", () => {
     expect(desc.id).toMatch(/^sess-[0-9a-f-]{36}$/);
   });
 
-  test("initialises protocolIds as null", () => {
+  test("initialises protocolIds as null and completedStages as empty", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.protocolIds.recordId).toBeNull();
     expect(desc.protocolIds.sessionId).toBeNull();
-  });
-
-  test("completedStages starts empty", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.completedStages).toHaveLength(0);
   });
 
@@ -336,30 +331,22 @@ describe("SessionManager.get()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.transition()", () => {
-  test("CREATED → RUNNING succeeds", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    const updated = mgr.transition(sess.id, "RUNNING");
-    expect(updated.state).toBe("RUNNING");
-  });
-
-  test("updates lastActivityAt on transition", () => {
+  test("CREATED → RUNNING succeeds and updates lastActivityAt", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     const before = sess.lastActivityAt;
     const updated = mgr.transition(sess.id, "RUNNING");
+    expect(updated.state).toBe("RUNNING");
     expect(updated.lastActivityAt).not.toBe(before);
   });
 
-  test("invalid transition throws NaxError", () => {
+  test.each([
+    ["invalid transition (CREATED → COMPLETED)", (mgr: SessionManager, id: string) => () => mgr.transition(id, "COMPLETED")],
+    ["unknown session ID", (mgr: SessionManager) => () => mgr.transition("sess-fake", "RUNNING")],
+  ] as const)("%s throws NaxError", (_label, makeCall) => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    expect(() => mgr.transition(sess.id, "COMPLETED")).toThrow(NaxError);
-  });
-
-  test("transition on unknown ID throws NaxError", () => {
-    const mgr = new SessionManager();
-    expect(() => mgr.transition("sess-fake", "RUNNING")).toThrow(NaxError);
+    expect(makeCall(mgr, sess.id)).toThrow(NaxError);
   });
 
   test("protocolIds updated via options", () => {
