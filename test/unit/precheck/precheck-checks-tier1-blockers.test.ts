@@ -382,42 +382,20 @@ describe("checkDependenciesInstalled (Tier 1 blocker)", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  test("detects Node.js dependencies via node_modules", async () => {
-    mkdirSync(join(testDir, "node_modules"));
+  test.each([
+    ["detects node_modules", "node_modules"],
+    ["detects target (Rust)", "target"],
+    ["detects venv (Python)", "venv"],
+    ["detects vendor (PHP)", "vendor"],
+  ])("%s", async (_label, dir) => {
+    mkdirSync(join(testDir, dir));
 
     const result = await checkDependenciesInstalled(testDir);
 
     expect(result.name).toBe("dependencies-installed");
     expect(result.tier).toBe("blocker");
     expect(result.passed).toBe(true);
-    expect(result.message).toContain("node_modules");
-  });
-
-  test("detects Rust dependencies via target directory", async () => {
-    mkdirSync(join(testDir, "target"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("target");
-  });
-
-  test("detects Python dependencies via venv directory", async () => {
-    mkdirSync(join(testDir, "venv"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("venv");
-  });
-
-  test("detects PHP dependencies via vendor directory", async () => {
-    mkdirSync(join(testDir, "vendor"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("vendor");
+    expect(result.message).toContain(dir);
   });
 
   test("fails when no dependency directories exist", async () => {
