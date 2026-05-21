@@ -123,34 +123,22 @@ describe("CostAggregator", () => {
     _costAggDeps.write = origWrite;
   });
 
-  test("drain() writes JSONL file with all events sorted by ts", async () => {
+  test("drain() writes sorted JSONL to <drainDir>/<runId>.jsonl", async () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       let captured = "";
+      let capturedPath = "";
       const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (_p, data) => { captured = String(data); return 0; };
-      const agg = new CostAggregator("r-test", drainDir);
+      _costAggDeps.write = async (p, data) => { capturedPath = p; captured = String(data); return 0; };
+      const agg = new CostAggregator("my-run-id", drainDir);
       agg.record(makeEvent({ ts: 2000 }));
       agg.record(makeEvent({ ts: 1000 }));
       await agg.drain();
+      expect(capturedPath).toBe(join(drainDir, "my-run-id.jsonl"));
       const lines = captured.trim().split("\n");
       expect(lines).toHaveLength(2);
       expect(JSON.parse(lines[0]).ts).toBe(1000);
       expect(JSON.parse(lines[1]).ts).toBe(2000);
-      _costAggDeps.write = origWrite;
-    });
-  });
-
-  test("drain() writes to <drainDir>/<runId>.jsonl", async () => {
-    await withTempDir(async (dir) => {
-      const drainDir = join(dir, "cost");
-      let capturedPath = "";
-      const origWrite = _costAggDeps.write;
-      _costAggDeps.write = async (p, _d) => { capturedPath = p; return 0; };
-      const agg = new CostAggregator("my-run-id", drainDir);
-      agg.record(makeEvent());
-      await agg.drain();
-      expect(capturedPath).toBe(join(drainDir, "my-run-id.jsonl"));
       _costAggDeps.write = origWrite;
     });
   });
@@ -229,18 +217,12 @@ describe("CostAggregator", () => {
     });
   });
 
-  test("snapshot() returns zero totalExactCostUsd when no events recorded", () => {
+  test("snapshot() returns zero totalExactCostUsd when empty and accumulates across events", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
-    const snap = agg.snapshot();
-    expect(snap.totalExactCostUsd).toBe(0);
-  });
-
-  test("snapshot() accumulates totalExactCostUsd from events", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
+    expect(agg.snapshot().totalExactCostUsd).toBe(0);
     agg.record(makeEvent({ exactCostUsd: 0.005, costUsd: 0.005 }));
     agg.record(makeEvent({ exactCostUsd: 0.003, costUsd: 0.003 }));
-    const snap = agg.snapshot();
-    expect(snap.totalExactCostUsd).toBeCloseTo(0.008);
+    expect(agg.snapshot().totalExactCostUsd).toBeCloseTo(0.008);
   });
 
   test("drain() includes exactCostUsd in JSONL output", async () => {
@@ -291,21 +273,16 @@ describe("CostAggregator", () => {
     expect(by["call-2"].totalCostUsd).toBeCloseTo(0.04);
   });
 
-  // --- AC5: openScope with explicit scopeId ---
-  test("openScope(scopeId) returns handle whose scopeId equals the input", () => {
+  // --- AC5: openScope ---
+  test("openScope() uses provided scopeId or generates one when omitted", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
-    const handle = agg.openScope("my-scope");
-    expect(handle.scopeId).toBe("my-scope");
-    handle.close();
-  });
-
-  // --- AC5: openScope with no arg generates a scopeId ---
-  test("openScope() with no arg generates a scopeId string", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    const handle = agg.openScope();
-    expect(typeof handle.scopeId).toBe("string");
-    expect(handle.scopeId.length).toBeGreaterThan(0);
-    handle.close();
+    const h1 = agg.openScope("my-scope");
+    expect(h1.scopeId).toBe("my-scope");
+    h1.close();
+    const h2 = agg.openScope();
+    expect(typeof h2.scopeId).toBe("string");
+    expect(h2.scopeId.length).toBeGreaterThan(0);
+    h2.close();
   });
 
   // --- AC6: CostScopeHandle.snapshot() filters by scopeId ---
@@ -413,27 +390,16 @@ describe("CostAggregator", () => {
     _costAggDeps.write = origWrite;
   });
 
-  // --- AC10: createNoOpCostAggregator().openScope().snapshot() returns EMPTY_SNAPSHOT ---
-  test("createNoOpCostAggregator().openScope().snapshot() returns zero CostSnapshot", () => {
+  // --- AC10: createNoOpCostAggregator ---
+  test("createNoOpCostAggregator() returns zero snapshots and empty byScope/byCall records", () => {
     const noOp = createNoOpCostAggregator();
-    const handle = noOp.openScope("any-scope");
-    const snap = handle.snapshot();
+    const snap = noOp.openScope("any-scope").snapshot();
     expect(snap.totalCostUsd).toBe(0);
     expect(snap.callCount).toBe(0);
     expect(snap.errorCount).toBe(0);
     expect(snap.totalInputTokens).toBe(0);
     expect(snap.totalOutputTokens).toBe(0);
-  });
-
-  // --- AC10: createNoOpCostAggregator().byScope() returns empty record ---
-  test("createNoOpCostAggregator().byScope() returns empty record", () => {
-    const noOp = createNoOpCostAggregator();
     expect(noOp.byScope()).toEqual({});
-  });
-
-  // --- AC10: createNoOpCostAggregator().byCall() returns empty record ---
-  test("createNoOpCostAggregator().byCall() returns empty record", () => {
-    const noOp = createNoOpCostAggregator();
     expect(noOp.byCall()).toEqual({});
   });
 });
