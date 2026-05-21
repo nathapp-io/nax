@@ -103,40 +103,20 @@ describe("countProgress", () => {
     expect(progress.pending).toBe(2);
   });
 
-  test("all passed → pending is 0", () => {
-    const prd = makePrd([makeStory("US-001", "passed"), makeStory("US-002", "passed")]);
-    const progress = countProgress(prd);
+  test("all-same status and empty PRD give expected counts", () => {
+    const allPassed = countProgress(makePrd([makeStory("US-001", "passed"), makeStory("US-002", "passed")]));
+    expect(allPassed.total).toBe(2);
+    expect(allPassed.passed).toBe(2);
+    expect(allPassed.failed + allPassed.paused + allPassed.blocked + allPassed.pending).toBe(0);
 
-    expect(progress.total).toBe(2);
-    expect(progress.passed).toBe(2);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(0);
-  });
+    const allPending = countProgress(makePrd([makeStory("US-001", "pending"), makeStory("US-002", "pending")]));
+    expect(allPending.total).toBe(2);
+    expect(allPending.pending).toBe(2);
+    expect(allPending.passed + allPending.failed + allPending.paused + allPending.blocked).toBe(0);
 
-  test("all pending → passed/failed/paused/blocked are 0", () => {
-    const prd = makePrd([makeStory("US-001", "pending"), makeStory("US-002", "pending")]);
-    const progress = countProgress(prd);
-
-    expect(progress.total).toBe(2);
-    expect(progress.passed).toBe(0);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(2);
-  });
-
-  test("empty PRD → all zeros", () => {
-    const prd = makePrd([]);
-    const progress = countProgress(prd);
-
-    expect(progress.total).toBe(0);
-    expect(progress.passed).toBe(0);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(0);
+    const empty = countProgress(makePrd([]));
+    expect(empty.total).toBe(0);
+    expect(empty.passed + empty.failed + empty.paused + empty.blocked + empty.pending).toBe(0);
   });
 
   test("pending = total - passed - failed - paused - blocked", () => {
@@ -155,20 +135,14 @@ describe("countProgress", () => {
     expect(p.pending).toBe(p.total - p.passed - p.failed - p.paused - p.blocked);
   });
 
-  test("skipped stories count as pending (not a tracked terminal state)", () => {
-    const prd = makePrd([makeStory("US-001", "skipped")]);
-    const p = countProgress(prd);
+  test("skipped and in-progress stories count as pending", () => {
+    const skipped = countProgress(makePrd([makeStory("US-001", "skipped")]));
+    expect(skipped.total).toBe(1);
+    expect(skipped.pending).toBe(1);
+    expect(skipped.passed).toBe(0);
 
-    expect(p.total).toBe(1);
-    expect(p.pending).toBe(1);
-    expect(p.passed).toBe(0);
-  });
-
-  test("in-progress stories count toward pending", () => {
-    const prd = makePrd([makeStory("US-001", "in-progress")]);
-    const p = countProgress(prd);
-
-    expect(p.pending).toBe(1);
+    const inProgress = countProgress(makePrd([makeStory("US-001", "in-progress")]));
+    expect(inProgress.pending).toBe(1);
   });
 });
 
@@ -201,18 +175,14 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.run.pid).toBe(12345);
   });
 
-  test("PID is included for crash detection", () => {
+  test("PID is a number, uses provided value, defaults to process.pid", () => {
     const testPid = 99999;
-    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
+    const withPid = buildStatusSnapshot(makeRunState({ pid: testPid }));
+    expect(withPid.run.pid).toBe(testPid);
+    expect(typeof withPid.run.pid).toBe("number");
 
-    expect(snapshot.run.pid).toBe(testPid);
-    expect(typeof snapshot.run.pid).toBe("number");
-  });
-
-  test("PID defaults to process.pid when not overridden", () => {
-    const snapshot = buildStatusSnapshot(makeRunState());
-
-    expect(snapshot.run.pid).toBe(process.pid);
+    const defaultPid = buildStatusSnapshot(makeRunState());
+    expect(defaultPid.run.pid).toBe(process.pid);
   });
 
   test("progress is derived from PRD stories", () => {
@@ -232,14 +202,9 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.cost.limit).toBe(10.0);
   });
 
-  test("cost limit is null when not set", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ costLimit: null }));
-    expect(snapshot.cost.limit).toBeNull();
-  });
-
-  test("current is null when no story active", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ currentStory: null }));
-    expect(snapshot.current).toBeNull();
+  test("cost limit is null when not set and current is null when no story active", () => {
+    expect(buildStatusSnapshot(makeRunState({ costLimit: null })).cost.limit).toBeNull();
+    expect(buildStatusSnapshot(makeRunState({ currentStory: null })).current).toBeNull();
   });
 
   test("current story info populated when story is active", () => {
