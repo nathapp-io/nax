@@ -349,22 +349,12 @@ describe("Integration: 6 roles with no override — story title and AC present",
 // ---------------------------------------------------------------------------
 
 describe("Structural: call sites migrated away from old prompt functions", () => {
-  test("src/tdd/session-runner.ts does not import buildTestWriterPrompt from ./prompts", async () => {
-    const source = await Bun.file(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname).text();
-
-    // After migration, session-runner should NOT import these old functions
-    expect(source).not.toContain("buildTestWriterPrompt");
-    expect(source).not.toContain("buildTestWriterLitePrompt");
-    expect(source).not.toContain("buildImplementerPrompt");
-    expect(source).not.toContain("buildImplementerLitePrompt");
-    expect(source).not.toContain("buildVerifierPrompt");
-  });
-
-  test("src/tdd/session-runner.ts imports PromptBuilder after migration", async () => {
-    const source = await Bun.file(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname).text();
-
-    // After migration, session-runner should use PromptBuilder
-    expect(source).toContain("PromptBuilder");
+  test("src/tdd/session-runner.ts has been deleted (issue #1067)", () => {
+    // session-runner.ts was retired in issue #1067 — the file must not exist.
+    const { existsSync } = require("fs");
+    const { join } = require("path");
+    const path = join(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname);
+    expect(existsSync(path)).toBe(false);
   });
 
   test("src/pipeline/stages/prompt.ts does not import buildSingleSessionPrompt or buildBatchPrompt after migration", async () => {

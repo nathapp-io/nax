@@ -17,7 +17,7 @@ Use these instead of mutating `Bun.spawn` globally (see `docs/architecture/conve
 |:---|:---|:---|
 | `src/tdd/isolation.ts` | `_isolationDeps.spawn` | `git diff` in `getChangedFiles` |
 | `src/tdd/cleanup.ts` | `_cleanupDeps.spawn/sleep/kill` | `ps`, `Bun.sleep`, `process.kill` in `cleanupProcessTree` |
-| `src/tdd/session-runner.ts` | `_sessionRunnerDeps.spawn/getChangedFiles/verifyTestWriterIsolation/verifyImplementerIsolation/captureGitRef/cleanupProcessTree/buildPrompt` | All session runner dependencies |
+| `src/tdd/rollback.ts` | `_rollbackDeps.spawn` | `git reset`/`clean` in `rollbackToRef` |
 | `src/tdd/rectification-gate.ts` | `_rectificationGateDeps.executeWithTimeout/parseBunTestOutput/shouldRetryRectification` | Gate logic |
 | `src/utils/git.ts` | `_gitDeps.spawn` | All git commands |
 | `src/verification/executor.ts` | `_executorDeps.spawn` | Shell test command execution |

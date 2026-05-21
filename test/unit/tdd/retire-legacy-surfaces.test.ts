@@ -229,4 +229,34 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
       }
     });
   });
+
+  /**
+   * Slice F: Retire direct-dispatch TDD layer (issue #1067)
+   * Asserts that runTddSessionOp / runTddSession / assembleTddSessionResult /
+   * truncateTestOutput and their supporting types are absent from the barrel.
+   */
+  describe("Slice F: Direct-dispatch TDD layer retired (issue #1067)", () => {
+    test("runTddSessionOp is not exported from the tdd barrel", () => {
+      expect((tddIndex as any).runTddSessionOp).toBeUndefined();
+    });
+
+    test("runTddSession is not exported from the tdd barrel", () => {
+      expect((tddIndex as any).runTddSession).toBeUndefined();
+    });
+
+    test("assembleTddSessionResult is not exported from the tdd barrel", () => {
+      expect((tddIndex as any).assembleTddSessionResult).toBeUndefined();
+    });
+
+    test("truncateTestOutput is not exported from the tdd barrel", () => {
+      expect((tddIndex as any).truncateTestOutput).toBeUndefined();
+    });
+
+    test("Supporting types do not leak as runtime values", () => {
+      const retiredTypes = ["TddSessionOpOptions", "TddSessionBinding", "ThreeSessionTddOptions"];
+      for (const name of retiredTypes) {
+        expect((tddIndex as any)[name]).toBeUndefined();
+      }
+    });
+  });
 });
