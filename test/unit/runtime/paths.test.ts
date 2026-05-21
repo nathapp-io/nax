@@ -61,11 +61,8 @@ describe("identity I/O", () => {
     await rm(identDir, { recursive: true, force: true });
   });
 
-  it("identityPath returns correct path", () => {
+  it("identityPath returns correct path and readProjectIdentity returns null when file absent", async () => {
     expect(identityPath(TEST_PROJECT_KEY)).toBe(path.join(globalConfigDir(), TEST_PROJECT_KEY, ".identity"));
-  });
-
-  it("readProjectIdentity returns null when file does not exist", async () => {
     const result = await readProjectIdentity(TEST_PROJECT_KEY);
     expect(result).toBeNull();
   });
@@ -88,7 +85,6 @@ describe("identity I/O", () => {
 
   it("readProjectIdentity returns null for malformed JSON file", async () => {
     await mkdir(identDir, { recursive: true });
-    // Write malformed identity (missing required fields — shape guard should reject)
     await Bun.write(path.join(identDir, ".identity"), JSON.stringify({ name: TEST_PROJECT_KEY }));
     const result = await readProjectIdentity(TEST_PROJECT_KEY);
     expect(result).toBeNull();
@@ -96,14 +92,11 @@ describe("identity I/O", () => {
 });
 
 describe("curatorRollupPath", () => {
-  it("defaults to globalDir/curator/rollup.jsonl", () => {
-    const result = curatorRollupPath("/home/user/.nax/global", undefined);
-    expect(result).toBe("/home/user/.nax/global/curator/rollup.jsonl");
-  });
-
-  it("uses override when provided as absolute path", () => {
-    const result = curatorRollupPath("/home/user/.nax/global", "/mnt/team/rollup.jsonl");
-    expect(result).toBe("/mnt/team/rollup.jsonl");
+  it.each([
+    ["no override (defaults to globalDir/curator/rollup.jsonl)", undefined, "/home/user/.nax/global/curator/rollup.jsonl"],
+    ["absolute path override", "/mnt/team/rollup.jsonl", "/mnt/team/rollup.jsonl"],
+  ] as const)("%s", (_label, override, expected) => {
+    expect(curatorRollupPath("/home/user/.nax/global", override)).toBe(expected);
   });
 
   it("expands tilde in override", () => {
@@ -147,7 +140,6 @@ describe("claimProjectIdentity", () => {
   it("updates lastSeen on subsequent calls for same workdir", async () => {
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
     const first = await readProjectIdentity(TEST_CLAIM_KEY);
-    // Small delay to ensure timestamps differ
     await new Promise((r) => setTimeout(r, 5));
     await claimProjectIdentity(TEST_CLAIM_KEY, "/tmp/my-project", null);
     const second = await readProjectIdentity(TEST_CLAIM_KEY);
@@ -159,62 +151,29 @@ describe("claimProjectIdentity", () => {
 import { NaxConfigSchema } from "../../../src/config/schemas";
 
 describe("NaxConfigSchema name field", () => {
-  it("accepts a valid name", () => {
-    const result = NaxConfigSchema.safeParse({ name: "my-project" });
-    expect(result.success).toBe(true);
+  it.each([
+    ["a valid name", { name: "my-project" }],
+    ["a name with underscores and digits", { name: "proj_1" }],
+    ["optional outputDir as absolute path", { name: "koda", outputDir: "/mnt/fast/nax/koda" }],
+    ["outputDir starting with ~/", { name: "koda", outputDir: "~/custom/koda" }],
+    ["curator.rollupPath", { name: "koda", curator: { rollupPath: "/mnt/share/rollup.jsonl" } }],
+  ] as const)("accepts %s", (_label, input) => {
+    expect(NaxConfigSchema.safeParse(input).success).toBe(true);
   });
 
-  it("accepts a name with underscores and digits", () => {
-    const result = NaxConfigSchema.safeParse({ name: "proj_1" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects a name with uppercase letters", () => {
-    const result = NaxConfigSchema.safeParse({ name: "MyProject" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects reserved name 'global'", () => {
-    const result = NaxConfigSchema.safeParse({ name: "global" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects reserved name '_archive'", () => {
-    const result = NaxConfigSchema.safeParse({ name: "_archive" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a name starting with '.'", () => {
-    const result = NaxConfigSchema.safeParse({ name: ".hidden" });
-    expect(result.success).toBe(false);
+  it.each([
+    ["a name with uppercase letters", { name: "MyProject" }],
+    ["reserved name 'global'", { name: "global" }],
+    ["reserved name '_archive'", { name: "_archive" }],
+    ["a name starting with '.'", { name: ".hidden" }],
+    ["relative outputDir", { name: "koda", outputDir: "relative/path" }],
+  ] as const)("rejects %s", (_label, input) => {
+    expect(NaxConfigSchema.safeParse(input).success).toBe(false);
   });
 
   it("defaults name to empty string when absent", () => {
     const result = NaxConfigSchema.safeParse({});
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.name).toBe("");
-  });
-
-  it("accepts optional outputDir as absolute path", () => {
-    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "/mnt/fast/nax/koda" });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts outputDir starting with ~/", () => {
-    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "~/custom/koda" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects relative outputDir", () => {
-    const result = NaxConfigSchema.safeParse({ name: "koda", outputDir: "relative/path" });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts curator.rollupPath", () => {
-    const result = NaxConfigSchema.safeParse({
-      name: "koda",
-      curator: { rollupPath: "/mnt/share/rollup.jsonl" },
-    });
-    expect(result.success).toBe(true);
   });
 });
