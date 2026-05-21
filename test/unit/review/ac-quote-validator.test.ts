@@ -51,13 +51,8 @@ describe("validateAcQuote", () => {
       expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "missing_ac_quote" });
     });
 
-    test("error with acIndex 0 → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acQuote: "validateAcQuote", acIndex: 0 });
-      expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "ac_index_out_of_range" });
-    });
-
-    test("error with acIndex beyond array → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acQuote: "validateAcQuote", acIndex: 99 });
+    test.each([0, 99])("error with acIndex %d → ac_index_out_of_range", (acIndex) => {
+      const finding = makeFinding({ severity: "error", acQuote: "validateAcQuote", acIndex });
       expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "ac_index_out_of_range" });
     });
 
@@ -283,33 +278,19 @@ describe("validateAcGroundingMinimal", () => {
       expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "missing_ac_index" });
     });
 
-    test("error with acIndex beyond array → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 99 });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "ac_index_out_of_range" });
+    test.each<[string, ReturnType<typeof makeFinding>, string[]]>([
+      ["acIndex 99 in-range ACS", makeFinding({ severity: "error", acIndex: 99 }), ACS],
+      ["acIndex 1 with empty ACS", makeFinding({ severity: "error", acIndex: 1 }), []],
+    ])("ac_index_out_of_range for %s", (_label, finding, acs) => {
+      expect(validateAcGroundingMinimal(finding, acs)).toEqual({ valid: false, code: "ac_index_out_of_range" });
     });
 
-    test("error with acIndex: 1 and no acceptanceCriteria → ac_index_out_of_range", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 1 });
-      expect(validateAcGroundingMinimal(finding, [])).toEqual({ valid: false, code: "ac_index_out_of_range" });
-    });
-
-    // Contract regression test: acQuote content is NEVER inspected
-    test("error with acIndex in range and acQuote: 'this text is nowhere in any AC' → valid", () => {
-      const finding = makeFinding({
-        severity: "error",
-        acIndex: 1,
-        acQuote: "this text is nowhere in any AC",
-      });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-
-    test("error with valid acIndex and no acQuote → valid", () => {
-      const finding = makeFinding({ severity: "error", acIndex: 1 });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
-    });
-
-    test("error with acIndex in range (last AC) → valid", () => {
-      const finding = makeFinding({ severity: "error", acIndex: ACS.length });
+    // Contract regression test: acQuote content is NEVER inspected — only acIndex range matters
+    test.each<[string, ReturnType<typeof makeFinding>]>([
+      ["acQuote not in any AC", makeFinding({ severity: "error", acIndex: 1, acQuote: "this text is nowhere in any AC" })],
+      ["no acQuote", makeFinding({ severity: "error", acIndex: 1 })],
+      ["acIndex at last AC", makeFinding({ severity: "error", acIndex: ACS.length })],
+    ])("valid for %s", (_label, finding) => {
       expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: true });
     });
   });
