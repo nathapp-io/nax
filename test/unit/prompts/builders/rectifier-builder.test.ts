@@ -227,59 +227,27 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(prompt).not.toContain("Structured findings:");
   });
 
-  test("does NOT include rethink preamble before rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      1, // attempt 1 — below rethinkAtAttempt (2)
-      2,
-      3,
-    );
-
-    expect(prompt).not.toContain("Rethink your approach");
+  test.each<[number, boolean]>([
+    [1, false],
+    [2, true],
+    [3, true],
+  ])("rethink preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
+    if (shouldInclude) expect(prompt).toContain("Rethink your approach");
+    else expect(prompt).not.toContain("Rethink your approach");
   });
 
-  test("includes rethink preamble at rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      2, // attempt == rethinkAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("Rethink your approach");
+  test.each<[number, boolean]>([
+    [1, false],
+    [3, true],
+  ])("urgency preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
+    if (shouldInclude) expect(prompt).toContain("URGENT");
+    else expect(prompt).not.toContain("URGENT");
   });
 
-  test("includes rethink preamble after rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      3, // attempt > rethinkAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("Rethink your approach");
-  });
-
-  test("does NOT include urgency preamble before urgencyAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      1, // attempt 1 — below urgencyAtAttempt (3)
-      2,
-      3,
-    );
-
-    expect(prompt).not.toContain("URGENT");
-  });
-
-  test("includes urgency preamble at urgencyAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      3, // attempt == urgencyAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("URGENT");
+  test("includes urgency 'final attempt' note at urgencyAtAttempt", () => {
+    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3);
     expect(prompt).toContain("final attempt");
   });
 
@@ -297,33 +265,16 @@ describe("RectifierPromptBuilder.continuation", () => {
     }
   });
 
-  test("continuation prompt does NOT contain constitution", () => {
+  test.each([
+    ["constitution", /constitution/i],
+    ["acceptance criteria header", /### acceptance criteria/i],
+    ["story title block", /^Story:/m],
+  ])("continuation prompt does NOT contain %s", (_label, pattern) => {
     const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
-
-    expect(prompt.toLowerCase()).not.toContain("constitution");
-  });
-
-  test("continuation prompt does NOT contain 'acceptance criteria' section header", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("semantic", "AC-1 missing")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    // Should not have the full AC list or the "Acceptance Criteria" section found in full prompts
-    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
-  });
-
-  test("continuation prompt does NOT contain story title section", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    // Should not open with the full story context block
-    expect(prompt).not.toMatch(/^Story:/m);
+    expect(prompt).not.toMatch(pattern);
   });
 
   test("truncates long output to 4000 chars per check", () => {
@@ -526,26 +477,20 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
   });
 
   // D1 — Anti-assertion-loosening constraints (#897)
-  test("adversarial check: forbids loosening assertions to match current implementation behavior", () => {
+  test.each([
+    ["forbids loosening assertions", "Do NOT loosen assertions to match current implementation behavior"],
+    ["forbids deleting failing tests", "Do NOT delete a failing test"],
+  ])("adversarial check: %s", (_label, expected) => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Do NOT loosen assertions to match current implementation behavior");
+    expect(prompt).toContain(expected);
   });
 
   test("adversarial check: instructs to encode spec not current behavior", () => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
     expect(prompt).toContain("SPECIFICATION");
     expect(prompt).toContain("not the current behavior");
-  });
-
-  test("adversarial check: forbids deleting failing tests", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Do NOT delete a failing test");
   });
 });
 
@@ -648,18 +593,9 @@ describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
   });
 
-  test("lists FILES: as a required field", () => {
-    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
-      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
-    );
-    expect(afterException4).toContain("FILES:");
-  });
-
-  test("lists REASON: as a required field", () => {
-    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
-      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
-    );
-    expect(afterException4).toContain("REASON:");
+  test.each(["FILES:", "REASON:"])("lists %s as a required field", (field) => {
+    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"));
+    expect(afterException4).toContain(field);
   });
 
   test("states the handoff rule: do not also emit UNRESOLVED in the same turn", () => {
