@@ -50,23 +50,12 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 }
 
 describe("autofixStage", () => {
-  test("disabled when reviewResult is undefined", () => {
-    expect(autofixStage.enabled(makeCtx())).toBe(false);
-  });
-
-  test("disabled when review passed", () => {
-    expect(autofixStage.enabled(makeCtx({ reviewResult: makeReviewResult(true) }))).toBe(false);
-  });
-
-  test("disabled when autofix.enabled = false", () => {
-    const ctx = makeCtx({
-      reviewResult: makeReviewResult(false),
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: { ...DEFAULT_CONFIG.quality, autofix: { enabled: false } },
-      } as any,
-    });
-    expect(autofixStage.enabled(ctx)).toBe(false);
+  test.each([
+    ["reviewResult is undefined", () => makeCtx()],
+    ["review passed", () => makeCtx({ reviewResult: makeReviewResult(true) })],
+    ["autofix.enabled = false", () => makeCtx({ reviewResult: makeReviewResult(false), config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, autofix: { enabled: false } } } as any })],
+  ])("disabled when %s", (_label, makeTestCtx) => {
+    expect(autofixStage.enabled(makeTestCtx())).toBe(false);
   });
 
   test("escalates when no fix commands configured and agent rectification fails", async () => {
@@ -579,27 +568,17 @@ describe("autofixStage", () => {
     expect(prompt).toContain("lint");
   });
 
-  test("ENH-008: includes scope constraint when story.workdir is set", () => {
+  test("ENH-008: includes scope constraint when workdir set, excludes when not set", () => {
     const failedChecks: ReviewCheckResult[] = [
       { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
     ];
-    const story = { id: "US-002", title: "Add feature", workdir: "apps/api" } as any;
 
-    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
+    const promptWithWorkdir = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature", workdir: "apps/api" } as any);
+    expect(promptWithWorkdir).toContain("Only modify files within `apps/api/`");
+    expect(promptWithWorkdir).toContain("Do NOT touch files outside this directory");
 
-    expect(prompt).toContain("Only modify files within `apps/api/`");
-    expect(prompt).toContain("Do NOT touch files outside this directory");
-  });
-
-  test("ENH-008: no scope constraint when story.workdir is not set", () => {
-    const failedChecks: ReviewCheckResult[] = [
-      { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
-    ];
-    const story = { id: "US-002", title: "Add feature" } as any;
-
-    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
-
-    expect(prompt).not.toContain("Only modify files within");
+    const promptWithoutWorkdir = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature" } as any);
+    expect(promptWithoutWorkdir).not.toContain("Only modify files within");
   });
 });
 
