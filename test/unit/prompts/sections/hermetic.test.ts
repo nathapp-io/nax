@@ -3,35 +3,21 @@ import { buildHermeticSection } from "../../../../src/prompts/sections/hermetic"
 
 describe("buildHermeticSection", () => {
   describe("role filtering", () => {
-    test("returns content for test-writer", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
-      expect(result).not.toBe("");
-      expect(result).toContain("# Hermetic Test Requirement");
-    });
-
-    test("returns content for implementer", () => {
-      const result = buildHermeticSection("implementer", undefined, undefined);
-      expect(result).not.toBe("");
-    });
-
-    test("returns content for tdd-simple", () => {
-      const result = buildHermeticSection("tdd-simple", undefined, undefined);
-      expect(result).not.toBe("");
-    });
-
-    test("returns content for batch", () => {
-      const result = buildHermeticSection("batch", undefined, undefined);
-      expect(result).not.toBe("");
-    });
-
-    test("returns content for single-session", () => {
-      const result = buildHermeticSection("single-session", undefined, undefined);
-      expect(result).not.toBe("");
-    });
-
-    test("returns empty string for verifier (read-only)", () => {
-      const result = buildHermeticSection("verifier", undefined, undefined);
-      expect(result).toBe("");
+    test.each([
+      ["test-writer returns content", "test-writer", true],
+      ["implementer returns content", "implementer", true],
+      ["tdd-simple returns content", "tdd-simple", true],
+      ["batch returns content", "batch", true],
+      ["single-session returns content", "single-session", true],
+      ["verifier returns empty string", "verifier", false],
+    ])("%s", (_label, role, hasContent) => {
+      const result = buildHermeticSection(role as any, undefined, undefined);
+      if (hasContent) {
+        expect(result).not.toBe("");
+        expect(result).toContain("# Hermetic Test Requirement");
+      } else {
+        expect(result).toBe("");
+      }
     });
   });
 
@@ -64,27 +50,19 @@ describe("buildHermeticSection", () => {
   });
 
   describe("externalBoundaries", () => {
-    test("no mention when undefined", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
-      expect(result).not.toContain("Project-specific boundaries");
-    });
-
-    test("injects boundaries as backtick-wrapped list", () => {
-      const result = buildHermeticSection("test-writer", ["claude", "acpx", "redis"], undefined);
-      expect(result).toContain("Project-specific boundaries to mock");
-      expect(result).toContain("`claude`");
-      expect(result).toContain("`acpx`");
-      expect(result).toContain("`redis`");
-    });
-
-    test("handles single boundary", () => {
-      const result = buildHermeticSection("test-writer", ["redis"], undefined);
-      expect(result).toContain("`redis`");
-    });
-
-    test("handles empty array (no boundaries line)", () => {
-      const result = buildHermeticSection("test-writer", [], undefined);
-      expect(result).not.toContain("Project-specific boundaries");
+    test.each([
+      ["undefined → no mention", undefined, false],
+      ["three boundaries → all backtick-wrapped", ["claude", "acpx", "redis"], true],
+      ["single boundary → backtick-wrapped", ["redis"], true],
+      ["empty array → no boundaries line", [], false],
+    ])("%s", (_label, boundaries, hasBoundaries) => {
+      const result = buildHermeticSection("test-writer", boundaries ?? undefined, undefined);
+      if (hasBoundaries) {
+        expect(result).toContain("Project-specific boundaries to mock");
+        for (const b of boundaries!) expect(result).toContain(`\`${b}\``);
+      } else {
+        expect(result).not.toContain("Project-specific boundaries");
+      }
     });
   });
 
