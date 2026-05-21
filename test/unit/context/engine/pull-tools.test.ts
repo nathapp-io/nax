@@ -79,14 +79,9 @@ describe("QUERY_NEIGHBOR_DESCRIPTOR", () => {
     expect(schema.required).toContain("filePath");
   });
 
-  test("maxCallsPerSession is a positive integer", () => {
-    expect(QUERY_NEIGHBOR_DESCRIPTOR.maxCallsPerSession).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR.maxCallsPerSession)).toBe(true);
-  });
-
-  test("maxTokensPerCall is a positive integer", () => {
-    expect(QUERY_NEIGHBOR_DESCRIPTOR.maxTokensPerCall).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR.maxTokensPerCall)).toBe(true);
+  test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
+    expect(QUERY_NEIGHBOR_DESCRIPTOR[field]).toBeGreaterThan(0);
+    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR[field])).toBe(true);
   });
 
   test("PULL_TOOL_REGISTRY includes query_neighbor", () => {
@@ -137,31 +132,24 @@ describe("PullToolBudget", () => {
     expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
-  test("isSessionExhausted() returns false when calls remain", () => {
-    const budget = new PullToolBudget(5, 50, createRunCallCounter());
+  test.each([
+    ["isSessionExhausted() when calls remain", () => new PullToolBudget(5, 50, createRunCallCounter()), false],
+    ["isSessionExhausted() when session limit reached", () => new PullToolBudget(1, 50, createRunCallCounter()), true],
+  ])("%s → %s", (_label, makeBudget, expected) => {
+    const budget = makeBudget();
     budget.consume();
-    expect(budget.isSessionExhausted()).toBe(false);
+    expect(budget.isSessionExhausted()).toBe(expected);
   });
 
-  test("isSessionExhausted() returns true when session limit reached", () => {
-    const budget = new PullToolBudget(1, 50, createRunCallCounter());
-    budget.consume();
-    expect(budget.isSessionExhausted()).toBe(true);
-  });
-
-  test("isRunExhausted() returns false when run calls remain", () => {
+  test.each([
+    ["isRunExhausted() when run calls remain", 0, false],
+    ["isRunExhausted() when run limit reached", 49, true],
+  ])("%s → %s", (_label, counterStart, expected) => {
     const counter = createRunCallCounter();
+    counter.count = counterStart;
     const budget = new PullToolBudget(5, 50, counter);
     budget.consume();
-    expect(budget.isRunExhausted()).toBe(false);
-  });
-
-  test("isRunExhausted() returns true when run limit reached", () => {
-    const counter = createRunCallCounter();
-    counter.count = 49;
-    const budget = new PullToolBudget(5, 50, counter);
-    budget.consume();
-    expect(budget.isRunExhausted()).toBe(true);
+    expect(budget.isRunExhausted()).toBe(expected);
   });
 
   test("run counter is shared — multiple budgets draw from the same pool", () => {
@@ -309,14 +297,9 @@ describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
     expect(schema.required).toBeUndefined();
   });
 
-  test("maxCallsPerSession is a positive integer", () => {
-    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxCallsPerSession).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxCallsPerSession)).toBe(true);
-  });
-
-  test("maxTokensPerCall is a positive integer", () => {
-    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxTokensPerCall).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxTokensPerCall)).toBe(true);
+  test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
+    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field]).toBeGreaterThan(0);
+    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field])).toBe(true);
   });
 
   test("PULL_TOOL_REGISTRY includes query_feature_context", () => {
