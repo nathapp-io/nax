@@ -20,34 +20,28 @@ import {
 // extractJsonFromMarkdown
 // ---------------------------------------------------------------------------
 
+const JSON_FIXTURE = '{"passed":true,"findings":[]}';
+
 describe("extractJsonFromMarkdown", () => {
   test("returns input unchanged when no fence present", () => {
-    const input = '{"passed":true,"findings":[]}';
-    expect(extractJsonFromMarkdown(input)).toBe(input);
+    expect(extractJsonFromMarkdown(JSON_FIXTURE)).toBe(JSON_FIXTURE);
   });
 
-  test("extracts JSON from ```json fence", () => {
-    const json = '{"passed":true,"findings":[]}';
-    const input = "```json\n" + json + "\n```";
-    expect(extractJsonFromMarkdown(input)).toBe(json);
-  });
-
-  test("extracts JSON from plain ``` fence", () => {
-    const json = '{"passed":true,"findings":[]}';
-    const input = "```\n" + json + "\n```";
-    expect(extractJsonFromMarkdown(input)).toBe(json);
+  test.each<[string, string]>([
+    ["```json", "```json\n" + JSON_FIXTURE + "\n```"],
+    ["```", "```\n" + JSON_FIXTURE + "\n```"],
+  ])("extracts JSON from %s fence", (_fenceType, input) => {
+    expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles preamble text before fence (failure mode 2)", () => {
-    const json = '{"passed":true,"findings":[]}';
-    const input = "I'll verify each AC by reading the implementation files.\n```json\n" + json + "\n```";
-    expect(extractJsonFromMarkdown(input)).toBe(json);
+    const input = "I'll verify each AC by reading the implementation files.\n```json\n" + JSON_FIXTURE + "\n```";
+    expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles trailing text after closing fence", () => {
-    const json = '{"passed":true,"findings":[]}';
-    const input = "```json\n" + json + "\n```\nAll ACs are met.";
-    expect(extractJsonFromMarkdown(input)).toBe(json);
+    const input = "```json\n" + JSON_FIXTURE + "\n```\nAll ACs are met.";
+    expect(extractJsonFromMarkdown(input)).toBe(JSON_FIXTURE);
   });
 
   test("handles both preamble and trailing text", () => {
@@ -58,7 +52,6 @@ describe("extractJsonFromMarkdown", () => {
 
   test("returns input unchanged when fence is unclosed", () => {
     const input = "```json\n{";
-    // No closing fence — returns input unchanged
     expect(extractJsonFromMarkdown(input)).toBe(input);
   });
 
@@ -74,12 +67,11 @@ describe("extractJsonFromMarkdown", () => {
 // ---------------------------------------------------------------------------
 
 describe("stripTrailingCommas", () => {
-  test("removes trailing comma before }", () => {
-    expect(stripTrailingCommas('{"a":1,}')).toBe('{"a":1}');
-  });
-
-  test("removes trailing comma before ]", () => {
-    expect(stripTrailingCommas("[1,2,3,]")).toBe("[1,2,3]");
+  test.each<[string, string]>([
+    ['{"a":1,}', '{"a":1}'],
+    ["[1,2,3,]", "[1,2,3]"],
+  ])("removes trailing comma: %s → %s", (input, expected) => {
+    expect(stripTrailingCommas(input)).toBe(expected);
   });
 
   test("removes trailing comma with whitespace", () => {
@@ -91,8 +83,7 @@ describe("stripTrailingCommas", () => {
   });
 
   test("leaves valid JSON unchanged", () => {
-    const json = '{"passed":true,"findings":[]}';
-    expect(stripTrailingCommas(json)).toBe(json);
+    expect(stripTrailingCommas(JSON_FIXTURE)).toBe(JSON_FIXTURE);
   });
 });
 
@@ -101,19 +92,21 @@ describe("stripTrailingCommas", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractJsonObject", () => {
-  test("returns null when no JSON container found", () => {
-    expect(extractJsonObject("just plain text, no JSON here")).toBeNull();
+  test.each([
+    ["just plain text, no JSON here"],
+    ["{ no closing brace"],
+    [""],
+  ])("returns null for %j", (input) => {
+    expect(extractJsonObject(input)).toBeNull();
   });
 
   test("extracts object from pure JSON string", () => {
-    const json = '{"passed":true,"findings":[]}';
-    expect(extractJsonObject(json)).toBe(json);
+    expect(extractJsonObject(JSON_FIXTURE)).toBe(JSON_FIXTURE);
   });
 
   test("extracts object from narration with preamble", () => {
-    const json = '{"passed":true,"findings":[]}';
-    const input = "After analysis: " + json + " All ACs met.";
-    expect(extractJsonObject(input)).toBe(json);
+    const input = "After analysis: " + JSON_FIXTURE + " All ACs met.";
+    expect(extractJsonObject(input)).toBe(JSON_FIXTURE);
   });
 
   test("extracts JSON array from text", () => {
@@ -122,22 +115,11 @@ describe("extractJsonObject", () => {
     expect(extractJsonObject(input)).toBe(json);
   });
 
-  test("prefers object when { appears before [", () => {
-    const input = '{"key":[1,2,3]}';
-    expect(extractJsonObject(input)).toBe('{"key":[1,2,3]}');
-  });
-
-  test("prefers array when [ appears before {", () => {
-    const input = '[{"key":"val"}]';
-    expect(extractJsonObject(input)).toBe('[{"key":"val"}]');
-  });
-
-  test("returns null when only open brace with no close", () => {
-    expect(extractJsonObject("{ no closing brace")).toBeNull();
-  });
-
-  test("returns null for empty string", () => {
-    expect(extractJsonObject("")).toBeNull();
+  test.each<[string, string, string]>([
+    ["object", '{"key":[1,2,3]}', '{"key":[1,2,3]}'],
+    ["array", '[{"key":"val"}]', '[{"key":"val"}]'],
+  ])("prefers %s when its delimiter appears first", (_label, input, expected) => {
+    expect(extractJsonObject(input)).toBe(expected);
   });
 });
 
