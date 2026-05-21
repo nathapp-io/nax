@@ -583,38 +583,11 @@ describe("autofixStage", () => {
 });
 
 describe("autofixStage — unsignaled-failure guard (2D)", () => {
-  test("escalates when reviewResult.checks is empty", async () => {
-    const ctx = makeCtx({
-      reviewResult: {
-        success: false,
-        failureReason: "Gating LLM checks due to mechanical failure",
-        checks: [],
-      } as any,
-    });
-    const result = await autofixStage.execute(ctx);
-    expect(result.action).toBe("escalate");
-    if (result.action === "escalate") {
-      expect(result.reason).toContain("Review failed without actionable signal");
-    }
-  });
-
-  test("escalates when only failed check is git-clean with no findings", async () => {
-    const ctx = makeCtx({
-      reviewResult: {
-        success: false,
-        failureReason: "Working tree has uncommitted changes",
-        checks: [
-          {
-            check: "git-clean",
-            success: false,
-            command: "git status --porcelain",
-            exitCode: 1,
-            output: "?? src/foo.ts",
-            durationMs: 0,
-          },
-        ],
-      } as any,
-    });
+  test.each<[string, object]>([
+    ["empty checks", { success: false, failureReason: "Gating LLM checks due to mechanical failure", checks: [] }],
+    ["only git-clean check with no findings", { success: false, failureReason: "Working tree has uncommitted changes", checks: [{ check: "git-clean", success: false, command: "git status --porcelain", exitCode: 1, output: "?? src/foo.ts", durationMs: 0 }] }],
+  ])("escalates when reviewResult has %s", async (_label, reviewResult) => {
+    const ctx = makeCtx({ reviewResult: reviewResult as any });
     const result = await autofixStage.execute(ctx);
     expect(result.action).toBe("escalate");
     if (result.action === "escalate") {
