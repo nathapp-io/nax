@@ -236,22 +236,6 @@ test/minimal.test.ts:
   });
 
   describe("Jest output — Console pseudo-failure filtering", () => {
-    test("does not capture '● Console' group header as a failure", () => {
-      const output = `
-FAIL src/commands/comment.spec.ts
-  ● Console
-
-    console.error
-      Some error logged during a test
-
-Tests:       1 passed, 0 failed, 1 total
-      `.trim();
-
-      const result = parseTestOutput(output);
-      expect(result.failures).toHaveLength(0);
-      expect(result.passed).toBe(1);
-      expect(result.failed).toBe(0);
-    });
 
     test("does not capture '● Console' when mixed with real failures", () => {
       const output = `
@@ -273,23 +257,14 @@ Tests:       0 passed, 1 failed, 1 total
       expect(result.failures[0].testName).toBe("kb import > AC1 › exits 0 and prints success");
     });
 
-    test("does not capture '● Console' across multiple files", () => {
-      const output = `
-FAIL src/commands/comment.spec.ts
-  ● Console
+    test("does not capture '● Console' — single or multiple files", () => {
+      const single = parseTestOutput(`FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n      Some error logged during a test\n\nTests:       1 passed, 0 failed, 1 total`);
+      expect(single.failures).toHaveLength(0);
+      expect(single.passed).toBe(1);
+      expect(single.failed).toBe(0);
 
-    console.error
-
-FAIL src/commands/label.spec.ts
-  ● Console
-
-    console.log
-
-Tests:       0 passed, 0 failed, 2 total
-      `.trim();
-
-      const result = parseTestOutput(output);
-      expect(result.failures).toHaveLength(0);
+      const multi = parseTestOutput(`FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n\nFAIL src/commands/label.spec.ts\n  ● Console\n\n    console.log\n\nTests:       0 passed, 0 failed, 2 total`);
+      expect(multi.failures).toHaveLength(0);
     });
   });
 
