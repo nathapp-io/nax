@@ -87,45 +87,20 @@ describe("acceptanceStage.enabled", () => {
     expect(acceptanceStage.enabled(ctx)).toBe(false);
   });
 
-  test("disabled when stories are still pending", () => {
-    const prd = createTestPRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "pending" },
-    ]);
-    const ctx = createTestContext(prd);
+  test("disabled when any story is pending or in-progress", () => {
+    const ctxPending = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]));
+    expect(acceptanceStage.enabled(ctxPending)).toBe(false);
 
-    expect(acceptanceStage.enabled(ctx)).toBe(false);
+    const ctxInProgress = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "in-progress" }]));
+    expect(acceptanceStage.enabled(ctxInProgress)).toBe(false);
   });
 
-  test("disabled when stories are in-progress", () => {
-    const prd = createTestPRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "in-progress" },
-    ]);
-    const ctx = createTestContext(prd);
+  test("enabled when all stories are terminal (passed/failed/skipped)", () => {
+    const ctxMixed = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "failed" }, { id: "US-003", status: "skipped" }]));
+    expect(acceptanceStage.enabled(ctxMixed)).toBe(true);
 
-    expect(acceptanceStage.enabled(ctx)).toBe(false);
-  });
-
-  test("enabled when all stories are complete (passed/failed/skipped)", () => {
-    const prd = createTestPRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "failed" },
-      { id: "US-003", status: "skipped" },
-    ]);
-    const ctx = createTestContext(prd);
-
-    expect(acceptanceStage.enabled(ctx)).toBe(true);
-  });
-
-  test("enabled when all stories passed", () => {
-    const prd = createTestPRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "passed" },
-    ]);
-    const ctx = createTestContext(prd);
-
-    expect(acceptanceStage.enabled(ctx)).toBe(true);
+    const ctxAllPassed = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]));
+    expect(acceptanceStage.enabled(ctxAllPassed)).toBe(true);
   });
 });
 
@@ -181,23 +156,13 @@ describe("test-feature - Acceptance Tests", () => {
     }
   });
 
-  test("continues when test file does not exist", async () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd);
+  test("continues when test file does not exist or no feature directory", async () => {
+    const ctx1 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]));
+    expect((await acceptanceStage.execute(ctx1)).action).toBe("continue");
 
-    const result = await acceptanceStage.execute(ctx);
-
-    expect(result.action).toBe("continue");
-  });
-
-  test("continues when no feature directory", async () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd);
-    ctx.featureDir = undefined;
-
-    const result = await acceptanceStage.execute(ctx);
-
-    expect(result.action).toBe("continue");
+    const ctx2 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]));
+    ctx2.featureDir = undefined;
+    expect((await acceptanceStage.execute(ctx2)).action).toBe("continue");
   });
 
   test("skips overridden ACs", async () => {
