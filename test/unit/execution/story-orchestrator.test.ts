@@ -226,7 +226,7 @@ describe("StoryOrchestratorBuilder — AC1: Generic OrchestratorSlot<I, O, C>", 
 });
 
 describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLEMENTER", () => {
-  test("throws NaxError with ORCHESTRATOR_NO_IMPLEMENTER when addImplementer not called", async () => {
+  test("throws NaxError with code ORCHESTRATOR_NO_IMPLEMENTER when addImplementer not called", async () => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
 
@@ -239,32 +239,14 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
       storyId: "story-1",
     };
 
-    expect(() => {
-      builder.build(ctx);
-    }).toThrow(NaxError);
-  });
-
-  test("error code is ORCHESTRATOR_NO_IMPLEMENTER", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)();
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
+    let caught: unknown;
     try {
       builder.build(ctx);
-      expect.unreachable();
     } catch (err) {
-      if (err instanceof NaxError) {
-        expect(err.code).toBe("ORCHESTRATOR_NO_IMPLEMENTER");
-      }
+      caught = err;
     }
+    expect(caught).toBeInstanceOf(NaxError);
+    expect((caught as NaxError).code).toBe("ORCHESTRATOR_NO_IMPLEMENTER");
   });
 });
 
@@ -404,28 +386,6 @@ describe("StoryOrchestratorBuilder — AC4: callOp dispatch only", () => {
     _storyOrchestratorDeps.callOp = origCallOp;
   });
 
-  test("does not use agentManager.runWithFallback", async () => {
-    const config = makeNaxConfig();
-    const mockAgentManager = makeMockAgentManager();
-
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    expect(plan).toBeDefined();
-    // runWithFallback should not be called
-    expect(mockAgentManager.runWithFallback).not.toHaveBeenCalled();
-  });
 });
 
 describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", () => {
@@ -1004,27 +964,15 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
 });
 
 describe("StoryOrchestratorBuilder — AC9: Refactored execution and TDD", () => {
-  test("builder is available and exported from src/execution/story-orchestrator", async () => {
-    const StoryOrchestratorBuilder = require("@/execution/story-orchestrator")
-      .StoryOrchestratorBuilder;
-    expect(StoryOrchestratorBuilder).toBeDefined();
-  });
-
-  test("ExecutionPlan is available and exported", async () => {
-    const ExecutionPlan = require("@/execution/story-orchestrator").ExecutionPlan;
-    expect(ExecutionPlan).toBeDefined();
-  });
-
-  test("StoryOrchestratorResult is exported as a type (compile-time check)", () => {
-    // StoryOrchestratorResult is a TypeScript interface, not a runtime value.
-    // The type contract is enforced by ExecutionPlan.run()'s return signature,
-    // which is exercised by every passing test in this suite.
-    expect(true).toBe(true);
+  test("StoryOrchestratorBuilder and ExecutionPlan are exported", async () => {
+    const mod = require("@/execution/story-orchestrator");
+    expect(mod.StoryOrchestratorBuilder).toBeDefined();
+    expect(mod.ExecutionPlan).toBeDefined();
   });
 });
 
 describe("StoryOrchestratorBuilder — AC10: TDD wrapper retains responsibilities", () => {
-  test("builder does not handle rollback", async () => {
+  test("builder builds a plan (rollback/verdict/isolation are delegated to TDD wrapper)", async () => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
 
@@ -1041,47 +989,6 @@ describe("StoryOrchestratorBuilder — AC10: TDD wrapper retains responsibilitie
 
     const plan = builder.build(ctx);
     expect(plan).toBeDefined();
-    // Rollback should be handled by TDD wrapper, not builder
-  });
-
-  test("builder does not handle verdict reading", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    expect(plan).toBeDefined();
-    // Verdict reading should be in TDD wrapper
-  });
-
-  test("builder does not handle isolation surfacing", async () => {
-    const config = makeNaxConfig();
-    runtime = makeTestRuntime({ config });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    expect(plan).toBeDefined();
-    // Isolation surfacing should be in TDD wrapper
   });
 });
 
