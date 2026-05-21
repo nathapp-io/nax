@@ -71,11 +71,6 @@ describe("KNOWN_SESSION_ROLES — AC1", () => {
     expect(Array.isArray(KNOWN_SESSION_ROLES)).toBe(true);
     expect(KNOWN_SESSION_ROLES).toContain("plan-critic");
   });
-
-  test("'plan-critic' is a string literal in the readonly array", () => {
-    const planCriticRole = KNOWN_SESSION_ROLES.find((r: string) => r === "plan-critic");
-    expect(planCriticRole).toBe("plan-critic");
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -359,30 +354,11 @@ describe("planCriticLlmOp.retry — AC12", () => {
 // AC13-14: buildCriticRetryPrompt function
 // ─────────────────────────────────────────────────────────────────────────────
 describe("buildCriticRetryPrompt — AC13-14", () => {
-  test("returns CriticPromptBuilder.jsonRepair() for not-json kind — AC13", () => {
-    const inspection = {
-      ok: false,
-      kind: "not-json",
-      message: "Response was not valid JSON or could not be extracted.",
-    };
-
-    const result = buildCriticRetryPrompt(inspection, false);
-
-    expect(result).toBeDefined();
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("returns CriticPromptBuilder.schemaRepair() for schema-invalid kind — AC14", () => {
-    const inspection = {
-      ok: false,
-      kind: "schema-invalid",
-      message: "Response was valid JSON but did not have a `findings` array at the root.",
-    };
-
-    const result = buildCriticRetryPrompt(inspection, false);
-
-    expect(result).toBeDefined();
+  test.each([
+    ["not-json", "Response was not valid JSON or could not be extracted."],
+    ["schema-invalid", "Response was valid JSON but did not have a `findings` array at the root."],
+  ])("returns repair string for %s kind", (kind, message) => {
+    const result = buildCriticRetryPrompt({ ok: false, kind, message } as any, false);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
@@ -409,71 +385,15 @@ describe("buildCriticRetryPrompt — AC13-14", () => {
 // AC15: CriticPromptBuilder.build() output
 // ─────────────────────────────────────────────────────────────────────────────
 describe("CriticPromptBuilder.build() — AC15", () => {
-  test("returns a ComposeInput with task.content containing 'ac-testable'", () => {
-    const mockPrd = {
-      feature: "test-feature",
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
-    const builder = new CriticPromptBuilder();
-    const result = builder.build?.(mockPrd, mockManifest);
-
-    expect(result).toBeDefined();
-    expect(result.task).toBeDefined();
-    expect(typeof result.task.content).toBe("string");
-    expect(result.task.content).toContain("ac-testable");
-  });
-
-  test("returns a ComposeInput with task.content containing 'failure-modes-considered'", () => {
-    const mockPrd = {
-      feature: "test-feature",
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
-    const builder = new CriticPromptBuilder();
-    const result = builder.build?.(mockPrd, mockManifest);
-
-    expect(result).toBeDefined();
-    expect(result.task).toBeDefined();
-    expect(typeof result.task.content).toBe("string");
-    expect(result.task.content).toContain("failure-modes-considered");
-  });
-
-  test("returns a ComposeInput with task.content containing the literal prd.feature value — AC15", () => {
-    const featureName = "my-special-feature";
-    const mockPrd = {
-      feature: featureName,
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
-    const builder = new CriticPromptBuilder();
-    const result = builder.build?.(mockPrd, mockManifest);
-
-    expect(result).toBeDefined();
-    expect(result.task).toBeDefined();
-    expect(typeof result.task.content).toBe("string");
-    expect(result.task.content).toContain(featureName);
+  test.each([
+    ["ac-testable", "test-feature"],
+    ["failure-modes-considered", "test-feature"],
+    ["my-special-feature", "my-special-feature"],
+  ])("task.content contains '%s'", (expectedSubstring: string, feature: string) => {
+    const mockPrd = { feature, specContent: "some spec", stories: [], branch: "test-branch" };
+    const mockManifest = { repoFacts: [], specClaims: [], gaps: [] };
+    const result = new CriticPromptBuilder().build?.(mockPrd, mockManifest);
+    expect(result.task.content).toContain(expectedSubstring);
   });
 
   test("build method exists and is callable", () => {
@@ -482,14 +402,8 @@ describe("CriticPromptBuilder.build() — AC15", () => {
     expect(typeof builder.build).toBe("function");
   });
 
-  test("CriticPromptBuilder has static jsonRepair method", () => {
-    expect(CriticPromptBuilder).toBeDefined();
-    expect(typeof CriticPromptBuilder.jsonRepair).toBe("function");
-  });
-
-  test("CriticPromptBuilder has static schemaRepair method", () => {
-    expect(CriticPromptBuilder).toBeDefined();
-    expect(typeof CriticPromptBuilder.schemaRepair).toBe("function");
+  test.each(["jsonRepair", "schemaRepair"])("CriticPromptBuilder has static %s method", (method) => {
+    expect(typeof (CriticPromptBuilder as any)[method]).toBe("function");
   });
 
   test("jsonRepair returns non-empty string for error messages", () => {
