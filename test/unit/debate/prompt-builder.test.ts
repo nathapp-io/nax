@@ -225,14 +225,12 @@ describe("buildRebuttalPrompt()", () => {
     expect(builder.buildRebuttalPrompt(0, proposals, [])).toContain("unique-task-context-string");
   });
 
-  test("1-indexes debater number (index 0 → debater 1)", () => {
+  test.each([
+    [0, "You are debater 1"],
+    [1, "You are debater 2"],
+  ])("1-indexes debater number (index %i)", (index, expected) => {
     const builder = makeBuilder("ctx", "fmt", [], "stateful");
-    expect(builder.buildRebuttalPrompt(0, proposals, [])).toContain("You are debater 1");
-  });
-
-  test("1-indexes debater number (index 1 → debater 2)", () => {
-    const builder = makeBuilder("ctx", "fmt", [], "stateful");
-    expect(builder.buildRebuttalPrompt(1, proposals, [])).toContain("You are debater 2");
+    expect(builder.buildRebuttalPrompt(index, proposals, [])).toContain(expected);
   });
 
   test("uses prose-only instruction — Do NOT output JSON", () => {
@@ -672,17 +670,11 @@ describe("buildCritiquePrompt() — issue 7: assembly order", () => {
 describe("finding schema — issue 8: explicit fields", () => {
   const ctx: DebateResolverContext = { resolverType: "synthesis" };
 
-  test("buildReviewPrompt includes ruleId, severity, message in schema", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildReviewPrompt(DIFF, REVIEW_STORY);
-    expect(prompt).toContain("ruleId");
-    expect(prompt).toContain("severity");
-    expect(prompt).toContain("message");
-  });
-
-  test("buildResolverPrompt includes ruleId, severity, message in schema", () => {
-    const builder = makeBuilder();
-    const prompt = builder.buildResolverPrompt(LABELED_PROPOSALS, [], { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx);
+  test.each([
+    ["buildReviewPrompt", () => makeBuilder().buildReviewPrompt(DIFF, REVIEW_STORY)],
+    ["buildResolverPrompt", () => makeBuilder().buildResolverPrompt(LABELED_PROPOSALS, [], { mode: "embedded" as const, diff: DIFF }, REVIEW_STORY, ctx)],
+  ])("%s includes ruleId, severity, message in schema", (_name, getPrompt) => {
+    const prompt = getPrompt();
     expect(prompt).toContain("ruleId");
     expect(prompt).toContain("severity");
     expect(prompt).toContain("message");
