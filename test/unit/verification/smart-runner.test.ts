@@ -113,19 +113,12 @@ describe("mapSourceToTests", () => {
     expect(result).not.toContain("/repo/test/integration/utils/helper.test.ts");
   });
 
-  test("returns empty array when no test files match", async () => {
-    mockFileExists([]); // nothing exists
-
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty array for empty sourceFiles input", async () => {
-    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests([], "/repo");
-
+  test.each([
+    ["no test files match", () => mockFileExists([]), ["src/foo/bar.ts"] as string[]],
+    ["empty sourceFiles input", () => mockFileExists(["/repo/test/unit/foo/bar.test.ts"]), [] as string[]],
+  ])("returns empty array when %s", async (_label, setup, files) => {
+    setup();
+    const result = await mapSourceToTests(files, "/repo");
     expect(result).toEqual([]);
   });
 
@@ -239,23 +232,12 @@ describe("getChangedNonTestFiles", () => {
     ]);
   });
 
-  test("returns empty array when git exits with non-zero code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
-
+  test.each([
+    ["exits with non-zero code", () => { (_gitDeps as any).spawn = mock(() => makeProc("", 128)); }],
+    ["throws (not a repo)", () => { (_gitDeps as any).spawn = mock(() => { throw new Error("git not found"); }); }],
+  ])("returns empty array when git %s", async (_label, setup) => {
+    setup();
     const result = await getChangedNonTestFiles("/fake/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty array when git throws (e.g. not a repo)", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => {
-      throw new Error("git not found");
-    }) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedNonTestFiles("/fake/repo");
-
     expect(result).toEqual([]);
   });
 
@@ -272,7 +254,7 @@ describe("getChangedNonTestFiles", () => {
 
   test("returns empty array when no files changed", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
+    (_gitDeps as any).spawn = mock(() => makeProc("", 0));
 
     const result = await getChangedNonTestFiles("/fake/repo");
 
@@ -477,34 +459,14 @@ describe("getChangedTestFiles", () => {
     expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
   });
 
-  test("returns empty when no test files changed", async () => {
-    const gitOutput = ["packages/lib/src/util.ts"].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty when testFileRegex is empty", async () => {
-    const gitOutput = ["packages/lib/src/util.test.ts"].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", []);
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty when git exits with non-zero code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo", "/fake/repo", undefined, undefined, TS_TEST_REGEX);
-
+  test.each([
+    ["no test files changed", () => { (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.ts", 0)); }, "packages/lib" as const, TS_TEST_REGEX],
+    ["testFileRegex is empty", () => { (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.test.ts", 0)); }, "packages/lib" as const, [] as RegExp[]],
+    ["git exits with non-zero code", () => { (_gitDeps as any).spawn = mock(() => makeProc("", 128)); }, undefined as const, TS_TEST_REGEX],
+  ])("returns empty when %s", async (_label, setup, prefix, regex) => {
+    setup();
+    const workdir = prefix ? "/fake/repo/packages/lib" : "/fake/repo";
+    const result = await getChangedTestFiles(workdir, "/fake/repo", undefined, prefix, regex);
     expect(result).toEqual([]);
   });
 
