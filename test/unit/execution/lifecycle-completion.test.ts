@@ -482,38 +482,13 @@ describe("handleRunCompletion - deferred regression gate", () => {
     expect(call.workdir).toBe(COMPLETION_WORKDIR);
   });
 
-  test("does NOT call runDeferredRegression when mode is 'per-story'", async () => {
+  test.each([
+    ["mode is 'per-story'", makeConfig("per-story", "bun test")],
+    ["mode is 'disabled'", makeConfig("disabled", "bun test")],
+    ["no test command is configured", makeConfig("deferred", undefined)],
+  ])("does NOT call runDeferredRegression when %s", async (_label, config) => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("per-story", "bun test");
-
-    try {
-      await handleRunCompletion(makeOpts(config, prd));
-    } catch {
-      //
-    }
-
-    expect(mockRunDeferredRegression).not.toHaveBeenCalled();
-  });
-
-  test("does NOT call runDeferredRegression when mode is 'disabled'", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("disabled", "bun test");
-
-    try {
-      await handleRunCompletion(makeOpts(config, prd));
-    } catch {
-      //
-    }
-
-    expect(mockRunDeferredRegression).not.toHaveBeenCalled();
-  });
-
-  test("does NOT call runDeferredRegression when no test command is configured", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("deferred", undefined);
 
     try {
       await handleRunCompletion(makeOpts(config, prd));
@@ -632,20 +607,12 @@ describe("handleRunCompletion - regression-failed story marking (RL-004)", () =>
     expect(prd.userStories[2].status).toBe("regression-failed");
   });
 
-  test("does not mark stories 'regression-failed' when regression gate succeeds", async () => {
+  test.each([
+    ["regression gate succeeds", makeConfig("deferred", "bun test")],
+    ["mode is not 'deferred'", makeConfig("per-story", "bun test")],
+  ])("does not mark stories 'regression-failed' when %s", async (_label, config) => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("deferred", "bun test");
-
-    await handleRunCompletion(makeOpts(config, prd));
-
-    expect(prd.userStories[0].status).toBe("passed");
-  });
-
-  test("does not mark stories 'regression-failed' when mode is not 'deferred'", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("per-story", "bun test");
 
     await handleRunCompletion(makeOpts(config, prd));
 
