@@ -22,7 +22,7 @@ function baseConfig(models: unknown): Record<string, unknown> {
 }
 
 describe("ModelsSchema — legacy flat config migration", () => {
-  test("auto-migrates legacy flat ModelDef object to per-agent shape using defaultAgent", () => {
+  test("auto-migrates legacy flat ModelDef object: tier keys move under defaultAgent, original values preserved", () => {
     const legacy = {
       fast: { provider: "anthropic", model: "haiku" },
       balanced: { provider: "anthropic", model: "sonnet" },
@@ -31,41 +31,22 @@ describe("ModelsSchema — legacy flat config migration", () => {
 
     const result = NaxConfigSchema.safeParse(baseConfig(legacy));
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-
-    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
-    const models = result.data.models as Record<string, unknown>;
-
-    // Top-level keys should be agent names, not tier names
-    expect(models[defaultAgent]).toBeDefined();
-    expect(models["fast"]).toBeUndefined();
-    expect(models["balanced"]).toBeUndefined();
-    expect(models["powerful"]).toBeUndefined();
-  });
-
-  test("migrated per-agent config contains the original tier entries under defaultAgent", () => {
-    const legacy = {
-      fast: { provider: "anthropic", model: "haiku" },
-      balanced: { provider: "anthropic", model: "sonnet" },
-      powerful: { provider: "anthropic", model: "opus" },
-    };
-
-    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
     expect(result.success).toBe(true);
     if (!result.success) return;
 
     const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
     const models = result.data.models as Record<string, Record<string, unknown>>;
-    const agentMap = models[defaultAgent];
 
-    expect(agentMap).toBeDefined();
-    expect(agentMap["fast"]).toEqual({ provider: "anthropic", model: "haiku" });
-    expect(agentMap["balanced"]).toEqual({ provider: "anthropic", model: "sonnet" });
-    expect(agentMap["powerful"]).toEqual({ provider: "anthropic", model: "opus" });
+    expect(models[defaultAgent]).toBeDefined();
+    expect(models["fast"]).toBeUndefined();
+    expect(models["balanced"]).toBeUndefined();
+    expect(models["powerful"]).toBeUndefined();
+    expect(models[defaultAgent]["fast"]).toEqual({ provider: "anthropic", model: "haiku" });
+    expect(models[defaultAgent]["balanced"]).toEqual({ provider: "anthropic", model: "sonnet" });
+    expect(models[defaultAgent]["powerful"]).toEqual({ provider: "anthropic", model: "opus" });
   });
 
-  test("auto-migrates legacy flat string model entries to per-agent shape using defaultAgent", () => {
+  test("auto-migrates legacy flat string entries: tier keys move under defaultAgent, string values preserved", () => {
     const legacy = {
       fast: "claude-haiku-4-5",
       balanced: "claude-sonnet-4-5",
@@ -81,49 +62,17 @@ describe("ModelsSchema — legacy flat config migration", () => {
 
     expect(models[defaultAgent]).toBeDefined();
     expect(models["fast"]).toBeUndefined();
+    expect(models[defaultAgent]["fast"]).toBe("claude-haiku-4-5");
+    expect(models[defaultAgent]["balanced"]).toBe("claude-sonnet-4-5");
   });
 
-  test("migrated string model entries are preserved under defaultAgent", () => {
-    const legacy = {
-      fast: "claude-haiku-4-5",
-      balanced: "claude-sonnet-4-5",
-    };
-
+  test.each([
+    ["value with 'provider' key", { fast: { provider: "anthropic", model: "haiku" } }],
+    ["string value at top level", { fast: "claude-haiku" }],
+  ])("detection: %s triggers legacy migration (tier keys move under agent)", (_label, legacy) => {
     const result = NaxConfigSchema.safeParse(baseConfig(legacy));
     expect(result.success).toBe(true);
     if (!result.success) return;
-
-    const defaultAgent = DEFAULT_CONFIG.agent?.default ?? "claude";
-    const models = result.data.models as Record<string, Record<string, unknown>>;
-    const agentMap = models[defaultAgent];
-
-    expect(agentMap["fast"]).toBe("claude-haiku-4-5");
-    expect(agentMap["balanced"]).toBe("claude-sonnet-4-5");
-  });
-
-  test("detection: value with 'provider' key directly triggers legacy migration", () => {
-    const legacy = {
-      fast: { provider: "anthropic", model: "haiku" },
-    };
-
-    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-
-    // After migration, top-level should not have tier names
-    const models = result.data.models as Record<string, unknown>;
-    expect(models["fast"]).toBeUndefined();
-  });
-
-  test("detection: string value at top level triggers legacy migration", () => {
-    const legacy = {
-      fast: "claude-haiku",
-    };
-
-    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-
     const models = result.data.models as Record<string, unknown>;
     expect(models["fast"]).toBeUndefined();
   });
@@ -246,20 +195,20 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
     };
   }
 
-  test("action defaults to 'block' when omitted", () => {
-    const config = basePrecheckConfig({
-      enabled: true,
-      maxAcCount: 10,
-      maxDescriptionLength: 3000,
-      maxBulletPoints: 12,
-      maxReplanAttempts: 3,
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const gate = (result.data as Record<string, unknown>).precheck as Record<string, unknown>;
-    const ssg = gate.storySizeGate as Record<string, unknown>;
-    expect(ssg.action).toBe("block");
+  test("action defaults to 'block' and maxReplanAttempts defaults to 3 when omitted", () => {
+    const withoutAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3 });
+    const r1 = NaxConfigSchema.safeParse(withoutAction);
+    expect(r1.success).toBe(true);
+    if (!r1.success) return;
+    const ssg1 = ((r1.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    expect(ssg1.action).toBe("block");
+
+    const withoutMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block" });
+    const r2 = NaxConfigSchema.safeParse(withoutMax);
+    expect(r2.success).toBe(true);
+    if (!r2.success) return;
+    const ssg2 = ((r2.data as Record<string, unknown>).precheck as Record<string, unknown>).storySizeGate as Record<string, unknown>;
+    expect(ssg2.maxReplanAttempts).toBe(3);
   });
 
   test.each(["warn", "skip"])("action accepts '%s'", (action) => {
@@ -275,46 +224,12 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
     expect(result.success).toBe(true);
   });
 
-  test("action rejects invalid values", () => {
-    const config = basePrecheckConfig({
-      enabled: true,
-      maxAcCount: 10,
-      maxDescriptionLength: 3000,
-      maxBulletPoints: 12,
-      maxReplanAttempts: 3,
-      action: "invalid",
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-  });
+  test("action rejects invalid values; maxReplanAttempts rejects 0 (must be >= 1)", () => {
+    const badAction = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "invalid" });
+    expect(NaxConfigSchema.safeParse(badAction).success).toBe(false);
 
-  test("maxReplanAttempts defaults to 3 when omitted", () => {
-    const config = basePrecheckConfig({
-      enabled: true,
-      maxAcCount: 10,
-      maxDescriptionLength: 3000,
-      maxBulletPoints: 12,
-      action: "block",
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const gate = (result.data as Record<string, unknown>).precheck as Record<string, unknown>;
-    const ssg = gate.storySizeGate as Record<string, unknown>;
-    expect(ssg.maxReplanAttempts).toBe(3);
-  });
-
-  test("maxReplanAttempts rejects 0 (must be >= 1)", () => {
-    const config = basePrecheckConfig({
-      enabled: true,
-      maxAcCount: 10,
-      maxDescriptionLength: 3000,
-      maxBulletPoints: 12,
-      action: "block",
-      maxReplanAttempts: 0,
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
+    const badMax = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 0 });
+    expect(NaxConfigSchema.safeParse(badMax).success).toBe(false);
   });
 });
 
@@ -383,27 +298,14 @@ describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
 });
 
 describe("profile field — US-001-A", () => {
-  test("NaxConfigSchema.parse({}).profile equals 'default'", () => {
-    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+  test.each([
+    ["default", DEFAULT_CONFIG as Record<string, unknown>],
+    ["fast", { ...(DEFAULT_CONFIG as Record<string, unknown>), profile: "fast" }],
+  ])("profile equals '%s' when parsed with that value", (profile, input) => {
+    const result = NaxConfigSchema.safeParse(input);
     expect(result.success).toBe(true);
     if (!result.success) return;
-
-    const profile = (result.data as Record<string, unknown>).profile as string;
-    expect(profile).toBe("default");
-  });
-
-  test("NaxConfigSchema.parse({ profile: 'fast' }).profile equals 'fast'", () => {
-    const config = {
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
-      profile: "fast",
-    };
-
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-
-    const profile = (result.data as Record<string, unknown>).profile as string;
-    expect(profile).toBe("fast");
+    expect((result.data as Record<string, unknown>).profile).toBe(profile);
   });
 });
 
@@ -447,14 +349,11 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
 });
 
 describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
-  test("NaxConfigSchema.parse({}).quality.scopeTestThreshold === 10", () => {
-    const result = NaxConfigSchema.parse({});
-    expect(result.quality.scopeTestThreshold).toBe(10);
-  });
-
-  test("NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } }).quality.scopeTestThreshold === 5", () => {
-    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } });
-    expect(result.quality.scopeTestThreshold).toBe(5);
+  test.each([
+    [{}, 10],
+    [{ quality: { scopeTestThreshold: 5 } }, 5],
+  ])("scopeTestThreshold: input %j → %d", (input, expected) => {
+    expect(NaxConfigSchema.parse(input).quality.scopeTestThreshold).toBe(expected);
   });
 
   test("scopeTestThreshold rejects negative values", () => {
