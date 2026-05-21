@@ -214,64 +214,25 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.routing?.complexity).toBe(expected as any);
   });
 
-  test("maps legacy testStrategy 'tdd-lite' alias to 'three-session-tdd-lite'", () => {
-    const input = makeInput([makeStory({ testStrategy: "tdd-lite" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("three-session-tdd-lite");
+  test.each([
+    ["maps legacy 'tdd-lite' alias", "tdd-lite", "three-session-tdd-lite"],
+    ["accepts valid 'tdd-simple' as-is", "tdd-simple", "tdd-simple"],
+    ["falls back to test-after for unknown", "unknown-strategy", "test-after"],
+  ] as const)("testStrategy: %s", (_label, input, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ testStrategy: input })]), "feat", "branch");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe(expected as any);
   });
 
-  test("accepts valid testStrategy 'tdd-simple' as-is", () => {
-    const input = makeInput([makeStory({ testStrategy: "tdd-simple" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
-  });
-
-  test("falls back to test-after for unknown testStrategy values", () => {
-    const input = makeInput([makeStory({ testStrategy: "unknown-strategy" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("test-after");
-  });
-
-  test("fixes \\xNN escape (LLM quirk — not valid JSON) to \\u00NN", () => {
-    // \x41 = 'A' in some languages, not valid JSON (should be \u0041)
-    const escaped = "\\x41";
+  test.each([
+    ["\\xNN escape (LLM quirk)", "\\x41", "A"],
+    ["\\u0041 (covers \\uXXX/\\uXX/\\uX short-unicode variants)", "\\u0041", "A"],
+  ] as const)("fixes %s to correct unicode char", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
     expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
+    expect(validatePlanOutput(json, "feat", "branch").userStories[0]!.description).toBe(expected);
   });
 
-  test("fixes \\xN escape (single hex digit) to \\u000N", () => {
-    const escaped = "\\x41";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uXXX (3 hex digits) to \\u0XXX", () => {
-    // \u0041 = 'A' — LLM may output \u041 (3 digits, missing leading zero)
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uXX (2 hex digits) to \\u00XX", () => {
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uX (1 hex digit) to \\u000X", () => {
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("strips backslash from invalid \\u escape with no hex digits", () => {
+    test("strips backslash from invalid \\u escape with no hex digits", () => {
     // \u followed by non-hex chars: strip the backslash, let JSON.parse handle the rest
     const escaped = "\\uQQQQ";
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
