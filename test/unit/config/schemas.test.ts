@@ -262,27 +262,14 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
     expect(ssg.action).toBe("block");
   });
 
-  test("action accepts 'warn'", () => {
+  test.each(["warn", "skip"])("action accepts '%s'", (action) => {
     const config = basePrecheckConfig({
       enabled: true,
       maxAcCount: 10,
       maxDescriptionLength: 3000,
       maxBulletPoints: 12,
       maxReplanAttempts: 3,
-      action: "warn",
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("action accepts 'skip'", () => {
-    const config = basePrecheckConfig({
-      enabled: true,
-      maxAcCount: 10,
-      maxDescriptionLength: 3000,
-      maxBulletPoints: 12,
-      maxReplanAttempts: 3,
-      action: "skip",
+      action,
     });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -434,25 +421,12 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
     return (parsed as unknown as { debate: { stages: DebateStages } }).debate.stages;
   }
 
-  test("stages.plan.mode defaults to 'panel'", () => {
-    expect(getStages().plan.mode).toBe("panel");
-  });
-
-  test("stages.review.mode defaults to 'panel'", () => {
-    expect(getStages().review.mode).toBe("panel");
-  });
-
-  test("stages.acceptance.mode defaults to 'panel'", () => {
-    expect(getStages().acceptance.mode).toBe("panel");
-  });
-
-  test("stages.rectification.mode defaults to 'panel'", () => {
-    expect(getStages().rectification.mode).toBe("panel");
-  });
-
-  test("stages.escalation.mode defaults to 'panel'", () => {
-    expect(getStages().escalation.mode).toBe("panel");
-  });
+  test.each(["plan", "review", "acceptance", "rectification", "escalation"] as const)(
+    "stages.%s.mode defaults to 'panel'",
+    (stage) => {
+      expect(getStages()[stage].mode).toBe("panel");
+    },
+  );
 
   test("stages.plan.mode accepts 'hybrid'", () => {
     const result = NaxConfigSchema.safeParse({
@@ -488,13 +462,8 @@ describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
     expect(result.success).toBe(false);
   });
 
-  test("scopeTestThreshold accepts zero", () => {
-    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 0 } });
-    expect(result.quality.scopeTestThreshold).toBe(0);
-  });
-
-  test("scopeTestThreshold accepts large values", () => {
-    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 1000 } });
-    expect(result.quality.scopeTestThreshold).toBe(1000);
+  test.each([0, 1000])("scopeTestThreshold accepts %d", (value) => {
+    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: value } });
+    expect(result.quality.scopeTestThreshold).toBe(value);
   });
 });
