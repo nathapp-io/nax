@@ -21,157 +21,32 @@ import { makeMockAgentManager } from "../../helpers";
 
 // ─── AC7 & AC8: majorityResolver ─────────────────────────────────────────────
 
-describe("majorityResolver()", () => {
-  test("returns 'passed' when 2 of 3 proposals contain \"passed\": true", () => {
-    const proposals = [
-      '{"passed": true, "reason": "looks good"}',
-      '{"passed": true, "reason": "acceptable"}',
-      '{"passed": false, "reason": "needs work"}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("passed");
-  });
-
-  test("returns 'failed' when 2 of 3 proposals contain \"passed\": false", () => {
-    const proposals = [
-      '{"passed": false, "reason": "not ready"}',
-      '{"passed": false, "reason": "missing tests"}',
-      '{"passed": true, "reason": "looks good"}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
-  });
-
-  test("returns 'passed' when all 3 proposals pass", () => {
-    const proposals = [
-      '{"passed": true}',
-      '{"passed": true}',
-      '{"passed": true}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("passed");
-  });
-
-  test("returns 'failed' when all 3 proposals fail", () => {
-    const proposals = [
-      '{"passed": false}',
-      '{"passed": false}',
-      '{"passed": false}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
-  });
-
-  // AC8: fail-closed on tie
-  test("returns fail-closed 'failed' on tie: 1 pass, 1 fail, 1 unparseable", () => {
-    const proposals = [
-      '{"passed": true, "reason": "looks good"}',
-      '{"passed": false, "reason": "needs work"}',
-      "this is not valid JSON",
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
-  });
-
-  test("returns fail-closed 'failed' on exact 50/50 tie with 2 debaters", () => {
-    const proposals = [
-      '{"passed": true}',
-      '{"passed": false}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
-  });
-
-  test("returns fail-closed 'failed' when all proposals are unparseable", () => {
-    const proposals = ["not json", "also not json", "still not json"];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
-  });
-
-  test("handles proposals with markdown fence wrapping around JSON", () => {
-    const proposals = [
-      "```json\n{\"passed\": true}\n```",
-      '{"passed": true}',
-      '{"passed": false}',
-    ];
-
-    // 2 pass — should return 'passed'
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("passed");
-  });
-
-  test("returns 'failed' when only 1 of 3 proposals passes", () => {
-    const proposals = [
-      '{"passed": true}',
-      '{"passed": false}',
-      '{"passed": false}',
-    ];
-
-    const result = majorityResolver(proposals, false);
-
-    expect(result).toBe("failed");
+describe("majorityResolver() — fail-closed", () => {
+  test.each([
+    ["2 of 3 pass", ['{"passed": true, "reason": "looks good"}', '{"passed": true, "reason": "acceptable"}', '{"passed": false, "reason": "needs work"}'], false, "passed"],
+    ["2 of 3 fail", ['{"passed": false, "reason": "not ready"}', '{"passed": false, "reason": "missing tests"}', '{"passed": true, "reason": "looks good"}'], false, "failed"],
+    ["all 3 pass", ['{"passed": true}', '{"passed": true}', '{"passed": true}'], false, "passed"],
+    ["all 3 fail", ['{"passed": false}', '{"passed": false}', '{"passed": false}'], false, "failed"],
+    ["fail-closed on tie: 1p 1f 1u", ['{"passed": true, "reason": "looks good"}', '{"passed": false, "reason": "needs work"}', "this is not valid JSON"], false, "failed"],
+    ["fail-closed on exact 50/50 tie", ['{"passed": true}', '{"passed": false}'], false, "failed"],
+    ["fail-closed when all unparseable", ["not json", "also not json", "still not json"], false, "failed"],
+    ["handles markdown fence wrapping", ['```json\n{"passed": true}\n```', '{"passed": true}', '{"passed": false}'], false, "passed"],
+    ["only 1 of 3 passes", ['{"passed": true}', '{"passed": false}', '{"passed": false}'], false, "failed"],
+  ])("%s", (_label, proposals, failOpen, expected) => {
+    const result = majorityResolver(proposals as string[], failOpen as boolean);
+    expect(result).toBe(expected);
   });
 });
 
-// ─── majorityResolver fail-open ─────────────────────────────────────────────
-
 describe("majorityResolver(..., true) — fail-open", () => {
-  test("returns fail-open 'passed' on tie: 1 pass, 1 fail, 1 unparseable", () => {
-    const proposals = [
-      '{"passed": true, "reason": "looks good"}',
-      '{"passed": false, "reason": "needs work"}',
-      "this is not valid JSON",
-    ];
-
-    const result = majorityResolver(proposals, true);
-
-    expect(result).toBe("passed");
-  });
-
-  test("returns fail-open 'passed' when all proposals are unparseable", () => {
-    const proposals = ["not json", "also not json", "still not json"];
-
-    const result = majorityResolver(proposals, true);
-
-    expect(result).toBe("passed"); // unparseable → pass in fail-open: passCount=3, failCount=0
-  });
-
-  test("returns fail-open 'passed' on exact 50/50 tie with 2 debaters", () => {
-    const proposals = [
-      '{"passed": true}',
-      '{"passed": false}',
-    ];
-
-    const result = majorityResolver(proposals, true);
-
-    expect(result).toBe("passed"); // tie goes to pass in fail-open
-  });
-
-  test("returns fail-open 'passed' when majority are parseable and pass", () => {
-    const proposals = [
-      '{"passed": true}',
-      '{"passed": false}',
-      "not json",
-    ];
-
-    const result = majorityResolver(proposals, true);
-
-    expect(result).toBe("passed"); // 2 passCount (true + failOpen) vs 1 failCount
+  test.each([
+    ["fail-open on tie: 1p 1f 1u", ['{"passed": true, "reason": "looks good"}', '{"passed": false, "reason": "needs work"}', "this is not valid JSON"], true, "passed"],
+    ["fail-open when all unparseable", ["not json", "also not json", "still not json"], true, "passed"],
+    ["fail-open on exact 50/50 tie", ['{"passed": true}', '{"passed": false}'], true, "passed"],
+    ["fail-open when majority parseable and pass", ['{"passed": true}', '{"passed": false}', "not json"], true, "passed"],
+  ])("%s", (_label, proposals, failOpen, expected) => {
+    const result = majorityResolver(proposals as string[], failOpen as boolean);
+    expect(result).toBe(expected);
   });
 });
 

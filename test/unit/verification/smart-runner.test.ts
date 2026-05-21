@@ -15,51 +15,17 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("buildSmartTestCommand", () => {
-  test("returns original command when testFiles is empty", () => {
-    const result = buildSmartTestCommand([], "bun test test/");
-    expect(result).toBe("bun test test/");
-  });
-
-  test("replaces last path argument with specific test file", () => {
-    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test test/");
-    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
-  });
-
-  test("joins multiple test files with spaces", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
-      "bun test test/",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts'");
-  });
-
-  test("appends test files when command has no path argument", () => {
-    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test");
-    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
-  });
-
-  test("replaces last path-like token even when flags precede it", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts"],
-      "bun test --coverage test/",
-    );
-    expect(result).toBe("bun test --coverage 'test/unit/foo.test.ts'");
-  });
-
-  test("preserves trailing flags after path argument (BUG-043)", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts"],
-      "bun test test/ --timeout=60000",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' --timeout=60000");
-  });
-
-  test("preserves trailing flags with multiple test files", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
-      "bun test test/ --timeout=60000 --bail",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts' --timeout=60000 --bail");
+  test.each([
+    ["empty testFiles returns original command", [], "bun test test/", "bun test test/"],
+    ["single test file replaces last path", ["test/unit/foo.test.ts"], "bun test test/", "bun test 'test/unit/foo.test.ts'"],
+    ["multiple test files joined with spaces", ["test/unit/foo.test.ts", "test/unit/bar.test.ts"], "bun test test/", "bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts'"],
+    ["no path arg — appends test files", ["test/unit/foo.test.ts"], "bun test", "bun test 'test/unit/foo.test.ts'"],
+    ["flags before path — replaces last path-like token", ["test/unit/foo.test.ts"], "bun test --coverage test/", "bun test --coverage 'test/unit/foo.test.ts'"],
+    ["preserves trailing flags after path (BUG-043)", ["test/unit/foo.test.ts"], "bun test test/ --timeout=60000", "bun test 'test/unit/foo.test.ts' --timeout=60000"],
+    ["preserves trailing flags with multiple files", ["test/unit/foo.test.ts", "test/unit/bar.test.ts"], "bun test test/ --timeout=60000 --bail", "bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts' --timeout=60000 --bail"],
+  ])("%s", (_label, testFiles, command, expected) => {
+    const result = buildSmartTestCommand(testFiles as string[], command);
+    expect(result).toBe(expected);
   });
 });
 
