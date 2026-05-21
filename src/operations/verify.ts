@@ -1,14 +1,23 @@
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "../tdd/verdict";
 import { parseSessionJsonOutput } from "./_session-output";
-import type { RunOperation } from "./types";
+import type { RunOperation, VerifyContext } from "./types";
+
+void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
 
 export interface VerifierInput {
   readonly story: UserStory;
   readonly promptMarkdown?: string;
+  /**
+   * Git ref captured by the orchestrator just before this phase dispatches.
+   * When present, isolation is checked in both verify and recover paths.
+   * Absent in legacy / ad-hoc callers — isolation is then skipped.
+   */
+  readonly beforeRef?: string;
 }
 
 export interface VerifierOutput {
@@ -23,6 +32,19 @@ export interface VerifierOutput {
   readonly failureCategory?: FailureCategory;
   /** Human-readable reason for rejection from the verifier verdict. */
   readonly reviewReason?: string;
+}
+
+async function runVerifierIsolation(
+  beforeRef: string | undefined,
+  ctx: VerifyContext<TddConfig>,
+): Promise<IsolationCheck | undefined> {
+  if (!beforeRef) return undefined;
+  const testFilePatterns =
+    typeof ctx.packageView.config.execution?.smartTestRunner === "object" &&
+    ctx.packageView.config.execution.smartTestRunner !== null
+      ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
+      : undefined;
+  return verifyImplementerIsolation(ctx.packageView.packageDir, beforeRef, testFilePatterns);
 }
 
 export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> = {
@@ -51,11 +73,13 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
     const envelope = parseSessionJsonOutput(output);
     return { ...envelope, estimatedCostUsd: 0, durationMs: 0 };
   },
-  async verify(parsed, _input, _ctx): Promise<VerifierOutput | null> {
+  async verify(parsed, input, ctx): Promise<VerifierOutput | null> {
     // Signal to recover when parse produced no usable value (success=false).
-    return parsed.success ? parsed : null;
+    if (!parsed.success) return null;
+    const isolation = await runVerifierIsolation(input.beforeRef, ctx);
+    return isolation ? { ...parsed, isolation } : parsed;
   },
-  async recover(_input, verifyCtx): Promise<VerifierOutput | null> {
+  async recover(input, verifyCtx): Promise<VerifierOutput | null> {
     // Derive outcome from the verdict file the verifier agent writes to disk (AC-5).
     // Use try/finally to ensure verdict cleanup on every code path.
     const packageDir = verifyCtx.packageView.packageDir;
@@ -64,6 +88,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
       if (!verdict) return null;
       const testsAllPassing = verdict.tests.allPassing === true;
       const categorization = categorizeVerdict(verdict, testsAllPassing);
+      const isolation = await runVerifierIsolation(input.beforeRef, verifyCtx);
       return {
         success: categorization.success,
         filesChanged: [],
@@ -72,6 +97,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
         output: "",
         ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
         ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
+        ...(isolation && { isolation }),
       };
     } finally {
       await cleanupVerdict(packageDir);
