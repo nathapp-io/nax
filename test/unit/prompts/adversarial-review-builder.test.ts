@@ -63,25 +63,14 @@ describe("AdversarialReviewPromptBuilder — ref mode", () => {
     expect(result).toContain("Sessions expire after 24h");
   });
 
-  test("prompt contains stat block when stat is provided", () => {
+  test("stat block included when stat provided, omitted when not", () => {
     const stat = "src/auth/login.ts | 10 ++++++++++\n 1 file changed";
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      stat,
-    });
+    const withStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF, stat });
+    expect(withStat).toContain(stat);
+    expect(withStat).toContain("Changed Files Summary");
 
-    expect(result).toContain(stat);
-    expect(result).toContain("Changed Files Summary");
-  });
-
-  test("stat block is omitted when stat is not provided", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).not.toContain("Changed Files Summary");
+    const withoutStat = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(withoutStat).not.toContain("Changed Files Summary");
   });
 
   test("ref mode uses resolver-provided test patterns in test-audit workflow", () => {
@@ -276,74 +265,28 @@ describe("AdversarialReviewPromptBuilder — priorAdversarialIterations", () => 
     },
   ];
 
-  test("prior iterations block appears when priorAdversarialIterations is set", () => {
+  test("prior iterations block: header, round, outcome, finding, file:line, count, ordering", () => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "ref",
       storyGitRef: STORY_GIT_REF,
       priorAdversarialIterations: PRIOR_ITERATIONS,
     });
     expect(result).toContain("## Prior Iterations — verdict required before new analysis");
-  });
-
-  test("prior iterations block contains the round header with iteration number", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorAdversarialIterations: PRIOR_ITERATIONS,
-    });
     expect(result).toContain("### Round 1");
-  });
-
-  test("prior iterations block contains outcome and finding text", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorAdversarialIterations: PRIOR_ITERATIONS,
-    });
     expect(result).toContain("partial");
-    // Finding text (message) is rendered verbatim rather than as a count
     expect(result).toContain("Null pointer dereference on empty input");
-  });
-
-  test("prior iterations block contains file:line and count in round header", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorAdversarialIterations: PRIOR_ITERATIONS,
-    });
-    // findingsBefore is empty (0), findingsAfter has 2 findings → header shows (0 → 2)
     expect(result).toContain("(0 → 2)");
-    // Finding file:line rendered
     expect(result).toContain("src/auth/login.ts:42");
-  });
-
-  test("prior iterations block appears before the story block (verdict-first)", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorAdversarialIterations: PRIOR_ITERATIONS,
-    });
     const priorIdx = result.indexOf("## Prior Iterations");
-    const storyIdx = result.indexOf("## Story Under Review");
-    expect(priorIdx).toBeGreaterThanOrEqual(0);
-    expect(priorIdx).toBeLessThan(storyIdx);
+    expect(priorIdx).toBeLessThan(result.indexOf("## Story Under Review"));
   });
 
-  test("no prior iterations block when priorAdversarialIterations is undefined", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-    expect(result).not.toContain("## Prior Iterations");
-  });
+  test("no prior iterations block when undefined or empty array", () => {
+    const undef = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(undef).not.toContain("## Prior Iterations");
 
-  test("no prior iterations block when priorAdversarialIterations is empty array", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-      priorAdversarialIterations: [],
-    });
-    expect(result).not.toContain("## Prior Iterations");
+    const empty = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF, priorAdversarialIterations: [] });
+    expect(empty).not.toContain("## Prior Iterations");
   });
 
   test("unchanged outcome note appears when an iteration outcome is unchanged", () => {
