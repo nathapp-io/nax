@@ -63,31 +63,32 @@ describe("PlanPromptBuilder.build — taskContext/outputFormat split", () => {
     expect(outputFormat).not.toContain("Step 1");
   });
 
-  test("outputFormat with outputFilePath instructs agent to write to file", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(SPEC, CTX, "/tmp/prd.json");
-    expect(outputFormat).toContain("/tmp/prd.json");
-    expect(outputFormat).toContain("Write the PRD JSON directly to this file path");
-    expect(outputFormat).not.toContain("Output ONLY the JSON");
-  });
-
-  test("outputFormat without outputFilePath instructs agent to output inline", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(SPEC, CTX);
-    expect(outputFormat).toContain("Output ONLY the JSON object");
-    expect(outputFormat).not.toContain("Write the PRD JSON directly");
+  test.each([
+    ["with outputFilePath", "/tmp/prd.json" as string | undefined, true],
+    ["without outputFilePath", undefined, false],
+  ] as const)("outputFormat %s: writes-to-file=%s", (_label, outputFilePath, writesToFile) => {
+    const { outputFormat } = new PlanPromptBuilder().build(SPEC, CTX, outputFilePath);
+    if (writesToFile) {
+      expect(outputFormat).toContain("/tmp/prd.json");
+      expect(outputFormat).toContain("Write the PRD JSON directly to this file path");
+      expect(outputFormat).not.toContain("Output ONLY the JSON");
+    } else {
+      expect(outputFormat).toContain("Output ONLY the JSON object");
+      expect(outputFormat).not.toContain("Write the PRD JSON directly");
+    }
   });
 });
 
 // ─── Monorepo handling (MW-007) ───────────────────────────────────────────────
 
 describe("PlanPromptBuilder.build — monorepo handling (MW-007)", () => {
-  test("includes workdir field in schema when packages provided", () => {
-    const prompt = fullPrompt(SPEC, CTX, undefined, ["apps/api", "apps/web"]);
-    expect(prompt).toContain('"workdir"');
-  });
-
-  test("no workdir field in schema for non-monorepo", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).not.toContain('"workdir"');
+  test.each([
+    ["includes workdir when packages provided", ["apps/api", "apps/web"] as string[] | undefined, true],
+    ["no workdir for non-monorepo", undefined, false],
+  ] as const)("%s", (_label, packages, shouldInclude) => {
+    const prompt = fullPrompt(SPEC, CTX, undefined, packages);
+    if (shouldInclude) expect(prompt).toContain('"workdir"');
+    else expect(prompt).not.toContain('"workdir"');
   });
 
   test("includes monorepo context section with package list", () => {
@@ -114,14 +115,13 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
   const SPEC_WITH_AC = "## Acceptance Criteria\n- AC-1: Returns 200 when project exists";
   const CTX2 = "## Codebase Structure\nsrc/projects/projects.service.ts";
 
-  test("spec anchor rules included in taskContext when specContent is non-empty", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(taskContext).toContain("Preserve spec ACs");
-  });
-
-  test("spec anchor rules NOT included when specContent is empty string", () => {
-    const { taskContext } = new PlanPromptBuilder().build("", CTX2);
-    expect(taskContext).not.toContain("Preserve spec ACs");
+  test.each([
+    ["included when non-empty spec", SPEC_WITH_AC, true],
+    ["NOT included when empty spec", "", false],
+  ] as const)("spec anchor rules: %s", (_label, spec, shouldInclude) => {
+    const { taskContext } = new PlanPromptBuilder().build(spec, CTX2);
+    if (shouldInclude) expect(taskContext).toContain("Preserve spec ACs");
+    else expect(taskContext).not.toContain("Preserve spec ACs");
   });
 
   test.each([
@@ -133,14 +133,13 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
     expect(taskContext).toContain(text);
   });
 
-  test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(outputFormat).toContain("suggestedCriteria");
-  });
-
-  test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
-    const { outputFormat } = new PlanPromptBuilder().build("", CTX2);
-    expect(outputFormat).not.toContain("suggestedCriteria");
+  test.each([
+    ["includes suggestedCriteria when spec provided", SPEC_WITH_AC, true],
+    ["does NOT include suggestedCriteria when spec empty", "", false],
+  ] as const)("outputFormat schema: %s", (_label, spec, shouldInclude) => {
+    const { outputFormat } = new PlanPromptBuilder().build(spec, CTX2);
+    if (shouldInclude) expect(outputFormat).toContain("suggestedCriteria");
+    else expect(outputFormat).not.toContain("suggestedCriteria");
   });
 });
 
@@ -162,33 +161,24 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
     expect(withProposers.taskContext).toBe(withoutProposers.taskContext);
   });
 
-  test("removes file names only restriction when fileReadAccess === true", () => {
+  test("fileReadAccess true: removes file-names-only restriction and adds file-read instruction", () => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
       fileReadAccess: true,
     });
     expect(taskContext).not.toContain("file names and structure only");
-  });
-
-  test("adds file-read permission instruction when fileReadAccess === true", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
-      fileReadAccess: true,
-    });
     expect(taskContext).toContain("file-read");
   });
 
-  test("includes 'up to N file reads' when fileReadBudget is set", () => {
+  test.each([
+    ["includes 'up to N' when budget set", 5 as number | undefined, true],
+    ["no 'up to N' when budget not set", undefined, false],
+  ] as const)("fileReadBudget: %s", (_label, fileReadBudget, shouldInclude) => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
       fileReadAccess: true,
-      fileReadBudget: 5,
+      fileReadBudget,
     });
-    expect(taskContext).toContain("up to 5 file reads");
-  });
-
-  test("does not include 'up to N file reads' when fileReadBudget is not set", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
-      fileReadAccess: true,
-    });
-    expect(taskContext).not.toContain("up to");
+    if (shouldInclude) expect(taskContext).toContain("up to 5 file reads");
+    else expect(taskContext).not.toContain("up to");
   });
 
   test("no file read instruction emitted when fileReadAccess is false", () => {
@@ -204,11 +194,8 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
 // ─── PlanPromptBuilder.jsonRepair() static method ─────────────────────────────
 
 describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
-  test("AC1: method exists as a static method on PlanPromptBuilder", () => {
+  test("AC1: method exists and returns a non-empty string", () => {
     expect(typeof PlanPromptBuilder.jsonRepair).toBe("function");
-  });
-
-  test("AC1: returns a non-empty string", () => {
     const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
@@ -340,86 +327,31 @@ describe("PlanPromptBuilder — shared quality rules", () => {
     expect(task.content).toContain("Self-check before emitting");
   });
 
-  test("buildDraft() injects SPEC_ANCHOR_RULES with failure-table rule when spec is non-empty", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some non-empty spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).toContain("Enumerate failure-mode tables");
+  test.each([
+    ["injects SPEC_ANCHOR_RULES when spec non-empty", "Some non-empty spec", true],
+    ["omits SPEC_ANCHOR_RULES when spec empty", "", false],
+  ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
+    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent, codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5 });
+    if (shouldInclude) expect(task.content).toContain("Enumerate failure-mode tables");
+    else expect(task.content).not.toContain("Enumerate failure-mode tables");
   });
 
-  test("buildDraft() omits SPEC_ANCHOR_RULES when spec is empty", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).not.toContain("Enumerate failure-mode tables");
+  test.each([
+    ["injects monorepo hint when packages provided", ["packages/api"] as string[] | undefined, true],
+    ["omits monorepo hint when no packages", undefined, false],
+  ] as const)("buildDraft(): %s", (_label, packages, shouldInclude) => {
+    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent: "Some spec", codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5, packages });
+    if (shouldInclude) { expect(task.content).toContain("Monorepo Context"); expect(task.content).toContain("packages/api"); expect(task.content).toContain('"workdir"'); }
+    else { expect(task.content).not.toContain("Monorepo Context"); expect(task.content).not.toContain('"workdir"'); }
   });
 
-  test("buildDraft() injects monorepo hint when packages provided", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-      packages: ["packages/api"],
-    });
-    expect(task.content).toContain("Monorepo Context");
-    expect(task.content).toContain("packages/api");
-    expect(task.content).toContain('"workdir"');
-  });
-
-  test("buildDraft() omits monorepo hint when no packages provided", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).not.toContain("Monorepo Context");
-    expect(task.content).not.toContain('"workdir"');
-  });
-
-  test("buildDraft() includes suggestedCriteria schema field when spec is non-empty", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).toContain("suggestedCriteria");
-  });
-
-  test("buildDraft() omits suggestedCriteria when spec is empty", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).not.toContain("suggestedCriteria");
+  test.each([
+    ["includes suggestedCriteria when spec non-empty", "Some spec", true],
+    ["omits suggestedCriteria when spec empty", "", false],
+  ] as const)("buildDraft(): %s", (_label, specContent, shouldInclude) => {
+    const { task } = new PlanPromptBuilder().buildDraft({ manifestSection: "## Manifest\n", specContent, codebaseContext: "ctx", feature: "feat", branchName: "feat/x", citationThreshold: 0.5 });
+    if (shouldInclude) expect(task.content).toContain("suggestedCriteria");
+    else expect(task.content).not.toContain("suggestedCriteria");
   });
 });
 
