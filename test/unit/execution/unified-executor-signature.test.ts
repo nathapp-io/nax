@@ -65,23 +65,14 @@ describe("_unifiedExecutorDeps — injectable dispatch dependencies", () => {
     expect((mod as Record<string, unknown>)._unifiedExecutorDeps).toBeDefined();
   });
 
-  test("_unifiedExecutorDeps contains runParallelBatch function", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
-    const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-    expect(typeof deps.runParallelBatch).toBe("function");
-  });
-
-  test("_unifiedExecutorDeps contains runIteration function", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
-    const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-    expect(typeof deps.runIteration).toBe("function");
-  });
-
-  test("_unifiedExecutorDeps contains selectIndependentBatch function", async () => {
-    const mod = await import("../../../src/execution/unified-executor");
-    const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-    expect(typeof deps.selectIndependentBatch).toBe("function");
-  });
+  test.each(["runParallelBatch", "runIteration", "selectIndependentBatch"])(
+    "_unifiedExecutorDeps contains %s function",
+    async (fnName) => {
+      const mod = await import("../../../src/execution/unified-executor");
+      const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+      expect(typeof deps[fnName]).toBe("function");
+    },
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,15 +215,13 @@ describe("AC-8 — runner-execution.ts always calls executeUnified with parallel
     expect(src).toContain("parallelCount");
   });
 
-  test("runner-execution.ts does not contain a separate executeParallel dispatch branch", async () => {
-    const src = await readSrc("execution/runner-execution.ts");
-    expect(src).not.toContain("executeParallel(");
-  });
-
-  test("runner-execution.ts does not contain a runParallelExecution dispatch branch", async () => {
-    const src = await readSrc("execution/runner-execution.ts");
-    expect(src).not.toContain("runParallelExecution");
-  });
+  test.each(["executeParallel(", "runParallelExecution"])(
+    "runner-execution.ts does not contain %s dispatch branch",
+    async (symbol) => {
+      const src = await readSrc("execution/runner-execution.ts");
+      expect(src).not.toContain(symbol);
+    },
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
