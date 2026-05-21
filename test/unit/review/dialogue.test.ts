@@ -231,16 +231,10 @@ describe("createReviewerSession — initial state", () => {
     expect(session.history.length).toBe(0);
   });
 
-  test("session exposes review() method", () => {
+  test.each(["review", "destroy"])("session exposes %s() method", (method) => {
     const agentManager = makeAgentManager();
     const session = createReviewerSession(agentManager, makeSessionManager(), "US-001", "/work", "my-feature", makeConfig());
-    expect(typeof session.review).toBe("function");
-  });
-
-  test("session exposes destroy() method", () => {
-    const agentManager = makeAgentManager();
-    const session = createReviewerSession(agentManager, makeSessionManager(), "US-001", "/work", "my-feature", makeConfig());
-    expect(typeof session.destroy).toBe("function");
+    expect(typeof (session as any)[method]).toBe("function");
   });
 });
 
@@ -286,19 +280,13 @@ describe("ReviewerSession.review() — agentManager.runAsSession() call paramete
     expect(capturedOpts?.pipelineStage).toBe("review");
   });
 
-  test("prompt passed to agentManager.runAsSession() contains the diff", async () => {
+  test.each([
+    ["diff", SAMPLE_DIFF],
+    ["story id", STORY.id],
+    ["acceptance criterion", STORY.acceptanceCriteria[0]],
+  ])("prompt passed to agentManager.runAsSession() contains the %s", async (_label, value) => {
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(capturedPrompt).toContain(SAMPLE_DIFF);
-  });
-
-  test("prompt passed to agentManager.runAsSession() contains the story id", async () => {
-    await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(capturedPrompt).toContain(STORY.id);
-  });
-
-  test("prompt passed to agentManager.runAsSession() contains at least one acceptance criterion", async () => {
-    await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(capturedPrompt).toContain(STORY.acceptanceCriteria[0]);
+    expect(capturedPrompt).toContain(value);
   });
 });
 
@@ -396,19 +384,14 @@ describe("ReviewerSession.review() — history entries", () => {
     await session.destroy();
   });
 
-  test("first history entry has role 'implementer'", async () => {
+  test.each<[string, number, string]>([
+    ["first", 0, "implementer"],
+    ["second", 1, "reviewer"],
+  ])("%s history entry has role '%s'", async (_label, index, expectedRole) => {
     const agent = makeAgentManager();
     const session = createReviewerSession(agent, makeSessionManager(), "US-001", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(session.history[0]?.role).toBe("implementer");
-    await session.destroy();
-  });
-
-  test("second history entry has role 'reviewer'", async () => {
-    const agent = makeAgentManager();
-    const session = createReviewerSession(agent, makeSessionManager(), "US-001", "/work", "my-feature", makeConfig());
-    await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
-    expect(session.history[1]?.role).toBe("reviewer");
+    expect(session.history[index]?.role).toBe(expectedRole as any);
     await session.destroy();
   });
 
