@@ -72,22 +72,13 @@ describe("validatePlanOutput — valid input", () => {
     expect(prd.userStories).toHaveLength(1);
   });
 
-  test("forces story status to 'pending'", () => {
-    const input = makeInput([makeStory({ status: "passed" })]);
+  test.each([
+    ["status to 'pending'", makeInput([makeStory({ status: "passed" })]), (s: any) => s.status, "pending"],
+    ["passes to false", makeInput([makeStory({ passes: true })]), (s: any) => s.passes, false],
+    ["attempts to 0", makeInput([makeStory({ attempts: 5 })]), (s: any) => s.attempts, 0],
+  ])("forces %s", (_label, input, getField, expected) => {
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.status).toBe("pending");
-  });
-
-  test("forces passes to false", () => {
-    const input = makeInput([makeStory({ passes: true })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.passes).toBe(false);
-  });
-
-  test("forces attempts to 0", () => {
-    const input = makeInput([makeStory({ attempts: 5 })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.attempts).toBe(0);
+    expect(getField(prd.userStories[0]!)).toBe(expected);
   });
 
   test("forces escalations to empty array", () => {
@@ -460,9 +451,11 @@ describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
 // ---------------------------------------------------------------------------
 
 describe("suggestedCriteria", () => {
-  test("absent — validates and omits field", () => {
-    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  test.each([
+    ["absent", makeStory()],
+    ["empty array", makeStory({ suggestedCriteria: [] })],
+  ])("omits suggestedCriteria when %s", (_label, story) => {
+    expect(validatePlanOutput(makeInput([story]), "feat", "feat/feat").userStories[0].suggestedCriteria).toBeUndefined();
   });
 
   test("valid string[] — passes through", () => {
@@ -471,43 +464,19 @@ describe("suggestedCriteria", () => {
     expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
   });
 
-  test("empty array — stripped to undefined", () => {
-    const story = makeStory({ suggestedCriteria: [] });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  test.each([
+    ["{criterion, rationale} objects", [{ criterion: "edge case A", rationale: "debater suggested" }, { criterion: "edge case B", rationale: "another reason" }], ["edge case A", "edge case B"]],
+    ["mixed strings and objects", ["plain string", { criterion: "from object" }], ["plain string", "from object"]],
+  ])("coerces %s to plain strings", (_label, suggestedCriteria, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ suggestedCriteria })]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toEqual(expected);
   });
 
-  test("{criterion, rationale} objects — coerced to plain strings", () => {
-    const story = makeStory({
-      suggestedCriteria: [
-        { criterion: "edge case A", rationale: "debater suggested" },
-        { criterion: "edge case B", rationale: "another reason" },
-      ],
-    });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
-  });
-
-  test("mixed strings and {criterion} objects — coerced uniformly", () => {
-    const story = makeStory({
-      suggestedCriteria: ["plain string", { criterion: "from object" }],
-    });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toEqual(["plain string", "from object"]);
-  });
-
-  test("non-string elements — throws", () => {
-    const story = makeStory({ suggestedCriteria: ["valid", 42] });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      "suggestedCriteria[1] must be a string",
-    );
-  });
-
-  test("non-array — throws", () => {
-    const story = makeStory({ suggestedCriteria: "not an array" });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      "suggestedCriteria must be an array",
-    );
+  test.each([
+    ["non-string element", makeStory({ suggestedCriteria: ["valid", 42] }), "suggestedCriteria[1] must be a string"],
+    ["non-array", makeStory({ suggestedCriteria: "not an array" }), "suggestedCriteria must be an array"],
+  ])("throws for %s", (_label, story, expectedMsg) => {
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(expectedMsg);
   });
 });
 
@@ -524,22 +493,12 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     expect(story.contextFiles).toBeUndefined();
   });
 
-  test("AC5: preserves verifiedBy when present", () => {
-    const story = makeStory({
-      verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] },
-    });
+  test.each([
+    ["verifiedBy", makeStory({ verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] } }), (s: any) => s.verifiedBy, { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] }],
+    ["intent", makeStory({ intent: true }), (s: any) => s.intent, true],
+  ])("AC5: preserves %s when present", (_label, story, getField, expected) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0]!.verifiedBy).toEqual({
-      kind: "test",
-      anchor: "src/foo.test.ts#should work",
-      factIds: ["fact-001"],
-    });
-  });
-
-  test("AC5: preserves intent when present", () => {
-    const story = makeStory({ intent: true });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0]!.intent).toBe(true);
+    expect(getField(prd.userStories[0]!)).toEqual(expected);
   });
 
   test("AC5: preserves contextFiles[].factId when present", () => {
