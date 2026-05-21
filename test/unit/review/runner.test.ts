@@ -183,58 +183,20 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
   });
 
-  test(".nax/status.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/status.json"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".nax-verifier-verdict.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax-verifier-verdict.json"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".nax/features/*/prd.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/ctx-simplify/prd.json"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".nax/features/*/acp-sessions.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/cli/acp-sessions.json"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test("monorepo-prefixed acp-sessions.json is excluded (apps/cli/nax/features/*/acp-sessions.json)", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      "apps/cli/nax/features/cli/acp-sessions.json",
-    ]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".nax/features/*/stories/*/context-manifest-*.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      ".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json",
-    ]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test("monorepo-prefixed context-manifest is excluded", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      "apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json",
-    ]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".nax/features/*/stories/*/rebuild-manifest.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      ".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json",
-    ]);
+  test.each([
+    [".nax/status.json", [".nax/status.json"]],
+    [".nax-verifier-verdict.json", [".nax-verifier-verdict.json"]],
+    [".nax/features/*/prd.json", [".nax/features/ctx-simplify/prd.json"]],
+    [".nax/features/*/acp-sessions.json", [".nax/features/cli/acp-sessions.json"]],
+    ["monorepo-prefixed acp-sessions.json", ["apps/cli/nax/features/cli/acp-sessions.json"]],
+    [".nax/features/*/stories/*/context-manifest-*.json", [".nax/features/memory-guardrails/stories/US-001/context-manifest-review-semantic.json"]],
+    ["monorepo-prefixed context-manifest", ["apps/backend/nax/features/memory-guardrails/stories/US-001/context-manifest-verify.json"]],
+    [".nax/features/*/stories/*/rebuild-manifest.json", [".nax/features/memory-guardrails/stories/US-001/rebuild-manifest.json"]],
+    ["test-output .jsonl files under test/", ["test/unit/runtime/middleware/test-logging-sub-abc123.jsonl"]],
+    ["coverage/ directory files", ["coverage/lcov.info"]],
+    [".lcov files", ["report.lcov"]],
+  ] as const)("%s is excluded from uncommitted check", async (_label, files) => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [...files]);
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
   });
@@ -249,26 +211,6 @@ describe("nax runtime file exclusions", () => {
     const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
     expect(result.success).toBe(true);
     expect(result.checks.some((c) => c.check === "git-clean")).toBe(false);
-  });
-
-  test("test-output .jsonl files under test/ are excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      "test/unit/runtime/middleware/test-logging-sub-abc123.jsonl",
-    ]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test("coverage/ directory files are excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["coverage/lcov.info"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
-  });
-
-  test(".lcov files are excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["report.lcov"]);
-    const result = await runReview({ config: noChecksConfig, workdir: "/tmp/fake-workdir" });
-    expect(result.success).toBe(true);
   });
 
   test("test artifact mixed with real file — real file triggers warning, test artifact is excluded", async () => {
