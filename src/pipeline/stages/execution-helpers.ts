@@ -30,24 +30,6 @@ export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): st
 }
 
 /**
- * Detect if agent output contains ambiguity signals.
- * Checks for keywords that indicate the agent is unsure about the implementation.
- */
-export function isAmbiguousOutput(output: string): boolean {
-  if (!output) return false;
-  const ambiguityKeywords = [
-    "unclear",
-    "ambiguous",
-    "need clarification",
-    "please clarify",
-    "which one",
-    "not sure which",
-  ];
-  const lowerOutput = output.toLowerCase();
-  return ambiguityKeywords.some((keyword) => lowerOutput.includes(keyword));
-}
-
-/**
  * Determine the pipeline action for a failed TDD result, based on its failureCategory.
  *
  * Pure routing function — mutates only ctx.retryAsLite when needed.
