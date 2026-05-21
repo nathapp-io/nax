@@ -22,22 +22,14 @@ function fullPrompt(...args: Parameters<InstanceType<typeof PlanPromptBuilder>["
 // ─── 3-step structure (ENH-006) ───────────────────────────────────────────────
 
 describe("PlanPromptBuilder.build — 3-step structure (ENH-006)", () => {
-  test("prompt has Step 1 — understand the spec", () => {
+  test.each([
+    ["Step 1", "Understand the Spec"],
+    ["Step 2", "Analyze"],
+    ["Step 3", "Generate Implementation Stories"],
+  ])("prompt has %s", (step, text) => {
     const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain("Step 1");
-    expect(prompt).toContain("Understand the Spec");
-  });
-
-  test("prompt has Step 2 — analyze", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain("Step 2");
-    expect(prompt).toContain("Analyze");
-  });
-
-  test("prompt has Step 3 — generate stories", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain("Step 3");
-    expect(prompt).toContain("Generate Implementation Stories");
+    expect(prompt).toContain(step);
+    expect(prompt).toContain(text);
   });
 
   test("prompt includes greenfield guidance", () => {
@@ -45,14 +37,8 @@ describe("PlanPromptBuilder.build — 3-step structure (ENH-006)", () => {
     expect(prompt).toContain("greenfield project");
   });
 
-  test("output schema includes analysis field", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain('"analysis"');
-  });
-
-  test("output schema includes contextFiles field", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain('"contextFiles"');
+  test.each(['"analysis"', '"contextFiles"'])("output schema includes %s field", (field) => {
+    expect(fullPrompt(SPEC, CTX)).toContain(field);
   });
 
   test("testStrategy list is in correct order", () => {
@@ -138,9 +124,13 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
     expect(taskContext).not.toContain("Preserve spec ACs");
   });
 
-  test("taskContext mentions suggestedCriteria when spec is provided", () => {
+  test.each([
+    ["suggestedCriteria"],
+    ["Never silently drop"],
+    ["story scope"],
+  ])("taskContext with spec contains '%s'", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(taskContext).toContain("suggestedCriteria");
+    expect(taskContext).toContain(text);
   });
 
   test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
@@ -151,16 +141,6 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
   test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
     const { outputFormat } = new PlanPromptBuilder().build("", CTX2);
     expect(outputFormat).not.toContain("suggestedCriteria");
-  });
-
-  test("taskContext instructs planner to never drop a spec AC", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(taskContext).toContain("Never silently drop");
-  });
-
-  test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC_WITH_AC, CTX2);
-    expect(taskContext).toContain("story scope");
   });
 });
 
@@ -307,68 +287,24 @@ Budget: aim for ≤ 10 file reads per story.
   // AC-4: taskContext does NOT contain "## Codebase Structure"
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-4: taskContext does NOT contain '## Codebase Structure'", () => {
+  test.each([
+    ["## Source Roots"],
+    ["You have Read, Grep, and Glob tools"],
+    ["≤ 10 file reads per story"],
+  ])("taskContext contains '%s' (AC-5/7/8)", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).not.toContain("## Codebase Structure");
+    expect(taskContext).toContain(text);
   });
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-5: taskContext DOES contain "## Source Roots"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-5: taskContext DOES contain '## Source Roots'", () => {
+  test.each([
+    ["## Codebase Structure"],
+    ["file names and structure only"],
+    ["## Dependencies"],
+    ["## Test Setup"],
+  ])("taskContext does NOT contain '%s' (AC-4/6/9/10)", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).toContain("## Source Roots");
+    expect(taskContext).not.toContain(text);
   });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-6: taskContext does NOT contain "file names and structure only"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-6: taskContext does NOT contain 'file names and structure only' in default mode", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).not.toContain("file names and structure only");
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-7: taskContext DOES contain "You have Read, Grep, and Glob tools"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-7: taskContext contains 'You have Read, Grep, and Glob tools'", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).toContain("You have Read, Grep, and Glob tools");
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-8: taskContext contains "≤ 10 file reads per story"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-8: taskContext contains '≤ 10 file reads per story'", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).toContain("≤ 10 file reads per story");
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-9: taskContext does NOT contain "## Dependencies"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-9: taskContext does NOT contain '## Dependencies'", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).not.toContain("## Dependencies");
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-10: taskContext does NOT contain "## Test Setup"
-  // ──────────────────────────────────────────────────────────────────────────
-
-  test("AC-10: taskContext does NOT contain '## Test Setup'", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX);
-    expect(taskContext).not.toContain("## Test Setup");
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // AC-11: with fileReadAccess: true, taskContext contains "File Read Permission:"
-  // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-11: with fileReadAccess: true, taskContext section contains 'File Read Permission:'", () => {
     const { taskContext } = new PlanPromptBuilder().build(SPEC, SOURCE_ROOTS_CTX, undefined, undefined, undefined, undefined, {
@@ -396,7 +332,11 @@ describe("PlanPromptBuilder — shared quality rules", () => {
     expect(taskContext).toContain("Resolve internal spec contradictions toward the AC");
   });
 
-  test("buildDraft() injects shared quality rules (COMPLEXITY_GUIDE)", () => {
+  test.each([
+    ["COMPLEXITY_GUIDE", "Complexity Classification Guide"],
+    ["TEST_STRATEGY_GUIDE", "Test Strategy Guide"],
+    ["DESCRIPTION_QUALITY_RULES", "Description Quality Rules"],
+  ])("buildDraft() injects %s", (_name, expected) => {
     const builder = new PlanPromptBuilder();
     const { task } = builder.buildDraft({
       manifestSection: "## Manifest\n",
@@ -406,12 +346,11 @@ describe("PlanPromptBuilder — shared quality rules", () => {
       branchName: "feat/x",
       citationThreshold: 0.5,
     });
-    expect(task.content).toContain("Complexity Classification Guide");
+    expect(task.content).toContain(expected);
   });
 
-  test("buildDraft() injects TEST_STRATEGY_GUIDE", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
+  test("buildDraft() DESCRIPTION_QUALITY_RULES includes self-check", () => {
+    const { task } = new PlanPromptBuilder().buildDraft({
       manifestSection: "## Manifest\n",
       specContent: "Some spec",
       codebaseContext: "ctx",
@@ -419,20 +358,6 @@ describe("PlanPromptBuilder — shared quality rules", () => {
       branchName: "feat/x",
       citationThreshold: 0.5,
     });
-    expect(task.content).toContain("Test Strategy Guide");
-  });
-
-  test("buildDraft() injects DESCRIPTION_QUALITY_RULES with self-check", () => {
-    const builder = new PlanPromptBuilder();
-    const { task } = builder.buildDraft({
-      manifestSection: "## Manifest\n",
-      specContent: "Some spec",
-      codebaseContext: "ctx",
-      feature: "feat",
-      branchName: "feat/x",
-      citationThreshold: 0.5,
-    });
-    expect(task.content).toContain("Description Quality Rules");
     expect(task.content).toContain("Self-check before emitting");
   });
 
