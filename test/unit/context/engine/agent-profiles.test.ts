@@ -17,43 +17,31 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AGENT_PROFILES", () => {
-  test("contains claude profile", () => {
-    expect("claude" in AGENT_PROFILES).toBe(true);
+  test.each(["claude", "codex"] as const)("contains %s profile", (name) => {
+    expect(name in AGENT_PROFILES).toBe(true);
   });
 
-  test("contains codex profile", () => {
-    expect("codex" in AGENT_PROFILES).toBe(true);
-  });
-
-  test("claude caps have maxContextTokens >= 128_000", () => {
+  test("claude >= 128_000 and codex >= 64_000 maxContextTokens", () => {
     expect(AGENT_PROFILES["claude"]!.caps.maxContextTokens).toBeGreaterThanOrEqual(128_000);
-  });
-
-  test("codex caps have maxContextTokens >= 64_000", () => {
     expect(AGENT_PROFILES["codex"]!.caps.maxContextTokens).toBeGreaterThanOrEqual(64_000);
   });
 
-  test("claude systemPromptStyle is markdown-sections", () => {
-    expect(AGENT_PROFILES["claude"]!.caps.systemPromptStyle).toBe("markdown-sections");
+  test.each([
+    ["claude", "markdown-sections"],
+    ["codex", "xml-tagged"],
+  ] as const)("%s systemPromptStyle is %s", (name, style) => {
+    expect(AGENT_PROFILES[name]!.caps.systemPromptStyle).toBe(style);
   });
 
-  test("codex systemPromptStyle is xml-tagged", () => {
-    expect(AGENT_PROFILES["codex"]!.caps.systemPromptStyle).toBe("xml-tagged");
+  test.each([
+    ["claude", "anthropic"],
+    ["codex", "openai"],
+  ] as const)("%s toolSchemaDialect is %s", (name, dialect) => {
+    expect(AGENT_PROFILES[name]!.caps.toolSchemaDialect).toBe(dialect);
   });
 
-  test("claude toolSchemaDialect is anthropic", () => {
-    expect(AGENT_PROFILES["claude"]!.caps.toolSchemaDialect).toBe("anthropic");
-  });
-
-  test("codex toolSchemaDialect is openai", () => {
-    expect(AGENT_PROFILES["codex"]!.caps.toolSchemaDialect).toBe("openai");
-  });
-
-  test("claude supportsToolCalls is true", () => {
+  test("claude and codex supportsToolCalls is true", () => {
     expect(AGENT_PROFILES["claude"]!.caps.supportsToolCalls).toBe(true);
-  });
-
-  test("codex supportsToolCalls is true", () => {
     expect(AGENT_PROFILES["codex"]!.caps.supportsToolCalls).toBe(true);
   });
 
@@ -69,19 +57,10 @@ describe("AGENT_PROFILES", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("CONSERVATIVE_DEFAULT_PROFILE", () => {
-  test("systemPromptStyle is plain", () => {
+  test("has plain systemPromptStyle, none toolSchemaDialect, false supportsToolCalls, positive maxContextTokens", () => {
     expect(CONSERVATIVE_DEFAULT_PROFILE.caps.systemPromptStyle).toBe("plain");
-  });
-
-  test("toolSchemaDialect is none", () => {
     expect(CONSERVATIVE_DEFAULT_PROFILE.caps.toolSchemaDialect).toBe("none");
-  });
-
-  test("supportsToolCalls is false", () => {
     expect(CONSERVATIVE_DEFAULT_PROFILE.caps.supportsToolCalls).toBe(false);
-  });
-
-  test("has positive maxContextTokens", () => {
     expect(CONSERVATIVE_DEFAULT_PROFILE.caps.maxContextTokens).toBeGreaterThan(0);
   });
 });
@@ -91,26 +70,14 @@ describe("CONSERVATIVE_DEFAULT_PROFILE", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("getAgentProfile", () => {
-  test("returns claude profile with isDefault: false", () => {
-    const { profile, isDefault } = getAgentProfile("claude");
-    expect(profile).toBe(AGENT_PROFILES["claude"]);
+  test.each(["claude", "codex"] as const)("returns %s profile with isDefault: false", (name) => {
+    const { profile, isDefault } = getAgentProfile(name);
+    expect(profile).toBe(AGENT_PROFILES[name]);
     expect(isDefault).toBe(false);
   });
 
-  test("returns codex profile with isDefault: false", () => {
-    const { profile, isDefault } = getAgentProfile("codex");
-    expect(profile).toBe(AGENT_PROFILES["codex"]);
-    expect(isDefault).toBe(false);
-  });
-
-  test("returns CONSERVATIVE_DEFAULT_PROFILE for unknown agent", () => {
-    const { profile, isDefault } = getAgentProfile("unknown-agent-xyz");
-    expect(profile).toBe(CONSERVATIVE_DEFAULT_PROFILE);
-    expect(isDefault).toBe(true);
-  });
-
-  test("returns CONSERVATIVE_DEFAULT_PROFILE for empty string", () => {
-    const { profile, isDefault } = getAgentProfile("");
+  test.each(["unknown-agent-xyz", ""] as const)("returns CONSERVATIVE_DEFAULT_PROFILE for '%s'", (id) => {
+    const { profile, isDefault } = getAgentProfile(id);
     expect(profile).toBe(CONSERVATIVE_DEFAULT_PROFILE);
     expect(isDefault).toBe(true);
   });
@@ -126,30 +93,12 @@ describe("getAgentProfile", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AGENT_PROFILES — #508-H6 AC-27 built-in profiles", () => {
-  test("contains gemini profile", () => {
-    expect("gemini" in AGENT_PROFILES).toBe(true);
+  test.each(["gemini", "cursor", "local"] as const)("contains %s profile", (name) => {
+    expect(name in AGENT_PROFILES).toBe(true);
   });
 
-  test("contains cursor profile", () => {
-    expect("cursor" in AGENT_PROFILES).toBe(true);
-  });
-
-  test("contains local profile", () => {
-    expect("local" in AGENT_PROFILES).toBe(true);
-  });
-
-  test("getAgentProfile('gemini') returns isDefault: false", () => {
-    const { isDefault } = getAgentProfile("gemini");
-    expect(isDefault).toBe(false);
-  });
-
-  test("getAgentProfile('cursor') returns isDefault: false", () => {
-    const { isDefault } = getAgentProfile("cursor");
-    expect(isDefault).toBe(false);
-  });
-
-  test("getAgentProfile('local') returns isDefault: false", () => {
-    const { isDefault } = getAgentProfile("local");
+  test.each(["gemini", "cursor", "local"] as const)("getAgentProfile('%s') returns isDefault: false", (name) => {
+    const { isDefault } = getAgentProfile(name);
     expect(isDefault).toBe(false);
   });
 
@@ -157,11 +106,8 @@ describe("AGENT_PROFILES — #508-H6 AC-27 built-in profiles", () => {
     expect(AGENT_PROFILES["gemini"]?.caps.maxContextTokens).toBeGreaterThan(0);
   });
 
-  test("local toolSchemaDialect is none (conservative default for local LLMs)", () => {
+  test("local toolSchemaDialect is none and supportsToolCalls is false", () => {
     expect(AGENT_PROFILES["local"]?.caps.toolSchemaDialect).toBe("none");
-  });
-
-  test("local supportsToolCalls is false", () => {
     expect(AGENT_PROFILES["local"]?.caps.supportsToolCalls).toBe(false);
   });
 });
