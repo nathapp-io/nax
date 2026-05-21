@@ -653,33 +653,22 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     expect(prompt).toContain(text);
   });
 
-  test("prompt handles greenfield guidance", () => {
+  test("prompt: greenfield guidance, testStrategy order, workdir iff monorepo", () => {
     const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("greenfield project");
+    expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
+    expect(fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"])).toContain('"workdir"');
+    expect(prompt).not.toContain('"workdir"');
   });
 
   test.each(['"analysis"', '"contextFiles"'])("output schema includes %s field", (field) => {
     expect(fullPrompt(spec, ctx)).toContain(field);
   });
 
-  test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
-  });
-
-  test("workdir field in schema iff monorepo packages provided", () => {
-    expect(fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"])).toContain('"workdir"');
-    expect(fullPrompt(spec, ctx)).not.toContain('"workdir"');
-  });
-
-  test("taskContext excludes output schema — no Output Schema header or JSON field listing", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
+  test("taskContext excludes output schema; outputFormat contains schema but not spec steps", () => {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).not.toContain("Output Schema");
     expect(taskContext).not.toContain('"analysis": "string');
-  });
-
-  test("outputFormat contains schema and format directive but not spec steps", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
     expect(outputFormat).toContain("Output Schema");
     expect(outputFormat).toContain('"analysis"');
     expect(outputFormat).not.toContain("Step 1");
@@ -692,11 +681,13 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   const spec = "## Acceptance Criteria\n- AC-1: Returns 200 when project exists";
   const ctx = "## Codebase Structure\nsrc/projects/projects.service.ts";
 
-  test("spec anchor rules included in taskContext iff specContent is non-empty", () => {
-    const { taskContext: withSpec } = new PlanPromptBuilder().build(spec, ctx);
-    const { taskContext: withoutSpec } = new PlanPromptBuilder().build("", ctx);
+  test("spec anchor rules in taskContext iff specContent non-empty; suggestedCriteria in outputFormat iff spec non-empty", () => {
+    const { taskContext: withSpec, outputFormat: outWithSpec } = new PlanPromptBuilder().build(spec, ctx);
+    const { taskContext: withoutSpec, outputFormat: outWithoutSpec } = new PlanPromptBuilder().build("", ctx);
     expect(withSpec).toContain("Preserve spec ACs");
     expect(withoutSpec).not.toContain("Preserve spec ACs");
+    expect(outWithSpec).toContain("suggestedCriteria");
+    expect(outWithoutSpec).not.toContain("suggestedCriteria");
   });
 
   test.each([
@@ -706,13 +697,6 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   ])("taskContext with spec contains '%s'", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
     expect(taskContext).toContain(text);
-  });
-
-  test("outputFormat schema includes suggestedCriteria iff spec is non-empty", () => {
-    const { outputFormat: withSpec } = new PlanPromptBuilder().build(spec, ctx);
-    const { outputFormat: withoutSpec } = new PlanPromptBuilder().build("", ctx);
-    expect(withSpec).toContain("suggestedCriteria");
-    expect(withoutSpec).not.toContain("suggestedCriteria");
   });
 });
 
@@ -1157,7 +1141,7 @@ describe("runPlanPipeline (US-005)", () => {
   });
 
   describe("AC15: planCommand integration with pipeline mode", () => {
-    test("planCommand with resolvePlanMode() === 'pipeline' returns path from runPlanPipeline", async () => {
+    test("planCommand pipeline mode: returns path from runPlanPipeline and does not throw PLAN_PIPELINE_NOT_IMPLEMENTED", async () => {
       const agentManager = makePipelineAgentManager();
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
@@ -1172,28 +1156,8 @@ describe("runPlanPipeline (US-005)", () => {
       });
 
       expect(result).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
-    });
-
-    test("planCommand no longer throws PLAN_PIPELINE_NOT_IMPLEMENTED for pipeline mode", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const pipelineConfig = {
-        ...DEFAULT_CONFIG,
-        plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" as const },
-      };
-
-      const err = await planCommand(tempWorkdir, pipelineConfig as never, {
-        from: "/spec.md",
-        feature: "test-feature",
-      }).catch((e) => e);
-
-      if (err instanceof NaxError) {
-        expect((err as NaxError).code).not.toBe("PLAN_PIPELINE_NOT_IMPLEMENTED");
-      } else {
-        // Success path — planCommand returned without throwing
-        expect(typeof err).toBe("string");
-      }
+      // Verify no PLAN_PIPELINE_NOT_IMPLEMENTED was thrown (success path reached)
+      expect(typeof result).toBe("string");
     });
   });
 });
