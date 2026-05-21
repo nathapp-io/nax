@@ -52,43 +52,17 @@ describe("detectProjectStack — runtime detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — language detection", () => {
-  test("detects typescript from tsconfig.json", async () => {
+  test.each([
+    { file: "tsconfig.json", lang: "typescript" },
+    { file: "pyproject.toml", lang: "python" },
+    { file: "setup.py", lang: "python" },
+    { file: "Cargo.toml", lang: "rust" },
+    { file: "go.mod", lang: "go" },
+  ])("detects $file → $lang language", async ({ file, lang }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
+      await Bun.write(join(dir, file), file.endsWith(".json") ? "{}" : "");
       const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("typescript");
-    });
-  });
-
-  test("detects python from pyproject.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pyproject.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("python");
-    });
-  });
-
-  test("detects python from setup.py", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "setup.py"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("python");
-    });
-  });
-
-  test("detects rust from Cargo.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "Cargo.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("rust");
-    });
-  });
-
-  test("detects go from go.mod", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "go.mod"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("go");
+      expect(stack.language).toBe(lang);
     });
   });
 
@@ -105,52 +79,22 @@ describe("detectProjectStack — language detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — linter detection", () => {
-  test("detects biome from biome.json", async () => {
+  test.each([
+    { file: "biome.json", linter: "biome" },
+    { file: "biome.jsonc", linter: "biome" },
+    { file: ".eslintrc.json", linter: "eslint" },
+    { file: ".eslintrc.js", linter: "eslint", content: "module.exports = {}" },
+    { file: "eslint.config.js", linter: "eslint", content: "export default []" },
+    { file: "biome.json+.eslintrc.json", linter: "biome", extraFiles: [".eslintrc.json"] },
+  ])("detects $file → $linter linter", async ({ file, linter, content, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
+      const [primary] = file.split("+");
+      await Bun.write(join(dir, primary), content ?? (primary.endsWith(".json") ? "{}" : ""));
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
-    });
-  });
-
-  test("detects biome from biome.jsonc", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.jsonc"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
-    });
-  });
-
-  test("detects eslint from .eslintrc.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".eslintrc.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("detects eslint from .eslintrc.js", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".eslintrc.js"), "module.exports = {}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("detects eslint from eslint.config.js", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "eslint.config.js"), "export default []");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("biome takes priority over eslint when both present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
-      await Bun.write(join(dir, ".eslintrc.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
+      expect(stack.linter).toBe(linter);
     });
   });
 
@@ -167,44 +111,21 @@ describe("detectProjectStack — linter detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — monorepo detection", () => {
-  test("detects turborepo from turbo.json", async () => {
+  test.each([
+    { file: "turbo.json", mono: "turborepo" },
+    { file: "nx.json", mono: "nx" },
+    { file: "pnpm-workspace.yaml", mono: "pnpm-workspaces", content: "packages:\n  - 'packages/*'\n" },
+    { file: "package.json", mono: "bun-workspaces", content: JSON.stringify({ workspaces: ["packages/*"] }) },
+    { file: "turbo.json+nx.json", mono: "turborepo", extraFiles: ["nx.json"] },
+  ])("detects $file → $mono monorepo", async ({ file, mono, content, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
+      const [primary] = file.split("+");
+      await Bun.write(join(dir, primary), content ?? "{}");
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("turborepo");
-    });
-  });
-
-  test("detects nx from nx.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "nx.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("nx");
-    });
-  });
-
-  test("detects pnpm-workspaces from pnpm-workspace.yaml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("pnpm-workspaces");
-    });
-  });
-
-  test("detects bun-workspaces from package.json workspaces field", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("bun-workspaces");
-    });
-  });
-
-  test("turborepo takes priority over nx when both present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
-      await Bun.write(join(dir, "nx.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("turborepo");
+      expect(stack.monorepo).toBe(mono);
     });
   });
 
