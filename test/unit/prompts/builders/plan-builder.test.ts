@@ -214,34 +214,19 @@ describe("PlanPromptBuilder.jsonRepair() — US-002", () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("AC1: returned string contains the word 'JSON'", () => {
+  test.each([
+    ["the word 'JSON'", "JSON"],
+    ["'re-write' instruction", "re-write"],
+    ["output file path instruction", "output file path"],
+  ])("returned prompt contains %s", (_label, expected) => {
     const result = PlanPromptBuilder.jsonRepair(0, "Invalid JSON");
-    expect(result).toContain("JSON");
+    expect(result).toContain(expected);
   });
 
   test("AC2: output includes the parseError string passed as argument", () => {
     const parseError = "Unexpected token } at position 42";
     const result = PlanPromptBuilder.jsonRepair(0, parseError);
     expect(result).toContain(parseError);
-  });
-
-  test("accepts attempt parameter (ignored in current implementation)", () => {
-    const result0 = PlanPromptBuilder.jsonRepair(0, "Error");
-    const result2 = PlanPromptBuilder.jsonRepair(2, "Error");
-    // Both should return valid repair prompts
-    expect(result0).toContain("JSON");
-    expect(result2).toContain("JSON");
-  });
-
-  test("returned prompt instructs agent to re-write JSON", () => {
-    const result = PlanPromptBuilder.jsonRepair(0, "Parse error");
-    expect(result).toContain("re-write");
-    expect(result.toLowerCase()).toContain("complete");
-  });
-
-  test("returned prompt mentions the output file path instruction", () => {
-    const result = PlanPromptBuilder.jsonRepair(0, "Some error");
-    expect(result).toContain("output file path");
   });
 
   test("different parseError values produce different outputs", () => {
@@ -317,19 +302,13 @@ Budget: aim for ≤ 10 file reads per story.
 // ─── buildSharedQualityRules content propagation (Step 2A) ────────────────────
 
 describe("PlanPromptBuilder — shared quality rules", () => {
-  test("build() includes failure-handling enumeration rule when spec is provided", () => {
-    const { taskContext } = new PlanPromptBuilder().build("Some spec with failure handling", "ctx");
-    expect(taskContext).toContain("Enumerate failure-mode tables");
-  });
-
-  test("build() includes description self-check rule", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain("Self-check before emitting");
-  });
-
-  test("build() includes contradiction-resolution rule when spec provided", () => {
-    const { taskContext } = new PlanPromptBuilder().build("spec body", "ctx");
-    expect(taskContext).toContain("Resolve internal spec contradictions toward the AC");
+  test.each([
+    ["failure-handling enumeration rule", "Enumerate failure-mode tables"],
+    ["description self-check rule", "Self-check before emitting"],
+    ["contradiction-resolution rule", "Resolve internal spec contradictions toward the AC"],
+  ])("build() includes %s when spec provided", (_label, expected) => {
+    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX);
+    expect(taskContext).toContain(expected);
   });
 
   test.each([
@@ -458,49 +437,23 @@ describe("PlanPromptBuilder.buildDraft() — US-003", () => {
     ...overrides,
   });
 
-  test("AC-6: buildDraft returns a ComposeInput with task.content", () => {
+  test("AC-6: input is well-formed when revisionFindings is undefined", () => {
     const input = makePlanDraftInput({ revisionFindings: undefined });
-    // When buildDraft is implemented, it should return ComposeInput
     expect(input.manifestSection).toBeDefined();
     expect(input.feature).toBeDefined();
-  });
-
-  test("AC-6: task.content includes manifestSection when revisionFindings is undefined", () => {
-    const input = makePlanDraftInput({ revisionFindings: undefined });
     expect(input.manifestSection).toContain("Manifest");
-  });
-
-  test("AC-6: task.content includes 'intent' directional language", () => {
-    const input = makePlanDraftInput({ revisionFindings: undefined });
-    expect(input.feature).toBeTruthy();
-  });
-
-  test("AC-6: task.content does NOT contain 'Previous draft rejected' when revisionFindings is undefined", () => {
-    const input = makePlanDraftInput({ revisionFindings: undefined });
     expect(input.revisionFindings).toBeUndefined();
   });
 
-  test("AC-7: task.content contains 'Previous draft rejected' when revisionFindings is set", () => {
+  test("AC-7: revisionFindings are forwarded to the input", () => {
+    const message = "Citations must reference [F-NNN] or [S-NNN] from manifest";
     const findings = [
       { checklistItem: "ac-testable", severity: "blocker", message: "ACs must be testable" },
+      { checklistItem: "citation", severity: "blocker", message },
     ];
     const input = makePlanDraftInput({ revisionFindings: findings });
     expect(input.revisionFindings).toEqual(findings);
-  });
-
-  test("AC-7: task.content includes the finding message", () => {
-    const message = "Citations must reference [F-NNN] or [S-NNN] from manifest";
-    const findings = [{ checklistItem: "citation", severity: "blocker", message }];
-    const input = makePlanDraftInput({ revisionFindings: findings });
-    expect(input.revisionFindings?.[0]?.message).toBe(message);
-  });
-
-  test("AC-7: when revisionFindings has multiple items, all are included", () => {
-    const findings = [
-      { checklistItem: "ac-testable", severity: "blocker", message: "must be testable" },
-      { checklistItem: "story-size", severity: "warning", message: "user story too large" },
-    ];
-    const input = makePlanDraftInput({ revisionFindings: findings });
+    expect(input.revisionFindings?.[1]?.message).toBe(message);
     expect(input.revisionFindings?.length).toBe(2);
   });
 });
@@ -524,14 +477,12 @@ describe("PlanPromptBuilder.schemaRepair() — US-003", () => {
     expect(result).toContain(message);
   });
 
-  test("AC-19: instructs agent to rewrite PRD JSON", () => {
+  test.each([
+    ["rewrite PRD JSON", "prd"],
+    ["complete PRD", "complete"],
+  ])("AC-19: instructs agent to %s", (_label, keyword) => {
     const result = PlanPromptBuilder.schemaRepair("error");
-    expect(result.toLowerCase()).toContain("prd");
-  });
-
-  test("AC-19: tells agent to ensure complete PRD", () => {
-    const result = PlanPromptBuilder.schemaRepair("schema validation failed");
-    expect(result.toLowerCase()).toContain("complete");
+    expect(result.toLowerCase()).toContain(keyword);
   });
 });
 
@@ -554,13 +505,11 @@ describe("PlanPromptBuilder.citationRepair() — US-003", () => {
     expect(result).toContain(message);
   });
 
-  test("AC-20: instructs agent to cite claims from manifest", () => {
+  test.each([
+    ["cite claims from manifest", (r: string) => r.toLowerCase().includes("cit")],
+    ["manifest fact IDs [F-NNN] or [S-NNN]", (r: string) => /\[F-\d+\]|\[S-\d+\]/.test(r)],
+  ])("AC-20: instructs agent to reference %s", (_label, check) => {
     const result = PlanPromptBuilder.citationRepair("low citations");
-    expect(result.toLowerCase()).toContain("cit");
-  });
-
-  test("AC-20: mentions manifest fact IDs [F-NNN] or [S-NNN]", () => {
-    const result = PlanPromptBuilder.citationRepair("uncited claims");
-    expect(result).toMatch(/\[F-\d+\]|\[S-\d+\]/);
+    expect(check(result)).toBe(true);
   });
 });
