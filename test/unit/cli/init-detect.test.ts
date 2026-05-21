@@ -21,52 +21,21 @@ import { withTempDir } from "../../helpers/temp";
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — runtime detection", () => {
-  test("detects bun runtime from bun.lockb", async () => {
+  test.each([
+    { lockfile: "bun.lockb", runtime: "bun" },
+    { lockfile: "bunfig.toml", runtime: "bun" },
+    { lockfile: "package-lock.json", runtime: "node" },
+    { lockfile: "yarn.lock", runtime: "node" },
+    { lockfile: "pnpm-lock.yaml", runtime: "node" },
+    { lockfile: "bun.lockb+package-lock.json", runtime: "bun", extraFiles: ["package-lock.json"] },
+  ])("detects $lockfile → $runtime runtime", async ({ lockfile, runtime, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
+      await Bun.write(join(dir, lockfile.split("+")[0]!), lockfile.endsWith(".json") ? "{}" : "");
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
-    });
-  });
-
-  test("detects bun runtime from bunfig.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bunfig.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
-    });
-  });
-
-  test("detects node runtime from package-lock.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package-lock.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("detects node runtime from yarn.lock", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "yarn.lock"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("detects node runtime from pnpm-lock.yaml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pnpm-lock.yaml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("bun takes priority over node when both lockfiles present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
-      await Bun.write(join(dir, "package-lock.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
+      expect(stack.runtime).toBe(runtime);
     });
   });
 
