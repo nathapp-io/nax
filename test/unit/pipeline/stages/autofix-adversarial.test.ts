@@ -137,29 +137,12 @@ describe("extractFilesFromLintOutput", () => {
     expect(extractFilesFromLintOutput(output)).toEqual([]);
   });
 
-  test("ESLint stylish format — file header line", () => {
-    const output = `
-src/foo.test.ts
-  1:5   error  Non-null assertion  @typescript-eslint/no-non-null-assertion
-`.trim();
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("src/foo.test.ts");
-  });
-
-  test("Biome stylish format — path:line:col prefix", () => {
-    const output = `
-src/entity-store.integration.spec.ts:232:26 lint/suspicious/noNonNullAssertion ━━━━━
-  ✖ Non-null assertion operator is forbidden.
-  232 │ const result = store.search(projectId, "foo")!;
-`.trim();
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("src/entity-store.integration.spec.ts");
-  });
-
-  test("ESLint compact format — path:line:col: severity", () => {
-    const output = "src/foo.test.ts:1:5: error  Non-null assertion  @typescript-eslint/no-non-null-assertion";
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("src/foo.test.ts");
+  test.each([
+    ["ESLint stylish file header", "src/foo.test.ts\n  1:5   error  Non-null assertion  @typescript-eslint/no-non-null-assertion", "src/foo.test.ts"],
+    ["Biome stylish path:line:col", "src/entity-store.integration.spec.ts:232:26 lint/suspicious/noNonNullAssertion ━━━━━\n  ✖ Non-null assertion operator is forbidden.\n  232 │ const result = store.search(projectId, \"foo\")!;", "src/entity-store.integration.spec.ts"],
+    ["ESLint compact path:line:col: severity", "src/foo.test.ts:1:5: error  Non-null assertion  @typescript-eslint/no-non-null-assertion", "src/foo.test.ts"],
+  ] as const)("%s format — extracts file path", (_label, output, expected) => {
+    expect(extractFilesFromLintOutput(output)).toContain(expected);
   });
 
   test("multiple test files deduplicated", () => {
@@ -223,19 +206,11 @@ test/unit/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
     expect(extractFilesFromTypecheckOutput(output)).toEqual(["src/service.ts", "test/unit/service.test.ts"]);
   });
 
-  test("tsc pretty output extracts file path", () => {
-    const output = `
-src/service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.
-
-10 const x: B = value;
-         ~
-`.trim();
-    expect(extractFilesFromTypecheckOutput(output)).toEqual(["src/service.ts"]);
-  });
-
-  test("tsc pretty output extracts Windows drive-letter paths", () => {
-    const output = "C:\\repo\\src\\service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.";
-    expect(extractFilesFromTypecheckOutput(output)).toEqual(["C:\\repo\\src\\service.ts"]);
+  test.each<[string, string, string[]]>([
+    ["unix path", "src/service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.\n\n10 const x: B = value;\n         ~", ["src/service.ts"]],
+    ["Windows drive-letter path", "C:\\repo\\src\\service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.", ["C:\\repo\\src\\service.ts"]],
+  ])("tsc pretty output extracts %s", (_label, output, expected) => {
+    expect(extractFilesFromTypecheckOutput(output)).toEqual(expected);
   });
 });
 
