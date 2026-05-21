@@ -129,16 +129,11 @@ describe("isTestFile", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("extractFilesFromLintOutput", () => {
-  test("empty string → empty array", () => {
-    expect(extractFilesFromLintOutput("")).toEqual([]);
-  });
-
-  test("whitespace-only string → empty array", () => {
-    expect(extractFilesFromLintOutput("   \n  \n")).toEqual([]);
-  });
-
-  test("unparseable output (no file paths) → empty array", () => {
-    const output = "Lint failed\nSome warnings\nPlease fix the errors above\n";
+  test.each([
+    ["empty string", ""],
+    ["whitespace-only string", "   \n  \n"],
+    ["unparseable output (no file paths)", "Lint failed\nSome warnings\nPlease fix the errors above\n"],
+  ])("%s → empty array", (_label, output) => {
     expect(extractFilesFromLintOutput(output)).toEqual([]);
   });
 
@@ -213,12 +208,10 @@ test/unit/service.test.ts:5:1 lint/error message
 });
 
 describe("extractFilesFromTypecheckOutput", () => {
-  test("empty string → empty array", () => {
-    expect(extractFilesFromTypecheckOutput("")).toEqual([]);
-  });
-
-  test("unparseable output → empty array", () => {
-    const output = "Typecheck failed\nPlease fix errors";
+  test.each([
+    ["empty string", ""],
+    ["unparseable output", "Typecheck failed\nPlease fix errors"],
+  ])("%s → empty array", (_label, output) => {
     expect(extractFilesFromTypecheckOutput(output)).toEqual([]);
   });
 
@@ -251,37 +244,16 @@ src/service.ts:10:3 - error TS2322: Type 'A' is not assignable to type 'B'.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("splitFindingsByScope — structured findings path", () => {
-  test("non-routable check (build) → both buckets null", () => {
-    const check: ReviewCheckResult = {
-      check: "build",
-      success: false,
-      command: "bun run build",
-      exitCode: 1,
-      output: "build failed",
-      durationMs: 10,
-    };
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("adversarial check with no findings → both buckets null", () => {
-    const check = makeAdversarialCheck([]);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("adversarial check with undefined findings → both buckets null", () => {
-    const check: ReviewCheckResult = {
-      check: "adversarial",
-      success: false,
-      command: "adversarial-review",
-      exitCode: 1,
-      output: "output",
-      durationMs: 10,
-    };
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
+  test.each<[string, () => ReviewCheckResult]>([
+    ["non-routable check (build)", () => ({
+      check: "build" as const, success: false, command: "bun run build", exitCode: 1, output: "build failed", durationMs: 10,
+    })],
+    ["adversarial check with no findings", () => makeAdversarialCheck([])],
+    ["adversarial check with undefined findings", () => ({
+      check: "adversarial" as const, success: false, command: "adversarial-review", exitCode: 1, output: "output", durationMs: 10,
+    })],
+  ])("%s → both buckets null", (_label, makeCheck) => {
+    const { testFindings, sourceFindings } = splitFindingsByScope(makeCheck());
     expect(testFindings).toBeNull();
     expect(sourceFindings).toBeNull();
   });
