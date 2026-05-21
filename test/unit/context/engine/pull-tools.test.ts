@@ -187,22 +187,15 @@ describe("handleQueryNeighbor", () => {
     expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
-  test("returns neighbor content from CodeNeighborProvider", async () => {
-    // src/a.ts exists — sibling test is always added
+  test("returns neighbor content (string) for src/ file and empty string for file with no neighbors", async () => {
     _codeNeighborDeps.fileExists = async (p) => p.includes("src/a.ts");
     _codeNeighborDeps.readFile = async () => "";
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+    expect(typeof (await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget()))).toBe("string");
 
-    const result = await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
-    expect(typeof result).toBe("string");
-  });
-
-  test("returns empty string when file has no neighbors", async () => {
-    // scripts/ file — no sibling test, no forward/reverse deps
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
-    const result = await handleQueryNeighbor({ filePath: "scripts/build.ts" }, "/repo", makeBudget());
-    expect(result).toBe("");
+    expect(await handleQueryNeighbor({ filePath: "scripts/build.ts" }, "/repo", makeBudget())).toBe("");
   });
 
   test("truncates output to maxTokensPerCall * 4 characters", async () => {
@@ -347,48 +340,24 @@ describe("handleQueryFeatureContext", () => {
     expect(result).toContain("Section B");
   });
 
-  test("returns empty string when context.md does not exist", async () => {
+  test("returns empty string when context.md absent or no sections match filter", async () => {
     mockV1Provider(null);
-    const result = await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-    expect(result).toBe("");
-  });
+    expect(await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget())).toBe("");
 
-  test("filter returns only sections containing the keyword", async () => {
     mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
-    const result = await handleQueryFeatureContext(
-      { filter: "security" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toContain("Security");
-    expect(result).not.toContain("Conventions");
+    expect(await handleQueryFeatureContext({ filter: "nonexistent-keyword-xyz" }, STORY, CONFIG, "/repo", makeBudget())).toBe("");
   });
 
-  test("filter is case-insensitive", async () => {
+  test("filter returns matching sections (case-insensitive)", async () => {
+    mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
+    const lower = await handleQueryFeatureContext({ filter: "security" }, STORY, CONFIG, "/repo", makeBudget());
+    expect(lower).toContain("Security");
+    expect(lower).not.toContain("Conventions");
+
     mockV1Provider("## Async Patterns\nPrefer async/await.\n\n## Other\nUnrelated.");
-    const result = await handleQueryFeatureContext(
-      { filter: "ASYNC" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toContain("Async Patterns");
-    expect(result).not.toContain("Other");
-  });
-
-  test("filter returns empty string when no sections match", async () => {
-    mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
-    const result = await handleQueryFeatureContext(
-      { filter: "nonexistent-keyword-xyz" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toBe("");
+    const upper = await handleQueryFeatureContext({ filter: "ASYNC" }, STORY, CONFIG, "/repo", makeBudget());
+    expect(upper).toContain("Async Patterns");
+    expect(upper).not.toContain("Other");
   });
 
   test("filter with no ## headings returns full content (flat context.md)", async () => {
@@ -440,29 +409,22 @@ describe("handleQueryFeatureContext", () => {
     expect(call?.data?.storyId).toBe("US-001");
   });
 
-  test("logger emit includes resultCount and resultBytes", async () => {
+  test("logger includes resultCount and resultBytes (>0 when content exists, 0 when none)", async () => {
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
-    const content = "## Section\nSome content here";
-    mockV1Provider(content);
 
+    mockV1Provider("## Section\nSome content here");
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
+    const withContent = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(withContent?.data?.resultCount).toBeGreaterThan(0);
+    expect(withContent?.data?.resultBytes).toBeGreaterThan(0);
 
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBeGreaterThan(0);
-    expect(call?.data?.resultBytes).toBeGreaterThan(0);
-  });
-
-  test("logger emit includes resultCount=0 when no context exists", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    mockLogger.calls.length = 0;
     mockV1Provider(null);
-
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBe(0);
-    expect(call?.data?.resultBytes).toBe(0);
+    const noContent = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(noContent?.data?.resultCount).toBe(0);
+    expect(noContent?.data?.resultBytes).toBe(0);
   });
 
   test("logger emit includes keyword=null when no filter is provided", async () => {
