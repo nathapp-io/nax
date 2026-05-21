@@ -220,7 +220,7 @@ describe("curatorStatus", () => {
   });
 
   describe("observation counts", () => {
-    test("prints observation count by kind", async () => {
+    test("prints observation count by kind and total count", async () => {
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
       writeObservations(runDir, [
@@ -235,40 +235,30 @@ describe("curatorStatus", () => {
       expect(out).toContain("verdict");
       expect(out).toContain("review-finding");
       expect(out).toContain("escalation");
-    });
-
-    test("prints total observation count", async () => {
-      const runDir = join(outputDir, "runs", "run-001");
-      mkdirSync(runDir, { recursive: true });
-      writeObservations(runDir, [makeObservation("verdict"), makeObservation("verdict"), makeObservation("escalation")]);
-
-      await curatorStatus({ run: "run-001" });
-      const out = capturedOutput.join("\n");
-      expect(out).toMatch(/3/);
+      expect(out).toMatch(/4/);
     });
   });
 
   describe("proposal markdown", () => {
-    test("prints proposal markdown when curator-proposals.md exists", async () => {
+    test("prints proposal markdown when file exists; reports no proposals when absent", async () => {
+      // proposals file exists
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
       writeObservations(runDir, [makeObservation("verdict")]);
       writeProposalsMd(runDir, "# Curator Proposals\n\n- [ ] [HIGH] H1: some proposal\n");
-
       await curatorStatus({ run: "run-001" });
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("Curator Proposals");
-      expect(out).toContain("H1");
-    });
+      const outWithProposals = capturedOutput.join("\n");
+      expect(outWithProposals).toContain("Curator Proposals");
+      expect(outWithProposals).toContain("H1");
 
-    test("reports no proposals when curator-proposals.md does not exist", async () => {
-      const runDir = join(outputDir, "runs", "run-001");
-      mkdirSync(runDir, { recursive: true });
-      writeObservations(runDir, [makeObservation("verdict")]);
-
-      await curatorStatus({ run: "run-001" });
-      const out = capturedOutput.join("\n");
-      expect(out.toLowerCase()).toMatch(/no proposals|proposals not found|no proposals file/);
+      // no proposals file
+      capturedOutput.length = 0;
+      const runDir2 = join(outputDir, "runs", "run-002");
+      mkdirSync(runDir2, { recursive: true });
+      writeObservations(runDir2, [makeObservation("verdict")]);
+      await curatorStatus({ run: "run-002" });
+      const outNoProposals = capturedOutput.join("\n");
+      expect(outNoProposals.toLowerCase()).toMatch(/no proposals|proposals not found|no proposals file/);
     });
   });
 });
@@ -651,32 +641,20 @@ describe("curatorDryrun", () => {
 
 describe("curatorGc", () => {
   describe("no-op cases", () => {
-    test("is a no-op when rollup file does not exist", async () => {
+    test("is a no-op when rollup file does not exist or fewer runIds than keep count", async () => {
+      // rollup file doesn't exist
       let writeCalled = false;
-      _deps.writeFile = mock(async (_p: string, _content: string) => {
-        writeCalled = true;
-      });
-
+      _deps.writeFile = mock(async (_p: string, _content: string) => { writeCalled = true; });
       await curatorGc({ keep: 50 });
       expect(writeCalled).toBe(false);
-    });
 
-    test("is a no-op when fewer unique runIds exist than keep count", async () => {
-      writeRollup(rollupPath, [
-        makeObservation("verdict", "run-001"),
-        makeObservation("verdict", "run-002"),
-      ]);
-
+      // fewer unique runIds than keep
+      writeRollup(rollupPath, [makeObservation("verdict", "run-001"), makeObservation("verdict", "run-002")]);
       let writtenContent: string | undefined;
-      _deps.writeFile = mock(async (_p: string, content: string) => {
-        writtenContent = content;
-      });
-
+      _deps.writeFile = mock(async (_p: string, content: string) => { writtenContent = content; });
       await curatorGc({ keep: 50 });
-      // Either not called or rewrites with all rows intact
       if (writtenContent !== undefined) {
-        const lines = writtenContent.trim().split("\n").filter(Boolean);
-        expect(lines.length).toBe(2);
+        expect(writtenContent.trim().split("\n").filter(Boolean).length).toBe(2);
       }
     });
   });
