@@ -460,47 +460,24 @@ describe("mergePackageConfig — project field (US-001)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () => {
-  test("root context.v2.stages is preserved when no package override", () => {
+  test("root context.v2.stages preserved when no override; package override sets a stage budget", () => {
     const root = makeRoot();
-    const result = mergePackageConfig(root, { quality: { requireTests: false } } as Partial<NaxConfig>);
-    expect(result.context.v2.stages).toEqual({});
-  });
-
-  test("package override sets a stage budget", () => {
-    const root = makeRoot();
+    expect(mergePackageConfig(root, { quality: { requireTests: false } } as Partial<NaxConfig>).context.v2.stages).toEqual({});
     const result = mergePackageConfig(root, {
       context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
     } as Partial<NaxConfig>);
     expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
   });
 
-  test("package override does not clobber other stages from root", () => {
-    const root = {
-      ...makeRoot(),
-      context: {
-        ...makeRoot().context,
-        v2: { ...makeRoot().context.v2, stages: { verify: { budgetTokens: 4_000 } } },
-      },
-    };
-    const result = mergePackageConfig(root, {
-      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
-    expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
-    expect(result.context.v2.stages.verify?.budgetTokens).toBe(4_000);
-  });
+  test("package override does not clobber other stages; override wins for same stage", () => {
+    const rootBase = { ...makeRoot(), context: { ...makeRoot().context, v2: { ...makeRoot().context.v2, stages: { verify: { budgetTokens: 4_000 } } } } };
+    const noClobber = mergePackageConfig(rootBase, { context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]> } as Partial<NaxConfig>);
+    expect(noClobber.context.v2.stages.execution?.budgetTokens).toBe(15_000);
+    expect(noClobber.context.v2.stages.verify?.budgetTokens).toBe(4_000);
 
-  test("package override wins over root for same stage", () => {
-    const root = {
-      ...makeRoot(),
-      context: {
-        ...makeRoot().context,
-        v2: { ...makeRoot().context.v2, stages: { execution: { budgetTokens: 8_000 } } },
-      },
-    };
-    const result = mergePackageConfig(root, {
-      context: { v2: { stages: { execution: { budgetTokens: 20_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
-    expect(result.context.v2.stages.execution?.budgetTokens).toBe(20_000);
+    const rootWithExec = { ...makeRoot(), context: { ...makeRoot().context, v2: { ...makeRoot().context.v2, stages: { execution: { budgetTokens: 8_000 } } } } };
+    const overrideWins = mergePackageConfig(rootWithExec, { context: { v2: { stages: { execution: { budgetTokens: 20_000 } } } } as unknown as Partial<NaxConfig["context"]> } as Partial<NaxConfig>);
+    expect(overrideWins.context.v2.stages.execution?.budgetTokens).toBe(20_000);
   });
 
   test("does not mutate root context.v2.stages", () => {
