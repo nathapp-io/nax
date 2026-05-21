@@ -22,7 +22,7 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.create()", () => {
-  test("returns a descriptor with CREATED state, correct fields, and empty protocolIds/completedStages", () => {
+  test("returns a descriptor with CREATED state, correct fields, empty protocolIds/completedStages; copy is immutable", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.state).toBe("CREATED");
@@ -32,14 +32,8 @@ describe("SessionManager.create()", () => {
     expect(desc.protocolIds.recordId).toBeNull();
     expect(desc.protocolIds.sessionId).toBeNull();
     expect(desc.completedStages).toHaveLength(0);
-  });
-
-  test("returns an immutable copy (mutations don't affect registry)", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     (desc as { state: SessionState }).state = "RUNNING";
-    const fetched = mgr.get(desc.id);
-    expect(fetched?.state).toBe("CREATED");
+    expect(mgr.get(desc.id)?.state).toBe("CREATED");
   });
 
   test("storyId and featureName are optional", () => {
@@ -366,19 +360,14 @@ describe("SessionManager.transition()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.listActive()", () => {
-  test("empty manager: returns empty array", () => {
+  test("returns empty array when empty; excludes COMPLETED and FAILED sessions", () => {
     const mgr = new SessionManager();
     expect(mgr.listActive()).toHaveLength(0);
-  });
-
-  test("excludes COMPLETED and FAILED sessions", () => {
-    const mgr = new SessionManager();
     const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     const s2 = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr.transition(s1.id, "RUNNING");
     mgr.transition(s1.id, "COMPLETED");
-    const active = mgr.listActive();
-    const ids = active.map((s) => s.id);
+    const ids = mgr.listActive().map((s) => s.id);
     expect(ids).not.toContain(s1.id);
     expect(ids).toContain(s2.id);
   });
