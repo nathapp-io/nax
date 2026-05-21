@@ -175,16 +175,9 @@ describe("planCriticLlmOp.model() resolution — AC4-5", () => {
     expect(result).toBe("fast");
   });
 
-  test("returns config.plan.criticModel when provided — AC5", () => {
-    const ctx = makeBuildCtx({ criticModel: "balanced" });
-    const result = planCriticLlmOp.model?.({}, ctx);
-    expect(result).toBe("balanced");
-  });
-
-  test("returns custom tier string if criticModel is set", () => {
-    const ctx = makeBuildCtx({ criticModel: "powerful" });
-    const result = planCriticLlmOp.model?.({}, ctx);
-    expect(result).toBe("powerful");
+  test.each(["balanced", "powerful"] as const)("returns criticModel '%s' when provided — AC5", (model) => {
+    const ctx = makeBuildCtx({ criticModel: model });
+    expect(planCriticLlmOp.model?.({}, ctx)).toBe(model);
   });
 
   test("resolves model from context config — not from input", () => {
@@ -406,14 +399,11 @@ describe("CriticPromptBuilder.build() — AC15", () => {
     expect(typeof (CriticPromptBuilder as any)[method]).toBe("function");
   });
 
-  test("jsonRepair returns non-empty string for error messages", () => {
-    const result = CriticPromptBuilder.jsonRepair(false, "Error message");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("schemaRepair returns non-empty string for error messages", () => {
-    const result = CriticPromptBuilder.schemaRepair("Error message");
+  test.each<[string, () => string]>([
+    ["jsonRepair", () => CriticPromptBuilder.jsonRepair(false, "Error message")],
+    ["schemaRepair", () => CriticPromptBuilder.schemaRepair("Error message")],
+  ])("%s returns non-empty string", (_method, call) => {
+    const result = call();
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
