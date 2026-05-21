@@ -184,44 +184,16 @@ describe("detectProjectProfile — language: python", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectProfile — type: web", () => {
-  test("returns type: 'web' when package.json deps include react", async () => {
+  test.each([
+    { dep: "react", version: "^18.0.0" },
+    { dep: "next", version: "^14.0.0" },
+    { dep: "vue", version: "^3.0.0" },
+    { dep: "nuxt", version: "^3.0.0" },
+  ])("returns type: 'web' when package.json deps include $dep", async ({ dep, version }) => {
     await withTempDir(async (dir) => {
       await Bun.write(
         join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { react: "^18.0.0" } }),
-      );
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.type).toBe("web");
-    });
-  });
-
-  test("returns type: 'web' when package.json deps include next", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { next: "^14.0.0" } }),
-      );
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.type).toBe("web");
-    });
-  });
-
-  test("returns type: 'web' when package.json deps include vue", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { vue: "^3.0.0" } }),
-      );
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.type).toBe("web");
-    });
-  });
-
-  test("returns type: 'web' when package.json deps include nuxt", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { nuxt: "^3.0.0" } }),
+        JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }),
       );
       const profile = await detectProjectProfile(dir, {});
       expect(profile.type).toBe("web");
@@ -234,33 +206,15 @@ describe("detectProjectProfile — type: web", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectProfile — type: api", () => {
-  test("returns type: 'api' when package.json deps include express", async () => {
+  test.each([
+    { dep: "express", version: "^4.0.0" },
+    { dep: "fastify", version: "^4.0.0" },
+    { dep: "hono", version: "^4.0.0" },
+  ])("returns type: 'api' when package.json deps include $dep", async ({ dep, version }) => {
     await withTempDir(async (dir) => {
       await Bun.write(
         join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { express: "^4.0.0" } }),
-      );
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.type).toBe("api");
-    });
-  });
-
-  test("returns type: 'api' when package.json deps include fastify", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { fastify: "^4.0.0" } }),
-      );
-      const profile = await detectProjectProfile(dir, {});
-      expect(profile.type).toBe("api");
-    });
-  });
-
-  test("returns type: 'api' when package.json deps include hono", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "myapp", dependencies: { hono: "^4.0.0" } }),
+        JSON.stringify({ name: "myapp", dependencies: { [dep]: version } }),
       );
       const profile = await detectProjectProfile(dir, {});
       expect(profile.type).toBe("api");
