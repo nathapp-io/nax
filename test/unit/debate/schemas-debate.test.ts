@@ -93,18 +93,9 @@ describe("DebateStageConfigSchema — proposers field", () => {
 // ─── AC 4: preDebatePhase field ───────────────────────────────────────────────
 
 describe("DebateStageConfigSchema — preDebatePhase field", () => {
-  it("accepts preDebatePhase.kind = 'grounder'", () => {
-    const result = DebateConfigSchema.parse({
-      stages: { plan: { preDebatePhase: { kind: "grounder" } } },
-    });
-    expect(result.stages.plan.preDebatePhase?.kind).toBe("grounder");
-  });
-
-  it("accepts preDebatePhase.kind = 'custom'", () => {
-    const result = DebateConfigSchema.parse({
-      stages: { plan: { preDebatePhase: { kind: "custom" } } },
-    });
-    expect(result.stages.plan.preDebatePhase?.kind).toBe("custom");
+  it.each(["grounder", "custom"] as const)("accepts preDebatePhase.kind = '%s'", (kind) => {
+    const result = DebateConfigSchema.parse({ stages: { plan: { preDebatePhase: { kind } } } });
+    expect(result.stages.plan.preDebatePhase?.kind).toBe(kind);
   });
 
   it("strips extra unknown fields from preDebatePhase (no longer strict)", () => {
@@ -126,12 +117,6 @@ describe("DebateConfigSchema — grounder block", () => {
     expect(result.grounder.timeoutSeconds).toBe(1800);
   });
 
-  it("parse({ grounder: { model: 'balanced' } }) returns grounder.model === 'balanced'", () => {
-    const result = DebateConfigSchema.parse({ grounder: { model: "balanced" } });
-    expect(result.grounder.model).toBe("balanced");
-    expect(result.grounder.timeoutSeconds).toBe(1800);
-  });
-
   it("parse with object model returns grounder.model.agent === 'claude'", () => {
     const result = DebateConfigSchema.parse({
       grounder: { model: { agent: "claude", model: "claude-opus-4-7" } },
@@ -141,10 +126,13 @@ describe("DebateConfigSchema — grounder block", () => {
     expect(model.model).toBe("claude-opus-4-7");
   });
 
-  it("parse({ grounder: { timeoutSeconds: 600 } }) returns timeoutSeconds=600, model defaults to 'fast'", () => {
-    const result = DebateConfigSchema.parse({ grounder: { timeoutSeconds: 600 } });
-    expect(result.grounder.timeoutSeconds).toBe(600);
-    expect(result.grounder.model).toBe("fast");
+  it("single grounder override keeps other field at default", () => {
+    const byModel = DebateConfigSchema.parse({ grounder: { model: "balanced" } });
+    expect(byModel.grounder.model).toBe("balanced");
+    expect(byModel.grounder.timeoutSeconds).toBe(1800);
+    const byTimeout = DebateConfigSchema.parse({ grounder: { timeoutSeconds: 600 } });
+    expect(byTimeout.grounder.timeoutSeconds).toBe(600);
+    expect(byTimeout.grounder.model).toBe("fast");
   });
 });
 
@@ -204,19 +192,12 @@ describe("DebateStageConfigSchema — verifier-pick selector (Phase 2 AC1)", () 
 // ─── AC 2 (Phase 2): onBlocker / onFailure ───────────────────────────────────
 
 describe("DebateStageConfigSchema — onBlocker / onFailure (Phase 2 AC2)", () => {
-  it("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker 'block'", () => {
+  it.each(["block", "tag-expert"] as const)("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker '%s'", (onBlocker) => {
     const result = DebateConfigSchema.parse({
-      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker: "block" } } },
+      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker } } },
     });
     expect(result.stages.plan.postDebateVerifier?.kind).toBe("plan-checklist");
-    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe("block");
-  });
-
-  it("accepts postDebateVerifier.kind 'plan-checklist' with onBlocker 'tag-expert'", () => {
-    const result = DebateConfigSchema.parse({
-      stages: { plan: { postDebateVerifier: { kind: "plan-checklist", onBlocker: "tag-expert" } } },
-    });
-    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe("tag-expert");
+    expect((result.stages.plan.postDebateVerifier as { onBlocker?: string })?.onBlocker).toBe(onBlocker);
   });
 
   it("rejects invalid postDebateVerifier.onBlocker value with ZodError", () => {
@@ -227,18 +208,11 @@ describe("DebateStageConfigSchema — onBlocker / onFailure (Phase 2 AC2)", () =
     ).toThrow(z.ZodError);
   });
 
-  it("accepts preDebatePhase.kind 'grounder' with onFailure 'degrade'", () => {
+  it.each(["degrade", "block"] as const)("accepts preDebatePhase.kind 'grounder' with onFailure '%s'", (onFailure) => {
     const result = DebateConfigSchema.parse({
-      stages: { plan: { preDebatePhase: { kind: "grounder", onFailure: "degrade" } } },
+      stages: { plan: { preDebatePhase: { kind: "grounder", onFailure } } },
     });
-    expect((result.stages.plan.preDebatePhase as { onFailure?: string })?.onFailure).toBe("degrade");
-  });
-
-  it("accepts preDebatePhase.kind 'grounder' with onFailure 'block'", () => {
-    const result = DebateConfigSchema.parse({
-      stages: { plan: { preDebatePhase: { kind: "grounder", onFailure: "block" } } },
-    });
-    expect((result.stages.plan.preDebatePhase as { onFailure?: string })?.onFailure).toBe("block");
+    expect((result.stages.plan.preDebatePhase as { onFailure?: string })?.onFailure).toBe(onFailure);
   });
 
   it("rejects invalid preDebatePhase.onFailure value with ZodError", () => {
@@ -253,14 +227,11 @@ describe("DebateStageConfigSchema — onBlocker / onFailure (Phase 2 AC2)", () =
 // ─── AC 3 (Phase 2): evidenceMode plan-only ──────────────────────────────────
 
 describe("DebateConfigSchema — evidenceMode (Phase 2 AC3)", () => {
-  it("accepts stages.plan.evidenceMode === 'asymmetric'", () => {
-    const result = DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "asymmetric" } } });
-    expect((result.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("asymmetric");
-  });
-
-  it("defaults stages.plan.evidenceMode to 'current' when omitted", () => {
-    const result = DebateConfigSchema.parse({});
-    expect((result.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("current");
+  it("accepts 'asymmetric' and defaults to 'current' when omitted", () => {
+    const explicit = DebateConfigSchema.parse({ stages: { plan: { evidenceMode: "asymmetric" } } });
+    expect((explicit.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("asymmetric");
+    const defaulted = DebateConfigSchema.parse({});
+    expect((defaulted.stages.plan as { evidenceMode?: string }).evidenceMode).toBe("current");
   });
 
   it("rejects unknown evidenceMode value with ZodError", () => {
