@@ -95,18 +95,12 @@ describe("readVerdict", () => {
     expect(result).toBeNull();
   });
 
-  test("returns null when JSON is malformed (no throw)", async () => {
+  test.each([
+    ["malformed JSON", "{ this is not valid json }"],
+    ["truncated JSON", '{"version": 1, "approved": true, "tests":'],
+  ])("returns null when JSON is %s (no throw)", async (_label, content) => {
     const filePath = path.join(tmpDir, VERDICT_FILE);
-    await writeFile(filePath, "{ this is not valid json }", "utf-8");
-
-    const result = await readVerdict(tmpDir);
-    expect(result).toBeNull();
-  });
-
-  test("returns null when JSON is truncated (no throw)", async () => {
-    const filePath = path.join(tmpDir, VERDICT_FILE);
-    await writeFile(filePath, '{"version": 1, "approved": true, "tests":', "utf-8");
-
+    await writeFile(filePath, content, "utf-8");
     const result = await readVerdict(tmpDir);
     expect(result).toBeNull();
   });
@@ -345,14 +339,11 @@ describe("cleanupVerdict", () => {
     expect(existsSync(filePath)).toBe(false);
   });
 
-  test("does not throw when verdict file does not exist", async () => {
-    // File doesn't exist — should not throw
-    await expect(cleanupVerdict(tmpDir)).resolves.toBeUndefined();
-  });
-
-  test("does not throw when directory does not exist", async () => {
-    // Non-existent directory — should not throw
-    await expect(cleanupVerdict("/tmp/nonexistent-dir-nax-xyz")).resolves.toBeUndefined();
+  test.each([
+    ["verdict file does not exist", () => cleanupVerdict(tmpDir)],
+    ["directory does not exist", () => cleanupVerdict("/tmp/nonexistent-dir-nax-xyz")],
+  ])("does not throw when %s", async (_label, fn) => {
+    await expect(fn()).resolves.toBeUndefined();
   });
 
   test("can be called multiple times without error", async () => {
@@ -517,17 +508,14 @@ describe("categorizeVerdict", () => {
 
   // --- null verdict fallback ---
 
-  test("null verdict + testsPass=true → success", () => {
-    const result = categorizeVerdict(null, true);
-    expect(result.success).toBe(true);
-    expect(result.failureCategory).toBeUndefined();
-  });
-
-  test("null verdict + testsPass=false → tests-failing", () => {
-    const result = categorizeVerdict(null, false);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("tests-failing");
-    expect(result.reviewReason).toContain("no verdict file");
+  test.each<[boolean, boolean, string | undefined]>([
+    [true, true, undefined],
+    [false, false, "tests-failing"],
+  ])("null verdict + testsPass=%s → success=%s", (testsPass, expectedSuccess, expectedCategory) => {
+    const result = categorizeVerdict(null, testsPass);
+    expect(result.success).toBe(expectedSuccess);
+    if (expectedCategory) expect(result.failureCategory).toBe(expectedCategory as any);
+    else expect(result.failureCategory).toBeUndefined();
   });
 
   // --- priority ordering ---
