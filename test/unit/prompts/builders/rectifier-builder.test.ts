@@ -118,32 +118,12 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).not.toContain("Structured findings:");
   });
 
-  test("CONTRADICTION_ESCAPE_HATCH is present", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
+  test("contains UNRESOLVED escape hatch, fix instructions, and excludes story sections", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], 2);
     expect(prompt).toContain("UNRESOLVED:");
-  });
-
-  test("instructs agent to fix in priority order, verify, and commit", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
     expect(prompt).toContain("Fix in priority order");
     expect(prompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
     expect(prompt).toContain("Commit your changes when all checks pass");
-  });
-
-  test("does NOT include story title or acceptance criteria sections", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
     expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
     expect(prompt).not.toMatch(/^Story:/m);
     expect(prompt.toLowerCase()).not.toContain("constitution");
@@ -165,36 +145,15 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
 });
 
 describe("RectifierPromptBuilder.continuation", () => {
-  test("contains opening signal that this is a follow-up attempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "Unexpected token at line 10")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
-  });
-
-  test("contains error output from failedChecks", () => {
+  test("contains follow-up signal, error output from all checks, and check name header", () => {
     const checks = [
-      makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable"),
+      makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable", 2),
       makeCheck("typecheck", "src/index.ts(10,3): error TS2304: Cannot find name 'foo'"),
     ];
-
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
+    const prompt = RectifierPromptBuilder.continuation(checks, ...Object.values(DEFAULTS) as [number, number, number]);
+    expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
     expect(prompt).toContain("error TS2345: Argument of type 'string' is not assignable");
     expect(prompt).toContain("src/index.ts(10,3): error TS2304: Cannot find name 'foo'");
-  });
-
-  test("contains check name and exit code in section header", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "some lint error", 2)],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
     expect(prompt).toContain("### lint (exit 2)");
   });
 
@@ -488,11 +447,8 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts";
 
 describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
-  test("includes a section titled 'Exception 4 — Mock-structure handoff'", () => {
+  test("includes Exception 4 section title and TEST_EDIT_REASON: mock_structure field", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("Exception 4 — Mock-structure handoff");
-  });
-
-  test("lists TEST_EDIT_REASON: mock_structure as a required field", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
   });
 
@@ -641,21 +597,11 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
     };
   }
 
-  test("blockingThreshold='error' drops warning and info from firstAttemptDelta", () => {
+  test("blockingThreshold='error' (default) drops advisory and info findings, keeps error", () => {
     const checks = [makeMixedSeverityCheck()];
     const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
-    // With default threshold="error", only error findings appear
     expect(prompt).toContain("a.ts:1");
     expect(prompt).not.toContain("b.ts:2");
-    expect(prompt).not.toContain("c.ts:3");
-  });
-
-  test("blockingThreshold='warning' includes warnings but not info", () => {
-    const checks = [makeMixedSeverityCheck()];
-    // firstAttemptDelta doesn't currently accept threshold — defaulting to error
-    // This test verifies the default behavior is consistent
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
-    expect(prompt).toContain("a.ts:1");
     expect(prompt).not.toContain("c.ts:3");
   });
 
@@ -669,26 +615,16 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
 });
 
 describe("RectifierPromptBuilder.failingTestContext", () => {
-  test("returns a string containing test failure details", () => {
+  test("returns string with failure details; handles empty array gracefully", () => {
     const findings: Finding[] = [
-      {
-        source: "test-runner",
-        severity: "error",
-        category: "failed-test",
-        rule: "should handle edge case",
-        file: "test/unit/foo.test.ts",
-        message: "Expected 1 but got 0",
-      },
+      { source: "test-runner", severity: "error", category: "failed-test", rule: "should handle edge case", file: "test/unit/foo.test.ts", message: "Expected 1 but got 0" },
     ];
     const result = RectifierPromptBuilder.failingTestContext(findings);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
     expect(result).toContain("should handle edge case");
     expect(result).toContain("Expected 1 but got 0");
-  });
-
-  test("handles empty findings array", () => {
-    const result = RectifierPromptBuilder.failingTestContext([]);
-    expect(typeof result).toBe("string");
+    const emptyResult = RectifierPromptBuilder.failingTestContext([]);
+    expect(typeof emptyResult).toBe("string");
   });
 });
