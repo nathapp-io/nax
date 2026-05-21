@@ -49,13 +49,16 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
       builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
       builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
 
-      const plan = builder.build({
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp/x",
-        agentName: "claude",
-        storyId: "US-001",
-      });
+      const plan = builder.build(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp/x",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        { isThreeSession: true },
+      );
       await plan.run();
 
       expect((capturedInput as { beforeRef?: string }).beforeRef).toBe("abc1234");
@@ -85,13 +88,16 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
         input: { story: { id: "US-001" } as any },
       });
 
-      const plan = builder.build({
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp/x",
-        agentName: "claude",
-        storyId: "US-001",
-      });
+      const plan = builder.build(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp/x",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        { isThreeSession: true },
+      );
       await plan.run();
 
       // implementer IS a TDD phase — should have beforeRef
@@ -146,13 +152,16 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       const builder = new StoryOrchestratorBuilder();
       builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
       builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
-      const plan = builder.build({
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp/x",
-        agentName: "claude",
-        storyId: "US-001",
-      });
+      const plan = builder.build(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp/x",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        { isThreeSession: true },
+      );
       await plan.run();
     } finally {
       logger!.info = origInfo;
@@ -188,13 +197,16 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       const builder = new StoryOrchestratorBuilder();
       builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
       builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
-      const plan = builder.build({
-        runtime,
-        packageView: runtime.packages.repo(),
-        packageDir: "/tmp/x",
-        agentName: "claude",
-        storyId: "US-001",
-      });
+      const plan = builder.build(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp/x",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        { isThreeSession: true },
+      );
       await plan.run();
     } finally {
       logger!.info = origInfo;
@@ -233,6 +245,58 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       const builder = new StoryOrchestratorBuilder();
       builder.addTestWriter({ op: testWriterOp, input: { story: { id: "US-001" } as any } });
       builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      const plan = builder.build(
+        {
+          runtime,
+          packageView: runtime.packages.repo(),
+          packageDir: "/tmp/x",
+          agentName: "claude",
+          storyId: "US-001",
+        },
+        { isThreeSession: true },
+      );
+      await plan.run();
+    } finally {
+      logger!.info = origInfo;
+      await runtime.close();
+    }
+
+    expect(logs.some((l) => l.stage === "tdd" && l.msg === "Isolation maintained")).toBe(true);
+  });
+
+  test("single-session strategy (isThreeSession=false) skips TDD logs and beforeRef capture", async () => {
+    const { StoryOrchestratorBuilder } = await import("@/execution");
+    const { implementerOp } = await import("@/operations");
+
+    let capturedInput: unknown;
+    let captureGitRefCalls = 0;
+    _storyOrchestratorDeps.callOp = (async (_ctx: unknown, _op: unknown, input: unknown) => {
+      capturedInput = input;
+      return {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => {
+      captureGitRefCalls += 1;
+      return "abc1234";
+    };
+
+    const logs: Array<{ stage: string; msg: string }> = [];
+    const logger = getSafeLogger();
+    const origInfo = logger!.info;
+    logger!.info = ((stage: string, msg: string) => {
+      logs.push({ stage, msg });
+    }) as any;
+
+    const runtime = makeTestRuntime();
+    try {
+      const builder = new StoryOrchestratorBuilder();
+      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      // build() defaults to isThreeSession=false — same as the single-session ("no-test") path
       const plan = builder.build({
         runtime,
         packageView: runtime.packages.repo(),
@@ -246,6 +310,13 @@ describe("StoryOrchestrator runPhase — log emission", () => {
       await runtime.close();
     }
 
-    expect(logs.some((l) => l.stage === "tdd" && l.msg === "Isolation maintained")).toBe(true);
+    // No git ref capture — saves a spawn per phase on the hot path
+    expect(captureGitRefCalls).toBe(0);
+    // Input dispatched as-is, no beforeRef injected
+    expect((capturedInput as { beforeRef?: string }).beforeRef).toBeUndefined();
+    // No TDD-stage logs emitted
+    expect(logs.some((l) => l.stage === "tdd" && l.msg === "-> Session: implementer")).toBe(false);
+    expect(logs.some((l) => l.stage === "tdd" && l.msg === "Session complete: implementer")).toBe(false);
+    expect(logs.some((l) => l.stage === "tdd" && l.msg === "Isolation maintained")).toBe(false);
   });
 });

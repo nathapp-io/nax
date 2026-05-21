@@ -90,16 +90,16 @@ export function buildPlanForStrategy(
   testStrategy: TestStrategy,
   inputs: PlanInputs,
 ): ExecutionPlan {
-  const isTdd = isThreeSessionStrategy(testStrategy);
+  const isThreeSession = isThreeSessionStrategy(testStrategy);
   const freshRun = isFreshRun(story);
 
   const builder = new StoryOrchestratorBuilder();
 
   // Fresh TDD run: include test-writer + greenfield-gate (skipped on retry)
-  if (isTdd && freshRun && inputs.testWriter) {
+  if (isThreeSession && freshRun && inputs.testWriter) {
     builder.addTestWriter(inputs.testWriter);
   }
-  if (isTdd && freshRun && inputs.greenfieldGate) {
+  if (isThreeSession && freshRun && inputs.greenfieldGate) {
     builder.addGreenfieldGate(inputs.greenfieldGate);
   }
 
@@ -109,10 +109,10 @@ export function buildPlanForStrategy(
   }
 
   // TDD: full-suite-gate + verifier
-  if (isTdd && inputs.fullSuiteGate) {
+  if (isThreeSession && inputs.fullSuiteGate) {
     builder.addFullSuiteGate(inputs.fullSuiteGate);
   }
-  if (isTdd && inputs.verifier) {
+  if (isThreeSession && inputs.verifier) {
     builder.addVerifier(inputs.verifier);
   }
 
@@ -128,7 +128,7 @@ export function buildPlanForStrategy(
   // When TDD with full-suite gate is configured, prepend fullSuiteRectifyStrategy so
   // test-failure findings from the gate take priority over review-finding strategies.
   if (shouldRunRectification(config) && inputs.rectification) {
-    const gateStrategies = isTdd && inputs.fullSuiteGate ? [makeFullSuiteRectifyStrategy(story)] : [];
+    const gateStrategies = isThreeSession && inputs.fullSuiteGate ? [makeFullSuiteRectifyStrategy(story)] : [];
     const rectOpts: RectificationPhaseOptions = {
       ...inputs.rectification,
       strategies: [...gateStrategies, ...inputs.rectification.strategies],
@@ -136,5 +136,5 @@ export function buildPlanForStrategy(
     builder.addRectification(rectOpts);
   }
 
-  return builder.build(ctx);
+  return builder.build(ctx, { isThreeSession });
 }
