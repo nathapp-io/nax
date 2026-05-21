@@ -38,19 +38,11 @@ async function srcExists(rel: string): Promise<boolean> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-1 — executeUnified signature matches SequentialExecutionResult", () => {
-  test("unified-executor.ts imports SequentialExecutionContext as its context type", async () => {
+  test("unified-executor.ts has correct context type, return type, and function signature", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     expect(src).toContain("SequentialExecutionContext");
-  });
-
-  test("unified-executor.ts return type is SequentialExecutionResult (includes exitReason)", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
     expect(src).toContain("SequentialExecutionResult");
     expect(src).toContain("exitReason");
-  });
-
-  test("executeUnified function signature uses (ctx: SequentialExecutionContext, initialPrd: PRD)", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
     expect(src).toMatch(/executeUnified\s*\(\s*ctx\s*:/);
   });
 });
@@ -79,38 +71,14 @@ describe("_unifiedExecutorDeps — injectable dispatch dependencies", () => {
 // AC-2 / AC-3 / AC-4 — parallel dispatch routing (source-code level)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC-2 — runParallelBatch called when parallelCount > 0 and batch > 1 (source)", () => {
-  test("unified-executor.ts calls selectIndependentBatch to compute the parallel batch", async () => {
+describe("AC-2/AC-3 — parallel dispatch routing (source)", () => {
+  test("unified-executor.ts has selectIndependentBatch, runParallelBatch (guarded), runIteration in same loop", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     expect(src).toContain("selectIndependentBatch");
-  });
-
-  test("unified-executor.ts calls runParallelBatch inside the main loop", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
     expect(src).toContain("runParallelBatch");
-  });
-
-  test("dispatch to runParallelBatch is guarded by parallelCount > 0", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
+    expect(src).toContain("runIteration");
     expect(src).toMatch(/parallelCount\s*[><!]/);
-  });
-
-  test("dispatch to runParallelBatch is guarded by batch length > 1", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
     expect(src).toMatch(/\.length\s*[>!]/);
-  });
-});
-
-describe("AC-3 — runIteration called when parallelCount > 0 but batch == 1 (source)", () => {
-  test("unified-executor.ts still calls runIteration (single-story fallback path exists)", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toContain("runIteration");
-  });
-
-  test("runIteration is inside the same loop as the parallel dispatch check", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toContain("runIteration");
-    expect(src).toContain("runParallelBatch");
   });
 });
 
@@ -129,22 +97,13 @@ describe("AC-4 — runIteration always used when parallelCount is undefined or 0
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-5 — story:started emitted for each batch story before runParallelBatch (source)", () => {
-  test("unified-executor.ts emits story:started event type", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toContain("story:started");
-  });
-
-  test("story:started emit appears before runParallelBatch call in source", async () => {
+  test("unified-executor.ts emits story:started before runParallelBatch with storyId in loop", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     const startedIdx = src.indexOf("story:started");
     const batchIdx = src.indexOf("runParallelBatch");
     expect(startedIdx).toBeGreaterThan(0);
     expect(batchIdx).toBeGreaterThan(0);
     expect(startedIdx).toBeLessThan(batchIdx);
-  });
-
-  test("story:started is emitted inside a loop over batch stories (has storyId: story.id)", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
     expect(src).toMatch(/story:started[\s\S]{0,200}storyId\s*:/);
   });
 });
@@ -154,24 +113,11 @@ describe("AC-5 — story:started emitted for each batch story before runParallel
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-6 — parallel failures routed through handlePipelineFailure (source)", () => {
-  test("unified-executor.ts imports handlePipelineFailure", async () => {
+  test("unified-executor.ts has handlePipelineFailure and escalation handling", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     expect(src).toContain("handlePipelineFailure");
-  });
-
-  test("unified-executor.ts calls handlePipelineFailure for failed batch stories", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    const failedIdx = src.indexOf("failed");
-    const handlerIdx = src.indexOf("handlePipelineFailure");
-    expect(failedIdx).toBeGreaterThan(0);
-    expect(handlerIdx).toBeGreaterThan(0);
-  });
-
-  test("unified-executor.ts imports handleTierEscalation (reached when finalAction === escalate)", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    const hasEscalation =
-      src.includes("handleTierEscalation") || src.includes("handlePipelineFailure");
-    expect(hasEscalation).toBe(true);
+    expect(src.indexOf("failed")).toBeGreaterThan(0);
+    expect(src.includes("handleTierEscalation") || src.includes("handlePipelineFailure")).toBe(true);
   });
 });
 
@@ -180,20 +126,11 @@ describe("AC-6 — parallel failures routed through handlePipelineFailure (sourc
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-7 — cost-limit check after parallel batch (source)", () => {
-  test("unified-executor.ts contains a cost-limit check using costLimit", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toContain("costLimit");
-  });
-
-  test("cost-limit exit reason is 'cost-limit'", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toContain("cost-limit");
-  });
-
-  test("cost-limit check appears after runParallelBatch in the loop body (source order)", async () => {
+  test("unified-executor.ts has cost-limit check after runParallelBatch in source order", async () => {
     const src = await readSrc("execution/unified-executor.ts");
     const batchIdx = src.indexOf("runParallelBatch");
     const costLimitIdx = src.indexOf("cost-limit");
+    expect(src).toContain("costLimit");
     expect(batchIdx).toBeGreaterThan(0);
     expect(costLimitIdx).toBeGreaterThan(0);
     expect(costLimitIdx).toBeGreaterThan(batchIdx);
@@ -205,13 +142,9 @@ describe("AC-7 — cost-limit check after parallel batch (source)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-8 — runner-execution.ts always calls executeUnified with parallelCount", () => {
-  test("runner-execution.ts calls executeUnified", async () => {
+  test("runner-execution.ts calls executeUnified with parallelCount and no legacy dispatch", async () => {
     const src = await readSrc("execution/runner-execution.ts");
     expect(src).toContain("executeUnified");
-  });
-
-  test("runner-execution.ts passes parallelCount to executeUnified", async () => {
-    const src = await readSrc("execution/runner-execution.ts");
     expect(src).toContain("parallelCount");
   });
 
@@ -277,13 +210,9 @@ describe("AC-10 — lifecycle/parallel-lifecycle.ts deleted", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-11 — runner.ts has no reference to _runnerDeps.runParallelExecution", () => {
-  test("runner.ts does not contain runParallelExecution", async () => {
+  test("runner.ts does not contain runParallelExecution in source or _runnerDeps", async () => {
     const src = await readSrc("execution/runner.ts");
     expect(src).not.toContain("runParallelExecution");
-  });
-
-  test("runner.ts _runnerDeps does not include runParallelExecution", async () => {
-    const src = await readSrc("execution/runner.ts");
     expect(src).not.toMatch(/_runnerDeps[\s\S]{0,200}runParallelExecution/);
   });
 });
