@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { _storyOrchestratorDeps } from "@/execution/story-orchestrator";
+import { _storyOrchestratorDeps } from "@/execution";
 import { getSafeLogger } from "@/logger";
 import { makeTestRuntime } from "../../helpers";
 
@@ -29,7 +29,7 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
   });
 
   test("decorates TDD slot inputs with captured beforeRef before dispatch", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution/story-orchestrator");
+    const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp } = await import("@/operations");
 
     let capturedInput: unknown;
@@ -65,7 +65,7 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
   });
 
   test("does not decorate non-TDD phase inputs with beforeRef", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution/story-orchestrator");
+    const { StoryOrchestratorBuilder } = await import("@/execution");
     const { implementerOp, semanticReviewOp } = await import("@/operations");
 
     const capturedInputs: { opName: string; input: unknown }[] = [];
@@ -122,7 +122,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
   });
 
   test("emits '-> Session: <role>' and 'Session complete: <role>' for TDD phases", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution/story-orchestrator");
+    const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
     _storyOrchestratorDeps.callOp = (async () => ({
@@ -164,7 +164,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
   });
 
   test("emits 'Created test files' after test-writer with filesChanged count", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution/story-orchestrator");
+    const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
     _storyOrchestratorDeps.callOp = (async () => ({
@@ -208,7 +208,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
   });
 
   test("emits 'Isolation maintained' when phase output carries passing isolation", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution/story-orchestrator");
+    const { StoryOrchestratorBuilder } = await import("@/execution");
     const { testWriterOp, implementerOp } = await import("@/operations");
 
     _storyOrchestratorDeps.callOp = (async () => ({

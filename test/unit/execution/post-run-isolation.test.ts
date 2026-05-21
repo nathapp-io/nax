@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("applyPostRunInspection — isolation aggregation", () => {
   test("collects isolation from TDD phase outputs into ctx.tddIsolations", async () => {
-    const { applyPostRunInspection } = await import("@/execution/post-run");
+    const { applyPostRunInspection } = await import("@/execution");
 
     // Minimal ctx — only what applyPostRunInspection reads
     const ctx: any = {
@@ -48,7 +48,7 @@ describe("applyPostRunInspection — isolation aggregation", () => {
   });
 
   test("does not set tddIsolations when no phase has isolation", async () => {
-    const { applyPostRunInspection } = await import("@/execution/post-run");
+    const { applyPostRunInspection } = await import("@/execution");
 
     const ctx: any = {
       story: { id: "US-001" },

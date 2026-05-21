@@ -208,9 +208,7 @@ async function runPhase(
   // Pre-phase: capture git ref for TDD phases; emit phase-begin log.
   const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
   const dispatchInput =
-    isTddPhase && beforeRef
-      ? { ...(slot.input as Record<string, unknown>), beforeRef }
-      : slot.input;
+    isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
 
   if (isTddPhase) {
     logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName });
