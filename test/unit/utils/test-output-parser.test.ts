@@ -113,15 +113,11 @@ Error: Stack overflow
 
   // BUG-059: Truncated output from crash/OOM should return passed:0, failed:0
   // so callers can detect inconclusive results
-  test("returns passed:0, failed:0 for truncated crash output (BUG-059)", () => {
-    // Bun crashed mid-run — only header and partial file output, no test results
-    const crashOutput = `
-bun test v1.3.9
-
-test/unit/agents/claude.test.ts:
-`.trim();
-
-    const result = parseTestOutput(crashOutput);
+  test.each([
+    ["truncated crash", "bun test v1.3.9\n\ntest/unit/agents/claude.test.ts:"],
+    ["segfault", "Segmentation fault (core dumped)"],
+  ] as const)("returns passed:0, failed:0 for %s output (BUG-059)", (_label, output) => {
+    const result = parseTestOutput(output);
     expect(result.passed).toBe(0);
     expect(result.failed).toBe(0);
     expect(result.failures).toHaveLength(0);
@@ -145,15 +141,6 @@ Killed
     expect(result.passed).toBe(2);
     expect(result.failed).toBe(0);
     // Key: callers should check passed > 0 to distinguish from total crash
-  });
-
-  test("returns passed:0, failed:0 for segfault output (BUG-059)", () => {
-    const segfaultOutput = "Segmentation fault (core dumped)";
-
-    const result = parseTestOutput(segfaultOutput);
-    expect(result.passed).toBe(0);
-    expect(result.failed).toBe(0);
-    expect(result.failures).toHaveLength(0);
   });
 
   test("handles multiple test files", () => {
