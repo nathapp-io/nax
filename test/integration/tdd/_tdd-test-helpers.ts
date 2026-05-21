@@ -80,7 +80,7 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
       const r = results[callCount] || {};
       callCount++;
       if (r.success === false) {
-        throw new Error(r.output ?? "Agent failed");
+        throw new Error(`Agent "mock" failed: ${r.output ?? "Agent failed"}`);
       }
       // Default to a parseable JSON envelope so callOp's CALL_OP_NO_OUTPUT
       // guard accepts the response. Callers supplying explicit `output` (e.g.

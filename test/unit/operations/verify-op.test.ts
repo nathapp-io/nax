@@ -135,6 +135,7 @@ describe("verifierOp.parse — error handling", () => {
     expect(result.filesChanged).toBeDefined();
     expect(typeof result.estimatedCostUsd).toBe("number");
     expect(typeof result.durationMs).toBe("number");
+    expect(typeof result.output).toBe("string");
   });
 });
 
@@ -178,6 +179,7 @@ describe("verifierOp output type", () => {
     expect("filesChanged" in result).toBe(true);
     expect("estimatedCostUsd" in result).toBe(true);
     expect("durationMs" in result).toBe(true);
+    expect("output" in result).toBe(true);
   });
 
   test("verifierOp output may include optional isolation field", async () => {
@@ -209,5 +211,66 @@ describe("verifierOp.recover — disk artifact recovery", () => {
     if (verifierOp.recover) {
       expect(typeof verifierOp.recover).toBe("function");
     }
+  });
+});
+
+describe("verifierOp.verify — isolation", () => {
+  test("attaches isolation result when beforeRef supplied (happy path)", async () => {
+    const { verifierOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await verifierOp.verify!(parsed, input, ctx as any);
+      expect(result).not.toBeNull();
+      expect(result!.isolation).toBeDefined();
+      expect(result!.isolation!.passed).toBe(true);
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("still returns null when parsed.success=false (defer to recover)", async () => {
+    const { verifierOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const parsed = {
+      success: false,
+      filesChanged: [],
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: "",
+    };
+    const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+    const ctx = {
+      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+      config: DEFAULT_CONFIG.tdd,
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+
+    const result = await verifierOp.verify!(parsed, input, ctx as any);
+    expect(result).toBeNull();
   });
 });

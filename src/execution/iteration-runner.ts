@@ -214,6 +214,34 @@ export async function runIteration(
     }
   }
 
+  // Tear down warm story sessions (implementer + per-role) on escalation so the
+  // next attempt opens fresh ACP sessions. Without this, warm-lifetime sessions
+  // stay in SessionManager._liveHandles / persist as descriptors, and the next
+  // openSession call resumes the prior conversation. The session name (used as
+  // the prompt-audit filename prefix) is unchanged — only the underlying ACP
+  // session is recreated, so audit correlation by storyId+role is preserved.
+  if (pipelineResult.finalAction === "escalate" && ctx.sessionManager) {
+    const sessionManager = ctx.sessionManager;
+    const liveStorySessions = sessionManager
+      .getForStory(story.id)
+      .filter((desc) => desc.handle && (desc.state === "RUNNING" || desc.state === "CREATED"));
+    for (const desc of liveStorySessions) {
+      if (!desc.handle) continue;
+      const live = sessionManager.getLiveHandle(desc.handle);
+      if (!live) continue;
+      try {
+        await sessionManager.closeSession(live);
+      } catch (err) {
+        getLogger().warn("iteration-runner", "Failed to close warm session on escalation — continuing", {
+          storyId: story.id,
+          sessionName: desc.handle ?? "(no handle)",
+          role: desc.role,
+          error: errorMessage(err),
+        });
+      }
+    }
+  }
+
   // Propagate reviewSummary to status writer so it appears in status.json
   const reviewSummaryFromPipeline = pipelineResult.context.reviewResult?.reviewSummary;
   if (reviewSummaryFromPipeline) {

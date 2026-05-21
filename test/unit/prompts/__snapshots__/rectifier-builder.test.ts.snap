@@ -231,10 +231,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -334,10 +335,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -477,10 +479,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -568,10 +571,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -669,10 +673,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
@@ -816,10 +821,11 @@ TEST_AFTER: <corrected call line>
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
 signatures that directly contradict a quoted PRD interface.
 
-### Exception 3 — Sibling-story lint spillover
+### Exception 3 — Unrelated sibling spillover
 
-When a lint or typecheck error is in a file you did NOT create or modify in this turn,
-do NOT edit that file. Instead declare:
+When a lint or typecheck error is outside this story's intended scope, do NOT edit that
+file. If the smallest package-local fix is required to satisfy this story's acceptance
+criteria, you MAY make that fix instead. Otherwise declare:
 \`\`\`
 TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>

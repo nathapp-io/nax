@@ -241,13 +241,16 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     abortSignal: options.abortSignal,
   });
 
-  const { durationMs, runCompletedAt, finalCounts } = completionResult;
+  const { durationMs, runCompletedAt, finalCounts, reportedTotal } = completionResult;
 
-  // Write feature-level status (SFC-002)
+  // Write feature-level status (SFC-002).
+  // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
+  // options.totalCost accumulator, which drops acceptance/review/diagnosis
+  // spend (issue #909).
   if (options.featureDir) {
     const finalStatus = isComplete(options.prd) ? "completed" : "failed";
     options.statusWriter.setRunStatus(finalStatus);
-    await options.statusWriter.writeFeatureStatus(options.featureDir, options.totalCost, options.iterations);
+    await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
   }
 
   // Output run footer in headless mode
@@ -261,7 +264,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         skipped: finalCounts.skipped,
       },
       durationMs,
-      totalCost: options.totalCost,
+      totalCost: reportedTotal,
       startedAt: options.startedAt,
       completedAt: runCompletedAt,
       formatterMode: options.formatterMode,
@@ -271,13 +274,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // Stop heartbeat and write exit summary (US-007)
   logger?.debug("execution", "Completion phase — stopping heartbeat and writing exit summary");
   stopHeartbeat();
-  await writeExitSummary(
-    options.logFilePath,
-    options.totalCost,
-    options.iterations,
-    options.storiesCompleted,
-    durationMs,
-  );
+  await writeExitSummary(options.logFilePath, reportedTotal, options.iterations, options.storiesCompleted, durationMs);
 
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");

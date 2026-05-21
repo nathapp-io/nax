@@ -1,5 +1,5 @@
 import { afterEach, describe, test, expect, mock } from "bun:test";
-import { callOp } from "@/operations";
+import { callOp, shouldKeepSessionOpen } from "@/operations";
 import type { CompleteOperation, RunOperation } from "@/operations";
 import { pickSelector } from "@/config";
 import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "@test/helpers";
@@ -13,6 +13,7 @@ let runtime: NaxRuntime | undefined;
 afterEach(async () => { await runtime?.close(); });
 
 const testSel = pickSelector("routing-op-test", "routing");
+const implementerGateSel = pickSelector("routing-op-test-with-gates", "routing", "review", "execution");
 
 const echoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
   kind: "complete",
@@ -49,6 +50,25 @@ const timedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT
   ...runEchoOp,
   name: "timed-run-echo-test",
   timeoutMs: () => 123_000,
+};
+
+const warmImplementerOp: RunOperation<
+  { text: string },
+  string,
+  Pick<typeof DEFAULT_CONFIG, "routing" | "review" | "execution">
+> = {
+  ...runEchoOp,
+  name: "implementer",
+  config: implementerGateSel,
+  session: { role: "implementer", lifetime: "warm" },
+  keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "implementer"),
+};
+
+const warmAutofixOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
+  ...runEchoOp,
+  name: "autofix-implementer",
+  stage: "rectification",
+  session: { role: "implementer", lifetime: "warm" },
 };
 
 const invalidTimedEchoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
@@ -191,6 +211,122 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as { noFallback?: boolean };
     expect(reqArg.noFallback).toBe(true);
     expect(result).toBe("single-agent output");
+  });
+
+  test("main implementer keepOpen stays disabled when review and rectification are both off", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({
+      agentManager,
+      sessionManager,
+      config: {
+        ...DEFAULT_CONFIG,
+        review: { ...DEFAULT_CONFIG.review, enabled: false },
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+        },
+      },
+    });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      warmImplementerOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as {
+      runOptions: { keepOpen?: boolean };
+    };
+    expect(reqArg.runOptions.keepOpen).toBeUndefined();
+  });
+
+  test("main implementer keepOpen is enabled when rectification is enabled", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({
+      agentManager,
+      sessionManager,
+      config: {
+        ...DEFAULT_CONFIG,
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true },
+        },
+      },
+    });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      warmImplementerOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as {
+      runOptions: { keepOpen?: boolean };
+    };
+    expect(reqArg.runOptions.keepOpen).toBe(true);
+  });
+
+  test("autofix implementer remains warm regardless of review and rectification gates", async () => {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (_req) => ({
+        result: { success: true, exitCode: 0, output: "single-agent output", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+        fallbacks: [],
+      }),
+    });
+    const sessionManager = makeSessionManager();
+    runtime = makeTestRuntime({
+      agentManager,
+      sessionManager,
+      config: {
+        ...DEFAULT_CONFIG,
+        review: { ...DEFAULT_CONFIG.review, enabled: false },
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+        },
+      },
+    });
+
+    await callOp(
+      {
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-001",
+      },
+      warmAutofixOp,
+      { text: "hello" },
+    );
+
+    const reqArg = (agentManager.runWithFallback as ReturnType<typeof mock>).mock.calls[0]?.[0] as {
+      runOptions: { keepOpen?: boolean };
+    };
+    expect(reqArg.runOptions.keepOpen).toBe(true);
   });
 
   test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {

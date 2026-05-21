@@ -91,6 +91,12 @@ const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
     supportedTiers: ["fast", "balanced", "powerful"],
     maxContextTokens: 1_000_000,
   },
+  opencode: {
+    binary: "opencode",
+    displayName: "opencode (ACP)",
+    supportedTiers: ["fast", "balanced", "powerful"],
+    maxContextTokens: 128_000,
+  },
 };
 
 const DEFAULT_ENTRY: AgentRegistryEntry = {

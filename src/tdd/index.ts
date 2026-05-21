@@ -15,6 +15,7 @@ export type { VerdictCategorization, VerifierVerdict } from "./verdict";
 
 export { isTestFile } from "../test-runners";
 export {
+  _isolationDeps,
   getChangedFiles,
   isSourceFile,
   verifyImplementerIsolation,

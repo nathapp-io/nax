@@ -41,8 +41,8 @@ export const executionStage: PipelineStage = {
     const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(defaultAgent);
     if (!agent) return { action: "fail", reason: `Agent "${defaultAgent}" not found` };
 
-    // HARD FAILURE: Missing prompt indicates pipeline misconfiguration
-    if (!ctx.prompt) return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
+    // Prompt presence is validated inside assemblePlanInputsFromCtx — it knows
+    // which strategies depend on ctx.prompt vs. build per-role prompts internally.
 
     // Validate agent supports the requested tier; clamp to first supported if not (issue #369)
     let effectiveTier = ctx.routing.modelTier;
@@ -58,7 +58,8 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    if (!ctx.packageView) return { action: "fail", reason: "Package view unavailable for execution dispatch" };
+    const packageView = ctx.packageView ?? ctx.runtime?.packages?.resolve(ctx.workdir);
+    if (!packageView) return { action: "fail", reason: "Package view unavailable for execution dispatch" };
 
     const interactionBridge = buildInteractionBridge(ctx.interaction, {
       featureName: ctx.prd.feature,
@@ -68,7 +69,7 @@ export const executionStage: PipelineStage = {
 
     const callCtx: CallContext = {
       runtime: ctx.runtime,
-      packageView: ctx.packageView,
+      packageView,
       packageDir: ctx.workdir,
       agentName: ctx.routing.agent ?? defaultAgent,
       storyId: ctx.story.id,

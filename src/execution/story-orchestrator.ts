@@ -26,11 +26,15 @@ import type {
 } from "../operations";
 import { callOp } from "../operations/call";
 import { errorMessage } from "../utils/errors";
+import { captureGitRef } from "../utils/git";
 
 export const _storyOrchestratorDeps = {
   callOp,
   runFixCycle,
+  captureGitRef,
 };
+
+const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
 
 export interface OrchestratorSlot<I, O, C> {
   readonly op: RunOperation<I, O, C>;
@@ -196,14 +200,69 @@ async function runPhase(
   slot: AnySlot,
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
+  isThreeSession = false,
 ): Promise<unknown> {
+  const logger = getSafeLogger();
+  const opName = slot.op.name;
+  // Isolation enforcement + TDD-stage logs only apply when the orchestrator is
+  // executing a three-session-tdd strategy. The single-session ("no-test") path
+  // reuses implementerOp but has no boundary semantics to enforce, so capturing
+  // beforeRef and emitting "Session: implementer" / "Isolation maintained" there
+  // would be misleading.
+  const isTddPhase = isThreeSession && TDD_OP_NAMES.has(opName);
+
+  // Pre-phase: capture git ref for TDD phases; emit phase-begin log.
+  const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
+  const dispatchInput =
+    isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
+
+  if (isTddPhase) {
+    logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName });
+  } else if (isThreeSession && opName === "full-suite-gate") {
+    logger?.info("tdd", "-> Running full test suite gate (before Verifier)", { storyId: ctx.storyId });
+  }
+
+  const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
   try {
-    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, slot.input);
-    phaseOutputs[slot.op.name] = output;
+    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
+    phaseOutputs[opName] = output;
+
+    // Post-phase logs (TDD phases only).
+    if (isTddPhase) {
+      const durationMs = Date.now() - phaseStartedAt;
+      logger?.info("tdd", `Session complete: ${opName}`, {
+        storyId: ctx.storyId,
+        role: opName,
+        durationMs,
+      });
+
+      const filesChanged = (output as { filesChanged?: readonly string[] })?.filesChanged ?? [];
+      if (opName === "test-writer" && filesChanged.length > 0) {
+        logger?.info("tdd", "Created test files", {
+          storyId: ctx.storyId,
+          testFilesCount: filesChanged.length,
+          testFiles: [...filesChanged],
+        });
+      }
+
+      const isolation = (output as { isolation?: { passed: boolean; violations: string[] } })?.isolation;
+      if (isolation) {
+        if (isolation.passed) {
+          logger?.info("tdd", "Isolation maintained", { storyId: ctx.storyId, role: opName });
+        } else {
+          logger?.error("tdd", "Isolation violated", {
+            storyId: ctx.storyId,
+            role: opName,
+            violations: isolation.violations,
+          });
+        }
+      }
+    }
+
     return output;
   } finally {
-    phaseCosts[slot.op.name] = (phaseCosts[slot.op.name] ?? 0) + scope.snapshot().totalCostUsd;
+    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd;
     scope.close();
   }
 }
@@ -340,6 +399,13 @@ export class ExecutionPlan {
   constructor(
     private readonly ctx: CallContext,
     private readonly state: InternalBuildState,
+    /**
+     * When true, the orchestrator emits TDD-stage logs and captures per-phase
+     * `beforeRef` so isolation `verify` hooks run. The single-session path
+     * reuses implementerOp but has no boundary semantics, so this stays false
+     * for that strategy. Set by `buildPlanForStrategy` based on `isThreeSessionStrategy`.
+     */
+    private readonly isThreeSession: boolean = false,
   ) {}
 
   /**
@@ -374,7 +440,7 @@ export class ExecutionPlan {
 
     for (const phase of collectOrderedPhases(this.state)) {
       try {
-        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs);
+        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
       } catch (error) {
         logger?.error("story-orchestrator", "Phase threw unexpected error", {
           storyId: this.ctx.storyId,
@@ -468,7 +534,7 @@ export class StoryOrchestratorBuilder {
     return this;
   }
 
-  build(ctx: CallContext): ExecutionPlan {
+  build(ctx: CallContext, opts: { isThreeSession?: boolean } = {}): ExecutionPlan {
     if (!this.state.implementer) {
       throw new NaxError(
         "StoryOrchestratorBuilder.build(): addImplementer() must be called before build()",
@@ -477,6 +543,6 @@ export class StoryOrchestratorBuilder {
       );
     }
 
-    return new ExecutionPlan(ctx, { ...this.state });
+    return new ExecutionPlan(ctx, { ...this.state }, opts.isThreeSession ?? false);
   }
 }

@@ -1,14 +1,25 @@
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { _isolationDeps, verifyTestWriterIsolation } from "../tdd/isolation";
+import type { IsolationCheck } from "../tdd/types";
 import { parseSessionJsonOutput } from "./_session-output";
 import type { RunOperation } from "./types";
 
+void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
+
 export interface TestWriterInput {
   readonly story: UserStory;
+  readonly promptMarkdown?: string;
   readonly contextMarkdown?: string;
   readonly featureContextMarkdown?: string;
   readonly constitution?: string;
+  /**
+   * Git ref captured by the orchestrator just before this phase dispatches.
+   * When present, the op's `verify` hook runs test-writer isolation against this ref.
+   * Absent in legacy / ad-hoc callers — isolation is then skipped.
+   */
+  readonly beforeRef?: string;
 }
 
 export interface TestWriterOutput {
@@ -16,6 +27,9 @@ export interface TestWriterOutput {
   readonly filesChanged: readonly string[];
   readonly estimatedCostUsd: number;
   readonly durationMs: number;
+  readonly output: string;
+  /** Populated by `verify` when input.beforeRef was supplied. */
+  readonly isolation?: IsolationCheck;
 }
 
 export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddConfig> = {
@@ -25,6 +39,12 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   session: { role: "test-writer", lifetime: "fresh" },
   config: tddConfigSelector,
   build(input, _ctx) {
+    if (input.promptMarkdown?.trim()) {
+      return {
+        role: { id: "role", content: "", overridable: false },
+        task: { id: "task", content: input.promptMarkdown, overridable: false },
+      };
+    }
     const context = [input.contextMarkdown, input.featureContextMarkdown].filter(Boolean).join("\n\n");
     return {
       role: { id: "role", content: "", overridable: false },
@@ -37,11 +57,39 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
     };
   },
   parse(output, _input, _ctx): TestWriterOutput {
-    // Graceful degradation — parseSessionJsonOutput returns success=false on
-    // empty/unparseable output, so callers always see a valid envelope without
-    // requiring verify/recover.
+    if (!output) return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output: "" };
+    // buildHopCallback injects 'Agent "xxx" failed: ...' when all hops fail.
+    if (output.startsWith('Agent "')) {
+      return { success: false, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output };
+    }
+    // Mirror implementerOp: the test-writer does not reliably emit the JSON
+    // envelope (some agents reply in prose). Treat non-empty, non-error output
+    // as success — downstream greenfieldGate / fullSuiteGate / verifier catch
+    // the real failure modes (no tests written, tests don't fail in RED, etc.).
     const envelope = parseSessionJsonOutput(output);
-    return { ...envelope, estimatedCostUsd: 0, durationMs: 0 };
+    return {
+      success: envelope.parsed ? envelope.success : true,
+      filesChanged: envelope.filesChanged,
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: envelope.output,
+    };
+  },
+  async verify(parsed, input, ctx): Promise<TestWriterOutput | null> {
+    if (!input.beforeRef) return parsed;
+    const allowedPaths = ctx.config.tdd?.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+    const testFilePatterns =
+      typeof ctx.packageView.config.execution?.smartTestRunner === "object" &&
+      ctx.packageView.config.execution.smartTestRunner !== null
+        ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
+        : undefined;
+    const isolation = await verifyTestWriterIsolation(
+      ctx.packageView.packageDir,
+      input.beforeRef,
+      allowedPaths,
+      testFilePatterns,
+    );
+    return { ...parsed, isolation };
   },
 };
 

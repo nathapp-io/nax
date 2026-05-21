@@ -8,9 +8,11 @@ import type { NaxConfig } from "@/config";
  * AC-1: implementerOp.kind equals "run", implementerOp.session.role equals
  * "implementer", and implementerOp.session.lifetime equals "warm".
  *
- * AC-4: Given implementerOp.parse receives empty or unparseable output, when
- * parse executes, then it returns ImplementerOutput with success: false and
- * filesChanged: [].
+ * AC-4: Given implementerOp.parse receives empty output, when parse executes,
+ * then it returns ImplementerOutput with success: false and filesChanged: [].
+ * Given a buildHopCallback error string ('Agent "..." failed: ...'), parse
+ * returns success: false. Given non-error non-empty output (prose or JSON),
+ * parse returns success: true — session exited 0, treat as success.
  *
  * AC-5: Given upgraded TDD op parse cannot produce a usable value and op-level
  * recover can derive output from disk artifacts, when callOp post-parse flow
@@ -82,7 +84,7 @@ describe("implementerOp.parse — error handling", () => {
     expect(result.filesChanged).toEqual([]);
   });
 
-  test("returns ImplementerOutput with success=false when output is unparseable", async () => {
+  test("returns ImplementerOutput with success=false when output is a buildHopCallback error string", async () => {
     const { implementerOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
@@ -95,13 +97,33 @@ describe("implementerOp.parse — error handling", () => {
       story: { id: "US-001" } as any,
     };
 
-    const result = implementerOp.parse("not json", input, ctx);
+    const result = implementerOp.parse('Agent "mock" failed: Agent failed', input, ctx);
 
     expect(result.success).toBe(false);
     expect(result.filesChanged).toEqual([]);
   });
 
-  test("returns ImplementerOutput with success=false when output is malformed JSON", async () => {
+  test("returns ImplementerOutput with success=true when output is non-empty prose", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const ctx = {
+      packageView: {} as any,
+      config: DEFAULT_CONFIG,
+    };
+
+    const input = {
+      story: { id: "US-001" } as any,
+    };
+
+    const result = implementerOp.parse("I implemented the story and committed all changes.", input, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.filesChanged).toEqual([]);
+    expect(result.output).toBe("I implemented the story and committed all changes.");
+  });
+
+  test("returns ImplementerOutput with success=true when output is malformed JSON (non-agent-error)", async () => {
     const { implementerOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
@@ -116,8 +138,9 @@ describe("implementerOp.parse — error handling", () => {
 
     const result = implementerOp.parse('{ "broken": ', input, ctx);
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
     expect(result.filesChanged).toEqual([]);
+    expect(result.output).toBe('{ "broken": ');
   });
 
   test("returns ImplementerOutput with all required fields on parse failure", async () => {
@@ -191,5 +214,103 @@ describe("implementerOp input/output types", () => {
     expect("filesChanged" in output).toBe(true);
     expect("estimatedCostUsd" in output).toBe(true);
     expect("durationMs" in output).toBe(true);
+    expect("output" in output).toBe(true);
+  });
+});
+
+describe("implementerOp.verify — isolation", () => {
+  test("attaches isolation with warnings when implementer touched test files", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts", "test/foo.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      expect(result).not.toBeNull();
+      expect(result!.isolation).toBeDefined();
+      expect(result!.isolation!.passed).toBe(true);
+      expect(result!.isolation!.warnings).toContain("test/foo.test.ts");
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("attaches passing isolation when implementer touched only source files", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      expect(result!.isolation!.passed).toBe(true);
+      expect(result!.isolation!.warnings ?? []).toEqual([]);
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("returns parsed unchanged when beforeRef absent", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const parsed = {
+      success: true,
+      filesChanged: [],
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: "ok",
+    };
+    const input = { story: { id: "US-001" } as any };
+    const ctx = {
+      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+      config: DEFAULT_CONFIG.tdd,
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+
+    const result = await implementerOp.verify!(parsed, input, ctx as any);
+    expect(result).toEqual(parsed);
   });
 });

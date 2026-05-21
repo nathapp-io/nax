@@ -67,6 +67,14 @@ export interface RunCompletionOptions extends DispatchContext {
 export interface RunCompletionResult {
   durationMs: number;
   runCompletedAt: string;
+  /**
+   * Authoritative run total — max of the legacy per-iteration accumulator and
+   * the cost aggregator snapshot. Callers MUST use this for downstream reporting
+   * (exit summary, headless footer, feature-status file) instead of the stale
+   * `options.totalCost`, which only covers execution-phase work and silently
+   * drops acceptance/review/diagnosis spend (issue #909).
+   */
+  reportedTotal: number;
   finalCounts: {
     total: number;
     passed: number;
@@ -402,6 +410,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   return {
     durationMs,
     runCompletedAt,
+    reportedTotal,
     finalCounts: {
       total: finalCounts.total,
       passed: finalCounts.passed,

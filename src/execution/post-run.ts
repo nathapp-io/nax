@@ -260,6 +260,19 @@ export async function applyPostRunInspection(
 
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
   const failureCategory = isTdd && !planResult.success ? deriveTddFailureCategory(planResult.phaseOutputs) : undefined;
+
+  // Aggregate isolation from TDD phase outputs (SPEC §3 line 211).
+  const tddIsolations: Record<string, import("./types").IsolationCheck> = {};
+  for (const opName of ["test-writer", "implementer", "verifier"] as const) {
+    const phaseOut = planResult.phaseOutputs[opName] as { isolation?: import("./types").IsolationCheck } | undefined;
+    if (phaseOut?.isolation) {
+      tddIsolations[opName] = phaseOut.isolation;
+    }
+  }
+  if (Object.keys(tddIsolations).length > 0) {
+    (ctx as { tddIsolations?: typeof tddIsolations }).tddIsolations = tddIsolations;
+  }
+
   const needsHumanReview = failureCategory === "session-failure";
   const combinedOutput = (agentResult.output ?? "") + ((agentResult as { stderr?: string }).stderr ?? "");
 

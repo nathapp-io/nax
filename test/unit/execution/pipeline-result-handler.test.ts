@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { _tierEscalationDeps } from "../../../src/execution/escalation/tier-escalation";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _gitDeps } from "../../../src/utils/git";
 import {
@@ -111,17 +112,20 @@ const WORKTREE_CONFIG = {
 let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
 let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
+let origSavePrd: typeof _tierEscalationDeps.savePRD;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
   origMergeEngine = _resultHandlerDeps.mergeEngine;
+  origSavePrd = _tierEscalationDeps.savePRD;
 });
 
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
   _resultHandlerDeps.spawn = origResultSpawn;
   _resultHandlerDeps.mergeEngine = origMergeEngine;
+  _tierEscalationDeps.savePRD = origSavePrd;
   mock.restore();
 });
 

@@ -53,7 +53,7 @@ function makeConfig() {
 }
 
 function makeCtx(
-  testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite",
+  testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite",
   overrides: Partial<PipelineContext> = {},
 ): PipelineContext {
   const story = makeStory();
@@ -201,5 +201,37 @@ describe("promptStage.execute() — test-after strategy (unified with tdd-simple
     const ctx = makeCtx("test-after");
     await promptStage.execute(ctx);
     expect(ctx.prompt).toContain("RED phase");
+  });
+});
+
+describe("promptStage.execute() — no-test strategy", () => {
+  test("uses the no-test role", async () => {
+    const ctx = makeCtx("no-test", {
+      story: {
+        ...makeStory(),
+        routing: {
+          testStrategy: "no-test",
+          noTestJustification: "Pure style change",
+        },
+      } as PipelineContext["story"],
+    });
+    ctx.stories = [ctx.story];
+    await promptStage.execute(ctx);
+    expect(ctx.prompt).toContain("# Role: Implementer (No Tests)");
+  });
+
+  test("does not include isolation rules", async () => {
+    const ctx = makeCtx("no-test", {
+      story: {
+        ...makeStory(),
+        routing: {
+          testStrategy: "no-test",
+          noTestJustification: "Pure style change",
+        },
+      } as PipelineContext["story"],
+    });
+    ctx.stories = [ctx.story];
+    await promptStage.execute(ctx);
+    expect(ctx.prompt).not.toContain("# Isolation Rules");
   });
 });

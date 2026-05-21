@@ -227,6 +227,8 @@ export interface PipelineContext extends DispatchContext {
   }>;
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;
+  /** Isolation results aggregated from TDD phase outputs. Set by applyPostRunInspection. */
+  tddIsolations?: Record<string, import("../execution/types").IsolationCheck>;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
   fullSuiteGatePassed?: boolean;
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */

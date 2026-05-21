@@ -18,6 +18,7 @@ import type {
   VerifierInput,
 } from "../operations";
 import type { UserStory } from "../prd/types";
+import { TddPromptBuilder } from "../prompts";
 import type { SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
@@ -127,6 +128,20 @@ function hasReviewEscalation(story: UserStory): boolean {
   return (story.priorFailures ?? []).some((f: { stage?: string }) => f.stage === "review");
 }
 
+async function buildThreeSessionPrompt(
+  role: "test-writer" | "implementer" | "verifier",
+  ctx: import("../pipeline/types").PipelineContext,
+  lite: boolean,
+): Promise<string> {
+  return TddPromptBuilder.buildForRole(role, ctx.workdir, ctx.config, ctx.story, {
+    lite,
+    contextMarkdown: ctx.contextMarkdown,
+    featureContextMarkdown: ctx.featureContextMarkdown,
+    contextBundle: ctx.contextBundle,
+    constitution: ctx.constitution?.content,
+  });
+}
+
 /**
  * Assemble typed PlanInputs from the current pipeline context.
  * Populates all slots eligible for the given strategy + run phase.
@@ -139,16 +154,37 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   validatePlanInputs(story, config);
   const _isTdd = isThreeSessionStrategy(ctx.routing.testStrategy);
   const _isFreshRun = (story.attempts ?? 0) === 0 && !hasReviewEscalation(story);
+  const isLite = ctx.routing.testStrategy === "three-session-tdd-lite";
+
+  // Non-TDD strategies feed ctx.prompt (built by promptStage) into implementerInput.
+  // TDD strategies build per-role prompts internally below, so promptStage is skipped
+  // for them. Validate here — this is the single site that knows which strategies
+  // depend on ctx.prompt — so executionStage doesn't need a leaky "prompt-missing"
+  // guard that duplicates the predicate.
+  if (!_isTdd && !ctx.prompt?.trim()) {
+    throw new NaxError(
+      `Prompt missing for strategy "${ctx.routing.testStrategy}" — non-TDD strategies require ctx.prompt`,
+      "PROMPT_NOT_BUILT",
+      { stage: "plan-inputs", storyId: story.id, testStrategy: ctx.routing.testStrategy },
+    );
+  }
 
   // Resolve once for the plan — reused by greenfieldGate and threaded into fullSuiteGate
   // so the gate doesn't re-resolve. Per ADR-009 the resolver is the SSOT.
   const resolvedTestPatterns = _isTdd ? await resolveTestFilePatterns(config, ctx.workdir) : undefined;
+  const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
+    ? await Promise.all([
+        _isFreshRun ? buildThreeSessionPrompt("test-writer", ctx, isLite) : Promise.resolve(""),
+        buildThreeSessionPrompt("implementer", ctx, isLite),
+        buildThreeSessionPrompt("verifier", ctx, isLite),
+      ])
+    : ["", ctx.prompt as string, ""];
 
   const testWriterInput =
     _isTdd && _isFreshRun
       ? {
           story,
-          contextMarkdown: ctx.prompt,
+          promptMarkdown: testWriterPrompt,
           featureContextMarkdown: ctx.featureContextMarkdown,
           constitution: ctx.constitution?.content,
         }
@@ -159,7 +195,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const implementerInput = {
     story,
-    contextMarkdown: ctx.prompt,
+    promptMarkdown: implementerPrompt,
     featureContextMarkdown: ctx.featureContextMarkdown,
     constitution: ctx.constitution?.content,
   };
@@ -174,7 +210,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       }
     : undefined;
 
-  const verifierInput = _isTdd ? { story } : undefined;
+  const verifierInput = _isTdd ? { story, promptMarkdown: verifierPrompt } : undefined;
 
   // Build review + rectification inputs only when inlineReview is enabled.
   // Default (false) preserves legacy behavior where review/rectify run as standalone stages.
