@@ -255,33 +255,17 @@ describe("debate config schema — AC-6: debater with agent but no model is vali
 });
 
 describe("debate config schema — AC-7: FIELD_DESCRIPTIONS contains debate entries", () => {
-  test("debate top-level description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate"]).toBeDefined();
-    expect(typeof FIELD_DESCRIPTIONS["debate"]).toBe("string");
-  });
-
-  test("debate.enabled description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.enabled"]).toBeDefined();
-  });
-
-  test("debate.agents description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.agents"]).toBeDefined();
-  });
-
-  test("debate.stages.plan description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.stages.plan"]).toBeDefined();
-  });
-
-  test("debate.stages.plan.resolver.type description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.stages.plan.resolver.type"]).toBeDefined();
-  });
-
-  test("debate.stages.plan.sessionMode description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.stages.plan.sessionMode"]).toBeDefined();
-  });
-
-  test("debate.stages.plan.rounds description exists", () => {
-    expect(FIELD_DESCRIPTIONS["debate.stages.plan.rounds"]).toBeDefined();
+  test.each([
+    "debate",
+    "debate.enabled",
+    "debate.agents",
+    "debate.stages.plan",
+    "debate.stages.plan.resolver.type",
+    "debate.stages.plan.sessionMode",
+    "debate.stages.plan.rounds",
+  ])("%s description exists", (key) => {
+    expect(FIELD_DESCRIPTIONS[key]).toBeDefined();
+    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
   });
 });
 
@@ -334,11 +318,10 @@ describe("DEFAULT_CONFIG includes debate section", () => {
     expect(DEFAULT_CONFIG.debate?.agents).toBe(3);
   });
 
-  test("plan stage has stateful sessionMode", () => {
-    expect(DEFAULT_CONFIG.debate?.stages.plan.sessionMode).toBe("stateful");
-  });
-
-  test("review stage has one-shot sessionMode", () => {
-    expect(DEFAULT_CONFIG.debate?.stages.review.sessionMode).toBe("one-shot");
+  test.each([
+    ["plan", "stateful"],
+    ["review", "one-shot"],
+  ] as const)("%s stage has correct sessionMode", (stage, expected) => {
+    expect(DEFAULT_CONFIG.debate?.stages[stage].sessionMode).toBe(expected);
   });
 });
