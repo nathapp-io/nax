@@ -103,15 +103,12 @@ function setupDeps(options: {
 describe("CodeNeighborProvider", () => {
   const provider = new CodeNeighborProvider();
 
-  test("returns empty when touchedFiles is absent", async () => {
+  test.each([
+    ["touchedFiles is absent", () => makeRequest()],
+    ["touchedFiles is empty array", () => makeRequest({ touchedFiles: [] })],
+  ])("returns empty when %s", async (_label, makeReq) => {
     setupDeps({});
-    const result = await provider.fetch(makeRequest());
-    expect(result.chunks).toHaveLength(0);
-  });
-
-  test("returns empty when touchedFiles is empty array", async () => {
-    setupDeps({});
-    const result = await provider.fetch(makeRequest({ touchedFiles: [] }));
+    const result = await provider.fetch(makeReq());
     expect(result.chunks).toHaveLength(0);
   });
 
@@ -140,29 +137,13 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks[0]?.content).toContain("test/unit/foo/bar.test.ts");
   });
 
-  test("chunk has kind 'neighbor'", async () => {
+  test("chunk has expected metadata", async () => {
     setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
-    // Only the sibling test is added; a.ts exists so we get at least one neighbor
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(result.chunks[0]?.kind).toBe("neighbor");
-  });
-
-  test("chunk has scope 'story'", async () => {
-    setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(result.chunks[0]?.scope).toBe("story");
-  });
-
-  test("chunk role includes implementer and tdd", async () => {
-    setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(result.chunks[0]?.role).toContain("implementer");
     expect(result.chunks[0]?.role).toContain("tdd");
-  });
-
-  test("chunk rawScore is 0.65", async () => {
-    setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     expect(result.chunks[0]?.rawScore).toBe(0.65);
   });
 
