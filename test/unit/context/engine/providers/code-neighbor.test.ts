@@ -253,31 +253,16 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
-  test("colocated test is preferred over mirrored hint when it exists on disk (#526 Bug 2)", async () => {
-    // Fixture uses colocated layout — src/calc.test.ts exists on disk.
-    // Provider should pick it instead of hallucinating test/unit/calc.test.ts.
-    setupDeps({
-      files: { "src/calc.ts": "", "src/calc.test.ts": "" },
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({
-      touchedFiles: ["src/calc.ts"],
-      resolvedTestPatterns: makePatterns(["**/*.test.ts"]),
-    }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("src/calc.test.ts");
-    expect(content).not.toContain("test/unit/");
-  });
+  test("colocated test preferred when on disk; falls back to mirrored hint when absent (#526 Bug 2)", async () => {
+    setupDeps({ files: { "src/calc.ts": "", "src/calc.test.ts": "" }, globFiles: [] });
+    const colocated = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }));
+    const c1 = colocated.chunks[0]?.content ?? "";
+    expect(c1).toContain("src/calc.test.ts");
+    expect(c1).not.toContain("test/unit/");
 
-  test("falls back to mirrored hint when no colocated test exists (#526 Bug 2)", async () => {
-    // No file on disk → emit mirrored hint so TDD agent knows where to write.
     setupDeps({ files: { "src/calc.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({
-      touchedFiles: ["src/calc.ts"],
-      resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]),
-    }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("test/unit/calc.test.ts");
+    const mirrored = await provider.fetch(makeRequest({ touchedFiles: ["src/calc.ts"], resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]) }));
+    expect(mirrored.chunks[0]?.content ?? "").toContain("test/unit/calc.test.ts");
   });
 
   test("Go pattern: src/foo.go → src/foo_test.go (language-agnostic)", async () => {
@@ -301,32 +286,16 @@ describe("CodeNeighborProvider", () => {
     expect(content).not.toContain("_test_test.go");
   });
 
-  test("monorepo-tiny scenario: packages/lib/src/util.ts + colocated util.test.ts → colocated wins", async () => {
-    setupDeps({
-      files: {
-        "packages/lib/src/util.ts": "",
-        "packages/lib/src/util.test.ts": "",
-      },
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({
-      touchedFiles: ["packages/lib/src/util.ts"],
-      resolvedTestPatterns: makePatterns(["**/*.test.ts"]),
-    }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("packages/lib/src/util.test.ts");
-    expect(content).not.toContain("test/unit/");
-  });
+  test("monorepo-tiny: colocated test wins; mirrored hint preserves package prefix when absent", async () => {
+    setupDeps({ files: { "packages/lib/src/util.ts": "", "packages/lib/src/util.test.ts": "" }, globFiles: [] });
+    const colocated = await provider.fetch(makeRequest({ touchedFiles: ["packages/lib/src/util.ts"], resolvedTestPatterns: makePatterns(["**/*.test.ts"]) }));
+    const c1 = colocated.chunks[0]?.content ?? "";
+    expect(c1).toContain("packages/lib/src/util.test.ts");
+    expect(c1).not.toContain("test/unit/");
 
-  test("monorepo-tiny scenario: mirrored hint preserves package prefix", async () => {
-    // No colocated file; mirrored candidate should live under the same package.
     setupDeps({ files: { "packages/lib/src/util.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({
-      touchedFiles: ["packages/lib/src/util.ts"],
-      resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]),
-    }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("packages/lib/test/unit/util.test.ts");
+    const mirrored = await provider.fetch(makeRequest({ touchedFiles: ["packages/lib/src/util.ts"], resolvedTestPatterns: makePatterns(["test/unit/**/*.test.ts"]) }));
+    expect(mirrored.chunks[0]?.content ?? "").toContain("packages/lib/test/unit/util.test.ts");
   });
 
   test("reverse-dep scan continues past self-reference (continue, not break)", async () => {
@@ -523,42 +492,27 @@ describe("CodeNeighborProvider — #508-M11 glob cap debug logging", () => {
     _codeNeighborDeps.getLogger = origGetLogger;
   });
 
-  test("logs warn when glob results are truncated at cap", () => {
-    const warnCalls: Array<[string, string, Record<string, unknown>]> = [];
+  test("logs warn when glob truncated at cap; no warn when below cap", () => {
+    let warnCalls: Array<[string, string, Record<string, unknown>]> = [];
     _codeNeighborDeps.getLogger = () =>
       ({
         debug: () => {},
-        warn: (stage: string, msg: string, ctx: Record<string, unknown>) =>
-          warnCalls.push([stage, msg, ctx]),
+        warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warnCalls.push([stage, msg, ctx]),
         info: () => {},
         error: () => {},
       }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
 
-    // Call the real default glob implementation directly with a small cap
     const { files, truncated } = _codeNeighborDeps.glob("src/**/*.ts", tmpDir, [], 200);
-
     expect(files).toHaveLength(200);
     expect(truncated).toBe(true);
     expect(warnCalls.length).toBeGreaterThan(0);
     expect(warnCalls[0]?.[0]).toBe("context-v2");
     expect(warnCalls[0]?.[2]).toMatchObject({ cap: 200 });
-  });
 
-  test("does not log warn when glob results are below the cap", () => {
-    const warnCalls: unknown[] = [];
-    _codeNeighborDeps.getLogger = () =>
-      ({
-        debug: () => {},
-        warn: (...args: unknown[]) => warnCalls.push(args),
-        info: () => {},
-        error: () => {},
-      }) as unknown as ReturnType<typeof _codeNeighborDeps.getLogger>;
-
-    // Only 1 file matches — well below cap
-    const { files, truncated } = _codeNeighborDeps.glob("src/file0.ts", tmpDir, [], 500);
-
-    expect(files.length).toBeLessThan(200);
-    expect(truncated).toBe(false);
+    warnCalls = [];
+    const { files: files2, truncated: truncated2 } = _codeNeighborDeps.glob("src/file0.ts", tmpDir, [], 500);
+    expect(files2.length).toBeLessThan(200);
+    expect(truncated2).toBe(false);
     expect(warnCalls.length).toBe(0);
   });
 });
