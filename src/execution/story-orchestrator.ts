@@ -26,11 +26,15 @@ import type {
 } from "../operations";
 import { callOp } from "../operations/call";
 import { errorMessage } from "../utils/errors";
+import { captureGitRef } from "../utils/git";
 
 export const _storyOrchestratorDeps = {
   callOp,
   runFixCycle,
+  captureGitRef,
 };
+
+const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
 
 export interface OrchestratorSlot<I, O, C> {
   readonly op: RunOperation<I, O, C>;
@@ -197,13 +201,22 @@ async function runPhase(
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
 ): Promise<unknown> {
+  const opName = slot.op.name;
+  const isTddPhase = TDD_OP_NAMES.has(opName);
+
+  const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
+  const dispatchInput =
+    isTddPhase && beforeRef
+      ? { ...(slot.input as Record<string, unknown>), beforeRef }
+      : slot.input;
+
   const scope = ctx.runtime.costAggregator.openScope();
   try {
-    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, slot.input);
-    phaseOutputs[slot.op.name] = output;
+    const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
+    phaseOutputs[opName] = output;
     return output;
   } finally {
-    phaseCosts[slot.op.name] = (phaseCosts[slot.op.name] ?? 0) + scope.snapshot().totalCostUsd;
+    phaseCosts[opName] = (phaseCosts[opName] ?? 0) + scope.snapshot().totalCostUsd;
     scope.close();
   }
 }
