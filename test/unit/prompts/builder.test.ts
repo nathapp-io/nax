@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { UserStory } from "../../../src/prd";
 import { PromptBuilder } from "../../../src/prompts";
@@ -46,24 +45,13 @@ describe("PromptBuilder fluent API", () => {
     expect(builder).toBeInstanceOf(PromptBuilder);
   });
 
-  test(".story() is chainable", () => {
-    const builder = PromptBuilder.for("implementer").story(makeStory());
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".context() is chainable", () => {
-    const builder = PromptBuilder.for("verifier").story(makeStory()).context("# Context");
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".constitution() is chainable", () => {
-    const builder = PromptBuilder.for("single-session").story(makeStory()).constitution("Be helpful.");
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".override() is chainable", () => {
-    const builder = PromptBuilder.for("test-writer").story(makeStory()).override("/tmp/override.md");
-    expect(builder).toBeInstanceOf(PromptBuilder);
+  test.each([
+    [".story()", () => PromptBuilder.for("implementer").story(makeStory())],
+    [".context()", () => PromptBuilder.for("verifier").story(makeStory()).context("# Context")],
+    [".constitution()", () => PromptBuilder.for("single-session").story(makeStory()).constitution("Be helpful.")],
+    [".override()", () => PromptBuilder.for("test-writer").story(makeStory()).override("/tmp/override.md")],
+  ])("%s is chainable", (_name, build) => {
+    expect(build()).toBeInstanceOf(PromptBuilder);
   });
 
   test(".build() returns a Promise<string>", async () => {
@@ -279,20 +267,13 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(prompt.length).toBeGreaterThan(0);
   });
 
-  test("tdd-simple prompt contains TDD red-green-refactor instructions", async () => {
+  test.each([
+    ["TDD instructions", "Write failing tests FIRST"],
+    ["git commit instruction", "git commit -m"],
+  ])("tdd-simple prompt contains %s", async (_label, expected) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt).toContain("Write failing tests FIRST");
-  });
-
-  test("tdd-simple prompt includes git commit instruction", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt).toContain("git commit -m");
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt).toContain(expected);
   });
 
   test("tdd-simple prompt isolation section does not forbid src/ modification", async () => {
