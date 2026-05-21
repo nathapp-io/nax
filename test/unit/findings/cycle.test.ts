@@ -570,84 +570,49 @@ callOp: callOpMock as unknown as CallOpFn});
 // ─── runFixCycle — lite validate on terminal exhausted ───────────────────────
 
 describe("runFixCycle — lite validate on terminal exhausted", () => {
-  test("returns resolved exit when lite validate returns empty findings (AC2)", async () => {
+  test("lite validate empty → resolved (AC2); non-empty → max-attempts-per-strategy (AC3)", async () => {
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => []);
-    const callOpMock = makeCallOpMock();
+    const emptyResult = await runFixCycle(makeCycle([lintA], [strategy], async () => []), makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn});
+    expect(emptyResult.exitReason).toBe("resolved");
+    expect(emptyResult.finalFindings).toEqual([]);
+    expect(emptyResult.exhaustedStrategy).toBeUndefined();
 
-    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
-    expect(result.exitReason).toBe("resolved");
-    expect(result.finalFindings).toEqual([]);
-    expect(result.exhaustedStrategy).toBeUndefined();
+    const nonEmptyResult = await runFixCycle(makeCycle([lintA], [makeStrategy({ name: "lint-fix", maxAttempts: 1 })], async () => [lintA, lintB]), makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn});
+    expect(nonEmptyResult.exitReason).toBe("max-attempts-per-strategy");
+    expect(nonEmptyResult.finalFindings).toEqual([lintA, lintB]);
+    expect(nonEmptyResult.exhaustedStrategy).toBe("lint-fix");
   });
 
-  test("returns max-attempts-per-strategy with lite findings when lite validate returns non-empty (AC3)", async () => {
-    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => [lintA, lintB]);
-    const callOpMock = makeCallOpMock();
-
-    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
-    expect(result.exitReason).toBe("max-attempts-per-strategy");
-    expect(result.finalFindings).toEqual([lintA, lintB]);
-    expect(result.exhaustedStrategy).toBe("lint-fix");
-  });
-
-  test("iteration findingsAfter equals lite result and outcome = classifyOutcome(before, liteFindingsAfter) (AC4/AC5)", async () => {
+  test("iteration findingsAfter and cycle.findings both reflect lite result (AC4/AC5/AC6)", async () => {
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     // lintA before, lintB after (same source lint) → regressed
     const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
-    const callOpMock = makeCallOpMock();
 
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
+callOp: makeCallOpMock() as unknown as CallOpFn});
 
     expect(result.iterations).toHaveLength(1);
     expect(result.iterations[0].findingsAfter).toEqual([lintB]);
     expect(result.iterations[0].outcome).toBe("regressed");
-  });
-
-  test("cycle.findings updated to lite result when exit is prepared (AC6)", async () => {
-    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
-    const callOpMock = makeCallOpMock();
-
-    await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
     expect(cycle.findings).toEqual([lintB]);
   });
 
-  test("returns max-attempts-per-strategy with existing findings when lite validate throws (AC7)", async () => {
-    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => {
-      throw new Error("lite validate failed");
-    });
-    const callOpMock = makeCallOpMock();
-
-    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
-    expect(result.exitReason).toBe("max-attempts-per-strategy");
-    expect(result.finalFindings).toEqual([lintA]);
-    expect(result.exhaustedStrategy).toBe("lint-fix");
-  });
-
-  test("does not consume validator-retry budget when terminal lite validate throws (AC7)", async () => {
+  test("lite validate throws: exits with max-attempts-per-strategy and no retry budget consumed (AC7)", async () => {
     let validateCallCount = 0;
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     const cycle = makeCycle([lintA], [strategy], async () => {
       validateCallCount++;
       throw new Error("lite validate failed");
     }, { config: { maxAttemptsTotal: 10, validatorRetries: 3 } });
-    const callOpMock = makeCallOpMock();
 
-    await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn});
 
+    expect(result.exitReason).toBe("max-attempts-per-strategy");
+    expect(result.finalFindings).toEqual([lintA]);
+    expect(result.exhaustedStrategy).toBe("lint-fix");
     // Only 1 call — no retries consumed even though validatorRetries=3
     expect(validateCallCount).toBe(1);
   });
