@@ -447,20 +447,17 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts";
 
 describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
-  test("includes Exception 4 section title and TEST_EDIT_REASON: mock_structure field", () => {
+  test("includes Exception 4 title, required fields, and UNRESOLVED handoff rule", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("Exception 4 — Mock-structure handoff");
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
+    expect(CONTRADICTION_ESCAPE_HATCH).toContain(
+      "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
+    );
   });
 
   test.each(["FILES:", "REASON:"])("lists %s as a required field", (field) => {
     const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"));
     expect(afterException4).toContain(field);
-  });
-
-  test("states the handoff rule: do not also emit UNRESOLVED in the same turn", () => {
-    expect(CONTRADICTION_ESCAPE_HATCH).toContain(
-      "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
-    );
   });
 });
 
