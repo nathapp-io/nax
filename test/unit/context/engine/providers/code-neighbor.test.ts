@@ -216,27 +216,15 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
-  test("sibling test path: .test.ts input does not hallucinate .test.test.ts (#526)", async () => {
-    setupDeps({
-      files: { "src/greeting.test.ts": "" },
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/greeting.test.ts"] }));
+  test.each([
+    ["test", "src/greeting.test.ts", "greeting.test.test.ts", ".test.test."],
+    ["spec", "src/greeting.spec.ts", "greeting.spec.spec.ts", ".spec.spec."],
+  ])("sibling test path: .%s.ts input does not hallucinate doubled suffix (#526)", async (_kind, file, bad1, bad2) => {
+    setupDeps({ files: { [file]: "" }, globFiles: [] });
+    const result = await provider.fetch(makeRequest({ touchedFiles: [file] }));
     const content = result.chunks[0]?.content ?? "";
-    // Must not produce the hallucinated .test.test.ts path
-    expect(content).not.toContain("greeting.test.test.ts");
-    expect(content).not.toContain(".test.test.");
-  });
-
-  test("sibling test path: .spec.ts input does not hallucinate .spec.spec.ts (#526)", async () => {
-    setupDeps({
-      files: { "src/greeting.spec.ts": "" },
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/greeting.spec.ts"] }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).not.toContain("greeting.spec.spec.ts");
-    expect(content).not.toContain(".spec.spec.");
+    expect(content).not.toContain(bad1);
+    expect(content).not.toContain(bad2);
   });
 
   test("sibling test path: .test.tsx / .spec.tsx also guarded (#526)", async () => {
@@ -434,6 +422,7 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
     await p.fetch(MONOREPO_REQUEST);
     expect(cwds).toContain("/repo/packages/api");
+    expect(cwds.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
     expect(cwds).not.toContain("/repo");
   });
 
@@ -442,14 +431,6 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     const p = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
     await p.fetch(makeRequest({ touchedFiles: ["src/a.ts"] })); // packageDir === repoRoot
     expect(cwds).toContain("/repo");
-  });
-
-  test("crossPackageDepth 0 with neighborScope 'package' — glob only in packageDir", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(cwds.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
-    expect(cwds).not.toContain("/repo");
   });
 
   test("crossPackageDepth 1 with neighborScope 'package' — falls back to repoRoot when no workspace detected", async () => {
@@ -487,30 +468,16 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("CodeNeighborProvider — SEC-503 path traversal prevention", () => {
-  test("drops touchedFiles with '..' traversal — never reads them", async () => {
+  test.each([
+    ["dotdot traversal", "../../../etc/passwd"],
+    ["absolute path", "/etc/passwd"],
+  ])("drops touchedFiles with %s — never reads them", async (_label, malicious) => {
     const readPaths: string[] = [];
-    _codeNeighborDeps.fileExists = async (p: string) => {
-      readPaths.push(p);
-      return false;
-    };
+    _codeNeighborDeps.fileExists = async (rp: string) => { readPaths.push(rp); return false; };
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
 
     const p = new CodeNeighborProvider();
-    await p.fetch(makeRequest({ touchedFiles: ["../../../etc/passwd", "src/valid.ts"] }));
-
-    expect(readPaths.some((p) => p.includes("etc/passwd"))).toBe(false);
-  });
-
-  test("drops touchedFiles with absolute paths — never reads them", async () => {
-    const readPaths: string[] = [];
-    _codeNeighborDeps.fileExists = async (p: string) => {
-      readPaths.push(p);
-      return false;
-    };
-    _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
-
-    const p = new CodeNeighborProvider();
-    await p.fetch(makeRequest({ touchedFiles: ["/etc/passwd", "src/valid.ts"] }));
+    await p.fetch(makeRequest({ touchedFiles: [malicious, "src/valid.ts"] }));
 
     expect(readPaths.some((rp) => rp.includes("etc/passwd"))).toBe(false);
   });
@@ -629,28 +596,16 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
     cleanupTempDir(tmpDir);
   });
 
-  test("excludes node_modules/ from glob results", () => {
+  test("excludes node_modules/, .nax/, and nested .nax/ from glob results", () => {
     const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
-  });
-
-  test("excludes .nax/ from glob results", () => {
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.startsWith(".nax/"))).toBe(false);
-  });
-
-  test("excludes nested packages/api/.nax/ from glob results", () => {
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.includes("/.nax/"))).toBe(false);
   });
 
-  test("includes files in lib/ (non-src/ layout)", () => {
+  test("includes files in lib/ (non-src/ layout) and src/ (standard layout)", () => {
     const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files).toContain("lib/utils.ts");
-  });
-
-  test("includes files in src/ (standard layout)", () => {
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files).toContain("src/main.ts");
   });
 
