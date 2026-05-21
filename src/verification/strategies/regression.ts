@@ -9,8 +9,8 @@
  * src/execution/lifecycle/run-regression.ts.
  */
 
-import { getSafeLogger } from "../../logger";
-import { parseTestOutput } from "../../test-runners";
+import { getSafeLogger } from "@/logger";
+import { parseTestOutput } from "@/test-runners";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { fullSuite } from "../runners";

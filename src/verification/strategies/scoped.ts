@@ -10,9 +10,9 @@
  * Must produce identical results to the existing verify stage.
  */
 
-import { getLogger } from "../../logger";
-import { parseTestOutput } from "../../test-runners";
-import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "../../test-runners/conventions";
+import { getLogger } from "@/logger";
+import { parseTestOutput } from "@/test-runners";
+import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners/conventions";
 import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { regression } from "../runners";

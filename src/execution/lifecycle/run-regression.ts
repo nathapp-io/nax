@@ -8,15 +8,15 @@
  * - Unmapped tests: warn and mark all passed stories for re-verification
  */
 
-import type { NaxConfig } from "../../config";
-import { getSafeLogger } from "../../logger";
-import type { PRD, UserStory } from "../../prd";
-import { countStories } from "../../prd";
-import type { NaxRuntime } from "../../runtime";
-import { parseTestOutput } from "../../test-runners";
-import { hasCommitsForStory } from "../../utils/git";
-import { runRectificationLoop } from "../../verification/rectification-loop";
-import { fullSuite } from "../../verification/runners";
+import type { NaxConfig } from "@/config";
+import { getSafeLogger } from "@/logger";
+import type { PRD, UserStory } from "@/prd";
+import { countStories } from "@/prd";
+import type { NaxRuntime } from "@/runtime";
+import { parseTestOutput } from "@/test-runners";
+import { hasCommitsForStory } from "@/utils/git";
+import { runRectificationLoop } from "@/verification/rectification-loop";
+import { fullSuite } from "@/verification/runners";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
