@@ -72,18 +72,14 @@ describe("builder.buildGeneratorFromPRDPrompt()", () => {
       expect(result).toContain("## Step 3");
     });
 
-    test("includes implementation context when provided", () => {
-      const result = builder.buildGeneratorFromPRDPrompt({
+    test("includes implementation section when provided, omits when not", () => {
+      const withCtx = builder.buildGeneratorFromPRDPrompt({
         ...base,
         implementationContext: [{ path: "src/index.ts", content: "export function shorten() {}" }],
       });
-      expect(result).toContain("## Implementation (already exists)");
-      expect(result).toContain("src/index.ts");
-    });
-
-    test("omits implementation section when not provided", () => {
-      const result = builder.buildGeneratorFromPRDPrompt(base);
-      expect(result).not.toContain("## Implementation");
+      expect(withCtx).toContain("## Implementation (already exists)");
+      expect(withCtx).toContain("src/index.ts");
+      expect(builder.buildGeneratorFromPRDPrompt(base)).not.toContain("## Implementation");
     });
 
     test("includes framework override when non-empty", () => {
@@ -160,18 +156,11 @@ describe("builder.buildDiagnosisPromptTemplate()", () => {
       expect(builder.buildDiagnosisPromptTemplate(base)).toContain(getExpected());
     });
 
-    test("references acceptance test path (Bug 6 — no embedded body)", () => {
+    test("references test path, instructs Read, includes JSON schema (Bug 6 no embedded body)", () => {
       const result = builder.buildDiagnosisPromptTemplate(base);
       expect(result).toContain(base.acceptanceTestPath);
       expect(result).not.toContain("```typescript");
-    });
-
-    test("instructs agent to use Read on the test path", () => {
-      expect(builder.buildDiagnosisPromptTemplate(base)).toContain("Read");
-    });
-
-    test("includes JSON response schema", () => {
-      const result = builder.buildDiagnosisPromptTemplate(base);
+      expect(result).toContain("Read");
       expect(result).toContain('"verdict"');
       expect(result).toContain('"reasoning"');
       expect(result).toContain('"confidence"');
@@ -201,14 +190,10 @@ describe("builder.buildSourceFixPrompt()", () => {
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
   };
 
-  test("includes structured test output (Bug 6 regression)", () => {
+  test("includes structured test output and does not embed file content (Bug 6 regression)", () => {
     const result = builder.buildSourceFixPrompt(base);
     expect(result).toContain("AC-1");
     expect(result).toContain("Cannot read property");
-  });
-
-  test("does not embed test file content (Bug 6 regression)", () => {
-    const result = builder.buildSourceFixPrompt(base);
     expect(result).not.toContain("```typescript");
   });
 
@@ -246,20 +231,11 @@ describe("builder.buildTestFixPrompt()", () => {
     acceptanceTestPath: "/project/.nax/features/feat/.nax-acceptance.test.ts",
   };
 
-  test("includes failing ACs", () => {
+  test("includes failing ACs, drops (pass) lines, does not embed file content (Bug 6 regression)", () => {
     const result = builder.buildTestFixPrompt(base);
     expect(result).toContain("AC-2");
-  });
-
-  test("does not embed test file content (Bug 6 regression)", () => {
-    const result = builder.buildTestFixPrompt(base);
     expect(result).not.toContain("```typescript");
-  });
-
-  test("drops (pass) lines from test output (Bug 6 regression)", () => {
-    const result = builder.buildTestFixPrompt(base);
     expect(result).not.toContain("(pass) AC-1");
-    expect(result).toContain("AC-2");
     expect(result).toContain("Expected 1 got 0");
   });
 
