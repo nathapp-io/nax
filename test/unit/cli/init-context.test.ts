@@ -122,21 +122,13 @@ describe("scanProject — README", () => {
     });
   });
 
-  test("returns null readmeSnippet when no README.md", async () => {
+  test("returns null readmeSnippet when absent; full content when short README present", async () => {
     await withTempDir(async (dir) => {
-      const scan = await scanProject(dir);
-
-      expect(scan.readmeSnippet).toBeNull();
+      expect((await scanProject(dir)).readmeSnippet).toBeNull();
     });
-  });
-
-  test("returns full content when README.md is under 100 lines", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "README.md"), "# Short readme\n\nTwo lines.");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.readmeSnippet).toContain("Short readme");
+      expect((await scanProject(dir)).readmeSnippet).toContain("Short readme");
     });
   });
 });
@@ -224,82 +216,41 @@ describe("scanProject — config files", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateContextTemplate — output structure", () => {
-  test("returns a non-empty markdown string", () => {
-    const scan = {
-      projectName: "test-project",
+  test("returns non-empty markdown string with heading and project name", () => {
+    const result = generateContextTemplate({
+      projectName: "my-awesome-project",
       fileTree: ["src/index.ts", "package.json"],
       packageManifest: null,
       readmeSnippet: null,
       entryPoints: [],
       configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    });
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("includes project name in output", () => {
-    const scan = {
-      projectName: "my-awesome-project",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    expect(result).toMatch(/^#+ /m);
     expect(result).toContain("my-awesome-project");
   });
 
-  test("includes file tree section in output", () => {
-    const scan = {
+  test("includes file tree and entry points in output", () => {
+    const result = generateContextTemplate({
       projectName: "proj",
       fileTree: ["src/index.ts", "package.json"],
       packageManifest: null,
       readmeSnippet: null,
-      entryPoints: [],
+      entryPoints: ["src/main.ts"],
       configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    });
     expect(result).toContain("src/index.ts");
     expect(result).toContain("package.json");
-  });
-
-  test("includes entry points in output", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: ["src/index.ts", "src/main.ts"],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("src/index.ts");
     expect(result).toContain("src/main.ts");
   });
 
-  test("includes TODO placeholders where data is missing", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("TODO");
+  test("includes TODO when data missing; includes config files when present", () => {
+    const emptyResult = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: [] });
+    expect(emptyResult).toContain("TODO");
+    const withConfig = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: ["tsconfig.json", "biome.json"] });
+    expect(withConfig).toContain("tsconfig.json");
+    expect(withConfig).toContain("biome.json");
   });
 
   test("includes package description when packageManifest has description", () => {
@@ -322,36 +273,6 @@ describe("generateContextTemplate — output structure", () => {
     expect(result).toContain("A fantastic library for testing");
   });
 
-  test("includes config files section when config files detected", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: ["tsconfig.json", "biome.json"],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("tsconfig.json");
-    expect(result).toContain("biome.json");
-  });
-
-  test("is valid markdown with at least one heading", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toMatch(/^#+ /m);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -389,24 +310,13 @@ describe("initContext — creates context.md from template", () => {
     });
   });
 
-  test("template includes project name derived from directory", async () => {
+  test("template includes project name and detected entry points", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "scan-test-proj" }));
-
+      await Bun.write(join(dir, "src", "index.ts"), "export {}");
       await initContext(dir, { ai: false });
-
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("scan-test-proj");
-    });
-  });
-
-  test("template includes detected entry points", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      await initContext(dir, { ai: false });
-
-      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("src/index.ts");
     });
   });
