@@ -329,7 +329,7 @@ callOp: callOpMock as unknown as CallOpFn});
 // ─── runFixCycle — bail: agent-gave-up (#897) ────────────────────────────────
 
 describe("runFixCycle — bail: agent-gave-up", () => {
-  test("exits with agent-gave-up when extractApplied returns unresolved string", async () => {
+  test("exits with agent-gave-up and records iteration without findingsAfter when extractApplied returns unresolved", async () => {
     let validateCalled = false;
     const strategy = makeStrategy({
       name: "source-fix",
@@ -347,19 +347,6 @@ callOp: callOpMock as unknown as CallOpFn});
     expect(result.exitReason).toBe("agent-gave-up");
     expect(result.unresolvedDetail).toBe("Cannot resolve — conflicting requirements");
     expect(validateCalled).toBe(false);
-  });
-
-  test("records the iteration without findingsAfter when bailing on UNRESOLVED", async () => {
-    const strategy = makeStrategy({
-      name: "source-fix",
-      extractApplied: () => ({ summary: "", unresolved: "Cannot proceed" }),
-    });
-    const cycle = makeCycle([lintA], [strategy], async () => []);
-    const callOpMock = makeCallOpMock();
-
-    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
     expect(result.iterations).toHaveLength(1);
     expect(result.finalFindings).toEqual([lintA]);
   });
@@ -609,20 +596,7 @@ callOp: callOpMock as unknown as CallOpFn});
     expect(result.exhaustedStrategy).toBe("lint-fix");
   });
 
-  test("iteration findingsAfter equals lite result not pre-fix snapshot (AC4)", async () => {
-    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    // lintB is a different finding than lintA (pre-fix)
-    const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
-    const callOpMock = makeCallOpMock();
-
-    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn});
-
-    expect(result.iterations).toHaveLength(1);
-    expect(result.iterations[0].findingsAfter).toEqual([lintB]);
-  });
-
-  test("iteration outcome equals classifyOutcome(findingsBefore, liteFindingsAfter) (AC5)", async () => {
+  test("iteration findingsAfter equals lite result and outcome = classifyOutcome(before, liteFindingsAfter) (AC4/AC5)", async () => {
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     // lintA before, lintB after (same source lint) → regressed
     const cycle = makeCycle([lintA], [strategy], async () => [lintB]);
@@ -631,6 +605,8 @@ callOp: callOpMock as unknown as CallOpFn});
     const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
 callOp: callOpMock as unknown as CallOpFn});
 
+    expect(result.iterations).toHaveLength(1);
+    expect(result.iterations[0].findingsAfter).toEqual([lintB]);
     expect(result.iterations[0].outcome).toBe("regressed");
   });
 
@@ -697,49 +673,23 @@ callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as impo
     });
   });
 
-  test("emits info log with storyId as first key when resolved after lite validate (AC9)", async () => {
+  test.each([
+    ["resolved (AC9)", async () => [], "resolved", { storyId: "story-1", packageDir: "/tmp/test", cycleName: "my-cycle", reason: "resolved" }],
+    ["cap-exhausted (AC10)", async () => [lintA], "max-attempts-per-strategy", { storyId: "story-1", packageDir: "/tmp/test", cycleName: "my-cycle", reason: "max-attempts-per-strategy", exhaustedStrategy: "lint-fix", liteFindingsAfterCount: 1 }],
+  ] as const)("emits info log with storyId as first key when lite validate %s", async (_label, validateFn, reason, expectedData) => {
     const mockLogger = makeLogger();
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => []);
+    const cycle = makeCycle([lintA], [strategy], validateFn as (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<Finding[]>);
     const callOpMock = makeCallOpMock();
 
     await runFixCycle(cycle, makeCtx(), "my-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
 callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as import("../../../src/logger").Logger});
 
     const infoCall = mockLogger.calls.find(
-      (c) => c.level === "info" && c.stage === "findings.cycle" && c.data?.reason === "resolved",
+      (c) => c.level === "info" && c.stage === "findings.cycle" && c.data?.reason === reason,
     );
     expect(infoCall).toBeDefined();
     expect(Object.keys(infoCall!.data!)[0]).toBe("storyId");
-    expect(infoCall?.data).toMatchObject({
-      storyId: "story-1",
-      packageDir: "/tmp/test",
-      cycleName: "my-cycle",
-      reason: "resolved",
-    });
-  });
-
-  test("emits info log with correct fields when cap-exhausted after lite validate with non-empty findings (AC10)", async () => {
-    const mockLogger = makeLogger();
-    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
-    const cycle = makeCycle([lintA], [strategy], async () => [lintA]);
-    const callOpMock = makeCallOpMock();
-
-    await runFixCycle(cycle, makeCtx(), "my-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
-callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as import("../../../src/logger").Logger});
-
-    const infoCall = mockLogger.calls.find(
-      (c) => c.level === "info" && c.stage === "findings.cycle" && c.data?.reason === "max-attempts-per-strategy",
-    );
-    expect(infoCall).toBeDefined();
-    expect(Object.keys(infoCall!.data!)[0]).toBe("storyId");
-    expect(infoCall?.data).toMatchObject({
-      storyId: "story-1",
-      packageDir: "/tmp/test",
-      cycleName: "my-cycle",
-      reason: "max-attempts-per-strategy",
-      exhaustedStrategy: "lint-fix",
-      liteFindingsAfterCount: 1,
-    });
+    expect(infoCall?.data).toMatchObject(expectedData);
   });
 });
