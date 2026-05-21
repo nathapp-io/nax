@@ -53,7 +53,7 @@ describe("HelpOverlay", () => {
     expect(lastFrame()).toBe("");
   });
 
-  test("renders keybindings when visible=true", () => {
+  test("renders all keybindings, Stories panel, and Agent panel content when visible=true", () => {
     const { lastFrame } = render(createElement(HelpOverlay, { visible: true }));
     const output = lastFrame();
 
@@ -68,21 +68,11 @@ describe("HelpOverlay", () => {
     expect(output).toContain("r"); // Retry
     expect(output).toContain("Esc"); // Close overlay
     expect(output).toContain("Ctrl+]"); // Escape agent panel
-  });
-
-  test("displays Stories panel keybindings", () => {
-    const { lastFrame } = render(createElement(HelpOverlay, { visible: true }));
-    const output = lastFrame();
 
     expect(output).toContain("Stories Panel");
     expect(output).toContain("Pause after current story");
     expect(output).toContain("Abort run");
     expect(output).toContain("Skip current story");
-  });
-
-  test("displays Agent panel keybindings", () => {
-    const { lastFrame } = render(createElement(HelpOverlay, { visible: true }));
-    const output = lastFrame();
 
     expect(output).toContain("Agent Panel");
     expect(output).toContain("Escape back to Stories panel");
@@ -96,7 +86,7 @@ describe("CostOverlay", () => {
     expect(lastFrame()).toBe("");
   });
 
-  test("renders cost breakdown when visible=true", () => {
+  test("renders cost breakdown header when visible=true", () => {
     const stories = [
       createMockStory("US-001", "passed", 0.023),
       createMockStory("US-002", "running", 0.015),
@@ -104,11 +94,7 @@ describe("CostOverlay", () => {
     ];
 
     const { lastFrame } = render(
-      createElement(CostOverlay, {
-        visible: true,
-        stories,
-        totalCost: 0.038,
-      }),
+      createElement(CostOverlay, { visible: true, stories, totalCost: 0.038 }),
     );
 
     const output = lastFrame();
@@ -118,15 +104,11 @@ describe("CostOverlay", () => {
     expect(output).toContain("Cost");
   });
 
-  test("displays executed stories with costs", () => {
+  test("displays executed stories with costs and total", () => {
     const stories = [createMockStory("US-001", "passed", 0.023), createMockStory("US-002", "failed", 0.015)];
 
     const { lastFrame } = render(
-      createElement(CostOverlay, {
-        visible: true,
-        stories,
-        totalCost: 0.038,
-      }),
+      createElement(CostOverlay, { visible: true, stories, totalCost: 0.123456 }),
     );
 
     const output = lastFrame();
@@ -136,99 +118,45 @@ describe("CostOverlay", () => {
     expect(output).toContain("US-002");
     expect(output).toContain("failed");
     expect(output).toContain("$0.0150");
-  });
-
-  test("displays total cost", () => {
-    const stories = [createMockStory("US-001", "passed", 0.023)];
-
-    const { lastFrame } = render(
-      createElement(CostOverlay, {
-        visible: true,
-        stories,
-        totalCost: 0.123456,
-      }),
-    );
-
-    const output = lastFrame();
     expect(output).toContain("Total Cost:");
     expect(output).toContain("$0.1235");
   });
 
   test("shows message when no stories executed", () => {
     const stories = [createMockStory("US-001", "pending", 0)];
-
     const { lastFrame } = render(
-      createElement(CostOverlay, {
-        visible: true,
-        stories,
-        totalCost: 0,
-      }),
+      createElement(CostOverlay, { visible: true, stories, totalCost: 0 }),
     );
-
-    const output = lastFrame();
-    expect(output).toContain("No stories executed yet");
+    expect(lastFrame()).toContain("No stories executed yet");
   });
 });
 
 describe("Keyboard action types", () => {
-  test("PAUSE action has correct type", () => {
-    const action: KeyboardAction = { type: "PAUSE" };
-    expect(action.type).toBe("PAUSE");
+  test.each([
+    "PAUSE",
+    "ABORT",
+    "TOGGLE_FOCUS",
+    "ESCAPE_AGENT",
+    "QUIT",
+    "SHOW_HELP",
+    "SHOW_COST",
+    "RETRY",
+    "CLOSE_OVERLAY",
+  ] as const)("%s action has correct type", (type) => {
+    const action: KeyboardAction = { type };
+    expect(action.type).toBe(type);
   });
 
-  test("ABORT action has correct type", () => {
-    const action: KeyboardAction = { type: "ABORT" };
-    expect(action.type).toBe("ABORT");
-  });
-
-  test("SKIP action has story ID", () => {
+  test("SKIP action has correct type and storyId", () => {
     const action: KeyboardAction = { type: "SKIP", storyId: "US-042" };
     expect(action.type).toBe("SKIP");
     expect(action.storyId).toBe("US-042");
   });
-
-  test("TOGGLE_FOCUS action has correct type", () => {
-    const action: KeyboardAction = { type: "TOGGLE_FOCUS" };
-    expect(action.type).toBe("TOGGLE_FOCUS");
-  });
-
-  test("ESCAPE_AGENT action has correct type", () => {
-    const action: KeyboardAction = { type: "ESCAPE_AGENT" };
-    expect(action.type).toBe("ESCAPE_AGENT");
-  });
-
-  test("QUIT action has correct type", () => {
-    const action: KeyboardAction = { type: "QUIT" };
-    expect(action.type).toBe("QUIT");
-  });
-
-  test("SHOW_HELP action has correct type", () => {
-    const action: KeyboardAction = { type: "SHOW_HELP" };
-    expect(action.type).toBe("SHOW_HELP");
-  });
-
-  test("SHOW_COST action has correct type", () => {
-    const action: KeyboardAction = { type: "SHOW_COST" };
-    expect(action.type).toBe("SHOW_COST");
-  });
-
-  test("RETRY action has correct type", () => {
-    const action: KeyboardAction = { type: "RETRY" };
-    expect(action.type).toBe("RETRY");
-  });
-
-  test("CLOSE_OVERLAY action has correct type", () => {
-    const action: KeyboardAction = { type: "CLOSE_OVERLAY" };
-    expect(action.type).toBe("CLOSE_OVERLAY");
-  });
 });
 
 describe("Focus mode", () => {
-  test("PanelFocus enum has Stories value", () => {
+  test("PanelFocus enum has Stories and Agent values", () => {
     expect(PanelFocus.Stories).toBe("stories");
-  });
-
-  test("PanelFocus enum has Agent value", () => {
     expect(PanelFocus.Agent).toBe("agent");
   });
 
@@ -246,40 +174,24 @@ describe("Queue command writer", () => {
   const tempQueueFile = `/tmp/nax-test-queue-${randomUUID()}.txt`;
 
   beforeEach(async () => {
-    // Clean up any existing test file
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      // Ignore if doesn't exist
-    }
+    try { await unlink(tempQueueFile); } catch { /* ignore */ }
   });
 
   afterEach(async () => {
-    // Clean up after tests
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      // Ignore if doesn't exist
-    }
+    try { await unlink(tempQueueFile); } catch { /* ignore */ }
   });
 
-  test("writes PAUSE command to queue file", async () => {
-    await writeQueueCommand(tempQueueFile, { type: "PAUSE" });
-
+  test.each([
+    ["PAUSE", { type: "PAUSE" as const }, "PAUSE"],
+    ["ABORT", { type: "ABORT" as const }, "ABORT"],
+  ])("writes %s command to queue file", async (_label, cmd, expected) => {
+    await writeQueueCommand(tempQueueFile, cmd);
     const content = await Bun.file(tempQueueFile).text();
-    expect(content.trim()).toBe("PAUSE");
-  });
-
-  test("writes ABORT command to queue file", async () => {
-    await writeQueueCommand(tempQueueFile, { type: "ABORT" });
-
-    const content = await Bun.file(tempQueueFile).text();
-    expect(content.trim()).toBe("ABORT");
+    expect(content.trim()).toBe(expected);
   });
 
   test("writes SKIP command with story ID to queue file", async () => {
     await writeQueueCommand(tempQueueFile, { type: "SKIP", storyId: "US-042" });
-
     const content = await Bun.file(tempQueueFile).text();
     expect(content.trim()).toBe("SKIP US-042");
   });
@@ -290,47 +202,29 @@ describe("Queue command writer", () => {
     await writeQueueCommand(tempQueueFile, { type: "ABORT" });
 
     const content = await Bun.file(tempQueueFile).text();
-    const lines = content.trim().split("\n");
-
-    expect(lines).toEqual(["SKIP US-001", "PAUSE", "ABORT"]);
+    expect(content.trim().split("\n")).toEqual(["SKIP US-001", "PAUSE", "ABORT"]);
   });
 
   test("creates queue file if it doesn't exist", async () => {
-    // Ensure file doesn't exist
-    try {
-      await unlink(tempQueueFile);
-    } catch {
-      // Ignore
-    }
-
+    try { await unlink(tempQueueFile); } catch { /* ignore */ }
     await writeQueueCommand(tempQueueFile, { type: "PAUSE" });
-
     const file = Bun.file(tempQueueFile);
     expect(await file.exists()).toBe(true);
-
-    const content = await file.text();
-    expect(content.trim()).toBe("PAUSE");
+    expect((await file.text()).trim()).toBe("PAUSE");
   });
 });
 
 describe("Ctrl+] escape sequence", () => {
-  test("Ctrl+] should escape from agent panel", () => {
-    // This would be tested in integration with the useKeyboard hook
-    // For now, we verify the concept:
+  test("Ctrl+] triggers ESCAPE_AGENT; regular ] without Ctrl does not", () => {
     const input = "]";
-    const keyCtrl = true;
 
-    if (keyCtrl && input === "]") {
+    const withCtrl = true;
+    if (withCtrl && input === "]") {
       const action: KeyboardAction = { type: "ESCAPE_AGENT" };
       expect(action.type).toBe("ESCAPE_AGENT");
     }
-  });
 
-  test("regular ] without Ctrl should not escape", () => {
-    const input = "]";
-    const keyCtrl = false;
-
-    // Should not trigger escape
-    expect(keyCtrl && input === "]").toBe(false);
+    const withoutCtrl = false;
+    expect(withoutCtrl && input === "]").toBe(false);
   });
 });
