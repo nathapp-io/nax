@@ -258,22 +258,21 @@ describe("splitFindingsByScope — structured findings path", () => {
     expect(sourceFindings).toBeNull();
   });
 
-  test("all test-file findings → testFindings non-null, sourceFindings null", () => {
-    const findings = [makeFinding("src/auth.test.ts"), makeFinding("test/unit/foo.spec.ts")];
-    const check = makeAdversarialCheck(findings);
+  test.each([
+    ["all test-file", [makeFinding("src/auth.test.ts"), makeFinding("test/unit/foo.spec.ts")], true, false],
+    ["all source-file", [makeFinding("src/auth.ts"), makeFinding("src/utils/helpers.ts")], false, true],
+  ] as const)("%s findings → correct bucket populated, other null", (_label, findings, testNotNull, _sourceNotNull) => {
+    const check = makeAdversarialCheck([...findings]);
     const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).not.toBeNull();
-    expect(testFindings!.findings).toHaveLength(2);
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("all source-file findings → sourceFindings non-null, testFindings null", () => {
-    const findings = [makeFinding("src/auth.ts"), makeFinding("src/utils/helpers.ts")];
-    const check = makeAdversarialCheck(findings);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
-    expect(sourceFindings!.findings).toHaveLength(2);
+    if (testNotNull) {
+      expect(testFindings).not.toBeNull();
+      expect(testFindings!.findings).toHaveLength(2);
+      expect(sourceFindings).toBeNull();
+    } else {
+      expect(testFindings).toBeNull();
+      expect(sourceFindings).not.toBeNull();
+      expect(sourceFindings!.findings).toHaveLength(2);
+    }
   });
 
   test("mixed findings → both buckets populated with correct subsets", () => {
@@ -301,41 +300,29 @@ describe("splitFindingsByScope — structured findings path", () => {
     expect(sourceFindings!.findings).toHaveLength(1);
   });
 
-  test("scoped checks preserve original raw output from parent check", () => {
+  test("scoped checks inherit exitCode and raw output from parent check", () => {
     const rawOutput = "adversarial tool raw output with stack trace\n  at line 42\n  at line 100";
     const findings = [makeFinding("src/foo.ts"), makeFinding("src/foo.test.ts")];
     const check = makeAdversarialCheck(findings, rawOutput);
     const { testFindings, sourceFindings } = splitFindingsByScope(check);
-
     expect(testFindings!.output).toBe(rawOutput);
     expect(sourceFindings!.output).toBe(rawOutput);
-  });
-
-  test("scoped check exitCode is inherited from parent check", () => {
-    const findings = [makeFinding("src/foo.ts")];
-    const check = makeAdversarialCheck(findings);
-    const { sourceFindings } = splitFindingsByScope(check);
     expect(sourceFindings!.exitCode).toBe(check.exitCode);
   });
 
   // Issue #829 — `test-gap` findings flag a source-file unit that lacks a test;
   // the remediation belongs in test-writer scope, not implementer.
-  test("test-gap on source file → routes to testFindings, not sourceFindings", () => {
-    const finding = makeFinding("apps/api/src/rag/rag.service.ts", { category: "test-gap" });
+  test.each([
+    ["test-gap on source file → routes to testFindings", "apps/api/src/rag/rag.service.ts", "test-gap", true, false],
+    ["non-test-gap on source file → routes to sourceFindings", "src/foo.ts", "abandonment", false, true],
+  ] as const)("%s", (_label, file, category, testNotNull, sourceNotNull) => {
+    const finding = makeFinding(file, { category });
     const check = makeAdversarialCheck([finding]);
     const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).not.toBeNull();
-    expect(testFindings!.findings).toHaveLength(1);
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("non-test-gap on source file still routes to sourceFindings", () => {
-    const finding = makeFinding("src/foo.ts", { category: "abandonment" });
-    const check = makeAdversarialCheck([finding]);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
-    expect(sourceFindings!.findings).toHaveLength(1);
+    if (testNotNull) { expect(testFindings).not.toBeNull(); expect(testFindings!.findings).toHaveLength(1); }
+    else expect(testFindings).toBeNull();
+    if (sourceNotNull) { expect(sourceFindings).not.toBeNull(); expect(sourceFindings!.findings).toHaveLength(1); }
+    else expect(sourceFindings).toBeNull();
   });
 
   test("mixed test-gap + non-test-gap on source files → split correctly", () => {
@@ -371,18 +358,13 @@ describe("splitFindingsByScope — structured findings path", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("splitFindingsByScope — lint output path", () => {
-  test("lint check with empty output → both buckets null", () => {
-    const check = makeLintCheck("");
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("lint check with unparseable output → conservative: sourceFindings non-null, testFindings null", () => {
-    const check = makeLintCheck("Lint failed with unknown format\nPlease check your code");
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
+  test("lint empty → both null; unparseable → conservative sourceFindings only", () => {
+    const empty = splitFindingsByScope(makeLintCheck(""));
+    expect(empty.testFindings).toBeNull();
+    expect(empty.sourceFindings).toBeNull();
+    const unparseable = splitFindingsByScope(makeLintCheck("Lint failed with unknown format\nPlease check your code"));
+    expect(unparseable.testFindings).toBeNull();
+    expect(unparseable.sourceFindings).not.toBeNull();
   });
 
   test.each([
@@ -515,18 +497,13 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
 });
 
 describe("splitFindingsByScope — typecheck output path", () => {
-  test("typecheck check with empty output → both buckets null", () => {
-    const check = makeTypecheckCheck("");
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("typecheck check with unparseable output → conservative: sourceFindings non-null, testFindings null", () => {
-    const check = makeTypecheckCheck("Typecheck failed with unknown format");
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
+  test("typecheck empty → both null; unparseable → conservative sourceFindings only", () => {
+    const empty = splitFindingsByScope(makeTypecheckCheck(""));
+    expect(empty.testFindings).toBeNull();
+    expect(empty.sourceFindings).toBeNull();
+    const unparseable = splitFindingsByScope(makeTypecheckCheck("Typecheck failed with unknown format"));
+    expect(unparseable.testFindings).toBeNull();
+    expect(unparseable.sourceFindings).not.toBeNull();
   });
 
   test.each([
