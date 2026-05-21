@@ -21,81 +21,28 @@ describe("Config Validation", () => {
     }
   });
 
-  test("rejects maxIterations <= 0", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        maxIterations: 0,
-      },
-    };
+  test.each([
+    ["maxIterations", { maxIterations: 0 }, "maxIterations must be > 0"],
+    ["costLimit", { costLimit: -1 }, "costLimit must be > 0"],
+    ["sessionTimeoutSeconds", { sessionTimeoutSeconds: 0 }, "sessionTimeoutSeconds must be > 0"],
+  ] as const)("rejects %s <= 0", (_field, patch, errMsg) => {
+    const config = { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, ...patch } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((e) => e.includes("maxIterations must be > 0"))).toBe(true);
+      expect(result.error.issues.map((e) => e.message).some((msg) => msg.includes(errMsg))).toBe(true);
     }
   });
 
-  test("rejects costLimit <= 0", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        costLimit: -1,
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((e) => e.includes("costLimit must be > 0"))).toBe(true);
+  test("rejects empty and whitespace-only agent.default", () => {
+    for (const val of ["", "   "]) {
+      const config = { ...DEFAULT_CONFIG, agent: { ...DEFAULT_CONFIG.agent, default: val } };
+      const result = NaxConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+      if (!result.success && val === "") {
+        expect(result.error.issues.map((e) => e.message).some((msg) => msg.includes("agent.default must be non-empty"))).toBe(true);
+      }
     }
-  });
-
-  test("rejects sessionTimeoutSeconds <= 0", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        sessionTimeoutSeconds: 0,
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((e) => e.includes("sessionTimeoutSeconds must be > 0"))).toBe(true);
-    }
-  });
-
-  test("rejects empty agent.default", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        default: "",
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((msg) => msg.includes("agent.default must be non-empty"))).toBe(true);
-    }
-  });
-
-  test("rejects whitespace-only agent.default", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      agent: {
-        ...DEFAULT_CONFIG.agent,
-        default: "   ",
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    // Zod's .trim().min(1) validation rejects whitespace-only strings
   });
 
   test("rejects empty tierOrder", () => {
@@ -171,35 +118,12 @@ describe("Config Validation", () => {
     }
   });
 
-  test("accepts any non-empty string as complexityRouting tier", () => {
-    // Tiers are now extensible (z.string), validated against models at runtime
-    const config = {
-      ...DEFAULT_CONFIG,
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        complexityRouting: {
-          ...DEFAULT_CONFIG.autoMode.complexityRouting,
-          simple: "custom-tier",
-        },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects empty string as complexityRouting tier", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        complexityRouting: {
-          ...DEFAULT_CONFIG.autoMode.complexityRouting,
-          simple: "",
-        },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
+  test("complexityRouting accepts non-empty string and rejects empty string", () => {
+    const base = { ...DEFAULT_CONFIG, autoMode: { ...DEFAULT_CONFIG.autoMode } };
+    const accepts = NaxConfigSchema.safeParse({ ...base, autoMode: { ...base.autoMode, complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "custom-tier" } } });
+    expect(accepts.success).toBe(true);
+    const rejects = NaxConfigSchema.safeParse({ ...base, autoMode: { ...base.autoMode, complexityRouting: { ...DEFAULT_CONFIG.autoMode.complexityRouting, simple: "" } } });
+    expect(rejects.success).toBe(false);
   });
 
   test("accepts all valid tiers in complexityRouting", () => {
@@ -259,55 +183,11 @@ describe("Config Validation", () => {
 });
 
 describe("LLM Routing Mode Config", () => {
-  test("accepts one-shot mode", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: {
-        ...DEFAULT_CONFIG.routing,
-        llm: {
-          mode: "one-shot" as const,
-        },
-      },
-    };
+  test.each(["one-shot", "per-story", "hybrid"] as const)("accepts mode: %s", (mode) => {
+    const config = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: { mode } } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.routing.llm?.mode).toBe("one-shot");
-    }
-  });
-
-  test("accepts per-story mode", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: {
-        ...DEFAULT_CONFIG.routing,
-        llm: {
-          mode: "per-story" as const,
-        },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.routing.llm?.mode).toBe("per-story");
-    }
-  });
-
-  test("accepts hybrid mode", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: {
-        ...DEFAULT_CONFIG.routing,
-        llm: {
-          mode: "hybrid" as const,
-        },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.routing.llm?.mode).toBe("hybrid");
-    }
+    if (result.success) expect(result.data.routing.llm?.mode).toBe(mode);
   });
 
   test("rejects invalid mode value", () => {
@@ -373,52 +253,18 @@ describe("TDD Strategy Config", () => {
     expect(strategies).toHaveLength(4);
   });
 
-  test("default config has strategy: auto", () => {
+  test("default config has strategy: auto and parses successfully", () => {
     expect(DEFAULT_CONFIG.tdd.strategy).toBe("auto");
-  });
-
-  test("default config parses successfully", () => {
     const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG);
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.tdd.strategy).toBe("auto");
-    }
+    if (result.success) expect(result.data.tdd.strategy).toBe("auto");
   });
 
-  test("accepts strategy: strict", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
-    };
+  test.each(["strict", "lite", "off"] as const)("accepts strategy: %s", (strategy) => {
+    const config = { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, strategy } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.tdd.strategy).toBe("strict");
-    }
-  });
-
-  test("accepts strategy: lite", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.tdd.strategy).toBe("lite");
-    }
-  });
-
-  test("accepts strategy: off", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "off" as const },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.tdd.strategy).toBe("off");
-    }
+    if (result.success) expect(result.data.tdd.strategy).toBe(strategy);
   });
 
   test("rejects invalid strategy value", () => {
