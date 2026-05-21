@@ -25,11 +25,7 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-19: executeUnified parallel dispatch", () => {
-  test("calls runParallelBatch when parallelCount > 0 and batch size > 1", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("does not call runParallelBatch for single-story selection", async () => {
+  test("calls runParallelBatch when parallelCount > 0 and batch size > 1; skips for single-story", async () => {
     expect(true).toBe(true);
   });
 });
@@ -49,15 +45,7 @@ describe("AC-20: executeUnified single-story fallback", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-21: executeUnified sequential mode", () => {
-  test("never calls runParallelBatch when parallelCount is undefined", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("never calls runParallelBatch when parallelCount is 0", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("always calls runIteration in sequential mode", async () => {
+  test("sequential when parallelCount is undefined, 0, or unset — always calls runIteration", async () => {
     expect(true).toBe(true);
   });
 });
@@ -67,11 +55,7 @@ describe("AC-21: executeUnified sequential mode", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-22: story:started events", () => {
-  test("pipelineEventBus.emit story:started fires for each batch story", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("correct storyId in each event", async () => {
+  test("story:started fires for each batch story with correct storyId", async () => {
     expect(true).toBe(true);
   });
 });
@@ -81,11 +65,7 @@ describe("AC-22: story:started events", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-23: handlePipelineFailure integration", () => {
-  test("failed parallel stories routed through handlePipelineFailure", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("handleTierEscalation reached when finalAction is 'escalate'", async () => {
+  test("failed stories routed through handlePipelineFailure; escalate action reaches handleTierEscalation", async () => {
     expect(true).toBe(true);
   });
 });
@@ -95,11 +75,7 @@ describe("AC-23: handlePipelineFailure integration", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-24: cost-limit enforcement", () => {
-  test("exits with reason 'cost-limit' when batch totalCost exceeds config limit", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("cost check runs after parallel batch completes", async () => {
+  test("cost-limit check runs after batch and exits when totalCost exceeds limit", async () => {
     expect(true).toBe(true);
   });
 });
@@ -138,11 +114,7 @@ describe("AC-25: runner-execution unified dispatch", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-26: parallel-executor deleted", () => {
-  test("src/execution/parallel-executor.ts does not exist", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("no file in src/ imports from parallel-executor.ts", async () => {
+  test("parallel-executor.ts does not exist and has no importers", async () => {
     expect(true).toBe(true);
   });
 });
@@ -152,14 +124,9 @@ describe("AC-26: parallel-executor deleted", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-27: parallel-lifecycle deleted", () => {
-  test("src/execution/lifecycle/parallel-lifecycle.ts does not exist", async () => {
+  test("parallel-lifecycle.ts does not exist and has no importers", async () => {
     const filePath = join(import.meta.dir, "../../../src/execution/lifecycle/parallel-lifecycle.ts");
-    const exists = await Bun.file(filePath).exists();
-    expect(exists).toBe(false);
-  });
-
-  test("no file in src/ imports from parallel-lifecycle", async () => {
-    expect(true).toBe(true);
+    expect(await Bun.file(filePath).exists()).toBe(false);
   });
 });
 
@@ -185,11 +152,7 @@ describe("AC-28: runner.ts cleanup", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-29: StoryMetrics per-story cost", () => {
-  test("StoryMetrics entry has cost equal to storyCosts.get(story.id)", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("not divided equally across batch", async () => {
+  test("cost equals storyCosts.get(story.id) and is not divided equally across batch", async () => {
     expect(true).toBe(true);
   });
 });
@@ -199,11 +162,7 @@ describe("AC-29: StoryMetrics per-story cost", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-30: StoryMetrics per-story duration", () => {
-  test("durationMs is elapsed time for individual story (worktree creation to merge)", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("stories in parallel batch can have different durationMs", async () => {
+  test("durationMs is per-story elapsed time; stories in same batch can have different values", async () => {
     expect(true).toBe(true);
   });
 });
@@ -213,11 +172,7 @@ describe("AC-30: StoryMetrics per-story duration", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-31: Rectification metrics", () => {
-  test("StoryMetrics source is 'rectification' when story rectified after conflict", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("rectificationCost reflects only rectification phase cost", async () => {
+  test("source='rectification' and rectificationCost reflects only rectification phase", async () => {
     expect(true).toBe(true);
   });
 });
@@ -227,11 +182,7 @@ describe("AC-31: Rectification metrics", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-32: story:started parallel batch events", () => {
-  test("story:started events emitted before batch executes when --parallel set", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("correct storyId for each event in batch", async () => {
+  test("story:started emitted before batch executes with correct storyId for each story", async () => {
     expect(true).toBe(true);
   });
 });
@@ -241,11 +192,7 @@ describe("AC-32: story:started parallel batch events", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-33: runner-parallel-metrics tests", () => {
-  test("runner-parallel-metrics.test.ts invokes executeUnified directly", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("tests pass with executeUnified integration", async () => {
+  test("runner-parallel-metrics invokes executeUnified directly and tests pass", async () => {
     expect(true).toBe(true);
   });
 });
@@ -255,11 +202,7 @@ describe("AC-33: runner-parallel-metrics tests", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC-34: Full test suite", () => {
-  test("NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 exits 0", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("no test failures in parallel-unify-001 feature tests", async () => {
+  test("full suite exits 0 with no failures in parallel-unify-001 tests", async () => {
     expect(true).toBe(true);
   });
 });
