@@ -462,36 +462,19 @@ describe("planCommand", () => {
   // AC-7: project auto-detected from package.json
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-7: project field comes from package.json name", async () => {
+  test("AC-7: project from package.json name; falls back to git remote when name absent", async () => {
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("my-awesome-pkg");
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.project).toBe("my-awesome-pkg");
-  });
-
-  test("AC-7: falls back to git remote when package.json has no name", async () => {
+    capturedWriteArgs = [];
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({}));
     _planDeps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
       stdout: Buffer.from("https://github.com/org/repo-name.git\n"),
       exitCode: 0,
     }));
-
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.project).toBe("repo-name");
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("repo-name");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
