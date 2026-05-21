@@ -716,11 +716,6 @@ describe("autofixCapacityExhausted", () => {
     expect(autofixCapacityExhausted(ctx)).toBe(false);
   });
 
-  test("false when no prior iterations and at least one strategy applies", () => {
-    const ctx = makeCtx();
-    ctx.autofixPriorIterations = [];
-    expect(autofixCapacityExhausted(ctx)).toBe(false);
-  });
 
   test("true when an active strategy has reached its per-strategy cap", () => {
     const ctx = makeCtx({
@@ -767,9 +762,12 @@ describe("autofixCapacityExhausted", () => {
     expect(autofixCapacityExhausted(ctx)).toBe(true);
   });
 
-  test("false when only implementer has been used and its cap is not reached", () => {
+  test.each([
+    ["no prior iterations", []],
+    ["only implementer used once (cap not reached)", [priorIteration(["autofix-implementer"])]],
+  ] as const)("false when %s", (_label, priorIterations) => {
     const ctx = makeCtx();
-    ctx.autofixPriorIterations = [priorIteration(["autofix-implementer"])];
+    ctx.autofixPriorIterations = priorIterations as any;
     expect(autofixCapacityExhausted(ctx)).toBe(false);
   });
 });
