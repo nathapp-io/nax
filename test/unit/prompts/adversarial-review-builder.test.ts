@@ -47,50 +47,20 @@ const builder = new AdversarialReviewPromptBuilder();
 // ─── ref mode ─────────────────────────────────────────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — ref mode", () => {
-  test("prompt contains story title", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).toContain(STORY.title);
-  });
-
-  test("prompt contains story id", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).toContain(STORY.id);
+  test.each([
+    ["story title", () => STORY.title],
+    ["story id", () => STORY.id],
+    ["storyGitRef", () => STORY_GIT_REF],
+    ["git diff command", () => `git diff --unified=3 ${STORY_GIT_REF}..HEAD`],
+  ])("prompt contains %s", (_label, getValue) => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(result).toContain(getValue());
   });
 
   test("prompt contains acceptance criteria", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
     expect(result).toContain("Users can log in");
     expect(result).toContain("Sessions expire after 24h");
-  });
-
-  test("prompt contains the ref-based diff section with git diff command", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).toContain(`git diff --unified=3 ${STORY_GIT_REF}..HEAD`);
-  });
-
-  test("prompt contains the storyGitRef as baseline ref label", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).toContain(STORY_GIT_REF);
   });
 
   test("prompt contains stat block when stat is provided", () => {
@@ -251,43 +221,26 @@ describe("AdversarialReviewPromptBuilder — output schema", () => {
 // ─── role section ─────────────────────────────────────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — role section", () => {
-  test('prompt contains adversarial role description ("find what is WRONG")', () => {
+  test.each([
+    ["adversarial role description", "find what is WRONG"],
+    ["adversarial reviewer identity", "adversarial code reviewer"],
+  ])("prompt contains %s", (_label, expected) => {
     const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
       mode: "ref",
       storyGitRef: STORY_GIT_REF,
     });
-
-    expect(result).toContain("find what is WRONG");
-  });
-
-  test("prompt contains adversarial reviewer identity declaration", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      storyGitRef: STORY_GIT_REF,
-    });
-
-    expect(result).toContain("adversarial code reviewer");
+    expect(result).toContain(expected);
   });
 });
 
 // ─── no diff available ────────────────────────────────────────────────────────
 
 describe("AdversarialReviewPromptBuilder — no diff available", () => {
-  test("fallback message appears when neither diff nor storyGitRef are provided", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "embedded",
-      // no diff, no storyGitRef
-    });
-
-    expect(result).toContain("No diff available");
-  });
-
-  test("fallback message present when mode is ref but no storyGitRef provided", () => {
-    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, {
-      mode: "ref",
-      // storyGitRef intentionally omitted
-    });
-
+  test.each<[string, Parameters<typeof builder.buildAdversarialReviewPrompt>[2]]>([
+    ["embedded mode without diff", { mode: "embedded" }],
+    ["ref mode without storyGitRef", { mode: "ref" }],
+  ])("fallback message appears for %s", (_label, diffContext) => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, diffContext);
     expect(result).toContain("No diff available");
   });
 });
