@@ -181,7 +181,7 @@ describe("planCommand", () => {
   //       guide, and test strategy guide
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-2: prompt includes codebase context", async () => {
+  test("AC-2: prompt includes codebase context, output schema, complexity guide, and test strategy guide", async () => {
     await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
@@ -191,6 +191,16 @@ describe("planCommand", () => {
     const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("Source Roots");
     expect(prompt).toContain("Read, Grep, and Glob tools");
+    expect(prompt).toContain("userStories");
+    expect(prompt).toContain("acceptanceCriteria");
+    expect(prompt).toContain("dependencies");
+    expect(prompt).toContain("simple");
+    expect(prompt).toContain("medium");
+    expect(prompt).toContain("complex");
+    expect(prompt).toContain("expert");
+    expect(prompt).toContain("test-after");
+    expect(prompt).toContain("tdd-lite");
+    expect(prompt).toContain("three-session-tdd");
   });
 
   test("uses explicit plan model selector to choose adapter", async () => {
@@ -242,46 +252,6 @@ describe("planCommand", () => {
     });
 
     expect(receivedAgentName).toBe("codex");
-  });
-
-  test("AC-2: prompt includes output schema with prd.json structure", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("userStories");
-    expect(prompt).toContain("acceptanceCriteria");
-    expect(prompt).toContain("dependencies");
-  });
-
-  test("AC-2: prompt includes complexity classification guide", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("simple");
-    expect(prompt).toContain("medium");
-    expect(prompt).toContain("complex");
-    expect(prompt).toContain("expert");
-  });
-
-  test("AC-2: prompt includes test strategy guide", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("test-after");
-    expect(prompt).toContain("tdd-lite");
-    expect(prompt).toContain("three-session-tdd");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -427,7 +397,7 @@ describe("planCommand", () => {
   // AC-5: output written to nax/features/<feature>/prd.json
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-5: output path is nax/features/<feature>/prd.json", async () => {
+  test("AC-5: output path is nax/features/<feature>/prd.json and content is valid JSON with PRD structure", async () => {
     const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
@@ -437,15 +407,6 @@ describe("planCommand", () => {
     const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
     expect(result).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
-  });
-
-  test("AC-5: written content is valid JSON with PRD structure", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
     const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.userStories).toBeDefined();
@@ -537,29 +498,20 @@ describe("planCommand", () => {
   // AC-8: branchName defaults to feat/<feature>, overridable via -b
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-8: branchName defaults to feat/<feature>", async () => {
+  test.each([
+    ["defaults to feat/<feature>", undefined, "feat/my-feat"],
+    ["can be overridden via branch option", "custom/branch-name", "custom/branch-name"],
+  ] as const)("AC-8: branchName %s", async (_label, branch, expected) => {
     await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "my-feat",
       auto: true,
+      ...(branch ? { branch } : {}),
     });
 
     const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
-    expect(written.branchName).toBe("feat/my-feat");
-  });
-
-  test("AC-8: branchName can be overridden via branch option", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "my-feat",
-      auto: true,
-      branch: "custom/branch-name",
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.branchName).toBe("custom/branch-name");
+    expect(written.branchName).toBe(expected);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -715,14 +667,9 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
   });
 
-  test("monorepo: includes workdir field in schema", () => {
-    const prompt = fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"]);
-    expect(prompt).toContain('"workdir"');
-  });
-
-  test("non-monorepo: no workdir field in schema", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).not.toContain('"workdir"');
+  test("workdir field in schema iff monorepo packages provided", () => {
+    expect(fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"])).toContain('"workdir"');
+    expect(fullPrompt(spec, ctx)).not.toContain('"workdir"');
   });
 
   test("taskContext excludes output schema — no Output Schema header or JSON field listing", () => {
@@ -745,14 +692,11 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   const spec = "## Acceptance Criteria\n- AC-1: Returns 200 when project exists";
   const ctx = "## Codebase Structure\nsrc/projects/projects.service.ts";
 
-  test("spec anchor rules included in taskContext when specContent is non-empty", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("Preserve spec ACs");
-  });
-
-  test("spec anchor rules NOT included when specContent is empty string", () => {
-    const { taskContext } = new PlanPromptBuilder().build("", ctx);
-    expect(taskContext).not.toContain("Preserve spec ACs");
+  test("spec anchor rules included in taskContext iff specContent is non-empty", () => {
+    const { taskContext: withSpec } = new PlanPromptBuilder().build(spec, ctx);
+    const { taskContext: withoutSpec } = new PlanPromptBuilder().build("", ctx);
+    expect(withSpec).toContain("Preserve spec ACs");
+    expect(withoutSpec).not.toContain("Preserve spec ACs");
   });
 
   test.each([
@@ -764,14 +708,11 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
     expect(taskContext).toContain(text);
   });
 
-  test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
-    expect(outputFormat).toContain("suggestedCriteria");
-  });
-
-  test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
-    const { outputFormat } = new PlanPromptBuilder().build("", ctx);
-    expect(outputFormat).not.toContain("suggestedCriteria");
+  test("outputFormat schema includes suggestedCriteria iff spec is non-empty", () => {
+    const { outputFormat: withSpec } = new PlanPromptBuilder().build(spec, ctx);
+    const { outputFormat: withoutSpec } = new PlanPromptBuilder().build("", ctx);
+    expect(withSpec).toContain("suggestedCriteria");
+    expect(withoutSpec).not.toContain("suggestedCriteria");
   });
 });
 
@@ -953,41 +894,14 @@ describe("buildPlanComposition()", () => {
     expect(getField(result)).toEqual(expected);
   });
 
-  test("AC-2: user-specified preDebatePhase overrides asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      preDebatePhase: { kind: "custom" as const, onFailure: "block" as const },
-    });
-    expect(result.preDebatePhase).toEqual({ kind: "custom", onFailure: "block" });
-  });
-
-  test("AC-2: user-specified selector overrides asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      selector: { kind: "synthesis" as const },
-    });
-    expect(result.selector).toEqual({ kind: "synthesis" });
-  });
-
-  test("AC-2: user-specified sessionMode overrides asymmetric default", () => {
-    // User explicitly sets one-shot — should not be replaced with stateful default.
-    const result = buildPlanComposition({
-      ...baseConfig,
-      sessionMode: "one-shot" as const,
-      evidenceMode: "asymmetric" as const,
-    });
-    expect(result.sessionMode).toBe("one-shot");
-  });
-
-  test("AC-2: user-specified proposers override asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      proposers: { citationsRequired: false },
-    });
-    expect(result.proposers).toEqual({ citationsRequired: false });
+  test.each([
+    ["preDebatePhase", { preDebatePhase: { kind: "custom" as const, onFailure: "block" as const } }, (r: ReturnType<typeof buildPlanComposition>) => r.preDebatePhase, { kind: "custom", onFailure: "block" }],
+    ["selector", { selector: { kind: "synthesis" as const } }, (r: ReturnType<typeof buildPlanComposition>) => r.selector, { kind: "synthesis" }],
+    ["sessionMode one-shot", { sessionMode: "one-shot" as const }, (r: ReturnType<typeof buildPlanComposition>) => r.sessionMode, "one-shot"],
+    ["proposers", { proposers: { citationsRequired: false } }, (r: ReturnType<typeof buildPlanComposition>) => r.proposers, { citationsRequired: false }],
+  ])("AC-2: user-specified %s overrides asymmetric default", (_label, override, getField, expected) => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const, ...override } as any);
+    expect(getField(result)).toEqual(expected);
   });
 });
 
