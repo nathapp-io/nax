@@ -105,71 +105,24 @@ describe("mergePackageConfig", () => {
   // --- PKG-001: new fields ---
 
   describe("execution.smartTestRunner override", () => {
-    test("overrides smartTestRunner when set to false in package config", () => {
-      const root = makeRoot();
-      const result = mergePackageConfig(root, {
-        execution: {
-          smartTestRunner: false,
-        } as Partial<NaxConfig["execution"]>,
-      } as Partial<NaxConfig>);
+    test("overrides when set in package config; preserves from root when not overridden", () => {
+      const result1 = mergePackageConfig(makeRoot(), { execution: { smartTestRunner: false } as Partial<NaxConfig["execution"]> } as Partial<NaxConfig>);
+      expect(result1.execution.smartTestRunner).toBe(false);
 
-      // false → coerced as-is (verify stage handles coercion)
-      expect(result.execution.smartTestRunner).toBe(false);
-    });
-
-    test("preserves root smartTestRunner when not overridden", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        execution: {
-          ...DEFAULT_CONFIG.execution,
-          smartTestRunner: { enabled: true, testFilePatterns: ["test/**/*.test.ts"], fallback: "import-grep" },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { commands: { test: "changed" } },
-      } as Partial<NaxConfig>);
-
-      expect(result.execution.smartTestRunner).toEqual(root.execution.smartTestRunner);
+      const rootWithSmart: NaxConfig = { ...makeRoot(), execution: { ...DEFAULT_CONFIG.execution, smartTestRunner: { enabled: true, testFilePatterns: ["test/**/*.test.ts"], fallback: "import-grep" } } };
+      const result2 = mergePackageConfig(rootWithSmart, { quality: { commands: { test: "changed" } } } as Partial<NaxConfig>);
+      expect(result2.execution.smartTestRunner).toEqual(rootWithSmart.execution.smartTestRunner);
     });
   });
 
   describe("execution.regressionGate deep merge", () => {
-    test("overrides regressionGate.mode per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        execution: {
-          ...DEFAULT_CONFIG.execution,
-          regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        execution: {
-          regressionGate: { mode: "per-story" },
-        } as Partial<NaxConfig["execution"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.execution.regressionGate.mode).toBe("per-story");
-      // Other regressionGate fields preserved
-      expect(result.execution.regressionGate.enabled).toBe(true);
-      expect(result.execution.regressionGate.timeoutSeconds).toBe(120);
-    });
-
-    test("overrides regressionGate.timeoutSeconds per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        execution: {
-          ...DEFAULT_CONFIG.execution,
-          regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        execution: {
-          regressionGate: { timeoutSeconds: 600 },
-        } as Partial<NaxConfig["execution"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.execution.regressionGate.timeoutSeconds).toBe(600);
-      expect(result.execution.regressionGate.mode).toBe("deferred");
+    test.each([
+      ["mode", { mode: "per-story" as const }, (r: NaxConfig) => r.execution.regressionGate.mode, "per-story"],
+      ["timeoutSeconds", { timeoutSeconds: 600 }, (r: NaxConfig) => r.execution.regressionGate.timeoutSeconds, 600],
+    ])("overrides regressionGate.%s per package", (_field, override, getField, expected) => {
+      const root: NaxConfig = { ...makeRoot(), execution: { ...DEFAULT_CONFIG.execution, regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true } } };
+      const result = mergePackageConfig(root, { execution: { regressionGate: override } as Partial<NaxConfig["execution"]> } as Partial<NaxConfig>);
+      expect(getField(result)).toBe(expected);
     });
   });
 
@@ -432,45 +385,17 @@ describe("mergePackageConfig", () => {
   });
 
   describe("context.testCoverage deep merge", () => {
-    test("deep merges context.testCoverage per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        context: {
-          ...DEFAULT_CONFIG.context,
-          testCoverage: {
-            enabled: true,
-            detail: "names-and-counts",
-            maxTokens: 500,
-            testPattern: "**/*.test.ts",
-            scopeToStory: true,
-          },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        context: {
-          testCoverage: { enabled: false },
-        } as Partial<NaxConfig["context"]>,
-      } as Partial<NaxConfig>);
+    test("deep merges per package; preserves when not overridden", () => {
+      const tcConfig = { enabled: true, detail: "names-and-counts" as const, maxTokens: 500, testPattern: "**/*.test.ts", scopeToStory: true };
+      const rootWithTc: NaxConfig = { ...makeRoot(), context: { ...DEFAULT_CONFIG.context, testCoverage: tcConfig } };
 
-      expect(result.context.testCoverage.enabled).toBe(false);
-      // Other testCoverage fields preserved
-      expect(result.context.testCoverage.testPattern).toBe("**/*.test.ts");
-      expect(result.context.testCoverage.scopeToStory).toBe(true);
-    });
+      const merged = mergePackageConfig(rootWithTc, { context: { testCoverage: { enabled: false } } as Partial<NaxConfig["context"]> } as Partial<NaxConfig>);
+      expect(merged.context.testCoverage.enabled).toBe(false);
+      expect(merged.context.testCoverage.testPattern).toBe("**/*.test.ts");
+      expect(merged.context.testCoverage.scopeToStory).toBe(true);
 
-    test("preserves root testCoverage when not overridden", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        context: {
-          ...DEFAULT_CONFIG.context,
-          testCoverage: { enabled: true, detail: "names-and-counts", maxTokens: 500, testPattern: "**/*.test.ts", scopeToStory: true },
-        },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { commands: { test: "jest" } },
-      } as Partial<NaxConfig>);
-
-      expect(result.context.testCoverage).toEqual(root.context.testCoverage);
+      const preserved = mergePackageConfig(rootWithTc, { quality: { commands: { test: "jest" } } } as Partial<NaxConfig>);
+      expect(preserved.context.testCoverage).toEqual(rootWithTc.context.testCoverage);
     });
   });
 
@@ -499,45 +424,27 @@ describe("mergePackageConfig — project field (US-001)", () => {
     };
   }
 
-  // AC-5: merging project.type from package override
-  test("AC-5: merges project.type from packageOverride while preserving root.project.language", () => {
-    const root = makeRootWithProject();
-    const result = mergePackageConfig(root, {
-      project: { type: "api" },
-    } as Partial<NaxConfig>);
+  // AC-5: merging project fields from package override
+  test("AC-5: merges project fields while preserving others", () => {
+    const resultType = mergePackageConfig(makeRootWithProject(), { project: { type: "api" } } as Partial<NaxConfig>);
+    expect(resultType.project?.type).toBe("api");
+    expect(resultType.project?.language).toBe("typescript");
 
-    expect(result.project?.type).toBe("api");
-    expect(result.project?.language).toBe("typescript");
-  });
-
-  test("AC-5: merges project.testFramework without losing other project fields", () => {
-    const root = makeRootWithProject();
-    const result = mergePackageConfig(root, {
-      project: { testFramework: "vitest" },
-    } as Partial<NaxConfig>);
-
-    expect(result.project?.testFramework).toBe("vitest");
-    expect(result.project?.language).toBe("typescript");
-    expect(result.project?.type).toBe("library");
+    const resultFramework = mergePackageConfig(makeRootWithProject(), { project: { testFramework: "vitest" } } as Partial<NaxConfig>);
+    expect(resultFramework.project?.testFramework).toBe("vitest");
+    expect(resultFramework.project?.language).toBe("typescript");
+    expect(resultFramework.project?.type).toBe("library");
   });
 
   // AC-6: no project in packageOverride → root.project unchanged
-  test("AC-6: returns unchanged root.project when packageOverride has no project field", () => {
-    const root = makeRootWithProject();
-    const result = mergePackageConfig(root, {
-      quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
-    } as Partial<NaxConfig>);
+  test("AC-6: returns unchanged root.project when no override; undefined when neither defines it", () => {
+    const rootWithProject = makeRootWithProject();
+    const result = mergePackageConfig(rootWithProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
+    expect(result.project).toEqual(rootWithProject.project);
 
-    expect(result.project).toEqual(root.project);
-  });
-
-  test("AC-6: root.project is undefined when neither root nor override defines it", () => {
-    const root = makeRoot(); // no project field
-    const result = mergePackageConfig(root, {
-      quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
-    } as Partial<NaxConfig>);
-
-    expect(result.project).toBeUndefined();
+    const rootNoProject = makeRoot();
+    const resultNoProject = mergePackageConfig(rootNoProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
+    expect(resultNoProject.project).toBeUndefined();
   });
 
   test("does not mutate root.project", () => {
