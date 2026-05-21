@@ -58,21 +58,9 @@ const DEFAULTS = {
 // ---------------------------------------------------------------------------
 
 describe("RectifierPromptBuilder.firstAttemptDelta", () => {
-  test("contains the failed check output", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "Unexpected token at line 10")],
-      2,
-    );
-
+  test("contains failed check output and check name/exit code in section header", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("typecheck", "Unexpected token at line 10", 2)], 2);
     expect(prompt).toContain("Unexpected token at line 10");
-  });
-
-  test("contains check name and exit code in section header", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("typecheck", "TS2345 error", 2)],
-      2,
-    );
-
     expect(prompt).toContain("### typecheck (exit 2)");
   });
 
@@ -99,23 +87,13 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("10000 chars total");
   });
 
-  test("includes structured findings when present", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheckWithFindings("semantic", "Semantic review failed")],
-      2,
-    );
+  test("includes structured findings when present; omits section when absent", () => {
+    const withFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheckWithFindings("semantic", "Semantic review failed")], 2);
+    expect(withFindings).toContain("Structured findings:");
+    expect(withFindings).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
 
-    expect(prompt).toContain("Structured findings:");
-    expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
-  });
-
-  test("does NOT include findings section when findings are absent", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "some lint error")],
-      2,
-    );
-
-    expect(prompt).not.toContain("Structured findings:");
+    const withoutFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "some lint error")], 2);
+    expect(withoutFindings).not.toContain("Structured findings:");
   });
 
   test("contains UNRESOLVED escape hatch, fix instructions, and excludes story sections", () => {
@@ -189,16 +167,12 @@ describe("RectifierPromptBuilder.continuation", () => {
     else expect(prompt).not.toContain("URGENT");
   });
 
-  test("includes urgency 'final attempt' note at urgencyAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3);
-    expect(prompt).toContain("final attempt");
-  });
-
-  test("CONTRADICTION_ESCAPE_HATCH is present in every continuation prompt", () => {
+  test("UNRESOLVED present in every continuation; 'final attempt' note at urgencyAtAttempt", () => {
     for (const attempt of [1, 2, 3]) {
       const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
       expect(prompt).toContain("UNRESOLVED:");
     }
+    expect(RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3)).toContain("final attempt");
   });
 
   test.each([
