@@ -198,23 +198,17 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(prompt).toContain("### lint (exit 2)");
   });
 
-  test("contains structured findings when present", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheckWithFindings("semantic", "Semantic review failed")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("Structured findings:");
-    expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
-  });
-
-  test("does NOT include findings section when findings are absent", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "some lint error")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).not.toContain("Structured findings:");
+  test.each([
+    ["present", [makeCheckWithFindings("semantic", "Semantic review failed")], true],
+    ["absent", [makeCheck("lint", "some lint error")], false],
+  ] as const)("structured findings when %s", (_label, checks, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation(checks as any, ...Object.values(DEFAULTS) as [number, number, number]);
+    if (shouldInclude) {
+      expect(prompt).toContain("Structured findings:");
+      expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
+    } else {
+      expect(prompt).not.toContain("Structured findings:");
+    }
   });
 
   test.each<[number, boolean]>([
@@ -242,15 +236,8 @@ describe("RectifierPromptBuilder.continuation", () => {
   });
 
   test("CONTRADICTION_ESCAPE_HATCH is present in every continuation prompt", () => {
-    const attempts = [1, 2, 3];
-    for (const attempt of attempts) {
-      const prompt = RectifierPromptBuilder.continuation(
-        [makeCheck("lint", "error")],
-        attempt,
-        2,
-        3,
-      );
-      // The escape hatch instructs the agent to emit UNRESOLVED: when findings conflict
+    for (const attempt of [1, 2, 3]) {
+      const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
       expect(prompt).toContain("UNRESOLVED:");
     }
   });
@@ -336,66 +323,35 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     } as any;
   }
 
-  test("contains the finding message", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "Missing assertion for edge case")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Missing assertion for edge case");
-  });
-
-  test("contains the file path and severity in finding line", () => {
-    const checks = [makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
+  test("contains the finding message and file path with severity in finding line", () => {
+    const prompt = RectifierPromptBuilder.testWriterRectification(
+      [makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage")],
+      makeStory(),
+    );
+    expect(prompt).toContain("Incomplete test coverage");
     expect(prompt).toContain("[error] test/unit/bar.test.ts:10 — Incomplete test coverage");
   });
 
-  test("contains 'Only modify test files' constraint without workdir", () => {
+  test.each([
+    ["without workdir", undefined, "Only modify test files", "Do NOT touch source implementation files"],
+    ["with workdir packages/api", "packages/api", "Only modify test files within `packages/api/`", "Do NOT touch source files"],
+  ] as const)("constraint %s", (_label, workdir, expectedConstraint, expectedNoTouch) => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: undefined }));
-
-    expect(prompt).toContain("Only modify test files");
-    expect(prompt).toContain("Do NOT touch source implementation files");
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir }));
+    expect(prompt).toContain(expectedConstraint);
+    expect(prompt).toContain(expectedNoTouch);
   });
 
-  test("contains workdir-scoped constraint when story.workdir is set", () => {
+  test("contains AC list, story id/title, no-delete constraint, and commit instruction", () => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: "packages/api" }));
-
-    expect(prompt).toContain("Only modify test files within `packages/api/`");
-    expect(prompt).toContain("Do NOT touch source files");
-  });
-
-  test("contains the acceptance criteria list", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const story = makeStory({ acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
+    const story = makeStory({ id: "US-409", title: "Resolve deadlock", acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
-
     expect(prompt).toContain("1. AC-1: First criterion");
     expect(prompt).toContain("2. AC-2: Second criterion");
-  });
-
-  test("contains the story id and title", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const story = makeStory({ id: "US-409", title: "Resolve deadlock" });
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
-
     expect(prompt).toContain("US-409");
     expect(prompt).toContain("Resolve deadlock");
-  });
-
-  test("instructs not to delete failing tests or modify source files", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
     expect(prompt).toContain("Do NOT delete a failing test");
     expect(prompt).toContain("Do NOT modify source implementation files");
-  });
-
-  test("instructs to commit fixes when done", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
     expect(prompt).toContain("Commit your fixes when done");
   });
 
@@ -487,27 +443,14 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
     } as any;
   }
 
-  test("write-failing-test mode: instructs to write a failing test, not fix source", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "upsertNode uses wrong identifier space")];
+  test("write-failing-test mode: instructs to write failing test, excludes source-fix language, includes bug details", () => {
+    const checks = [makeSourceBugCheck("src/service.ts", "deleteMany uses node.id instead of GraphNode.id")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).toContain("failing test");
     expect(prompt).toContain("spec-correct");
     expect(prompt).toContain("FAIL with the current");
-  });
-
-  test("write-failing-test mode: does not instruct to fix source files", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "wrong id")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).not.toContain("Fix the lint errors");
     expect(prompt).not.toContain("You are fixing test file");
-  });
-
-  test("write-failing-test mode: includes the source bug finding details", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "deleteMany uses node.id instead of GraphNode.id")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).toContain("deleteMany uses node.id instead of GraphNode.id");
     expect(prompt).toContain("src/service.ts");
   });
