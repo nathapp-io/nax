@@ -192,202 +192,65 @@ describe("buildQualityCommands — monorepo tools", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildQualityCommands — bun + typescript", () => {
-  test("returns bun typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("bun run tsc --noEmit");
-  });
-
-  test("returns bun test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("bun test");
-  });
-
-  test("returns bun lint command when linter unknown", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("bun run lint");
-  });
-
-  test("returns biome check lint command when biome detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "biome",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("biome check .");
-  });
-
-  test("returns eslint lint command when eslint detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "eslint",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("eslint .");
+  test.each([
+    ["unknown", "typecheck", "bun run tsc --noEmit"],
+    ["unknown", "test", "bun test"],
+    ["unknown", "lint", "bun run lint"],
+    ["biome", "lint", "biome check ."],
+    ["eslint", "lint", "eslint ."],
+  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+    const commands = buildQualityCommands({ runtime: "bun", language: "typescript", linter: linter as any, monorepo: "none" });
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — node + typescript", () => {
-  test("returns npx typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("npx tsc --noEmit");
-  });
-
-  test("returns npm test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("npm test");
-  });
-
-  test("returns npm run lint command when linter unknown", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("npm run lint");
-  });
-
-  test("returns biome check lint command when biome detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "biome",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("biome check .");
-  });
-
-  test("returns eslint lint command when eslint detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "eslint",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("eslint .");
+  test.each([
+    ["unknown", "typecheck", "npx tsc --noEmit"],
+    ["unknown", "test", "npm test"],
+    ["unknown", "lint", "npm run lint"],
+    ["biome", "lint", "biome check ."],
+    ["eslint", "lint", "eslint ."],
+  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+    const commands = buildQualityCommands({ runtime: "node", language: "typescript", linter: linter as any, monorepo: "none" });
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — python", () => {
-  test("returns ruff lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("ruff check .");
-  });
+  const PYTHON_STACK = { runtime: "unknown" as const, language: "python" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns pytest test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("pytest");
-  });
-
-  test("does not include typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBeUndefined();
+  test.each([
+    ["lint", "ruff check ."],
+    ["test", "pytest"],
+    ["typecheck", undefined],
+  ])("%s command", (cmd: string, expected: string | undefined) => {
+    const commands = buildQualityCommands(PYTHON_STACK);
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — rust", () => {
-  test("returns cargo check typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("cargo check");
-  });
+  const RUST_STACK = { runtime: "unknown" as const, language: "rust" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns cargo clippy lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("cargo clippy");
-  });
-
-  test("returns cargo test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("cargo test");
+  test.each([
+    ["typecheck", "cargo check"],
+    ["lint", "cargo clippy"],
+    ["test", "cargo test"],
+  ])("%s command", (cmd: string, expected: string) => {
+    expect((buildQualityCommands(RUST_STACK) as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — go", () => {
-  test("returns go vet typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("go vet ./...");
-  });
+  const GO_STACK = { runtime: "unknown" as const, language: "go" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns golangci-lint lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("golangci-lint run");
-  });
-
-  test("returns go test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("go test ./...");
+  test.each([
+    ["typecheck", "go vet ./..."],
+    ["lint", "golangci-lint run"],
+    ["test", "go test ./..."],
+  ])("%s command", (cmd: string, expected: string) => {
+    expect((buildQualityCommands(GO_STACK) as any)[cmd]).toBe(expected);
   });
 });
 

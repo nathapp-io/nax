@@ -329,18 +329,12 @@ describe("Phase 4: pull tools", () => {
     providerIds: [],
   };
 
-  test("pullTools is empty when pullConfig is absent", async () => {
+  test.each([
+    ["pullConfig is absent", undefined],
+    ["pullConfig.enabled is false", { enabled: false, allowedTools: [] as string[], maxCallsPerSession: 5 }],
+  ])("pullTools is empty when %s", async (_label, pullConfig) => {
     const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig: undefined });
-    expect(bundle.pullTools).toEqual([]);
-  });
-
-  test("pullTools is empty when pullConfig.enabled is false", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
-    });
+    const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig });
     expect(bundle.pullTools).toEqual([]);
   });
 
