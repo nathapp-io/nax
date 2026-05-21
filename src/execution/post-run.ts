@@ -19,7 +19,7 @@ import { isAmbiguousOutput, routeTddFailure } from "../pipeline/stages/execution
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
 import { appendScratchEntry } from "../session/scratch-writer";
-import { rollbackToRef } from "../tdd/session-runner";
+import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { failAndClose } from "./session-manager-runtime";

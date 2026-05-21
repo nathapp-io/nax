@@ -109,9 +109,8 @@ export function fakeAgentManager(
             tokenUsage: turnResult.tokenUsage,
           };
           // Emit a minimal session-turn dispatch event so subscribers wired via
-          // CallContext.scopeId (e.g. runTddSessionOp's tokenUsage capture) can
-          // observe turn outcomes. Mirrors what AgentManager middleware emits in
-          // production. No-op when no bus was supplied.
+          // CallContext.scopeId can observe turn outcomes. Mirrors what AgentManager
+          // middleware emits in production. No-op when no bus was supplied.
           if (dispatchEvents) {
             dispatchEvents.emitDispatch({
               kind: "session-turn",

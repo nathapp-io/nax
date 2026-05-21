@@ -2,14 +2,14 @@
  * Shared test helpers for TDD orchestrator tests.
  *
  * Provides mockGitSpawn, createMockAgent, and setup/teardown for injectable deps.
- * Uses _isolationDeps, _gitDeps, _executorDeps, _sessionRunnerDeps instead of
+ * Uses _isolationDeps, _gitDeps, _executorDeps, _rollbackDeps instead of
  * global Bun.spawn to avoid cross-file contamination in parallel test runs.
  */
 import { mock } from "bun:test";
 import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { _fullSuiteGateDeps } from "../../../src/operations/full-suite-gate";
 import { _isolationDeps } from "../../../src/tdd/isolation";
-import { _sessionRunnerDeps } from "../../../src/tdd/session-runner";
+import { _rollbackDeps } from "../../../src/tdd/rollback";
 import { _gitDeps } from "../../../src/utils/git";
 import { _executorDeps } from "../../../src/verification/executor";
 
@@ -18,7 +18,7 @@ export interface SavedDeps {
   isolationSpawn: typeof _isolationDeps.spawn;
   executorSpawn: typeof _executorDeps.spawn;
   gitSpawn: typeof _gitDeps.spawn;
-  sessionRunnerSpawn: typeof _sessionRunnerDeps.spawn;
+  rollbackSpawn: typeof _rollbackDeps.spawn;
   fullSuiteGateResolveCtx: typeof _fullSuiteGateDeps.resolveGateContext;
 }
 
@@ -28,7 +28,7 @@ export function saveDeps(): SavedDeps {
     isolationSpawn: _isolationDeps.spawn,
     executorSpawn: _executorDeps.spawn,
     gitSpawn: _gitDeps.spawn,
-    sessionRunnerSpawn: _sessionRunnerDeps.spawn,
+    rollbackSpawn: _rollbackDeps.spawn,
     fullSuiteGateResolveCtx: _fullSuiteGateDeps.resolveGateContext,
   };
 }
@@ -38,7 +38,7 @@ export function restoreDeps(saved: SavedDeps): void {
   _isolationDeps.spawn = saved.isolationSpawn;
   _executorDeps.spawn = saved.executorSpawn;
   _gitDeps.spawn = saved.gitSpawn;
-  _sessionRunnerDeps.spawn = saved.sessionRunnerSpawn;
+  _rollbackDeps.spawn = saved.rollbackSpawn;
   _fullSuiteGateDeps.resolveGateContext = saved.fullSuiteGateResolveCtx;
 }
 
@@ -110,7 +110,7 @@ export function mockAllSpawn(mockFn: any): void {
   _isolationDeps.spawn = mockFn;
   _executorDeps.spawn = mockFn;
   _gitDeps.spawn = mockFn;
-  _sessionRunnerDeps.spawn = mockFn;
+  _rollbackDeps.spawn = mockFn;
 }
 
 /**
@@ -173,7 +173,7 @@ export function mockGitSpawn(opts: {
   }) as any;
 
   _gitDeps.spawn = gitMock;
-  _sessionRunnerDeps.spawn = gitMock;
+  _rollbackDeps.spawn = gitMock;
 
   // Mock test command execution (executeWithTimeout)
   _executorDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
