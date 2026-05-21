@@ -180,26 +180,15 @@ describe("PromptBuilder non-overridable sections", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder override fallthrough", () => {
-  test("missing override file falls through to default template", async () => {
-    const prompt = await PromptBuilder.for("test-writer")
-      .story(makeStory({ title: "FALLTHROUGH_STORY" }))
-      .override("/nonexistent/path/override.md")
-      .build();
-
-    // Should still contain story context (non-overridable)
-    expect(prompt).toContain("FALLTHROUGH_STORY");
-    // Should contain default role task content (not crash)
-    expect(typeof prompt).toBe("string");
+  test.each([
+    ["missing override falls through to default", "/nonexistent/path/override.md", "FALLTHROUGH_STORY"],
+    ["no override uses default template", undefined, "DEFAULT_TEMPLATE_STORY"],
+  ] as const)("%s", async (_label, overridePath, marker) => {
+    let builder = PromptBuilder.for("test-writer").story(makeStory({ title: marker }));
+    if (overridePath) builder = builder.override(overridePath);
+    const prompt = await builder.build();
+    expect(prompt).toContain(marker);
     expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test("no override set uses default template body", async () => {
-    const promptWithout = await PromptBuilder.for("test-writer")
-      .story(makeStory({ title: "DEFAULT_TEMPLATE_STORY" }))
-      .build();
-
-    expect(promptWithout).toContain("DEFAULT_TEMPLATE_STORY");
-    expect(promptWithout.length).toBeGreaterThan(0);
   });
 
   test("valid override file replaces default template body", async () => {
@@ -231,18 +220,12 @@ describe("src/prompts/types exports", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — tdd-simple role", () => {
-  test("PromptBuilder.for('tdd-simple') returns a PromptBuilder instance", () => {
+  test("PromptBuilder.for('tdd-simple') returns a PromptBuilder instance and resolves to non-empty string", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const builder = PromptBuilder.for("tdd-simple" as any);
     expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".build() resolves to a non-empty string for tdd-simple", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(typeof prompt).toBe("string");
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
     expect(prompt.length).toBeGreaterThan(0);
   });
 
@@ -264,20 +247,11 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(prompt).not.toContain("Do not modify test files");
   });
 
-  test("tdd-simple prompt includes story context", async () => {
+  test("tdd-simple prompt includes story context and conventions footer", async () => {
     const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(story)
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(story).build();
     expect(prompt).toContain("TDD_SIMPLE_STORY_MARKER");
-  });
-
-  test("tdd-simple prompt includes conventions footer", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
     expect(prompt.toLowerCase()).toContain("conventions");
   });
 
@@ -360,34 +334,15 @@ describe("PromptBuilder — batch role: build()", () => {
     makeStory({ id: "BP-002", title: "Second Batch Story" }),
   ];
 
-  test("resolves to a non-empty string", async () => {
+  test("resolves to non-empty string with all story IDs, headings, batch instructions, conventions, no verdict", async () => {
     const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test("uses buildBatchStorySection: includes all story IDs and Story N headings", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt).toContain("BP-001");
     expect(prompt).toContain("BP-002");
     expect(prompt).toContain("## Story 1:");
     expect(prompt).toContain("## Story 2:");
-  });
-
-  test("does NOT include verdict section", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    // Verdict section is verifier-only — batch must not include it
     expect(prompt.toLowerCase()).not.toContain("verdict");
-  });
-
-  test("includes batch role-task instructions", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    // Batch role should include TDD-aligned instructions
     expect(prompt.toLowerCase()).toMatch(/each story|implement.*story|story.*implement/);
-  });
-
-  test("includes conventions footer", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt.toLowerCase()).toContain("conventions");
   });
 
