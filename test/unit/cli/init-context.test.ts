@@ -63,55 +63,16 @@ describe("scanProject — file tree", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — package manifest", () => {
-  test("reads name from package.json", async () => {
+  test.each([
+    ["name", { name: "my-project", version: "1.0.0" }, (m: any) => m?.name, "my-project"],
+    ["description", { name: "my-project", description: "A test project" }, (m: any) => m?.description, "A test project"],
+    ["scripts.build", { name: "proj", scripts: { build: "bun run build" } }, (m: any) => m?.scripts?.build, "bun run build"],
+    ["dependencies.zod", { name: "proj", dependencies: { zod: "^3.0.0" } }, (m: any) => m?.dependencies?.zod, "^3.0.0"],
+  ] as const)("reads %s from package.json", async (_field, pkgJson, getField, expected) => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "my-project", version: "1.0.0" }),
-      );
-
+      await Bun.write(join(dir, "package.json"), JSON.stringify(pkgJson));
       const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.name).toBe("my-project");
-    });
-  });
-
-  test("reads description from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "my-project", description: "A test project" }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.description).toBe("A test project");
-    });
-  });
-
-  test("reads scripts from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "proj", scripts: { build: "bun run build", test: "bun test" } }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.scripts?.build).toBe("bun run build");
-    });
-  });
-
-  test("reads dependencies from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "proj", dependencies: { zod: "^3.0.0" } }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.dependencies?.zod).toBe("^3.0.0");
+      expect(getField(scan.packageManifest)).toBe(expected);
     });
   });
 
@@ -398,28 +359,14 @@ describe("generateContextTemplate — output structure", () => {
 // ---------------------------------------------------------------------------
 
 describe("initContext — creates context.md from template", () => {
-  test("creates nax/context.md when it does not exist", async () => {
-    await withTempDir(async (dir) => {
-      await initContext(dir, { ai: false });
-
-      expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
-    });
-  });
-
-  test(".nax/context.md is non-empty", async () => {
-    await withTempDir(async (dir) => {
-      await initContext(dir, { ai: false });
-
-      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
-      expect(content.length).toBeGreaterThan(0);
-    });
-  });
-
-  test("creates nax/ directory if it does not exist", async () => {
+  test("creates .nax/ directory and non-empty context.md when they do not exist", async () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
       expect(existsSync(join(dir, ".nax"))).toBe(true);
+      expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
+      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
+      expect(content.length).toBeGreaterThan(0);
     });
   });
 
@@ -499,18 +446,18 @@ describe("initContext — AI mode (--ai flag)", () => {
     });
   });
 
-  test("calls LLM when --ai flag is set", async () => {
+  test.each([
+    [true, 1],
+    [false, 0],
+  ] as const)("calls LLM %d time(s) when ai=%s", async (ai, expectedCalls) => {
     await withTempDir(async (dir) => {
       const mod = await import("../../../src/cli/init-context");
       const original = mod._initContextDeps.callLLM;
-
-      const callLLMMock = mock(async (_prompt: string) => "# AI Generated Context\n\nContent here.");
+      const callLLMMock = mock(async () => "# AI output");
       mod._initContextDeps.callLLM = callLLMMock;
-
       try {
-        await mod.initContext(dir, { ai: true });
-
-        expect(callLLMMock).toHaveBeenCalledTimes(1);
+        await mod.initContext(dir, { ai });
+        expect(callLLMMock).toHaveBeenCalledTimes(expectedCalls);
       } finally {
         mod._initContextDeps.callLLM = original;
       }
@@ -529,24 +476,6 @@ describe("initContext — AI mode (--ai flag)", () => {
 
         const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content).toContain("AI Generated");
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-
-  test("does not call LLM when --ai flag is not set", async () => {
-    await withTempDir(async (dir) => {
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-
-      const callLLMMock = mock(async () => "# AI output");
-      mod._initContextDeps.callLLM = callLLMMock;
-
-      try {
-        await mod.initContext(dir, { ai: false });
-
-        expect(callLLMMock).not.toHaveBeenCalled();
       } finally {
         mod._initContextDeps.callLLM = original;
       }
