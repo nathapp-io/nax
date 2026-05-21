@@ -55,25 +55,11 @@ function makePrd(): PRD {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isStubTestFile", () => {
-  test("returns true for expect(true).toBe(false)", () => {
-    const content = `
-import { test, expect } from "bun:test";
-test("AC-1: something", async () => {
-  expect(true).toBe(false); // Replace with actual test
-});`;
-    expect(isStubTestFile(content)).toBe(true);
-  });
-
-  test("returns true for expect(true).toBe(true)", () => {
-    const content = `
-test("AC-1: something", async () => {
-  expect(true).toBe(true);
-});`;
-    expect(isStubTestFile(content)).toBe(true);
-  });
-
-  test("returns true with extra whitespace in expression", () => {
-    const content = `expect( true ).toBe( false );`;
+  test.each([
+    ["expect(true).toBe(false)", `\nimport { test, expect } from "bun:test";\ntest("AC-1: something", async () => {\n  expect(true).toBe(false); // Replace with actual test\n});`],
+    ["expect(true).toBe(true)", `\ntest("AC-1: something", async () => {\n  expect(true).toBe(true);\n});`],
+    ["extra whitespace in expression", "expect( true ).toBe( false );"],
+  ])("returns true for %s", (_label, content) => {
     expect(isStubTestFile(content)).toBe(true);
   });
 
@@ -117,39 +103,22 @@ test("AC-1: something", async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isTestLevelFailure", () => {
-  test("returns true for AC-ERROR sentinel (test crash)", () => {
-    expect(isTestLevelFailure(["AC-ERROR"], 10)).toBe(true);
+  test.each([
+    ["AC-ERROR sentinel", ["AC-ERROR"], 10],
+    [">80% of ACs fail (9/10)", ["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"], 10],
+    ["exactly 28/31 case (koda scenario)", Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`), 31],
+    ["AC-ERROR mixed with other failures", ["AC-1", "AC-ERROR", "AC-3"], 10],
+  ] as const)("returns true when %s", (_label, failedACs, totalACs) => {
+    expect(isTestLevelFailure([...failedACs], totalACs)).toBe(true);
   });
 
-  test("returns true when >80% of ACs fail", () => {
-    // 9 of 10 = 90% > 80%
-    expect(isTestLevelFailure(["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"], 10)).toBe(true);
-  });
-
-  test("returns true for exactly 28/31 case (koda scenario)", () => {
-    const failedACs = Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`);
-    expect(isTestLevelFailure(failedACs, 31)).toBe(true); // 90% > 80%
-  });
-
-  test("returns false when <=80% of ACs fail", () => {
-    // 8 of 10 = 80%, threshold is >80% so this should be false
-    expect(isTestLevelFailure(["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8"], 10)).toBe(false);
-  });
-
-  test("returns false for typical partial failure (3 of 10)", () => {
-    expect(isTestLevelFailure(["AC-1","AC-2","AC-3"], 10)).toBe(false);
-  });
-
-  test("returns false when totalACs is 0", () => {
-    expect(isTestLevelFailure(["AC-1"], 0)).toBe(false);
-  });
-
-  test("returns false for empty failedACs", () => {
-    expect(isTestLevelFailure([], 10)).toBe(false);
-  });
-
-  test("returns true when AC-ERROR is mixed with other failures", () => {
-    expect(isTestLevelFailure(["AC-1", "AC-ERROR", "AC-3"], 10)).toBe(true);
+  test.each([
+    ["<=80% of ACs fail (8/10)", ["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8"], 10],
+    ["typical partial failure (3/10)", ["AC-1","AC-2","AC-3"], 10],
+    ["totalACs is 0", ["AC-1"], 0],
+    ["empty failedACs", [], 10],
+  ] as const)("returns false when %s", (_label, failedACs, totalACs) => {
+    expect(isTestLevelFailure([...failedACs], totalACs)).toBe(false);
   });
 });
 
@@ -159,21 +128,12 @@ describe("isTestLevelFailure", () => {
 
 // BUG-067
 describe("AcceptanceLoopContext accepts agentGetFn as optional field", () => {
-  test("AcceptanceLoopContext accepts agentGetFn as optional field", () => {
+  test("AcceptanceLoopContext agentGetFn is optional: set and unset variants", () => {
     const agentGetFn: AgentGetFn = mock(() => undefined);
-
-    // Compile-time and runtime type check: the context should accept agentGetFn
-    const ctx: Partial<AcceptanceLoopContext> = {
-      agentGetFn,
-    };
-
-    expect(ctx.agentGetFn).toBe(agentGetFn);
-  });
-
-  test("AcceptanceLoopContext works without agentGetFn (optional field)", () => {
-    const ctx: Partial<AcceptanceLoopContext> = {};
-
-    expect(ctx.agentGetFn).toBeUndefined();
+    const withFn: Partial<AcceptanceLoopContext> = { agentGetFn };
+    expect(withFn.agentGetFn).toBe(agentGetFn);
+    const withoutFn: Partial<AcceptanceLoopContext> = {};
+    expect(withoutFn.agentGetFn).toBeUndefined();
   });
 });
 
@@ -311,26 +271,14 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
-  test("AcceptanceLoopContext accepts acceptanceTestPaths as optional field", () => {
-    const paths = [
-      {
-        testPath: "/feature/a.test.ts",
-        packageDir: "/feature",
-        commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
-        testFramework: "jest",
-      },
-    ];
-    const ctx: Partial<AcceptanceLoopContext> = {
-      acceptanceTestPaths: paths,
-    };
-    expect(ctx.acceptanceTestPaths).toEqual(paths);
-    expect(ctx.acceptanceTestPaths?.[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
-    expect(ctx.acceptanceTestPaths?.[0]?.testFramework).toBe("jest");
-  });
-
-  test("AcceptanceLoopContext.acceptanceTestPaths defaults to undefined when not set", () => {
-    const ctx: Partial<AcceptanceLoopContext> = {};
-    expect(ctx.acceptanceTestPaths).toBeUndefined();
+  test("AcceptanceLoopContext acceptanceTestPaths is optional: set and unset variants", () => {
+    const paths = [{ testPath: "/feature/a.test.ts", packageDir: "/feature", commandOverride: "npx jest --config jest.nax.config.js {{FILE}}", testFramework: "jest" }];
+    const withPaths: Partial<AcceptanceLoopContext> = { acceptanceTestPaths: paths };
+    expect(withPaths.acceptanceTestPaths).toEqual(paths);
+    expect(withPaths.acceptanceTestPaths?.[0]?.commandOverride).toBe("npx jest --config jest.nax.config.js {{FILE}}");
+    expect(withPaths.acceptanceTestPaths?.[0]?.testFramework).toBe("jest");
+    const withoutPaths: Partial<AcceptanceLoopContext> = {};
+    expect(withoutPaths.acceptanceTestPaths).toBeUndefined();
   });
 });
 
