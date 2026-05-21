@@ -41,13 +41,10 @@ describe("validateAcQuote", () => {
   });
 
   describe("blocking severities require acQuote", () => {
-    test("error with no acQuote → missing_ac_quote", () => {
-      const finding = makeFinding({ severity: "error" });
-      expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "missing_ac_quote" });
-    });
-
-    test("critical with empty acQuote → missing_ac_quote", () => {
-      const finding = makeFinding({ severity: "critical", acQuote: "   " });
+    test.each([
+      ["error with no acQuote", makeFinding({ severity: "error" })],
+      ["critical with whitespace-only acQuote", makeFinding({ severity: "critical", acQuote: "   " })],
+    ] as const)("%s → missing_ac_quote", (_label, finding) => {
       expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "missing_ac_quote" });
     });
 
@@ -114,34 +111,18 @@ describe("validateAcQuote", () => {
       expect(validateAcQuote(finding, ACS)).toEqual({ valid: true });
     });
 
-    test("acQuote without backticks matches AC text that has backtick formatting", () => {
-      // Regression: adversarial reviewer dropped backticks when copying AC text verbatim.
-      // The validator must normalise inline markdown before substring matching so that
-      // `planInteractiveOp` in the AC matches planInteractiveOp in the quote.
-      const backtickAcs = [
-        "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts` with `kind: \"run\"`.",
-        "The `jsonRepair` method must return a non-empty string containing the word JSON.",
-      ];
-      const finding: AcQuotable = {
-        severity: "error",
-        file: "src/operations/plan.ts",
-        issue: "planInteractiveOp is not exported",
-        // acQuote is the AC text with backticks stripped — as the LLM commonly produces
-        acQuote: "planInteractiveOp is a RunOperation exported from src/operations/plan.ts",
-        acIndex: 1,
-      };
-      expect(validateAcQuote(finding, backtickAcs)).toEqual({ valid: true });
-    });
-
-    test("acQuote with backticks also matches AC text that has backtick formatting", () => {
+    test.each([
+      ["without backticks", "planInteractiveOp is a RunOperation exported from src/operations/plan.ts"],
+      ["with backticks", "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`"],
+    ] as const)("acQuote %s matches AC text that has backtick formatting", (_label, acQuote) => {
       const backtickAcs = [
         "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`.",
       ];
       const finding: AcQuotable = {
         severity: "error",
         file: "src/operations/plan.ts",
-        issue: "planInteractiveOp missing",
-        acQuote: "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`",
+        issue: "planInteractiveOp is not exported",
+        acQuote,
         acIndex: 1,
       };
       expect(validateAcQuote(finding, backtickAcs)).toEqual({ valid: true });
@@ -164,25 +145,42 @@ describe("validateAcQuote", () => {
   });
 });
 
+// ─── shared filter behaviors ──────────────────────────────────────────────────
+
+const FILTER_FNS = [
+  ["filterByAcQuote", filterByAcQuote],
+  ["filterByAcGroundingMinimal", filterByAcGroundingMinimal],
+] as const;
+
+test.each(FILTER_FNS)("%s — empty findings → empty accepted and dropped", (_name, fn) => {
+  const result = fn([], ACS);
+  expect(result.accepted).toHaveLength(0);
+  expect(result.dropped).toHaveLength(0);
+});
+
+test.each(FILTER_FNS)("%s — non-blocking findings always accepted", (_name, fn) => {
+  const findings: AcQuotable[] = [
+    makeFinding({ severity: "warning" }),
+    makeFinding({ severity: "info" }),
+    makeFinding({ severity: "unverifiable" }),
+  ];
+  const result = fn(findings, ACS);
+  expect(result.accepted).toHaveLength(3);
+  expect(result.dropped).toHaveLength(0);
+});
+
+test.each([
+  ["filterByAcQuote (missing_ac_quote)", filterByAcQuote, makeFinding({ severity: "error", issue: "sentinel" }), "missing_ac_quote"],
+  ["filterByAcGroundingMinimal (missing_ac_index)", filterByAcGroundingMinimal, makeFinding({ severity: "error", issue: "sentinel-minimal" }), "missing_ac_index"],
+] as const)("%s — dropped entry preserves original finding reference", (_name, fn, finding, code) => {
+  const result = fn([finding], ACS);
+  expect(result.dropped[0].finding.issue).toBe(finding.issue);
+  expect(result.dropped[0].code).toBe(code);
+});
+
 // ─── filterByAcQuote ──────────────────────────────────────────────────────────
 
 describe("filterByAcQuote", () => {
-  test("empty findings → empty accepted and dropped", () => {
-    const result = filterByAcQuote([], ACS);
-    expect(result.accepted).toHaveLength(0);
-    expect(result.dropped).toHaveLength(0);
-  });
-
-  test("non-blocking findings always accepted", () => {
-    const findings: AcQuotable[] = [
-      makeFinding({ severity: "warning" }),
-      makeFinding({ severity: "info" }),
-      makeFinding({ severity: "unverifiable" }),
-    ];
-    const result = filterByAcQuote(findings, ACS);
-    expect(result.accepted).toHaveLength(3);
-    expect(result.dropped).toHaveLength(0);
-  });
 
   test("error finding without acQuote is dropped with missing_ac_quote", () => {
     const findings = [makeFinding({ severity: "error" })];
@@ -228,18 +226,6 @@ describe("filterByAcQuote", () => {
     expect(result.dropped[0].code).toBe("missing_ac_quote");
   });
 
-  test("dropped entry preserves the original finding reference", () => {
-    const finding = makeFinding({ severity: "error", issue: "sentinel-issue" });
-    const result = filterByAcQuote([finding], ACS);
-    expect(result.dropped[0].finding.issue).toBe("sentinel-issue");
-  });
-
-  test("critical severity is also subject to validation", () => {
-    const findings = [makeFinding({ severity: "critical" })];
-    const result = filterByAcQuote(findings, ACS);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("missing_ac_quote");
-  });
 
   test("preserves concrete AdversarialLLMFinding shape (category field)", () => {
     type AdversarialShape = AcQuotable & { category: string };
@@ -268,13 +254,10 @@ describe("validateAcGroundingMinimal", () => {
   });
 
   describe("blocking severities require valid acIndex", () => {
-    test("error with no acIndex → missing_ac_index", () => {
-      const finding = makeFinding({ severity: "error" });
-      expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "missing_ac_index" });
-    });
-
-    test("critical with acIndex 0 → missing_ac_index", () => {
-      const finding = makeFinding({ severity: "critical", acIndex: 0 });
+    test.each([
+      ["error with no acIndex", makeFinding({ severity: "error" })],
+      ["critical with acIndex 0", makeFinding({ severity: "critical", acIndex: 0 })],
+    ] as const)("%s → missing_ac_index", (_label, finding) => {
       expect(validateAcGroundingMinimal(finding, ACS)).toEqual({ valid: false, code: "missing_ac_index" });
     });
 
@@ -299,23 +282,6 @@ describe("validateAcGroundingMinimal", () => {
 // ─── filterByAcGroundingMinimal ───────────────────────────────────────────────
 
 describe("filterByAcGroundingMinimal", () => {
-  test("empty findings → empty accepted and dropped", () => {
-    const result = filterByAcGroundingMinimal([], ACS);
-    expect(result.accepted).toHaveLength(0);
-    expect(result.dropped).toHaveLength(0);
-  });
-
-  test("non-blocking findings always accepted", () => {
-    const findings: AcQuotable[] = [
-      makeFinding({ severity: "warning" }),
-      makeFinding({ severity: "info" }),
-      makeFinding({ severity: "unverifiable" }),
-    ];
-    const result = filterByAcGroundingMinimal(findings, ACS);
-    expect(result.accepted).toHaveLength(3);
-    expect(result.dropped).toHaveLength(0);
-  });
-
   test("error finding without acIndex is dropped with missing_ac_index", () => {
     const findings = [makeFinding({ severity: "error" })];
     const result = filterByAcGroundingMinimal(findings, ACS);
@@ -347,19 +313,6 @@ describe("filterByAcGroundingMinimal", () => {
     ];
     const result = filterByAcGroundingMinimal(findings, ACS);
     expect(result.accepted).toHaveLength(2);
-    expect(result.dropped).toHaveLength(1);
-    expect(result.dropped[0].code).toBe("missing_ac_index");
-  });
-
-  test("dropped entry preserves the original finding reference", () => {
-    const finding = makeFinding({ severity: "error", issue: "sentinel-issue-minimal" });
-    const result = filterByAcGroundingMinimal([finding], ACS);
-    expect(result.dropped[0].finding.issue).toBe("sentinel-issue-minimal");
-  });
-
-  test("critical severity is also subject to validation", () => {
-    const findings = [makeFinding({ severity: "critical" })];
-    const result = filterByAcGroundingMinimal(findings, ACS);
     expect(result.dropped).toHaveLength(1);
     expect(result.dropped[0].code).toBe("missing_ac_index");
   });
