@@ -186,15 +186,13 @@ describe("ReviewerSession.reReview() — agentManager.runAsSession() call parame
     expect(capturedPrompt).toContain(UPDATED_DIFF);
   });
 
-  test("prompt references previous finding by ruleId (AC-1-not-satisfied)", async () => {
-    await session.reReview(UPDATED_DIFF);
-    expect(capturedPrompt).toContain("AC-1-not-satisfied");
-  });
-
-  test("prompt references second previous finding by ruleId (AC-2-not-satisfied)", async () => {
-    await session.reReview(UPDATED_DIFF);
-    expect(capturedPrompt).toContain("AC-2-not-satisfied");
-  });
+  test.each(["AC-1-not-satisfied", "AC-2-not-satisfied"])(
+    "prompt references previous finding by ruleId (%s)",
+    async (ruleId) => {
+      await session.reReview(UPDATED_DIFF);
+      expect(capturedPrompt).toContain(ruleId);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -258,21 +256,14 @@ describe("ReviewerSession.reReview() — history entries", () => {
     await session.destroy();
   });
 
-  test("reReview appended entry at n has role 'implementer'", async () => {
+  test.each<[string, number, string]>([
+    ["implementer", 0, "implementer"],
+    ["reviewer", 1, "reviewer"],
+  ])("reReview appended entry at n+%d has role '%s'", async (_role, offset, expectedRole) => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
     const prevLen = session.history.length;
     await session.reReview(UPDATED_DIFF);
-    const entry = session.history[prevLen];
-    expect(entry?.role).toBe("implementer");
-    await session.destroy();
-  });
-
-  test("reReview appended entry at n+1 has role 'reviewer'", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.reReview(UPDATED_DIFF);
-    const entry = session.history[prevLen + 1];
-    expect(entry?.role).toBe("reviewer");
+    expect(session.history[prevLen + offset]?.role).toBe(expectedRole as any);
     await session.destroy();
   });
 
@@ -438,19 +429,14 @@ describe("ReviewerSession.clarify() — history entries", () => {
     await session.destroy();
   });
 
-  test("first appended entry has role 'implementer'", async () => {
+  test.each<[string, number, string]>([
+    ["first", 0, "implementer"],
+    ["second", 1, "reviewer"],
+  ])("%s appended entry has role '%s'", async (_label, offset, role) => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
     const prevLen = session.history.length;
     await session.clarify("What does AC-1 require?");
-    expect(session.history[prevLen]?.role).toBe("implementer");
-    await session.destroy();
-  });
-
-  test("second appended entry has role 'reviewer'", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.clarify("What does AC-1 require?");
-    expect(session.history[prevLen + 1]?.role).toBe("reviewer");
+    expect(session.history[prevLen + offset]?.role).toBe(role as any);
     await session.destroy();
   });
 
