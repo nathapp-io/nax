@@ -385,27 +385,15 @@ describe("splitFindingsByScope — lint output path", () => {
     expect(sourceFindings).not.toBeNull();
   });
 
-  test("lint check with all test-file paths → testFindings non-null, sourceFindings null", () => {
-    const output = `
-src/entity-store.integration.spec.ts:232:26 lint/style/noNonNullAssertion
-src/entity-store.integration.spec.ts:247:18 lint/style/noNonNullAssertion
-test/unit/foo.test.ts:10:5 lint/style/noNonNullAssertion
-`.trim();
-    const check = makeLintCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).not.toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("lint check with all source-file paths → sourceFindings non-null, testFindings null", () => {
-    const output = `
-src/service.ts:10:3 lint/style/useConst
-src/utils/helpers.ts:25:1 lint/style/useConst
-`.trim();
-    const check = makeLintCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
+  test.each([
+    ["all test-file paths", "src/entity-store.integration.spec.ts:232:26 lint/style/noNonNullAssertion\nsrc/entity-store.integration.spec.ts:247:18 lint/style/noNonNullAssertion\ntest/unit/foo.test.ts:10:5 lint/style/noNonNullAssertion", true, false],
+    ["all source-file paths", "src/service.ts:10:3 lint/style/useConst\nsrc/utils/helpers.ts:25:1 lint/style/useConst", false, true],
+  ] as const)("lint check with %s → correct bucket", (_label, output, testNotNull, sourceNotNull) => {
+    const { testFindings, sourceFindings } = splitFindingsByScope(makeLintCheck(output));
+    if (testNotNull) expect(testFindings).not.toBeNull();
+    else expect(testFindings).toBeNull();
+    if (sourceNotNull) expect(sourceFindings).not.toBeNull();
+    else expect(sourceFindings).toBeNull();
   });
 
   test("lint check with mixed paths → both buckets non-null", () => {
@@ -541,26 +529,15 @@ describe("splitFindingsByScope — typecheck output path", () => {
     expect(sourceFindings).not.toBeNull();
   });
 
-  test("all test-file diagnostics → testFindings non-null, sourceFindings null", () => {
-    const output = `
-src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
-test/unit/foo.test.ts(2,1): error TS2552: Cannot find name 'describe'.
-`.trim();
-    const check = makeTypecheckCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "tsc");
-    expect(testFindings).not.toBeNull();
-    expect(sourceFindings).toBeNull();
-  });
-
-  test("all source diagnostics → sourceFindings non-null, testFindings null", () => {
-    const output = `
-src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.
-src/core.ts(1,1): error TS2304: Cannot find name 'foo'.
-`.trim();
-    const check = makeTypecheckCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check, undefined, "auto", "tsc");
-    expect(testFindings).toBeNull();
-    expect(sourceFindings).not.toBeNull();
+  test.each([
+    ["all test-file diagnostics", "src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.\ntest/unit/foo.test.ts(2,1): error TS2552: Cannot find name 'describe'.", true, false],
+    ["all source diagnostics", "src/service.ts(10,3): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/core.ts(1,1): error TS2304: Cannot find name 'foo'.", false, true],
+  ] as const)("%s → correct bucket", (_label, output, testNotNull, sourceNotNull) => {
+    const { testFindings, sourceFindings } = splitFindingsByScope(makeTypecheckCheck(output), undefined, "auto", "tsc");
+    if (testNotNull) expect(testFindings).not.toBeNull();
+    else expect(testFindings).toBeNull();
+    if (sourceNotNull) expect(sourceFindings).not.toBeNull();
+    else expect(sourceFindings).toBeNull();
   });
 
   test("mixed test/source diagnostics split into distinct outputs", () => {
@@ -704,57 +681,35 @@ describe("runTestWriterRectification", () => {
     expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
   });
 
-  test("returns 0 when agent is not found (getDefault returns null)", async () => {
+  test.each([
+    ["agent not found (getDefault returns null)", (mgr: ReturnType<typeof makeMockAgentManager>) => { mgr.getDefault = () => null; }, 0],
+    ["runWithFallback throws", (mgr: ReturnType<typeof makeMockAgentManager>) => { mgr.runWithFallback = mock(async () => { throw new Error("agent session error"); }); }, 1],
+  ] as const)("returns 0 when %s", async (_label, setupMgr, expectedCalls) => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     const agentManager = makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 })));
-    agentManager.getDefault = () => null;
+    setupMgr(agentManager);
     const ctx = makeCtx();
 
     const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     expect(cost).toBe(0);
+    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(expectedCalls);
   });
 
-  test("returns 0 and does not rethrow when runWithFallback throws", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const agentManager = makeMockAgentManager(mock(async () => ({ estimatedCostUsd: 0 })));
-    agentManager.runWithFallback = mock(async () => { throw new Error("agent session error"); });
-    const ctx = makeCtx();
-
-    const cost = await runTestWriterRectification(ctx, testChecks, story, agentManager);
-
-    expect(cost).toBe(0);
-    expect(agentManager.runWithFallback).toHaveBeenCalledTimes(1);
-  });
-
-  test("uses config.tdd.sessionTiers.testWriter for model tier", async () => {
+  test.each([
+    ["configured testWriter tier", { testWriter: "fast" } as any, "fast"],
+    ["undefined sessionTiers falls back to balanced", undefined, "balanced"],
+  ] as const)("model tier: %s", async (_label, sessionTiers, expectedTier) => {
     const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
     const mockRun = mock(async () => ({ estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false }));
     const agentManager = makeMockAgentManager(mockRun);
     const ctx = makeCtx({
-      rootConfig: {
-        ...DEFAULT_CONFIG,
-        tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers: { testWriter: "fast" } },
-      } as any,
+      rootConfig: { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers } } as any,
     });
 
     await runTestWriterRectification(ctx, testChecks, story, agentManager);
 
     const callOpts = (agentManager.runWithFallback.mock.calls as unknown[][])[0][0] as { runOptions: Record<string, unknown> };
-    expect(callOpts.runOptions.modelTier).toBe("fast");
-  });
-
-  test("defaults to 'balanced' model tier when sessionTiers.testWriter is not configured", async () => {
-    const testChecks = [makeAdversarialCheck([makeFinding("src/foo.test.ts")])];
-    const mockRun = mock(async () => ({ estimatedCostUsd: 0, success: true, output: "", exitCode: 0, rateLimited: false }));
-    const agentManager = makeMockAgentManager(mockRun);
-    const ctx = makeCtx({
-      rootConfig: { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, sessionTiers: undefined } } as any,
-    });
-
-    await runTestWriterRectification(ctx, testChecks, story, agentManager);
-
-    const callOpts = (agentManager.runWithFallback.mock.calls as unknown[][])[0][0] as { runOptions: Record<string, unknown> };
-    expect(callOpts.runOptions.modelTier).toBe("balanced");
+    expect(callOpts.runOptions.modelTier).toBe(expectedTier);
   });
 });
