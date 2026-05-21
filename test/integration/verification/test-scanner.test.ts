@@ -34,17 +34,13 @@ describe("Validation", () => {
     expect(result.describes[1].tests).toEqual(["rejects empty name"]);
   });
 
-  test("handles single-quoted strings", () => {
-    const source = `describe('Auth', () => { it('logs in', () => {}); });`;
-    const result = extractTestStructure(source);
-    expect(result.describes[0].name).toBe("Auth");
-    expect(result.describes[0].tests).toEqual(["logs in"]);
-  });
+  test("handles single-quoted and backtick strings", () => {
+    const single = extractTestStructure(`describe('Auth', () => { it('logs in', () => {}); });`);
+    expect(single.describes[0].name).toBe("Auth");
+    expect(single.describes[0].tests).toEqual(["logs in"]);
 
-  test("handles backtick strings", () => {
-    const source = "describe(`Math utils`, () => { test(`adds numbers`, () => {}); });";
-    const result = extractTestStructure(source);
-    expect(result.describes[0].name).toBe("Math utils");
+    const backtick = extractTestStructure("describe(`Math utils`, () => { test(`adds numbers`, () => {}); });");
+    expect(backtick.describes[0].name).toBe("Math utils");
   });
 
   test("handles top-level tests without describe", () => {
@@ -115,17 +111,10 @@ describe("formatTestSummary", () => {
     expect(result).toContain("required name");
   });
 
-  test("includes dedup instruction", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("DO NOT duplicate");
-  });
-
-  test("shows total count in header", () => {
+  test("header shows total count, includes dedup instruction, empty input → empty string", () => {
     const result = formatTestSummary(files, "names-only");
     expect(result).toContain("8 tests across 2 files");
-  });
-
-  test("returns empty string for no files", () => {
+    expect(result).toContain("DO NOT duplicate");
     expect(formatTestSummary([], "names-only")).toBe("");
   });
 });
@@ -150,16 +139,11 @@ describe("truncateToTokenBudget", () => {
     expect(result.truncated).toBe(false);
   });
 
-  test("falls back to simpler detail if over budget", () => {
-    // Very tight budget — force fallback
-    const result = truncateToTokenBudget(files, 50, "describe-blocks");
-    expect(result.truncated).toBe(true);
-  });
-
-  test("handles tiny budget with fallback message", () => {
-    const result = truncateToTokenBudget(files, 10, "describe-blocks");
-    expect(result.truncated).toBe(true);
-    expect(result.summary).toContain("test files");
+  test("falls back and truncates when budget is too tight", () => {
+    expect(truncateToTokenBudget(files, 50, "describe-blocks").truncated).toBe(true);
+    const tiny = truncateToTokenBudget(files, 10, "describe-blocks");
+    expect(tiny.truncated).toBe(true);
+    expect(tiny.summary).toContain("test files");
   });
 });
 
@@ -178,24 +162,12 @@ describe("deriveTestPatterns", () => {
     expect(patterns).toContain("connection.spec.ts");
   });
 
-  test("handles files without special suffixes", () => {
-    const contextFiles = ["src/utils.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    expect(patterns).toContain("utils.test.ts");
-    expect(patterns).toContain("utils.spec.ts");
-    expect(patterns).toContain("utils.test.js");
-    expect(patterns).toContain("utils.spec.js");
-  });
-
-  test("handles various file extensions", () => {
-    const contextFiles = ["src/component.tsx", "src/script.jsx"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    expect(patterns).toContain("component.test.tsx");
-    expect(patterns).toContain("component.spec.tsx");
-    expect(patterns).toContain("script.test.jsx");
-    expect(patterns).toContain("script.spec.jsx");
+  test.each([
+    ["plain .ts", ["src/utils.ts"], ["utils.test.ts", "utils.spec.ts", "utils.test.js", "utils.spec.js"]],
+    ["tsx/jsx extensions", ["src/component.tsx", "src/script.jsx"], ["component.test.tsx", "component.spec.tsx", "script.test.jsx", "script.spec.jsx"]],
+  ] as const)("generates patterns for %s", (_label, contextFiles, expected) => {
+    const patterns = deriveTestPatterns([...contextFiles]);
+    for (const p of expected) expect(patterns).toContain(p);
   });
 
   test("strips common suffixes like .service, .controller, .module", () => {
@@ -209,18 +181,11 @@ describe("deriveTestPatterns", () => {
     expect(patterns).toContain("api.test.ts"); // Simplified
   });
 
-  test("returns empty array for empty input", () => {
-    const patterns = deriveTestPatterns([]);
-    expect(patterns).toEqual([]);
-  });
+  test("returns empty array for empty input and deduplicates patterns", () => {
+    expect(deriveTestPatterns([])).toEqual([]);
 
-  test("deduplicates patterns", () => {
-    const contextFiles = ["src/foo.ts", "src/foo.service.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    // Both files generate "foo.test.ts", should only appear once
-    const fooTestCount = patterns.filter((p) => p === "foo.test.ts").length;
-    expect(fooTestCount).toBe(1);
+    const patterns = deriveTestPatterns(["src/foo.ts", "src/foo.service.ts"]);
+    expect(patterns.filter((p) => p === "foo.test.ts")).toHaveLength(1);
   });
 });
 
