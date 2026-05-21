@@ -66,20 +66,17 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_NEIGHBOR_DESCRIPTOR", () => {
-  test("has expected name, description, and inputSchema", () => {
+  test("has expected name, description, inputSchema, and is in PULL_TOOL_REGISTRY", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.name).toBe("query_neighbor");
     expect(QUERY_NEIGHBOR_DESCRIPTOR.description.length).toBeGreaterThan(0);
     const schema = QUERY_NEIGHBOR_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toContain("filePath");
+    expect(PULL_TOOL_REGISTRY["query_neighbor"]).toBe(QUERY_NEIGHBOR_DESCRIPTOR);
   });
 
   test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR[field]).toBeGreaterThan(0);
     expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR[field])).toBe(true);
-  });
-
-  test("PULL_TOOL_REGISTRY includes query_neighbor", () => {
-    expect(PULL_TOOL_REGISTRY["query_neighbor"]).toBe(QUERY_NEIGHBOR_DESCRIPTOR);
   });
 });
 
@@ -278,20 +275,17 @@ describe("handleQueryNeighbor", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
-  test("has expected name, description, and inputSchema (filter is optional)", () => {
+  test("has expected name, description, inputSchema (filter optional), and is in PULL_TOOL_REGISTRY", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name).toBe("query_feature_context");
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.description.length).toBeGreaterThan(0);
     const schema = QUERY_FEATURE_CONTEXT_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toBeUndefined();
+    expect(PULL_TOOL_REGISTRY["query_feature_context"]).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR);
   });
 
   test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field]).toBeGreaterThan(0);
     expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field])).toBe(true);
-  });
-
-  test("PULL_TOOL_REGISTRY includes query_feature_context", () => {
-    expect(PULL_TOOL_REGISTRY["query_feature_context"]).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR);
   });
 });
 
