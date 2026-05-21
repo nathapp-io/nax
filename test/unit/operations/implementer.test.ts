@@ -217,3 +217,100 @@ describe("implementerOp input/output types", () => {
     expect("output" in output).toBe(true);
   });
 });
+
+describe("implementerOp.verify — isolation", () => {
+  test("attaches isolation with warnings when implementer touched test files", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\ntest/foo.test.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts", "test/foo.test.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      expect(result).not.toBeNull();
+      expect(result!.isolation).toBeDefined();
+      expect(result!.isolation!.passed).toBe(true);
+      expect(result!.isolation!.warnings).toContain("test/foo.test.ts");
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("attaches passing isolation when implementer touched only source files", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { _isolationDeps } = await import("@/tdd");
+
+    const origSpawn = _isolationDeps.spawn;
+    _isolationDeps.spawn = ((_cmd: string[]) => ({
+      stdout: new Response("src/foo.ts\n").body,
+      exited: Promise.resolve(0),
+    })) as any;
+
+    try {
+      const parsed = {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "ok",
+      };
+      const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+      const ctx = {
+        packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+        config: DEFAULT_CONFIG.tdd,
+        readFile: async () => null,
+        fileExists: async () => false,
+      };
+
+      const result = await implementerOp.verify!(parsed, input, ctx as any);
+      expect(result!.isolation!.passed).toBe(true);
+      expect(result!.isolation!.warnings ?? []).toEqual([]);
+    } finally {
+      _isolationDeps.spawn = origSpawn;
+    }
+  });
+
+  test("returns parsed unchanged when beforeRef absent", async () => {
+    const { implementerOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+
+    const parsed = {
+      success: true,
+      filesChanged: [],
+      estimatedCostUsd: 0,
+      durationMs: 0,
+      output: "ok",
+    };
+    const input = { story: { id: "US-001" } as any };
+    const ctx = {
+      packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
+      config: DEFAULT_CONFIG.tdd,
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+
+    const result = await implementerOp.verify!(parsed, input, ctx as any);
+    expect(result).toEqual(parsed);
+  });
+});
