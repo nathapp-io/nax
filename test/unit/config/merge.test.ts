@@ -473,42 +473,19 @@ describe("mergePackageConfig", () => {
   });
 
   describe("quality boolean flag overrides", () => {
-    test("overrides quality.requireTests per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        quality: { ...DEFAULT_CONFIG.quality, requireTests: true, commands: {} },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.quality.requireTests).toBe(false);
-    });
-
-    test("overrides quality.requireTypecheck per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        quality: { ...DEFAULT_CONFIG.quality, requireTypecheck: true, commands: {} },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { requireTypecheck: false } as Partial<NaxConfig["quality"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.quality.requireTypecheck).toBe(false);
-    });
-
-    test("overrides quality.requireLint per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        quality: { ...DEFAULT_CONFIG.quality, requireLint: true, commands: {} },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { requireLint: false } as Partial<NaxConfig["quality"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.quality.requireLint).toBe(false);
-    });
-
+    test.each(["requireTests", "requireTypecheck", "requireLint"] as const)(
+      "overrides quality.%s per package",
+      (field) => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          quality: { ...DEFAULT_CONFIG.quality, [field]: true, commands: {} as NaxConfig["quality"]["commands"] },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { [field]: false } as Partial<NaxConfig["quality"]>,
+        } as Partial<NaxConfig>);
+        expect(result.quality[field]).toBe(false);
+      },
+    );
   });
 
   describe("context.testCoverage deep merge", () => {
@@ -555,31 +532,15 @@ describe("mergePackageConfig", () => {
   });
 
   describe("immutability guarantees", () => {
-    test("does not mutate root.execution", () => {
+    test.each([
+      ["root.execution", (r: NaxConfig) => r.execution.verificationTimeoutSeconds, (_r: NaxConfig) => ({ execution: { verificationTimeoutSeconds: 999 } } as unknown as Partial<NaxConfig>)],
+      ["root.review", (r: NaxConfig) => r.review.enabled, (r: NaxConfig) => ({ review: { enabled: !r.review.enabled } } as unknown as Partial<NaxConfig>)],
+      ["root.acceptance", (r: NaxConfig) => r.acceptance.enabled, (r: NaxConfig) => ({ acceptance: { enabled: !r.acceptance.enabled } } as unknown as Partial<NaxConfig>)],
+    ])("does not mutate %s", (_label, getOrig, makeOverride) => {
       const root = makeRoot();
-      const origTimeout = root.execution.verificationTimeoutSeconds;
-      mergePackageConfig(root, {
-        execution: { verificationTimeoutSeconds: 999 } as Partial<NaxConfig["execution"]>,
-      } as Partial<NaxConfig>);
-      expect(root.execution.verificationTimeoutSeconds).toBe(origTimeout);
-    });
-
-    test("does not mutate root.review", () => {
-      const root = makeRoot();
-      const origEnabled = root.review.enabled;
-      mergePackageConfig(root, {
-        review: { enabled: !origEnabled } as Partial<NaxConfig["review"]>,
-      } as Partial<NaxConfig>);
-      expect(root.review.enabled).toBe(origEnabled);
-    });
-
-    test("does not mutate root.acceptance", () => {
-      const root = makeRoot();
-      const origEnabled = root.acceptance.enabled;
-      mergePackageConfig(root, {
-        acceptance: { enabled: !origEnabled } as Partial<NaxConfig["acceptance"]>,
-      } as Partial<NaxConfig>);
-      expect(root.acceptance.enabled).toBe(origEnabled);
+      const orig = getOrig(root);
+      mergePackageConfig(root, makeOverride(root));
+      expect(getOrig(root)).toBe(orig);
     });
   });
 });
