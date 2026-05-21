@@ -32,36 +32,16 @@ describe("scanProject — file tree", () => {
     });
   });
 
-  test("excludes node_modules from file tree", async () => {
+  test.each([
+    ["node_modules", "node_modules/some-pkg/index.js"],
+    [".git", ".git/config"],
+    ["dist", "dist/bundle.js"],
+  ])("excludes %s directory from file tree", async (excludedDir, fileToWrite) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "node_modules", "some-pkg", "index.js"), "");
+      await Bun.write(join(dir, fileToWrite), "");
       await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
       const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes("node_modules"))).toBe(false);
-    });
-  });
-
-  test("excludes .git directory from file tree", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".git", "config"), "");
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes(".git"))).toBe(false);
-    });
-  });
-
-  test("excludes dist directory from file tree", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "dist", "bundle.js"), "");
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes("dist"))).toBe(false);
+      expect(scan.fileTree.some((f) => f.includes(excludedDir))).toBe(false);
     });
   });
 
@@ -205,43 +185,16 @@ describe("scanProject — README", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — entry points", () => {
-  test("detects src/index.ts as entry point", async () => {
+  test.each([
+    ["src/index.ts", "export {}"],
+    ["src/main.ts", ""],
+    ["main.go", "package main"],
+    ["src/lib.rs", ""],
+  ])("detects %s as entry point", async (file, content) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
+      await Bun.write(join(dir, file), content);
       const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/index.ts");
-    });
-  });
-
-  test("detects src/main.ts as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "main.ts"), "");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/main.ts");
-    });
-  });
-
-  test("detects main.go as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "main.go"), "package main");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("main.go");
-    });
-  });
-
-  test("detects src/lib.rs as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "lib.rs"), "");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/lib.rs");
+      expect(scan.entryPoints).toContain(file);
     });
   });
 
@@ -271,43 +224,16 @@ describe("scanProject — entry points", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — config files", () => {
-  test("lists tsconfig.json when present", async () => {
+  test.each([
+    ["tsconfig.json", "{}"],
+    ["biome.json", "{}"],
+    ["turbo.json", "{}"],
+    [".env.example", "API_KEY="],
+  ])("lists %s when present", async (file, content) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
-
+      await Bun.write(join(dir, file), content);
       const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("tsconfig.json");
-    });
-  });
-
-  test("lists biome.json when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("biome.json");
-    });
-  });
-
-  test("lists turbo.json when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("turbo.json");
-    });
-  });
-
-  test("lists .env.example when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".env.example"), "API_KEY=");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain(".env.example");
+      expect(scan.configFiles).toContain(file);
     });
   });
 
