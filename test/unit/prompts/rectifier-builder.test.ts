@@ -39,52 +39,12 @@ const CONTEXT = "# Project Context\n\nThis project uses Bun 1.3+.";
 // ─── RectifierPromptBuilder.regressionFailure() ────────────────────────────────
 
 describe("RectifierPromptBuilder.regressionFailure()", () => {
-  test("includes story title", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
+  test("includes story title, description, acceptance criteria, failure messages, and test command", () => {
+    const result = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD });
     expect(result).toContain(STORY.title);
-  });
-
-  test("includes story description", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
     expect(result).toContain(STORY.description);
-  });
-
-  test("includes acceptance criteria", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
-    for (const ac of STORY.acceptanceCriteria) {
-      expect(result).toContain(ac);
-    }
-  });
-
-  test("includes failure messages", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
-    for (const f of FAILURES) {
-      expect(result).toContain(f.message);
-    }
-  });
-
-  test("includes test command", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
+    for (const ac of STORY.acceptanceCriteria) expect(result).toContain(ac);
+    for (const f of FAILURES) expect(result).toContain(f.message);
     expect(result).toContain(TEST_CMD);
   });
 
@@ -99,68 +59,24 @@ describe("RectifierPromptBuilder.regressionFailure()", () => {
     expect(result).toContain("cross-story regressions");
   });
 
-  test("includes conventions by default", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-    });
-    expect(result).toContain("Conventions");
+  test("includes conventions by default; omits conventions section when disabled", () => {
+    const withConventions = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD });
+    expect(withConventions).toContain("Conventions");
+    const noConventions = RectifierPromptBuilder.regressionFailure({ story: STORY, failures: FAILURES, testCommand: TEST_CMD, conventions: false });
+    expect(noConventions.split("\n").some((l) => l.startsWith("# Conventions"))).toBe(false);
   });
 
-  test("omits conventions when disabled", () => {
+  test("includes isolation, context, constitution, and promptPrefix when provided", () => {
     const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-      conventions: false,
-    });
-    // Should not contain the conventions section heading
-    const lines = result.split("\n");
-    const hasConventionsSection = lines.some((line) => line.startsWith("# Conventions"));
-    expect(hasConventionsSection).toBe(false);
-  });
-
-  test("includes isolation when provided", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-      isolation: "strict",
+      story: STORY, failures: FAILURES, testCommand: TEST_CMD,
+      isolation: "strict", context: CONTEXT,
+      constitution: "# Constitution\n\nFollow these rules.",
+      promptPrefix: "DIAGNOSTIC: Retrying after escalation.",
     });
     expect(result).toContain("Isolation");
-  });
-
-  test("includes context when provided", () => {
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-      context: CONTEXT,
-    });
     expect(result).toContain("Project Context");
-  });
-
-  test("includes constitution when provided", () => {
-    const constitution = "# Constitution\n\nFollow these rules.";
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-      constitution,
-    });
     expect(result).toContain("Follow these rules");
-  });
-
-  test("includes promptPrefix when provided", () => {
-    const prefix = "DIAGNOSTIC: Retrying after escalation.";
-    const result = RectifierPromptBuilder.regressionFailure({
-      story: STORY,
-      failures: FAILURES,
-      testCommand: TEST_CMD,
-      promptPrefix: prefix,
-    });
-    expect(result).toContain(prefix);
+    expect(result).toContain("DIAGNOSTIC: Retrying after escalation.");
   });
 
   test("snapshot: regressionFailure() with minimal options", () => {
@@ -199,24 +115,13 @@ describe("RectifierPromptBuilder.noOpReprompt", () => {
     durationMs: 1234,
   };
 
-  test("contains the core no-op directive and UNRESOLVED escape hatch", () => {
+  test("contains the core no-op directive, UNRESOLVED escape hatch, and no TS-specific names", () => {
     const result = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 0, 1);
     expect(result).toContain("no committed file changes");
     expect(result).toContain("UNRESOLVED");
     expect(result).toContain("commit");
-  });
-
-  test("does not bake in TypeScript/Node-specific file or command names", () => {
-    // nax orchestrates polyglot monorepos. The no-op reprompt must not name
-    // language-specific manifests (package.json/tsconfig.json) or single
-    // ecosystems' install commands as authoritative — that misleads agents
-    // working in Go/Python/Rust packages. See monorepo-awareness.md §B and
-    // the precedent in #543 (acceptance/escalated test command).
-    const result = RectifierPromptBuilder.noOpReprompt([FAILED_CHECK], 0, 1);
     expect(result).not.toContain("`package.json`");
     expect(result).not.toContain("`tsconfig.json`");
-    // The phrase "bun install / npm install" alone (no other examples) was the
-    // shape of the bug — the fix lists install commands across ecosystems.
     expect(result).toMatch(/go mod tidy|pip install|cargo/);
   });
 
