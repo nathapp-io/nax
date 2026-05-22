@@ -11,12 +11,9 @@ import type { NaxPlugin } from "../../../src/plugins/types";
 
 describe("PluginRegistry", () => {
   describe("constructor", () => {
-    test("creates empty registry", () => {
-      const registry = new PluginRegistry([]);
-      expect(registry.plugins).toEqual([]);
-    });
+    test("creates empty registry; stores plugins when provided", () => {
+      expect(new PluginRegistry([]).plugins).toEqual([]);
 
-    test("stores plugins", () => {
       const plugin: NaxPlugin = {
         name: "test",
         version: "1.0.0",
@@ -25,12 +22,7 @@ describe("PluginRegistry", () => {
           optimizer: {
             name: "test",
             async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
+              return { optimizedPrompt: input.prompt, estimatedTokens: input.estimatedTokens, tokensSaved: 0, appliedStrategies: [] };
             },
           },
         },
@@ -195,12 +187,11 @@ describe("PluginRegistry", () => {
   });
 
   describe("getAgent", () => {
-    test("returns undefined when no agents", () => {
-      const registry = new PluginRegistry([]);
-      expect(registry.getAgent("test")).toBeUndefined();
+    test("returns undefined when no agents or agent not found", () => {
+      expect(new PluginRegistry([]).getAgent("test")).toBeUndefined();
     });
 
-    test("returns undefined when agent not found", () => {
+    test("returns undefined when agent name not in registry", () => {
       const plugin: NaxPlugin = {
         name: "agent-plugin",
         version: "1.0.0",
@@ -565,76 +556,22 @@ describe("PluginRegistry", () => {
   });
 
   describe("teardownAll", () => {
-    test("calls teardown on all plugins", async () => {
+    test("calls teardown on all plugins; does not throw if plugin has no teardown", async () => {
       const teardownCalls: string[] = [];
-
-      const plugin1: NaxPlugin = {
-        name: "plugin1",
-        version: "1.0.0",
-        provides: ["optimizer"],
-        async teardown() {
-          teardownCalls.push("plugin1");
+      const makeOpt = (name: string) => ({
+        name,
+        async optimize(input: { prompt: string; estimatedTokens: number }) {
+          return { optimizedPrompt: input.prompt, estimatedTokens: input.estimatedTokens, tokensSaved: 0, appliedStrategies: [] };
         },
-        extensions: {
-          optimizer: {
-            name: "opt1",
-            async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
-            },
-          },
-        },
-      };
+      });
 
-      const plugin2: NaxPlugin = {
-        name: "plugin2",
-        version: "1.0.0",
-        provides: ["router"],
-        async teardown() {
-          teardownCalls.push("plugin2");
-        },
-        extensions: {
-          router: {
-            name: "router1",
-            route() {
-              return null;
-            },
-          },
-        },
-      };
-
-      const registry = new PluginRegistry([plugin1, plugin2]);
-      await registry.teardownAll();
-
+      const p1: NaxPlugin = { name: "plugin1", version: "1.0.0", provides: ["optimizer"], async teardown() { teardownCalls.push("plugin1"); }, extensions: { optimizer: makeOpt("opt1") } };
+      const p2: NaxPlugin = { name: "plugin2", version: "1.0.0", provides: ["router"], async teardown() { teardownCalls.push("plugin2"); }, extensions: { router: { name: "router1", route() { return null; } } } };
+      await new PluginRegistry([p1, p2]).teardownAll();
       expect(teardownCalls).toEqual(["plugin1", "plugin2"]);
-    });
 
-    test("does not throw if plugin has no teardown", async () => {
-      const plugin: NaxPlugin = {
-        name: "no-teardown",
-        version: "1.0.0",
-        provides: ["optimizer"],
-        extensions: {
-          optimizer: {
-            name: "opt",
-            async optimize(input) {
-              return {
-                optimizedPrompt: input.prompt,
-                estimatedTokens: input.estimatedTokens,
-                tokensSaved: 0,
-                appliedStrategies: [],
-              };
-            },
-          },
-        },
-      };
-
-      const registry = new PluginRegistry([plugin]);
-      await expect(registry.teardownAll()).resolves.toBeUndefined();
+      const noTeardown: NaxPlugin = { name: "no-teardown", version: "1.0.0", provides: ["optimizer"], extensions: { optimizer: makeOpt("opt") } };
+      await expect(new PluginRegistry([noTeardown]).teardownAll()).resolves.toBeUndefined();
     });
 
     test("continues teardown if one plugin fails", async () => {
