@@ -39,15 +39,11 @@ describe("extractJsonFromMarkdown", () => {
     expect(extractJsonFromMarkdown(text)).toBe(expected);
   });
 
-  test("trims whitespace inside code block", () => {
-    const text = '```json\n  { "c": 3 }  \n```';
-    expect(extractJsonFromMarkdown(text).trim()).toBe('{ "c": 3 }');
-  });
+  test("trims whitespace inside code block; handles multiline JSON", () => {
+    expect(extractJsonFromMarkdown('```json\n  { "c": 3 }  \n```').trim()).toBe('{ "c": 3 }');
 
-  test("handles multiline JSON inside code block", () => {
     const inner = '{\n  "userStories": []\n}';
-    const text = `\`\`\`json\n${inner}\n\`\`\``;
-    expect(extractJsonFromMarkdown(text)).toBe(inner);
+    expect(extractJsonFromMarkdown(`\`\`\`json\n${inner}\n\`\`\``)).toBe(inner);
   });
 });
 
@@ -56,20 +52,15 @@ describe("extractJsonFromMarkdown", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — valid input", () => {
-  test("returns a PRD with auto-filled metadata", () => {
-    const input = makeInput();
-    const prd = validatePlanOutput(input, "my-feature", "feat/my-feature");
+  test("returns a PRD with auto-filled metadata; parses JSON string input", () => {
+    const prd = validatePlanOutput(makeInput(), "my-feature", "feat/my-feature");
     expect(prd.feature).toBe("my-feature");
     expect(prd.branchName).toBe("feat/my-feature");
     expect(prd.createdAt).toBeTruthy();
     expect(prd.updatedAt).toBeTruthy();
     expect(prd.userStories).toHaveLength(1);
-  });
 
-  test("parses JSON string input", () => {
-    const json = JSON.stringify(makeInput());
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories).toHaveLength(1);
+    expect(validatePlanOutput(JSON.stringify(makeInput()), "feat", "branch").userStories).toHaveLength(1);
   });
 
   test.each([
@@ -138,17 +129,9 @@ describe("validatePlanOutput — complexity validation", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — dependency validation", () => {
-  test("throws when dependency references non-existent story ID", () => {
-    const stories = [makeStory({ id: "ST-001", dependencies: ["ST-999"] })];
-    expect(() => validatePlanOutput(makeInput(stories), "feat", "branch")).toThrow(/ST-999/);
-  });
-
-  test("valid cross-story dependencies pass", () => {
-    const stories = [
-      makeStory({ id: "ST-001", dependencies: [] }),
-      makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
-    ];
-    expect(() => validatePlanOutput(makeInput(stories), "feat", "branch")).not.toThrow();
+  test("throws for non-existent dependency ID; valid cross-story deps pass", () => {
+    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-999"] })]), "feat", "branch")).toThrow(/ST-999/);
+    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: [] }), makeStory({ id: "ST-002", dependencies: ["ST-001"] })]), "feat", "branch")).not.toThrow();
   });
 });
 
@@ -404,12 +387,20 @@ describe("suggestedCriteria", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
-  test("AC4: accepts legacy PRD without verifiedBy, intent, or contextFiles factId", () => {
-    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    const story = prd.userStories[0]!;
+  test("AC4+AC5: accepts legacy PRD without citation fields; omits verifiedBy from stories that lack it", () => {
+    const prd1 = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
+    const story = prd1.userStories[0]!;
     expect(story.verifiedBy).toBeUndefined();
     expect(story.intent).toBeUndefined();
     expect(story.contextFiles).toBeUndefined();
+
+    const stories = [
+      makeStory({ id: "ST-001" }),
+      makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
+    ];
+    const prd2 = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
+    expect(prd2.userStories[0]!.verifiedBy).toBeUndefined();
+    expect(prd2.userStories[1]!.verifiedBy?.kind).toBe("file");
   });
 
   test.each([
@@ -443,13 +434,4 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(/verifiedBy.*kind/i);
   });
 
-  test("AC5: omits verifiedBy when not present (no pollution of existing stories)", () => {
-    const stories = [
-      makeStory({ id: "ST-001" }),
-      makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
-    ];
-    const prd = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
-    expect(prd.userStories[0]!.verifiedBy).toBeUndefined();
-    expect(prd.userStories[1]!.verifiedBy?.kind).toBe("file");
-  });
 });
