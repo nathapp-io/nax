@@ -59,6 +59,9 @@ export function makeConfig(debateEnabled = false, overrides: Partial<NaxConfig> 
       gracePeriodMs: 0,
       drainTimeoutMs: 0,
     },
+    prompts: {
+      behavioralGuardrails: "lite" as const,
+    },
     debate: {
       enabled: debateEnabled,
       agents: 2,
