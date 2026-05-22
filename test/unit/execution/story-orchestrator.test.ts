@@ -251,103 +251,38 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
 });
 
 describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
-  test("executes phases in canonical order: test-writer → implementer → verifier → semantic → adversarial", async () => {
+  test("canonical order: test-writer→implementer→verifier→semantic→adversarial; skips phases not added", async () => {
     const config = makeNaxConfig();
-    const executionOrder: string[] = [];
-
-    const mockAgentManager = makeMockAgentManager({
+    const makeOrderTracker = (roles: string[]) => makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
-        const phase = _req.sessionRole === "test-writer"
-          ? "test-writer"
-          : _req.sessionRole === "implementer"
-          ? "implementer"
-          : _req.sessionRole === "verifier"
-          ? "verifier"
-          : _req.sessionRole === "reviewer-semantic"
-          ? "semantic"
-          : _req.sessionRole === "reviewer-adversarial"
-          ? "adversarial"
-          : "unknown";
-        executionOrder.push(phase);
-
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.001,
-        });
+        const role = _req.sessionRole ?? "unknown";
+        roles.push(role === "reviewer-semantic" ? "semantic" : role === "reviewer-adversarial" ? "adversarial" : role);
+        return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
       },
     });
 
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const order1: string[] = [];
+    runtime = makeTestRuntime({ config, agentManager: makeOrderTracker(order1) });
+    const ctx1: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
       .addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })
-      .addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } });
+      .addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })
+      .build(ctx1).run();
+    expect(order1).toEqual(["test-writer", "implementer", "verifier", "semantic", "adversarial"]);
+    await runtime.close();
+    runtime = undefined;
 
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    await plan.run();
-
-    expect(executionOrder).toEqual([
-      "test-writer",
-      "implementer",
-      "verifier",
-      "semantic",
-      "adversarial",
-    ]);
-  });
-
-  test("skips phases that were not added", async () => {
-    const config = makeNaxConfig();
-    const executionOrder: string[] = [];
-
-    const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        const phase = _req.sessionRole === "implementer"
-          ? "implementer"
-          : _req.sessionRole === "verifier"
-          ? "verifier"
-          : "unknown";
-        executionOrder.push(phase);
-
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.001,
-        });
-      },
-    });
-
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const order2: string[] = [];
+    runtime = makeTestRuntime({ config, agentManager: makeOrderTracker(order2) });
+    const ctx2: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
-      .addVerifier({ op: mockVerifierOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    await plan.run();
-
-    expect(executionOrder).toEqual(["implementer", "verifier"]);
+      .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
+      .build(ctx2).run();
+    expect(order2).toEqual(["implementer", "verifier"]);
   });
 });
 
@@ -421,57 +356,16 @@ describe("StoryOrchestratorBuilder — AC5: Error handling and success=false", (
     expect(result.success).toBe(false);
   });
 
-  test("logs thrown errors with { storyId, phase, error }", async () => {
-    const config = makeNaxConfig();
-    const logged: Array<{ storyId?: string; phase?: string; error?: string }> = [];
-
-    const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        throw new Error("Test error");
-      },
-    });
-
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    // Error should be logged with { storyId, phase, error }
-    expect(plan).toBeDefined();
-  });
-
-  test("propagates thrown errors after logging", async () => {
+  test("logs and propagates thrown errors with { storyId, phase, error }", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        throw new Error("Critical error");
-      },
+      runAsSessionFn: async () => { throw new Error("Test error"); },
     });
-
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    // Note: implementation should propagate errors
+    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+      .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
+      .build(ctx);
     expect(plan).toBeDefined();
   });
 });
@@ -512,72 +406,22 @@ describe("StoryOrchestratorBuilder — AC6: Result shape (costs, outputs, durati
     expect(result).toHaveProperty("durationMs");
   });
 
-  test("aggregates per-phase costs keyed by op.name", async () => {
+  test("aggregates per-phase costs keyed by op.name and sums into totalCostUsd", async () => {
     const config = makeNaxConfig();
     const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.005,
-        });
-      },
+      runAsSessionFn: async (_req, onSuccess) => onSuccess({
+        turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.005,
+      }),
     });
-
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
-      .addVerifier({ op: mockVerifierOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    const result = await plan.run();
-
+      .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
+      .build(ctx).run();
     expect(result.phaseCosts["mock-implementer"]).toBeGreaterThanOrEqual(0);
     expect(result.phaseCosts["mock-verifier"]).toBeGreaterThanOrEqual(0);
-  });
-
-  test("sums phaseCosts into totalCostUsd", async () => {
-    const config = makeNaxConfig();
-    const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.002,
-        });
-      },
-    });
-
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
-      .addVerifier({ op: mockVerifierOp, input: { code: "test" } });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    const result = await plan.run();
-
-    const summedCost = Object.values(result.phaseCosts).reduce((a, b) => a + b, 0);
-    expect(result.totalCostUsd).toBeCloseTo(summedCost, 5);
+    expect(result.totalCostUsd).toBeCloseTo(Object.values(result.phaseCosts).reduce((a, b) => a + b, 0), 5);
   });
 
   test("stores parsed phase outputs keyed by op.name in phaseOutputs", async () => {
@@ -827,49 +671,23 @@ describe("StoryOrchestratorBuilder — AC7: Rectification phase loop", () => {
 });
 
 describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
-  test("owns one SessionKeeper for implementer session", async () => {
+  test("owns one SessionKeeper for implementer session (count ≥ 1); closes in finally", async () => {
     const config = makeNaxConfig();
     let sessionCount = 0;
-
     const mockAgentManager = makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
-        if (_req.sessionRole === "implementer") {
-          sessionCount++;
-        }
-
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.001,
-        });
+        if (_req.sessionRole === "implementer") sessionCount++;
+        return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
       },
     });
-
     runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+    const ctx: CallContext = { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "story-1" };
+    const result = await new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
-      .addRectification({
-        maxAttempts: 3,
-        strategies: [],
-        abortOnIncreasingFailures: false,
-      });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    const result = await plan.run();
-
-    // SessionKeeper should reuse the warm implementer handle
-    // so implementer should be called only once in rectification
+      .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+      .build(ctx).run();
     expect(sessionCount).toBeGreaterThanOrEqual(1);
+    expect(result).toBeDefined();
   });
 
   test("reuses warm-lifetime implementer handle across rectification iterations", async () => {
@@ -923,44 +741,6 @@ describe("StoryOrchestratorBuilder — AC8: SessionKeeper reuse", () => {
     expect(sessionIds.length).toBeLessThanOrEqual(2);
   });
 
-  test("closes SessionKeeper in .finally()", async () => {
-    const config = makeNaxConfig();
-    let closeSessionCalled = false;
-
-    const mockAgentManager = makeMockAgentManager({
-      runAsSessionFn: async (_req, onSuccess) => {
-        return onSuccess({
-          turnId: randomUUID(),
-          output: JSON.stringify({ success: true }),
-          tokenUsage: { inputTokens: 10, outputTokens: 5 },
-          estimatedCostUsd: 0.001,
-        });
-      },
-    });
-
-    runtime = makeTestRuntime({ config, agentManager: mockAgentManager });
-
-    const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
-      .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
-      .addRectification({
-        maxAttempts: 1,
-        strategies: [],
-        abortOnIncreasingFailures: false,
-      });
-
-    const ctx: CallContext = {
-      runtime,
-      packageView: runtime.packages.repo(),
-      packageDir: "/tmp",
-      agentName: "claude",
-      storyId: "story-1",
-    };
-
-    const plan = builder.build(ctx);
-    const result = await plan.run();
-
-    expect(result).toBeDefined();
-  });
 });
 
 describe("StoryOrchestratorBuilder — AC9: Refactored execution and TDD", () => {

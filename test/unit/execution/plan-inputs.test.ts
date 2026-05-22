@@ -100,42 +100,15 @@ describe("assemblePlanInputs - missing test patterns", () => {
     expect(result).toBeDefined();
   });
 
-  test("validates config.agent.default is set", () => {
+  test("validates config.agent.default: throws NaxError with stage='execution-inputs' and human-readable message", () => {
     const story = makeStory({ id: "US-001", title: "Test feature" });
-    const config = makeNaxConfig({
-      agent: { default: "", fallback: { map: {} } },
-    });
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("error for missing agent includes context with stage='execution-inputs'", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: { default: "", fallback: { map: {} } },
-    });
-
+    const config = makeNaxConfig({ agent: { default: "", fallback: { map: {} } } });
     try {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).context?.stage).toBe("execution-inputs");
-    }
-  });
-
-  test("error message is human-readable for missing agent", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: { default: "", fallback: { map: {} } },
-    });
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
       expect((err as NaxError).message).toContain("agent");
     }
   });
@@ -155,52 +128,15 @@ describe("assemblePlanInputs - missing test patterns", () => {
 
 // AC4: Invalid or missing config produces deterministic structured failure
 describe("assemblePlanInputs - invalid config", () => {
-  test("throws NaxError when agent.default is not set", () => {
+  test("error includes config field path in context and machine-readable code", () => {
     const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: {
-        default: "",
-        fallback: { map: {} },
-      },
-    });
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("error includes config field path in context", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: {
-        default: "",
-        fallback: { map: {} },
-      },
-    });
-
+    const config = makeNaxConfig({ agent: { default: "", fallback: { map: {} } } });
     try {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect((err as NaxError).context?.field).toBe("agent.default");
-    }
-  });
-
-  test("error code is machine-readable", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: {
-        default: "",
-        fallback: { map: {} },
-      },
-    });
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      const code = (err as NaxError).code;
-      expect(/^[A-Z_]+$/.test(code)).toBe(true);
+      expect(/^[A-Z_]+$/.test((err as NaxError).code)).toBe(true);
     }
   });
 
@@ -260,43 +196,17 @@ describe("assemblePlanInputs - NaxError contract", () => {
     }
   });
 
-  test("NaxError context includes stage and story metadata", () => {
+  test("NaxError context has stage+storyId; code is UPPER_SNAKE_CASE; message is human-readable", () => {
     const story = makeStory({ id: "" });
     const config = makeNaxConfig();
-
     try {
       assemblePlanInputs(story, config);
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect((err as NaxError).context?.stage).toBe("execution-inputs");
       expect((err as NaxError).context?.storyId).toBeDefined();
-    }
-  });
-
-  test("NaxError code is machine-parseable (UPPER_SNAKE_CASE)", () => {
-    const story = makeStory({ id: "" });
-    const config = makeNaxConfig();
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      const code = (err as NaxError).code;
-      expect(/^[A-Z_]+$/.test(code)).toBe(true);
-    }
-  });
-
-  test("error message is human-readable", () => {
-    const story = makeStory({ id: "" });
-    const config = makeNaxConfig();
-
-    try {
-      assemblePlanInputs(story, config);
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      const msg = (err as NaxError).message;
-      expect(msg.length).toBeGreaterThan(0);
-      expect(msg.toLowerCase()).toContain("required");
+      expect(/^[A-Z_]+$/.test((err as NaxError).code)).toBe(true);
+      expect((err as NaxError).message.toLowerCase()).toContain("required");
     }
   });
 });
@@ -358,53 +268,17 @@ describe("assemblePlanInputs - edge cases", () => {
 
 // Additional validation tests
 describe("assemblePlanInputs - complete scenario", () => {
-  test("builds valid PlanInputs from story and config", () => {
-    const story = makeStory({
-      id: "US-001",
-      title: "Implement feature",
-      workdir: "packages/lib",
-    });
-    const config = makeNaxConfig({
-      agent: { default: "claude", fallback: { map: {} } },
-    });
-
-    const result = assemblePlanInputs(story, config);
-    expect(result).toBeDefined();
-    expect(result.story).toBe(story);
-    expect(result.config).toBe(config);
-  });
-
-  test("fails fast on first validation error (story)", () => {
-    const story = makeStory({ id: "" }); // Invalid story
-    const config = makeNaxConfig();
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("fails fast on first validation error (config)", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig({
-      agent: { default: "", fallback: { map: {} } }, // Invalid config
-    });
-
-    expect(() => {
-      assemblePlanInputs(story, config);
-    }).toThrow(NaxError);
-  });
-
-  test("preserves story and config in returned PlanInputs", () => {
-    const story = makeStory({
-      id: "US-001",
-      title: "Test",
-      workdir: "packages/lib",
-    });
-    const config = makeNaxConfig();
-
+  test("builds valid PlanInputs and preserves story/config refs", () => {
+    const story = makeStory({ id: "US-001", title: "Implement feature", workdir: "packages/lib" });
+    const config = makeNaxConfig({ agent: { default: "claude", fallback: { map: {} } } });
     const result = assemblePlanInputs(story, config);
     expect(result.story).toBe(story);
     expect(result.config).toBe(config);
+  });
+
+  test("fails fast on first validation error — story id or config agent.default", () => {
+    expect(() => assemblePlanInputs(makeStory({ id: "" }), makeNaxConfig())).toThrow(NaxError);
+    expect(() => assemblePlanInputs(makeStory({ id: "US-001" }), makeNaxConfig({ agent: { default: "", fallback: { map: {} } } }))).toThrow(NaxError);
   });
 
   test("returned PlanInputs has correct structure for downstream assembly", () => {
