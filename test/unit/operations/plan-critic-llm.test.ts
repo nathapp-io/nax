@@ -100,66 +100,16 @@ describe("planCriticLlmOp — identity (AC2)", () => {
 // and task.content
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.build() — AC3", () => {
-  test("returns an object with role and task properties", () => {
-    const mockPrd = {
-      feature: "test-feature",
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
+  test("returns an object with non-empty role.content and task.content", () => {
+    const mockPrd = { feature: "test-feature", specContent: "some spec", stories: [], branch: "test-branch" };
+    const mockManifest = { repoFacts: [], specClaims: [], gaps: [] };
     const ctx = makeBuildCtx();
     const result = planCriticLlmOp.build({ prd: mockPrd, manifest: mockManifest }, ctx);
-
     expect(result).toBeDefined();
-    expect(typeof result).toBe("object");
     expect(result.role).toBeDefined();
     expect(result.task).toBeDefined();
-  });
-
-  test("role.content is non-empty string", () => {
-    const mockPrd = {
-      feature: "test-feature",
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
-    const ctx = makeBuildCtx();
-    const result = planCriticLlmOp.build({ prd: mockPrd, manifest: mockManifest }, ctx);
-
-    expect(result.role.content).toBeDefined();
     expect(typeof result.role.content).toBe("string");
     expect(result.role.content.length).toBeGreaterThan(0);
-  });
-
-  test("task.content is non-empty string", () => {
-    const mockPrd = {
-      feature: "test-feature",
-      specContent: "some spec",
-      stories: [],
-      branch: "test-branch",
-    };
-    const mockManifest = {
-      repoFacts: [],
-      specClaims: [],
-      gaps: [],
-    };
-
-    const ctx = makeBuildCtx();
-    const result = planCriticLlmOp.build({ prd: mockPrd, manifest: mockManifest }, ctx);
-
-    expect(result.task.content).toBeDefined();
     expect(typeof result.task.content).toBe("string");
     expect(result.task.content.length).toBeGreaterThan(0);
   });
@@ -192,38 +142,17 @@ describe("planCriticLlmOp.model() resolution — AC4-5", () => {
 // AC6-8: inspectCriticOutput behavior
 // ─────────────────────────────────────────────────────────────────────────────
 describe("inspectCriticOutput — AC6-8", () => {
-  test("returns { ok: true, findings } for markdown-fenced JSON — AC6", () => {
+  test("returns { ok: true, findings } for markdown-fenced JSON (parseLLMJson used, not bare JSON.parse) — AC6", () => {
     const input = '```json\n{"findings":[]}\n```';
     const result = inspectCriticOutput(input);
-
-    expect(result).toBeDefined();
     expect(result.ok).toBe(true);
-    expect(result.findings).toBeDefined();
     expect(Array.isArray(result.findings)).toBe(true);
     expect(result.findings.length).toBe(0);
   });
 
-  test("parseLLMJson is used (not bare JSON.parse) — markdown-fenced input succeeds", () => {
-    // This test verifies that parseLLMJson is being used: a bare JSON.parse would throw on fenced input
-    const input = '```json\n{"findings":[]}\n```';
-    const result = inspectCriticOutput(input);
-    expect(result.ok).toBe(true);
-  });
-
-  test("returns { ok: false, kind: 'not-json' } for non-JSON input — AC7", () => {
-    const input = "not json";
-    const result = inspectCriticOutput(input);
-
-    expect(result.ok).toBe(false);
-    expect(result.kind).toBe("not-json");
-  });
-
-  test("returns { ok: false, kind: 'schema-invalid' } for JSON missing findings array — AC8", () => {
-    const input = '{"other":"x"}';
-    const result = inspectCriticOutput(input);
-
-    expect(result.ok).toBe(false);
-    expect(result.kind).toBe("schema-invalid");
+  test("returns { ok: false } with kind 'not-json' or 'schema-invalid' as appropriate — AC7-8", () => {
+    expect(inspectCriticOutput("not json")).toMatchObject({ ok: false, kind: "not-json" });
+    expect(inspectCriticOutput('{"other":"x"}')).toMatchObject({ ok: false, kind: "schema-invalid" });
   });
 
   test("filters non-VerifierFinding items from findings array", () => {
@@ -249,43 +178,11 @@ describe("inspectCriticOutput — AC6-8", () => {
 // AC9-11: planCriticLlmOp.parse() behavior
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.parse() — AC9-11", () => {
-  test("returns { findings: [] } for valid JSON with empty findings array — AC9", () => {
-    const output = '{"findings":[]}';
-    const result = planCriticLlmOp.parse?.(output, {}, {});
-
-    expect(result).toBeDefined();
-    expect(typeof result).toBe("object");
-    expect(result.findings).toBeDefined();
-    expect(Array.isArray(result.findings)).toBe(true);
-    expect(result.findings.length).toBe(0);
-  });
-
-  test("throws ParseValidationError for invalid JSON — AC10", () => {
-    const output = "not json";
-
-    expect(() => {
-      planCriticLlmOp.parse?.(output, {}, {});
-    }).toThrow(ParseValidationError);
-  });
-
-  test("throws ParseValidationError for JSON missing findings array — AC11", () => {
-    const output = '{"other":"x"}';
-
-    expect(() => {
-      planCriticLlmOp.parse?.(output, {}, {});
-    }).toThrow(ParseValidationError);
-  });
-
-  test("returns parsed findings when schema is valid", () => {
-    const output = JSON.stringify({
-      findings: [{ checklistItem: "ac-testable", severity: "blocker" }],
-    });
-
-    const result = planCriticLlmOp.parse?.(output, {}, {});
-
-    expect(result).toBeDefined();
-    expect(result.findings).toBeDefined();
-    expect(result.findings.length).toBeGreaterThan(0);
+  test("returns findings array on valid JSON; throws ParseValidationError on invalid or schema-mismatch — AC9-11", () => {
+    expect(planCriticLlmOp.parse?.('{"findings":[]}', {}, {})).toMatchObject({ findings: [] });
+    expect(planCriticLlmOp.parse?.(JSON.stringify({ findings: [{ checklistItem: "ac-testable", severity: "blocker" }] }), {}, {}).findings.length).toBeGreaterThan(0);
+    expect(() => planCriticLlmOp.parse?.("not json", {}, {})).toThrow(ParseValidationError);
+    expect(() => planCriticLlmOp.parse?.('{"other":"x"}', {}, {})).toThrow(ParseValidationError);
   });
 });
 
@@ -293,18 +190,9 @@ describe("planCriticLlmOp.parse() — AC9-11", () => {
 // AC12: planCriticLlmOp.retry configuration
 // ─────────────────────────────────────────────────────────────────────────────
 describe("planCriticLlmOp.retry — AC12", () => {
-  test("retry is defined and is a RetryStrategy", () => {
+  test("retry is defined as a RetryStrategy with shouldRetry function", () => {
     expect(planCriticLlmOp.retry).toBeDefined();
-    expect(typeof planCriticLlmOp.retry).toBe("object");
     expect(typeof (planCriticLlmOp.retry as RetryStrategy).shouldRetry).toBe("function");
-  });
-
-  test("retry strategy is configured via makeTieredParseRetryStrategy with correct options", () => {
-    expect(planCriticLlmOp.retry).toBeDefined();
-    const strategy = planCriticLlmOp.retry as RetryStrategy;
-
-    // The strategy should have shouldRetry method
-    expect(typeof strategy.shouldRetry).toBe("function");
   });
 
   test("retry.shouldRetry handles ParseValidationError and checks lastOutput", () => {
