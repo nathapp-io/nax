@@ -32,32 +32,24 @@ describe("PlanPromptBuilder.build — 3-step structure (ENH-006)", () => {
     expect(prompt).toContain(text);
   });
 
-  test("prompt includes greenfield guidance", () => {
+  test("prompt includes greenfield guidance and testStrategy list in correct order", () => {
     const prompt = fullPrompt(SPEC, CTX);
     expect(prompt).toContain("greenfield project");
+    expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
   });
 
   test.each(['"analysis"', '"contextFiles"'])("output schema includes %s field", (field) => {
     expect(fullPrompt(SPEC, CTX)).toContain(field);
-  });
-
-  test("testStrategy list is in correct order", () => {
-    const prompt = fullPrompt(SPEC, CTX);
-    expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
   });
 });
 
 // ─── taskContext / outputFormat split ─────────────────────────────────────────
 
 describe("PlanPromptBuilder.build — taskContext/outputFormat split", () => {
-  test("taskContext excludes Output Schema header", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX);
+  test("taskContext excludes Output Schema; outputFormat contains schema and format but not spec steps", () => {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build(SPEC, CTX);
     expect(taskContext).not.toContain("Output Schema");
     expect(taskContext).not.toContain('"analysis": "string');
-  });
-
-  test("outputFormat contains schema and format directive but not spec steps", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(SPEC, CTX);
     expect(outputFormat).toContain("Output Schema");
     expect(outputFormat).toContain('"analysis"');
     expect(outputFormat).not.toContain("Step 1");
@@ -91,21 +83,19 @@ describe("PlanPromptBuilder.build — monorepo handling (MW-007)", () => {
     else expect(prompt).not.toContain('"workdir"');
   });
 
-  test("includes monorepo context section with package list", () => {
+  test("includes monorepo context section with package list and tech stacks table when packageDetails provided", () => {
     const prompt = fullPrompt(SPEC, CTX, undefined, ["apps/api", "apps/web"]);
     expect(prompt).toContain("Monorepo Context");
     expect(prompt).toContain("- apps/api");
     expect(prompt).toContain("- apps/web");
-  });
 
-  test("includes package tech stacks table when packageDetails provided", () => {
     const details: PackageSummary[] = [
       { path: "apps/api", name: "@acme/api", runtime: "bun", framework: "Hono", testRunner: "bun:test", keyDeps: ["zod"] },
     ];
-    const prompt = fullPrompt(SPEC, CTX, undefined, ["apps/api"], details);
-    expect(prompt).toContain("Package Tech Stacks");
-    expect(prompt).toContain("apps/api");
-    expect(prompt).toContain("Hono");
+    const promptWithDetails = fullPrompt(SPEC, CTX, undefined, ["apps/api"], details);
+    expect(promptWithDetails).toContain("Package Tech Stacks");
+    expect(promptWithDetails).toContain("apps/api");
+    expect(promptWithDetails).toContain("Hono");
   });
 });
 
@@ -146,19 +136,16 @@ describe("PlanPromptBuilder.build — spec anchor rules (fix #346)", () => {
 // ─── fileReadAccess gate (AC-6) ───────────────────────────────────────────────
 
 describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
-  test("output is byte-equivalent when fileReadAccess is false", () => {
+  test("output is byte-equivalent when fileReadAccess is false or proposers is omitted", () => {
     const withFalse = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
       fileReadAccess: false,
     });
     const withUndefined = new PlanPromptBuilder().build(SPEC, CTX);
     expect(withFalse.taskContext).toBe(withUndefined.taskContext);
     expect(withFalse.outputFormat).toBe(withUndefined.outputFormat);
-  });
 
-  test("output is byte-equivalent when proposers is omitted", () => {
     const withProposers = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, undefined);
-    const withoutProposers = new PlanPromptBuilder().build(SPEC, CTX);
-    expect(withProposers.taskContext).toBe(withoutProposers.taskContext);
+    expect(withProposers.taskContext).toBe(withUndefined.taskContext);
   });
 
   test("fileReadAccess true: removes file-names-only restriction and adds file-read instruction", () => {
@@ -181,14 +168,6 @@ describe("PlanPromptBuilder.build — fileReadAccess gate (AC-6)", () => {
     else expect(taskContext).not.toContain("up to");
   });
 
-  test("no file read instruction emitted when fileReadAccess is false", () => {
-    const { taskContext } = new PlanPromptBuilder().build(SPEC, CTX, undefined, undefined, undefined, undefined, {
-      fileReadAccess: false,
-    });
-    // When fileReadAccess is false, buildFileReadInstruction returns empty string
-    // (the Source Roots section already contains tool access guidance)
-    expect(taskContext).not.toContain("file names and structure only");
-  });
 });
 
 // ─── PlanPromptBuilder.jsonRepair() static method ─────────────────────────────
@@ -369,43 +348,34 @@ describe("PlanPromptBuilder.buildDraft() — US-003", () => {
     ...overrides,
   });
 
-  test("AC-6: input is well-formed when revisionFindings is undefined", () => {
-    const input = makePlanDraftInput({ revisionFindings: undefined });
-    expect(input.manifestSection).toBeDefined();
-    expect(input.feature).toBeDefined();
-    expect(input.manifestSection).toContain("Manifest");
-    expect(input.revisionFindings).toBeUndefined();
-  });
+  test("AC-6/7: input is well-formed with undefined revisionFindings; revisionFindings are forwarded when provided", () => {
+    const inputUndefined = makePlanDraftInput({ revisionFindings: undefined });
+    expect(inputUndefined.manifestSection).toBeDefined();
+    expect(inputUndefined.feature).toBeDefined();
+    expect(inputUndefined.manifestSection).toContain("Manifest");
+    expect(inputUndefined.revisionFindings).toBeUndefined();
 
-  test("AC-7: revisionFindings are forwarded to the input", () => {
     const message = "Citations must reference [F-NNN] or [S-NNN] from manifest";
     const findings = [
       { checklistItem: "ac-testable", severity: "blocker", message: "ACs must be testable" },
       { checklistItem: "citation", severity: "blocker", message },
     ];
-    const input = makePlanDraftInput({ revisionFindings: findings });
-    expect(input.revisionFindings).toEqual(findings);
-    expect(input.revisionFindings?.[1]?.message).toBe(message);
-    expect(input.revisionFindings?.length).toBe(2);
+    const inputWithFindings = makePlanDraftInput({ revisionFindings: findings });
+    expect(inputWithFindings.revisionFindings).toEqual(findings);
+    expect(inputWithFindings.revisionFindings?.[1]?.message).toBe(message);
+    expect(inputWithFindings.revisionFindings?.length).toBe(2);
   });
 });
 
 // ─── PlanPromptBuilder.schemaRepair() static method ────────────────────────
 
 describe("PlanPromptBuilder.schemaRepair() — US-003", () => {
-  test("AC-19: method exists as a static method", () => {
+  test("AC-19: method exists, returns non-empty string containing the message", () => {
     expect(typeof PlanPromptBuilder.schemaRepair).toBe("function");
-  });
-
-  test("AC-19: returns a non-empty string", () => {
-    const result = PlanPromptBuilder.schemaRepair("Missing required field: feature");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("AC-19: includes message in response", () => {
     const message = "Missing required field: feature";
     const result = PlanPromptBuilder.schemaRepair(message);
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
     expect(result).toContain(message);
   });
 
@@ -421,19 +391,12 @@ describe("PlanPromptBuilder.schemaRepair() — US-003", () => {
 // ─── PlanPromptBuilder.citationRepair() static method ──────────────────────
 
 describe("PlanPromptBuilder.citationRepair() — US-003", () => {
-  test("AC-20: method exists as a static method", () => {
+  test("AC-20: method exists, returns non-empty string containing the message", () => {
     expect(typeof PlanPromptBuilder.citationRepair).toBe("function");
-  });
-
-  test("AC-20: returns a non-empty string", () => {
-    const result = PlanPromptBuilder.citationRepair("Citation rate 0.30 below threshold 0.50");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("AC-20: includes message in response", () => {
     const message = "Citation rate 0.30 below threshold 0.50";
     const result = PlanPromptBuilder.citationRepair(message);
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
     expect(result).toContain(message);
   });
 
