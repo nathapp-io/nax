@@ -84,27 +84,19 @@ afterEach(() => {
 // ─── buildAutofixStrategies — implementer strategy ────────────────────────────
 
 describe("buildAutofixStrategies — implementer strategy", () => {
-  test("extractApplied stashes declarations on ctx.testEditDeclarations", () => {
+  test("extractApplied stashes declarations; no-op when output has no declarations", () => {
     const ctx = makeMinCtx();
     const [, implementer] = buildAutofixStrategies(ctx, 3);
-
-    const declarations: TestEditDeclaration[] = [
-      {
-        reason: "prd_contract",
-        file: "test/foo.spec.ts",
-        prdQuote: "fn(x: number): void",
-        testBefore: "fn()",
-        testAfter: "fn(1)",
-      },
-    ];
-
-    implementer.extractApplied?.(
-      { applied: true, testEditDeclarations: declarations },
-      // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
-      undefined as any,
-    );
-
+    const declarations: TestEditDeclaration[] = [{ reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "fn(x: number): void", testBefore: "fn()", testAfter: "fn(1)" }];
+    // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
+    implementer.extractApplied?.({ applied: true, testEditDeclarations: declarations }, undefined as any);
     expect(ctx.testEditDeclarations).toEqual(declarations);
+
+    const ctx2 = makeMinCtx();
+    const [, implementer2] = buildAutofixStrategies(ctx2, 3);
+    // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
+    implementer2.extractApplied?.({ applied: true, testEditDeclarations: [] }, undefined as any);
+    expect(ctx2.testEditDeclarations).toBeUndefined();
   });
 
   test("extractApplied appends to existing declarations rather than replacing", () => {
@@ -128,17 +120,6 @@ describe("buildAutofixStrategies — implementer strategy", () => {
     expect(ctx.testEditDeclarations).toHaveLength(2);
     expect(ctx.testEditDeclarations?.[0].file).toBe("a.spec.ts");
     expect(ctx.testEditDeclarations?.[1].file).toBe("b.spec.ts");
-  });
-
-  test("extractApplied is a no-op when output has no declarations", () => {
-    const ctx = makeMinCtx();
-    const [, implementer] = buildAutofixStrategies(ctx, 3);
-    implementer.extractApplied?.(
-      { applied: true, testEditDeclarations: [] },
-      // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
-      undefined as any,
-    );
-    expect(ctx.testEditDeclarations).toBeUndefined();
   });
 
   test("appliesTo returns false for prd_quote_mismatch advisory findings", () => {
@@ -249,28 +230,15 @@ describe("applyTestEditDeclarations", () => {
     expect(out[0].fixTarget).toBe("source");
   });
 
-  test("no-op on empty declarations", () => {
+  test("no-op on empty declarations; drops declaration whose FILE matches no current finding", () => {
     const story = makeStory();
     const findings: Finding[] = [makeFinding()];
     expect(applyTestEditDeclarations(findings, [], story)).toEqual(findings);
-  });
 
-  test("drops a prd_contract declaration whose FILE matches no current finding", () => {
-    const story = makeStory({ description: "fn(): void" });
-    const findings: Finding[] = [makeFinding({ file: "test/other.spec.ts" })];
-    const declarations: TestEditDeclaration[] = [
-      {
-        reason: "prd_contract",
-        file: "test/missing.spec.ts",
-        prdQuote: "fn(): void",
-        testBefore: "x",
-        testAfter: "y",
-      },
-    ];
-
-    const out = applyTestEditDeclarations(findings, declarations, story);
-
-    // No re-tagging, no mismatch finding
+    const story2 = makeStory({ description: "fn(): void" });
+    const findings2: Finding[] = [makeFinding({ file: "test/other.spec.ts" })];
+    const declarations2: TestEditDeclaration[] = [{ reason: "prd_contract", file: "test/missing.spec.ts", prdQuote: "fn(): void", testBefore: "x", testAfter: "y" }];
+    const out = applyTestEditDeclarations(findings2, declarations2, story2);
     expect(out).toHaveLength(1);
     expect(out[0].fixTarget).toBe("source");
   });
@@ -532,43 +500,28 @@ describe("runAgentRectificationV2", () => {
     expect(receivedFindings[0]?.fixTarget).toBe("test");
   });
 
-  test("persists iterations to autofixPriorIterations on ctx", async () => {
+  test("persists iterations to autofixPriorIterations on ctx; preserves testEditDeclarations when no findings present", async () => {
+    // Sub-scenario 1: persists iterations
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
       ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
       return true;
     });
+    const ctx1 = makeCtx();
+    await runAgentRectificationV2(ctx1, undefined, undefined, "/tmp");
+    expect(ctx1.autofixPriorIterations).toBeDefined();
+    expect(ctx1.autofixPriorIterations?.length).toBeGreaterThanOrEqual(1);
 
-    const ctx = makeCtx();
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    expect(ctx.autofixPriorIterations).toBeDefined();
-    expect(ctx.autofixPriorIterations?.length).toBeGreaterThanOrEqual(1);
-  });
-
-  test("preserves testEditDeclarations when no findings present (validate never fires)", async () => {
-    const ctx: PipelineContext = {
-      ...makeCtx(),
-      prd: { feature: "f" } as any,
-    };
-    ctx.testEditDeclarations = [
-      { reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" },
-    ];
-    // No findings → cycle exits immediately; validate() is never called, so
-    // the side-channel is NOT cleared (consumed on next pipeline retry).
-    ctx.reviewResult = { success: false, checks: [] } as unknown as PipelineContext["reviewResult"];
-    const saved = { ..._autofixDeps };
+    // Sub-scenario 2: no findings → cycle exits immediately; validate() never runs; testEditDeclarations preserved
+    _cycleDeps.callOp = savedCycleCallOp;
     _autofixDeps.recheckReview = async () => false;
-    try {
-      await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-    } finally {
-      Object.assign(_autofixDeps, saved);
-    }
-
-    expect(ctx.autofixPriorIterations).toBeDefined();
-    // Side-channel still present — validate() never ran to consume it.
-    expect(ctx.testEditDeclarations).toHaveLength(1);
+    const ctx2: PipelineContext = { ...makeCtx(), prd: { feature: "f" } as any };
+    ctx2.testEditDeclarations = [{ reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" }];
+    ctx2.reviewResult = { success: false, checks: [] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctx2, undefined, undefined, "/tmp");
+    expect(ctx2.autofixPriorIterations).toBeDefined();
+    expect(ctx2.testEditDeclarations).toHaveLength(1);
   });
 
   test("validate closure: lite=false on normal path; lite=true when implementer exhausted (AC#4)", async () => {
@@ -630,49 +583,26 @@ describe("autofixCapacityExhausted", () => {
   });
 
 
-  test("true when an active strategy has reached its per-strategy cap", () => {
-    const ctx = makeCtx({
+  test("true when per-strategy cap reached or total fixesApplied reaches maxTotalAttempts", () => {
+    // Per-strategy cap: test-writer has maxAttempts:2; two prior uses = exhausted
+    const ctx1 = makeCtx({
       reviewResult: {
         success: false,
-        checks: [
-          {
-            ...failedCheck("adversarial", "blocking"),
-            findings: toAdversarialReviewFindings([
-              {
-                severity: "error",
-                category: "assumption",
-                file: "src/x.ts",
-                line: 1,
-                issue: "bug",
-                suggestion: "fix",
-              },
-            ]),
-          },
-        ],
+        checks: [{ ...failedCheck("adversarial", "blocking"), findings: toAdversarialReviewFindings([{ severity: "error", category: "assumption", file: "src/x.ts", line: 1, issue: "bug", suggestion: "fix" }]) }],
       } as unknown as PipelineContext["reviewResult"],
     });
-    // test-writer has maxAttempts:2; two prior uses = exhausted
-    ctx.autofixPriorIterations = [
+    ctx1.autofixPriorIterations = [
       priorIteration(["autofix-test-writer", "autofix-implementer"]),
       priorIteration(["autofix-test-writer", "autofix-implementer"]),
     ];
-    expect(autofixCapacityExhausted(ctx)).toBe(true);
-  });
+    expect(autofixCapacityExhausted(ctx1)).toBe(true);
 
-  test("true when total prior fixesApplied reaches maxTotalAttempts", () => {
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          autofix: { enabled: true, maxAttempts: 5, maxTotalAttempts: 2 },
-        },
-      } as PipelineContext["config"],
+    // Total attempts cap
+    const ctx2 = makeCtx({
+      config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, autofix: { enabled: true, maxAttempts: 5, maxTotalAttempts: 2 } } } as PipelineContext["config"],
     });
-    ctx.autofixPriorIterations = [
-      priorIteration(["autofix-implementer", "autofix-implementer"]),
-    ];
-    expect(autofixCapacityExhausted(ctx)).toBe(true);
+    ctx2.autofixPriorIterations = [priorIteration(["autofix-implementer", "autofix-implementer"])];
+    expect(autofixCapacityExhausted(ctx2)).toBe(true);
   });
 
   test.each([
