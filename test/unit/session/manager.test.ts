@@ -36,26 +36,12 @@ describe("SessionManager.create()", () => {
     expect(mgr.get(desc.id)?.state).toBe("CREATED");
   });
 
-  test("storyId and featureName are optional", () => {
+  test("storyId and featureName stored; derives scratch dir when projectDir and featureName provided", () => {
     const mgr = new SessionManager();
-    const desc = mgr.create({ role: "decompose", agent: "claude", workdir: "/p", storyId: "US-001", featureName: "auth" });
+    const desc = mgr.create({ role: "test-writer", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" });
     expect(desc.storyId).toBe("US-001");
     expect(desc.featureName).toBe("auth");
-  });
-
-  test("derives a scratch dir when projectDir and featureName are provided", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({
-      role: "test-writer",
-      agent: "claude",
-      workdir: "/repo",
-      projectDir: "/repo",
-      featureName: "auth",
-      storyId: "US-001",
-    });
-    expect(desc.scratchDir).toBe(
-      "/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001",
-    );
+    expect(desc.scratchDir).toBe("/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001");
   });
 });
 
@@ -102,41 +88,18 @@ describe("SessionManager.create() — descriptor persistence", () => {
     _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
   });
 
-  test("skips descriptor write when scratchDir cannot be resolved", async () => {
+  test("skips descriptor write when scratchDir unresolved; write failure does not throw from create()", async () => {
     const writes: Array<unknown> = [];
-    _sessionManagerDeps.writeDescriptor = async (scratchDir) => {
-      writes.push(scratchDir);
-    };
-
+    _sessionManagerDeps.writeDescriptor = async (scratchDir) => { writes.push(scratchDir); };
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/repo" });
-
     await Promise.resolve();
     await Promise.resolve();
-
     expect(writes).toHaveLength(0);
 
-    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
-  });
-
-  test("descriptor write failure does not throw from create()", async () => {
-    _sessionManagerDeps.writeDescriptor = async () => {
-      throw new Error("disk full");
-    };
-
-    const mgr = new SessionManager();
-    expect(() =>
-      mgr.create({
-        role: "main",
-        agent: "claude",
-        workdir: "/repo",
-        projectDir: "/repo",
-        featureName: "auth",
-        storyId: "US-001",
-      }),
-    ).not.toThrow();
-
-    // Let the rejected promise settle so the logger.warn branch runs.
+    _sessionManagerDeps.writeDescriptor = async () => { throw new Error("disk full"); };
+    const mgr2 = new SessionManager();
+    expect(() => mgr2.create({ role: "main", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" })).not.toThrow();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -378,28 +341,25 @@ describe("SessionManager.listActive()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.sweepOrphans()", () => {
-  test("returns 0 when no terminal sessions exist", () => {
+  test("returns 0 when no terminal sessions; removes old terminal sessions, keeps recent ones", () => {
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     expect(mgr.sweepOrphans(0)).toBe(0);
-  });
 
-  test("removes terminal sessions older than ttl, keeps newer ones", () => {
-    const mgr = new SessionManager();
+    const mgr2 = new SessionManager();
     _sessionManagerDeps.now = () => new Date(Date.now() - 10_000).toISOString();
-    const oldSess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(oldSess.id, "RUNNING");
-    mgr.transition(oldSess.id, "COMPLETED");
+    const oldSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr2.transition(oldSess.id, "RUNNING");
+    mgr2.transition(oldSess.id, "COMPLETED");
 
     _sessionManagerDeps.now = () => new Date().toISOString();
-    const newSess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(newSess.id, "RUNNING");
-    mgr.transition(newSess.id, "COMPLETED");
+    const newSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr2.transition(newSess.id, "RUNNING");
+    mgr2.transition(newSess.id, "COMPLETED");
 
-    const removed = mgr.sweepOrphans(1);
-    expect(removed).toBe(1);
-    expect(mgr.get(oldSess.id)).toBeNull();
-    expect(mgr.get(newSess.id)).not.toBeNull();
+    expect(mgr2.sweepOrphans(1)).toBe(1);
+    expect(mgr2.get(oldSess.id)).toBeNull();
+    expect(mgr2.get(newSess.id)).not.toBeNull();
   });
 });
 
@@ -408,34 +368,24 @@ describe("SessionManager.sweepOrphans()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.getForStory()", () => {
-  test("returns matching sessions and empty array when no match", () => {
+  test("returns matching sessions and empty when no match; immutable copies; includes all states", () => {
     const mgr = new SessionManager();
     const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     const s2 = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    const s3 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-002" });
+    mgr.transition(s3.id, "RUNNING");
+    mgr.transition(s3.id, "COMPLETED");
 
     const results = mgr.getForStory("US-001");
-    expect(results).toHaveLength(2);
-    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
+    expect(results).toHaveLength(3);
+    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id, s3.id].sort());
+    expect(results.some((s) => s.state === "COMPLETED")).toBe(true);
     expect(mgr.getForStory("US-999")).toHaveLength(0);
-  });
 
-  test("returns immutable copies (mutations don't affect registry)", () => {
-    const mgr = new SessionManager();
-    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
-    const results = mgr.getForStory("US-001");
+    // Immutable: mutation does not affect registry
     (results[0] as { state: string }).state = "FAILED";
-    expect(mgr.getForStory("US-001")[0].state).toBe("CREATED");
-  });
-
-  test("includes sessions regardless of state", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
-    const results = mgr.getForStory("US-001");
-    expect(results).toHaveLength(1);
-    expect(results[0].state).toBe("COMPLETED");
+    expect(mgr.getForStory("US-001")[0].state).not.toBe("FAILED");
   });
 });
 
