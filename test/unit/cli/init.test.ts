@@ -23,55 +23,26 @@ const TEMPLATE_FILES = [
 ] as const;
 
 describe("initProject — creates templates alongside config", () => {
-  test("creates nax/templates/ directory", async () => {
+  test("creates templates/ directory and standard init files (config.json, constitution.md, hooks/); config.json has no prompts.overrides", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
-
       expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(true);
-    });
-  });
-
-  test("creates all 5 template files in nax/templates/", async () => {
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir);
-
-      for (const file of TEMPLATE_FILES) {
-        expect(existsSync(join(tempDir, ".nax", "templates", file))).toBe(true);
-      }
-    });
-  });
-
-  test("template files are non-empty", async () => {
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir);
-
-      for (const file of TEMPLATE_FILES) {
-        const filePath = join(tempDir, ".nax", "templates", file);
-        const content = await Bun.file(filePath).text();
-        expect(content.length).toBeGreaterThan(0);
-      }
-    });
-  });
-
-  test(".nax/config.json does NOT contain prompts.overrides", async () => {
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir);
-
-      const configPath = join(tempDir, ".nax", "config.json");
-      const configContent = JSON.parse(await Bun.file(configPath).text());
-
-      // Should NOT have prompts.overrides set
+      expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "constitution.md"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "hooks"))).toBe(true);
+      const configContent = JSON.parse(await Bun.file(join(tempDir, ".nax", "config.json")).text());
       expect(configContent.prompts?.overrides).toBeUndefined();
     });
   });
 
-  test("creates standard init files (config.json, constitution.md, hooks/)", async () => {
+  test("creates all 5 template files in nax/templates/ and each is non-empty", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
-
-      expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
-      expect(existsSync(join(tempDir, ".nax", "constitution.md"))).toBe(true);
-      expect(existsSync(join(tempDir, ".nax", "hooks"))).toBe(true);
+      for (const file of TEMPLATE_FILES) {
+        const filePath = join(tempDir, ".nax", "templates", file);
+        expect(existsSync(filePath)).toBe(true);
+        expect((await Bun.file(filePath).text()).length).toBeGreaterThan(0);
+      }
     });
   });
 });
@@ -114,29 +85,12 @@ describe("initProject — nax/config.json preserves defaults", () => {
 // ─── INIT-003: Post-init checklist and unified init flow ─────────────────────
 
 describe("initProject — .gitignore includes new nax entries", () => {
-  test("adds nax.lock to .gitignore", async () => {
+  test("adds nax.lock, .nax/**/runs/, and .nax/metrics.json to .gitignore", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
-
       const gitignore = await Bun.file(join(tempDir, ".gitignore")).text();
       expect(gitignore).toContain("nax.lock");
-    });
-  });
-
-  test("adds nax/**/runs/ to .gitignore", async () => {
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir);
-
-      const gitignore = await Bun.file(join(tempDir, ".gitignore")).text();
       expect(gitignore).toContain(".nax/**/runs/");
-    });
-  });
-
-  test("adds nax/metrics.json to .gitignore", async () => {
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir);
-
-      const gitignore = await Bun.file(join(tempDir, ".gitignore")).text();
       expect(gitignore).toContain(".nax/metrics.json");
     });
   });
@@ -157,48 +111,26 @@ describe("initProject — .gitignore includes new nax entries", () => {
 });
 
 describe("initProject — stack-aware constitution.md", () => {
-  test("includes Bun-specific API examples when bun.lockb detected", async () => {
+  test("includes stack-specific guidance: Bun, TypeScript, Python, and monorepo when corresponding markers detected", async () => {
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "bun.lockb"), "");
-
       await initProject(tempDir);
-
-      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
-      // Must reference concrete Bun APIs (not just the generic "Bun-native APIs only" in the default)
-      expect(constitution).toMatch(/Bun\.file\(\)|Bun\.spawn\(\)|Bun\.sleep\(\)|bun test/);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/Bun\.file\(\)|Bun\.spawn\(\)|Bun\.sleep\(\)|bun test/);
     });
-  });
-
-  test("includes strict TypeScript guidance when tsconfig.json detected", async () => {
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "tsconfig.json"), "{}");
-
       await initProject(tempDir);
-
-      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
-      expect(constitution).toMatch(/strict.*TypeScript|TypeScript.*strict/i);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/strict.*TypeScript|TypeScript.*strict/i);
     });
-  });
-
-  test("includes PEP 8 and type hints guidance when python detected", async () => {
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "pyproject.toml"), "[tool.poetry]\nname = \"example\"");
-
       await initProject(tempDir);
-
-      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
-      expect(constitution).toMatch(/PEP.?8|type hint/i);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/PEP.?8|type hint/i);
     });
-  });
-
-  test("includes monorepo package boundaries when turbo.json detected", async () => {
     await withTempDir(async (tempDir) => {
       await Bun.write(join(tempDir, "turbo.json"), "{}");
-
       await initProject(tempDir);
-
-      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
-      expect(constitution).toMatch(/monorepo|package boundar/i);
+      expect(await Bun.file(join(tempDir, ".nax", "constitution.md")).text()).toMatch(/monorepo|package boundar/i);
     });
   });
 });
@@ -215,10 +147,13 @@ describe("initProject — --ai flag wired through to context generation", () => 
     mock.restore();
   });
 
-  test("accepts options object with ai: false without error", async () => {
+  test("with ai: false, returns undefined without invoking LLM", async () => {
+    let llmCalled = false;
+    contextDeps.callLLM = async (_prompt: string) => { llmCalled = true; return "# LLM Content"; };
     await withTempDir(async (tempDir) => {
       const result = await initProject(tempDir, { ai: false });
       expect(result).toBeUndefined();
+      expect(llmCalled).toBe(false);
     });
   });
 
@@ -239,19 +174,6 @@ describe("initProject — --ai flag wired through to context generation", () => 
     });
   });
 
-  test("with ai: false, context.md is generated from template (no LLM)", async () => {
-    let llmCalled = false;
-    contextDeps.callLLM = async (_prompt: string) => {
-      llmCalled = true;
-      return "# LLM Content";
-    };
-
-    await withTempDir(async (tempDir) => {
-      await initProject(tempDir, { ai: false });
-
-      expect(llmCalled).toBe(false);
-    });
-  });
 });
 
 describe("initProject — prints summary with created files and next steps", () => {
@@ -262,62 +184,18 @@ describe("initProject — prints summary with created files and next steps", () 
     return { output, restore: () => { _initDeps.log = orig; } };
   }
 
-  test("summary output includes nax/config.json", async () => {
+  test("summary output includes config.json, constitution.md, context.md, nax generate, nax plan, and nax run", async () => {
     const { output, restore } = captureInitLog();
     try {
       await withTempDir(async (tempDir) => {
         await initProject(tempDir);
-        expect(output.join("\n")).toContain("config.json");
-      });
-    } finally { restore(); }
-  });
-
-  test("summary output includes nax/constitution.md", async () => {
-    const { output, restore } = captureInitLog();
-    try {
-      await withTempDir(async (tempDir) => {
-        await initProject(tempDir);
-        expect(output.join("\n")).toContain("constitution.md");
-      });
-    } finally { restore(); }
-  });
-
-  test("summary output includes nax/context.md", async () => {
-    const { output, restore } = captureInitLog();
-    try {
-      await withTempDir(async (tempDir) => {
-        await initProject(tempDir);
-        expect(output.join("\n")).toContain("context.md");
-      });
-    } finally { restore(); }
-  });
-
-  test("next-steps checklist includes nax generate", async () => {
-    const { output, restore } = captureInitLog();
-    try {
-      await withTempDir(async (tempDir) => {
-        await initProject(tempDir);
-        expect(output.join("\n")).toContain("nax generate");
-      });
-    } finally { restore(); }
-  });
-
-  test("next-steps checklist includes nax plan", async () => {
-    const { output, restore } = captureInitLog();
-    try {
-      await withTempDir(async (tempDir) => {
-        await initProject(tempDir);
-        expect(output.join("\n")).toContain("nax plan");
-      });
-    } finally { restore(); }
-  });
-
-  test("next-steps checklist includes nax run", async () => {
-    const { output, restore } = captureInitLog();
-    try {
-      await withTempDir(async (tempDir) => {
-        await initProject(tempDir);
-        expect(output.join("\n")).toContain("nax run");
+        const out = output.join("\n");
+        expect(out).toContain("config.json");
+        expect(out).toContain("constitution.md");
+        expect(out).toContain("context.md");
+        expect(out).toContain("nax generate");
+        expect(out).toContain("nax plan");
+        expect(out).toContain("nax run");
       });
     } finally { restore(); }
   });
