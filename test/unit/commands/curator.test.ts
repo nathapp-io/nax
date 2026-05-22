@@ -158,16 +158,26 @@ afterEach(() => {
 // ─── curatorStatus ────────────────────────────────────────────────────────────
 
 describe("curatorStatus", () => {
-  describe("project resolution", () => {
-    test("resolves project and loads config; uses projectOutputDir with config name as project key", async () => {
+  describe("project resolution and observation counts", () => {
+    test("resolves project/config; prints observation count by kind and total", async () => {
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
-      writeObservations(runDir, [makeObservation("verdict")]);
+      writeObservations(runDir, [
+        makeObservation("verdict", "run-001"),
+        makeObservation("verdict", "run-001"),
+        makeObservation("review-finding", "run-001"),
+        makeObservation("escalation", "run-001"),
+      ]);
 
-      await curatorStatus({});
+      await curatorStatus({ run: "run-001" });
       expect(_deps.resolveProject).toHaveBeenCalled();
       expect(_deps.loadConfig).toHaveBeenCalled();
       expect(_deps.projectOutputDir).toHaveBeenCalledWith("test-proj", undefined);
+      const out = capturedOutput.join("\n");
+      expect(out).toContain("verdict");
+      expect(out).toContain("review-finding");
+      expect(out).toContain("escalation");
+      expect(out).toMatch(/4/);
     });
   });
 
@@ -213,25 +223,6 @@ describe("curatorStatus", () => {
     });
   });
 
-  describe("observation counts", () => {
-    test("prints observation count by kind and total count", async () => {
-      const runDir = join(outputDir, "runs", "run-001");
-      mkdirSync(runDir, { recursive: true });
-      writeObservations(runDir, [
-        makeObservation("verdict", "run-001"),
-        makeObservation("verdict", "run-001"),
-        makeObservation("review-finding", "run-001"),
-        makeObservation("escalation", "run-001"),
-      ]);
-
-      await curatorStatus({ run: "run-001" });
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("verdict");
-      expect(out).toContain("review-finding");
-      expect(out).toContain("escalation");
-      expect(out).toMatch(/4/);
-    });
-  });
 
   describe("proposal markdown", () => {
     test("prints proposal markdown when file exists; reports no proposals when absent", async () => {
@@ -501,30 +492,24 @@ describe("curatorCommit", () => {
 // ─── curatorDryrun ────────────────────────────────────────────────────────────
 
 describe("curatorDryrun", () => {
-  describe("no runs", () => {
-    test("reports no runs when no observations.jsonl exists", async () => {
+  describe("no runs / latest run", () => {
+    test("reports no runs when no observations.jsonl exists; uses the latest runId when no --run specified", async () => {
       await curatorDryrun({});
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("No runs found");
-    });
-  });
+      expect(capturedOutput.join("\n")).toContain("No runs found");
 
-  describe("latest run by default", () => {
-    test("uses the latest runId when no --run specified", async () => {
+      capturedOutput.length = 0;
       for (const id of ["run-001", "run-002", "run-003"]) {
         const runDir = join(outputDir, "runs", id);
         mkdirSync(runDir, { recursive: true });
         writeObservations(runDir, [makeObservation("verdict", id)]);
       }
-
       await curatorDryrun({});
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("run-003");
+      expect(capturedOutput.join("\n")).toContain("run-003");
     });
   });
 
   describe("re-runs heuristics", () => {
-    test("prints rendered proposals to stdout", async () => {
+    test("prints rendered proposals to stdout; does not write any canonical files", async () => {
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
 
@@ -553,10 +538,17 @@ describe("curatorDryrun", () => {
       ];
       writeObservations(runDir, obs);
 
+      let writeCalled = false;
+      let appendCalled = false;
+      _deps.writeFile = mock(async (_p: string, _content: string) => { writeCalled = true; });
+      _deps.appendFile = mock(async (_p: string, _content: string) => { appendCalled = true; });
+
       await curatorDryrun({ run: "run-001" });
       const out = capturedOutput.join("\n");
       expect(out).toContain("Curator Proposals");
       expect(out).toContain("H1");
+      expect(writeCalled).toBe(false);
+      expect(appendCalled).toBe(false);
     });
 
     test("uses current config.curator.thresholds", async () => {
@@ -610,24 +602,6 @@ describe("curatorDryrun", () => {
       expect(out).not.toContain("H1");
     });
 
-    test("does not write any canonical files", async () => {
-      const runDir = join(outputDir, "runs", "run-001");
-      mkdirSync(runDir, { recursive: true });
-      writeObservations(runDir, [makeObservation("verdict")]);
-
-      let writeCalled = false;
-      let appendCalled = false;
-      _deps.writeFile = mock(async (_p: string, _content: string) => {
-        writeCalled = true;
-      });
-      _deps.appendFile = mock(async (_p: string, _content: string) => {
-        appendCalled = true;
-      });
-
-      await curatorDryrun({ run: "run-001" });
-      expect(writeCalled).toBe(false);
-      expect(appendCalled).toBe(false);
-    });
   });
 });
 
@@ -654,8 +628,8 @@ describe("curatorGc", () => {
   });
 
   describe("pruning", () => {
-    test("keeps rows for the most recent N runIds (by max ts)", async () => {
-      // Create 5 runs, keep only the latest 3
+    test("keeps rows for the most recent N runIds; defaults to keep=50 when unspecified", async () => {
+      // Sub-scenario 1: keep 3 of 5 runs
       const obs: Observation[] = [
         { ...makeObservation("verdict", "run-001"), ts: "2026-01-01T00:00:00.000Z" },
         { ...makeObservation("verdict", "run-002"), ts: "2026-01-02T00:00:00.000Z" },
@@ -673,35 +647,27 @@ describe("curatorGc", () => {
 
       await curatorGc({ keep: 3 });
       expect(writtenContent).toBeDefined();
-
-      const lines = writtenContent!.trim().split("\n").filter(Boolean);
-      const runIds = lines.map((l) => (JSON.parse(l) as Observation).runId);
+      const runIds = writtenContent!.trim().split("\n").filter(Boolean).map((l) => (JSON.parse(l) as Observation).runId);
       expect(runIds).toContain("run-003");
       expect(runIds).toContain("run-004");
       expect(runIds).toContain("run-005");
       expect(runIds).not.toContain("run-001");
       expect(runIds).not.toContain("run-002");
-    });
 
-    test("uses default keep=50 when no --keep specified", async () => {
-      // Create 60 unique runs with distinct timestamps
+      // Sub-scenario 2: default keep=50 with 60 runs
       const obsFixed: Observation[] = Array.from({ length: 60 }, (_, i) => ({
         ...makeObservation("verdict", `run-${String(i + 1).padStart(3, "0")}`),
         ts: new Date(2026, 0, 1, 0, 0, i).toISOString(),
       }));
       writeRollup(rollupPath, obsFixed);
-
-      let writtenContent: string | undefined;
+      let writtenContent2: string | undefined;
       _deps.writeFile = mock(async (_p: string, content: string) => {
-        writtenContent = content;
+        writtenContent2 = content;
         await Bun.write(rollupPath, content);
       });
-
       await curatorGc({});
-      expect(writtenContent).toBeDefined();
-
-      const lines = writtenContent!.trim().split("\n").filter(Boolean);
-      const uniqueRunIds = new Set(lines.map((l) => (JSON.parse(l) as Observation).runId));
+      expect(writtenContent2).toBeDefined();
+      const uniqueRunIds = new Set(writtenContent2!.trim().split("\n").filter(Boolean).map((l) => (JSON.parse(l) as Observation).runId));
       expect(uniqueRunIds.size).toBe(50);
     });
 
