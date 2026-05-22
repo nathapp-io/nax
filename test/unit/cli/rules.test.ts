@@ -64,63 +64,46 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("neutralizeContent", () => {
-  test("removes <system-reminder> tags", () => {
-    const { content } = neutralizeContent("<system-reminder>Do this.</system-reminder>\n\nKeep this.");
-    expect(content).not.toContain("system-reminder");
-    expect(content).toContain("Keep this.");
+  test("removes system-reminder tags, replaces tool-name phrasing, and handles multiple tool names", () => {
+    const r1 = neutralizeContent("<system-reminder>Do this.</system-reminder>\n\nKeep this.");
+    expect(r1.content).not.toContain("system-reminder");
+    expect(r1.content).toContain("Keep this.");
+
+    const r2 = neutralizeContent("Use the Grep tool to search.");
+    expect(r2.content).not.toContain("the Grep tool");
+    expect(r2.content).toContain("the Grep capability");
+    expect(r2.replacements).toBeGreaterThan(0);
+
+    const r3 = neutralizeContent("Call the TodoWrite tool and the WebFetch tool.");
+    expect(r3.content).not.toContain("the TodoWrite tool");
+    expect(r3.content).not.toContain("the WebFetch tool");
+    expect(r3.content).toContain("TodoWrite capability");
+    expect(r3.content).toContain("WebFetch capability");
   });
 
-  test("replaces tool-name phrasing with '<Name> capability'", () => {
-    const { content, replacements } = neutralizeContent("Use the Grep tool to search.");
-    expect(content).not.toContain("the Grep tool");
-    expect(content).toContain("the Grep capability");
-    expect(replacements).toBeGreaterThan(0);
+  test("replaces CLAUDE.md references and .claude/ directory references", () => {
+    const r1 = neutralizeContent("See CLAUDE.md for details.");
+    expect(r1.content).not.toContain("CLAUDE.md");
+    expect(r1.content).toContain("project conventions");
+
+    const r2 = neutralizeContent("Rules live in .claude/rules/.");
+    expect(r2.content).not.toContain(".claude/");
+    expect(r2.content).toContain(".nax/rules/");
   });
 
-  test("replaces any capitalised tool name, not just a hardcoded list", () => {
-    const { content } = neutralizeContent("Call the TodoWrite tool and the WebFetch tool.");
-    expect(content).not.toContain("the TodoWrite tool");
-    expect(content).not.toContain("the WebFetch tool");
-    expect(content).toContain("TodoWrite capability");
-    expect(content).toContain("WebFetch capability");
+  test("replaces IMPORTANT: with Note: and strips emoji", () => {
+    const r1 = neutralizeContent("IMPORTANT: Never mutate.");
+    expect(r1.content).not.toContain("IMPORTANT:");
+    expect(r1.content).toContain("Note:");
+
+    const r2 = neutralizeContent("Write tests 🎯 always.");
+    expect(r2.content).not.toContain("🎯");
+    expect(r2.content).toContain("Write tests");
   });
 
-  test("replaces CLAUDE.md references", () => {
-    const { content } = neutralizeContent("See CLAUDE.md for details.");
-    expect(content).not.toContain("CLAUDE.md");
-    expect(content).toContain("project conventions");
-  });
-
-  test("replaces .claude/ directory references", () => {
-    const { content } = neutralizeContent("Rules live in .claude/rules/.");
-    expect(content).not.toContain(".claude/");
-    expect(content).toContain(".nax/rules/");
-  });
-
-  test("replaces IMPORTANT: with Note:", () => {
-    const { content } = neutralizeContent("IMPORTANT: Never mutate.");
-    expect(content).not.toContain("IMPORTANT:");
-    expect(content).toContain("Note:");
-  });
-
-  test("strips emoji", () => {
-    const { content } = neutralizeContent("Write tests 🎯 always.");
-    expect(content).not.toContain("🎯");
-    expect(content).toContain("Write tests");
-  });
-
-  test("returns zero replacements for clean content", () => {
-    const { replacements } = neutralizeContent("## Style\n\nUse async/await.");
-    expect(replacements).toBe(0);
-  });
-
-  test("replacements counts occurrences, not pattern hits", () => {
-    // 3 occurrences of IMPORTANT: — should count as 3, not 1
-    const { replacements } = neutralizeContent("IMPORTANT: one.\nIMPORTANT: two.\nIMPORTANT: three.");
-    expect(replacements).toBe(3);
-  });
-
-  test("trims whitespace from result", () => {
+  test("returns zero replacements for clean content, counts occurrences not pattern hits, and trims whitespace", () => {
+    expect(neutralizeContent("## Style\n\nUse async/await.").replacements).toBe(0);
+    expect(neutralizeContent("IMPORTANT: one.\nIMPORTANT: two.\nIMPORTANT: three.").replacements).toBe(3);
     const { content } = neutralizeContent("\n\n## Style\n\nContent.\n\n");
     expect(content.startsWith("\n")).toBe(false);
     expect(content.endsWith("\n")).toBe(false);
@@ -166,23 +149,15 @@ describe("rulesExportCommand", () => {
     expect(expectedPath in written).toBe(true);
   });
 
-  test("shim content includes auto-generated header", async () => {
-    _rulesCLIDeps.loadCanonicalRules = async () => [
-      { fileName: "style.md", content: "## Style\n\nContent." },
-    ];
-    await rulesExportCommand({ dir: "/project", agent: "claude" });
-    const content = written["/project/CLAUDE.md"]!;
-    expect(content).toContain("AUTO-GENERATED");
-    expect(content).toContain(".nax/rules/");
-  });
-
-  test("shim content includes all canonical rule files", async () => {
+  test("shim content includes auto-generated header and all canonical rule files", async () => {
     _rulesCLIDeps.loadCanonicalRules = async () => [
       { fileName: "style.md", content: "Style content." },
       { fileName: "testing.md", content: "Testing content." },
     ];
     await rulesExportCommand({ dir: "/project", agent: "claude" });
     const content = written["/project/CLAUDE.md"]!;
+    expect(content).toContain("AUTO-GENERATED");
+    expect(content).toContain(".nax/rules/");
     expect(content).toContain("Style content.");
     expect(content).toContain("Testing content.");
   });
@@ -244,12 +219,15 @@ describe("rulesMigrateCommand", () => {
     expect(content).not.toContain("🎯");
   });
 
-  test("includes neutralization notice when replacements were made", async () => {
+  test("includes neutralization notice when replacements were made and creates .nax/rules/ directory", async () => {
+    const createdDirs: string[] = [];
+    _rulesCLIDeps.mkdir = async (dir) => { createdDirs.push(dir); };
     _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md";
     _rulesCLIDeps.readFile = async () => "IMPORTANT: do this.";
     await rulesMigrateCommand({ dir: "/project" });
     const content = written["/project/.nax/rules/project-conventions.md"]!;
     expect(content).toContain("neutralization");
+    expect(createdDirs.some((d) => d.includes(".nax/rules"))).toBe(true);
   });
 
   test("dry run does not write any files", async () => {
@@ -257,15 +235,6 @@ describe("rulesMigrateCommand", () => {
     _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
     await rulesMigrateCommand({ dir: "/project", dryRun: true });
     expect(Object.keys(written)).toHaveLength(0);
-  });
-
-  test("creates .nax/rules/ directory", async () => {
-    const createdDirs: string[] = [];
-    _rulesCLIDeps.mkdir = async (dir) => { createdDirs.push(dir); };
-    _rulesCLIDeps.fileExists = async (p) => p === "/project/CLAUDE.md";
-    _rulesCLIDeps.readFile = async () => "## Style\n\nContent.";
-    await rulesMigrateCommand({ dir: "/project" });
-    expect(createdDirs.some((d) => d.includes(".nax/rules"))).toBe(true);
   });
 });
 
