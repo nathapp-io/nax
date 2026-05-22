@@ -9,10 +9,9 @@
  * - update() writes via writeStatusFile (no-op guard, success path, failure counter BUG-2)
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
@@ -125,45 +124,21 @@ describe("StatusWriter setters", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  test("setCurrentStory sets active story in snapshot", async () => {
+  test("setCurrentStory sets active story; setCurrentStory(null) clears it", async () => {
     const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
-    sw.setCurrentStory({
-      storyId: "US-001",
-      title: "Test story",
-      complexity: "simple",
-      tddStrategy: "test-after",
-      model: "balanced",
-      attempt: 1,
-      phase: "routing",
-    });
+    sw.setCurrentStory({ storyId: "US-001", title: "Test story", complexity: "simple", tddStrategy: "test-after", model: "balanced", attempt: 1, phase: "routing" });
     await sw.update(0, 0);
     const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
     expect(content.current?.storyId).toBe("US-001");
     expect(content.current?.phase).toBe("routing");
-    await rm(dir, { recursive: true, force: true });
-  });
 
-  test("setCurrentStory(null) clears active story", async () => {
-    const dir = makeTempDir("sw-test-");
-    const path = join(dir, "status.json");
-    const sw = new StatusWriter(path, makeConfig(), makeCtx());
-    sw.setPrd(makePrd());
-    sw.setCurrentStory({
-      storyId: "US-001",
-      title: "T",
-      complexity: "simple",
-      tddStrategy: "test-after",
-      model: "balanced",
-      attempt: 1,
-      phase: "routing",
-    });
     sw.setCurrentStory(null);
     await sw.update(0, 0);
-    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
-    expect(content.current).toBeNull();
+    const cleared = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
+    expect(cleared.current).toBeNull();
     await rm(dir, { recursive: true, force: true });
   });
 });
@@ -178,31 +153,21 @@ describe("StatusWriter.getSnapshot", () => {
     expect(sw.getSnapshot(0, 0)).toBeNull();
   });
 
-  test("includes totalCost and iterations from call args", () => {
-    const sw = new StatusWriter("/tmp/x.json", makeConfig(), makeCtx());
-    sw.setPrd(makePrd());
-    const snap = sw.getSnapshot(3.75, 7);
-    expect(snap?.totalCost).toBe(3.75);
-    expect(snap?.iterations).toBe(7);
-  });
+  test("includes totalCost, iterations, fixed context values, and PID from constructor", () => {
+    const sw1 = new StatusWriter("/tmp/x.json", makeConfig(), makeCtx());
+    sw1.setPrd(makePrd());
+    const snap1 = sw1.getSnapshot(3.75, 7);
+    expect(snap1?.totalCost).toBe(3.75);
+    expect(snap1?.iterations).toBe(7);
 
-  test("includes fixed context values from constructor", () => {
     const ctx = makeCtx({ runId: "run-abc", feature: "my-feature", dryRun: true, pid: 12345 });
-    const sw = new StatusWriter("/tmp/x.json", makeConfig(), ctx);
-    sw.setPrd(makePrd());
-    const snap = sw.getSnapshot(0, 0);
-    expect(snap?.runId).toBe("run-abc");
-    expect(snap?.feature).toBe("my-feature");
-    expect(snap?.dryRun).toBe(true);
-    expect(snap?.pid).toBe(12345);
-  });
-
-  test("includes PID for crash detection", () => {
-    const testPid = 99999;
-    const sw = new StatusWriter("/tmp/x.json", makeConfig(), makeCtx({ pid: testPid }));
-    sw.setPrd(makePrd());
-    const snap = sw.getSnapshot(0, 0);
-    expect(snap?.pid).toBe(testPid);
+    const sw2 = new StatusWriter("/tmp/x.json", makeConfig(), ctx);
+    sw2.setPrd(makePrd());
+    const snap2 = sw2.getSnapshot(0, 0);
+    expect(snap2?.runId).toBe("run-abc");
+    expect(snap2?.feature).toBe("my-feature");
+    expect(snap2?.dryRun).toBe(true);
+    expect(snap2?.pid).toBe(12345);
   });
 });
 
@@ -276,23 +241,14 @@ describe("StatusWriter.update success path", () => {
     expect(content.iterations).toBe(5);
   });
 
-  test("no .tmp file remains after successful write", async () => {
-    const path = join(tmpDir, "status.json");
-    const sw = new StatusWriter(path, makeConfig(), makeCtx());
-    sw.setPrd(makePrd());
-    await sw.update(0, 0);
-    expect(existsSync(`${path}.tmp`)).toBe(false);
-  });
-
-  test("PID is written to status file for crash detection", async () => {
-    const path = join(tmpDir, "status.json");
+  test("no .tmp file remains after write; PID persisted for crash detection", async () => {
     const testPid = 88888;
+    const path = join(tmpDir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx({ pid: testPid }));
     sw.setPrd(makePrd());
     await sw.update(0, 0);
-
-    const content = JSON.parse(await Bun.file(path).text()) as NaxStatusFile;
-    expect(content.run.pid).toBe(testPid);
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+    expect((JSON.parse(await Bun.file(path).text()) as NaxStatusFile).run.pid).toBe(testPid);
   });
 });
 
@@ -358,45 +314,24 @@ describe("StatusWriter.writeFeatureStatus", () => {
     expect(existsSync(join(featureDir, "status.json"))).toBe(false);
   });
 
-  test("writes feature status.json in feature directory", async () => {
+  test("writes feature status.json (version, cost, iterations, progress, completed/failed statuses)", async () => {
     const featureDir = join(tmpDir, "features", "auth-feature");
     const statusPath = join(featureDir, "status.json");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
-    sw.setPrd(makePrd());
+    sw.setPrd(makePrd(3));
     sw.setRunStatus("completed");
     await sw.writeFeatureStatus(featureDir, 2.5, 5);
-
     expect(existsSync(statusPath)).toBe(true);
     const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
     expect(content.version).toBe(1);
     expect(content.run.status).toBe("completed");
     expect(content.cost.spent).toBe(2.5);
     expect(content.iterations).toBe(5);
-  });
-
-  test("writes feature status with 'completed' status after successful run", async () => {
-    const featureDir = join(tmpDir, "features", "auth-feature");
-    const statusPath = join(featureDir, "status.json");
-    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
-    sw.setPrd(makePrd(3));
-    sw.setRunStatus("completed");
-    await sw.writeFeatureStatus(featureDir, 1.0, 1);
-
-    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
-    expect(content.run.status).toBe("completed");
     expect(content.progress.total).toBe(3);
-  });
 
-  test("writes feature status with 'failed' status after unsuccessful run", async () => {
-    const featureDir = join(tmpDir, "features", "auth-feature");
-    const statusPath = join(featureDir, "status.json");
-    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
-    sw.setPrd(makePrd(2));
     sw.setRunStatus("failed");
     await sw.writeFeatureStatus(featureDir, 0.5, 2);
-
-    const content = JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile;
-    expect(content.run.status).toBe("failed");
+    expect((JSON.parse(await Bun.file(statusPath).text()) as NaxStatusFile).run.status).toBe("failed");
   });
 
   test("writes feature status with 'crashed' status on crash with overrides", async () => {
