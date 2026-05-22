@@ -141,47 +141,16 @@ describe("mergePackageConfig", () => {
   });
 
   describe("review field overrides", () => {
-    test("overrides review.enabled and review.checks independently", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        review: { enabled: true, checks: ["typecheck", "lint"], commands: {}, pluginMode: "per-story" },
-      };
-      const withEnabled = mergePackageConfig(root, { review: { enabled: false } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
-      expect(withEnabled.review.enabled).toBe(false);
-      expect(withEnabled.review.checks).toEqual(["typecheck", "lint"]);
-
-      const withChecks = mergePackageConfig(root, { review: { checks: ["lint"] } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
-      expect(withChecks.review.checks).toEqual(["lint"]);
-    });
-
-    test("deep merges review.commands per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        review: {
-          enabled: true,
-          checks: ["typecheck", "lint"],
-          commands: { typecheck: "bun typecheck", lint: "bun lint" },
-          pluginMode: "per-story",
-        },
-      };
-      const result = mergePackageConfig(root, {
-        review: { commands: { lint: "eslint ." } } as Partial<NaxConfig["review"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.review.commands.lint).toBe("eslint .");
-      expect(result.review.commands.typecheck).toBe("bun typecheck");
-    });
-
-    test("overrides review.pluginMode per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        review: { enabled: true, checks: [], commands: {}, pluginMode: "per-story" },
-      };
-      const result = mergePackageConfig(root, {
-        review: { pluginMode: "deferred" } as Partial<NaxConfig["review"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.review.pluginMode).toBe("deferred");
+    test("overrides review.enabled/checks independently; deep merges commands; overrides pluginMode", () => {
+      const base: NaxConfig = { ...makeRoot(), review: { enabled: true, checks: ["typecheck", "lint"], commands: { typecheck: "bun typecheck", lint: "bun lint" }, pluginMode: "per-story" } };
+      const r1 = mergePackageConfig(base, { review: { enabled: false } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
+      expect(r1.review.enabled).toBe(false);
+      expect(r1.review.checks).toEqual(["typecheck", "lint"]);
+      const r2 = mergePackageConfig(base, { review: { commands: { lint: "eslint ." } } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
+      expect(r2.review.commands.lint).toBe("eslint .");
+      expect(r2.review.commands.typecheck).toBe("bun typecheck");
+      const r3 = mergePackageConfig(base, { review: { pluginMode: "deferred" } as Partial<NaxConfig["review"]> } as Partial<NaxConfig>);
+      expect(r3.review.pluginMode).toBe("deferred");
     });
 
     test("deep merges review.semantic: rules override and modelTier override both preserve other field", () => {
@@ -400,8 +369,8 @@ describe("mergePackageConfig — project field (US-001)", () => {
     expect(resultFramework.project?.type).toBe("library");
   });
 
-  // AC-6: no project in packageOverride → root.project unchanged
-  test("AC-6: returns unchanged root.project when no override; undefined when neither defines it", () => {
+  // AC-6: no project in packageOverride → root.project unchanged; immutability
+  test("AC-6: returns unchanged root.project when no override; undefined when neither; does not mutate", () => {
     const rootWithProject = makeRootWithProject();
     const result = mergePackageConfig(rootWithProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
     expect(result.project).toEqual(rootWithProject.project);
@@ -409,13 +378,11 @@ describe("mergePackageConfig — project field (US-001)", () => {
     const rootNoProject = makeRoot();
     const resultNoProject = mergePackageConfig(rootNoProject, { quality: { requireTests: false } as Partial<NaxConfig["quality"]> } as Partial<NaxConfig>);
     expect(resultNoProject.project).toBeUndefined();
-  });
 
-  test("does not mutate root.project", () => {
-    const root = makeRootWithProject();
-    const origLang = root.project?.language;
-    mergePackageConfig(root, { project: { language: "go" } } as Partial<NaxConfig>);
-    expect(root.project?.language).toBe(origLang);
+    const rootMut = makeRootWithProject();
+    const origLang = rootMut.project?.language;
+    mergePackageConfig(rootMut, { project: { language: "go" } } as Partial<NaxConfig>);
+    expect(rootMut.project?.language).toBe(origLang);
   });
 });
 
@@ -424,13 +391,19 @@ describe("mergePackageConfig — project field (US-001)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () => {
-  test("root context.v2.stages preserved when no override; package override sets a stage budget", () => {
+  test("root context.v2.stages preserved when no override; package override sets a stage budget; does not mutate", () => {
     const root = makeRoot();
     expect(mergePackageConfig(root, { quality: { requireTests: false } } as Partial<NaxConfig>).context.v2.stages).toEqual({});
     const result = mergePackageConfig(root, {
       context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
     } as Partial<NaxConfig>);
     expect(result.context.v2.stages.execution?.budgetTokens).toBe(15_000);
+
+    const origStages = root.context.v2.stages;
+    mergePackageConfig(root, {
+      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
+    } as Partial<NaxConfig>);
+    expect(root.context.v2.stages).toBe(origStages);
   });
 
   test("package override does not clobber other stages; override wins for same stage", () => {
@@ -444,12 +417,4 @@ describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () =
     expect(overrideWins.context.v2.stages.execution?.budgetTokens).toBe(20_000);
   });
 
-  test("does not mutate root context.v2.stages", () => {
-    const root = makeRoot();
-    const origStages = root.context.v2.stages;
-    mergePackageConfig(root, {
-      context: { v2: { stages: { execution: { budgetTokens: 15_000 } } } } as unknown as Partial<NaxConfig["context"]>,
-    } as Partial<NaxConfig>);
-    expect(root.context.v2.stages).toBe(origStages);
-  });
 });
