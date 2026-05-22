@@ -20,64 +20,39 @@ function makeEvent(overrides: Partial<CostEvent> = {}): CostEvent {
 }
 
 describe("CostAggregator", () => {
-  test("snapshot() returns zero totals when no events recorded", () => {
+  test("snapshot(): zero totals when empty; accumulates events; counts errors separately", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
-    const snap = agg.snapshot();
-    expect(snap.callCount).toBe(0);
-    expect(snap.totalCostUsd).toBe(0);
-    expect(snap.errorCount).toBe(0);
-  });
+    const empty = agg.snapshot();
+    expect(empty.callCount).toBe(0);
+    expect(empty.totalCostUsd).toBe(0);
+    expect(empty.errorCount).toBe(0);
 
-  test("snapshot() accumulates recorded events", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ costUsd: 0.001, tokens: { input: 100, output: 50 } }));
     agg.record(makeEvent({ costUsd: 0.002, tokens: { input: 200, output: 80 } }));
-    const snap = agg.snapshot();
-    expect(snap.callCount).toBe(2);
-    expect(snap.totalCostUsd).toBeCloseTo(0.003);
-    expect(snap.totalInputTokens).toBe(300);
-    expect(snap.totalOutputTokens).toBe(130);
-  });
+    const accumulated = agg.snapshot();
+    expect(accumulated.callCount).toBe(2);
+    expect(accumulated.totalCostUsd).toBeCloseTo(0.003);
+    expect(accumulated.totalInputTokens).toBe(300);
+    expect(accumulated.totalOutputTokens).toBe(130);
 
-  test("snapshot() counts errors separately", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    agg.record(makeEvent());
     agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", errorCode: "TIMEOUT", durationMs: 100 });
-    const snap = agg.snapshot();
-    expect(snap.callCount).toBe(1);
-    expect(snap.errorCount).toBe(1);
+    const withError = agg.snapshot();
+    expect(withError.errorCount).toBe(1);
   });
 
-  test("byCall() includes errorCount for matching callId", () => {
+  test("byCall() and byScope() include errorCount for matching id", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ callId: "call-1", costUsd: 0.01 }));
-    agg.recordError({
-      ts: Date.now(),
-      runId: "r-001",
-      agentName: "claude",
-      callId: "call-1",
-      errorCode: "TIMEOUT",
-      durationMs: 100,
-    });
-    const by = agg.byCall();
-    expect(by["call-1"].callCount).toBe(1);
-    expect(by["call-1"].errorCount).toBe(1);
-  });
+    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", callId: "call-1", errorCode: "TIMEOUT", durationMs: 100 });
+    const byCall = agg.byCall();
+    expect(byCall["call-1"].callCount).toBe(1);
+    expect(byCall["call-1"].errorCount).toBe(1);
 
-  test("byScope() includes errorCount for matching scopeId", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
     agg.record(makeEvent({ scopeId: "scope-1", costUsd: 0.01 }));
-    agg.recordError({
-      ts: Date.now(),
-      runId: "r-001",
-      agentName: "claude",
-      scopeId: "scope-1",
-      errorCode: "TIMEOUT",
-      durationMs: 100,
-    });
-    const by = agg.byScope();
-    expect(by["scope-1"].callCount).toBe(1);
-    expect(by["scope-1"].errorCount).toBe(1);
+    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", scopeId: "scope-1", errorCode: "TIMEOUT", durationMs: 100 });
+    const byScope = agg.byScope();
+    expect(byScope["scope-1"].callCount).toBe(1);
+    expect(byScope["scope-1"].errorCount).toBe(1);
   });
 
   test("byAgent() groups events by agentName", () => {
@@ -285,47 +260,28 @@ describe("CostAggregator", () => {
     h2.close();
   });
 
-  // --- AC6: CostScopeHandle.snapshot() filters by scopeId ---
-  test("CostScopeHandle.snapshot() returns totals only for events with matching scopeId", () => {
+  // --- AC6 + AC7: CostScopeHandle.snapshot() ---
+  test("CostScopeHandle.snapshot() filters by scopeId, includes errorCount, returns zero when empty", () => {
     const agg = new CostAggregator("r-001", "/tmp/drain");
     const handle = agg.openScope("region-X");
     agg.record(makeEvent({ scopeId: "region-X", costUsd: 0.01 }));
     agg.record(makeEvent({ scopeId: "region-X", costUsd: 0.02 }));
-    agg.record(makeEvent({ scopeId: "region-Y", costUsd: 0.99 })); // different scope
-    agg.record(makeEvent({ costUsd: 0.5 })); // no scope
+    agg.record(makeEvent({ scopeId: "region-Y", costUsd: 0.99 }));
+    agg.record(makeEvent({ costUsd: 0.5 }));
     const snap = handle.snapshot();
     expect(snap.callCount).toBe(2);
     expect(snap.totalCostUsd).toBeCloseTo(0.03);
-    handle.close();
-  });
 
-  test("CostScopeHandle.snapshot() includes errorCount for matching scopeId", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    const handle = agg.openScope("region-X");
-    agg.record(makeEvent({ scopeId: "region-X", costUsd: 0.01 }));
-    agg.recordError({
-      ts: Date.now(),
-      runId: "r-001",
-      agentName: "claude",
-      scopeId: "region-X",
-      errorCode: "TIMEOUT",
-      durationMs: 100,
-    });
-    const snap = handle.snapshot();
-    expect(snap.callCount).toBe(1);
-    expect(snap.errorCount).toBe(1);
+    agg.recordError({ ts: Date.now(), runId: "r-001", agentName: "claude", scopeId: "region-X", errorCode: "TIMEOUT", durationMs: 100 });
+    expect(handle.snapshot().errorCount).toBe(1);
     handle.close();
-  });
 
-  // --- AC7: CostScopeHandle.snapshot() returns EMPTY_SNAPSHOT when no matching events ---
-  test("CostScopeHandle.snapshot() returns zero totals when no events have matching scopeId", () => {
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    const handle = agg.openScope("empty-scope");
-    const snap = handle.snapshot();
-    expect(snap.totalCostUsd).toBe(0);
-    expect(snap.callCount).toBe(0);
-    expect(snap.errorCount).toBe(0);
-    handle.close();
+    const emptyHandle = agg.openScope("empty-scope");
+    const emptySnap = emptyHandle.snapshot();
+    expect(emptySnap.totalCostUsd).toBe(0);
+    expect(emptySnap.callCount).toBe(0);
+    expect(emptySnap.errorCount).toBe(0);
+    emptyHandle.close();
   });
 
   // --- AC8: CostScopeHandle.close() is idempotent ---
@@ -339,52 +295,36 @@ describe("CostAggregator", () => {
     }).not.toThrow();
   });
 
-  // --- AC9: drain() warns when open scopes remain ---
-  test("drain() logs warn with openScopeCount when scopes are still open", async () => {
-    const warnCalls: Array<[string, string, Record<string, unknown>]> = [];
+  // --- AC9: drain() warns when open scopes remain; does NOT warn when all closed ---
+  test("drain() warns with openScopeCount when scopes still open; silent when all closed", async () => {
     const origGetSafeLogger = _costAggDeps.getSafeLogger;
-    _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (stage: string, msg: string, data: Record<string, unknown>) => { warnCalls.push([stage, msg, data]); },
-      info: () => {},
-      error: () => {},
-      debug: () => {},
-    })) as never;
     const origWrite = _costAggDeps.write;
     _costAggDeps.write = async () => 0;
 
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    agg.openScope("unclosed-scope");
-    await agg.drain();
-
-    expect(warnCalls.length).toBeGreaterThanOrEqual(1);
-    const drainWarn = warnCalls.find(([, , data]) => typeof (data as Record<string, unknown>)["openScopeCount"] === "number");
+    // Scenario 1: unclosed scope → warn with openScopeCount
+    const warnCalls1: Array<[string, string, Record<string, unknown>]> = [];
+    _costAggDeps.getSafeLogger = mock(() => ({
+      warn: (stage: string, msg: string, data: Record<string, unknown>) => { warnCalls1.push([stage, msg, data]); },
+      info: () => {}, error: () => {}, debug: () => {},
+    })) as never;
+    const agg1 = new CostAggregator("r-001", "/tmp/drain");
+    agg1.openScope("unclosed-scope");
+    await agg1.drain();
+    expect(warnCalls1.length).toBeGreaterThanOrEqual(1);
+    const drainWarn = warnCalls1.find(([, , data]) => typeof (data as Record<string, unknown>)["openScopeCount"] === "number");
     expect(drainWarn).toBeDefined();
     expect((drainWarn![2] as Record<string, unknown>)["openScopeCount"]).toBe(1);
 
-    _costAggDeps.getSafeLogger = origGetSafeLogger;
-    _costAggDeps.write = origWrite;
-  });
-
-  // --- AC9: drain() does NOT warn when no scopes are open ---
-  test("drain() does not call warn for openScopeCount when no scopes are open", async () => {
-    const warnCalls: Array<Record<string, unknown>> = [];
-    const origGetSafeLogger = _costAggDeps.getSafeLogger;
+    // Scenario 2: closed scope → no warn with openScopeCount
+    const warnCalls2: Array<Record<string, unknown>> = [];
     _costAggDeps.getSafeLogger = mock(() => ({
-      warn: (_stage: string, _msg: string, data: Record<string, unknown>) => { warnCalls.push(data); },
-      info: () => {},
-      error: () => {},
-      debug: () => {},
+      warn: (_stage: string, _msg: string, data: Record<string, unknown>) => { warnCalls2.push(data); },
+      info: () => {}, error: () => {}, debug: () => {},
     })) as never;
-    const origWrite = _costAggDeps.write;
-    _costAggDeps.write = async () => 0;
-
-    const agg = new CostAggregator("r-001", "/tmp/drain");
-    const handle = agg.openScope("closed-scope");
-    handle.close();
-    await agg.drain();
-
-    const scopeWarn = warnCalls.find((d) => typeof d["openScopeCount"] === "number");
-    expect(scopeWarn).toBeUndefined();
+    const agg2 = new CostAggregator("r-001", "/tmp/drain");
+    agg2.openScope("closed-scope").close();
+    await agg2.drain();
+    expect(warnCalls2.find((d) => typeof d["openScopeCount"] === "number")).toBeUndefined();
 
     _costAggDeps.getSafeLogger = origGetSafeLogger;
     _costAggDeps.write = origWrite;

@@ -32,30 +32,18 @@ const STORY: UserStory = {
 // ---------------------------------------------------------------------------
 
 describe("buildIsolationSection", () => {
-  test("strict mode does NOT contain 'MAY read'", () => {
+  test("strict mode: no MAY read, forbids src/ modification; is pure", () => {
     const result = buildIsolationSection("strict");
     expect(result).not.toContain("MAY read");
+    expect(result).toMatch(/src\//);
+    expect(result.toLowerCase()).toMatch(/do not|forbidden|must not|not modify|no.*src/);
+    expect(buildIsolationSection("strict")).toBe(buildIsolationSection("strict"));
   });
 
-  test("lite mode contains 'MAY read src/'", () => {
+  test("lite mode: MAY read src/, allows stubs; is pure", () => {
     const result = buildIsolationSection("lite");
     expect(result).toContain("MAY read src/");
-  });
-
-  test("strict mode forbids src/ modification", () => {
-    const result = buildIsolationSection("strict");
-    expect(result).toMatch(/src\//);
-    // Should mention restriction / not modify / do not modify
-    expect(result.toLowerCase()).toMatch(/do not|forbidden|must not|not modify|no.*src/);
-  });
-
-  test("lite mode allows creating stubs in src/", () => {
-    const result = buildIsolationSection("lite");
     expect(result.toLowerCase()).toMatch(/stub|create.*src|src.*stub/);
-  });
-
-  test("is a pure function — same mode returns same output", () => {
-    expect(buildIsolationSection("strict")).toBe(buildIsolationSection("strict"));
     expect(buildIsolationSection("lite")).toBe(buildIsolationSection("lite"));
   });
 });
@@ -65,28 +53,17 @@ describe("buildIsolationSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildRoleTaskSection", () => {
-  test("standard contains 'Do NOT modify test files'", () => {
+  test("standard: Do NOT modify test files, make failing tests pass; is pure", () => {
     const result = buildRoleTaskSection("standard");
     expect(result).toContain("Do NOT modify test files");
-  });
-
-  test("standard contains instruction to make failing tests pass", () => {
-    const result = buildRoleTaskSection("standard");
     expect(result.toLowerCase()).toMatch(/make.*fail.*test.*pass|failing tests pass/);
+    expect(buildRoleTaskSection("standard")).toBe(buildRoleTaskSection("standard"));
   });
 
-  test("lite acknowledges test-writer session", () => {
+  test("lite: test-writer session, implements; is pure", () => {
     const result = buildRoleTaskSection("lite");
     expect(result).toContain("test-writer session");
-  });
-
-  test("lite contains instruction to implement", () => {
-    const result = buildRoleTaskSection("lite");
     expect(result.toLowerCase()).toMatch(/implement|then implement/);
-  });
-
-  test("is a pure function — same variant returns same output", () => {
-    expect(buildRoleTaskSection("standard")).toBe(buildRoleTaskSection("standard"));
     expect(buildRoleTaskSection("lite")).toBe(buildRoleTaskSection("lite"));
   });
 });
@@ -96,33 +73,21 @@ describe("buildRoleTaskSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildStorySection", () => {
-  test("includes the story title", () => {
+  test("includes title, description, and numbered acceptance criteria; is pure", () => {
     const result = buildStorySection(STORY);
     expect(result).toContain(STORY.title);
-  });
-
-  test("includes the story description", () => {
-    const result = buildStorySection(STORY);
     expect(result).toContain(STORY.description);
-  });
-
-  test("formats acceptance criteria as numbered list", () => {
-    const result = buildStorySection(STORY);
     expect(result).toContain("1.");
     expect(result).toContain("2.");
     expect(result).toContain("3.");
-    expect(result).toContain(STORY.acceptanceCriteria[0]);
-    expect(result).toContain(STORY.acceptanceCriteria[1]);
-    expect(result).toContain(STORY.acceptanceCriteria[2]);
-  });
-
-  test("is pure — same story returns same output", () => {
+    for (const ac of STORY.acceptanceCriteria) {
+      expect(result).toContain(ac);
+    }
     expect(buildStorySection(STORY)).toBe(buildStorySection(STORY));
   });
 
   test("single acceptance criterion is numbered '1.'", () => {
-    const singleAC: UserStory = { ...STORY, acceptanceCriteria: ["Only criterion"] };
-    const result = buildStorySection(singleAC);
+    const result = buildStorySection({ ...STORY, acceptanceCriteria: ["Only criterion"] });
     expect(result).toContain("1. Only criterion");
   });
 });
@@ -132,39 +97,20 @@ describe("buildStorySection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildVerdictSection", () => {
-  test("includes the verdict file name .nax-verifier-verdict.json", () => {
+  test("includes verdict file, schema fields, approved conditions, quality values, no-commit instruction; is pure", () => {
     const result = buildVerdictSection(STORY);
     expect(result).toContain(".nax-verifier-verdict.json");
-  });
-
-  test("includes JSON schema example with required fields", () => {
-    const result = buildVerdictSection(STORY);
     expect(result).toContain('"version"');
     expect(result).toContain('"approved"');
     expect(result).toContain('"tests"');
     expect(result).toContain('"acceptanceCriteria"');
     expect(result).toContain('"quality"');
-  });
-
-  test("includes approved: true and approved: false conditions", () => {
-    const result = buildVerdictSection(STORY);
     expect(result).toContain("approved: true");
     expect(result).toContain("approved: false");
-  });
-
-  test("includes quality rating values", () => {
-    const result = buildVerdictSection(STORY);
     expect(result).toContain('"good"');
     expect(result).toContain('"acceptable"');
     expect(result).toContain('"poor"');
-  });
-
-  test("instructs verifier not to commit code changes", () => {
-    const result = buildVerdictSection(STORY);
     expect(result).toContain("do not commit code changes");
-  });
-
-  test("is pure — same story returns same output", () => {
     expect(buildVerdictSection(STORY)).toBe(buildVerdictSection(STORY));
   });
 });
@@ -174,22 +120,11 @@ describe("buildVerdictSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildConventionsSection", () => {
-  test("includes code pattern guidelines", () => {
+  test("includes code patterns, maintainability, commit guidance; is pure", () => {
     const result = buildConventionsSection();
     expect(result).toContain("code patterns");
-  });
-
-  test("includes maintainability guidance", () => {
-    const result = buildConventionsSection();
     expect(result.toLowerCase()).toMatch(/idiomatic|maintainable/);
-  });
-
-  test("includes commit message instruction", () => {
-    const result = buildConventionsSection();
     expect(result.toLowerCase()).toMatch(/commit/);
-  });
-
-  test("is a pure function — returns same output each call", () => {
     expect(buildConventionsSection()).toBe(buildConventionsSection());
   });
 });
