@@ -33,6 +33,7 @@ import type { AcceptanceEntry } from "../sections";
 import {
   buildAcceptanceSection,
   buildBatchStorySection,
+  buildBehavioralGuardrailsSection,
   buildConventionsSection,
   buildHermeticSection,
   buildIsolationSection,
@@ -43,6 +44,7 @@ import {
   buildTddLanguageSection,
   buildVerdictSection,
 } from "../sections";
+import type { GuardrailRole } from "../sections";
 
 export class TddPromptBuilder {
   private readonly role: PromptRole;
@@ -227,6 +229,18 @@ export class TddPromptBuilder {
       if (hermeticSection) acc.add(this.s("hermetic", hermeticSection));
     }
 
+    // (6.7) Behavioral Guardrails
+    const guardrailLevel = this.loaderConfig_?.prompts?.behavioralGuardrails ?? "lite";
+    const guardrailVariant = this.options.variant as "standard" | "lite" | undefined;
+    const guardrailIsolation = this.options.isolation as "strict" | "lite" | undefined;
+    const guardrails = buildBehavioralGuardrailsSection(
+      this.role as GuardrailRole,
+      guardrailLevel,
+      guardrailVariant,
+      guardrailIsolation,
+    );
+    if (guardrails) acc.add(this.s("guardrails", guardrails));
+
     if (this.role !== "verifier") {
       const selfVerify = buildSelfVerificationSection(this.role, this.selfVerification_);
       if (selfVerify) acc.add(this.s("self-verification", selfVerify));
@@ -301,6 +315,13 @@ export class TddPromptBuilder {
 
     const variant = this.options.variant as "standard" | "lite" | undefined;
     const isolation = this.options.isolation as "strict" | "lite" | undefined;
-    return buildRoleTaskSection(this.role, variant, this.testCommand_, isolation, this.noTestJustification_);
+    return buildRoleTaskSection(
+      this.role,
+      variant,
+      this.testCommand_,
+      isolation,
+      this.noTestJustification_,
+      this.story_?.id,
+    );
   }
 }

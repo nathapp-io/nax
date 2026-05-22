@@ -131,19 +131,19 @@ describe("promptStage.execute() — tdd-simple strategy", () => {
   test("prompt contains RED phase instructions", async () => {
     const ctx = makeCtx("tdd-simple");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("RED phase");
+    expect(ctx.prompt).toMatch(/RED\s*[—-]/);
   });
 
   test("prompt contains GREEN phase instructions", async () => {
     const ctx = makeCtx("tdd-simple");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("GREEN phase");
+    expect(ctx.prompt).toMatch(/GREEN\s*[—-]/);
   });
 
   test("prompt contains REFACTOR phase instructions", async () => {
     const ctx = makeCtx("tdd-simple");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("REFACTOR phase");
+    expect(ctx.prompt).toMatch(/REFACTOR\s*[—-]/);
   });
 
   test("prompt contains 'Write failing tests FIRST' instruction", async () => {
@@ -200,7 +200,7 @@ describe("promptStage.execute() — test-after strategy (unified with tdd-simple
   test("test-after prompt contains RED phase instructions (unified with tdd-simple)", async () => {
     const ctx = makeCtx("test-after");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("RED phase");
+    expect(ctx.prompt).toMatch(/RED\s*[—-]/);
   });
 });
 

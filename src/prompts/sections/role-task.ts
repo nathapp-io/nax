@@ -1,12 +1,14 @@
 /**
  * Role-Task Section
  *
- * Generates role definition for all 5 roles in nax prompt orchestration:
+ * Generates role definition for all roles in nax prompt orchestration:
  * - implementer: Make failing tests pass (standard/lite variants)
- * - test-writer: Write tests first (RED phase)
- * - verifier: Review and verify implementation
+ * - test-writer: Write tests first (RED phase) (strict/lite isolation)
+ * - verifier: Review and verify TDD handoff integrity
  * - single-session: Write tests AND implement in one session
- * - tdd-simple: Write failing tests FIRST, then implement in one session
+ * - tdd-simple: RED → GREEN → REFACTOR in one session
+ * - batch: Per-story TDD loop (RED → GREEN, one commit per story)
+ * - no-test: Implement without tests (config/docs changes)
  *
  * Backwards compatible: also accepts old API (variant only)
  * - buildRoleTaskSection("standard") → implementer, standard
@@ -30,10 +32,11 @@ export function buildRoleTaskSection(
   testCommand?: string,
   isolation?: "strict" | "lite",
   noTestJustification?: string,
+  storyId?: string,
 ): string {
   // Old API support: buildRoleTaskSection("standard") or buildRoleTaskSection("lite")
   if ((roleOrVariant === "standard" || roleOrVariant === "lite") && variant === undefined) {
-    return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation);
+    return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation, noTestJustification, storyId);
   }
 
   const role = roleOrVariant as
@@ -46,6 +49,7 @@ export function buildRoleTaskSection(
     | "batch";
   const testCmd = testCommand ?? "";
   const frameworkHint = buildTestFrameworkHint(testCmd);
+  const commitMsg = storyId ? `feat(${storyId}): <description>` : "feat: <description>";
 
   if (role === "no-test") {
     const justification = noTestJustification ?? "No behavioral changes — tests not required";
@@ -57,7 +61,7 @@ Instructions:
 - Implement the change as described in the story
 - Do NOT create or modify test files
 - Justification for no tests: ${justification}
-- When done, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- When done, stage and commit ALL changed files with: git commit -m '${commitMsg}'
 - Goal: change implemented, no test files created or modified, all changes committed`;
   }
 
@@ -66,66 +70,82 @@ Instructions:
     if (v === "standard") {
       return `# Role: Implementer
 
-Your task: make failing tests pass.
+Your task: make the failing tests pass by writing real source code.
 
-Instructions:
-- Implement source code in src/ to make tests pass
-- Do NOT modify test files — three narrow lint/contract/sibling exceptions exist; see the escape valve section in the rectification prompt if you encounter one
-- Run tests frequently to track progress
-- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
-- Goal: all tests green, all changes committed`;
+Workflow:
+1. Read every failing test in scope. The tests are the contract — understand what each one asserts before editing source.
+2. Run the scoped test files once to establish the baseline (which fail, which pass, and why).
+3. Implement source code in the package's source location (the project context names it).
+4. After each meaningful change, re-run only the scoped test files — never the full suite.
+5. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+
+Rules:
+- Do NOT modify test files. Three narrow exceptions: (a) a lint-only fix to a test, (b) a contract drift where the test imports a removed/renamed symbol, (c) a sibling test file rename forced by your source change. Name which exception applies in the commit body before editing any test file.
+- Goal: every acceptance criterion covered by at least one passing test; all changes committed.`;
     }
 
     // lite variant — session 2 of three-session-tdd-lite
     return `# Role: Implementer (Lite)
 
-Your task: Make the failing tests pass AND add any missing test coverage.
+Your task: make the failing tests pass AND fill any test coverage gaps an earlier session left.
 
-Context: A test-writer session has already created test files with failing tests and possibly minimal stubs in src/. Your job is to make those tests pass by implementing the real logic.
+Context: A test-writer session has already created tests and may have added minimal stubs in the package's source location. Your job is to (a) replace stubs with real implementations and (b) confirm every AC has test coverage before committing.
 
-Instructions:
-- Start by running the existing tests to see what's failing
-- Implement source code in src/ to make all failing tests pass
-- You MAY add additional tests if you find gaps in coverage
-- Replace any stubs with real implementations
+Workflow:
+1. Run the existing scoped tests to see which fail and why (assertion failure vs import error).
+2. Read each failing test. Note which ACs they cover and which they DON'T.
+3. Replace stubs with real implementations. A stub is one of: a type-only declaration, a function returning a placeholder/throwing "not implemented", or a const placeholder.
+4. If any AC has no test, add one before implementing — do not implement uncovered behavior.
+5. Re-run only the scoped test files after each meaningful change.
+6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+
+Rules:
+- Three test-modification exceptions apply (lint-only fix, contract drift, sibling rename). Name the exception in the commit body before editing any test the test-writer wrote.
 - ${frameworkHint}
-- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
-- Goal: all tests green, all criteria met, all changes committed`;
+- Goal: every AC has at least one passing test; all stubs replaced with real logic; all changes committed.`;
   }
 
   if (role === "test-writer") {
     if (isolation === "lite") {
       return `# Role: Test-Writer (Lite)
 
-Your task: Write failing tests for the feature. You may create minimal stubs to support imports.
+Your task: write failing tests AND minimal stubs that let the tests compile.
 
 Context: You are session 1 of a multi-session workflow. An implementer will follow to make your tests pass.
 
-Instructions:
-- Create test files in test/ directory that cover all acceptance criteria
-- Tests must fail initially (RED phase) — do NOT implement real logic
+Workflow:
+1. Re-read the acceptance criteria above.
+2. Create test files in the location the project uses for tests.
+3. Create stubs in the package's source location so the tests can import and compile. A stub is one of: a type/interface declaration, a function returning a placeholder/throwing "not implemented" (no more than 3 lines of body), or a const placeholder. If a stub body needs real logic, you have crossed into implementer territory — stop.
+4. For each AC: at least one success-path test and one boundary/failure-path test.
+5. Run the new test files. Confirm tests compile (stubs work) AND fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
+
+Rules:
+- Stubs are NOT implementations. The implementer in the next session writes real logic.
+- Each test name describes ONE behavior. Use AC IDs in test names when available (e.g. \`it('AC4: throws Division by zero when b === 0')\`).
+- Assert on observable outputs.
 - ${frameworkHint}
-- You MAY read src/ files and import types/interfaces from them
-- You MAY create minimal stubs in src/ (type definitions, empty functions) so tests can import and compile
-- Write clear test names that document expected behavior
-- Focus on behavior, not implementation details
-- Goal: comprehensive failing test suite with compilable imports, ready for implementation`;
+- Goal: comprehensive failing test suite that compiles, with stubs ≤3 lines each, ready for implementation.`;
     }
 
     return `# Role: Test-Writer
 
-Your task: Write comprehensive failing tests for the feature.
+Your task: write failing tests that pin down every acceptance criterion. An implementer will follow.
 
-Context: You are session 1 of a multi-session workflow. An implementer will follow to make your tests pass.
+Context: You are session 1 of a multi-session workflow.
 
-Instructions:
-- Create test files in test/ directory that cover all acceptance criteria
-- Tests must fail initially (RED phase) — the feature is not yet implemented
-- Do NOT create or modify any files in src/
+Workflow:
+1. Re-read the acceptance criteria above.
+2. Create test files in the location the project uses for tests (project context names it).
+3. For each AC: write at least one test for the success path AND at least one for a boundary/failure path (zero, empty, negative, missing, throws). ACs worded as "throws X" require a test asserting the throw.
+4. Run the new test files. Confirm every test fails with an ASSERTION failure — NOT an import error, compile error, or runtime crash before assertion. A test that errors before reaching its assertion does not prove the behavior is missing.
+
+Rules:
+- Do NOT create or modify any source files. Read source for types/interfaces only.
+- Each test name describes ONE behavior; each test asserts ONE behavior. When the AC has a number or ID, prefix the test name (e.g. \`it('AC4: throws Division by zero when b === 0')\`).
+- Assert on observable outputs (return values, thrown errors, file contents, log output, boundary state). Do not assert on private helpers, internal call counts, or implementation-level mocks unless the AC requires it.
 - ${frameworkHint}
-- Write clear test names that document expected behavior
-- Focus on behavior, not implementation details
-- Goal: comprehensive failing test suite ready for implementation`;
+- Goal: every AC has at least one failing test that fails at assertion time and clearly documents what the implementer must build.`;
   }
 
   if (role === "verifier") {
@@ -148,48 +168,62 @@ Instructions:
   if (role === "single-session") {
     return `# Role: Single-Session
 
-Your task: Write tests AND implement the feature in a single focused session.
+Your task: write tests AND implement the feature in one session.
 
-Instructions:
-- Phase 1: Write comprehensive tests (test/ directory)
-- Phase 2: Implement to make all tests pass (src/ directory)
+Workflow:
+1. Read the acceptance criteria. For each AC, plan one success-path test and one boundary/failure test.
+2. Create test files in the location the project uses for tests. Cover every AC.
+3. Run the tests to confirm they fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
+4. Implement source code in the package's source location to make the tests pass.
+5. After each meaningful change, re-run only the scoped test files — never the full suite.
+6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+
+Rules:
+- Each test name describes ONE behavior; use AC IDs when available.
+- Assert on observable outputs.
 - ${frameworkHint}
-- Run tests frequently throughout implementation
-- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
-- Goal: all tests passing, all changes committed, full story complete`;
+- Goal: every AC has at least one passing test; all changes committed.`;
   }
 
   if (role === "batch") {
     const verifyCmdLine = testCmd
-      ? `  - Verify all tests pass: ${testCmd}`
-      : "  - Verify all tests pass using your project's test command";
+      ? `  - Re-run only the scoped test files after each meaningful change: ${testCmd}`
+      : "  - Re-run only the scoped test files after each meaningful change";
     return `# Role: Batch Implementer
 
-Your task: Implement each story in order using TDD — write tests first, then implement, then verify.
+Your task: implement each story in order using TDD — write tests first, then implement, then commit per story.
 
-Instructions:
-- Process each story in order (Story 1, Story 2, …)
-- For each story:
-  - Write failing tests FIRST covering the acceptance criteria
-  - Run tests to confirm they fail (RED phase)
-  - Implement the minimum code to make tests pass (GREEN phase)
-${verifyCmdLine}
-  - Commit the story with its story ID in the commit message: git commit -m 'feat(<story-id>): <description>'
+Per-story workflow (RED → GREEN):
+1. RED — write failing tests in the location the project uses for tests covering the story's ACs (success + boundary).
+2. RED — run the new test files. Confirm assertion failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
+3. GREEN — implement source code in the package's source location.
+4. GREEN — re-run only the scoped test files after each meaningful change.
+5. Commit the story with its ID: \`git commit -m 'feat(<story-id>): <description>'\`.
+
+Rules:
+- One commit per story — never bundle stories.
+- Process stories in order (Story 1, Story 2, …).
+- Each test name describes ONE behavior; use AC IDs when available.
 - ${frameworkHint}
-- Do NOT commit multiple stories together — each story gets its own commit
-- Goal: all stories implemented, all tests passing, each story committed with its story ID`;
+${verifyCmdLine}
+- Goal: every story implemented with passing tests; one commit per story tagged with the story ID.`;
   }
 
-  // tdd-simple role — test-driven development in one session
+  // tdd-simple role — RED → GREEN → REFACTOR
   return `# Role: TDD-Simple
 
-Your task: Write failing tests FIRST, then implement to make them pass.
+Your task: write failing tests FIRST, then implement in one session.
 
-Instructions:
-- RED phase: Write failing tests FIRST for the acceptance criteria
-- RED phase: Run the tests to confirm they fail
-- GREEN phase: Implement the minimum code to make tests pass
-- REFACTOR phase: Refactor while keeping tests green
-- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
-- Goal: all tests passing, feature complete, all changes committed`;
+Workflow (RED → GREEN → REFACTOR):
+1. RED — write failing tests in the location the project uses for tests covering every AC (success + boundary).
+2. RED — run the tests. Confirm they fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
+3. GREEN — implement minimum source code in the package's source location to make the tests pass.
+4. GREEN — re-run only the scoped test files after each meaningful change.
+5. REFACTOR — clean up while keeping tests green. No new behavior; no expanded scope.
+6. Stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+
+Rules:
+- Each test name describes ONE behavior; use AC IDs when available.
+- ${frameworkHint}
+- Goal: every AC covered by passing tests; refactor complete; all changes committed.`;
 }

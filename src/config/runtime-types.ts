@@ -483,6 +483,7 @@ export interface PromptsConfig {
   overrides?: Partial<
     Record<"no-test" | "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch", string>
   >;
+  behavioralGuardrails?: "off" | "lite" | "strict";
 }
 
 /** Hermetic test enforcement configuration (ENH-010) */

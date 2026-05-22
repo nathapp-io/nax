@@ -32,6 +32,14 @@ at test/unit/rate-limiter.test.ts:34
 
 \`bun test test/unit/\`
 
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`.
+
 # Conventions
 
 Follow existing code patterns and conventions. Write idiomatic, maintainable code.
@@ -130,6 +138,14 @@ at test/unit/rate-limiter.test.ts:34
 isolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.
 
 When running tests, run ONLY test files related to your changes (scope each run to the files you changed). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`.
 
 # Conventions
 
@@ -259,7 +275,16 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;
 
 exports[`RectifierPromptBuilder.firstAttemptDelta two-categories: renders in fixed priority order, not input order 1`] = `
@@ -363,7 +388,16 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;
 
 exports[`RectifierPromptBuilder.firstAttemptDelta all-categories: renders all five buckets with expected grouping 1`] = `
@@ -507,7 +541,16 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;
 
 exports[`RectifierPromptBuilder.continuation single-category: renders only the matching priority bucket 1`] = `
@@ -599,7 +642,16 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;
 
 exports[`RectifierPromptBuilder.continuation two-categories: renders in fixed priority order, not input order 1`] = `
@@ -701,7 +753,16 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;
 
 exports[`RectifierPromptBuilder.continuation all-categories: renders all five buckets with expected grouping 1`] = `
@@ -849,5 +910,14 @@ REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
 Rules:
 - Do NOT make any edits yourself; the test-writer will fulfill.
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file."
+- FILES must list real test files. Each path must exist and be a test file.
+
+
+# Behavioral Guardrails
+
+- Simplicity: write the minimum code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`."
 `;

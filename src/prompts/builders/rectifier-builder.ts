@@ -21,7 +21,13 @@ import { formatFailureSummary } from "@/test-runners";
 import type { TestFailure } from "@/verification";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { FailureRecord, ReviewFinding } from "../core";
-import { buildConventionsSection, buildIsolationSection, buildStorySection } from "../sections";
+import {
+  buildBehavioralGuardrailsSection,
+  buildConventionsSection,
+  buildIsolationSection,
+  buildStorySection,
+} from "../sections";
+import type { GuardrailLevel } from "../sections";
 import {
   CONTRADICTION_ESCAPE_HATCH,
   adversarialRectification,
@@ -179,7 +185,11 @@ export class RectifierPromptBuilder {
    * the review findings need to be delivered. Avoids re-sending story title, ACs,
    * and other context that is already in the conversation history.
    */
-  static firstAttemptDelta(failedChecks: ReviewCheckResult[], maxAttempts: number): string {
+  static firstAttemptDelta(
+    failedChecks: ReviewCheckResult[],
+    maxAttempts: number,
+    guardrailLevel?: GuardrailLevel,
+  ): string {
     const parts: string[] = [];
     const attemptWord = maxAttempts === 1 ? "1 attempt" : `${maxAttempts} attempts`;
 
@@ -193,6 +203,11 @@ export class RectifierPromptBuilder {
       "\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the three narrow exceptions appended below. Commit your changes when all checks pass.",
     );
     parts.push(CONTRADICTION_ESCAPE_HATCH);
+
+    const guardrails = buildBehavioralGuardrailsSection("implementer", guardrailLevel ?? "lite");
+    if (guardrails) {
+      parts.push(`\n\n${guardrails}`);
+    }
 
     return parts.join("\n");
   }
@@ -209,6 +224,7 @@ export class RectifierPromptBuilder {
     attempt: number,
     rethinkAtAttempt: number,
     urgencyAtAttempt: number,
+    guardrailLevel?: GuardrailLevel,
   ): string {
     const parts: string[] = [];
 
@@ -228,6 +244,11 @@ export class RectifierPromptBuilder {
     }
 
     parts.push(CONTRADICTION_ESCAPE_HATCH);
+
+    const guardrails = buildBehavioralGuardrailsSection("implementer", guardrailLevel ?? "lite");
+    if (guardrails) {
+      parts.push(`\n\n${guardrails}`);
+    }
 
     return parts.join("\n");
   }
@@ -732,6 +753,7 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
     constitution?: string;
     context?: string;
     promptPrefix?: string;
+    guardrailLevel?: GuardrailLevel;
   }): string {
     const parts: string[] = [];
 
@@ -777,6 +799,13 @@ Commit your fixes when done.${scopeConstraint}${CONTRADICTION_ESCAPE_HATCH}`;
     // 7. Isolation (optional)
     if (opts.isolation) {
       parts.push(buildIsolationSection("implementer", opts.isolation, undefined));
+      parts.push("\n\n");
+    }
+
+    // 7.5. Behavioral Guardrails (gated by config, not injected for review-finding rectifications)
+    const guardrails = buildBehavioralGuardrailsSection("implementer", opts.guardrailLevel ?? "lite");
+    if (guardrails) {
+      parts.push(guardrails);
       parts.push("\n\n");
     }
 
