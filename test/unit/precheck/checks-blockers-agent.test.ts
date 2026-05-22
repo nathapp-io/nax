@@ -26,288 +26,77 @@ withDepsRestore(_deps, ["spawn"]);
 // --- tests ---
 
 describe("checkAgentCLI — default behavior (claude)", () => {
-  test("passes when claude --version exits 0", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig());
-
+  test("uses claude by default and on explicit config; passes with correct fields and success message", async () => {
+    for (const agent of [undefined, "claude"] as const) {
+      const calls: string[][] = [];
+      _deps.spawn = mock((cmd: string[]) => {
+        calls.push(cmd);
+        return { exited: Promise.resolve(0), stdout: null, stderr: null };
+      });
+      await checkAgentCLI(makeConfig(agent));
+      expect(calls[0][0], `agent=${agent}`).toBe("claude");
+    }
+    _deps.spawn = mock((_cmd: string[]) => ({ exited: Promise.resolve(0), stdout: null, stderr: null }));
+    const result = await checkAgentCLI(makeConfig("claude"));
     expect(result.passed).toBe(true);
     expect(result.tier).toBe("blocker");
     expect(result.name).toBe("agent-cli-available");
-  });
-
-  test("uses claude binary by default when no agent configured", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig());
-
-    expect(calls[0][0]).toBe("claude");
-  });
-
-  test("uses claude binary when config.execution.agent is 'claude'", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("claude"));
-
-    expect(calls[0][0]).toBe("claude");
-  });
-
-  test("passes success message containing 'claude' when binary found", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig("claude"));
-
-    expect(result.message).toContain("claude");
-    expect(result.passed).toBe(true);
-  });
-
-  test("failure message contains 'claude' when claude binary missing", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT: not found");
-    });
-
-    const result = await checkAgentCLI(makeConfig("claude"));
-
-    expect(result.passed).toBe(false);
     expect(result.message).toContain("claude");
   });
 });
 
-describe("checkAgentCLI — codex", () => {
-  test("spawns codex binary when agent is 'codex'", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("codex"));
-
-    expect(calls[0][0]).toBe("codex");
+describe("checkAgentCLI — non-claude agents", () => {
+  test("spawns correct binary and passes when exit 0 for codex, opencode, gemini, aider", async () => {
+    for (const agent of ["codex", "opencode", "gemini", "aider"] as const) {
+      const calls: string[][] = [];
+      _deps.spawn = mock((cmd: string[]) => {
+        calls.push(cmd);
+        return { exited: Promise.resolve(0), stdout: null, stderr: null };
+      });
+      const result = await checkAgentCLI(makeConfig(agent));
+      expect(calls[0][0], agent).toBe(agent);
+      expect(result.passed, agent).toBe(true);
+    }
   });
 
-  test("passes when codex --version exits 0", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig("codex"));
-
-    expect(result.passed).toBe(true);
-  });
-
-  test("failure message contains 'codex' when binary missing", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT: not found");
-    });
-
-    const result = await checkAgentCLI(makeConfig("codex"));
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("codex");
-  });
-});
-
-describe("checkAgentCLI — opencode", () => {
-  test("spawns opencode binary when agent is 'opencode'", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("opencode"));
-
-    expect(calls[0][0]).toBe("opencode");
-  });
-
-  test("passes when opencode --version exits 0", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig("opencode"));
-
-    expect(result.passed).toBe(true);
-  });
-
-  test("failure message contains 'opencode' when binary missing", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT: not found");
-    });
-
-    const result = await checkAgentCLI(makeConfig("opencode"));
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("opencode");
-  });
-});
-
-describe("checkAgentCLI — gemini", () => {
-  test("spawns gemini binary when agent is 'gemini'", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("gemini"));
-
-    expect(calls[0][0]).toBe("gemini");
-  });
-
-  test("passes when gemini --version exits 0", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig("gemini"));
-
-    expect(result.passed).toBe(true);
-  });
-
-  test("failure message contains 'gemini' when binary missing", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT: not found");
-    });
-
-    const result = await checkAgentCLI(makeConfig("gemini"));
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("gemini");
-  });
-});
-
-describe("checkAgentCLI — aider", () => {
-  test("spawns aider binary when agent is 'aider'", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("aider"));
-
-    expect(calls[0][0]).toBe("aider");
-  });
-
-  test("passes when aider --version exits 0", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(0),
-      stdout: null,
-      stderr: null,
-    }));
-
-    const result = await checkAgentCLI(makeConfig("aider"));
-
-    expect(result.passed).toBe(true);
-  });
-
-  test("failure message contains 'aider' when binary missing", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT: not found");
-    });
-
-    const result = await checkAgentCLI(makeConfig("aider"));
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("aider");
+  test("failure message contains the binary name when binary is missing for all agents", async () => {
+    for (const agent of ["claude", "codex", "opencode", "gemini", "aider"] as const) {
+      _deps.spawn = mock((_cmd: string[]) => {
+        throw new Error("ENOENT: not found");
+      });
+      const result = await checkAgentCLI(makeConfig(agent));
+      expect(result.passed, agent).toBe(false);
+      expect(result.message, agent).toContain(agent);
+    }
   });
 });
 
 describe("checkAgentCLI — missing binary (non-zero exit)", () => {
-  test("returns blocker when spawn exits non-zero", async () => {
-    _deps.spawn = mock((_cmd: string[]) => ({
-      exited: Promise.resolve(1),
-      stdout: null,
-      stderr: null,
-    }));
+  test("returns blocker on non-zero exit or ENOENT; check name is agent-cli-available", async () => {
+    _deps.spawn = mock((_cmd: string[]) => ({ exited: Promise.resolve(1), stdout: null, stderr: null }));
+    const r1 = await checkAgentCLI(makeConfig("claude"));
+    expect(r1.passed).toBe(false);
+    expect(r1.tier).toBe("blocker");
 
-    const result = await checkAgentCLI(makeConfig("claude"));
-
-    expect(result.passed).toBe(false);
-    expect(result.tier).toBe("blocker");
-  });
-
-  test("returns blocker when spawn throws ENOENT", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT");
-    });
-
-    const result = await checkAgentCLI(makeConfig("claude"));
-
-    expect(result.passed).toBe(false);
-    expect(result.tier).toBe("blocker");
-  });
-
-  test("check name is 'agent-cli-available'", async () => {
-    _deps.spawn = mock((_cmd: string[]) => {
-      throw new Error("ENOENT");
-    });
-
-    const result = await checkAgentCLI(makeConfig("codex"));
-
-    expect(result.name).toBe("agent-cli-available");
+    _deps.spawn = mock((_cmd: string[]) => { throw new Error("ENOENT"); });
+    const r2 = await checkAgentCLI(makeConfig("codex"));
+    expect(r2.passed).toBe(false);
+    expect(r2.tier).toBe("blocker");
+    expect(r2.name).toBe("agent-cli-available");
   });
 });
 
 describe("checkAgentCLI — --version flag patterns", () => {
-  test("invokes binary with --version flag", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("claude"));
-
-    expect(calls[0]).toContain("--version");
-  });
-
-  test("aider uses --version flag", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("aider"));
-
-    expect(calls[0]).toContain("--version");
-  });
-
-  test("codex uses --version flag", async () => {
-    const calls: string[][] = [];
-    _deps.spawn = mock((cmd: string[]) => {
-      calls.push(cmd);
-      return { exited: Promise.resolve(0), stdout: null, stderr: null };
-    });
-
-    await checkAgentCLI(makeConfig("codex"));
-
-    expect(calls[0]).toContain("--version");
+  test("all agents invoke binary with --version flag", async () => {
+    for (const agent of ["claude", "aider", "codex"] as const) {
+      const calls: string[][] = [];
+      _deps.spawn = mock((cmd: string[]) => {
+        calls.push(cmd);
+        return { exited: Promise.resolve(0), stdout: null, stderr: null };
+      });
+      await checkAgentCLI(makeConfig(agent));
+      expect(calls[0], agent).toContain("--version");
+    }
   });
 });
 

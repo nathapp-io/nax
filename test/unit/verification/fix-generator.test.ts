@@ -100,23 +100,9 @@ AC-3: third criterion
     });
   });
 
-  test("normalizes AC IDs to uppercase", () => {
-    const spec = "- ac-1: lowercase\n- Ac-2: mixed case";
-
-    const map = parseACTextFromSpec(spec);
-
-    expect(map).toEqual({
-      "AC-1": "lowercase",
-      "AC-2": "mixed case",
-    });
-  });
-
-  test("returns empty map when no ACs found", () => {
-    const spec = "# Feature\n\nNo acceptance criteria here.";
-
-    const map = parseACTextFromSpec(spec);
-
-    expect(map).toEqual({});
+  test("normalizes AC IDs to uppercase; returns empty map when no ACs found", () => {
+    expect(parseACTextFromSpec("- ac-1: lowercase\n- Ac-2: mixed case")).toEqual({ "AC-1": "lowercase", "AC-2": "mixed case" });
+    expect(parseACTextFromSpec("# Feature\n\nNo acceptance criteria here.")).toEqual({});
   });
 });
 
@@ -137,29 +123,19 @@ describe("findRelatedStories", () => {
     expect(related).toEqual(["US-002"]);
   });
 
-  test("falls back to all passed stories when no AC match", () => {
+  test("falls back to passed stories only (not pending); limits fallback to 5", () => {
     const prd = makePrd([
       makeStory("US-001", ["other AC"], "passed"),
       makeStory("US-002", ["another AC"], "pending"),
       makeStory("US-003", ["yet another AC"], "passed"),
     ]);
-
     const related = findRelatedStories("AC-99", prd);
-
     expect(related).toContain("US-001");
     expect(related).toContain("US-003");
-    expect(related).not.toContain("US-002"); // pending, not passed
-  });
+    expect(related).not.toContain("US-002");
 
-  test("limits fallback to 5 stories", () => {
-    const stories: UserStory[] = [];
-    for (let i = 1; i <= 10; i++) {
-      stories.push(makeStory(`US-${String(i).padStart(3, "0")}`, ["unrelated"]));
-    }
-
-    const related = findRelatedStories("AC-99", makePrd(stories));
-
-    expect(related.length).toBeLessThanOrEqual(5);
+    const manyStories: UserStory[] = Array.from({ length: 10 }, (_, i) => makeStory(`US-${String(i + 1).padStart(3, "0")}`, ["unrelated"]));
+    expect(findRelatedStories("AC-99", makePrd(manyStories)).length).toBeLessThanOrEqual(5);
   });
 });
 
@@ -227,49 +203,29 @@ describe("groupACsByRelatedStories", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildFixPrompt", () => {
-  test("builds prompt with all required context", () => {
+  test("builds prompt with all required context; instructs not to modify test file", () => {
     const prd = makePrd([makeStory("US-002", ["AC-2: TTL expiry"])]);
     prd.userStories[0].title = "Implement TTL";
     prd.userStories[0].description = "Add TTL support to key-value store";
-
-    const acTextMap = { "AC-2": "set(key, value, ttl) expires after ttl milliseconds" };
-    const prompt = buildFixPrompt(["AC-2"], acTextMap, "Expected undefined, got 'value'", ["US-002"], prd);
-
+    const prompt = buildFixPrompt(["AC-2"], { "AC-2": "set(key, value, ttl) expires after ttl milliseconds" }, "Expected undefined, got 'value'", ["US-002"], prd);
     expect(prompt).toContain("AC-2:");
     expect(prompt).toContain("set(key, value, ttl)");
     expect(prompt).toContain("Expected undefined, got 'value'");
     expect(prompt).toContain("US-002");
     expect(prompt).toContain("Implement TTL");
     expect(prompt).toContain("Add TTL support");
-  });
-
-  test("includes test file path when provided (P1-A)", () => {
-    const prd = makePrd([makeStory("US-001", ["AC-1: criterion"])]);
-    const acTextMap = { "AC-1": "criterion" };
-    const testFilePath = "/repo/nax/features/cache/acceptance.test.ts";
-
-    const prompt = buildFixPrompt(["AC-1"], acTextMap, "fail output", ["US-001"], prd, testFilePath);
-
-    expect(prompt).toContain("ACCEPTANCE TEST FILE:");
-    expect(prompt).toContain(testFilePath);
-  });
-
-  test("instructs agent to fix implementation, not test file (P1-A)", () => {
-    const prd = makePrd([makeStory("US-001", ["AC-1: criterion"])]);
-    const acTextMap = { "AC-1": "criterion" };
-
-    const prompt = buildFixPrompt(["AC-1"], acTextMap, "fail output", ["US-001"], prd);
-
     expect(prompt.toLowerCase()).toContain("do not modify the test file");
   });
 
-  test("includes count of batched ACs in prompt header", () => {
-    const prd = makePrd([makeStory("US-001", ["AC-1: a", "AC-2: b", "AC-3: c"])]);
-    const acTextMap = { "AC-1": "a", "AC-2": "b", "AC-3": "c" };
+  test("includes test file path when provided; includes batched AC count in header", () => {
+    const prd1 = makePrd([makeStory("US-001", ["AC-1: criterion"])]);
+    const prompt1 = buildFixPrompt(["AC-1"], { "AC-1": "criterion" }, "fail output", ["US-001"], prd1, "/repo/nax/features/cache/acceptance.test.ts");
+    expect(prompt1).toContain("ACCEPTANCE TEST FILE:");
+    expect(prompt1).toContain("/repo/nax/features/cache/acceptance.test.ts");
 
-    const prompt = buildFixPrompt(["AC-1", "AC-2", "AC-3"], acTextMap, "output", ["US-001"], prd);
-
-    expect(prompt).toContain("3 total");
+    const prd2 = makePrd([makeStory("US-001", ["AC-1: a", "AC-2: b", "AC-3: c"])]);
+    const prompt2 = buildFixPrompt(["AC-1", "AC-2", "AC-3"], { "AC-1": "a", "AC-2": "b", "AC-3": "c" }, "output", ["US-001"], prd2);
+    expect(prompt2).toContain("3 total");
   });
 });
 
@@ -317,40 +273,14 @@ describe("convertFixStoryToUserStory", () => {
     expect(userStory.acceptanceCriteria).toEqual(["Fix AC-1", "Fix AC-2", "Fix AC-5"]);
   });
 
-  test("description includes acceptance test file path (P1-A)", () => {
-    const fixStory = {
-      id: "US-FIX-001",
-      title: "Fix",
-      failedAC: "AC-1",
-      batchedACs: ["AC-1"],
-      testOutput: "fail output",
-      relatedStories: ["US-001"],
-      description: "Fix the thing",
-      testFilePath: "/repo/nax/features/cache/acceptance.test.ts",
-    };
+  test("description includes test file path and truncated failure output", () => {
+    const withPath = convertFixStoryToUserStory({ id: "US-FIX-001", title: "Fix", failedAC: "AC-1", batchedACs: ["AC-1"], testOutput: "fail output", relatedStories: ["US-001"], description: "Fix the thing", testFilePath: "/repo/nax/features/cache/acceptance.test.ts" });
+    expect(withPath.description).toContain("ACCEPTANCE TEST FILE:");
+    expect(withPath.description).toContain("/repo/nax/features/cache/acceptance.test.ts");
 
-    const userStory = convertFixStoryToUserStory(fixStory);
-
-    expect(userStory.description).toContain("ACCEPTANCE TEST FILE:");
-    expect(userStory.description).toContain("/repo/nax/features/cache/acceptance.test.ts");
-  });
-
-  test("description includes truncated test failure output (P1-A)", () => {
-    const testOutput = "Expected undefined, got 'value'\nat AC-2 test...";
-    const fixStory = {
-      id: "US-FIX-001",
-      title: "Fix",
-      failedAC: "AC-2",
-      batchedACs: ["AC-2"],
-      testOutput,
-      relatedStories: ["US-001"],
-      description: "Fix the thing",
-    };
-
-    const userStory = convertFixStoryToUserStory(fixStory);
-
-    expect(userStory.description).toContain("TEST FAILURE OUTPUT:");
-    expect(userStory.description).toContain("Expected undefined");
+    const withOutput = convertFixStoryToUserStory({ id: "US-FIX-001", title: "Fix", failedAC: "AC-2", batchedACs: ["AC-2"], testOutput: "Expected undefined, got 'value'\nat AC-2 test...", relatedStories: ["US-001"], description: "Fix the thing" });
+    expect(withOutput.description).toContain("TEST FAILURE OUTPUT:");
+    expect(withOutput.description).toContain("Expected undefined");
   });
 
   test("description includes instructions not to modify test file (P1-A)", () => {
@@ -369,37 +299,10 @@ describe("convertFixStoryToUserStory", () => {
     expect(userStory.description.toLowerCase()).toContain("do not modify the test file");
   });
 
-  test("inherits workdir from fix story (P1-C / D4)", () => {
-    const fixStory = {
-      id: "US-FIX-001",
-      title: "Fix",
-      failedAC: "AC-1",
-      batchedACs: ["AC-1"],
-      testOutput: "output",
-      relatedStories: ["US-001"],
-      description: "Fix desc",
-      workdir: "packages/api",
-    };
-
-    const userStory = convertFixStoryToUserStory(fixStory);
-
-    expect(userStory.workdir).toBe("packages/api");
-  });
-
-  test("workdir is undefined when not set on fix story", () => {
-    const fixStory = {
-      id: "US-FIX-001",
-      title: "Fix",
-      failedAC: "AC-1",
-      batchedACs: ["AC-1"],
-      testOutput: "output",
-      relatedStories: ["US-001"],
-      description: "Fix desc",
-    };
-
-    const userStory = convertFixStoryToUserStory(fixStory);
-
-    expect(userStory.workdir).toBeUndefined();
+  test("inherits workdir when set; undefined when absent", () => {
+    const base = { id: "US-FIX-001", title: "Fix", failedAC: "AC-1", batchedACs: ["AC-1"], testOutput: "output", relatedStories: ["US-001"], description: "Fix desc" };
+    expect(convertFixStoryToUserStory({ ...base, workdir: "packages/api" }).workdir).toBe("packages/api");
+    expect(convertFixStoryToUserStory(base).workdir).toBeUndefined();
   });
 
   test("falls back to failedAC when batchedACs not present (backward compat)", () => {

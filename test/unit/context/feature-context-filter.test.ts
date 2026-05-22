@@ -14,12 +14,11 @@ import {
 } from "../../../src/context/feature-context-filter";
 
 describe("parseAudienceTags", () => {
-  test("returns ['all'] when no tag present", () => {
-    expect(parseAudienceTags("- **No tag here.**")).toEqual(["all"]);
-  });
-
-  test("returns ['all'] for plain text", () => {
-    expect(parseAudienceTags("Some text without brackets")).toEqual(["all"]);
+  test.each([
+    ["no tag present", "- **No tag here.**"],
+    ["plain text", "Some text without brackets"],
+  ])("returns ['all'] for %s", (_label, input) => {
+    expect(parseAudienceTags(input)).toEqual(["all"]);
   });
 
   test("parses single tag", () => {
@@ -67,73 +66,40 @@ describe("shouldIncludeEntry", () => {
     }
   });
 
-  test("[implementer] included for implementer", () => {
-    expect(shouldIncludeEntry(["implementer"], "implementer")).toBe(true);
-  });
+  test.each(["implementer", "single-session", "tdd-simple", "no-test", "batch"])(
+    "[implementer] included for %s",
+    (role) => {
+      expect(shouldIncludeEntry(["implementer"], role)).toBe(true);
+    },
+  );
 
-  test("[implementer] included for single-session", () => {
-    expect(shouldIncludeEntry(["implementer"], "single-session")).toBe(true);
-  });
+  test.each(["test-writer", "verifier", "reviewer-semantic"])(
+    "[implementer] excluded for %s",
+    (role) => {
+      expect(shouldIncludeEntry(["implementer"], role)).toBe(false);
+    },
+  );
 
-  test("[implementer] included for tdd-simple", () => {
-    expect(shouldIncludeEntry(["implementer"], "tdd-simple")).toBe(true);
-  });
+  test.each(["test-writer", "single-session", "tdd-simple", "batch"])(
+    "[test-writer] included for %s",
+    (role) => {
+      expect(shouldIncludeEntry(["test-writer"], role)).toBe(true);
+    },
+  );
 
-  test("[implementer] included for no-test", () => {
-    expect(shouldIncludeEntry(["implementer"], "no-test")).toBe(true);
-  });
+  test.each(["implementer", "verifier", "reviewer-semantic"])(
+    "[test-writer] excluded for %s",
+    (role) => {
+      expect(shouldIncludeEntry(["test-writer"], role)).toBe(false);
+    },
+  );
 
-  test("[implementer] included for batch", () => {
-    expect(shouldIncludeEntry(["implementer"], "batch")).toBe(true);
-  });
-
-  test("[implementer] excluded for test-writer", () => {
-    expect(shouldIncludeEntry(["implementer"], "test-writer")).toBe(false);
-  });
-
-  test("[implementer] excluded for verifier", () => {
-    expect(shouldIncludeEntry(["implementer"], "verifier")).toBe(false);
-  });
-
-  test("[implementer] excluded for reviewer-semantic", () => {
-    expect(shouldIncludeEntry(["implementer"], "reviewer-semantic")).toBe(false);
-  });
-
-  test("[test-writer] included for test-writer", () => {
-    expect(shouldIncludeEntry(["test-writer"], "test-writer")).toBe(true);
-  });
-
-  test("[test-writer] included for single-session", () => {
-    expect(shouldIncludeEntry(["test-writer"], "single-session")).toBe(true);
-  });
-
-  test("[test-writer] included for tdd-simple", () => {
-    expect(shouldIncludeEntry(["test-writer"], "tdd-simple")).toBe(true);
-  });
-
-  test("[test-writer] included for batch", () => {
-    expect(shouldIncludeEntry(["test-writer"], "batch")).toBe(true);
-  });
-
-  test("[test-writer] excluded for implementer", () => {
-    expect(shouldIncludeEntry(["test-writer"], "implementer")).toBe(false);
-  });
-
-  test("[test-writer] excluded for verifier", () => {
-    expect(shouldIncludeEntry(["test-writer"], "verifier")).toBe(false);
-  });
-
-  test("[test-writer] excluded for reviewer-semantic", () => {
-    expect(shouldIncludeEntry(["test-writer"], "reviewer-semantic")).toBe(false);
-  });
-
-  test("[reviewer] included for reviewer-semantic", () => {
-    expect(shouldIncludeEntry(["reviewer"], "reviewer-semantic")).toBe(true);
-  });
-
-  test("[reviewer] included for reviewer-adversarial", () => {
-    expect(shouldIncludeEntry(["reviewer"], "reviewer-adversarial")).toBe(true);
-  });
+  test.each(["reviewer-semantic", "reviewer-adversarial"])(
+    "[reviewer] included for %s",
+    (role) => {
+      expect(shouldIncludeEntry(["reviewer"], role)).toBe(true);
+    },
+  );
 
   test("[reviewer-semantic] included for reviewer-semantic only", () => {
     expect(shouldIncludeEntry(["reviewer-semantic"], "reviewer-semantic")).toBe(true);
@@ -145,16 +111,12 @@ describe("shouldIncludeEntry", () => {
     expect(shouldIncludeEntry(["reviewer-adversarial"], "reviewer-semantic")).toBe(false);
   });
 
-  test("multi-tag [implementer, test-writer] included for implementer", () => {
-    expect(shouldIncludeEntry(["implementer", "test-writer"], "implementer")).toBe(true);
-  });
-
-  test("multi-tag [implementer, test-writer] included for test-writer", () => {
-    expect(shouldIncludeEntry(["implementer", "test-writer"], "test-writer")).toBe(true);
-  });
-
-  test("multi-tag [implementer, test-writer] excluded for verifier", () => {
-    expect(shouldIncludeEntry(["implementer", "test-writer"], "verifier")).toBe(false);
+  test.each<[string, boolean]>([
+    ["implementer", true],
+    ["test-writer", true],
+    ["verifier", false],
+  ])("multi-tag [implementer, test-writer]: role %s → %s", (role, expected) => {
+    expect(shouldIncludeEntry(["implementer", "test-writer"], role)).toBe(expected);
   });
 });
 

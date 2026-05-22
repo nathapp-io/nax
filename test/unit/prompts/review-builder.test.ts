@@ -59,34 +59,25 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
   });
 
   describe("story block", () => {
-    test("includes story title", () => {
+    test("includes story title, description, and numbered acceptance criteria", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain(`## Story: ${STORY.title}`);
-    });
-
-    test("includes story description", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain(STORY.description);
-    });
-
-    test("numbers acceptance criteria", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("1. LLM is called with story diff");
       expect(result).toContain("2. Findings are returned as structured JSON");
     });
   });
 
   describe("custom rules", () => {
-    test("omitted when rules array is empty", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).not.toContain("## Additional Review Rules");
-    });
+    test("omitted when rules empty; included and numbered when rules are present", () => {
+      expect(
+        builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF }),
+      ).not.toContain("## Additional Review Rules");
 
-    test("included and numbered when rules are present", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_WITH_RULES, { mode: "embedded", diff: DIFF });
-      expect(result).toContain("## Additional Review Rules");
-      expect(result).toContain("1. Do not flag style issues");
-      expect(result).toContain("2. Verify AC 1 using GREP before flagging");
+      const withRules = builder.buildSemanticReviewPrompt(STORY, CONFIG_WITH_RULES, { mode: "embedded", diff: DIFF });
+      expect(withRules).toContain("## Additional Review Rules");
+      expect(withRules).toContain("1. Do not flag style issues");
+      expect(withRules).toContain("2. Verify AC 1 using GREP before flagging");
     });
   });
 
@@ -106,44 +97,20 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
     });
   });
 
-  describe("role declaration", () => {
-    test("includes semantic reviewer role", () => {
+  describe("role declaration and instructions block", () => {
+    test("role, tool-verification, style exclusion, verifiedBy verbatim, AC-grounding requirements", () => {
       const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("You are a semantic code reviewer");
-      // Role names the codebase's role boundary: test-gap + lint/convention are out of scope.
       expect(result).toContain("Test coverage gaps and convention/lint issues are out of scope");
-    });
-  });
-
-  describe("instructions block", () => {
-    test("includes tool-verification requirement", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("you MUST verify it using your tools");
-    });
-
-    test("instructs not to flag style issues", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("Do NOT flag: style issues");
-    });
-
-    // #826 — observed must be a verbatim excerpt, not a description, so the
-    // substring substantiator in semantic-evidence.ts can verify it on disk.
-    test("requires verifiedBy.observed to be a verbatim code excerpt", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
+      // #826 — observed must be verbatim excerpt
       expect(result).toContain("verbatim");
       expect(result).toMatch(/observed.*(verbatim|copy-pasted|exact)/i);
       expect(result).toContain("not a description");
-    });
-
-    test("AC-grounding section does not contain the old substring/locus-keyword contract phrases", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).not.toContain("verbatim substring");
       expect(result).not.toContain("copy backticks exactly");
       expect(result).not.toContain("AC names the file but not the symbol");
-    });
-
-    test("AC-grounding section instructs acIndex is required for error findings", () => {
-      const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
       expect(result).toContain("acIndex");
       expect(result).toContain("acQuote");
     });
@@ -153,18 +120,13 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt()", () => {
 describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticIterations", () => {
   const builder = new ReviewPromptBuilder();
 
-  test("omits prior iterations block when priorSemanticIterations is undefined", () => {
-    const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF });
-    expect(result).not.toContain("## Prior Iterations");
-  });
-
-  test("omits prior iterations block when priorSemanticIterations is empty array", () => {
-    const result = builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, {
-      mode: "embedded",
-      diff: DIFF,
-      priorSemanticIterations: [],
-    });
-    expect(result).not.toContain("## Prior Iterations");
+  test("omits prior iterations block when undefined or empty; includes it when entries present", () => {
+    expect(
+      builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF }),
+    ).not.toContain("## Prior Iterations");
+    expect(
+      builder.buildSemanticReviewPrompt(STORY, CONFIG_NO_RULES, { mode: "embedded", diff: DIFF, priorSemanticIterations: [] }),
+    ).not.toContain("## Prior Iterations");
   });
 
   test("includes prior iterations block with round header and finding text when priorSemanticIterations has entries", () => {
@@ -193,35 +155,27 @@ describe("ReviewPromptBuilder.buildSemanticReviewPrompt() — priorSemanticItera
 });
 
 describe("ReviewPromptBuilder.jsonRetryCondensed()", () => {
-  test("default threshold (error) — uncaps error severity, caps below at 3", () => {
-    const result = ReviewPromptBuilder.jsonRetryCondensed();
-    expect(result).toContain("Include ALL findings with severity \"error\"");
-    expect(result).toContain("at most 3 additional findings");
-    expect(result).toContain("Output ONLY a complete, valid JSON object");
+  test("error/warning/info thresholds produce correct include-all + cap text", () => {
+    const error = ReviewPromptBuilder.jsonRetryCondensed();
+    expect(error).toContain("Include ALL findings with severity \"error\"");
+    expect(error).toContain("at most 3 additional findings");
+    expect(error).toContain("Output ONLY a complete, valid JSON object");
+
+    const warning = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "warning" });
+    expect(warning).toContain('Include ALL findings with severity "error" and "warning"');
+    expect(warning).toContain("at most 3 additional findings");
+
+    const info = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "info" });
+    expect(info).toContain("Include ALL findings — do not drop any by severity.");
+    expect(info).not.toContain("at most 3 additional findings");
+    expect(info).toContain("prioritize the highest-severity findings first");
   });
 
-  test("threshold=warning — uncaps error AND warning, caps below at advisoryCap", () => {
-    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "warning" });
-    expect(result).toContain('Include ALL findings with severity "error" and "warning"');
-    expect(result).toContain("at most 3 additional findings");
-  });
-
-  test("threshold=info — no severity-based truncation", () => {
-    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "info" });
-    expect(result).toContain("Include ALL findings — do not drop any by severity.");
-    expect(result).not.toContain("at most 3 additional findings");
-    expect(result).toContain("prioritize the highest-severity findings first");
-  });
-
-  test("custom advisoryCap is honored", () => {
-    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 5 });
-    expect(result).toContain("at most 5 additional findings");
-  });
-
-  test("blocking findings are never capped — only below-threshold count is bounded", () => {
-    const result = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 0 });
-    expect(result).toContain("Include ALL findings with severity \"error\"");
-    expect(result).toContain("at most 0 additional findings");
+  test("custom advisoryCap and zero advisoryCap are honored", () => {
+    expect(ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 5 })).toContain("at most 5 additional findings");
+    const zero = ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: "error", advisoryCap: 0 });
+    expect(zero).toContain("Include ALL findings with severity \"error\"");
+    expect(zero).toContain("at most 0 additional findings");
   });
 
   test("condensed retry schema includes verifiedBy (Bug 4 fix: verifiedBy must not be dropped)", () => {

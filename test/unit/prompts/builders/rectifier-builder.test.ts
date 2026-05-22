@@ -58,41 +58,39 @@ const DEFAULTS = {
 // ---------------------------------------------------------------------------
 
 describe("RectifierPromptBuilder.firstAttemptDelta", () => {
-  test("contains the failed check output", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "Unexpected token at line 10")],
-      2,
-    );
-
-    expect(prompt).toContain("Unexpected token at line 10");
+  test("contains failed check output, check name/exit code, UNRESOLVED/fix instructions, excludes story sections, handles multiple checks", () => {
+    const checks = [
+      makeCheck("lint", "lint error output"),
+      makeCheck("typecheck", "typecheck error output"),
+    ];
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
+    // Content
+    expect(prompt).toContain("lint error output");
+    expect(prompt).toContain("typecheck error output");
+    expect(prompt).toContain("### lint");
+    expect(prompt).toContain("### typecheck");
+    // Single-check header format with exit code
+    const singlePrompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("typecheck", "Unexpected token at line 10", 2)], 2);
+    expect(singlePrompt).toContain("Unexpected token at line 10");
+    expect(singlePrompt).toContain("### typecheck (exit 2)");
+    // UNRESOLVED + fix instructions + exclusions
+    const fixPrompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], 2);
+    expect(fixPrompt).toContain("UNRESOLVED:");
+    expect(fixPrompt).toContain("Fix in priority order");
+    expect(fixPrompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
+    expect(fixPrompt).toContain("Commit your changes when all checks pass");
+    expect(fixPrompt.toLowerCase()).not.toContain("### acceptance criteria");
+    expect(fixPrompt).not.toMatch(/^Story:/m);
+    expect(fixPrompt.toLowerCase()).not.toContain("constitution");
   });
 
-  test("contains check name and exit code in section header", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("typecheck", "TS2345 error", 2)],
-      2,
-    );
-
-    expect(prompt).toContain("### typecheck (exit 2)");
-  });
-
-  test("contains maxAttempts count in singular form when maxAttempts === 1", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      1,
-    );
-
-    expect(prompt).toContain("1 attempt");
-    expect(prompt).not.toContain("1 attempts");
-  });
-
-  test("contains maxAttempts count in plural form when maxAttempts > 1", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      3,
-    );
-
-    expect(prompt).toContain("3 attempts");
+  test.each([
+    [1, "1 attempt", "1 attempts"],
+    [3, "3 attempts", null],
+  ] as const)("maxAttempts=%s uses correct plural form", (maxAttempts, shouldContain, shouldNotContain) => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], maxAttempts);
+    expect(prompt).toContain(shouldContain);
+    if (shouldNotContain) expect(prompt).not.toContain(shouldNotContain);
   });
 
   test("truncates long output to 4000 chars per check", () => {
@@ -109,221 +107,87 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(prompt).toContain("10000 chars total");
   });
 
-  test("includes structured findings when present", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheckWithFindings("semantic", "Semantic review failed")],
-      2,
-    );
+  test("includes structured findings when present; omits section when absent", () => {
+    const withFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheckWithFindings("semantic", "Semantic review failed")], 2);
+    expect(withFindings).toContain("Structured findings:");
+    expect(withFindings).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
 
-    expect(prompt).toContain("Structured findings:");
-    expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
-  });
-
-  test("does NOT include findings section when findings are absent", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "some lint error")],
-      2,
-    );
-
-    expect(prompt).not.toContain("Structured findings:");
-  });
-
-  test("CONTRADICTION_ESCAPE_HATCH is present", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
-    expect(prompt).toContain("UNRESOLVED:");
-  });
-
-  test("instructs agent to fix in priority order, verify, and commit", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
-    expect(prompt).toContain("Fix in priority order");
-    expect(prompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
-    expect(prompt).toContain("Commit your changes when all checks pass");
-  });
-
-  test("does NOT include story title or acceptance criteria sections", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(
-      [makeCheck("lint", "error")],
-      2,
-    );
-
-    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
-    expect(prompt).not.toMatch(/^Story:/m);
-    expect(prompt.toLowerCase()).not.toContain("constitution");
-  });
-
-  test("handles multiple failed checks", () => {
-    const checks = [
-      makeCheck("lint", "lint error output"),
-      makeCheck("typecheck", "typecheck error output"),
-    ];
-
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
-
-    expect(prompt).toContain("### lint");
-    expect(prompt).toContain("### typecheck");
-    expect(prompt).toContain("lint error output");
-    expect(prompt).toContain("typecheck error output");
+    const withoutFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "some lint error")], 2);
+    expect(withoutFindings).not.toContain("Structured findings:");
   });
 });
 
 describe("RectifierPromptBuilder.continuation", () => {
-  test("contains opening signal that this is a follow-up attempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "Unexpected token at line 10")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
-  });
-
-  test("contains error output from failedChecks", () => {
+  test("contains follow-up signal, error output from all checks, and check name header", () => {
     const checks = [
-      makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable"),
+      makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable", 2),
       makeCheck("typecheck", "src/index.ts(10,3): error TS2304: Cannot find name 'foo'"),
     ];
-
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
+    const prompt = RectifierPromptBuilder.continuation(checks, ...Object.values(DEFAULTS) as [number, number, number]);
+    expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
     expect(prompt).toContain("error TS2345: Argument of type 'string' is not assignable");
     expect(prompt).toContain("src/index.ts(10,3): error TS2304: Cannot find name 'foo'");
-  });
-
-  test("contains check name and exit code in section header", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "some lint error", 2)],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
     expect(prompt).toContain("### lint (exit 2)");
   });
 
-  test("contains structured findings when present", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheckWithFindings("semantic", "Semantic review failed")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("Structured findings:");
-    expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
-  });
-
-  test("does NOT include findings section when findings are absent", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "some lint error")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).not.toContain("Structured findings:");
-  });
-
-  test("does NOT include rethink preamble before rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      1, // attempt 1 — below rethinkAtAttempt (2)
-      2,
-      3,
-    );
-
-    expect(prompt).not.toContain("Rethink your approach");
-  });
-
-  test("includes rethink preamble at rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      2, // attempt == rethinkAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("Rethink your approach");
-  });
-
-  test("includes rethink preamble after rethinkAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      3, // attempt > rethinkAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("Rethink your approach");
-  });
-
-  test("does NOT include urgency preamble before urgencyAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      1, // attempt 1 — below urgencyAtAttempt (3)
-      2,
-      3,
-    );
-
-    expect(prompt).not.toContain("URGENT");
-  });
-
-  test("includes urgency preamble at urgencyAtAttempt", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      3, // attempt == urgencyAtAttempt
-      2,
-      3,
-    );
-
-    expect(prompt).toContain("URGENT");
-    expect(prompt).toContain("final attempt");
-  });
-
-  test("CONTRADICTION_ESCAPE_HATCH is present in every continuation prompt", () => {
-    const attempts = [1, 2, 3];
-    for (const attempt of attempts) {
-      const prompt = RectifierPromptBuilder.continuation(
-        [makeCheck("lint", "error")],
-        attempt,
-        2,
-        3,
-      );
-      // The escape hatch instructs the agent to emit UNRESOLVED: when findings conflict
-      expect(prompt).toContain("UNRESOLVED:");
+  test.each([
+    ["present", [makeCheckWithFindings("semantic", "Semantic review failed")], true],
+    ["absent", [makeCheck("lint", "some lint error")], false],
+  ] as const)("structured findings when %s", (_label, checks, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation(checks as any, ...Object.values(DEFAULTS) as [number, number, number]);
+    if (shouldInclude) {
+      expect(prompt).toContain("Structured findings:");
+      expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
+    } else {
+      expect(prompt).not.toContain("Structured findings:");
     }
   });
 
-  test("continuation prompt does NOT contain constitution", () => {
+  test.each<[number, boolean]>([
+    [1, false],
+    [2, true],
+    [3, true],
+  ])("rethink preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
+    if (shouldInclude) expect(prompt).toContain("Rethink your approach");
+    else expect(prompt).not.toContain("Rethink your approach");
+  });
+
+  test.each<[number, boolean]>([
+    [1, false],
+    [3, true],
+  ])("urgency preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
+    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
+    if (shouldInclude) expect(prompt).toContain("URGENT");
+    else expect(prompt).not.toContain("URGENT");
+  });
+
+  test("UNRESOLVED present in every continuation, 'final attempt' at urgencyAtAttempt; handles multiple failed checks", () => {
+    for (const attempt of [1, 2, 3]) {
+      const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
+      expect(prompt).toContain("UNRESOLVED:");
+    }
+    expect(RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3)).toContain("final attempt");
+
+    const multiPrompt = RectifierPromptBuilder.continuation(
+      [makeCheck("lint", "lint error output"), makeCheck("typecheck", "typecheck error output"), makeCheck("semantic", "semantic error output")],
+      ...Object.values(DEFAULTS) as [number, number, number],
+    );
+    expect(multiPrompt).toContain("### lint");
+    expect(multiPrompt).toContain("### typecheck");
+    expect(multiPrompt).toContain("### semantic");
+  });
+
+  test.each([
+    ["constitution", /constitution/i],
+    ["acceptance criteria header", /### acceptance criteria/i],
+    ["story title block", /^Story:/m],
+  ])("continuation prompt does NOT contain %s", (_label, pattern) => {
     const prompt = RectifierPromptBuilder.continuation(
       [makeCheck("lint", "error")],
       ...Object.values(DEFAULTS) as [number, number, number],
     );
-
-    expect(prompt.toLowerCase()).not.toContain("constitution");
-  });
-
-  test("continuation prompt does NOT contain 'acceptance criteria' section header", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("semantic", "AC-1 missing")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    // Should not have the full AC list or the "Acceptance Criteria" section found in full prompts
-    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
-  });
-
-  test("continuation prompt does NOT contain story title section", () => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    // Should not open with the full story context block
-    expect(prompt).not.toMatch(/^Story:/m);
+    expect(prompt).not.toMatch(pattern);
   });
 
   test("truncates long output to 4000 chars per check", () => {
@@ -338,23 +202,6 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(zCount).toBeLessThanOrEqual(4000);
     // And the original 10000 chars were cut down
     expect(zCount).toBeLessThan(10_000);
-  });
-
-  test("handles multiple failed checks", () => {
-    const checks = [
-      makeCheck("lint", "lint error output"),
-      makeCheck("typecheck", "typecheck error output"),
-      makeCheck("semantic", "semantic error output"),
-    ];
-
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("### lint");
-    expect(prompt).toContain("### typecheck");
-    expect(prompt).toContain("### semantic");
   });
 });
 
@@ -395,108 +242,50 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     } as any;
   }
 
-  test("contains the finding message", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "Missing assertion for edge case")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Missing assertion for edge case");
-  });
-
-  test("contains the file path and severity in finding line", () => {
-    const checks = [makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("[error] test/unit/bar.test.ts:10 — Incomplete test coverage");
-  });
-
-  test("contains 'Only modify test files' constraint without workdir", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: undefined }));
-
-    expect(prompt).toContain("Only modify test files");
-    expect(prompt).toContain("Do NOT touch source implementation files");
-  });
-
-  test("contains workdir-scoped constraint when story.workdir is set", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir: "packages/api" }));
-
-    expect(prompt).toContain("Only modify test files within `packages/api/`");
-    expect(prompt).toContain("Do NOT touch source files");
-  });
-
-  test("contains the acceptance criteria list", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const story = makeStory({ acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
-
-    expect(prompt).toContain("1. AC-1: First criterion");
-    expect(prompt).toContain("2. AC-2: Second criterion");
-  });
-
-  test("contains the story id and title", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const story = makeStory({ id: "US-409", title: "Resolve deadlock" });
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
-
-    expect(prompt).toContain("US-409");
-    expect(prompt).toContain("Resolve deadlock");
-  });
-
-  test("instructs not to delete failing tests or modify source files", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Do NOT delete a failing test");
-    expect(prompt).toContain("Do NOT modify source implementation files");
-  });
-
-  test("instructs to commit fixes when done", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Commit your fixes when done");
-  });
-
-  test("handles multiple findings across multiple checks", () => {
+  test("adversarial check: finding message/file/severity, multiple findings, adversarial opener, section label, and spec instruction", () => {
     const checks = [
-      makeTestFileCheck("test/unit/foo.test.ts", "First finding"),
-      makeTestFileCheck("test/unit/bar.test.ts", "Second finding"),
+      makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage"),
+      makeTestFileCheck("test/unit/baz.test.ts", "Second finding"),
     ];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("First finding");
+    // Finding content
+    expect(prompt).toContain("Incomplete test coverage");
+    expect(prompt).toContain("[error] test/unit/bar.test.ts:10 — Incomplete test coverage");
+    // Multiple findings
     expect(prompt).toContain("Second finding");
-    expect(prompt).toContain("test/unit/foo.test.ts");
-    expect(prompt).toContain("test/unit/bar.test.ts");
-  });
-
-  test("adversarial check: uses adversarial opener and section label", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
+    expect(prompt).toContain("test/unit/baz.test.ts");
+    // Adversarial-specific
     expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
     expect(prompt).toContain("### Test File Findings (adversarial review)");
     expect(prompt).toContain("Do NOT delete a failing test");
+    expect(prompt).toContain("SPECIFICATION");
+    expect(prompt).toContain("not the current behavior");
   });
 
-  test("lint-only check: uses lint opener and section label", () => {
-    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
-      check: "lint",
-      success: false,
-      command: "bun run lint",
-      exitCode: 1,
-      output: "apps/api/test/unit/foo.test.ts:10:5 error — Unexpected console statement",
-      durationMs: 100,
-    };
-    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
-
-    expect(prompt).toContain("You are fixing test file lint errors.");
-    expect(prompt).toContain("### Test File Findings (lint)");
-    expect(prompt).not.toContain("adversarial");
+  test.each([
+    ["without workdir", undefined, "Only modify test files", "Do NOT touch source implementation files"],
+    ["with workdir packages/api", "packages/api", "Only modify test files within `packages/api/`", "Do NOT touch source files"],
+  ] as const)("constraint %s", (_label, workdir, expectedConstraint, expectedNoTouch) => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory({ workdir }));
+    expect(prompt).toContain(expectedConstraint);
+    expect(prompt).toContain(expectedNoTouch);
   });
 
-  test("lint-only check: includes raw output in findings section", () => {
+  test("contains AC list, story id/title, no-delete constraint, and commit instruction", () => {
+    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
+    const story = makeStory({ id: "US-409", title: "Resolve deadlock", acceptanceCriteria: ["AC-1: First criterion", "AC-2: Second criterion"] });
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, story);
+    expect(prompt).toContain("1. AC-1: First criterion");
+    expect(prompt).toContain("2. AC-2: Second criterion");
+    expect(prompt).toContain("US-409");
+    expect(prompt).toContain("Resolve deadlock");
+    expect(prompt).toContain("Do NOT delete a failing test");
+    expect(prompt).toContain("Do NOT modify source implementation files");
+    expect(prompt).toContain("Commit your fixes when done");
+  });
+
+  test("lint-only check: uses lint opener, includes raw output, and simplified note", () => {
     const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
       check: "lint",
       success: false,
@@ -507,46 +296,24 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     };
     const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
 
+    expect(prompt).toContain("You are fixing test file lint errors.");
+    expect(prompt).toContain("### Test File Findings (lint)");
+    expect(prompt).not.toContain("adversarial");
     expect(prompt).toContain("foo.test.ts:5 error — some lint error");
-  });
-
-  test("lint-only check: uses simplified important note without verify-findings step", () => {
-    const lintCheck: import("../../../../src/review/types").ReviewCheckResult = {
-      check: "lint",
-      success: false,
-      command: "bun run lint",
-      exitCode: 1,
-      output: "some lint output",
-      durationMs: 100,
-    };
-    const prompt = RectifierPromptBuilder.testWriterRectification([lintCheck], makeStory());
-
     expect(prompt).toContain("Fix the lint errors");
     expect(prompt).not.toContain("verify each finding is a real issue");
   });
 
   // D1 — Anti-assertion-loosening constraints (#897)
-  test("adversarial check: forbids loosening assertions to match current implementation behavior", () => {
+  test.each([
+    ["forbids loosening assertions", "Do NOT loosen assertions to match current implementation behavior"],
+    ["forbids deleting failing tests", "Do NOT delete a failing test"],
+  ])("adversarial check: %s", (_label, expected) => {
     const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Do NOT loosen assertions to match current implementation behavior");
+    expect(prompt).toContain(expected);
   });
 
-  test("adversarial check: instructs to encode spec not current behavior", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("SPECIFICATION");
-    expect(prompt).toContain("not the current behavior");
-  });
-
-  test("adversarial check: forbids deleting failing tests", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("Do NOT delete a failing test");
-  });
 });
 
 // D2 — write-failing-test mode (#897)
@@ -582,27 +349,14 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
     } as any;
   }
 
-  test("write-failing-test mode: instructs to write a failing test, not fix source", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "upsertNode uses wrong identifier space")];
+  test("write-failing-test mode: instructs to write failing test, excludes source-fix language, includes bug details", () => {
+    const checks = [makeSourceBugCheck("src/service.ts", "deleteMany uses node.id instead of GraphNode.id")];
     const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).toContain("failing test");
     expect(prompt).toContain("spec-correct");
     expect(prompt).toContain("FAIL with the current");
-  });
-
-  test("write-failing-test mode: does not instruct to fix source files", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "wrong id")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).not.toContain("Fix the lint errors");
     expect(prompt).not.toContain("You are fixing test file");
-  });
-
-  test("write-failing-test mode: includes the source bug finding details", () => {
-    const checks = [makeSourceBugCheck("src/service.ts", "deleteMany uses node.id instead of GraphNode.id")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory(), { mode: "write-failing-test" });
-
     expect(prompt).toContain("deleteMany uses node.id instead of GraphNode.id");
     expect(prompt).toContain("src/service.ts");
   });
@@ -640,32 +394,17 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts";
 
 describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
-  test("includes a section titled 'Exception 4 — Mock-structure handoff'", () => {
+  test("includes Exception 4 title, required fields, and UNRESOLVED handoff rule", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("Exception 4 — Mock-structure handoff");
-  });
-
-  test("lists TEST_EDIT_REASON: mock_structure as a required field", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
-  });
-
-  test("lists FILES: as a required field", () => {
-    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
-      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
-    );
-    expect(afterException4).toContain("FILES:");
-  });
-
-  test("lists REASON: as a required field", () => {
-    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(
-      CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"),
-    );
-    expect(afterException4).toContain("REASON:");
-  });
-
-  test("states the handoff rule: do not also emit UNRESOLVED in the same turn", () => {
     expect(CONTRADICTION_ESCAPE_HATCH).toContain(
       "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
     );
+  });
+
+  test.each(["FILES:", "REASON:"])("lists %s as a required field", (field) => {
+    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"));
+    expect(afterException4).toContain(field);
   });
 });
 
@@ -694,65 +433,35 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     };
   }
 
-  test("dispatches to mock-restructure renderer when mode is 'mock-restructure'", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "adversarial output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "The adapter now uses callOp instead of direct run()",
-        handoffFiles: ["test/unit/agents/adapter.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("You are restructuring test mocks");
-  });
-
-  test("returned prompt contains the verbatim handoffReason text", () => {
-    const handoffReason = "Mocks reference primitives the new code bypasses via callOp dispatch";
+  test.each([
+    ["renderer opener", "You are restructuring test mocks"],
+    ["source file constraint", "Do NOT modify any source file"],
+    ["story id", "US-003"],
+    ["story title", "Restructure mocks"],
+    ["acceptance criteria heading", "Acceptance Criteria"],
+    ["first AC", "AC-1: Mocks align with dispatch shape"],
+  ])("mock-restructure: includes %s", (_label, expected) => {
     const prompt = RectifierPromptBuilder.testWriterRectification(
       [makeCheck("adversarial", "output")],
       makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason,
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
+      { mode: "mock-restructure", handoffReason: "reason", handoffFiles: ["test/unit/foo.test.ts"] },
     );
-
-    expect(prompt).toContain(handoffReason);
+    expect(prompt).toContain(expected);
   });
 
-  test("returned prompt lists every handoffFile under 'Files to rewrite (only these)' heading", () => {
+  test("returned prompt contains verbatim handoffReason and lists every handoffFile under heading", () => {
+    const handoffReason = "Mocks reference primitives the new code bypasses via callOp dispatch";
     const handoffFiles = ["test/unit/agents/adapter.test.ts", "test/unit/pipeline/stages/autofix.test.ts"];
     const prompt = RectifierPromptBuilder.testWriterRectification(
       [makeCheck("adversarial", "output")],
       makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles,
-      },
+      { mode: "mock-restructure", handoffReason, handoffFiles },
     );
-
+    expect(prompt).toContain(handoffReason);
     expect(prompt).toContain("Files to rewrite (only these)");
     for (const file of handoffFiles) {
       expect(prompt).toContain(file);
     }
-  });
-
-  test("returned prompt contains 'Do NOT modify any source file'", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("Do NOT modify any source file");
   });
 
   test("returned prompt references assertion keywords to indicate assertion sites are forbidden", () => {
@@ -786,36 +495,6 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     expect(withoutMode).toBe(withExplicitDefault);
   });
 
-  test("mock-restructure prompt includes story id and title", () => {
-    const story = makeStory();
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      story,
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("US-003");
-    expect(prompt).toContain("Restructure mocks");
-  });
-
-  test("mock-restructure prompt includes acceptance criteria", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain("Acceptance Criteria");
-    expect(prompt).toContain("AC-1: Mocks align with dispatch shape");
-  });
 });
 
 describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive filter", () => {
@@ -844,54 +523,31 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
     };
   }
 
-  test("blockingThreshold='error' drops warning and info from firstAttemptDelta", () => {
+  test("blockingThreshold='error' drops advisory/info findings; absent threshold defaults to error (advisory excluded)", () => {
     const checks = [makeMixedSeverityCheck()];
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
-    // With default threshold="error", only error findings appear
-    expect(prompt).toContain("a.ts:1");
-    expect(prompt).not.toContain("b.ts:2");
-    expect(prompt).not.toContain("c.ts:3");
-  });
 
-  test("blockingThreshold='warning' includes warnings but not info", () => {
-    const checks = [makeMixedSeverityCheck()];
-    // firstAttemptDelta doesn't currently accept threshold — defaulting to error
-    // This test verifies the default behavior is consistent
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
-    expect(prompt).toContain("a.ts:1");
-    expect(prompt).not.toContain("c.ts:3");
-  });
+    const deltaPrompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
+    expect(deltaPrompt).toContain("a.ts:1");
+    expect(deltaPrompt).not.toContain("b.ts:2");
+    expect(deltaPrompt).not.toContain("c.ts:3");
 
-  test("absent blockingThreshold defaults to error — advisory findings are excluded", () => {
-    const checks = [makeMixedSeverityCheck()];
-    const prompt = RectifierPromptBuilder.reviewRectification(checks, makeStory());
+    const reviewPrompt = RectifierPromptBuilder.reviewRectification(checks, makeStory());
     // The semantic path uses formatCheckErrors (raw output), not structured findings
-    // — the blocking filter applies when findings are rendered in check blocks
-    expect(prompt).toContain("Semantic review failed");
+    expect(reviewPrompt).toContain("Semantic review failed");
   });
 });
 
 describe("RectifierPromptBuilder.failingTestContext", () => {
-  test("returns a string containing test failure details", () => {
+  test("returns string with failure details; handles empty array gracefully", () => {
     const findings: Finding[] = [
-      {
-        source: "test-runner",
-        severity: "error",
-        category: "failed-test",
-        rule: "should handle edge case",
-        file: "test/unit/foo.test.ts",
-        message: "Expected 1 but got 0",
-      },
+      { source: "test-runner", severity: "error", category: "failed-test", rule: "should handle edge case", file: "test/unit/foo.test.ts", message: "Expected 1 but got 0" },
     ];
     const result = RectifierPromptBuilder.failingTestContext(findings);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
     expect(result).toContain("should handle edge case");
     expect(result).toContain("Expected 1 but got 0");
-  });
-
-  test("handles empty findings array", () => {
-    const result = RectifierPromptBuilder.failingTestContext([]);
-    expect(typeof result).toBe("string");
+    const emptyResult = RectifierPromptBuilder.failingTestContext([]);
+    expect(typeof emptyResult).toBe("string");
   });
 });

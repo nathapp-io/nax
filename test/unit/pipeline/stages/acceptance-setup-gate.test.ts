@@ -334,15 +334,9 @@ describe("acceptance-setup: skips generation when test file exists and fingerpri
 // ---------------------------------------------------------------------------
 
 describe("config defaults: acceptance.refinement, acceptance.redGate, acceptance.model", () => {
-  test("DEFAULT_CONFIG.acceptance.refinement is true", () => {
+  test("DEFAULT_CONFIG.acceptance.refinement is true; redGate is true; model is 'fast'", () => {
     expect((DEFAULT_CONFIG.acceptance as any).refinement).toBe(true);
-  });
-
-  test("DEFAULT_CONFIG.acceptance.redGate is true", () => {
     expect((DEFAULT_CONFIG.acceptance as any).redGate).toBe(true);
-  });
-
-  test("DEFAULT_CONFIG.acceptance.model is 'fast'", () => {
     expect(DEFAULT_CONFIG.acceptance.model).toBe("fast");
   });
 });
@@ -352,24 +346,12 @@ describe("config defaults: acceptance.refinement, acceptance.redGate, acceptance
 // ---------------------------------------------------------------------------
 
 describe("acceptanceSetupStage.enabled()", () => {
-  test("enabled when acceptance.enabled is true and featureDir is set", () => {
-    const ctx = makeCtx();
-    expect(acceptanceSetupStage.enabled(ctx)).toBe(true);
-  });
-
-  test("disabled when acceptance.enabled is false", () => {
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-      } as any,
-    });
-    expect(acceptanceSetupStage.enabled(ctx)).toBe(false);
-  });
-
-  test("disabled when featureDir is not set", () => {
-    const ctx = makeCtx({ featureDir: undefined });
-    expect(acceptanceSetupStage.enabled(ctx)).toBe(false);
+  test("enabled when acceptance.enabled and featureDir set; disabled when either absent", () => {
+    expect(acceptanceSetupStage.enabled(makeCtx())).toBe(true);
+    expect(acceptanceSetupStage.enabled(makeCtx({
+      config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } } as any,
+    }))).toBe(false);
+    expect(acceptanceSetupStage.enabled(makeCtx({ featureDir: undefined }))).toBe(false);
   });
 });
 
@@ -378,34 +360,16 @@ describe("acceptanceSetupStage.enabled()", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptance stage (GREEN gate): works with pre-generated test file", () => {
-  test("acceptance stage runs bun test without requiring spec.md parsing", async () => {
+  test("acceptance stage is enabled when featureDir set; returns continue when test file does not exist", async () => {
     const { acceptanceStage } = await import("../../../../src/pipeline/stages/acceptance");
 
     const stories = [makeStory("US-001", ["AC-1: criterion"])];
     stories[0].status = "passed" as any;
+    expect(acceptanceStage.enabled(makeCtx({ prd: makePrd(stories) as any, story: stories[0], featureDir: "/tmp/fake-feature-dir" }))).toBe(true);
 
-    const ctx = makeCtx({
-      prd: makePrd(stories) as any,
-      story: stories[0],
-      featureDir: "/tmp/fake-feature-dir",
-    });
-
-    expect(acceptanceStage.enabled(ctx)).toBe(true);
-  });
-
-  test("acceptance stage returns continue when test file does not exist", async () => {
-    const { acceptanceStage } = await import("../../../../src/pipeline/stages/acceptance");
-
-    const stories = [makeStory("US-001", ["AC-1"])];
-    stories[0].status = "passed" as any;
-
-    const ctx = makeCtx({
-      prd: makePrd(stories) as any,
-      story: stories[0],
-      featureDir: "/tmp/non-existent-feature-dir",
-    });
-
-    const result = await acceptanceStage.execute(ctx);
+    const stories2 = [makeStory("US-001", ["AC-1"])];
+    stories2[0].status = "passed" as any;
+    const result = await acceptanceStage.execute(makeCtx({ prd: makePrd(stories2) as any, story: stories2[0], featureDir: "/tmp/non-existent-feature-dir" }));
     expect(result.action).toBe("continue");
   });
 });
@@ -415,17 +379,10 @@ describe("acceptance stage (GREEN gate): works with pre-generated test file", ()
 // ---------------------------------------------------------------------------
 
 describe("preRunPipeline export", () => {
-  test("preRunPipeline is exported from src/pipeline/stages/index.ts", () => {
+  test("preRunPipeline is exported, contains acceptanceSetupStage as first entry", () => {
     expect(preRunPipeline).toBeDefined();
     expect(Array.isArray(preRunPipeline)).toBe(true);
-  });
-
-  test("preRunPipeline contains acceptanceSetupStage", () => {
-    const stageNames = preRunPipeline.map((s) => s.name);
-    expect(stageNames).toContain("acceptance-setup");
-  });
-
-  test("preRunPipeline has acceptanceSetupStage as first entry", () => {
+    expect(preRunPipeline.map((s) => s.name)).toContain("acceptance-setup");
     expect(preRunPipeline[0].name).toBe("acceptance-setup");
   });
 });

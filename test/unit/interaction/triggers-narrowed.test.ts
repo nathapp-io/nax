@@ -27,61 +27,34 @@ const mockChain = {
 
 describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => {
   describe("isTriggerEnabled", () => {
-    test("returns false when trigger not configured", () => {
-      const config = makeSlicedConfig({});
-      expect(isTriggerEnabled("security-review", config)).toBe(false);
-    });
-
-    test("returns boolean true when trigger is true", () => {
-      const config = makeSlicedConfig({ "security-review": true });
-      expect(isTriggerEnabled("security-review", config)).toBe(true);
-    });
-
-    test("returns enabled from object config", () => {
-      const config = makeSlicedConfig({ "security-review": { enabled: true } });
-      expect(isTriggerEnabled("security-review", config)).toBe(true);
-    });
-
-    test("returns false when enabled is false", () => {
-      const config = makeSlicedConfig({ "security-review": { enabled: false } });
-      expect(isTriggerEnabled("security-review", config)).toBe(false);
+    test("false when not configured or disabled; true when boolean true or {enabled:true}", () => {
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({}))).toBe(false);
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": true }))).toBe(true);
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: true } }))).toBe(true);
+      expect(isTriggerEnabled("security-review", makeSlicedConfig({ "security-review": { enabled: false } }))).toBe(false);
     });
   });
 
   describe("getTriggerConfig", () => {
-    test("returns metadata defaultFallback when trigger not configured", () => {
-      const config = makeSlicedConfig({}, { timeout: 30000, fallback: "approve" });
-      const result = getTriggerConfig("security-review", config);
-      expect(result.timeout).toBe(30000);
-      expect(result.fallback).toBe("abort");
-    });
-
-    test("overrides defaults with trigger config", () => {
-      const config = makeSlicedConfig(
-        { "security-review": { timeout: 60000, fallback: "escalate" } },
-        { timeout: 30000, fallback: "approve" },
-      );
-      const result = getTriggerConfig("security-review", config);
-      expect(result.timeout).toBe(60000);
-      expect(result.fallback).toBe("escalate");
+    test("returns defaults (with metadata fallback) when not configured; overrides when configured", () => {
+      const r1 = getTriggerConfig("security-review", makeSlicedConfig({}, { timeout: 30000, fallback: "approve" }));
+      expect(r1.timeout).toBe(30000);
+      expect(r1.fallback).toBe("abort");
+      const r2 = getTriggerConfig("security-review", makeSlicedConfig({ "security-review": { timeout: 60000, fallback: "escalate" } }, { timeout: 30000, fallback: "approve" }));
+      expect(r2.timeout).toBe(60000);
+      expect(r2.fallback).toBe("escalate");
     });
   });
 
   describe("createTriggerRequest", () => {
-    test("creates request with correct id prefix", () => {
-      const config = makeSlicedConfig({});
-      const context: TriggerContext = { featureName: "my-feature" };
-      const request = createTriggerRequest("security-review", context, config);
-      expect(request.id.startsWith("trigger-security-review-")).toBe(true);
-      expect(request.type).toBe("confirm");
-    });
-
-    test("uses metadata defaultFallback when trigger not configured", () => {
-      const config = makeSlicedConfig({}, { timeout: 60000, fallback: "escalate" });
-      const context: TriggerContext = { featureName: "my-feature" };
-      const request = createTriggerRequest("security-review", context, config);
-      expect(request.timeout).toBe(60000);
-      expect(request.fallback).toBe("abort");
+    test("correct id prefix + type; uses defaults when not configured", () => {
+      const ctx: TriggerContext = { featureName: "my-feature" };
+      const r1 = createTriggerRequest("security-review", ctx, makeSlicedConfig({}));
+      expect(r1.id.startsWith("trigger-security-review-")).toBe(true);
+      expect(r1.type).toBe("confirm");
+      const r2 = createTriggerRequest("security-review", ctx, makeSlicedConfig({}, { timeout: 60000, fallback: "escalate" }));
+      expect(r2.timeout).toBe(60000);
+      expect(r2.fallback).toBe("abort");
     });
   });
 
@@ -105,81 +78,38 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
     });
   });
 
-  describe("checkSecurityReview", () => {
-    test("returns true when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "security-review": false });
-      const result = await checkSecurityReview({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
+  describe("check* functions — disabled or not configured returns no-op value", () => {
+    const ctx = { featureName: "f" };
+    const empty = makeSlicedConfig({});
+
+    test("checkSecurityReview: true when disabled or not configured", async () => {
+      expect(await checkSecurityReview(ctx, makeSlicedConfig({ "security-review": false }), mockChain)).toBe(true);
+      expect(await checkSecurityReview(ctx, empty, mockChain)).toBe(true);
     });
 
-    test("returns true when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkSecurityReview({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe("checkCostExceeded", () => {
-    test("returns true when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "cost-exceeded": false });
-      const result = await checkCostExceeded({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
+    test("checkCostExceeded: true when disabled or not configured", async () => {
+      expect(await checkCostExceeded(ctx, makeSlicedConfig({ "cost-exceeded": false }), mockChain)).toBe(true);
+      expect(await checkCostExceeded(ctx, empty, mockChain)).toBe(true);
     });
 
-    test("returns true when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkCostExceeded({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe("checkMergeConflict", () => {
-    test("returns true when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "merge-conflict": false });
-      const result = await checkMergeConflict({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
+    test("checkMergeConflict: true when disabled or not configured", async () => {
+      expect(await checkMergeConflict(ctx, makeSlicedConfig({ "merge-conflict": false }), mockChain)).toBe(true);
+      expect(await checkMergeConflict(ctx, empty, mockChain)).toBe(true);
     });
 
-    test("returns true when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkMergeConflict({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe("checkCostWarning", () => {
-    test("returns continue when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "cost-warning": false });
-      const result = await checkCostWarning({ featureName: "f" }, config, mockChain);
-      expect(result).toBe("continue");
+    test("checkCostWarning: continue when disabled or not configured", async () => {
+      expect(await checkCostWarning(ctx, makeSlicedConfig({ "cost-warning": false }), mockChain)).toBe("continue");
+      expect(await checkCostWarning(ctx, empty, mockChain)).toBe("continue");
     });
 
-    test("returns continue when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkCostWarning({ featureName: "f" }, config, mockChain);
-      expect(result).toBe("continue");
-    });
-  });
-
-  describe("checkMaxRetries", () => {
-    test("returns continue when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "max-retries": false });
-      const result = await checkMaxRetries({ featureName: "f" }, config, mockChain);
-      expect(result).toBe("continue");
+    test("checkMaxRetries: continue when disabled or not configured", async () => {
+      expect(await checkMaxRetries(ctx, makeSlicedConfig({ "max-retries": false }), mockChain)).toBe("continue");
+      expect(await checkMaxRetries(ctx, empty, mockChain)).toBe("continue");
     });
 
-    test("returns continue when no trigger configured", async () => {
-      const config = makeSlicedConfig({});
-      const result = await checkMaxRetries({ featureName: "f" }, config, mockChain);
-      expect(result).toBe("continue");
-    });
-  });
-
-  describe("checkPreMerge", () => {
-    test("returns true when trigger disabled", async () => {
-      const config = makeSlicedConfig({ "pre-merge": false });
-      const result = await checkPreMerge({ featureName: "f" }, config, mockChain);
-      expect(result).toBe(true);
+    test("checkPreMerge: true when disabled or not configured", async () => {
+      expect(await checkPreMerge(ctx, makeSlicedConfig({ "pre-merge": false }), mockChain)).toBe(true);
+      expect(await checkPreMerge(ctx, empty, mockChain)).toBe(true);
     });
 
     test("returns true when no trigger configured", async () => {

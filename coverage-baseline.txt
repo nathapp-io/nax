@@ -1,0 +1,618 @@
+bun test v1.3.13 (bf2e2cec)
+---------------------------------------------------------|---------|---------|-------------------
+File                                                     | % Funcs | % Lines | Uncovered Line #s
+---------------------------------------------------------|---------|---------|-------------------
+All files                                                |   83.10 |   85.26 |
+ scripts/check-alias-internals.ts                        |   90.00 |   90.30 | 67,75,108,196-204
+ scripts/check-dead-tests.ts                             |   83.33 |   78.14 | 270-313,318-319
+ scripts/check-deep-relatives.ts                         |   66.67 |   74.38 | 80,99,127-130,135-144,206-229
+ scripts/check-no-real-global-nax.ts                     |   57.14 |   85.71 | 94-100,105-106
+ scripts/check-test-overlap.ts                           |   66.67 |   65.66 | 80-97,104-111,157,230-256,261-262
+ scripts/check-test-sizes.ts                             |   81.82 |   71.67 | 147-177,184-185
+ src/acceptance/content-loader.ts                        |    0.00 |    0.00 | 21-39
+ src/acceptance/fix-diagnosis.ts                         |  100.00 |  100.00 | 
+ src/acceptance/fix-generator.ts                         |  100.00 |  100.00 | 
+ src/acceptance/generator-helpers.ts                     |  100.00 |   98.36 | 17-18
+ src/acceptance/generator.ts                             |  100.00 |   94.59 | 36-39
+ src/acceptance/hardening.ts                             |   92.31 |   99.35 | 
+ src/acceptance/heuristics.ts                            |  100.00 |  100.00 | 
+ src/acceptance/index.ts                                 |  100.00 |  100.00 | 
+ src/acceptance/refinement.ts                            |  100.00 |   96.30 | 
+ src/acceptance/semantic-verdict.ts                      |   54.55 |   87.50 | 20-21,24,27-28,31
+ src/acceptance/test-path.ts                             |   83.33 |   83.33 | 70-74,172,175,178,198-206
+ src/agents/acp/adapter-lifecycle.ts                     |   80.95 |   85.33 | 30-38,87-99
+ src/agents/acp/adapter-output.ts                        |   75.00 |   60.49 | 78,83-86,95,97-99,101,110,115-116,127-145
+ src/agents/acp/adapter.ts                               |   71.43 |   93.08 | 142-144,148-149,310-335
+ src/agents/acp/index.ts                                 |  100.00 |  100.00 | 
+ src/agents/acp/interaction-bridge.ts                    |  100.00 |  100.00 | 
+ src/agents/acp/parse-agent-error.ts                     |  100.00 |   97.22 | 179-180,188,269,343-344
+ src/agents/acp/parser.ts                                |  100.00 |   89.76 | 127,151-152,154-157,159-160,162,184-185
+ src/agents/acp/spawn-client.ts                          |   75.00 |   81.84 | 404-484,583-585,704-706
+ src/agents/acp/token-mapper.ts                          |   50.00 |  100.00 | 
+ src/agents/cost/calculate.ts                            |  100.00 |  100.00 | 
+ src/agents/cost/index.ts                                |  100.00 |  100.00 | 
+ src/agents/cost/pricing.ts                              |  100.00 |  100.00 | 
+ src/agents/factory.ts                                   |  100.00 |  100.00 | 
+ src/agents/index.ts                                     |  100.00 |  100.00 | 
+ src/agents/interaction-handler.ts                       |  100.00 |  100.00 | 
+ src/agents/manager.ts                                   |   91.18 |   98.58 | 744-751
+ src/agents/registry.ts                                  |   70.00 |   73.08 | 27,37,77-88
+ src/agents/retry/compose.ts                             |  100.00 |  100.00 | 
+ src/agents/retry/default-strategy.ts                    |  100.00 |  100.00 | 
+ src/agents/retry/index.ts                               |  100.00 |  100.00 | 
+ src/agents/retry/parse-retry.ts                         |  100.00 |  100.00 | 
+ src/agents/retry/presets.ts                             |  100.00 |   91.67 | 
+ src/agents/retry/tiered-parse-retry.ts                  |  100.00 |  100.00 | 
+ src/agents/retry/types.ts                               |  100.00 |  100.00 | 
+ src/agents/shared/decompose-prompt.ts                   |   66.67 |   83.65 | 120,132-133,155-160,179-180,186-191
+ src/agents/shared/decompose.ts                          |  100.00 |   95.16 | 42,49
+ src/agents/shared/env.ts                                |  100.00 |   97.44 | 
+ src/agents/shared/model-resolution.ts                   |  100.00 |  100.00 | 
+ src/agents/shared/validation.ts                         |   33.33 |   37.50 | 47,64-67
+ src/agents/shared/version-detection.ts                  |  100.00 |   97.62 | 
+ src/agents/types.ts                                     |  100.00 |  100.00 | 
+ src/agents/utils.ts                                     |  100.00 |  100.00 | 
+ src/analyze/index.ts                                    |  100.00 |  100.00 | 
+ src/analyze/scanner.ts                                  |   76.92 |   34.66 | 27,73,119-147,160-204,221-259
+ src/cli/accept.ts                                       |    0.00 |    9.46 | 43-109
+ src/cli/agents.ts                                       |    0.00 |    6.25 | 26-84
+ src/cli/config-descriptions.ts                          |  100.00 |  100.00 | 
+ src/cli/config-diff.ts                                  |    0.00 |    1.52 | 27-68,79-101
+ src/cli/config-display.ts                               |    0.00 |    2.97 | 31-97,107-114,124,136-247,257-275,285-306
+ src/cli/config-get.ts                                   |    0.00 |   28.00 | 19-23,33-40,49-53
+ src/cli/config-profile.ts                               |  100.00 |   97.89 | 66
+ src/cli/config.ts                                       |  100.00 |  100.00 | 
+ src/cli/context.ts                                      |   50.00 |   82.09 | 89-100
+ src/cli/diagnose-analysis.ts                            |    0.00 |    3.03 | 14-48,53-66,71-84,89-120,125-157
+ src/cli/diagnose-formatter.ts                           |    0.00 |    1.32 | 11-85
+ src/cli/diagnose.ts                                     |    0.00 |   10.66 | 85-89,94-99,104-118,123-132,138-210
+ src/cli/generate.ts                                     |    0.00 |    2.83 | 47-252
+ src/cli/index.ts                                        |  100.00 |  100.00 | 
+ src/cli/init-context.ts                                 |   95.00 |   92.66 | 45-47,87-88,92,114-115,133-134,227,249-253
+ src/cli/init-detect.ts                                  |  100.00 |   97.83 | 40-41,271
+ src/cli/init.ts                                         |   81.82 |   65.12 | 130-131,188-193,214-253,269-276,284,292-308,335,347,356,388-400
+ src/cli/interact.ts                                     |    0.00 |    3.07 | 65-136,143-226,234-298
+ src/cli/plan-command.ts                                 |   41.67 |   91.27 | 101-104,115-117,133-135
+ src/cli/plan-decompose.ts                               |   92.31 |   95.81 | 149-156
+ src/cli/plan-helpers.ts                                 |   66.67 |   58.82 | 19-39
+ src/cli/plan-runtime.ts                                 |   59.09 |   73.42 | 48-51,64,78-80,82-83,99-104,109-113
+ src/cli/plan.ts                                         |  100.00 |  100.00 | 
+ src/cli/plugins.ts                                      |    0.00 |    3.41 | 19-92,103-112
+ src/cli/prompts-export.ts                               |  100.00 |  100.00 | 
+ src/cli/prompts-init.ts                                 |  100.00 |   99.09 | 
+ src/cli/prompts-main.ts                                 |    0.00 |    6.94 | 56-189
+ src/cli/prompts-shared.ts                               |    0.00 |    0.00 | 24-68
+ src/cli/prompts-tdd.ts                                  |    0.00 |    4.41 | 22-86
+ src/cli/prompts.ts                                      |  100.00 |  100.00 | 
+ src/cli/rules.ts                                        |   66.67 |   91.18 | 36,40-43,47,50-53,253-257
+ src/cli/runs.ts                                         |    0.00 |    6.72 | 15-18,54-61,76-125,139-187
+ src/cli/status-cost.ts                                  |    0.00 |    6.06 | 13-15,29-48,62-115,129-175
+ src/cli/status-features.ts                              |   85.71 |   76.11 | 72-73,90-91,101-107,131-135,143,145-149,180-181,190-191,252,271-273,287,289-295,297-305,307-310,312-313,321-326,328-330,332,365,394-396,405-406,414,455-459
+ src/cli/status.ts                                       |  100.00 |  100.00 | 
+ src/commands/common.ts                                  |  100.00 |   97.76 | 113,204-205
+ src/commands/curator.ts                                 |   60.87 |   83.39 | 52,55-57,60-62,67-71,283,285,287-289,291-295,297-299,301-306,312-319,340-345,349-351,383-384
+ src/commands/logs-formatter.ts                          |   85.71 |   53.96 | 103-166
+ src/commands/logs-reader.ts                             |  100.00 |   92.79 | 28,61-62,136-138,148
+ src/commands/logs.ts                                    |  100.00 |   89.36 | 53,71,79,97-98
+ src/commands/migrate.ts                                 |  100.00 |   32.24 | 56,70-73,77-83,86-92,95-101,104-110,113-124,165-171,189-196,200-208,210,212-218,220-227,230-232,234-237,239-246,248,250-253,255-261,263-284,287-289,291-294,296-299
+ src/commands/runs.ts                                    |  100.00 |   96.64 | 67-68,81
+ src/commands/unlock.ts                                  |  100.00 |   91.11 | 66-67,89-90
+ src/config/defaults.ts                                  |  100.00 |  100.00 | 
+ src/config/dotenv.ts                                    |  100.00 |  100.00 | 
+ src/config/index.ts                                     |  100.00 |  100.00 | 
+ src/config/loader-runtime.ts                            |  100.00 |  100.00 | 
+ src/config/loader.ts                                    |   84.62 |   74.90 | 52-57,60,119-127,130-137,153-155,227-235,257-258,260,265,286-287,289-290,344-345,375-381,383-391
+ src/config/merge.ts                                     |  100.00 |   97.64 | 76-78
+ src/config/merger.ts                                    |  100.00 |   38.57 | 42-43,50-52,55-58,61,64-66,68,70-71,73-74,76,78,80-83,86-90,92-93,98-99,101-102,105-106,108-111,113-114
+ src/config/migrations.ts                                |  100.00 |  100.00 | 
+ src/config/path-security.ts                             |   66.67 |   40.85 | 20-56,72,104-105,112
+ src/config/paths.ts                                     |  100.00 |  100.00 | 
+ src/config/permissions.ts                               |  100.00 |   91.67 | 
+ src/config/profile.ts                                   |  100.00 |   98.94 | 
+ src/config/schema-types.ts                              |  100.00 |  100.00 | 
+ src/config/schema.ts                                    |  100.00 |  100.00 | 
+ src/config/schemas-context.ts                           |  100.00 |  100.00 | 
+ src/config/schemas-debate.ts                            |  100.00 |  100.00 | 
+ src/config/schemas-execution.ts                         |  100.00 |  100.00 | 
+ src/config/schemas-infra.ts                             |  100.00 |  100.00 | 
+ src/config/schemas-model.ts                             |  100.00 |  100.00 | 
+ src/config/schemas-review.ts                            |  100.00 |  100.00 | 
+ src/config/schemas.ts                                   |  100.00 |  100.00 | 
+ src/config/selector.ts                                  |  100.00 |  100.00 | 
+ src/config/selectors.ts                                 |    0.00 |   97.37 | 47-48
+ src/config/test-strategy.ts                             |  100.00 |  100.00 | 
+ src/config/types.ts                                     |  100.00 |  100.00 | 
+ src/config/validate.ts                                  |  100.00 |   80.43 | 34,40,45,50,53,55-60,69,73,77,83,87,91
+ src/constitution/generators/aider.ts                    |  100.00 |  100.00 | 
+ src/constitution/generators/claude.ts                   |  100.00 |  100.00 | 
+ src/constitution/generators/cursor.ts                   |  100.00 |  100.00 | 
+ src/constitution/generators/opencode.ts                 |  100.00 |  100.00 | 
+ src/constitution/generators/windsurf.ts                 |  100.00 |  100.00 | 
+ src/constitution/index.ts                               |  100.00 |  100.00 | 
+ src/constitution/loader.ts                              |  100.00 |   85.29 | 66-67,69-75
+ src/context/auto-detect.ts                              |  100.00 |   95.62 | 182,228-232
+ src/context/builder.ts                                  |  100.00 |   92.50 | 198-199,219-224,251-255,264-265
+ src/context/elements.ts                                 |  100.00 |   98.92 | 
+ src/context/engine/agent-profiles.ts                    |  100.00 |  100.00 | 
+ src/context/engine/agent-renderer.ts                    |  100.00 |  100.00 | 
+ src/context/engine/available-budget.ts                  |  100.00 |  100.00 | 
+ src/context/engine/dedupe.ts                            |  100.00 |  100.00 | 
+ src/context/engine/digest.ts                            |  100.00 |  100.00 | 
+ src/context/engine/effectiveness.ts                     |  100.00 |   99.21 | 
+ src/context/engine/index.ts                             |  100.00 |  100.00 | 
+ src/context/engine/manifest-store.ts                    |   81.82 |   89.81 | 19-27,35-36
+ src/context/engine/orchestrator-factory.ts              |  100.00 |  100.00 | 
+ src/context/engine/orchestrator.ts                      |   86.00 |  100.00 | 
+ src/context/engine/packing.ts                           |  100.00 |  100.00 | 
+ src/context/engine/pollution.ts                         |  100.00 |  100.00 | 
+ src/context/engine/providers/code-neighbor.ts           |   96.77 |  100.00 | 
+ src/context/engine/providers/feature-context.ts         |  100.00 |  100.00 | 
+ src/context/engine/providers/git-history.ts             |  100.00 |  100.00 | 
+ src/context/engine/providers/plugin-cache.ts            |   75.00 |  100.00 | 
+ src/context/engine/providers/plugin-loader.ts           |   90.91 |   95.83 | 36,126-128
+ src/context/engine/providers/session-scratch.ts         |   72.73 |  100.00 | 
+ src/context/engine/providers/static-rules.ts            |   93.10 |  100.00 | 
+ src/context/engine/providers/test-coverage.ts           |  100.00 |  100.00 | 
+ src/context/engine/pull-tools.ts                        |  100.00 |  100.00 | 
+ src/context/engine/render-utils.ts                      |  100.00 |  100.00 | 
+ src/context/engine/render.ts                            |  100.00 |  100.00 | 
+ src/context/engine/scoring.ts                           |  100.00 |  100.00 | 
+ src/context/engine/scratch-neutralizer.ts               |  100.00 |  100.00 | 
+ src/context/engine/stage-assembler.ts                   |   64.29 |   93.38 | 40-42,118,162-163,221,238-239
+ src/context/engine/stage-config.ts                      |  100.00 |  100.00 | 
+ src/context/engine/staleness.ts                         |  100.00 |  100.00 | 
+ src/context/engine/tool-runtime.ts                      |   20.00 |   13.64 | 23,38-41,47-60,63-68,71-101
+ src/context/feature-context-filter.ts                   |  100.00 |  100.00 | 
+ src/context/feature-resolver.ts                         |  100.00 |   96.81 | 93-95
+ src/context/formatter.ts                                |  100.00 |   95.77 | 91-93
+ src/context/generator.ts                                |   82.35 |   75.85 | 74,91,106-108,118-149,261-270,339-341
+ src/context/generators/aider.ts                         |  100.00 |  100.00 | 
+ src/context/generators/claude.ts                        |  100.00 |  100.00 | 
+ src/context/generators/codex.ts                         |  100.00 |  100.00 | 
+ src/context/generators/cursor.ts                        |    0.00 |   38.89 | 10-20
+ src/context/generators/gemini.ts                        |  100.00 |  100.00 | 
+ src/context/generators/opencode.ts                      |  100.00 |  100.00 | 
+ src/context/generators/windsurf.ts                      |    0.00 |   38.89 | 10-20
+ src/context/greenfield.ts                               |  100.00 |  100.00 | 
+ src/context/index.ts                                    |  100.00 |  100.00 | 
+ src/context/injector.ts                                 |   11.11 |   27.14 | 48-65,71-92,98-116,122-148,154-166,172-180,186-212,223-240
+ src/context/parent-context.ts                           |  100.00 |  100.00 | 
+ src/context/providers/feature-context.ts                |   50.00 |  100.00 | 
+ src/context/rules/canonical-loader.ts                   |   95.24 |  100.00 | 
+ src/context/test-scanner.ts                             |   93.75 |   81.59 | 102,104-106,167-175,221,298,312-313,324-332,361-362,365-372
+ src/debate/citations.ts                                 |   91.67 |   96.08 | 55-56
+ src/debate/concurrency.ts                               |  100.00 |  100.00 | 
+ src/debate/facts-manifest.ts                            |  100.00 |  100.00 | 
+ src/debate/index.ts                                     |  100.00 |  100.00 | 
+ src/debate/personas.ts                                  |  100.00 |  100.00 | 
+ src/debate/pre-phase/grounder.ts                        |   75.00 |   77.27 | 34-43
+ src/debate/pre-phase/index.ts                           |  100.00 |  100.00 | 
+ src/debate/pre-phase/registry.ts                        |  100.00 |  100.00 | 
+ src/debate/resolvers.ts                                 |  100.00 |  100.00 | 
+ src/debate/runner-hybrid.ts                             |   96.55 |   96.32 | 143,231-236
+ src/debate/runner-plan-helpers.ts                       |   94.12 |   92.49 | 107-116,120,140-141,152,154-159,208
+ src/debate/runner-plan.ts                               |   90.32 |   89.93 | 73-78,154-158,212-218,257-261,357-363
+ src/debate/runner-stateful-helpers.ts                   |   50.00 |   33.56 | 28-46,50-54,58-65,89,114-144,153-158,162-190
+ src/debate/runner-stateful.ts                           |   96.00 |   86.27 | 53,86,151,153-157,159-171,173-178
+ src/debate/runner.ts                                    |  100.00 |  100.00 | 
+ src/debate/selectors/dialogue-verdict.ts                |   50.00 |   12.20 | 21-24,27-45,47-49,51-56,59-68,70-75,77-93,96-102
+ src/debate/selectors/index.ts                           |  100.00 |  100.00 | 
+ src/debate/selectors/judge.ts                           |  100.00 |  100.00 | 
+ src/debate/selectors/majority.ts                        |  100.00 |  100.00 | 
+ src/debate/selectors/pick.ts                            |  100.00 |   94.74 | 
+ src/debate/selectors/registry.ts                        |   66.67 |  100.00 | 
+ src/debate/selectors/synthesis.ts                       |  100.00 |  100.00 | 
+ src/debate/selectors/verifier-pick.ts                   |   82.35 |   91.67 | 78-80,107-109
+ src/debate/session-helpers.ts                           |   70.00 |   89.76 | 114-117,121-128,181-185
+ src/debate/utils.ts                                     |   80.00 |   45.83 | 7-32
+ src/debate/verifiers/checks.ts                          |  100.00 |   94.55 | 134-139
+ src/debate/verifiers/index.ts                           |  100.00 |  100.00 | 
+ src/debate/verifiers/plan-checklist.ts                  |   80.00 |   92.21 | 23-26,59-60
+ src/debate/verifiers/registry.ts                        |  100.00 |  100.00 | 
+ src/debate/verifiers/review-grounding-filter.ts         |   50.00 |  100.00 | 
+ src/errors.ts                                           |   20.00 |   60.00 | 27-28,37-41,50-54,63-64
+ src/execution/batching.ts                               |   50.00 |   20.56 | 21-92,129-130,133,135-141,143,145-146
+ src/execution/build-plan-for-strategy.ts                |   83.33 |   98.18 | 
+ src/execution/crash-heartbeat.ts                        |   83.33 |   60.38 | 28-29,31-42,45-46,48-52
+ src/execution/crash-recovery.ts                         |  100.00 |  100.00 | 
+ src/execution/crash-signals.ts                          |   58.82 |   48.99 | 77,122-158,171-207
+ src/execution/crash-writer.ts                           |  100.00 |   92.23 | 35,89,112-115,117
+ src/execution/deferred-review.ts                        |  100.00 |   98.55 | 
+ src/execution/dry-run.ts                                |    0.00 |    6.00 | 33-79
+ src/execution/escalation/escalation.ts                  |  100.00 |  100.00 | 
+ src/execution/escalation/index.ts                       |  100.00 |  100.00 | 
+ src/execution/escalation/quote-integrity.ts             |   85.71 |   93.44 | 28-31
+ src/execution/escalation/tier-escalation.ts             |   90.00 |   56.58 | 71,88,105-217,309,317,331-335
+ src/execution/escalation/tier-outcome.ts                |    0.00 |    4.96 | 21-77,84-141
+ src/execution/executor-types.ts                         |  100.00 |  100.00 | 
+ src/execution/helpers.ts                                |  100.00 |  100.00 | 
+ src/execution/index.ts                                  |  100.00 |  100.00 | 
+ src/execution/iteration-runner.ts                       |    0.00 |    7.38 | 39-314
+ src/execution/lifecycle/acceptance-fix.ts               |   83.33 |   85.53 | 26,136-145
+ src/execution/lifecycle/acceptance-helpers.ts           |   64.29 |   77.78 | 54-57,98-107,115-121,125-126,155-158,223,225-226
+ src/execution/lifecycle/acceptance-loop.ts              |   80.95 |   36.44 | 186-211,215-226,252,297-301,326-520
+ src/execution/lifecycle/headless-formatter.ts           |    0.00 |    9.52 | 38-52,59-81
+ src/execution/lifecycle/index.ts                        |  100.00 |  100.00 | 
+ src/execution/lifecycle/paused-story-prompts.ts         |  100.00 |  100.00 | 
+ src/execution/lifecycle/run-cleanup.ts                  |   42.86 |   93.91 | 138,181,187-191
+ src/execution/lifecycle/run-completion.ts               |   81.82 |   94.10 | 156-167,296,340,358
+ src/execution/lifecycle/run-initialization.ts           |   75.00 |   74.63 | 32,100,102,128-129,131-136,138-146,156-161,214-216,219-223
+ src/execution/lifecycle/run-regression.ts               |   75.00 |   80.56 | 71-87,236-251,266,277-278,280-286,292-303
+ src/execution/lifecycle/run-setup.ts                    |   50.00 |   12.50 | 130-416
+ src/execution/lock.ts                                   |   75.00 |   71.62 | 16-17,56,58-63,98,100-106,123-126
+ src/execution/merge-conflict-rectify.ts                 |   50.00 |   44.19 | 26-33,123-124,126,128-146,148-149,151-154,157-158,160-164,166-170
+ src/execution/parallel-batch.ts                         |   71.43 |   78.10 | 73-94,98-99,103-104,108-109,132-136,176-188
+ src/execution/parallel-worker.ts                        |   80.00 |   52.67 | 27-82,136-140,144-148,181-185
+ src/execution/pid-registry.ts                           |   94.44 |  100.00 | 
+ src/execution/pipeline-result-handler.ts                |  100.00 |   78.60 | 53-57,188,225-229,231-240,242-244,270,294-314
+ src/execution/plan-inputs.ts                            |   85.71 |   97.16 | 165-169
+ src/execution/post-run.ts                               |   57.14 |   31.63 | 135-136,179,188-202,210-212,215-232,234,236,239-256,258,294-447
+ src/execution/progress.ts                               |  100.00 |  100.00 | 
+ src/execution/queue-handler.ts                          |    0.00 |    9.62 | 16-19,47-77,95-106
+ src/execution/runner-completion.ts                      |   85.71 |   90.23 | 83-85,258-271
+ src/execution/runner-execution.ts                       |    0.00 |    5.08 | 76-187
+ src/execution/runner-setup.ts                           |    0.00 |    0.00 | 62-89
+ src/execution/runner.ts                                 |    0.00 |    7.42 | 90-301
+ src/execution/session-manager-runtime.ts                |  100.00 |   95.74 | 54,58,62-63
+ src/execution/status-file.ts                            |   50.00 |   94.44 | 277,281
+ src/execution/status-writer.ts                          |   53.33 |   43.57 | 103,108-109,119-137,146-153,160-163,235-279
+ src/execution/story-context.ts                          |   82.35 |   60.53 | 19,73-89,101-132,192,204-208,217-220
+ src/execution/story-orchestrator.ts                     |   90.91 |   95.43 | 280-290,348-351
+ src/execution/story-selector.ts                         |  100.00 |   98.95 | 
+ src/execution/timeout-handler.ts                        |  100.00 |  100.00 | 
+ src/execution/unified-executor.ts                       |   64.29 |   65.14 | 134-154,162-163,176-194,263-295,304-311,342-352,355-363,393-410,455-456,463-464,483-500,538-548,552-553,560-561,568-590,609-610
+ src/findings/adapters/acceptance-diagnose.ts            |  100.00 |  100.00 | 
+ src/findings/adapters/index.ts                          |  100.00 |  100.00 | 
+ src/findings/adapters/lint.ts                           |  100.00 |  100.00 | 
+ src/findings/adapters/plugin.ts                         |  100.00 |  100.00 | 
+ src/findings/adapters/semantic-review.ts                |  100.00 |  100.00 | 
+ src/findings/adapters/test-failure.ts                   |  100.00 |  100.00 | 
+ src/findings/adapters/test-runner.ts                    |  100.00 |  100.00 | 
+ src/findings/adapters/typecheck.ts                      |  100.00 |  100.00 | 
+ src/findings/cycle.ts                                   |  100.00 |   99.10 | 107-108
+ src/findings/index.ts                                   |  100.00 |  100.00 | 
+ src/findings/path-utils.ts                              |  100.00 |  100.00 | 
+ src/findings/types.ts                                   |   50.00 |   91.67 | 
+ src/hooks/index.ts                                      |  100.00 |  100.00 | 
+ src/hooks/runner.ts                                     |   57.14 |   56.76 | 18-29,51-78,173,179-182,193-197,209,222-223,233-243,252-255,284-292,294,303
+ src/hooks/types.ts                                      |  100.00 |  100.00 | 
+ src/interaction/bridge-builder.ts                       |   33.33 |   31.03 | 51-52,54-70
+ src/interaction/chain.ts                                |   70.59 |   57.65 | 110-119,132-142,149-163
+ src/interaction/index.ts                                |  100.00 |  100.00 | 
+ src/interaction/init.ts                                 |  100.00 |   83.67 | 25-28,82-85
+ src/interaction/plugins/auto.ts                         |   63.64 |   90.85 | 106-120
+ src/interaction/plugins/cli.ts                          |    7.69 |    5.26 | 31-300
+ src/interaction/plugins/telegram.ts                     |   72.41 |   97.15 | 69-73,193-197
+ src/interaction/plugins/webhook.ts                      |   91.43 |   97.84 | 315-321
+ src/interaction/state.ts                                |   20.00 |   20.21 | 51-53,61-65,72-75,82-94,102-105,114-124,131-150,158-166,182,184-187
+ src/interaction/triggers.ts                             |  100.00 |   94.03 | 132,160,188,216,230-231,233-234
+ src/interaction/types.ts                                |  100.00 |  100.00 | 
+ src/logger/formatters.ts                                |   50.00 |    9.52 | 24-61
+ src/logger/index.ts                                     |  100.00 |  100.00 | 
+ src/logger/logger.ts                                    |   85.00 |   82.61 | 144-156,170,225-234
+ src/logging/formatter.ts                                |   75.00 |   61.50 | 40,44-46,64-68,116,118-120,123,166-171,214,228-239,246-284,295,313,317,348-359
+ src/logging/index.ts                                    |  100.00 |  100.00 | 
+ src/logging/types.ts                                    |  100.00 |  100.00 | 
+ src/metrics/aggregator.ts                               |  100.00 |  100.00 | 
+ src/metrics/index.ts                                    |  100.00 |  100.00 | 
+ src/metrics/tracker.ts                                  |  100.00 |  100.00 | 
+ src/metrics/types.ts                                    |  100.00 |  100.00 | 
+ src/operations/_session-output.ts                       |  100.00 |   93.75 | 
+ src/operations/acceptance-diagnose.ts                   |   75.00 |  100.00 | 
+ src/operations/acceptance-fix.ts                        |  100.00 |  100.00 | 
+ src/operations/acceptance-generate.ts                   |   83.33 |   97.37 | 
+ src/operations/acceptance-refine.ts                     |   80.00 |  100.00 | 
+ src/operations/adversarial-review.ts                    |  100.00 |   98.31 | 
+ src/operations/auto-approve.ts                          |   50.00 |   44.58 | 78-106,110-126
+ src/operations/autofix-implementer.ts                   |   50.00 |   84.38 | 29-33
+ src/operations/autofix-test-writer.ts                   |   50.00 |   95.45 | 
+ src/operations/build-hop-callback.ts                    |   83.33 |   88.73 | 23-27,124-141
+ src/operations/call.ts                                  |  100.00 |   92.42 | 52,191-194,210-213,217-229,382-385,487-491
+ src/operations/classify-route.ts                        |   90.91 |  100.00 | 
+ src/operations/debate-hybrid.ts                         |   81.82 |   86.96 | 65,72-79
+ src/operations/debate-judge.ts                          |  100.00 |  100.00 | 
+ src/operations/debate-plan.ts                           |   58.33 |   76.27 | 46-55,90-93
+ src/operations/debate-propose.ts                        |  100.00 |  100.00 | 
+ src/operations/debate-rebut.ts                          |  100.00 |  100.00 | 
+ src/operations/debate-stateful.ts                       |   77.78 |  100.00 | 
+ src/operations/debate-synthesis.ts                      |  100.00 |  100.00 | 
+ src/operations/decompose.ts                             |  100.00 |  100.00 | 
+ src/operations/execution-gates.ts                       |  100.00 |  100.00 | 
+ src/operations/full-suite-gate.ts                       |   80.00 |   67.61 | 105-115,119-130
+ src/operations/full-suite-rectify.ts                    |   75.00 |  100.00 | 
+ src/operations/greenfield-gate.ts                       |  100.00 |  100.00 | 
+ src/operations/ground.ts                                |   91.67 |   92.62 | 79,81-84,86,163-165
+ src/operations/implement.ts                             |  100.00 |   92.45 | 45-48
+ src/operations/index.ts                                 |  100.00 |  100.00 | 
+ src/operations/plan-critic-llm.ts                       |  100.00 |  100.00 | 
+ src/operations/plan-draft.ts                            |  100.00 |   91.89 | 115,139-142,145-148
+ src/operations/plan-refine.ts                           |   85.00 |   79.41 | 53-57,62-66,69-73,78-82,86-90,96-98
+ src/operations/plan.ts                                  |   90.91 |  100.00 | 
+ src/operations/rectify.ts                               |  100.00 |  100.00 | 
+ src/operations/semantic-review.ts                       |  100.00 |   93.10 | 171,173-181
+ src/operations/test-edit-declaration.ts                 |  100.00 |  100.00 | 
+ src/operations/verify.ts                                |  100.00 |   93.94 | 58-61
+ src/operations/write-test.ts                            |  100.00 |   92.98 | 43-46
+ src/optimizer/index.ts                                  |    0.00 |   18.75 | 35-60
+ src/optimizer/noop.optimizer.ts                         |    0.00 |   26.67 | 11-21
+ src/optimizer/rule-based.optimizer.ts                   |    0.00 |    7.32 | 23-81,88-95,103-114,122-145,153-196,203-245
+ src/optimizer/types.ts                                  |  100.00 |  100.00 | 
+ src/pipeline/event-bus.ts                               |   82.35 |   91.04 | 238-242
+ src/pipeline/events.ts                                  |   33.33 |   64.71 | 91,101,123-126
+ src/pipeline/index.ts                                   |  100.00 |  100.00 | 
+ src/pipeline/runner.ts                                  |  100.00 |   59.23 | 87-99,111-119,121-129,131-139,141-148,189,191-194
+ src/pipeline/stages/acceptance-setup.ts                 |   75.00 |   81.41 | 76-77,80,83-84,87-91,103,105-106,114,121,128-143,146-171
+ src/pipeline/stages/acceptance.ts                       |   77.78 |   84.57 | 43-44,122-123,203-207,259-274,276-279
+ src/pipeline/stages/autofix-agent.ts                    |  100.00 |  100.00 | 
+ src/pipeline/stages/autofix-cycle.ts                    |   93.88 |   88.72 | 87-94,160-165,269-272,488-490,492-501,503-516
+ src/pipeline/stages/autofix-guards.ts                   |  100.00 |   98.85 | 
+ src/pipeline/stages/autofix-scope-split.ts              |   91.67 |   77.22 | 111,115-139,162-166,196-200
+ src/pipeline/stages/autofix-test-writer.ts              |  100.00 |   92.86 | 33-37
+ src/pipeline/stages/autofix.ts                          |   93.62 |   96.09 | 56-57,208-212,445-449
+ src/pipeline/stages/completion.ts                       |   57.14 |   83.87 | 54-65,162-169
+ src/pipeline/stages/constitution.ts                     |    0.00 |   17.95 | 29-60
+ src/pipeline/stages/context.ts                          |   50.00 |   50.66 | 62-71,114-117,138-141,163-164,174,203,205-207,216-302
+ src/pipeline/stages/execution-helpers.ts                |  100.00 |  100.00 | 
+ src/pipeline/stages/execution.ts                        |   33.33 |   45.98 | 64-68,70-79,82-89,91,93-100,102-103,105-109,112-119
+ src/pipeline/stages/index.ts                            |  100.00 |  100.00 | 
+ src/pipeline/stages/optimizer.ts                        |   66.67 |   41.94 | 43-44,55,58,61-66,69,72-78
+ src/pipeline/stages/prompt.ts                           |   83.33 |   94.25 | 31-34
+ src/pipeline/stages/queue-check.ts                      |    0.00 |    9.33 | 33-100
+ src/pipeline/stages/rectify.ts                          |   80.00 |   84.21 | 33-34,43,103-117
+ src/pipeline/stages/regression.ts                       |   60.00 |   91.23 | 35-37,67-68
+ src/pipeline/stages/review.ts                           |   80.00 |   78.75 | 45-54,60-62,66-69,105-114,121-123,127-130
+ src/pipeline/stages/routing.ts                          |   66.67 |  100.00 | 
+ src/pipeline/stages/verify.ts                           |  100.00 |   85.22 | 48,182-186,253-270,278-287
+ src/pipeline/subscribers/events-writer.ts               |  100.00 |   95.56 | 64-67
+ src/pipeline/subscribers/hooks.ts                       |   84.00 |   85.19 | 97-104,111-118
+ src/pipeline/subscribers/interaction.ts                 |   83.33 |   70.31 | 43-59,61-62
+ src/pipeline/subscribers/registry.ts                    |  100.00 |   89.19 | 70-73
+ src/pipeline/subscribers/reporters.ts                   |   85.00 |   95.35 | 58,110,136,164,173-174
+ src/plan/critic.ts                                      |  100.00 |  100.00 | 
+ src/plan/draft-citations.ts                             |  100.00 |  100.00 | 
+ src/plan/index.ts                                       |  100.00 |  100.00 | 
+ src/plan/spec-deltas.ts                                 |  100.00 |   92.73 | 50-51,64-65
+ src/plan/strategies/assert.ts                           |  100.00 |   92.31 | 
+ src/plan/strategies/context-builder.ts                  |  100.00 |  100.00 | 
+ src/plan/strategies/debate-composition.ts               |  100.00 |  100.00 | 
+ src/plan/strategies/debate.ts                           |   50.00 |  100.00 | 
+ src/plan/strategies/factory.ts                          |  100.00 |  100.00 | 
+ src/plan/strategies/index.ts                            |  100.00 |  100.00 | 
+ src/plan/strategies/pipeline.ts                         |   50.00 |  100.00 | 
+ src/plan/strategies/refine.ts                           |   50.00 |  100.00 | 
+ src/plan/strategies/single.ts                           |   50.00 |  100.00 | 
+ src/plan/strategies/write-prd.ts                        |  100.00 |   65.91 | 12,18-22,31,33-37,41-43
+ src/plugins/builtin/curator/collect.ts                  |   84.62 |   81.67 | 330-342,346-358,388-404,408-424,445,447,450-453
+ src/plugins/builtin/curator/heuristics.ts               |  100.00 |  100.00 | 
+ src/plugins/builtin/curator/index.ts                    |   77.78 |   83.00 | 49,57-63,115-119,133-136
+ src/plugins/builtin/curator/paths.ts                    |  100.00 |  100.00 | 
+ src/plugins/builtin/curator/render.ts                   |  100.00 |  100.00 | 
+ src/plugins/builtin/curator/rollup.ts                   |  100.00 |  100.00 | 
+ src/plugins/loader.ts                                   |   41.67 |   26.61 | 29,34,62-68,131-146,152-167,173-176,178-194,221,223,225-228,230-237,240-241,248,250,265-267,278-289,301-376
+ src/plugins/plugin-logger.ts                            |  100.00 |  100.00 | 
+ src/plugins/registry.ts                                 |   97.06 |   98.46 | 
+ src/plugins/validator.ts                                |   40.00 |   26.60 | 17,43-44,51-52,57-61,66-67,71-72,77-81,87-88,93-94,99-100,126-136,141-142,149-166,173-190,197-263,270-292,299-322,329-353,362-366
+ src/prd/decompose-mapper.ts                             |  100.00 |  100.00 | 
+ src/prd/index.ts                                        |   88.24 |   87.95 | 29,35-39,197-205,228,264-267
+ src/prd/schema.ts                                       |   90.91 |   94.82 | 57,68,92,134,153-155,164,219-221,224
+ src/prd/types.ts                                        |   91.67 |   58.46 | 257-283
+ src/prd/validate.ts                                     |  100.00 |  100.00 | 
+ src/precheck/checks-agents.ts                           |  100.00 |   81.58 | 59,61-66
+ src/precheck/checks-blockers.ts                         |  100.00 |  100.00 | 
+ src/precheck/checks-cli.ts                              |  100.00 |   87.23 | 31-36
+ src/precheck/checks-config.ts                           |  100.00 |   83.33 | 30,33-34,48-53,63,66,69
+ src/precheck/checks-git.ts                              |  100.00 |   95.51 | 114-117
+ src/precheck/checks-system.ts                           |  100.00 |  100.00 | 
+ src/precheck/checks-warnings.ts                         |   96.00 |   93.23 | 17-19,52-57,63-68,230-231
+ src/precheck/checks.ts                                  |  100.00 |  100.00 | 
+ src/precheck/index.ts                                   |   91.67 |   78.31 | 180-181,238-244,246-247,251,327,331,367-370,385-394,401-413
+ src/precheck/story-size-gate.ts                         |  100.00 |  100.00 | 
+ src/project/detector.ts                                 |  100.00 |   98.90 | 
+ src/project/index.ts                                    |  100.00 |  100.00 | 
+ src/project/package-stack.ts                            |  100.00 |  100.00 | 
+ src/prompts/builders/acceptance-builder-helpers.ts      |  100.00 |  100.00 | 
+ src/prompts/builders/acceptance-builder.ts              |   94.44 |  100.00 | 
+ src/prompts/builders/adversarial-review-builder.ts      |   83.33 |  100.00 | 
+ src/prompts/builders/critic-builder.ts                  |   87.50 |   96.03 | 194,223-227
+ src/prompts/builders/debate-builder.ts                  |  100.00 |  100.00 | 
+ src/prompts/builders/grounder-builder.ts                |   66.67 |  100.00 | 
+ src/prompts/builders/one-shot-builder.ts                |  100.00 |  100.00 | 
+ src/prompts/builders/patch-builder.ts                   |   66.67 |  100.00 | 
+ src/prompts/builders/plan-builder.ts                    |   92.86 |  100.00 | 
+ src/prompts/builders/prior-iterations-builder.ts        |  100.00 |  100.00 | 
+ src/prompts/builders/rectifier-builder-helpers.ts       |  100.00 |  100.00 | 
+ src/prompts/builders/rectifier-builder.ts               |   93.62 |   97.90 | 106,109,111,115,446-450
+ src/prompts/builders/review-builder.ts                  |   90.00 |  100.00 | 
+ src/prompts/builders/source-roots-builder.ts            |  100.00 |  100.00 | 
+ src/prompts/builders/tdd-builder.ts                     |  100.00 |  100.00 | 
+ src/prompts/compose.ts                                  |  100.00 |   90.63 | 59,63
+ src/prompts/core/index.ts                               |  100.00 |  100.00 | 
+ src/prompts/core/section-accumulator.ts                 |   66.67 |   92.86 | 
+ src/prompts/core/sections/findings.ts                   |    0.00 |    0.00 | 14-27
+ src/prompts/core/sections/index.ts                      |  100.00 |  100.00 | 
+ src/prompts/core/sections/instructions.ts               |  100.00 |  100.00 | 
+ src/prompts/core/sections/json-schema.ts                |  100.00 |  100.00 | 
+ src/prompts/core/sections/prior-failures.ts             |  100.00 |  100.00 | 
+ src/prompts/core/sections/routing-candidates.ts         |  100.00 |  100.00 | 
+ src/prompts/core/types.ts                               |  100.00 |  100.00 | 
+ src/prompts/core/universal-sections.ts                  |  100.00 |  100.00 | 
+ src/prompts/core/wrappers.ts                            |  100.00 |  100.00 | 
+ src/prompts/index.ts                                    |  100.00 |  100.00 | 
+ src/prompts/loader.ts                                   |  100.00 |   77.27 | 40-43
+ src/prompts/sections/acceptance.ts                      |  100.00 |  100.00 | 
+ src/prompts/sections/conventions.ts                     |  100.00 |  100.00 | 
+ src/prompts/sections/hermetic.ts                        |  100.00 |  100.00 | 
+ src/prompts/sections/index.ts                           |  100.00 |  100.00 | 
+ src/prompts/sections/isolation.ts                       |  100.00 |  100.00 | 
+ src/prompts/sections/role-task.ts                       |  100.00 |   96.08 | 98
+ src/prompts/sections/self-verification.ts               |  100.00 |  100.00 | 
+ src/prompts/sections/story.ts                           |  100.00 |  100.00 | 
+ src/prompts/sections/tdd-conventions.ts                 |  100.00 |  100.00 | 
+ src/prompts/sections/verdict.ts                         |  100.00 |  100.00 | 
+ src/quality/command-resolver.ts                         |   66.67 |   84.85 | 40-44
+ src/quality/index.ts                                    |  100.00 |  100.00 | 
+ src/quality/runner.ts                                   |   69.23 |   96.64 | 114-117
+ src/quality/self-verification.ts                        |  100.00 |  100.00 | 
+ src/queue/index.ts                                      |  100.00 |  100.00 | 
+ src/queue/manager.ts                                    |   78.79 |   86.61 | 56-64,116,130,151-155
+ src/review/ac-quote-validator.ts                        |  100.00 |   98.91 | 
+ src/review/ac-structural-counterfactual.ts              |  100.00 |  100.00 | 
+ src/review/adversarial-helpers.ts                       |   85.71 |   91.49 | 63-66
+ src/review/adversarial.ts                               |   93.33 |   95.98 | 190-193,212-219,253-254,256-257,265-269
+ src/review/categorization.ts                            |    0.00 |   71.43 | 10
+ src/review/dialogue.ts                                  |   86.67 |   86.44 | 108,116,118-119,121-123,125-138,189-192,197-200,268-270,284-285,344-348,351-354,389-393
+ src/review/diff-utils.ts                                |  100.00 |   93.49 | 164-173
+ src/review/finding-projection.ts                        |  100.00 |  100.00 | 
+ src/review/index.ts                                     |  100.00 |  100.00 | 
+ src/review/language-commands.ts                         |  100.00 |  100.00 | 
+ src/review/lint-parsing/index.ts                        |  100.00 |  100.00 | 
+ src/review/lint-parsing/parse.ts                        |   85.71 |   90.91 | 41-44
+ src/review/lint-parsing/strategies/biome-json.ts        |  100.00 |  100.00 | 
+ src/review/lint-parsing/strategies/eslint-json.ts       |  100.00 |   95.45 | 31-32
+ src/review/lint-parsing/strategies/text-block.ts        |  100.00 |  100.00 | 
+ src/review/orchestrator.ts                              |   87.10 |  100.00 | 
+ src/review/review-audit.ts                              |   91.30 |   94.29 | 206-211
+ src/review/runner.ts                                    |  100.00 |   96.66 | 131,137,219,221-223,327-330
+ src/review/scoped-lint.ts                               |   86.36 |   90.12 | 62-75,142-147,239-242
+ src/review/semantic-debate.ts                           |  100.00 |   88.89 | 180-207,209-211
+ src/review/semantic-evidence.ts                         |  100.00 |   97.40 | 110-111
+ src/review/semantic-helpers.ts                          |  100.00 |   98.78 | 
+ src/review/semantic.ts                                  |   83.33 |   89.96 | 165-168,183-190,195-202,211-222,231-232,234-235,265-268,271-275,304-308
+ src/review/severity.ts                                  |  100.00 |  100.00 | 
+ src/review/truncation.ts                                |  100.00 |  100.00 | 
+ src/review/typecheck-parsing/index.ts                   |  100.00 |  100.00 | 
+ src/review/typecheck-parsing/parse.ts                   |   80.00 |   93.75 | 23-24
+ src/review/typecheck-parsing/strategies/text-block.ts   |   50.00 |   44.12 | 13-19,23-35,41-44,57-59,62,75-83
+ src/review/typecheck-parsing/strategies/tsc.ts          |  100.00 |  100.00 | 
+ src/review/types.ts                                     |  100.00 |  100.00 | 
+ src/review/verdict-writer.ts                            |  100.00 |  100.00 | 
+ src/routing/classify.ts                                 |  100.00 |  100.00 | 
+ src/routing/index.ts                                    |  100.00 |  100.00 | 
+ src/routing/router.ts                                   |   93.33 |   61.90 | 119,172-183,185,190-193,196-215,218-234,236-239,241-247,249,251-258,261,275-280,319,383-387
+ src/routing/strategies/llm-cache.ts                     |   80.00 |   71.43 | 36-39
+ src/routing/strategies/llm-parsing.ts                   |   83.33 |   78.57 | 98-99,101,103-106,108-111,113-115
+ src/routing/strategies/llm.ts                           |    0.00 |   55.56 | 61-68,72-83
+ src/runtime/agent-middleware.ts                         |  100.00 |  100.00 | 
+ src/runtime/agent-stream-events.ts                      |   75.00 |  100.00 | 
+ src/runtime/cost-aggregator.ts                          |   78.57 |   96.67 | 100,103,106,109,123-124
+ src/runtime/dispatch-events.ts                          |   92.31 |  100.00 | 
+ src/runtime/index.ts                                    |   66.67 |   95.36 | 178-182,221-222
+ src/runtime/middleware/agent-stream-logging.ts          |  100.00 |   88.51 | 70-79
+ src/runtime/middleware/audit.ts                         |  100.00 |  100.00 | 
+ src/runtime/middleware/cancellation.ts                  |  100.00 |  100.00 | 
+ src/runtime/middleware/cost.ts                          |  100.00 |  100.00 | 
+ src/runtime/middleware/idle-watchdog.ts                 |   94.12 |   97.08 | 113-120
+ src/runtime/middleware/index.ts                         |  100.00 |  100.00 | 
+ src/runtime/middleware/logging.ts                       |  100.00 |  100.00 | 
+ src/runtime/middleware/review-audit.ts                  |  100.00 |  100.00 | 
+ src/runtime/no-op-interaction-handler.ts                |  100.00 |  100.00 | 
+ src/runtime/packages.ts                                 |   83.33 |   97.37 | 
+ src/runtime/paths.ts                                    |  100.00 |   98.92 | 
+ src/runtime/prompt-auditor.ts                           |   95.00 |  100.00 | 
+ src/runtime/session-name.ts                             |  100.00 |  100.00 | 
+ src/runtime/session-role.ts                             |  100.00 |  100.00 | 
+ src/runtime/session-run-hop.ts                          |  100.00 |   68.42 | 57-66,89-108
+ src/session/index.ts                                    |  100.00 |  100.00 | 
+ src/session/manager-deps.ts                             |   57.14 |   54.84 | 18-19,24-25,41-50
+ src/session/manager-run.ts                              |  100.00 |   88.29 | 70-74,137-144
+ src/session/manager-sweep.ts                            |  100.00 |  100.00 | 
+ src/session/manager.ts                                  |   93.48 |   99.78 | 
+ src/session/naming.ts                                   |  100.00 |  100.00 | 
+ src/session/scratch-purge.ts                            |   55.56 |   92.16 | 23-24,33-34
+ src/session/scratch-writer.ts                           |   93.33 |   94.44 | 141
+ src/session/session-keeper.ts                           |   70.00 |   95.79 | 175-178
+ src/session/types.ts                                    |  100.00 |  100.00 | 
+ src/tdd/cleanup.ts                                      |    0.00 |   14.71 | 35-54,76-113
+ src/tdd/index.ts                                        |  100.00 |  100.00 | 
+ src/tdd/isolation.ts                                    |  100.00 |   98.41 | 
+ src/tdd/rollback.ts                                     |    0.00 |   12.12 | 11-39
+ src/tdd/verdict-reader.ts                               |  100.00 |   90.32 | 171,203-207,238-239,241-250
+ src/tdd/verdict.ts                                      |  100.00 |  100.00 | 
+ src/test-runners/ac-parser.ts                           |  100.00 |   87.76 | 73-77
+ src/test-runners/classifier.ts                          |  100.00 |  100.00 | 
+ src/test-runners/conventions.ts                         |  100.00 |   97.89 | 68-69
+ src/test-runners/detect.ts                              |  100.00 |  100.00 | 
+ src/test-runners/detect/cache.ts                        |  100.00 |  100.00 | 
+ src/test-runners/detect/directory-scan.ts               |  100.00 |   98.36 | 
+ src/test-runners/detect/extglob.ts                      |  100.00 |  100.00 | 
+ src/test-runners/detect/file-scan.ts                    |  100.00 |  100.00 | 
+ src/test-runners/detect/framework-configs-deps.ts       |   50.00 |  100.00 | 
+ src/test-runners/detect/framework-configs-python.ts     |  100.00 |   62.30 | 35,51-53,55,60,64,79,81,84-89,92-97,99-100
+ src/test-runners/detect/framework-configs.ts            |   96.30 |   86.24 | 58,93,120-122,145,163,168,184,188,220-221,226,230,246-249,251-256,298-300,302,322
+ src/test-runners/detect/framework-defaults.ts           |  100.00 |   95.74 | 102,118,120
+ src/test-runners/detect/index.ts                        |   85.71 |   85.71 | 51,112-114,116-119,121-128
+ src/test-runners/detect/workspace.ts                    |   63.64 |   39.09 | 31-47,55-66,74-88,96-105,117-119,129,131-134,160-164
+ src/test-runners/detector.ts                            |  100.00 |   96.77 | 
+ src/test-runners/index.ts                               |  100.00 |  100.00 | 
+ src/test-runners/parser.ts                              |   60.00 |   73.47 | 37-39,49,264-286,304-324,431-447
+ src/test-runners/resolver.ts                            |   75.00 |   72.03 | 98,150-152,154-160,242-263
+ src/tui/components/AgentPanel.tsx                       |   80.00 |  100.00 | 
+ src/tui/components/CostOverlay.tsx                      |  100.00 |  100.00 | 
+ src/tui/components/HelpOverlay.tsx                      |  100.00 |  100.00 | 
+ src/tui/components/StatusBar.tsx                        |  100.00 |  100.00 | 
+ src/tui/components/StoriesPanel.tsx                     |  100.00 |   94.57 | 92-96
+ src/tui/hooks/useLayout.ts                              |    0.00 |   20.00 | 54-71,118-135
+ src/tui/types.ts                                        |  100.00 |  100.00 | 
+ src/utils/bun-deps.ts                                   |   50.00 |   83.33 | 30,35,40
+ src/utils/command-argv.ts                               |  100.00 |   55.77 | 24-30,34-49
+ src/utils/diff-files.ts                                 |  100.00 |  100.00 | 
+ src/utils/errors.ts                                     |  100.00 |  100.00 | 
+ src/utils/feature-name.ts                               |  100.00 |   71.43 | 6,10,14
+ src/utils/git.ts                                        |   72.22 |   69.88 | 26-32,53-56,66,95,106-110,123-144,168-176
+ src/utils/gitignore.ts                                  |  100.00 |  100.00 | 
+ src/utils/json-file.ts                                  |  100.00 |   55.56 | 34-39,64-69
+ src/utils/llm-json.ts                                   |  100.00 |   94.12 | 57-58,126
+ src/utils/log-test-output.ts                            |  100.00 |  100.00 | 
+ src/utils/nax-project-root.ts                           |  100.00 |   88.24 | 27-28
+ src/utils/path-filters.ts                               |   96.00 |   95.00 | 78-79,81-82,94-96
+ src/utils/path-security.ts                              |  100.00 |  100.00 | 
+ src/utils/paths.ts                                      |  100.00 |  100.00 | 
+ src/utils/process-kill.ts                               |  100.00 |  100.00 | 
+ src/utils/queue-writer.ts                               |  100.00 |   85.00 | 42-44
+ src/verification/crash-detector.ts                      |  100.00 |  100.00 | 
+ src/verification/executor.ts                            |    0.00 |    6.06 | 23-27,39-49,66-167,174,181-182,189,196-197,204-208,215-240
+ src/verification/failure-records.ts                     |  100.00 |   92.86 | 11
+ src/verification/index.ts                               |  100.00 |  100.00 | 
+ src/verification/orchestrator-types.ts                  |  100.00 |  100.00 | 
+ src/verification/orchestrator.ts                        |  100.00 |  100.00 | 
+ src/verification/rectification-loop.ts                  |   95.65 |   92.82 | 100,235-245,292-296,318,360-363,452,454-459
+ src/verification/rectification.ts                       |  100.00 |   92.86 | 
+ src/verification/runners.ts                             |    0.00 |   10.28 | 16-33,38-105,110,118,123-128,142-143
+ src/verification/shared-rectification-loop.ts           |   66.67 |   42.55 | 88-114
+ src/verification/smart-runner.ts                        |  100.00 |   99.45 | 
+ src/verification/strategies/acceptance.ts               |   25.00 |   88.89 | 53-57,108-112
+ src/verification/strategies/regression.ts               |   50.00 |   98.33 | 
+ src/verification/strategies/scoped.ts                   |   71.43 |  100.00 | 
+ src/verification/types.ts                               |  100.00 |  100.00 | 
+ src/version.ts                                          |  100.00 |   89.47 | 32-33
+ src/worktree/dependencies.ts                            |  100.00 |   93.48 | 89,107-111
+ src/worktree/manager.ts                                 |   62.50 |   49.24 | 16-54,127-130,134-139,141-142,172-173,180-181,185-190,192-194,196-201,203-232
+ src/worktree/merge.ts                                   |   72.73 |   53.62 | 23-84,262-308
+ src/worktree/types.ts                                   |  100.00 |  100.00 | 
+ test/helpers/call-context.ts                            |  100.00 |  100.00 | 
+ test/helpers/deps.ts                                    |  100.00 |  100.00 | 
+ test/helpers/env.ts                                     |  100.00 |  100.00 | 
+ test/helpers/fake-agent-manager.ts                      |   19.05 |   75.68 | 41-51,141-154,159-161,163-164,170-172,175-176
+ test/helpers/fs.ts                                      |  100.00 |   90.00 | 41
+ test/helpers/index.ts                                   |  100.00 |  100.00 | 
+ test/helpers/link-with-costs.ts                         |    0.00 |    0.00 | 
+ test/helpers/mock-agent-adapter.ts                      |   10.00 |  100.00 | 
+ test/helpers/mock-agent-manager.ts                      |   54.29 |  100.00 | 
+ test/helpers/mock-logger.ts                             |   75.00 |   94.12 | 
+ test/helpers/mock-nax-config.ts                         |  100.00 |  100.00 | 
+ test/helpers/mock-session-manager.ts                    |   23.53 |   80.56 | 26-32
+ test/helpers/mock-story.ts                              |   50.00 |   93.10 | 19
+ test/helpers/plan-inputs.ts                             |  100.00 |  100.00 | 
+ test/helpers/review-audit.ts                            |   57.14 |   80.25 | 68-75,92-99
+ test/helpers/runtime.ts                                 |   88.89 |   81.48 | 109-118
+ test/helpers/temp.ts                                    |  100.00 |  100.00 | 
+ test/helpers/timeout.ts                                 |   60.00 |   45.83 | 17-22,36-40,57
+ test/preload.ts                                         |   75.00 |  100.00 | 
+ test/unit/verification/_rectification-debate-helpers.ts |   66.67 |   81.82 | 86-101
+---------------------------------------------------------|---------|---------|-------------------
+
+ 9172 pass
+ 15 skip
+ 0 fail
+ 22 snapshots, 16633 expect() calls
+Ran 9187 tests across 654 files. [20.58s]

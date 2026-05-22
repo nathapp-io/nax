@@ -91,52 +91,29 @@ describe("rebuildForAgent — failure note injection", () => {
     expect(rebuilt.pushMarkdown).toContain("fail-quota");
   });
 
-  test("failure note includes prior agent id", async () => {
+  test("failure note includes prior and new agent id", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble(BASE_REQUEST);
-    const priorBundle = { ...original, agentId: "claude" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle, {
-      newAgentId: "codex",
-      failure: AVAILABILITY_FAILURE,
-    });
-
+    const rebuilt = orch.rebuildForAgent({ ...original, agentId: "claude" }, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
     expect(rebuilt.pushMarkdown).toContain("claude");
-  });
-
-  test("failure note includes new agent id", async () => {
-    const orch = new ContextOrchestrator([]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const priorBundle = { ...original, agentId: "claude" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle, {
-      newAgentId: "codex",
-      failure: AVAILABILITY_FAILURE,
-    });
-
     expect(rebuilt.pushMarkdown).toContain("codex");
   });
 
-  test("no failure note when failure is absent (plain re-render)", async () => {
+  test("no failure note when failure absent or no newAgentId; no rebuildInfo in both cases", async () => {
     const provider = makeProvider("p1", makeChunkResult());
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
 
-    const rebuilt = orch.rebuildForAgent(original);
+    // Plain re-render (no failure)
+    const rebuilt1 = orch.rebuildForAgent(original);
+    expect(rebuilt1.pushMarkdown).not.toContain("Agent swap");
 
-    expect(rebuilt.pushMarkdown).not.toContain("Agent swap");
-  });
-
-  test("failure without newAgentId produces no failure note and no rebuildInfo", async () => {
-    // The guard `if (failure && newAgentId)` requires both fields.
-    // Providing failure alone must not inject the chunk or populate rebuildInfo.
-    const orch = new ContextOrchestrator([]);
-    const original = await orch.assemble(BASE_REQUEST);
-
-    const rebuilt = orch.rebuildForAgent(original, { failure: AVAILABILITY_FAILURE });
-
-    expect(rebuilt.pushMarkdown).not.toContain("Agent swap");
-    expect(rebuilt.manifest.rebuildInfo).toBeUndefined();
+    // Failure but no newAgentId — guard requires both fields
+    const orch2 = new ContextOrchestrator([]);
+    const original2 = await orch2.assemble(BASE_REQUEST);
+    const rebuilt2 = orch2.rebuildForAgent(original2, { failure: AVAILABILITY_FAILURE });
+    expect(rebuilt2.pushMarkdown).not.toContain("Agent swap");
+    expect(rebuilt2.manifest.rebuildInfo).toBeUndefined();
   });
 });
 
@@ -203,23 +180,11 @@ describe("rebuildForAgent — agentId on bundle", () => {
     expect(rebuilt.agentId).toBe("codex");
   });
 
-  test("bundle.agentId defaults to claude when no newAgentId and no prior agentId", async () => {
+  test("bundle.agentId defaults to claude when no prior; uses prior.agentId when set", async () => {
     const orch = new ContextOrchestrator([]);
     const original = await orch.assemble(BASE_REQUEST);
-
-    const rebuilt = orch.rebuildForAgent(original);
-
-    expect(rebuilt.agentId).toBe("claude");
-  });
-
-  test("bundle.agentId uses prior.agentId when no newAgentId provided", async () => {
-    const orch = new ContextOrchestrator([]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const priorBundle = { ...original, agentId: "codex" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle);
-
-    expect(rebuilt.agentId).toBe("codex");
+    expect(orch.rebuildForAgent(original).agentId).toBe("claude");
+    expect(orch.rebuildForAgent({ ...original, agentId: "codex" }).agentId).toBe("codex");
   });
 });
 
@@ -331,55 +296,18 @@ describe("rebuildForAgent — #508-M2 session-chunk re-neutralization on swap", 
     expect(rebuilt.pushMarkdown).toContain("a shell command");
   });
 
-  test("session chunk is not re-neutralized on same-agent rebuild (claude → claude)", () => {
+  test("no re-neutralization on same-agent rebuild, non-session chunks, or plain re-render", () => {
     const orch = new ContextOrchestrator([]);
     const prior = makeSessionBundle("I used the Read tool to inspect.", "claude");
-    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "claude", failure: AVAILABILITY_FAILURE });
-    expect(rebuilt.pushMarkdown).toContain("the Read tool");
-  });
 
-  test("non-session (feature) chunks are not touched by re-neutralization", () => {
-    const orch = new ContextOrchestrator([]);
-    const prior: ContextBundle = {
-      pushMarkdown: "",
-      pullTools: [],
-      digest: "",
-      agentId: "claude",
-      chunks: [
-        {
-          id: "feature:abc",
-          providerId: "feature-context",
-          kind: "feature" as const,
-          scope: "feature" as const,
-          role: ["all"],
-          content: "Feature: use the Read tool pattern.",
-          tokens: 10,
-          score: 0.8,
-        },
-      ],
-      manifest: {
-        requestId: "req-x",
-        stage: "tdd-implementer",
-        totalBudgetTokens: 8_000,
-        usedTokens: 50,
-        includedChunks: ["feature:abc"],
-        excludedChunks: [],
-        floorItems: [],
-        digestTokens: 5,
-        buildMs: 1,
-      },
-    };
-    const rebuilt = orch.rebuildForAgent(prior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
-    // Feature chunks are not session history — must not be altered
-    expect(rebuilt.pushMarkdown).toContain("the Read tool");
-  });
+    // Same-agent rebuild
+    expect(orch.rebuildForAgent(prior, { newAgentId: "claude", failure: AVAILABILITY_FAILURE }).pushMarkdown).toContain("the Read tool");
+    // Plain re-render (no newAgentId)
+    expect(orch.rebuildForAgent(prior).pushMarkdown).toContain("the Read tool");
 
-  test("no re-neutralization when no newAgentId (plain re-render)", () => {
-    const orch = new ContextOrchestrator([]);
-    const prior = makeSessionBundle("I used the Read tool to inspect.", "claude");
-    const rebuilt = orch.rebuildForAgent(prior);
-    // no newAgentId → no swap → no re-neutralization
-    expect(rebuilt.pushMarkdown).toContain("the Read tool");
+    // Non-session (feature) chunks not altered
+    const featurePrior: ContextBundle = { pushMarkdown: "", pullTools: [], digest: "", agentId: "claude", chunks: [{ id: "feature:abc", providerId: "feature-context", kind: "feature" as const, scope: "feature" as const, role: ["all"], content: "Feature: use the Read tool pattern.", tokens: 10, score: 0.8 }], manifest: { requestId: "req-x", stage: "tdd-implementer", totalBudgetTokens: 8_000, usedTokens: 50, includedChunks: ["feature:abc"], excludedChunks: [], floorItems: [], digestTokens: 5, buildMs: 1 } };
+    expect(orch.rebuildForAgent(featurePrior, { newAgentId: "codex", failure: AVAILABILITY_FAILURE }).pushMarkdown).toContain("the Read tool");
   });
 });
 
@@ -388,55 +316,24 @@ describe("rebuildForAgent — #508-M2 session-chunk re-neutralization on swap", 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("rebuildForAgent — #508-M5 rebuildInfo chunk ID correlation", () => {
-  test("rebuildInfo contains priorChunkIds on agent-swap rebuild", async () => {
+  test("rebuildInfo chunk IDs: priorChunkIds, newChunkIds, chunkIdMap on agent-swap; undefined on plain re-render", async () => {
     const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
     const priorBundle = { ...original, agentId: "claude" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle, {
-      newAgentId: "codex",
-      failure: AVAILABILITY_FAILURE,
-    });
+    const rebuilt = orch.rebuildForAgent(priorBundle, { newAgentId: "codex", failure: AVAILABILITY_FAILURE });
 
     expect(rebuilt.manifest.rebuildInfo?.priorChunkIds).toEqual(["chunk:abc"]);
-  });
-
-  test("rebuildInfo contains newChunkIds including failure-note chunk", async () => {
-    const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
-    const orch = new ContextOrchestrator([provider]);
-    const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
-    const priorBundle = { ...original, agentId: "claude" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle, {
-      newAgentId: "codex",
-      failure: AVAILABILITY_FAILURE,
-    });
 
     const newIds = rebuilt.manifest.rebuildInfo?.newChunkIds ?? [];
     expect(newIds).toContain("chunk:abc");
-    // failure-note chunk is added on swap → newChunkIds has more than priorChunkIds
     expect(newIds.length).toBeGreaterThan(1);
-  });
-
-  test("rebuildInfo contains prior→new chunk ID correlation map", async () => {
-    const provider = makeProvider("p1", makeChunkResult("chunk:abc"));
-    const orch = new ContextOrchestrator([provider]);
-    const original = await orch.assemble({ ...BASE_REQUEST, providerIds: ["p1"] });
-    const priorBundle = { ...original, agentId: "claude" };
-
-    const rebuilt = orch.rebuildForAgent(priorBundle, {
-      newAgentId: "codex",
-      failure: AVAILABILITY_FAILURE,
-    });
 
     expect(rebuilt.manifest.rebuildInfo?.chunkIdMap).toEqual([{ priorChunkId: "chunk:abc", newChunkId: "chunk:abc" }]);
-  });
 
-  test("rebuildInfo has no chunk ID fields when no failure (plain re-render)", async () => {
-    const orch = new ContextOrchestrator([]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent(original);
-    expect(rebuilt.manifest.rebuildInfo).toBeUndefined();
+    // Plain re-render (no failure) → undefined
+    const orch2 = new ContextOrchestrator([]);
+    const original2 = await orch2.assemble(BASE_REQUEST);
+    expect(orch2.rebuildForAgent(original2).manifest.rebuildInfo).toBeUndefined();
   });
 });

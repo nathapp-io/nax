@@ -10,9 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -103,72 +102,36 @@ describe("countProgress", () => {
     expect(progress.pending).toBe(2);
   });
 
-  test("all passed → pending is 0", () => {
-    const prd = makePrd([makeStory("US-001", "passed"), makeStory("US-002", "passed")]);
-    const progress = countProgress(prd);
+  test("all-same status and empty PRD give expected counts", () => {
+    const allPassed = countProgress(makePrd([makeStory("US-001", "passed"), makeStory("US-002", "passed")]));
+    expect(allPassed.total).toBe(2);
+    expect(allPassed.passed).toBe(2);
+    expect(allPassed.failed + allPassed.paused + allPassed.blocked + allPassed.pending).toBe(0);
 
-    expect(progress.total).toBe(2);
-    expect(progress.passed).toBe(2);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(0);
+    const allPending = countProgress(makePrd([makeStory("US-001", "pending"), makeStory("US-002", "pending")]));
+    expect(allPending.total).toBe(2);
+    expect(allPending.pending).toBe(2);
+    expect(allPending.passed + allPending.failed + allPending.paused + allPending.blocked).toBe(0);
+
+    const empty = countProgress(makePrd([]));
+    expect(empty.total).toBe(0);
+    expect(empty.passed + empty.failed + empty.paused + empty.blocked + empty.pending).toBe(0);
   });
 
-  test("all pending → passed/failed/paused/blocked are 0", () => {
-    const prd = makePrd([makeStory("US-001", "pending"), makeStory("US-002", "pending")]);
-    const progress = countProgress(prd);
-
-    expect(progress.total).toBe(2);
-    expect(progress.passed).toBe(0);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(2);
-  });
-
-  test("empty PRD → all zeros", () => {
-    const prd = makePrd([]);
-    const progress = countProgress(prd);
-
-    expect(progress.total).toBe(0);
-    expect(progress.passed).toBe(0);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(0);
-  });
-
-  test("pending = total - passed - failed - paused - blocked", () => {
+  test("pending = total - passed - failed - paused - blocked; skipped and in-progress count as pending", () => {
     const stories = [
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-      makeStory("US-003", "paused"),
-      makeStory("US-004", "blocked"),
-      makeStory("US-005", "pending"),
-      makeStory("US-006", "in-progress"),
+      makeStory("US-001", "passed"), makeStory("US-002", "failed"), makeStory("US-003", "paused"),
+      makeStory("US-004", "blocked"), makeStory("US-005", "pending"), makeStory("US-006", "in-progress"),
       makeStory("US-007", "skipped"),
     ];
-    const prd = makePrd(stories);
-    const p = countProgress(prd);
-
+    const p = countProgress(makePrd(stories));
     expect(p.pending).toBe(p.total - p.passed - p.failed - p.paused - p.blocked);
-  });
 
-  test("skipped stories count as pending (not a tracked terminal state)", () => {
-    const prd = makePrd([makeStory("US-001", "skipped")]);
-    const p = countProgress(prd);
-
-    expect(p.total).toBe(1);
-    expect(p.pending).toBe(1);
-    expect(p.passed).toBe(0);
-  });
-
-  test("in-progress stories count toward pending", () => {
-    const prd = makePrd([makeStory("US-001", "in-progress")]);
-    const p = countProgress(prd);
-
-    expect(p.pending).toBe(1);
+    const skipped = countProgress(makePrd([makeStory("US-001", "skipped")]));
+    expect(skipped.total).toBe(1);
+    expect(skipped.pending).toBe(1);
+    expect(skipped.passed).toBe(0);
+    expect(countProgress(makePrd([makeStory("US-001", "in-progress")])).pending).toBe(1);
   });
 });
 
@@ -177,22 +140,10 @@ describe("countProgress", () => {
 // ============================================================================
 
 describe("buildStatusSnapshot", () => {
-  test("builds valid NaxStatusFile with version 1", () => {
-    const snapshot = buildStatusSnapshot(makeRunState());
-    expect(snapshot.version).toBe(1);
-  });
-
-  test("run metadata matches run state", () => {
-    const state = makeRunState({
-      runId: "run-test-id",
-      feature: "my-feature",
-      startedAt: "2026-02-25T10:00:00.000Z",
-      runStatus: "running",
-      dryRun: true,
-      pid: 12345,
-    });
+  test("version 1; run metadata (id, feature, startedAt, status, dryRun, pid) matches state", () => {
+    expect(buildStatusSnapshot(makeRunState()).version).toBe(1);
+    const state = makeRunState({ runId: "run-test-id", feature: "my-feature", startedAt: "2026-02-25T10:00:00.000Z", runStatus: "running", dryRun: true, pid: 12345 });
     const snapshot = buildStatusSnapshot(state);
-
     expect(snapshot.run.id).toBe("run-test-id");
     expect(snapshot.run.feature).toBe("my-feature");
     expect(snapshot.run.startedAt).toBe("2026-02-25T10:00:00.000Z");
@@ -201,18 +152,14 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.run.pid).toBe(12345);
   });
 
-  test("PID is included for crash detection", () => {
+  test("PID is a number, uses provided value, defaults to process.pid", () => {
     const testPid = 99999;
-    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
+    const withPid = buildStatusSnapshot(makeRunState({ pid: testPid }));
+    expect(withPid.run.pid).toBe(testPid);
+    expect(typeof withPid.run.pid).toBe("number");
 
-    expect(snapshot.run.pid).toBe(testPid);
-    expect(typeof snapshot.run.pid).toBe("number");
-  });
-
-  test("PID defaults to process.pid when not overridden", () => {
-    const snapshot = buildStatusSnapshot(makeRunState());
-
-    expect(snapshot.run.pid).toBe(process.pid);
+    const defaultPid = buildStatusSnapshot(makeRunState());
+    expect(defaultPid.run.pid).toBe(process.pid);
   });
 
   test("progress is derived from PRD stories", () => {
@@ -232,14 +179,9 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.cost.limit).toBe(10.0);
   });
 
-  test("cost limit is null when not set", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ costLimit: null }));
-    expect(snapshot.cost.limit).toBeNull();
-  });
-
-  test("current is null when no story active", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ currentStory: null }));
-    expect(snapshot.current).toBeNull();
+  test("cost limit is null when not set and current is null when no story active", () => {
+    expect(buildStatusSnapshot(makeRunState({ costLimit: null })).cost.limit).toBeNull();
+    expect(buildStatusSnapshot(makeRunState({ currentStory: null })).current).toBeNull();
   });
 
   test("current story info populated when story is active", () => {
@@ -299,24 +241,17 @@ describe("writeStatusFile", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  test("writes valid JSON to the target path", async () => {
+  test("writes valid JSON to target path; no .tmp leftover; PID persisted", async () => {
     const outPath = join(tmpDir, "status.json");
-    const snapshot = buildStatusSnapshot(makeRunState());
-
+    const testPid = 54321;
+    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
     await writeStatusFile(outPath, snapshot);
-
     expect(existsSync(outPath)).toBe(true);
-    const raw = readFileSync(outPath, "utf8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
+    expect(existsSync(`${outPath}.tmp`)).toBe(false);
+    const parsed = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
     expect(parsed.version).toBe(1);
     expect(parsed.run.id).toBe(snapshot.run.id);
-  });
-
-  test("does NOT leave a .tmp file after successful write", async () => {
-    const outPath = join(tmpDir, "status.json");
-    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState()));
-
-    expect(existsSync(`${outPath}.tmp`)).toBe(false);
+    expect(parsed.run.pid).toBe(testPid);
   });
 
   test("atomic rename: final file appears complete", async () => {
@@ -371,16 +306,6 @@ describe("writeStatusFile", () => {
     expect(raw).toContain('  "version"');
   });
 
-  test("PID is persisted to status file for crash detection", async () => {
-    const outPath = join(tmpDir, "status.json");
-    const testPid = 54321;
-    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
-
-    await writeStatusFile(outPath, snapshot);
-
-    const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
-    expect(content.run.pid).toBe(testPid);
-  });
 });
 
 // ============================================================================
@@ -388,55 +313,22 @@ describe("writeStatusFile", () => {
 // ============================================================================
 
 describe("PostRunStatus type hierarchy", () => {
-  test("AcceptancePhaseStatus accepts all valid status values", () => {
-    const statuses: AcceptancePhaseStatus["status"][] = ["not-run", "running", "passed", "failed"];
-    for (const status of statuses) {
-      const s: AcceptancePhaseStatus = { status };
-      expect(s.status).toBe(status);
+  test("AcceptancePhaseStatus/RegressionPhaseStatus/PostRunStatus: valid statuses + optional fields + required fields", () => {
+    for (const status of ["not-run", "running", "passed", "failed"] as AcceptancePhaseStatus["status"][]) {
+      expect(({ status } as AcceptancePhaseStatus).status).toBe(status);
+      expect(({ status } as RegressionPhaseStatus).status).toBe(status);
     }
-  });
-
-  test("AcceptancePhaseStatus optional fields are assignable", () => {
-    const s: AcceptancePhaseStatus = {
-      status: "failed",
-      lastRunAt: "2026-04-04T10:00:00.000Z",
-      retries: 2,
-      failedACs: ["AC-1", "AC-2"],
-    };
-    expect(s.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
-    expect(s.retries).toBe(2);
-    expect(s.failedACs).toEqual(["AC-1", "AC-2"]);
-  });
-
-  test("RegressionPhaseStatus accepts all valid status values", () => {
-    const statuses: RegressionPhaseStatus["status"][] = ["not-run", "running", "passed", "failed"];
-    for (const status of statuses) {
-      const s: RegressionPhaseStatus = { status };
-      expect(s.status).toBe(status);
-    }
-  });
-
-  test("RegressionPhaseStatus optional fields are assignable", () => {
-    const s: RegressionPhaseStatus = {
-      status: "failed",
-      lastRunAt: "2026-04-04T10:00:00.000Z",
-      retries: 1,
-      failedTests: ["test-a", "test-b"],
-      affectedStories: ["US-001", "US-002"],
-    };
-    expect(s.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
-    expect(s.retries).toBe(1);
-    expect(s.failedTests).toEqual(["test-a", "test-b"]);
-    expect(s.affectedStories).toEqual(["US-001", "US-002"]);
-  });
-
-  test("PostRunStatus has required acceptance and regression fields", () => {
-    const s: PostRunStatus = {
-      acceptance: { status: "passed" },
-      regression: { status: "not-run" },
-    };
-    expect(s.acceptance.status).toBe("passed");
-    expect(s.regression.status).toBe("not-run");
+    const acc: AcceptancePhaseStatus = { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 2, failedACs: ["AC-1", "AC-2"] };
+    expect(acc.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
+    expect(acc.retries).toBe(2);
+    expect(acc.failedACs).toEqual(["AC-1", "AC-2"]);
+    const reg: RegressionPhaseStatus = { status: "failed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 1, failedTests: ["test-a", "test-b"], affectedStories: ["US-001", "US-002"] };
+    expect(reg.retries).toBe(1);
+    expect(reg.failedTests).toEqual(["test-a", "test-b"]);
+    expect(reg.affectedStories).toEqual(["US-001", "US-002"]);
+    const postRun: PostRunStatus = { acceptance: { status: "passed" }, regression: { status: "not-run" } };
+    expect(postRun.acceptance.status).toBe("passed");
+    expect(postRun.regression.status).toBe("not-run");
   });
 });
 
@@ -445,41 +337,24 @@ describe("PostRunStatus type hierarchy", () => {
 // ============================================================================
 
 describe("buildStatusSnapshot postRun field", () => {
-  test("omits postRun from snapshot when RunStateSnapshot.postRun is undefined", () => {
-    const snapshot = buildStatusSnapshot(makeRunState());
-    expect(Object.prototype.hasOwnProperty.call(snapshot, "postRun")).toBe(false);
-  });
+  test("omitted when undefined; present with all fields intact when set", () => {
+    expect(Object.prototype.hasOwnProperty.call(buildStatusSnapshot(makeRunState()), "postRun")).toBe(false);
 
-  test("includes postRun in snapshot when RunStateSnapshot.postRun is present", () => {
     const postRun: PostRunStatus = {
       acceptance: { status: "passed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 0 },
       regression: { status: "not-run" },
     };
-    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
-    expect(snapshot.postRun).toBeDefined();
-    expect(snapshot.postRun?.acceptance.status).toBe("passed");
-    expect(snapshot.postRun?.regression.status).toBe("not-run");
-  });
+    const basic = buildStatusSnapshot(makeRunState({ postRun }));
+    expect(basic.postRun?.acceptance.status).toBe("passed");
+    expect(basic.postRun?.regression.status).toBe("not-run");
 
-  test("postRun is preserved with all fields intact in snapshot", () => {
-    const postRun: PostRunStatus = {
-      acceptance: {
-        status: "failed",
-        lastRunAt: "2026-04-04T11:00:00.000Z",
-        retries: 2,
-        failedACs: ["AC-1"],
-      },
-      regression: {
-        status: "failed",
-        lastRunAt: "2026-04-04T11:00:00.000Z",
-        retries: 1,
-        failedTests: ["test-x"],
-        affectedStories: ["US-001"],
-      },
+    const full: PostRunStatus = {
+      acceptance: { status: "failed", lastRunAt: "2026-04-04T11:00:00.000Z", retries: 2, failedACs: ["AC-1"] },
+      regression: { status: "failed", lastRunAt: "2026-04-04T11:00:00.000Z", retries: 1, failedTests: ["test-x"], affectedStories: ["US-001"] },
     };
-    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
-    expect(snapshot.postRun?.acceptance.failedACs).toEqual(["AC-1"]);
-    expect(snapshot.postRun?.regression.failedTests).toEqual(["test-x"]);
-    expect(snapshot.postRun?.regression.affectedStories).toEqual(["US-001"]);
+    const fullSnap = buildStatusSnapshot(makeRunState({ postRun: full }));
+    expect(fullSnap.postRun?.acceptance.failedACs).toEqual(["AC-1"]);
+    expect(fullSnap.postRun?.regression.failedTests).toEqual(["test-x"]);
+    expect(fullSnap.postRun?.regression.affectedStories).toEqual(["US-001"]);
   });
 });

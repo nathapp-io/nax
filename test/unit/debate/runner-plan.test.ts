@@ -253,10 +253,12 @@ describe("DebateRunner.runPlan() — plan mode uses callOp (one-shot path)", () 
 // ─── Extended plan mode tests (from session-plan) ────────────────────────────
 
 describe("DebateRunner.runPlan()", () => {
-  test("passes unique index to each plan debater callOp", async () => {
+  test("passes unique index and storyId to each plan debater callOp", async () => {
     const capturedIndices: number[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, _op, input: any) => {
+    const capturedStoryIds: string[] = [];
+    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, input: any) => {
       capturedIndices.push(input.index as number);
+      capturedStoryIds.push((callCtx as any).storyId ?? "");
       return { success: true, rebut: "ok" } as never;
     });
 
@@ -282,35 +284,7 @@ describe("DebateRunner.runPlan()", () => {
     });
 
     expect(capturedIndices.sort()).toEqual([0, 1, 2]);
-  });
-
-  test("passes storyId through to each plan debater callOp context", async () => {
-    const capturedStoryIds: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (callCtx, _op, _input) => {
-      capturedStoryIds.push((callCtx as any).storyId ?? "");
-      return { success: true, rebut: "ok" } as never;
-    });
-
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
-    const sm = makeSessionManager();
-    const agentManager = makeMockAgentManager();
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtxWithIds("config-ssot", agentManager, sm, config),
-      stage: "plan",
-      stageConfig: makePlanStageConfig(),
-      config,
-      workdir: "/tmp/workdir",
-      sessionManager: sm,
-    });
-
-    await runner.runPlan("task context", "output format", {
-      workdir: "/tmp/workdir",
-      feature: "config-ssot",
-      outputDir: "/tmp/out",
-    });
-
-    expect(capturedStoryIds).toEqual(["config-ssot", "config-ssot"]);
+    expect(capturedStoryIds).toEqual(["config-ssot", "config-ssot", "config-ssot"]);
   });
 
   test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
@@ -446,95 +420,49 @@ describe("DebateRunner.runPlan()", () => {
     expect(result.rounds).toBe(1);
   });
 
-  test("includes spec anchor in synthesis prompt when specContent is provided", async () => {
+  test("synthesis prompt includes spec anchor when specContent provided, omits when not", async () => {
     let capturedSynthesisPrompt = "";
-
+    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
     const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
+      runInSession: mock(async () => ({ output: "ok", tokenUsage: { inputTokens: 0, outputTokens: 0 }, internalRoundTrips: 0 })) as any,
       nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
     });
-
     const agentManager = makeMockAgentManager({
       completeFn: async (_agentName, prompt) => {
         capturedSynthesisPrompt = prompt;
         return { output: '{"userStories":[]}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
       },
     });
-
     _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
 
     const specContent = `# My Feature\n## Stories\n### US-001\n**AC:**\n- AC one\n- AC two`;
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtxWithIds("spec-anchor-test", agentManager, sm, config),
+    const makeRunner = (storyId: string) => new DebateRunner({
+      ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
       stage: "plan",
-      stageConfig: makePlanStageConfig({
-        resolver: { type: "synthesis", agent: "opencode" },
-      }),
+      stageConfig: makePlanStageConfig({ resolver: { type: "synthesis", agent: "opencode" } }),
       config,
       workdir: "/tmp/workdir",
       sessionManager: sm,
     });
 
-    await runner.runPlan("task context", "output format", {
+    await makeRunner("spec-anchor-test").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "spec-anchor-test",
       outputDir: "/tmp/out",
       specContent,
     });
-
     expect(capturedSynthesisPrompt).toContain("## Original Spec");
     expect(capturedSynthesisPrompt).toContain("AC one");
     expect(capturedSynthesisPrompt).toContain("AC two");
     expect(capturedSynthesisPrompt).toContain("acceptanceCriteria");
     expect(capturedSynthesisPrompt).toContain("suggestedCriteria");
-  });
 
-  test("synthesis prompt omits spec anchor when specContent is not provided", async () => {
-    let capturedSynthesisPrompt = "";
-
-    const sm = makeSessionManager({
-      runInSession: mock(async () => ({
-        output: "ok",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        internalRoundTrips: 0,
-      })) as any,
-      nameFor: mock((req: any) => `nax-${req?.role ?? "unknown"}`),
-    });
-
-    const agentManager = makeMockAgentManager({
-      completeFn: async (_agentName, prompt) => {
-        capturedSynthesisPrompt = prompt;
-        return { output: '{"userStories":[]}', tokenUsage: { inputTokens: 0, outputTokens: 0 }, estimatedCostUsd: 0 };
-      },
-    });
-
-    _debateSessionDeps.readFile = mock(async () => '{"userStories":[]}');
-
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtxWithIds("no-spec-anchor", agentManager, sm, config),
-      stage: "plan",
-      stageConfig: makePlanStageConfig({
-        resolver: { type: "synthesis", agent: "opencode" },
-      }),
-      config,
-      workdir: "/tmp/workdir",
-      sessionManager: sm,
-    });
-
-    await runner.runPlan("task context", "output format", {
+    capturedSynthesisPrompt = "";
+    await makeRunner("no-spec-anchor").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "no-spec-anchor",
       outputDir: "/tmp/out",
     });
-
     expect(capturedSynthesisPrompt).not.toContain("## Original Spec");
     expect(capturedSynthesisPrompt).not.toContain("suggestedCriteria");
   });
@@ -581,7 +509,7 @@ describe("DebateRunner.runPlan()", () => {
     await runPromise;
   });
 
-  test("prepends manifestSection to each debater prompt when provided", async () => {
+  test("prepends manifestSection to each debater prompt when provided, omits when not", async () => {
     const capturedPrompts: string[] = [];
     spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
       if (op?.name === "debate-plan") capturedPrompts.push(input.proposePrompt as string);
@@ -592,9 +520,8 @@ describe("DebateRunner.runPlan()", () => {
     const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
     const sm = makeSessionManager();
     const agentManager = makeMockAgentManager();
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtxWithIds("manifest-thread-test", agentManager, sm, config),
+    const makeRunner = (storyId: string) => new DebateRunner({
+      ctx: makeCallCtxWithIds(storyId, agentManager, sm, config),
       stage: "plan",
       stageConfig: makePlanStageConfig(),
       config,
@@ -602,47 +529,24 @@ describe("DebateRunner.runPlan()", () => {
       sessionManager: sm,
     });
 
-    await runner.runPlan("task context", "output format", {
+    await makeRunner("manifest-thread-test").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "manifest-thread-test",
       outputDir: "/tmp/out",
       manifestSection: "## Facts Manifest\n- F-001: some fact",
     });
-
     expect(capturedPrompts.length).toBeGreaterThan(0);
     for (const prompt of capturedPrompts) {
       expect(prompt).toContain("## Facts Manifest");
       expect(prompt).toContain("F-001: some fact");
     }
-  });
 
-  test("does not prepend manifest section when manifestSection is not provided", async () => {
-    const capturedPrompts: string[] = [];
-    spyOn(callModule, "callOp").mockImplementation(async (_ctx, op: any, input: any) => {
-      if (op?.name === "debate-plan") capturedPrompts.push(input.proposePrompt as string);
-      else return origCallOp(_ctx, op, input);
-      return { success: true, rebut: "ok" } as never;
-    });
-
-    const config = { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } } as unknown as NaxConfig;
-    const sm = makeSessionManager();
-    const agentManager = makeMockAgentManager();
-
-    const runner = new DebateRunner({
-      ctx: makeCallCtxWithIds("no-manifest-test", agentManager, sm, config),
-      stage: "plan",
-      stageConfig: makePlanStageConfig(),
-      config,
-      workdir: "/tmp/workdir",
-      sessionManager: sm,
-    });
-
-    await runner.runPlan("task context", "output format", {
+    capturedPrompts.length = 0;
+    await makeRunner("no-manifest-test").runPlan("task context", "output format", {
       workdir: "/tmp/workdir",
       feature: "no-manifest-test",
       outputDir: "/tmp/out",
     });
-
     expect(capturedPrompts.length).toBeGreaterThan(0);
     for (const prompt of capturedPrompts) {
       expect(prompt).not.toContain("## Facts Manifest");
@@ -1043,27 +947,13 @@ describe("runner-plan — postDebateVerifier and tag-expert rewrite", () => {
     return { runner, sm, verifierCalled };
   }
 
-  test("AC-5: invokes resolvePostDebateVerifier after selector resolution when configured", async () => {
-    const { runner, verifierCalled } = makeRunWithVerifier(async () => ({ outcome: "passed", costUsd: 0 }));
-
-    await runner.runPlan("task context", "output format", {
-      workdir: "/tmp/workdir",
-      feature: "verifier-test",
-      outputDir: "/tmp/out",
-    });
-
+  test("AC-5: invokes resolvePostDebateVerifier and propagates its outcome to DebateResult", async () => {
+    const { runner: passRunner, verifierCalled } = makeRunWithVerifier(async () => ({ outcome: "passed", costUsd: 0 }));
+    await passRunner.runPlan("task context", "output format", { workdir: "/tmp/workdir", feature: "verifier-test", outputDir: "/tmp/out" });
     expect(verifierCalled).toEqual(["plan-checklist"]);
-  });
 
-  test("AC-5: propagates verifier outcome to DebateResult", async () => {
-    const { runner } = makeRunWithVerifier(async () => ({ outcome: "failed", costUsd: 0 }));
-
-    const result = await runner.runPlan("task context", "output format", {
-      workdir: "/tmp/workdir",
-      feature: "verifier-test",
-      outputDir: "/tmp/out",
-    });
-
+    const { runner: failRunner } = makeRunWithVerifier(async () => ({ outcome: "failed", costUsd: 0 }));
+    const result = await failRunner.runPlan("task context", "output format", { workdir: "/tmp/workdir", feature: "verifier-test", outputDir: "/tmp/out" });
     expect(result.outcome).toBe("failed");
   });
 

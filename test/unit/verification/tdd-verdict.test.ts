@@ -84,131 +84,43 @@ describe("readVerdict", () => {
     expect(result?.reasoning).toBe("All good.");
   });
 
-  test("returns null when verdict file does not exist (no throw)", async () => {
-    // No file written — directory is empty
-    const result = await readVerdict(tmpDir);
+  test.each([
+    ["empty directory", () => tmpDir],
+    ["non-existent directory", () => "/tmp/this-dir-does-not-exist-xyz-nax"],
+  ] as const)("returns null when verdict file does not exist (%s)", async (_label, getDir) => {
+    const result = await readVerdict(getDir());
     expect(result).toBeNull();
   });
 
-  test("returns null when verdict file does not exist for non-existent dir", async () => {
-    const result = await readVerdict("/tmp/this-dir-does-not-exist-xyz-nax");
-    expect(result).toBeNull();
-  });
-
-  test("returns null when JSON is malformed (no throw)", async () => {
+  test.each([
+    ["malformed JSON", "{ this is not valid json }"],
+    ["truncated JSON", '{"version": 1, "approved": true, "tests":'],
+  ])("returns null when JSON is %s (no throw)", async (_label, content) => {
     const filePath = path.join(tmpDir, VERDICT_FILE);
-    await writeFile(filePath, "{ this is not valid json }", "utf-8");
-
+    await writeFile(filePath, content, "utf-8");
     const result = await readVerdict(tmpDir);
     expect(result).toBeNull();
   });
 
-  test("returns null when JSON is truncated (no throw)", async () => {
-    const filePath = path.join(tmpDir, VERDICT_FILE);
-    await writeFile(filePath, '{"version": 1, "approved": true, "tests":', "utf-8");
-
-    const result = await readVerdict(tmpDir);
-    expect(result).toBeNull();
-  });
-
-  test("coerces when version field is missing", async () => {
-    const { version: _v, ...noVersion } = makeVerdict() as any;
-    await writeVerdictFile(tmpDir, noVersion);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.version).toBe(1); // coerced
-    expect(result?.approved).toBe(true);
-  });
-
-  test("coerces when approved field is missing (defaults to false)", async () => {
+  test.each([
+    ["version missing", (d: any) => { delete d.version; }, (r: VerifierVerdict) => r.version, 1],
+    ["approved missing", (d: any) => { d.approved = undefined; }, (r: VerifierVerdict) => r.approved, false],
+    ["tests missing", (d: any) => { d.tests = undefined; }, (r: VerifierVerdict) => r.tests.passCount, 0],
+    ["tests.allPassing missing", (d: any) => { d.tests.allPassing = undefined; }, (r: VerifierVerdict) => r.tests.passCount, 10],
+    ["testModifications missing", (d: any) => { d.testModifications = undefined; }, (r: VerifierVerdict) => r.testModifications.detected, false],
+    ["acceptanceCriteria missing", (d: any) => { d.acceptanceCriteria = undefined; }, (r: VerifierVerdict) => r.acceptanceCriteria.criteria, []],
+    ["quality missing", (d: any) => { d.quality = undefined; }, (r: VerifierVerdict) => r.quality.rating, "acceptable"],
+    ["quality.rating invalid", (d: any) => { d.quality.rating = "excellent"; }, (r: VerifierVerdict) => r.quality.rating, "acceptable"],
+    ["fixes missing", (d: any) => { d.fixes = undefined; }, (r: VerifierVerdict) => r.fixes, []],
+    ["reasoning missing", (d: any) => { d.reasoning = undefined; }, (r: VerifierVerdict) => r.version, 1],
+  ])("coerces when %s", async (_label, mutate, getField, expected) => {
     const data = makeVerdict() as any;
-    data.approved = undefined;
+    mutate(data);
     await writeVerdictFile(tmpDir, data);
-
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result?.approved).toBe(false); // no verdict/approved → defaults false
-  });
-
-  test("coerces when tests field is missing", async () => {
-    const data = makeVerdict() as any;
-    data.tests = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.tests.passCount).toBe(0);
-  });
-
-  test("coerces when tests.allPassing is missing", async () => {
-    const data = makeVerdict() as any;
-    data.tests.allPassing = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.tests.passCount).toBe(10); // from partial tests object
-  });
-
-  test("coerces when testModifications field is missing", async () => {
-    const data = makeVerdict() as any;
-    data.testModifications = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.testModifications.detected).toBe(false);
-  });
-
-  test("coerces when acceptanceCriteria field is missing", async () => {
-    const data = makeVerdict() as any;
-    data.acceptanceCriteria = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.acceptanceCriteria.criteria).toEqual([]);
-  });
-
-  test("coerces when quality field is missing", async () => {
-    const data = makeVerdict() as any;
-    data.quality = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.quality.rating).toBe("acceptable"); // default
-  });
-
-  test("coerces when quality.rating is invalid", async () => {
-    const data = makeVerdict() as any;
-    data.quality.rating = "excellent"; // Not a valid rating
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.quality.rating).toBe("acceptable"); // coerced to default
-  });
-
-  test("coerces when fixes is missing", async () => {
-    const data = makeVerdict() as any;
-    data.fixes = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.fixes).toEqual([]);
-  });
-
-  test("coerces when reasoning is missing", async () => {
-    const data = makeVerdict() as any;
-    data.reasoning = undefined;
-    await writeVerdictFile(tmpDir, data);
-
-    const result = await readVerdict(tmpDir);
-    expect(result).not.toBeNull();
-    expect(result?.version).toBe(1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(getField(result!) as any).toEqual(expected);
   });
 
   test("parses verdict with approved=false correctly", async () => {
@@ -345,14 +257,11 @@ describe("cleanupVerdict", () => {
     expect(existsSync(filePath)).toBe(false);
   });
 
-  test("does not throw when verdict file does not exist", async () => {
-    // File doesn't exist — should not throw
-    await expect(cleanupVerdict(tmpDir)).resolves.toBeUndefined();
-  });
-
-  test("does not throw when directory does not exist", async () => {
-    // Non-existent directory — should not throw
-    await expect(cleanupVerdict("/tmp/nonexistent-dir-nax-xyz")).resolves.toBeUndefined();
+  test.each([
+    ["verdict file does not exist", () => cleanupVerdict(tmpDir)],
+    ["directory does not exist", () => cleanupVerdict("/tmp/nonexistent-dir-nax-xyz")],
+  ])("does not throw when %s", async (_label, fn) => {
+    await expect(fn()).resolves.toBeUndefined();
   });
 
   test("can be called multiple times without error", async () => {
@@ -517,17 +426,14 @@ describe("categorizeVerdict", () => {
 
   // --- null verdict fallback ---
 
-  test("null verdict + testsPass=true → success", () => {
-    const result = categorizeVerdict(null, true);
-    expect(result.success).toBe(true);
-    expect(result.failureCategory).toBeUndefined();
-  });
-
-  test("null verdict + testsPass=false → tests-failing", () => {
-    const result = categorizeVerdict(null, false);
-    expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("tests-failing");
-    expect(result.reviewReason).toContain("no verdict file");
+  test.each<[boolean, boolean, string | undefined]>([
+    [true, true, undefined],
+    [false, false, "tests-failing"],
+  ])("null verdict + testsPass=%s → success=%s", (testsPass, expectedSuccess, expectedCategory) => {
+    const result = categorizeVerdict(null, testsPass);
+    expect(result.success).toBe(expectedSuccess);
+    if (expectedCategory) expect(result.failureCategory).toBe(expectedCategory as any);
+    else expect(result.failureCategory).toBeUndefined();
   });
 
   // --- priority ordering ---

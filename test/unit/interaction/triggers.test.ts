@@ -51,29 +51,12 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isTriggerEnabled — no interaction plugin configured", () => {
-  test("returns false when cost-exceeded is not in triggers", () => {
-    const config = makeConfig({});
-    expect(isTriggerEnabled("cost-exceeded", config)).toBe(false);
-  });
-
-  test("returns false when cost-warning is not in triggers", () => {
-    const config = makeConfig({});
-    expect(isTriggerEnabled("cost-warning", config)).toBe(false);
-  });
-
-  test("returns false when trigger explicitly disabled", () => {
-    const config = makeConfig({ "cost-exceeded": { enabled: false } });
-    expect(isTriggerEnabled("cost-exceeded", config)).toBe(false);
-  });
-
-  test("returns true when trigger is boolean true", () => {
-    const config = makeConfig({ "cost-warning": true });
-    expect(isTriggerEnabled("cost-warning", config)).toBe(true);
-  });
-
-  test("returns true when trigger is enabled:true object", () => {
-    const config = makeConfig({ "cost-exceeded": { enabled: true } });
-    expect(isTriggerEnabled("cost-exceeded", config)).toBe(true);
+  test("false when missing or disabled; true when boolean true or enabled:true", () => {
+    expect(isTriggerEnabled("cost-exceeded", makeConfig({}))).toBe(false);
+    expect(isTriggerEnabled("cost-warning", makeConfig({}))).toBe(false);
+    expect(isTriggerEnabled("cost-exceeded", makeConfig({ "cost-exceeded": { enabled: false } }))).toBe(false);
+    expect(isTriggerEnabled("cost-warning", makeConfig({ "cost-warning": true }))).toBe(true);
+    expect(isTriggerEnabled("cost-exceeded", makeConfig({ "cost-exceeded": { enabled: true } }))).toBe(true);
   });
 });
 
@@ -83,34 +66,13 @@ describe("isTriggerEnabled — no interaction plugin configured", () => {
 
 describe("checkCostExceeded — abort response exits with cost-limit", () => {
   const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
+  const cfg = makeConfig({ "cost-exceeded": { enabled: true } });
 
-  test("returns false when trigger responds abort", async () => {
-    const config = makeConfig({ "cost-exceeded": { enabled: true } });
-    const chain = makeChain("abort");
-    const result = await checkCostExceeded(context, config, chain);
-    expect(result).toBe(false);
-  });
-
-  test("returns true (proceed past limit) when trigger responds skip", async () => {
-    const config = makeConfig({ "cost-exceeded": { enabled: true } });
-    const chain = makeChain("skip");
-    const result = await checkCostExceeded(context, config, chain);
-    expect(result).toBe(true);
-  });
-
-  test("returns true (proceed past limit) when trigger responds approve/continue", async () => {
-    const config = makeConfig({ "cost-exceeded": { enabled: true } });
-    const chain = makeChain("approve");
-    const result = await checkCostExceeded(context, config, chain);
-    expect(result).toBe(true);
-  });
-
-  test("returns true without prompting when trigger is disabled (today behavior preserved)", async () => {
-    const config = makeConfig({});
-    const chain = makeChain("abort");
-    const result = await checkCostExceeded(context, config, chain);
-    // Trigger disabled: checkCostExceeded returns true (caller decides to exit)
-    expect(result).toBe(true);
+  test("false on abort; true on skip/approve; true without prompting when disabled", async () => {
+    expect(await checkCostExceeded(context, cfg, makeChain("abort"))).toBe(false);
+    expect(await checkCostExceeded(context, cfg, makeChain("skip"))).toBe(true);
+    expect(await checkCostExceeded(context, cfg, makeChain("approve"))).toBe(true);
+    expect(await checkCostExceeded(context, makeConfig({}), makeChain("abort"))).toBe(true);
   });
 });
 
@@ -135,33 +97,13 @@ describe("US-004: unified-executor passes agentGetFn to preRunCtx", () => {
 
 describe("checkCostWarning — 80% threshold", () => {
   const context = { featureName: "feature-x", cost: 0.8, limit: 1.0 };
+  const cfg = makeConfig({ "cost-warning": { enabled: true } });
 
-  test("returns 'escalate' when trigger responds approve", async () => {
-    const config = makeConfig({ "cost-warning": { enabled: true } });
-    const chain = makeChain("approve");
-    const result = await checkCostWarning(context, config, chain);
-    expect(result).toBe("escalate");
-  });
-
-  test("returns 'continue' when trigger responds skip", async () => {
-    const config = makeConfig({ "cost-warning": { enabled: true } });
-    const chain = makeChain("skip");
-    const result = await checkCostWarning(context, config, chain);
-    expect(result).toBe("continue");
-  });
-
-  test("returns 'continue' when trigger responds abort", async () => {
-    const config = makeConfig({ "cost-warning": { enabled: true } });
-    const chain = makeChain("abort");
-    const result = await checkCostWarning(context, config, chain);
-    expect(result).toBe("continue");
-  });
-
-  test("returns 'continue' without prompting when trigger is disabled", async () => {
-    const config = makeConfig({});
-    const chain = makeChain("approve");
-    const result = await checkCostWarning(context, config, chain);
-    expect(result).toBe("continue");
+  test("escalate on approve; continue on skip/abort/disabled", async () => {
+    expect(await checkCostWarning(context, cfg, makeChain("approve"))).toBe("escalate");
+    expect(await checkCostWarning(context, cfg, makeChain("skip"))).toBe("continue");
+    expect(await checkCostWarning(context, cfg, makeChain("abort"))).toBe("continue");
+    expect(await checkCostWarning(context, makeConfig({}), makeChain("approve"))).toBe("continue");
   });
 });
 
@@ -181,33 +123,14 @@ describe("cost-warning threshold guard logic", () => {
     return totalCost >= costLimit * threshold;
   }
 
-  test("does not fire when cost is below 80% of limit", () => {
+  test("does not fire below threshold or when warningSent; fires at/above 80%; custom threshold; boolean default", () => {
     expect(shouldFireWarning(7.9, 10, { enabled: true }, false)).toBe(false);
-  });
-
-  test("fires when cost is exactly at 80% of limit", () => {
-    expect(shouldFireWarning(8.0, 10, { enabled: true }, false)).toBe(true);
-  });
-
-  test("fires when cost is between 80% and 100% of limit", () => {
-    expect(shouldFireWarning(9.5, 10, { enabled: true }, false)).toBe(true);
-  });
-
-  test("fires when cost is at 100% of limit", () => {
-    expect(shouldFireWarning(10.0, 10, { enabled: true }, false)).toBe(true);
-  });
-
-  test("does not fire a second time if warningSent is true", () => {
     expect(shouldFireWarning(9.0, 10, { enabled: true }, true)).toBe(false);
-  });
-
-  test("uses custom threshold when provided in trigger config", () => {
-    // threshold: 0.9 means fires at 90% not 80%
+    expect(shouldFireWarning(8.0, 10, { enabled: true }, false)).toBe(true);
+    expect(shouldFireWarning(9.5, 10, { enabled: true }, false)).toBe(true);
+    expect(shouldFireWarning(10.0, 10, { enabled: true }, false)).toBe(true);
     expect(shouldFireWarning(8.5, 10, { enabled: true, threshold: 0.9 }, false)).toBe(false);
     expect(shouldFireWarning(9.0, 10, { enabled: true, threshold: 0.9 }, false)).toBe(true);
-  });
-
-  test("defaults to 0.8 when trigger config is a boolean", () => {
     expect(shouldFireWarning(7.9, 10, true, false)).toBe(false);
     expect(shouldFireWarning(8.0, 10, true, false)).toBe(true);
   });
@@ -219,33 +142,12 @@ describe("cost-warning threshold guard logic", () => {
 
 describe("checkPreMerge — approve/abort responses", () => {
   const context = { featureName: "feature-x", totalStories: 3, cost: 0.5 };
+  const cfg = makeConfig({ "pre-merge": { enabled: true } });
 
-  test("returns false when trigger responds abort", async () => {
-    const config = makeConfig({ "pre-merge": { enabled: true } });
-    const chain = makeChain("abort");
-    const result = await checkPreMerge(context, config, chain);
-    expect(result).toBe(false);
-  });
-
-  test("returns true when trigger responds approve", async () => {
-    const config = makeConfig({ "pre-merge": { enabled: true } });
-    const chain = makeChain("approve");
-    const result = await checkPreMerge(context, config, chain);
-    expect(result).toBe(true);
-  });
-
-  test("returns false when trigger responds skip (non-approve = abort run)", async () => {
-    const config = makeConfig({ "pre-merge": { enabled: true } });
-    const chain = makeChain("skip");
-    const result = await checkPreMerge(context, config, chain);
-    expect(result).toBe(false);
-  });
-
-  test("returns true without prompting when trigger is disabled", async () => {
-    const config = makeConfig({});
-    const chain = makeChain("abort");
-    const result = await checkPreMerge(context, config, chain);
-    // Trigger disabled: checkPreMerge returns true (proceed normally)
-    expect(result).toBe(true);
+  test("false on abort/skip; true on approve; true without prompting when disabled", async () => {
+    expect(await checkPreMerge(context, cfg, makeChain("abort"))).toBe(false);
+    expect(await checkPreMerge(context, cfg, makeChain("skip"))).toBe(false);
+    expect(await checkPreMerge(context, cfg, makeChain("approve"))).toBe(true);
+    expect(await checkPreMerge(context, makeConfig({}), makeChain("abort"))).toBe(true);
   });
 });

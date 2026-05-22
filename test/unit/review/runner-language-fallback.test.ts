@@ -32,94 +32,52 @@ describe("resolveLanguageCommand — language command table", () => {
   });
 
   describe("Go language", () => {
-    test("returns 'go test ./...' for 'test' check when go binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/go");
-      const result = resolveLanguageCommand("go", "test", mockWhich);
-      expect(result).toBe("go test ./...");
+    test("returns correct command for test/lint/typecheck when go binaries are available", () => {
+      const scenarios = [
+        { check: "test", expected: "go test ./..." },
+        { check: "lint", expected: "golangci-lint run" },
+        { check: "typecheck", expected: "go vet ./..." },
+      ] as const;
+      for (const { check, expected } of scenarios) {
+        const mockWhich = mock((_name: string) => "/usr/local/bin/go");
+        expect(resolveLanguageCommand("go", check, mockWhich), check).toBe(expected);
+      }
     });
 
-    test("returns 'golangci-lint run' for 'lint' check when golangci-lint is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/golangci-lint");
-      const result = resolveLanguageCommand("go", "lint", mockWhich);
-      expect(result).toBe("golangci-lint run");
-    });
-
-    test("returns 'go vet ./...' for 'typecheck' check when go binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/go");
-      const result = resolveLanguageCommand("go", "typecheck", mockWhich);
-      expect(result).toBe("go vet ./...");
-    });
-
-    test("returns null for 'lint' check when golangci-lint binary is not found", () => {
+    test("returns null for lint and test when go/golangci-lint binary is not found", () => {
       const mockWhich = mock((_name: string) => null);
-      const result = resolveLanguageCommand("go", "lint", mockWhich);
-      expect(result).toBeNull();
-    });
-
-    test("returns null for 'test' check when go binary is not found", () => {
-      const mockWhich = mock((_name: string) => null);
-      const result = resolveLanguageCommand("go", "test", mockWhich);
-      expect(result).toBeNull();
+      expect(resolveLanguageCommand("go", "lint", mockWhich)).toBeNull();
+      expect(resolveLanguageCommand("go", "test", mockWhich)).toBeNull();
     });
   });
 
   describe("Rust language", () => {
-    test("returns 'cargo test' for 'test' check when cargo binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/cargo");
-      const result = resolveLanguageCommand("rust", "test", mockWhich);
-      expect(result).toBe("cargo test");
-    });
-
-    test("returns 'cargo clippy -- -D warnings' for 'lint' check when cargo is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/cargo");
-      const result = resolveLanguageCommand("rust", "lint", mockWhich);
-      expect(result).toBe("cargo clippy -- -D warnings");
-    });
-
-    test("returns null for 'test' check when cargo binary is not found", () => {
-      const mockWhich = mock((_name: string) => null);
-      const result = resolveLanguageCommand("rust", "test", mockWhich);
-      expect(result).toBeNull();
+    test("returns correct command when cargo is available; null when binary not found", () => {
+      const found = mock((_name: string) => "/usr/local/bin/cargo");
+      expect(resolveLanguageCommand("rust", "test", found), "test").toBe("cargo test");
+      expect(resolveLanguageCommand("rust", "lint", found), "lint").toBe("cargo clippy -- -D warnings");
+      const notFound = mock((_name: string) => null);
+      expect(resolveLanguageCommand("rust", "test", notFound), "test-null").toBeNull();
     });
   });
 
   describe("Python language", () => {
-    test("returns 'pytest' for 'test' check when pytest binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/pytest");
-      const result = resolveLanguageCommand("python", "test", mockWhich);
-      expect(result).toBe("pytest");
+    test("returns correct command for test/lint/typecheck when python binaries are available", () => {
+      const scenarios = [
+        { check: "test", expected: "pytest" },
+        { check: "lint", expected: "ruff check ." },
+        { check: "typecheck", expected: "mypy ." },
+      ] as const;
+      for (const { check, expected } of scenarios) {
+        const mockWhich = mock((_name: string) => "/usr/local/bin/something");
+        expect(resolveLanguageCommand("python", check, mockWhich), check).toBe(expected);
+      }
     });
 
-    test("returns 'ruff check .' for 'lint' check when ruff binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/ruff");
-      const result = resolveLanguageCommand("python", "lint", mockWhich);
-      expect(result).toBe("ruff check .");
-    });
-
-    test("returns 'mypy .' for 'typecheck' check when mypy binary is available", () => {
-      const mockWhich = mock((_name: string) => "/usr/local/bin/mypy");
-      const result = resolveLanguageCommand("python", "typecheck", mockWhich);
-      expect(result).toBe("mypy .");
-    });
-
-    test("returns null for 'lint' check when ruff binary is not found", () => {
-      const mockWhich = mock((_name: string) => null);
-      const result = resolveLanguageCommand("python", "lint", mockWhich);
-      expect(result).toBeNull();
-    });
-  });
-
-  describe("unsupported language", () => {
-    test("returns null for unsupported language (ruby)", () => {
-      const mockWhich = mock((_name: string) => "/usr/bin/ruby");
-      const result = resolveLanguageCommand("ruby", "test", mockWhich);
-      expect(result).toBeNull();
-    });
-
-    test("returns null for empty language string", () => {
-      const mockWhich = mock((_name: string) => "/usr/bin/something");
-      const result = resolveLanguageCommand("", "test", mockWhich);
-      expect(result).toBeNull();
+    test("returns null for missing binary, unsupported language, or empty language string", () => {
+      expect(resolveLanguageCommand("python", "lint", mock((_name: string) => null))).toBeNull();
+      expect(resolveLanguageCommand("ruby", "test", mock((_name: string) => "/usr/bin/ruby"))).toBeNull();
+      expect(resolveLanguageCommand("", "test", mock((_name: string) => "/usr/bin/something"))).toBeNull();
     });
   });
 });
@@ -160,64 +118,30 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
     })) as typeof _reviewRunnerDeps.file;
   }
 
-  // AC-1
-  test("AC-1: returns 'go test ./...' for test/go when go binary is available and no explicit config", async () => {
-    _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/go");
-    mockNoPackageJson();
-
-    const result = await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, {
-      language: "go",
-    });
-
-    expect(result).toBe("go test ./...");
+  // AC-1, AC-3, AC-4, AC-5
+  test("AC-1+3+4+5: returns language-appropriate command when binary is available", async () => {
+    const scenarios = [
+      { ac: "AC-1", check: "test", language: "go", binary: "/usr/local/bin/go", expected: "go test ./..." },
+      { ac: "AC-3", check: "test", language: "rust", binary: "/usr/local/bin/cargo", expected: "cargo test" },
+      { ac: "AC-4", check: "test", language: "python", binary: "/usr/local/bin/pytest", expected: "pytest" },
+      { ac: "AC-5", check: "typecheck", language: "go", binary: "/usr/local/bin/go", expected: "go vet ./..." },
+    ] as const;
+    for (const { ac, check, language, binary, expected } of scenarios) {
+      _reviewRunnerDeps.which = mock((_name: string) => binary);
+      mockNoPackageJson();
+      const result = await resolveCommand(check, emptyConfig, undefined, "/tmp/workdir", undefined, { language });
+      expect(result, ac).toBe(expected);
+    }
   });
 
   // AC-2
-  test("AC-2: returns null for lint/go when golangci-lint binary is not found via Bun.which()", async () => {
+  test("AC-2: returns null when binary not found; null when no profile provided (no regression)", async () => {
     _reviewRunnerDeps.which = mock((_name: string) => null);
     mockNoPackageJson();
+    expect(await resolveCommand("lint", emptyConfig, undefined, "/tmp/workdir", undefined, { language: "go" })).toBeNull();
 
-    const result = await resolveCommand("lint", emptyConfig, undefined, "/tmp/workdir", undefined, {
-      language: "go",
-    });
-
-    expect(result).toBeNull();
-  });
-
-  // AC-3
-  test("AC-3: returns 'cargo test' for test/rust when cargo binary is available", async () => {
-    _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/cargo");
     mockNoPackageJson();
-
-    const result = await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, {
-      language: "rust",
-    });
-
-    expect(result).toBe("cargo test");
-  });
-
-  // AC-4
-  test("AC-4: returns 'pytest' for test/python when pytest binary is available", async () => {
-    _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/pytest");
-    mockNoPackageJson();
-
-    const result = await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, {
-      language: "python",
-    });
-
-    expect(result).toBe("pytest");
-  });
-
-  // AC-5
-  test("AC-5: returns 'go vet ./...' for typecheck/go when go binary is available", async () => {
-    _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/go");
-    mockNoPackageJson();
-
-    const result = await resolveCommand("typecheck", emptyConfig, undefined, "/tmp/workdir", undefined, {
-      language: "go",
-    });
-
-    expect(result).toBe("go vet ./...");
+    expect(await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, undefined)).toBeNull();
   });
 
   // AC-6
@@ -277,12 +201,4 @@ describe("resolveCommand — language-aware fallback (US-004)", () => {
     expect(result).toBe("make test");
   });
 
-  // No profile provided — existing behavior unchanged (no regression)
-  test("returns null when no profile, no explicit config, and no package.json script (no regression)", async () => {
-    mockNoPackageJson();
-
-    const result = await resolveCommand("test", emptyConfig, undefined, "/tmp/workdir", undefined, undefined);
-
-    expect(result).toBeNull();
-  });
 });

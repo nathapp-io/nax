@@ -75,13 +75,9 @@ function sha256hex(content: string): string {
 
 describe("TestCoverageProvider", () => {
   describe("AC1: id and kind", () => {
-    test("id is 'test-coverage'", () => {
+    test("id and kind are both 'test-coverage'", () => {
       const provider = new TestCoverageProvider(STORY, CONFIG);
       expect(provider.id).toBe("test-coverage");
-    });
-
-    test("kind is 'test-coverage'", () => {
-      const provider = new TestCoverageProvider(STORY, CONFIG);
       expect(provider.kind).toBe("test-coverage");
     });
   });
@@ -105,18 +101,13 @@ describe("TestCoverageProvider", () => {
   });
 
   describe("AC4: short-circuits when packageDir is empty", () => {
-    test("returns empty chunks when request.packageDir is undefined", async () => {
+    test.each([
+      ["undefined packageDir", undefined as any],
+      ["empty string packageDir", ""],
+    ])("returns empty chunks when %s", async (_label, packageDir) => {
       const cfg = makeConfigWithTestCoverage();
       const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest({ packageDir: undefined as any }));
-      expect(result.chunks).toHaveLength(0);
-      expect(result.pullTools).toEqual([]);
-    });
-
-    test("returns empty chunks when request.packageDir is an empty string", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest({ packageDir: "" }));
+      const result = await provider.fetch(makeRequest({ packageDir }));
       expect(result.chunks).toHaveLength(0);
       expect(result.pullTools).toEqual([]);
     });
@@ -190,8 +181,11 @@ describe("TestCoverageProvider", () => {
       expect(receivedTestDir).toBe("custom-test-dir");
     });
 
-    test("forwards maxTokens with default 500", async () => {
-      const cfg = makeConfigWithTestCoverage({ maxTokens: 1200 });
+    test.each([
+      ["explicit maxTokens=1200", 1200, 1200],
+      ["default maxTokens=500 when not set", undefined as any, 500],
+    ])("forwards maxTokens: %s", async (_label, cfgMaxTokens, expected) => {
+      const cfg = makeConfigWithTestCoverage({ maxTokens: cfgMaxTokens });
       mockResolvePatterns(["**/*.test.ts"]);
 
       let receivedMaxTokens: number | undefined;
@@ -203,23 +197,7 @@ describe("TestCoverageProvider", () => {
       const provider = new TestCoverageProvider(STORY, cfg);
       await provider.fetch(makeRequest());
 
-      expect(receivedMaxTokens).toBe(1200);
-    });
-
-    test("uses default maxTokens of 500 when not set", async () => {
-      const cfg = makeConfigWithTestCoverage({ maxTokens: undefined as any });
-      mockResolvePatterns(["**/*.test.ts"]);
-
-      let receivedMaxTokens: number | undefined;
-      _testCoverageProviderDeps.generateTestCoverageSummary = async (opts: any) => {
-        receivedMaxTokens = opts.maxTokens;
-        return { summary: "", tokens: 0, files: [], totalTests: 0 };
-      };
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      await provider.fetch(makeRequest());
-
-      expect(receivedMaxTokens).toBe(500);
+      expect(receivedMaxTokens).toBe(expected);
     });
 
     test("forwards detail with default 'names-and-counts'", async () => {
@@ -336,23 +314,7 @@ describe("TestCoverageProvider", () => {
   });
 
   describe("AC9: emits correct chunk properties on non-empty summary", () => {
-    test("emits one RawChunk when scanner returns non-empty summary", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      mockResolvePatterns(["**/*.test.ts"]);
-      mockScanner({
-        summary: "Test coverage summary content",
-        tokens: 42,
-        files: [],
-        totalTests: 0,
-      });
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest());
-
-      expect(result.chunks).toHaveLength(1);
-    });
-
-    test("chunk content is byte-equal to scanner summary", async () => {
+    test("emits one RawChunk with correct content and tokens", async () => {
       const cfg = makeConfigWithTestCoverage();
       mockResolvePatterns(["**/*.test.ts"]);
       const summaryText = "## Test Coverage\n\n- src/foo.test.ts: 5 tests\n- src/bar.test.ts: 3 tests";
@@ -361,21 +323,12 @@ describe("TestCoverageProvider", () => {
       const provider = new TestCoverageProvider(STORY, cfg);
       const result = await provider.fetch(makeRequest());
 
+      expect(result.chunks).toHaveLength(1);
       expect(result.chunks[0].content).toBe(summaryText);
+      expect(result.chunks[0].tokens).toBe(80);
     });
 
-    test("chunk tokens equals scanner-reported tokens", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      mockResolvePatterns(["**/*.test.ts"]);
-      mockScanner({ summary: "some tests", tokens: 99, files: [], totalTests: 0 });
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest());
-
-      expect(result.chunks[0].tokens).toBe(99);
-    });
-
-    test("chunk kind is 'test-coverage'", async () => {
+    test("chunk has kind='test-coverage', scope='story', role=['implementer','tdd'], rawScore=0.85", async () => {
       const cfg = makeConfigWithTestCoverage();
       mockResolvePatterns(["**/*.test.ts"]);
       mockScanner({ summary: "tests", tokens: 10, files: [], totalTests: 0 });
@@ -384,38 +337,8 @@ describe("TestCoverageProvider", () => {
       const result = await provider.fetch(makeRequest());
 
       expect(result.chunks[0].kind).toBe("test-coverage");
-    });
-
-    test("chunk scope is 'story'", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      mockResolvePatterns(["**/*.test.ts"]);
-      mockScanner({ summary: "tests", tokens: 10, files: [], totalTests: 0 });
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest());
-
       expect(result.chunks[0].scope).toBe("story");
-    });
-
-    test("chunk role is ['implementer', 'tdd']", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      mockResolvePatterns(["**/*.test.ts"]);
-      mockScanner({ summary: "tests", tokens: 10, files: [], totalTests: 0 });
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest());
-
       expect(result.chunks[0].role).toEqual(["implementer", "tdd"]);
-    });
-
-    test("chunk rawScore is 0.85", async () => {
-      const cfg = makeConfigWithTestCoverage();
-      mockResolvePatterns(["**/*.test.ts"]);
-      mockScanner({ summary: "tests", tokens: 10, files: [], totalTests: 0 });
-
-      const provider = new TestCoverageProvider(STORY, cfg);
-      const result = await provider.fetch(makeRequest());
-
       expect(result.chunks[0].rawScore).toBe(0.85);
     });
   });

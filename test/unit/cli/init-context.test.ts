@@ -32,36 +32,16 @@ describe("scanProject — file tree", () => {
     });
   });
 
-  test("excludes node_modules from file tree", async () => {
+  test.each([
+    ["node_modules", "node_modules/some-pkg/index.js"],
+    [".git", ".git/config"],
+    ["dist", "dist/bundle.js"],
+  ])("excludes %s directory from file tree", async (excludedDir, fileToWrite) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "node_modules", "some-pkg", "index.js"), "");
+      await Bun.write(join(dir, fileToWrite), "");
       await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
       const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes("node_modules"))).toBe(false);
-    });
-  });
-
-  test("excludes .git directory from file tree", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".git", "config"), "");
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes(".git"))).toBe(false);
-    });
-  });
-
-  test("excludes dist directory from file tree", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "dist", "bundle.js"), "");
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.fileTree.some((f) => f.includes("dist"))).toBe(false);
+      expect(scan.fileTree.some((f) => f.includes(excludedDir))).toBe(false);
     });
   });
 
@@ -83,55 +63,16 @@ describe("scanProject — file tree", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — package manifest", () => {
-  test("reads name from package.json", async () => {
+  test.each([
+    ["name", { name: "my-project", version: "1.0.0" }, (m: any) => m?.name, "my-project"],
+    ["description", { name: "my-project", description: "A test project" }, (m: any) => m?.description, "A test project"],
+    ["scripts.build", { name: "proj", scripts: { build: "bun run build" } }, (m: any) => m?.scripts?.build, "bun run build"],
+    ["dependencies.zod", { name: "proj", dependencies: { zod: "^3.0.0" } }, (m: any) => m?.dependencies?.zod, "^3.0.0"],
+  ] as const)("reads %s from package.json", async (_field, pkgJson, getField, expected) => {
     await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "my-project", version: "1.0.0" }),
-      );
-
+      await Bun.write(join(dir, "package.json"), JSON.stringify(pkgJson));
       const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.name).toBe("my-project");
-    });
-  });
-
-  test("reads description from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "my-project", description: "A test project" }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.description).toBe("A test project");
-    });
-  });
-
-  test("reads scripts from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "proj", scripts: { build: "bun run build", test: "bun test" } }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.scripts?.build).toBe("bun run build");
-    });
-  });
-
-  test("reads dependencies from package.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(
-        join(dir, "package.json"),
-        JSON.stringify({ name: "proj", dependencies: { zod: "^3.0.0" } }),
-      );
-
-      const scan = await scanProject(dir);
-
-      expect(scan.packageManifest?.dependencies?.zod).toBe("^3.0.0");
+      expect(getField(scan.packageManifest)).toBe(expected);
     });
   });
 
@@ -181,21 +122,13 @@ describe("scanProject — README", () => {
     });
   });
 
-  test("returns null readmeSnippet when no README.md", async () => {
+  test("returns null readmeSnippet when absent; full content when short README present", async () => {
     await withTempDir(async (dir) => {
-      const scan = await scanProject(dir);
-
-      expect(scan.readmeSnippet).toBeNull();
+      expect((await scanProject(dir)).readmeSnippet).toBeNull();
     });
-  });
-
-  test("returns full content when README.md is under 100 lines", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "README.md"), "# Short readme\n\nTwo lines.");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.readmeSnippet).toContain("Short readme");
+      expect((await scanProject(dir)).readmeSnippet).toContain("Short readme");
     });
   });
 });
@@ -205,43 +138,16 @@ describe("scanProject — README", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — entry points", () => {
-  test("detects src/index.ts as entry point", async () => {
+  test.each([
+    ["src/index.ts", "export {}"],
+    ["src/main.ts", ""],
+    ["main.go", "package main"],
+    ["src/lib.rs", ""],
+  ])("detects %s as entry point", async (file, content) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
+      await Bun.write(join(dir, file), content);
       const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/index.ts");
-    });
-  });
-
-  test("detects src/main.ts as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "main.ts"), "");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/main.ts");
-    });
-  });
-
-  test("detects main.go as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "main.go"), "package main");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("main.go");
-    });
-  });
-
-  test("detects src/lib.rs as entry point", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "lib.rs"), "");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.entryPoints).toContain("src/lib.rs");
+      expect(scan.entryPoints).toContain(file);
     });
   });
 
@@ -271,43 +177,16 @@ describe("scanProject — entry points", () => {
 // ---------------------------------------------------------------------------
 
 describe("scanProject — config files", () => {
-  test("lists tsconfig.json when present", async () => {
+  test.each([
+    ["tsconfig.json", "{}"],
+    ["biome.json", "{}"],
+    ["turbo.json", "{}"],
+    [".env.example", "API_KEY="],
+  ])("lists %s when present", async (file, content) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
-
+      await Bun.write(join(dir, file), content);
       const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("tsconfig.json");
-    });
-  });
-
-  test("lists biome.json when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("biome.json");
-    });
-  });
-
-  test("lists turbo.json when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain("turbo.json");
-    });
-  });
-
-  test("lists .env.example when present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".env.example"), "API_KEY=");
-
-      const scan = await scanProject(dir);
-
-      expect(scan.configFiles).toContain(".env.example");
+      expect(scan.configFiles).toContain(file);
     });
   });
 
@@ -337,82 +216,41 @@ describe("scanProject — config files", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateContextTemplate — output structure", () => {
-  test("returns a non-empty markdown string", () => {
-    const scan = {
-      projectName: "test-project",
+  test("returns non-empty markdown string with heading and project name", () => {
+    const result = generateContextTemplate({
+      projectName: "my-awesome-project",
       fileTree: ["src/index.ts", "package.json"],
       packageManifest: null,
       readmeSnippet: null,
       entryPoints: [],
       configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    });
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("includes project name in output", () => {
-    const scan = {
-      projectName: "my-awesome-project",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    expect(result).toMatch(/^#+ /m);
     expect(result).toContain("my-awesome-project");
   });
 
-  test("includes file tree section in output", () => {
-    const scan = {
+  test("includes file tree and entry points in output", () => {
+    const result = generateContextTemplate({
       projectName: "proj",
       fileTree: ["src/index.ts", "package.json"],
       packageManifest: null,
       readmeSnippet: null,
-      entryPoints: [],
+      entryPoints: ["src/main.ts"],
       configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
+    });
     expect(result).toContain("src/index.ts");
     expect(result).toContain("package.json");
-  });
-
-  test("includes entry points in output", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: ["src/index.ts", "src/main.ts"],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("src/index.ts");
     expect(result).toContain("src/main.ts");
   });
 
-  test("includes TODO placeholders where data is missing", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("TODO");
+  test("includes TODO when data missing; includes config files when present", () => {
+    const emptyResult = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: [] });
+    expect(emptyResult).toContain("TODO");
+    const withConfig = generateContextTemplate({ projectName: "proj", fileTree: [], packageManifest: null, readmeSnippet: null, entryPoints: [], configFiles: ["tsconfig.json", "biome.json"] });
+    expect(withConfig).toContain("tsconfig.json");
+    expect(withConfig).toContain("biome.json");
   });
 
   test("includes package description when packageManifest has description", () => {
@@ -435,36 +273,6 @@ describe("generateContextTemplate — output structure", () => {
     expect(result).toContain("A fantastic library for testing");
   });
 
-  test("includes config files section when config files detected", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: ["tsconfig.json", "biome.json"],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toContain("tsconfig.json");
-    expect(result).toContain("biome.json");
-  });
-
-  test("is valid markdown with at least one heading", () => {
-    const scan = {
-      projectName: "proj",
-      fileTree: [],
-      packageManifest: null,
-      readmeSnippet: null,
-      entryPoints: [],
-      configFiles: [],
-    };
-
-    const result = generateContextTemplate(scan);
-
-    expect(result).toMatch(/^#+ /m);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -472,73 +280,43 @@ describe("generateContextTemplate — output structure", () => {
 // ---------------------------------------------------------------------------
 
 describe("initContext — creates context.md from template", () => {
-  test("creates nax/context.md when it does not exist", async () => {
+  test("creates .nax/ directory and non-empty context.md when they do not exist", async () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
+      expect(existsSync(join(dir, ".nax"))).toBe(true);
       expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
-    });
-  });
-
-  test(".nax/context.md is non-empty", async () => {
-    await withTempDir(async (dir) => {
-      await initContext(dir, { ai: false });
-
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content.length).toBeGreaterThan(0);
     });
   });
 
-  test("creates nax/ directory if it does not exist", async () => {
-    await withTempDir(async (dir) => {
-      await initContext(dir, { ai: false });
-
-      expect(existsSync(join(dir, ".nax"))).toBe(true);
-    });
-  });
-
-  test("does not overwrite existing context.md without --force", async () => {
+  test.each([
+    [false, true],
+    [true, false],
+  ] as const)("force=%s: content unchanged=%s when context.md exists", async (force, contentUnchanged) => {
     await withTempDir(async (dir) => {
       const contextPath = join(dir, ".nax", "context.md");
       await Bun.write(contextPath, "EXISTING_CONTENT");
 
-      await initContext(dir, { ai: false });
+      await initContext(dir, { ai: false, ...(force ? { force } : {}) });
 
       const content = await Bun.file(contextPath).text();
-      expect(content).toBe("EXISTING_CONTENT");
+      if (contentUnchanged) {
+        expect(content).toBe("EXISTING_CONTENT");
+      } else {
+        expect(content).not.toBe("EXISTING_CONTENT");
+      }
     });
   });
 
-  test("overwrites existing context.md with --force", async () => {
-    await withTempDir(async (dir) => {
-      const contextPath = join(dir, ".nax", "context.md");
-      await Bun.write(contextPath, "EXISTING_CONTENT");
-
-      await initContext(dir, { ai: false, force: true });
-
-      const content = await Bun.file(contextPath).text();
-      expect(content).not.toBe("EXISTING_CONTENT");
-    });
-  });
-
-  test("template includes project name derived from directory", async () => {
+  test("template includes project name and detected entry points", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "scan-test-proj" }));
-
+      await Bun.write(join(dir, "src", "index.ts"), "export {}");
       await initContext(dir, { ai: false });
-
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("scan-test-proj");
-    });
-  });
-
-  test("template includes detected entry points", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "src", "index.ts"), "export {}");
-
-      await initContext(dir, { ai: false });
-
-      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("src/index.ts");
     });
   });
@@ -573,18 +351,18 @@ describe("initContext — AI mode (--ai flag)", () => {
     });
   });
 
-  test("calls LLM when --ai flag is set", async () => {
+  test.each([
+    [true, 1],
+    [false, 0],
+  ] as const)("calls LLM %d time(s) when ai=%s", async (ai, expectedCalls) => {
     await withTempDir(async (dir) => {
       const mod = await import("../../../src/cli/init-context");
       const original = mod._initContextDeps.callLLM;
-
-      const callLLMMock = mock(async (_prompt: string) => "# AI Generated Context\n\nContent here.");
+      const callLLMMock = mock(async () => "# AI output");
       mod._initContextDeps.callLLM = callLLMMock;
-
       try {
-        await mod.initContext(dir, { ai: true });
-
-        expect(callLLMMock).toHaveBeenCalledTimes(1);
+        await mod.initContext(dir, { ai });
+        expect(callLLMMock).toHaveBeenCalledTimes(expectedCalls);
       } finally {
         mod._initContextDeps.callLLM = original;
       }
@@ -603,24 +381,6 @@ describe("initContext — AI mode (--ai flag)", () => {
 
         const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content).toContain("AI Generated");
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-
-  test("does not call LLM when --ai flag is not set", async () => {
-    await withTempDir(async (dir) => {
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-
-      const callLLMMock = mock(async () => "# AI output");
-      mod._initContextDeps.callLLM = callLLMMock;
-
-      try {
-        await mod.initContext(dir, { ai: false });
-
-        expect(callLLMMock).not.toHaveBeenCalled();
       } finally {
         mod._initContextDeps.callLLM = original;
       }

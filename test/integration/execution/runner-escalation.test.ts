@@ -159,7 +159,7 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
     { tier: "powerful", attempts: 2 },
   ];
 
-  test("escalateTier with standard chain", () => {
+  test("escalateTier with standard chain (fast→balanced→powerful→null)", () => {
     expect(escalateTier("fast", defaultTiers)?.tier).toBe("balanced");
     expect(escalateTier("balanced", defaultTiers)?.tier).toBe("powerful");
     expect(escalateTier("powerful", defaultTiers)).toBeNull();
@@ -191,23 +191,10 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
     expect(escalateTier("fast", reversed)).toBeNull();
   });
 
-  test("escalateTier with empty tierOrder returns null", () => {
+  test("escalateTier returns null for empty tierOrder, unknown tier, and idempotent at max", () => {
     expect(escalateTier("fast", [])).toBeNull();
-  });
-
-  test("escalateTier with three-tier standard order", () => {
-    expect(escalateTier("fast", defaultTiers)?.tier).toBe("balanced");
-    expect(escalateTier("balanced", defaultTiers)?.tier).toBe("powerful");
-    expect(escalateTier("powerful", defaultTiers)).toBeNull();
-  });
-
-  test("escalateTier should return null for unknown tier", () => {
     expect(escalateTier("unknown", defaultTiers)).toBeNull();
-  });
-
-  test("escalateTier should be idempotent at max tier", () => {
     expect(escalateTier("powerful", defaultTiers)).toBeNull();
-    // Call again — still null
     expect(escalateTier("powerful", defaultTiers)).toBeNull();
   });
 
@@ -402,60 +389,16 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("resolveMaxAttemptsOutcome", () => {
-  describe("categories that require human review → pause", () => {
-    test("isolation-violation → pause", () => {
-      const result = resolveMaxAttemptsOutcome("isolation-violation");
-      expect(result).toBe("pause");
-    });
-
-    test("verifier-rejected → pause", () => {
-      const result = resolveMaxAttemptsOutcome("verifier-rejected");
-      expect(result).toBe("pause");
-    });
-
-    test("greenfield-no-tests → pause", () => {
-      const result = resolveMaxAttemptsOutcome("greenfield-no-tests");
-      expect(result).toBe("pause");
-    });
-  });
-
-  describe("categories that can be failed automatically → fail", () => {
-    test("session-failure → fail", () => {
-      const result = resolveMaxAttemptsOutcome("session-failure");
-      expect(result).toBe("fail");
-    });
-
-    test("tests-failing → fail", () => {
-      const result = resolveMaxAttemptsOutcome("tests-failing");
-      expect(result).toBe("fail");
-    });
-
-    test("full-suite-gate-exhausted → fail", () => {
-      const result = resolveMaxAttemptsOutcome("full-suite-gate-exhausted");
-      expect(result).toBe("fail");
-    });
-
-    test("undefined (no category) → fail", () => {
-      const result = resolveMaxAttemptsOutcome(undefined);
-      expect(result).toBe("fail");
-    });
-  });
-
-  describe("exhaustive coverage of all FailureCategory values", () => {
-    const pauseCategories: FailureCategory[] = ["isolation-violation", "verifier-rejected", "greenfield-no-tests"];
-    const failCategories: FailureCategory[] = ["session-failure", "tests-failing", "full-suite-gate-exhausted"];
-
-    for (const cat of pauseCategories) {
-      test(`${cat} always returns pause`, () => {
-        expect(resolveMaxAttemptsOutcome(cat)).toBe("pause");
-      });
-    }
-
-    for (const cat of failCategories) {
-      test(`${cat} always returns fail`, () => {
-        expect(resolveMaxAttemptsOutcome(cat)).toBe("fail");
-      });
-    }
+  test.each([
+    ["isolation-violation", "pause"],
+    ["verifier-rejected", "pause"],
+    ["greenfield-no-tests", "pause"],
+    ["session-failure", "fail"],
+    ["tests-failing", "fail"],
+    ["full-suite-gate-exhausted", "fail"],
+    [undefined, "fail"],
+  ] as const)("%s → %s", (category, expected) => {
+    expect(resolveMaxAttemptsOutcome(category)).toBe(expected);
   });
 });
 

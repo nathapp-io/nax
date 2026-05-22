@@ -144,20 +144,12 @@ describe("collectDiff()", () => {
     expect(captured.value).toContain(":!.nax-pids");
   });
 
-  test("returns stdout string when exit code is 0", async () => {
+  test("returns stdout string on exit code 0; empty string on non-zero", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("diff content");
+    expect(await collectDiff("/repo", "abc123", [])).toBe("diff content");
 
-    const result = await collectDiff("/repo", "abc123", []);
-
-    expect(result).toBe("diff content");
-  });
-
-  test("returns empty string when spawn exits with non-zero", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some output", 1);
-
-    const result = await collectDiff("/repo", "abc123", []);
-
-    expect(result).toBe("");
+    expect(await collectDiff("/repo", "abc123", [])).toBe("");
   });
 });
 
@@ -175,20 +167,12 @@ describe("collectDiffStat()", () => {
     expect(captured.value).toContain("abc123..HEAD");
   });
 
-  test("returns trimmed stdout on success", async () => {
+  test("returns trimmed stdout on success; empty string on non-zero exit code", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("  stat output  ");
+    expect(await collectDiffStat("/repo", "abc123")).toBe("stat output");
 
-    const result = await collectDiffStat("/repo", "abc123");
-
-    expect(result).toBe("stat output");
-  });
-
-  test("returns empty string when exit code is non-zero", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("stat output", 2);
-
-    const result = await collectDiffStat("/repo", "abc123");
-
-    expect(result).toBe("");
+    expect(await collectDiffStat("/repo", "abc123")).toBe("");
   });
 });
 
@@ -203,51 +187,30 @@ describe("truncateDiff()", () => {
     expect(result).toBe(smallDiff);
   });
 
-  test("truncates diff when over DIFF_CAP_BYTES", () => {
+  test("truncates when over DIFF_CAP_BYTES; includes stat preamble when provided; omits when absent", () => {
     const largeDiff = "diff --git a/foo.ts b/foo.ts\n" + "x".repeat(DIFF_CAP_BYTES + 1000);
 
-    const result = truncateDiff(largeDiff);
+    const noStat = truncateDiff(largeDiff);
+    expect(noStat.length).toBeLessThan(largeDiff.length);
+    expect(noStat).toContain("truncated");
+    expect(noStat).not.toContain("File Summary");
 
-    expect(result.length).toBeLessThan(largeDiff.length);
-    expect(result).toContain("truncated");
-  });
-
-  test("includes stat preamble when stat is provided and diff is truncated", () => {
-    const largeDiff = "diff --git a/foo.ts b/foo.ts\n" + "x".repeat(DIFF_CAP_BYTES + 1000);
     const stat = "foo.ts | 10 ++++++++++";
-
-    const result = truncateDiff(largeDiff, stat);
-
-    expect(result).toContain("File Summary");
-    expect(result).toContain(stat);
-  });
-
-  test("omits stat preamble when stat is not provided even if truncated", () => {
-    const largeDiff = "diff --git a/foo.ts b/foo.ts\n" + "x".repeat(DIFF_CAP_BYTES + 1000);
-
-    const result = truncateDiff(largeDiff);
-
-    expect(result).not.toContain("File Summary");
+    const withStat = truncateDiff(largeDiff, stat);
+    expect(withStat).toContain("File Summary");
+    expect(withStat).toContain(stat);
   });
 });
 
 // ─── computeTestInventory ─────────────────────────────────────────────────────
 
 describe("computeTestInventory()", () => {
-  test("classifies .test.ts files as addedTestFiles", async () => {
+  test("classifies .test.ts and .spec.ts files as addedTestFiles", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("src/foo/bar.ts\ntest/unit/foo/bar.test.ts\n");
+    expect((await computeTestInventory("/repo", "abc123")).addedTestFiles).toContain("test/unit/foo/bar.test.ts");
 
-    const result = await computeTestInventory("/repo", "abc123");
-
-    expect(result.addedTestFiles).toContain("test/unit/foo/bar.test.ts");
-  });
-
-  test("classifies .spec.ts files as addedTestFiles", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("src/utils.ts\nsrc/utils.spec.ts\n");
-
-    const result = await computeTestInventory("/repo", "abc123");
-
-    expect(result.addedTestFiles).toContain("src/utils.spec.ts");
+    expect((await computeTestInventory("/repo", "abc123")).addedTestFiles).toContain("src/utils.spec.ts");
   });
 
   test("classifies source files with no matching test as newSourceFilesWithoutTests", async () => {
@@ -283,17 +246,13 @@ describe("collectDiffFileList", () => {
     expect(files).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
-  test("returns empty array when git produces no output", async () => {
+  test("returns empty array on no output; undefined on failure; trims and skips empty lines", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 0);
     expect(await collectDiffFileList("/tmp/repo", "abc123")).toEqual([]);
-  });
 
-  test("returns undefined on git failure (signals diffAvailable=false)", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("", 128);
     expect(await collectDiffFileList("/tmp/repo", "abc123")).toBeUndefined();
-  });
 
-  test("trims and skips empty lines", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("src/a.ts\n\nsrc/b.ts\n  \n", 0);
     expect(await collectDiffFileList("/tmp/repo", "abc123")).toEqual(["src/a.ts", "src/b.ts"]);
   });

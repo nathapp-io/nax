@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { UserStory } from "../../../src/prd";
 import { PromptBuilder } from "../../../src/prompts";
@@ -46,24 +45,13 @@ describe("PromptBuilder fluent API", () => {
     expect(builder).toBeInstanceOf(PromptBuilder);
   });
 
-  test(".story() is chainable", () => {
-    const builder = PromptBuilder.for("implementer").story(makeStory());
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".context() is chainable", () => {
-    const builder = PromptBuilder.for("verifier").story(makeStory()).context("# Context");
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".constitution() is chainable", () => {
-    const builder = PromptBuilder.for("single-session").story(makeStory()).constitution("Be helpful.");
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".override() is chainable", () => {
-    const builder = PromptBuilder.for("test-writer").story(makeStory()).override("/tmp/override.md");
-    expect(builder).toBeInstanceOf(PromptBuilder);
+  test.each([
+    [".story()", () => PromptBuilder.for("implementer").story(makeStory())],
+    [".context()", () => PromptBuilder.for("verifier").story(makeStory()).context("# Context")],
+    [".constitution()", () => PromptBuilder.for("single-session").story(makeStory()).constitution("Be helpful.")],
+    [".override()", () => PromptBuilder.for("test-writer").story(makeStory()).override("/tmp/override.md")],
+  ])("%s is chainable", (_name, build) => {
+    expect(build()).toBeInstanceOf(PromptBuilder);
   });
 
   test(".build() returns a Promise<string>", async () => {
@@ -79,50 +67,27 @@ describe("PromptBuilder fluent API", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder section order", () => {
-  test("constitution appears before role task", async () => {
+  test("constitution before role task; story before footer; context before footer; isolation present", async () => {
+    const ctxMarker = "CONTEXT_MARKDOWN_MARKER";
     const prompt = await PromptBuilder.for("test-writer")
-      .story(makeStory())
+      .story(makeStory({ title: "STORY_TITLE_MARKER" }))
       .constitution("CONSTITUTION_MARKER")
+      .context(ctxMarker)
       .build();
-
     const constitutionIdx = prompt.indexOf("CONSTITUTION_MARKER");
     const roleTaskIdx = prompt.indexOf("# Role:");
-
+    const storyIdx = prompt.indexOf("STORY_TITLE_MARKER");
+    const ctxIdx = prompt.indexOf(ctxMarker);
+    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length - 1;
+    const isolationIdx = prompt.indexOf("isolation") !== -1 ? prompt.indexOf("isolation") : prompt.indexOf("ISOLATION");
     expect(constitutionIdx).toBeGreaterThanOrEqual(0);
     expect(roleTaskIdx).toBeGreaterThanOrEqual(0);
     expect(constitutionIdx).toBeLessThan(roleTaskIdx);
-  });
-
-  test("story context appears before conventions footer", async () => {
-    const story = makeStory({ title: "STORY_TITLE_MARKER" });
-    const prompt = await PromptBuilder.for("implementer").story(story).build();
-
-    const storyIdx = prompt.indexOf("STORY_TITLE_MARKER");
-    // Conventions footer is always last — it contains "conventions" or appears after story
-    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length - 1;
-
     expect(storyIdx).toBeGreaterThanOrEqual(0);
     expect(storyIdx).toBeLessThan(footerIdx);
-  });
-
-  test("isolation rules appear after role task body", async () => {
-    const prompt = await PromptBuilder.for("test-writer").story(makeStory()).build();
-
-    // Isolation rules section — comes after the main role task body
-    const isolationIdx = prompt.indexOf("isolation") !== -1 ? prompt.indexOf("isolation") : prompt.indexOf("ISOLATION");
-
-    expect(isolationIdx).toBeGreaterThanOrEqual(0);
-  });
-
-  test("context markdown appears before conventions footer", async () => {
-    const ctxMarker = "CONTEXT_MARKDOWN_MARKER";
-    const prompt = await PromptBuilder.for("verifier").story(makeStory()).context(ctxMarker).build();
-
-    const ctxIdx = prompt.indexOf(ctxMarker);
-    const footerIdx = prompt.lastIndexOf("conventions") !== -1 ? prompt.lastIndexOf("conventions") : prompt.length;
-
     expect(ctxIdx).toBeGreaterThanOrEqual(0);
     expect(ctxIdx).toBeLessThan(footerIdx);
+    expect(isolationIdx).toBeGreaterThanOrEqual(0);
   });
 
   describe("section order for each role", () => {
@@ -158,41 +123,20 @@ describe("PromptBuilder section order", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder non-overridable sections", () => {
-  test("story context always included even when override is set", async () => {
+  test("override preserves story context, conventions footer order, and isolation rules", async () => {
     const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# Custom override body\nThis replaces the template.");
+    writeFileSync(overridePath, "# Custom override body");
 
     const story = makeStory({ title: "NON_OVERRIDABLE_STORY" });
     const prompt = await PromptBuilder.for("test-writer").story(story).override(overridePath).build();
 
     expect(prompt).toContain("NON_OVERRIDABLE_STORY");
-  });
-
-  test("conventions footer always last even when override is set", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
-    const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# Custom override body");
-
-    const prompt = await PromptBuilder.for("implementer").story(makeStory()).override(overridePath).build();
-
-    // Conventions footer must exist and be after the override content
     const overrideIdx = prompt.indexOf("Custom override body");
     const conventionsIdx = prompt.lastIndexOf("conventions");
     expect(conventionsIdx).toBeGreaterThan(overrideIdx);
-  });
-
-  test("isolation rules always present even when override is set", async () => {
-    const tmpDir = makeTempDir("nax-pb-test-");
-    const overridePath = join(tmpDir, "override.md");
-    writeFileSync(overridePath, "# My custom template");
-
-    const prompt = await PromptBuilder.for("test-writer").story(makeStory()).override(overridePath).build();
-
-    // Isolation rules must appear somewhere in the final prompt
     const lowerPrompt = prompt.toLowerCase();
-    const hasIsolation = lowerPrompt.includes("isolation") || lowerPrompt.includes("isolat");
-    expect(hasIsolation).toBe(true);
+    expect(lowerPrompt.includes("isolation") || lowerPrompt.includes("isolat")).toBe(true);
   });
 
   test("story context not removable via override for each role", async () => {
@@ -213,26 +157,15 @@ describe("PromptBuilder non-overridable sections", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder override fallthrough", () => {
-  test("missing override file falls through to default template", async () => {
-    const prompt = await PromptBuilder.for("test-writer")
-      .story(makeStory({ title: "FALLTHROUGH_STORY" }))
-      .override("/nonexistent/path/override.md")
-      .build();
-
-    // Should still contain story context (non-overridable)
-    expect(prompt).toContain("FALLTHROUGH_STORY");
-    // Should contain default role task content (not crash)
-    expect(typeof prompt).toBe("string");
+  test.each([
+    ["missing override falls through to default", "/nonexistent/path/override.md", "FALLTHROUGH_STORY"],
+    ["no override uses default template", undefined, "DEFAULT_TEMPLATE_STORY"],
+  ] as const)("%s", async (_label, overridePath, marker) => {
+    let builder = PromptBuilder.for("test-writer").story(makeStory({ title: marker }));
+    if (overridePath) builder = builder.override(overridePath);
+    const prompt = await builder.build();
+    expect(prompt).toContain(marker);
     expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test("no override set uses default template body", async () => {
-    const promptWithout = await PromptBuilder.for("test-writer")
-      .story(makeStory({ title: "DEFAULT_TEMPLATE_STORY" }))
-      .build();
-
-    expect(promptWithout).toContain("DEFAULT_TEMPLATE_STORY");
-    expect(promptWithout.length).toBeGreaterThan(0);
   });
 
   test("valid override file replaces default template body", async () => {
@@ -252,10 +185,16 @@ describe("PromptBuilder override fallthrough", () => {
 // ---------------------------------------------------------------------------
 
 describe("src/prompts/types exports", () => {
-  test("PromptRole values are correct literals", () => {
-    // This is a compile-time check — if types.ts exports correctly, import works
-    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
-    expect(roles).toHaveLength(4);
+  test("PromptRole includes all roles: 4 base + tdd-simple + batch = 6 total", () => {
+    const baseRoles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session"];
+    expect(baseRoles).toHaveLength(4);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const withTddSimple: PromptRole[] = [...baseRoles, "tdd-simple" as any];
+    expect(withTddSimple).toContain("tdd-simple");
+    expect(withTddSimple).toHaveLength(5);
+    const withBatch: PromptRole[] = [...withTddSimple, "batch"];
+    expect(withBatch).toContain("batch");
+    expect(withBatch).toHaveLength(6);
   });
 });
 
@@ -264,61 +203,27 @@ describe("src/prompts/types exports", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — tdd-simple role", () => {
-  test("PromptBuilder.for('tdd-simple') returns a PromptBuilder instance", () => {
+  test("returns PromptBuilder instance; non-empty; isolation ok; story + conventions present", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const builder = PromptBuilder.for("tdd-simple" as any);
     expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".build() resolves to a non-empty string for tdd-simple", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(typeof prompt).toBe("string");
-    expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test("tdd-simple prompt contains TDD red-green-refactor instructions", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt).toContain("Write failing tests FIRST");
-  });
-
-  test("tdd-simple prompt includes git commit instruction", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt).toContain("git commit -m");
-  });
-
-  test("tdd-simple prompt isolation section does not forbid src/ modification", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt).not.toContain("Only create or modify files in the test/ directory");
-    expect(prompt).not.toContain("Do not modify test files");
-  });
-
-  test("tdd-simple prompt includes story context", async () => {
     const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(story)
-      .build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(story).build();
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt).not.toContain("Only create or modify files in the test/ directory");
+    expect(prompt).not.toContain("Do not modify test files");
     expect(prompt).toContain("TDD_SIMPLE_STORY_MARKER");
+    expect(prompt.toLowerCase()).toContain("conventions");
   });
 
-  test("tdd-simple prompt includes conventions footer", async () => {
+  test.each([
+    ["TDD instructions", "Write failing tests FIRST"],
+    ["git commit instruction", "git commit -m"],
+  ])("tdd-simple prompt contains %s", async (_label, expected) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any)
-      .story(makeStory())
-      .build();
-    expect(prompt.toLowerCase()).toContain("conventions");
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt).toContain(expected);
   });
 
   test("tdd-simple prompt section order: role task before story before conventions", async () => {
@@ -339,66 +244,39 @@ describe("PromptBuilder — tdd-simple role", () => {
     expect(storyIdx).toBeLessThan(conventionsIdx);
   });
 
-  test("single-story prompt repeats acceptance criteria in the final reminder", async () => {
-    const story = makeStory({
-      acceptanceCriteria: ["UNIQUE_TOP_AND_BOTTOM_AC_ONE", "UNIQUE_TOP_AND_BOTTOM_AC_TWO"],
-    });
-    const prompt = await PromptBuilder.for("tdd-simple").story(story).build();
-
-    for (const criterion of story.acceptanceCriteria) {
-      expect(prompt.indexOf(criterion)).toBeGreaterThanOrEqual(0);
-      expect(prompt.lastIndexOf(criterion)).toBeGreaterThan(prompt.indexOf(criterion));
-    }
-  });
-
-  test("story reminder remains the final prompt section", async () => {
+  test("single-story prompt repeats acceptance criteria in the final reminder, which is the final section", async () => {
     const criterion = "UNIQUE_FINAL_REMINDER_AC";
+    const story = makeStory({ acceptanceCriteria: [criterion, "UNIQUE_TOP_AND_BOTTOM_AC_TWO"] });
     const prompt = await PromptBuilder.for("tdd-simple")
-      .story(makeStory({ acceptanceCriteria: [criterion] }))
+      .story(story)
       .constitution("REMINDER_ORDER_CONSTITUTION")
       .context("REMINDER_ORDER_CONTEXT")
       .hermeticConfig({ hermetic: true })
       .build();
-
+    for (const ac of story.acceptanceCriteria) {
+      expect(prompt.indexOf(ac)).toBeGreaterThanOrEqual(0);
+      expect(prompt.lastIndexOf(ac)).toBeGreaterThan(prompt.indexOf(ac));
+    }
     const conventionsIdx = prompt.lastIndexOf("conventions");
     const finalCriterionIdx = prompt.lastIndexOf(criterion);
-
     expect(conventionsIdx).toBeGreaterThanOrEqual(0);
     expect(finalCriterionIdx).toBeGreaterThan(conventionsIdx);
     expect(prompt.trim().endsWith("<!-- END USER-SUPPLIED DATA -->")).toBe(true);
   });
 });
 
-describe("src/prompts/types exports — tdd-simple", () => {
-  test("PromptRole type should include 'tdd-simple' (5 roles total)", () => {
-    // Once tdd-simple is added to PromptRole, this array should be valid TypeScript.
-    // Until then, tdd-simple is cast to bypass the TS check; this test documents intent.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple" as any];
-    expect(roles).toContain("tdd-simple");
-    expect(roles).toHaveLength(5);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // BP-001: batch role support (RED phase — will fail until implemented)
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — batch role: .stories() method", () => {
-  test(".stories() is chainable", () => {
-    const builder = PromptBuilder.for("batch").stories([makeStory()]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".stories() accepts an array of UserStory", () => {
-    const stories = [makeStory({ id: "B-001" }), makeStory({ id: "B-002" })];
-    const builder = PromptBuilder.for("batch").stories(stories);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test(".stories() accepts an empty array without error", () => {
-    const builder = PromptBuilder.for("batch").stories([]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
+  test.each([
+    ["single story", [makeStory()]],
+    ["multiple stories", [makeStory({ id: "B-001" }), makeStory({ id: "B-002" })]],
+    ["empty array", [] as UserStory[]],
+  ])(".stories() with %s is chainable", (_label, stories) => {
+    expect(PromptBuilder.for("batch").stories(stories)).toBeInstanceOf(PromptBuilder);
   });
 });
 
@@ -408,53 +286,20 @@ describe("PromptBuilder — batch role: build()", () => {
     makeStory({ id: "BP-002", title: "Second Batch Story" }),
   ];
 
-  test("resolves to a non-empty string", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    expect(typeof prompt).toBe("string");
+  test("story IDs/headings/instructions/conventions present, no verdict; section order: constitution < stories < conventions", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).constitution("BATCH_CONSTITUTION_MARKER").build();
     expect(prompt.length).toBeGreaterThan(0);
-  });
-
-  test("uses buildBatchStorySection: includes all story IDs", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt).toContain("BP-001");
     expect(prompt).toContain("BP-002");
-  });
-
-  test("uses batch story section with '## Story N:' headings", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt).toContain("## Story 1:");
     expect(prompt).toContain("## Story 2:");
-  });
-
-  test("does NOT include verdict section", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    // Verdict section is verifier-only — batch must not include it
     expect(prompt.toLowerCase()).not.toContain("verdict");
-  });
-
-  test("includes batch role-task instructions", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
-    // Batch role should include TDD-aligned instructions
     expect(prompt.toLowerCase()).toMatch(/each story|implement.*story|story.*implement/);
-  });
-
-  test("includes conventions footer", async () => {
-    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
     expect(prompt.toLowerCase()).toContain("conventions");
-  });
-
-  test("section order: role task before batch stories before conventions", async () => {
-    const prompt = await PromptBuilder.for("batch")
-      .stories(batchStories)
-      .constitution("BATCH_CONSTITUTION_MARKER")
-      .build();
-
     const constitutionIdx = prompt.indexOf("BATCH_CONSTITUTION_MARKER");
     const storyIdx = prompt.indexOf("BP-001");
     const conventionsIdx = prompt.lastIndexOf("conventions");
-
     expect(constitutionIdx).toBeGreaterThanOrEqual(0);
-    expect(storyIdx).toBeGreaterThanOrEqual(0);
     expect(constitutionIdx).toBeLessThan(storyIdx);
     expect(storyIdx).toBeLessThan(conventionsIdx);
   });
@@ -472,13 +317,6 @@ describe("PromptBuilder — batch role: build()", () => {
   });
 });
 
-describe("src/prompts/types exports — batch", () => {
-  test("PromptRole type includes 'batch' (6 roles total)", () => {
-    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple", "batch"];
-    expect(roles).toContain("batch");
-    expect(roles).toHaveLength(6);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // US-001 AC4: PromptBuilder.acceptanceContext() — stores entries, builds section
@@ -486,97 +324,42 @@ describe("src/prompts/types exports — batch", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder — acceptanceContext() method (US-001 AC4)", () => {
-  test(".acceptanceContext() is chainable", () => {
-    const builder = PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext([{ testPath: "test/a.test.ts", content: "// test" }]);
-    expect(builder).toBeInstanceOf(PromptBuilder);
-  });
-
-  test("build() includes acceptance test content when acceptanceContext() is called", async () => {
-    const entries = [{ testPath: "test/acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
-    expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
-  });
-
-  test("build() includes the test file path heading when acceptanceContext() is called", async () => {
-    const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "// test" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
-    expect(prompt).toContain("test/unit/my-feature.test.ts");
-  });
-
-  test("acceptance section appears after story section in build() output", async () => {
+  test(".acceptanceContext() chainable; content/path present; appears after story; fenced code block; multiple entries", async () => {
     const story = makeStory({ title: "STORY_BEFORE_ACCEPTANCE" });
-    const entries = [{ testPath: "test.ts", content: "ACCEPTANCE_AFTER_STORY_MARKER" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(story)
-      .acceptanceContext(entries)
-      .build();
-
-    const storyIdx = prompt.indexOf("STORY_BEFORE_ACCEPTANCE");
-    const acceptanceIdx = prompt.indexOf("ACCEPTANCE_AFTER_STORY_MARKER");
-    expect(storyIdx).toBeGreaterThanOrEqual(0);
-    expect(acceptanceIdx).toBeGreaterThanOrEqual(0);
-    expect(storyIdx).toBeLessThan(acceptanceIdx);
-  });
-
-  test("build() wraps acceptance content in a fenced TypeScript code block", async () => {
-    const entries = [{ testPath: "test/foo.test.ts", content: "FENCED_CONTENT_MARKER" }];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
+    const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
+    const builder = PromptBuilder.for("implementer").story(story).acceptanceContext(entries);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+    const prompt = await builder.build();
+    expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
+    expect(prompt).toContain("test/unit/my-feature.test.ts");
+    expect(prompt.indexOf("STORY_BEFORE_ACCEPTANCE")).toBeLessThan(prompt.indexOf("ACCEPTANCE_CONTENT_MARKER"));
     expect(prompt).toContain("```typescript");
-    expect(prompt).toContain("FENCED_CONTENT_MARKER");
-  });
 
-  test("acceptanceContext() with multiple entries includes all test paths", async () => {
-    const entries = [
+    const multiEntries = [
       { testPath: "test/a.test.ts", content: "CONTENT_A" },
       { testPath: "test/b.test.ts", content: "CONTENT_B" },
     ];
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .acceptanceContext(entries)
-      .build();
-    expect(prompt).toContain("test/a.test.ts");
-    expect(prompt).toContain("test/b.test.ts");
-    expect(prompt).toContain("CONTENT_A");
-    expect(prompt).toContain("CONTENT_B");
+    const multiPrompt = await PromptBuilder.for("implementer").story(makeStory()).acceptanceContext(multiEntries).build();
+    expect(multiPrompt).toContain("test/a.test.ts");
+    expect(multiPrompt).toContain("test/b.test.ts");
+    expect(multiPrompt).toContain("CONTENT_A");
+    expect(multiPrompt).toContain("CONTENT_B");
   });
 });
 
 describe("PromptBuilder — no acceptance section when acceptanceContext() not called (US-001 AC5)", () => {
-  test("build() output has no acceptance section marker when acceptanceContext() is not called", async () => {
-    const prompt = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .build();
-    // The acceptance section includes fenced typescript blocks with file paths — none expected
-    expect(prompt).not.toContain("[truncated — full file at");
-  });
-
-  test("build() output is deterministic when acceptanceContext() is not called", async () => {
+  test("build() without acceptanceContext(): no truncated marker, deterministic, no acceptance-only markers", async () => {
     const story = makeStory({ title: "BASELINE_STORY_AC5" });
     const promptA = await PromptBuilder.for("implementer").story(story).build();
+    expect(promptA).not.toContain("[truncated — full file at");
     const promptB = await PromptBuilder.for("implementer").story(story).build();
     expect(promptA).toBe(promptB);
-  });
 
-  test("build() without acceptanceContext() does not contain acceptance-only markers", async () => {
     const withAcceptance = await PromptBuilder.for("implementer")
       .story(makeStory())
       .acceptanceContext([{ testPath: "test/x.test.ts", content: "UNIQUE_AC5_MARKER" }])
       .build();
-    const withoutAcceptance = await PromptBuilder.for("implementer")
-      .story(makeStory())
-      .build();
-
+    const withoutAcceptance = await PromptBuilder.for("implementer").story(makeStory()).build();
     expect(withAcceptance).toContain("UNIQUE_AC5_MARKER");
     expect(withoutAcceptance).not.toContain("UNIQUE_AC5_MARKER");
   });

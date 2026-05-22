@@ -35,25 +35,16 @@ describe("openSession()", () => {
     mock.restore();
   });
 
-  test("returns a SessionHandle with id = session name", async () => {
+  test("returns SessionHandle with correct id, agentName, and ACP-internal fields", async () => {
     const session = makeSession();
     const client = makeClient(session);
     _acpAdapterDeps.createClient = mock(() => client as any);
 
     const handle = await adapter.openSession("nax-aabbccdd-feat-story", makeOpenSessionOpts());
+    const impl = handle as AcpSessionHandleImpl;
 
     expect(handle.id).toBe("nax-aabbccdd-feat-story");
     expect(handle.agentName).toBe("claude");
-  });
-
-  test("handle is AcpSessionHandleImpl with ACP-internal fields", async () => {
-    const session = makeSession();
-    const client = makeClient(session);
-    _acpAdapterDeps.createClient = mock(() => client as any);
-
-    const handle = await adapter.openSession("nax-test", makeOpenSessionOpts());
-    const impl = handle as AcpSessionHandleImpl;
-
     expect(impl._session).toBe(session);
     expect(impl._timeoutSeconds).toBe(30);
     expect(impl._modelDef.model).toBe("claude-sonnet-4-5");
@@ -557,49 +548,32 @@ describe("closeSession(handle)", () => {
     mock.restore();
   });
 
-  test("calls session.close() and client.close()", async () => {
+  test("calls session.close() and client.close(); swallows client errors; session error does not prevent client.close()", async () => {
+    // Scenario 1: both close calls execute
     const closedSessions: string[] = [];
     const closedClients: string[] = [];
-
-    const session = makeSession({ closeFn: async () => { closedSessions.push("session"); } });
-    const client = {
-      ...makeClient(session),
-      close: async () => { closedClients.push("client"); },
-    };
-    _acpAdapterDeps.createClient = mock(() => client as any);
-
-    const handle = await adapter.openSession("nax-close-test", makeOpenSessionOpts());
-    await adapter.closeSession(handle);
-
+    const session1 = makeSession({ closeFn: async () => { closedSessions.push("session"); } });
+    const client1 = { ...makeClient(session1), close: async () => { closedClients.push("client"); } };
+    _acpAdapterDeps.createClient = mock(() => client1 as any);
+    const handle1 = await adapter.openSession("nax-close-test", makeOpenSessionOpts());
+    await adapter.closeSession(handle1);
     expect(closedSessions).toEqual(["session"]);
     expect(closedClients).toEqual(["client"]);
-  });
 
-  test("swallows client.close() errors (best-effort)", async () => {
-    const session = makeSession();
-    const client = {
-      ...makeClient(session),
-      close: async () => { throw new Error("client close failed"); },
-    };
-    _acpAdapterDeps.createClient = mock(() => client as any);
+    // Scenario 2: client.close() throws → resolves anyway (best-effort)
+    const session2 = makeSession();
+    const client2 = { ...makeClient(session2), close: async () => { throw new Error("client close failed"); } };
+    _acpAdapterDeps.createClient = mock(() => client2 as any);
+    const handle2 = await adapter.openSession("nax-close-err", makeOpenSessionOpts());
+    await expect(adapter.closeSession(handle2)).resolves.toBeUndefined();
 
-    const handle = await adapter.openSession("nax-close-err", makeOpenSessionOpts());
-
-    await expect(adapter.closeSession(handle)).resolves.toBeUndefined();
-  });
-
-  test("session.close() error does not prevent client.close()", async () => {
-    const closedClients: string[] = [];
-    const session = makeSession({ closeFn: async () => { throw new Error("session close failed"); } });
-    const client = {
-      ...makeClient(session),
-      close: async () => { closedClients.push("client"); },
-    };
-    _acpAdapterDeps.createClient = mock(() => client as any);
-
-    const handle = await adapter.openSession("nax-close-session-err", makeOpenSessionOpts());
-    await expect(adapter.closeSession(handle)).resolves.toBeUndefined();
-
-    expect(closedClients).toEqual(["client"]);
+    // Scenario 3: session.close() throws → client.close() still runs
+    const closedClients3: string[] = [];
+    const session3 = makeSession({ closeFn: async () => { throw new Error("session close failed"); } });
+    const client3 = { ...makeClient(session3), close: async () => { closedClients3.push("client"); } };
+    _acpAdapterDeps.createClient = mock(() => client3 as any);
+    const handle3 = await adapter.openSession("nax-close-session-err", makeOpenSessionOpts());
+    await expect(adapter.closeSession(handle3)).resolves.toBeUndefined();
+    expect(closedClients3).toEqual(["client"]);
   });
 });

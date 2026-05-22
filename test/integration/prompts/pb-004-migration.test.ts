@@ -190,9 +190,8 @@ describe("Integration: 6 roles with no override — story title and AC present",
     acceptanceCriteria: ["CRITERIA_ONE", "CRITERIA_TWO"],
   });
 
-  test("test-writer (strict isolation) contains story title and acceptance criteria", async () => {
+  test("test-writer (strict): contains story/criteria and test-only isolation instructions", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("test-writer", { isolation: "strict" }) as any)
       .withLoader(tmpDir, config)
       .story(story)
@@ -201,27 +200,15 @@ describe("Integration: 6 roles with no override — story title and AC present",
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
     expect(prompt).toContain("CRITERIA_TWO");
-  });
-
-  test("test-writer (strict) includes test-only isolation instructions", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("test-writer", { isolation: "strict" }) as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
-
     const lower = prompt.toLowerCase();
-    // Must mention writing tests or test/ directory restriction
     const hasTestInstruction =
       lower.includes("test") &&
       (lower.includes("only") || lower.includes("do not") || lower.includes("don't") || lower.includes("src/"));
     expect(hasTestInstruction).toBe(true);
   });
 
-  test("test-writer (lite) contains story title and acceptance criteria", async () => {
+  test("test-writer (lite): contains story/criteria and allows src/ reads or stubs", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("test-writer", { isolation: "lite" }) as any)
       .withLoader(tmpDir, config)
       .story(story)
@@ -229,18 +216,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
-  });
-
-  test("test-writer (lite) mentions allowing src/ reads or stubs", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("test-writer", { isolation: "lite" }) as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
-
     const lower = prompt.toLowerCase();
-    // Lite mode allows reading source files or creating stubs
     const hasLiteInstruction =
       lower.includes("stub") ||
       lower.includes("may read") ||
@@ -249,9 +225,8 @@ describe("Integration: 6 roles with no override — story title and AC present",
     expect(hasLiteInstruction).toBe(true);
   });
 
-  test("implementer (standard) contains story title and acceptance criteria", async () => {
+  test("implementer (standard): contains story/criteria and implementation instructions", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("implementer", { variant: "standard" }) as any)
       .withLoader(tmpDir, config)
       .story(story)
@@ -260,24 +235,12 @@ describe("Integration: 6 roles with no override — story title and AC present",
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
     expect(prompt).toContain("CRITERIA_TWO");
-  });
-
-  test("implementer (standard) includes implementation instructions", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("implementer", { variant: "standard" }) as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
-
     const lower = prompt.toLowerCase();
-    const hasImplInstruction = lower.includes("implement") || lower.includes("make") || lower.includes("pass");
-    expect(hasImplInstruction).toBe(true);
+    expect(lower.includes("implement") || lower.includes("make") || lower.includes("pass")).toBe(true);
   });
 
-  test("implementer (lite) contains story title and acceptance criteria", async () => {
+  test("implementer (lite): contains story/criteria and mentions tests+implementing", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("implementer", { variant: "lite" }) as any)
       .withLoader(tmpDir, config)
       .story(story)
@@ -285,61 +248,30 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
-  });
-
-  test("implementer (lite) mentions writing tests AND implementing", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("implementer", { variant: "lite" }) as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
-
     const lower = prompt.toLowerCase();
-    const hasTests = lower.includes("test");
-    const hasImpl = lower.includes("implement") || lower.includes("feature");
-    expect(hasTests && hasImpl).toBe(true);
+    expect(lower.includes("test") && (lower.includes("implement") || lower.includes("feature"))).toBe(true);
   });
 
-  test("verifier contains story title and acceptance criteria", async () => {
+  test("verifier: contains story/criteria and verification instructions", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
     expect(prompt).toContain("CRITERIA_TWO");
-  });
-
-  test("verifier includes verification instructions", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
-
     const lower = prompt.toLowerCase();
-    const hasVerifyInstruction = lower.includes("verify") || lower.includes("check") || lower.includes("ensure");
-    expect(hasVerifyInstruction).toBe(true);
+    expect(lower.includes("verify") || lower.includes("check") || lower.includes("ensure")).toBe(true);
   });
 
-  test("single-session contains story title and acceptance criteria", async () => {
+  test("single-session: contains story/criteria and both test+implementation instructions", async () => {
     const config = makeConfig();
-    // FAILS: withLoader does not exist
     const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
     expect(prompt).toContain("CRITERIA_TWO");
-  });
-
-  test("single-session includes both test and implementation instructions", async () => {
-    const config = makeConfig();
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
-
     const lower = prompt.toLowerCase();
-    const hasTests = lower.includes("test");
-    const hasImpl = lower.includes("implement") || lower.includes("feature");
-    expect(hasTests && hasImpl).toBe(true);
+    expect(lower.includes("test") && (lower.includes("implement") || lower.includes("feature"))).toBe(true);
   });
 });
 
@@ -349,33 +281,18 @@ describe("Integration: 6 roles with no override — story title and AC present",
 // ---------------------------------------------------------------------------
 
 describe("Structural: call sites migrated away from old prompt functions", () => {
-  test("src/tdd/session-runner.ts has been deleted (issue #1067)", () => {
-    // session-runner.ts was retired in issue #1067 — the file must not exist.
+  test("session-runner.ts deleted; prompt.ts uses PromptBuilder not old functions", async () => {
     const { existsSync } = require("fs");
-    const { join } = require("path");
-    const path = join(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname);
-    expect(existsSync(path)).toBe(false);
-  });
+    expect(existsSync(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname)).toBe(false);
 
-  test("src/pipeline/stages/prompt.ts does not import buildSingleSessionPrompt or buildBatchPrompt after migration", async () => {
-    const source = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
-
-    // After migration, prompt stage should NOT use the old functions
-    expect(source).not.toContain("buildSingleSessionPrompt");
-    expect(source).not.toContain("buildBatchPrompt");
-  });
-
-  test("src/pipeline/stages/prompt.ts imports PromptBuilder after migration", async () => {
-    const source = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
-
-    // After migration, prompt stage should use PromptBuilder
-    expect(source).toContain("PromptBuilder");
+    const promptSrc = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
+    expect(promptSrc).not.toContain("buildSingleSessionPrompt");
+    expect(promptSrc).not.toContain("buildBatchPrompt");
+    expect(promptSrc).toContain("PromptBuilder");
   });
 
   test("src/cli/prompts.ts does not dynamically import buildTestWriterPrompt after migration", async () => {
     const source = await Bun.file(new URL("../../../src/cli/prompts.ts", import.meta.url).pathname).text();
-
-    // cli/prompts.ts has a dynamic import of tdd/prompts — after migration it should use PromptBuilder
     expect(source).not.toContain("buildTestWriterPrompt");
     expect(source).not.toContain("buildImplementerPrompt");
     expect(source).not.toContain("buildVerifierPrompt");
@@ -387,32 +304,17 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
 // ---------------------------------------------------------------------------
 
 describe("Internal prompts: not migrated, still accessible", () => {
-  test("src/tdd/prompts.ts has been deleted (Phase 5 — RectifierPromptBuilder replaces it)", async () => {
-    // After Phase 5, src/tdd/prompts.ts must not exist.
-    let importError: unknown = null;
-    try {
-      await import("../../../src/tdd/prompts");
-    } catch (err) {
-      importError = err;
-    }
-    expect(importError).not.toBeNull();
-  });
+  test("tdd/prompts.ts and execution/prompts.ts deleted; RectifierPromptBuilder exported (Phase 5)", async () => {
+    let tddErr: unknown = null;
+    try { await import("../../../src/tdd/prompts"); } catch (err) { tddErr = err; }
+    expect(tddErr).not.toBeNull();
 
-  test("RectifierPromptBuilder is exported from src/prompts (Phase 5)", async () => {
     const mod = await import("../../../src/prompts");
     expect(typeof mod.RectifierPromptBuilder).toBe("function");
-  });
 
-  test("src/execution/prompts.ts has been deleted (buildBatchPrompt and buildSingleSessionPrompt are now dead code)", async () => {
-    // After migration, src/execution/prompts.ts should not exist
-    // The module should not be importable
-    let importError = null;
-    try {
-      await import("../../../src/execution/prompts");
-    } catch (err) {
-      importError = err;
-    }
-    expect(importError).not.toBeNull();
+    let execErr: unknown = null;
+    try { await import("../../../src/execution/prompts"); } catch (err) { execErr = err; }
+    expect(execErr).not.toBeNull();
   });
 
   // buildRoutingPrompt / buildBatchRoutingPrompt parity tests removed in Phase 6:
@@ -424,58 +326,23 @@ describe("Internal prompts: not migrated, still accessible", () => {
 // ---------------------------------------------------------------------------
 
 describe("PromptBuilder.withLoader override content integration", () => {
-  test("override for implementer role replaces role body", async () => {
-    const overrideBody = "IMPLEMENTER_CUSTOM_ROLE_BODY_MARKER";
-    const relPath = ".nax/prompts/implementer.md";
-    const absPath = join(tmpDir, relPath);
-    mkdirSync(dirname(absPath), { recursive: true });
-    writeFileSync(absPath, overrideBody);
+  test("override for implementer, verifier, and single-session roles replaces role body", async () => {
+    const scenarios = [
+      { role: "implementer", opts: { variant: "standard" }, key: "implementer", marker: "IMPLEMENTER_CUSTOM_ROLE_BODY_MARKER", title: "OVERRIDE_STORY_TITLE" },
+      { role: "verifier", opts: {}, key: "verifier", marker: "VERIFIER_CUSTOM_ROLE_BODY_MARKER", title: "VERIFIER_OVERRIDE_TITLE" },
+      { role: "single-session", opts: {}, key: "single-session", marker: "SINGLE_SESSION_CUSTOM_ROLE_BODY_MARKER", title: "SINGLE_SESSION_OVERRIDE_TITLE" },
+    ] as const;
 
-    const config = makeConfig({ prompts: { overrides: { implementer: relPath } } });
-    const story = makeStory({ title: "OVERRIDE_STORY_TITLE" });
-
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("implementer", { variant: "standard" }) as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
-
-    expect(prompt).toContain(overrideBody);
-    // Story context still present (non-overridable)
-    expect(prompt).toContain("OVERRIDE_STORY_TITLE");
-  });
-
-  test("override for verifier role replaces role body", async () => {
-    const overrideBody = "VERIFIER_CUSTOM_ROLE_BODY_MARKER";
-    const relPath = ".nax/prompts/verifier.md";
-    const absPath = join(tmpDir, relPath);
-    mkdirSync(dirname(absPath), { recursive: true });
-    writeFileSync(absPath, overrideBody);
-
-    const config = makeConfig({ prompts: { overrides: { verifier: relPath } } });
-    const story = makeStory({ title: "VERIFIER_OVERRIDE_TITLE" });
-
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
-
-    expect(prompt).toContain(overrideBody);
-    expect(prompt).toContain("VERIFIER_OVERRIDE_TITLE");
-  });
-
-  test("override for single-session role replaces role body", async () => {
-    const overrideBody = "SINGLE_SESSION_CUSTOM_ROLE_BODY_MARKER";
-    const relPath = ".nax/prompts/single-session.md";
-    const absPath = join(tmpDir, relPath);
-    mkdirSync(dirname(absPath), { recursive: true });
-    writeFileSync(absPath, overrideBody);
-
-    const config = makeConfig({ prompts: { overrides: { "single-session": relPath } } });
-    const story = makeStory({ title: "SINGLE_SESSION_OVERRIDE_TITLE" });
-
-    // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
-
-    expect(prompt).toContain(overrideBody);
-    expect(prompt).toContain("SINGLE_SESSION_OVERRIDE_TITLE");
+    for (const { role, opts, key, marker, title } of scenarios) {
+      const relPath = `.nax/prompts/${role}.md`;
+      const absPath = join(tmpDir, relPath);
+      mkdirSync(dirname(absPath), { recursive: true });
+      writeFileSync(absPath, marker);
+      const config = makeConfig({ prompts: { overrides: { [key]: relPath } } });
+      const story = makeStory({ title });
+      const prompt = await (PromptBuilder.for(role, opts as never) as any).withLoader(tmpDir, config).story(story).build();
+      expect(prompt, role).toContain(marker);
+      expect(prompt, role).toContain(title);
+    }
   });
 });

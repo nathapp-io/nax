@@ -186,15 +186,13 @@ describe("ReviewerSession.reReview() — agentManager.runAsSession() call parame
     expect(capturedPrompt).toContain(UPDATED_DIFF);
   });
 
-  test("prompt references previous finding by ruleId (AC-1-not-satisfied)", async () => {
-    await session.reReview(UPDATED_DIFF);
-    expect(capturedPrompt).toContain("AC-1-not-satisfied");
-  });
-
-  test("prompt references second previous finding by ruleId (AC-2-not-satisfied)", async () => {
-    await session.reReview(UPDATED_DIFF);
-    expect(capturedPrompt).toContain("AC-2-not-satisfied");
-  });
+  test.each(["AC-1-not-satisfied", "AC-2-not-satisfied"])(
+    "prompt references previous finding by ruleId (%s)",
+    async (ruleId) => {
+      await session.reReview(UPDATED_DIFF);
+      expect(capturedPrompt).toContain(ruleId);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -202,44 +200,18 @@ describe("ReviewerSession.reReview() — agentManager.runAsSession() call parame
 // ---------------------------------------------------------------------------
 
 describe("ReviewerSession.reReview() — deltaSummary field", () => {
-  test("returns ReviewDialogueResult with deltaSummary defined", async () => {
+  test("returns ReviewDialogueResult with non-empty deltaSummary string, checkResult.success, and findings", async () => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
     const result = await session.reReview(UPDATED_DIFF);
     expect(result.deltaSummary).toBeDefined();
-    await session.destroy();
-  });
-
-  test("deltaSummary is a non-empty string", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const result = await session.reReview(UPDATED_DIFF);
     expect(typeof result.deltaSummary).toBe("string");
     expect((result.deltaSummary as string).length).toBeGreaterThan(0);
-    await session.destroy();
-  });
-
-  test("deltaSummary describes resolved findings", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const result = await session.reReview(UPDATED_DIFF);
-    // deltaSummary should mention either "resolved" or "still present" or similar language
-    const summary = result.deltaSummary as string;
-    const lowerSummary = summary.toLowerCase();
+    const lowerSummary = (result.deltaSummary as string).toLowerCase();
     expect(
       lowerSummary.includes("resolved") || lowerSummary.includes("fixed") || lowerSummary.includes("addressed")
       || lowerSummary.includes("still") || lowerSummary.includes("outstanding") || lowerSummary.includes("remaining"),
     ).toBe(true);
-    await session.destroy();
-  });
-
-  test("returns ReviewDialogueResult with checkResult.success", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const result = await session.reReview(UPDATED_DIFF);
     expect(typeof result.checkResult.success).toBe("boolean");
-    await session.destroy();
-  });
-
-  test("returns ReviewDialogueResult with checkResult.findings as array", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const result = await session.reReview(UPDATED_DIFF);
     expect(Array.isArray(result.checkResult.findings)).toBe(true);
     await session.destroy();
   });
@@ -258,36 +230,22 @@ describe("ReviewerSession.reReview() — history entries", () => {
     await session.destroy();
   });
 
-  test("reReview appended entry at n has role 'implementer'", async () => {
+  test.each<[string, number, string]>([
+    ["implementer", 0, "implementer"],
+    ["reviewer", 1, "reviewer"],
+  ])("reReview appended entry at n+%d has role '%s'", async (_role, offset, expectedRole) => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
     const prevLen = session.history.length;
     await session.reReview(UPDATED_DIFF);
-    const entry = session.history[prevLen];
-    expect(entry?.role).toBe("implementer");
+    expect(session.history[prevLen + offset]?.role).toBe(expectedRole as any);
     await session.destroy();
   });
 
-  test("reReview appended entry at n+1 has role 'reviewer'", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.reReview(UPDATED_DIFF);
-    const entry = session.history[prevLen + 1];
-    expect(entry?.role).toBe("reviewer");
-    await session.destroy();
-  });
-
-  test("implementer entry content contains the updated diff", async () => {
+  test("implementer entry contains updated diff; reviewer entry is non-empty", async () => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
     const prevLen = session.history.length;
     await session.reReview(UPDATED_DIFF);
     expect(session.history[prevLen]?.content).toContain(UPDATED_DIFF);
-    await session.destroy();
-  });
-
-  test("reviewer entry content is non-empty", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, RE_REVIEW_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.reReview(UPDATED_DIFF);
     expect((session.history[prevLen + 1]?.content ?? "").length).toBeGreaterThan(0);
     await session.destroy();
   });
@@ -403,24 +361,12 @@ describe("ReviewerSession.clarify() — agentManager.runAsSession() call and ret
     mock.restore();
   });
 
-  test("returns a string", async () => {
-    const result = await session.clarify("What does AC-1 require exactly?");
-    expect(typeof result).toBe("string");
-  });
-
-  test("returns the raw agent response string", async () => {
-    const result = await session.clarify("What does AC-1 require exactly?");
-    expect(result).toBe(CLARIFY_RESPONSE);
-  });
-
-  test("calls agentManager.runAsSession() with pipelineStage: 'review'", async () => {
-    await session.clarify("What does AC-1 require exactly?");
-    expect(capturedOpts?.pipelineStage).toBe("review");
-  });
-
-  test("prompt contains the clarification question", async () => {
+  test("returns raw response string, uses pipelineStage 'review', prompt contains question", async () => {
     const question = "What does AC-1 require exactly?";
-    await session.clarify(question);
+    const result = await session.clarify(question);
+    expect(typeof result).toBe("string");
+    expect(result).toBe(CLARIFY_RESPONSE);
+    expect(capturedOpts?.pipelineStage).toBe("review");
     expect(capturedPrompt).toContain(question);
   });
 });
@@ -438,35 +384,23 @@ describe("ReviewerSession.clarify() — history entries", () => {
     await session.destroy();
   });
 
-  test("first appended entry has role 'implementer'", async () => {
+  test.each<[string, number, string]>([
+    ["first", 0, "implementer"],
+    ["second", 1, "reviewer"],
+  ])("%s appended entry has role '%s'", async (_label, offset, role) => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
     const prevLen = session.history.length;
     await session.clarify("What does AC-1 require?");
-    expect(session.history[prevLen]?.role).toBe("implementer");
+    expect(session.history[prevLen + offset]?.role).toBe(role as any);
     await session.destroy();
   });
 
-  test("second appended entry has role 'reviewer'", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.clarify("What does AC-1 require?");
-    expect(session.history[prevLen + 1]?.role).toBe("reviewer");
-    await session.destroy();
-  });
-
-  test("implementer entry content contains the question", async () => {
+  test("implementer entry contains question; reviewer entry equals raw response", async () => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
     const prevLen = session.history.length;
     const question = "What does AC-1 require?";
     await session.clarify(question);
     expect(session.history[prevLen]?.content).toContain(question);
-    await session.destroy();
-  });
-
-  test("reviewer entry content equals the raw response", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE, CLARIFY_RESPONSE]);
-    const prevLen = session.history.length;
-    await session.clarify("What does AC-1 require?");
     expect(session.history[prevLen + 1]?.content).toBe(CLARIFY_RESPONSE);
     await session.destroy();
   });
@@ -484,17 +418,13 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
     await session.destroy();
   });
 
-  test("passed reflects last checkResult.success (false for failing review)", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE]);
+  test.each([
+    ["failing review → passed=false", [INITIAL_FAILING_RESPONSE], false],
+    ["passing review → passed=true", [INITIAL_PASSING_RESPONSE], true],
+  ] as const)("passed reflects checkResult.success: %s", async (_label, responses, expected) => {
+    const session = await makeSessionWithReview([...responses]);
     const verdict = session.getVerdict();
-    expect(verdict.passed).toBe(false);
-    await session.destroy();
-  });
-
-  test("passed reflects last checkResult.success (true for passing review)", async () => {
-    const session = await makeSessionWithReview([INITIAL_PASSING_RESPONSE]);
-    const verdict = session.getVerdict();
-    expect(verdict.passed).toBe(true);
+    expect(verdict.passed).toBe(expected);
     await session.destroy();
   });
 
@@ -507,18 +437,11 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
     await session.destroy();
   });
 
-  test("acCount is a non-negative integer", async () => {
+  test("acCount is a non-negative integer matching story.acceptanceCriteria.length", async () => {
     const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE]);
     const verdict = session.getVerdict();
-    expect(typeof verdict.acCount).toBe("number");
     expect(Number.isInteger(verdict.acCount)).toBe(true);
     expect(verdict.acCount).toBeGreaterThanOrEqual(0);
-    await session.destroy();
-  });
-
-  test("acCount matches the number of acceptance criteria in the story", async () => {
-    const session = await makeSessionWithReview([INITIAL_FAILING_RESPONSE]);
-    const verdict = session.getVerdict();
     expect(verdict.acCount).toBe(STORY.acceptanceCriteria.length);
     await session.destroy();
   });
@@ -556,13 +479,7 @@ describe("ReviewerSession.getVerdict() — SemanticVerdict fields", () => {
 // ---------------------------------------------------------------------------
 
 describe("ReviewerSession.getVerdict() — NO_REVIEW_RESULT guard", () => {
-  test("throws NaxError when called before any review()", () => {
-    const agentManager = makeAgentManager();
-    const session = createReviewerSession(agentManager, makeSessionManager(), "US-002", "/work", "my-feature", makeConfig());
-    expect(() => session.getVerdict()).toThrow(NaxError);
-  });
-
-  test("throws NaxError with code 'NO_REVIEW_RESULT' when called before any review()", () => {
+  test("throws NaxError with code 'NO_REVIEW_RESULT' before review(), does not throw after", async () => {
     const agentManager = makeAgentManager();
     const session = createReviewerSession(agentManager, makeSessionManager(), "US-002", "/work", "my-feature", makeConfig());
     let caught: unknown;
@@ -573,11 +490,7 @@ describe("ReviewerSession.getVerdict() — NO_REVIEW_RESULT guard", () => {
     }
     expect(caught).toBeInstanceOf(NaxError);
     expect((caught as NaxError).code).toBe("NO_REVIEW_RESULT");
-  });
 
-  test("does not throw after a successful review()", async () => {
-    const agentManager = makeAgentManager();
-    const session = createReviewerSession(agentManager, makeSessionManager(), "US-002", "/work", "my-feature", makeConfig());
     await session.review(SAMPLE_DIFF, STORY, SEMANTIC_CONFIG);
     expect(() => session.getVerdict()).not.toThrow();
     await session.destroy();

@@ -77,45 +77,26 @@ describe("OneShotPromptBuilder — snapshot stability", () => {
 // ─── Structural contract: fluent API ─────────────────────────────────────────
 
 describe("OneShotPromptBuilder — fluent API", () => {
-  test("for() returns a OneShotPromptBuilder", () => {
+  test("for() returns a OneShotPromptBuilder; getRole() returns the role passed to for()", () => {
     const builder = OneShotPromptBuilder.for("router");
     expect(builder).toBeInstanceOf(OneShotPromptBuilder);
-  });
-
-  test("getRole() returns the role passed to for()", () => {
     expect(OneShotPromptBuilder.for("router").getRole()).toBe("router");
     expect(OneShotPromptBuilder.for("decomposer").getRole()).toBe("decomposer");
     expect(OneShotPromptBuilder.for("auto-approver").getRole()).toBe("auto-approver");
   });
 
-  test(".instructions() is chainable", () => {
-    const builder = OneShotPromptBuilder.for("router").instructions(INSTRUCTIONS);
-    expect(builder).toBeInstanceOf(OneShotPromptBuilder);
+  test("all builder methods are chainable (instructions, constitution, inputData, candidates, jsonSchema)", () => {
+    expect(OneShotPromptBuilder.for("router").instructions(INSTRUCTIONS)).toBeInstanceOf(OneShotPromptBuilder);
+    expect(OneShotPromptBuilder.for("decomposer").constitution(CONSTITUTION)).toBeInstanceOf(OneShotPromptBuilder);
+    expect(OneShotPromptBuilder.for("router").inputData("Story", STORY_INPUT)).toBeInstanceOf(OneShotPromptBuilder);
+    expect(OneShotPromptBuilder.for("router").candidates(CANDIDATES)).toBeInstanceOf(OneShotPromptBuilder);
+    expect(OneShotPromptBuilder.for("router").jsonSchema(SCHEMA)).toBeInstanceOf(OneShotPromptBuilder);
   });
 
-  test(".constitution() is chainable", () => {
-    const builder = OneShotPromptBuilder.for("decomposer").constitution(CONSTITUTION);
-    expect(builder).toBeInstanceOf(OneShotPromptBuilder);
-  });
-
-  test(".inputData() is chainable", () => {
-    const builder = OneShotPromptBuilder.for("router").inputData("Story", STORY_INPUT);
-    expect(builder).toBeInstanceOf(OneShotPromptBuilder);
-  });
-
-  test(".candidates() is chainable", () => {
-    const builder = OneShotPromptBuilder.for("router").candidates(CANDIDATES);
-    expect(builder).toBeInstanceOf(OneShotPromptBuilder);
-  });
-
-  test(".jsonSchema() is chainable", () => {
-    const builder = OneShotPromptBuilder.for("router").jsonSchema(SCHEMA);
-    expect(builder).toBeInstanceOf(OneShotPromptBuilder);
-  });
-
-  test("build() returns a string (synchronous)", () => {
+  test("build() returns a string; empty builder produces empty string", () => {
     const result = OneShotPromptBuilder.for("router").instructions(INSTRUCTIONS).build();
     expect(typeof result).toBe("string");
+    expect(OneShotPromptBuilder.for("router").build()).toBe("");
   });
 });
 
@@ -127,29 +108,22 @@ describe("OneShotPromptBuilder — section content", () => {
     expect(result).toContain(INSTRUCTIONS);
   });
 
-  test("constitution section includes the constitution text", () => {
-    const result = OneShotPromptBuilder.for("decomposer")
+  test("constitution section includes text when set; absent when undefined", () => {
+    const withConstitution = OneShotPromptBuilder.for("decomposer")
       .constitution(CONSTITUTION)
       .instructions(INSTRUCTIONS)
       .build();
-    expect(result).toContain(CONSTITUTION);
-  });
-
-  test("undefined constitution produces no constitution section", () => {
-    const result = OneShotPromptBuilder.for("decomposer")
+    expect(withConstitution).toContain(CONSTITUTION);
+    const withoutConstitution = OneShotPromptBuilder.for("decomposer")
       .constitution(undefined)
       .instructions(INSTRUCTIONS)
       .build();
-    expect(result).not.toContain("CONSTITUTION");
+    expect(withoutConstitution).not.toContain("CONSTITUTION");
   });
 
-  test("inputData label is uppercased as a heading", () => {
+  test("inputData label is uppercased as heading; body appears verbatim", () => {
     const result = OneShotPromptBuilder.for("router").inputData("Story", STORY_INPUT).build();
     expect(result).toContain("# STORY");
-  });
-
-  test("inputData body appears verbatim", () => {
-    const result = OneShotPromptBuilder.for("router").inputData("Story", STORY_INPUT).build();
     expect(result).toContain(STORY_INPUT);
   });
 
@@ -174,25 +148,13 @@ describe("OneShotPromptBuilder — section content", () => {
     }
   });
 
-  test("jsonSchema section includes schema name", () => {
+  test("jsonSchema section includes schema name and example", () => {
     const result = OneShotPromptBuilder.for("router")
       .instructions(INSTRUCTIONS)
       .jsonSchema(SCHEMA)
       .build();
     expect(result).toContain(SCHEMA.name);
-  });
-
-  test("jsonSchema section includes example", () => {
-    const result = OneShotPromptBuilder.for("router")
-      .instructions(INSTRUCTIONS)
-      .jsonSchema(SCHEMA)
-      .build();
     expect(result).toContain(JSON.stringify(SCHEMA.example, null, 2));
-  });
-
-  test("empty builder produces empty string", () => {
-    const result = OneShotPromptBuilder.for("router").build();
-    expect(result).toBe("");
   });
 });
 

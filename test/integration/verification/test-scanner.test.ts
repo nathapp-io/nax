@@ -34,17 +34,13 @@ describe("Validation", () => {
     expect(result.describes[1].tests).toEqual(["rejects empty name"]);
   });
 
-  test("handles single-quoted strings", () => {
-    const source = `describe('Auth', () => { it('logs in', () => {}); });`;
-    const result = extractTestStructure(source);
-    expect(result.describes[0].name).toBe("Auth");
-    expect(result.describes[0].tests).toEqual(["logs in"]);
-  });
+  test("handles single-quoted and backtick strings", () => {
+    const single = extractTestStructure(`describe('Auth', () => { it('logs in', () => {}); });`);
+    expect(single.describes[0].name).toBe("Auth");
+    expect(single.describes[0].tests).toEqual(["logs in"]);
 
-  test("handles backtick strings", () => {
-    const source = "describe(`Math utils`, () => { test(`adds numbers`, () => {}); });";
-    const result = extractTestStructure(source);
-    expect(result.describes[0].name).toBe("Math utils");
+    const backtick = extractTestStructure("describe(`Math utils`, () => { test(`adds numbers`, () => {}); });");
+    expect(backtick.describes[0].name).toBe("Math utils");
   });
 
   test("handles top-level tests without describe", () => {
@@ -59,22 +55,14 @@ test("standalone test 2", () => {});
     expect(result.describes[0].tests).toHaveLength(2);
   });
 
-  test("returns empty for file with no tests", () => {
-    const source = "export function helper() { return 42; }";
-    const result = extractTestStructure(source);
-    expect(result.testCount).toBe(0);
-    expect(result.describes).toHaveLength(0);
-  });
+  test("returns empty for no tests; handles single describe with nested test", () => {
+    const empty = extractTestStructure("export function helper() { return 42; }");
+    expect(empty.testCount).toBe(0);
+    expect(empty.describes).toHaveLength(0);
 
-  test("handles mixed describe and top-level tests", () => {
-    const source = `
-describe("Suite", () => {
-  test("in suite", () => {});
-});
-`;
-    const result = extractTestStructure(source);
-    expect(result.testCount).toBe(1);
-    expect(result.describes).toHaveLength(1);
+    const mixed = extractTestStructure(`describe("Suite", () => { test("in suite", () => {}); });`);
+    expect(mixed.testCount).toBe(1);
+    expect(mixed.describes).toHaveLength(1);
   });
 });
 
@@ -92,40 +80,26 @@ describe("formatTestSummary", () => {
     },
   ];
 
-  test("names-only shows file and count", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("test/store.test.ts");
-    expect(result).toContain("(5 tests)");
-    expect(result).toContain("test/validation.test.ts");
-    expect(result).toContain("(3 tests)");
-    expect(result).not.toContain("CRUD");
-  });
+  test("all three detail levels produce correct output; header and empty input", () => {
+    const namesOnly = formatTestSummary(files, "names-only");
+    expect(namesOnly).toContain("test/store.test.ts");
+    expect(namesOnly).toContain("(5 tests)");
+    expect(namesOnly).toContain("test/validation.test.ts");
+    expect(namesOnly).toContain("(3 tests)");
+    expect(namesOnly).not.toContain("CRUD");
+    expect(namesOnly).toContain("8 tests across 2 files");
+    expect(namesOnly).toContain("DO NOT duplicate");
 
-  test("names-and-counts shows describe blocks", () => {
-    const result = formatTestSummary(files, "names-and-counts");
-    expect(result).toContain("CRUD (5 tests)");
-    expect(result).toContain("Input validation (3 tests)");
-    expect(result).not.toContain("create");
-  });
+    const namesAndCounts = formatTestSummary(files, "names-and-counts");
+    expect(namesAndCounts).toContain("CRUD (5 tests)");
+    expect(namesAndCounts).toContain("Input validation (3 tests)");
+    expect(namesAndCounts).not.toContain("create");
 
-  test("describe-blocks shows individual test names", () => {
-    const result = formatTestSummary(files, "describe-blocks");
-    expect(result).toContain("create");
-    expect(result).toContain("read");
-    expect(result).toContain("required name");
-  });
+    const describeBlocks = formatTestSummary(files, "describe-blocks");
+    expect(describeBlocks).toContain("create");
+    expect(describeBlocks).toContain("read");
+    expect(describeBlocks).toContain("required name");
 
-  test("includes dedup instruction", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("DO NOT duplicate");
-  });
-
-  test("shows total count in header", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("8 tests across 2 files");
-  });
-
-  test("returns empty string for no files", () => {
     expect(formatTestSummary([], "names-only")).toBe("");
   });
 });
@@ -144,22 +118,15 @@ describe("truncateToTokenBudget", () => {
     },
   ];
 
-  test("uses preferred detail if within budget", () => {
-    const result = truncateToTokenBudget(files, 5000, "describe-blocks");
-    expect(result.detail).toBe("describe-blocks");
-    expect(result.truncated).toBe(false);
-  });
+  test("uses preferred detail when within budget; falls back and truncates when budget is too tight", () => {
+    const large = truncateToTokenBudget(files, 5000, "describe-blocks");
+    expect(large.detail).toBe("describe-blocks");
+    expect(large.truncated).toBe(false);
 
-  test("falls back to simpler detail if over budget", () => {
-    // Very tight budget — force fallback
-    const result = truncateToTokenBudget(files, 50, "describe-blocks");
-    expect(result.truncated).toBe(true);
-  });
-
-  test("handles tiny budget with fallback message", () => {
-    const result = truncateToTokenBudget(files, 10, "describe-blocks");
-    expect(result.truncated).toBe(true);
-    expect(result.summary).toContain("test files");
+    expect(truncateToTokenBudget(files, 50, "describe-blocks").truncated).toBe(true);
+    const tiny = truncateToTokenBudget(files, 10, "describe-blocks");
+    expect(tiny.truncated).toBe(true);
+    expect(tiny.summary).toContain("test files");
   });
 });
 
@@ -178,49 +145,25 @@ describe("deriveTestPatterns", () => {
     expect(patterns).toContain("connection.spec.ts");
   });
 
-  test("handles files without special suffixes", () => {
-    const contextFiles = ["src/utils.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    expect(patterns).toContain("utils.test.ts");
-    expect(patterns).toContain("utils.spec.ts");
-    expect(patterns).toContain("utils.test.js");
-    expect(patterns).toContain("utils.spec.js");
+  test.each([
+    ["plain .ts", ["src/utils.ts"], ["utils.test.ts", "utils.spec.ts", "utils.test.js", "utils.spec.js"]],
+    ["tsx/jsx extensions", ["src/component.tsx", "src/script.jsx"], ["component.test.tsx", "component.spec.tsx", "script.test.jsx", "script.spec.jsx"]],
+  ] as const)("generates patterns for %s", (_label, contextFiles, expected) => {
+    const patterns = deriveTestPatterns([...contextFiles]);
+    for (const p of expected) expect(patterns).toContain(p);
   });
 
-  test("handles various file extensions", () => {
-    const contextFiles = ["src/component.tsx", "src/script.jsx"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    expect(patterns).toContain("component.test.tsx");
-    expect(patterns).toContain("component.spec.tsx");
-    expect(patterns).toContain("script.test.jsx");
-    expect(patterns).toContain("script.spec.jsx");
-  });
-
-  test("strips common suffixes like .service, .controller, .module", () => {
-    const contextFiles = ["src/user.service.ts", "src/api.controller.ts", "src/app.module.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    // Should include both full and simplified patterns
+  test("strips common suffixes; returns empty for empty input; deduplicates patterns", () => {
+    const patterns = deriveTestPatterns(["src/user.service.ts", "src/api.controller.ts", "src/app.module.ts"]);
     expect(patterns).toContain("user.service.test.ts");
-    expect(patterns).toContain("user.test.ts"); // Simplified
+    expect(patterns).toContain("user.test.ts");
     expect(patterns).toContain("api.controller.test.ts");
-    expect(patterns).toContain("api.test.ts"); // Simplified
-  });
+    expect(patterns).toContain("api.test.ts");
 
-  test("returns empty array for empty input", () => {
-    const patterns = deriveTestPatterns([]);
-    expect(patterns).toEqual([]);
-  });
+    expect(deriveTestPatterns([])).toEqual([]);
 
-  test("deduplicates patterns", () => {
-    const contextFiles = ["src/foo.ts", "src/foo.service.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    // Both files generate "foo.test.ts", should only appear once
-    const fooTestCount = patterns.filter((p) => p === "foo.test.ts").length;
-    expect(fooTestCount).toBe(1);
+    const deduped = deriveTestPatterns(["src/foo.ts", "src/foo.service.ts"]);
+    expect(deduped.filter((p) => p === "foo.test.ts")).toHaveLength(1);
   });
 });
 

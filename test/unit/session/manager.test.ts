@@ -22,56 +22,26 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.create()", () => {
-  test("returns a descriptor with CREATED state", () => {
+  test("returns a descriptor with CREATED state, correct fields, empty protocolIds/completedStages; copy is immutable", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.state).toBe("CREATED");
     expect(desc.role).toBe("main");
     expect(desc.agent).toBe("claude");
     expect(desc.id).toMatch(/^sess-[0-9a-f-]{36}$/);
-  });
-
-  test("initialises protocolIds as null", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.protocolIds.recordId).toBeNull();
     expect(desc.protocolIds.sessionId).toBeNull();
-  });
-
-  test("completedStages starts empty", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     expect(desc.completedStages).toHaveLength(0);
-  });
-
-  test("returns an immutable copy (mutations don't affect registry)", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
     (desc as { state: SessionState }).state = "RUNNING";
-    const fetched = mgr.get(desc.id);
-    expect(fetched?.state).toBe("CREATED");
+    expect(mgr.get(desc.id)?.state).toBe("CREATED");
   });
 
-  test("storyId and featureName are optional", () => {
+  test("storyId and featureName stored; derives scratch dir when projectDir and featureName provided", () => {
     const mgr = new SessionManager();
-    const desc = mgr.create({ role: "decompose", agent: "claude", workdir: "/p", storyId: "US-001", featureName: "auth" });
+    const desc = mgr.create({ role: "test-writer", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" });
     expect(desc.storyId).toBe("US-001");
     expect(desc.featureName).toBe("auth");
-  });
-
-  test("derives a scratch dir when projectDir and featureName are provided", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({
-      role: "test-writer",
-      agent: "claude",
-      workdir: "/repo",
-      projectDir: "/repo",
-      featureName: "auth",
-      storyId: "US-001",
-    });
-    expect(desc.scratchDir).toBe(
-      "/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001",
-    );
+    expect(desc.scratchDir).toBe("/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001");
   });
 });
 
@@ -118,41 +88,18 @@ describe("SessionManager.create() — descriptor persistence", () => {
     _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
   });
 
-  test("skips descriptor write when scratchDir cannot be resolved", async () => {
+  test("skips descriptor write when scratchDir unresolved; write failure does not throw from create()", async () => {
     const writes: Array<unknown> = [];
-    _sessionManagerDeps.writeDescriptor = async (scratchDir) => {
-      writes.push(scratchDir);
-    };
-
+    _sessionManagerDeps.writeDescriptor = async (scratchDir) => { writes.push(scratchDir); };
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/repo" });
-
     await Promise.resolve();
     await Promise.resolve();
-
     expect(writes).toHaveLength(0);
 
-    _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;
-  });
-
-  test("descriptor write failure does not throw from create()", async () => {
-    _sessionManagerDeps.writeDescriptor = async () => {
-      throw new Error("disk full");
-    };
-
-    const mgr = new SessionManager();
-    expect(() =>
-      mgr.create({
-        role: "main",
-        agent: "claude",
-        workdir: "/repo",
-        projectDir: "/repo",
-        featureName: "auth",
-        storyId: "US-001",
-      }),
-    ).not.toThrow();
-
-    // Let the rejected promise settle so the logger.warn branch runs.
+    _sessionManagerDeps.writeDescriptor = async () => { throw new Error("disk full"); };
+    const mgr2 = new SessionManager();
+    expect(() => mgr2.create({ role: "main", agent: "claude", workdir: "/repo", projectDir: "/repo", featureName: "auth", storyId: "US-001" })).not.toThrow();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -318,16 +265,11 @@ describe("SessionManager — descriptor re-persistence on mutation", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.get()", () => {
-  test("returns null for unknown id", () => {
+  test("returns null for unknown id; returns descriptor after create", () => {
     const mgr = new SessionManager();
     expect(mgr.get("sess-unknown")).toBeNull();
-  });
-
-  test("returns descriptor after create", () => {
-    const mgr = new SessionManager();
     const created = mgr.create({ role: "main", agent: "claude", workdir: "/project" });
-    const fetched = mgr.get(created.id);
-    expect(fetched?.id).toBe(created.id);
+    expect(mgr.get(created.id)?.id).toBe(created.id);
   });
 });
 
@@ -336,48 +278,34 @@ describe("SessionManager.get()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.transition()", () => {
-  test("CREATED → RUNNING succeeds", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    const updated = mgr.transition(sess.id, "RUNNING");
-    expect(updated.state).toBe("RUNNING");
-  });
-
-  test("updates lastActivityAt on transition", () => {
+  test("CREATED → RUNNING succeeds and updates lastActivityAt", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     const before = sess.lastActivityAt;
     const updated = mgr.transition(sess.id, "RUNNING");
+    expect(updated.state).toBe("RUNNING");
     expect(updated.lastActivityAt).not.toBe(before);
   });
 
-  test("invalid transition throws NaxError", () => {
+  test.each([
+    ["invalid transition (CREATED → COMPLETED)", (mgr: SessionManager, id: string) => () => mgr.transition(id, "COMPLETED")],
+    ["unknown session ID", (mgr: SessionManager) => () => mgr.transition("sess-fake", "RUNNING")],
+  ] as const)("%s throws NaxError", (_label, makeCall) => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    expect(() => mgr.transition(sess.id, "COMPLETED")).toThrow(NaxError);
+    expect(makeCall(mgr, sess.id)).toThrow(NaxError);
   });
 
-  test("transition on unknown ID throws NaxError", () => {
-    const mgr = new SessionManager();
-    expect(() => mgr.transition("sess-fake", "RUNNING")).toThrow(NaxError);
-  });
-
-  test("protocolIds updated via options", () => {
+  test("protocolIds and completedStage updated via transition options", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr.transition(sess.id, "RUNNING");
-    const updated = mgr.transition(sess.id, "COMPLETED", {
+    const updated = mgr.transition(sess.id, "PAUSED", {
       protocolIds: { recordId: "rec-123", sessionId: "sid-456" },
+      completedStage: "verify",
     });
     expect(updated.protocolIds.recordId).toBe("rec-123");
     expect(updated.protocolIds.sessionId).toBe("sid-456");
-  });
-
-  test("completedStage appended via options", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    const updated = mgr.transition(sess.id, "PAUSED", { completedStage: "verify" });
     expect(updated.completedStages).toContain("verify");
   });
 
@@ -395,19 +323,14 @@ describe("SessionManager.transition()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.listActive()", () => {
-  test("empty manager: returns empty array", () => {
+  test("returns empty array when empty; excludes COMPLETED and FAILED sessions", () => {
     const mgr = new SessionManager();
     expect(mgr.listActive()).toHaveLength(0);
-  });
-
-  test("excludes COMPLETED and FAILED sessions", () => {
-    const mgr = new SessionManager();
     const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     const s2 = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr.transition(s1.id, "RUNNING");
     mgr.transition(s1.id, "COMPLETED");
-    const active = mgr.listActive();
-    const ids = active.map((s) => s.id);
+    const ids = mgr.listActive().map((s) => s.id);
     expect(ids).not.toContain(s1.id);
     expect(ids).toContain(s2.id);
   });
@@ -418,36 +341,25 @@ describe("SessionManager.listActive()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.sweepOrphans()", () => {
-  test("returns 0 when no terminal sessions exist", () => {
+  test("returns 0 when no terminal sessions; removes old terminal sessions, keeps recent ones", () => {
     const mgr = new SessionManager();
     mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     expect(mgr.sweepOrphans(0)).toBe(0);
-  });
 
-  test("removes terminal sessions older than ttl", () => {
-    const mgr = new SessionManager();
-    // Set time to old timestamp
+    const mgr2 = new SessionManager();
     _sessionManagerDeps.now = () => new Date(Date.now() - 10_000).toISOString();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
+    const oldSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr2.transition(oldSess.id, "RUNNING");
+    mgr2.transition(oldSess.id, "COMPLETED");
 
-    // Sweep with ttl=1ms (anything older than 1ms is an orphan)
-    const removed = mgr.sweepOrphans(1);
-    expect(removed).toBe(1);
-    expect(mgr.get(sess.id)).toBeNull();
-  });
-
-  test("keeps terminal sessions newer than ttl", () => {
-    // Reset mock to current time so lastActivityAt is "now"
     _sessionManagerDeps.now = () => new Date().toISOString();
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
-    // Use max safe integer TTL — the session was just completed so it can't be older
-    const removed = mgr.sweepOrphans(Number.MAX_SAFE_INTEGER);
-    expect(removed).toBe(0);
+    const newSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
+    mgr2.transition(newSess.id, "RUNNING");
+    mgr2.transition(newSess.id, "COMPLETED");
+
+    expect(mgr2.sweepOrphans(1)).toBe(1);
+    expect(mgr2.get(oldSess.id)).toBeNull();
+    expect(mgr2.get(newSess.id)).not.toBeNull();
   });
 });
 
@@ -456,39 +368,24 @@ describe("SessionManager.sweepOrphans()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.getForStory()", () => {
-  test("returns all sessions matching the given storyId", () => {
+  test("returns matching sessions and empty when no match; immutable copies; includes all states", () => {
     const mgr = new SessionManager();
     const s1 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     const s2 = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    const s3 = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-002" });
+    mgr.transition(s3.id, "RUNNING");
+    mgr.transition(s3.id, "COMPLETED");
 
     const results = mgr.getForStory("US-001");
-    expect(results).toHaveLength(2);
-    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
-  });
-
-  test("returns empty array when no sessions match", () => {
-    const mgr = new SessionManager();
-    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
+    expect(results).toHaveLength(3);
+    expect(results.map((s) => s.id).sort()).toEqual([s1.id, s2.id, s3.id].sort());
+    expect(results.some((s) => s.state === "COMPLETED")).toBe(true);
     expect(mgr.getForStory("US-999")).toHaveLength(0);
-  });
 
-  test("returns immutable copies (mutations don't affect registry)", () => {
-    const mgr = new SessionManager();
-    mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
-    const results = mgr.getForStory("US-001");
+    // Immutable: mutation does not affect registry
     (results[0] as { state: string }).state = "FAILED";
-    expect(mgr.getForStory("US-001")[0].state).toBe("CREATED");
-  });
-
-  test("includes sessions regardless of state", () => {
-    const mgr = new SessionManager();
-    const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(sess.id, "RUNNING");
-    mgr.transition(sess.id, "COMPLETED");
-    const results = mgr.getForStory("US-001");
-    expect(results).toHaveLength(1);
-    expect(results[0].state).toBe("COMPLETED");
+    expect(mgr.getForStory("US-001")[0].state).not.toBe("FAILED");
   });
 });
 
@@ -503,16 +400,12 @@ describe("SessionManager.getForStory()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SessionManager.handoff()", () => {
-  test("updates the session's agent owner", () => {
+  test("updates agent owner; throws NaxError for unknown session", () => {
     const mgr = new SessionManager();
     const sess = mgr.create({ role: "main", agent: "claude", workdir: "/p", storyId: "US-001" });
     const updated = mgr.handoff(sess.id, "codex", "fail-quota");
     expect(updated.agent).toBe("codex");
     expect(mgr.get(sess.id)?.agent).toBe("codex");
-  });
-
-  test("handoff on unknown session throws NaxError", () => {
-    const mgr = new SessionManager();
     expect(() => mgr.handoff("sess-unknown", "codex", "fail-quota")).toThrow(NaxError);
   });
 });

@@ -450,16 +450,18 @@ describe("planChecklistVerifier (US-004)", () => {
   });
 
   describe("AC3: Outcome determination", () => {
-    test("returns outcome === 'failed' when blocker findings exist and onBlocker is 'block'", async () => {
+    test("returns outcome === 'failed' when blocker findings exist (onBlocker 'block' or default)", async () => {
       existsSyncImpl = () => false; // triggers files-exist blocker
+      const blockerSelectorResult = {
+        outcome: "passed",
+        output: makeValidPRDJson([
+          makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
+        ]),
+      } as SelectorResult;
 
-      const ctx = makeVerifierContext({
-        selectorResult: {
-          outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
-        } as SelectorResult,
+      // Sub-scenario 1: explicit onBlocker: "block"
+      const ctx1 = makeVerifierContext({
+        selectorResult: blockerSelectorResult,
         stageConfig: {
           enabled: true,
           sessionMode: "one-shot",
@@ -468,32 +470,20 @@ describe("planChecklistVerifier (US-004)", () => {
           postDebateVerifier: { kind: "plan-checklist", onBlocker: "block" },
         } as DebateStageConfig,
       });
+      expect((await planChecklistVerifier(ctx1)).outcome).toBe("failed");
 
-      const result = await planChecklistVerifier(ctx);
-      expect(result.outcome).toBe("failed");
-    });
-
-    test("returns outcome === 'failed' when blocker findings exist and onBlocker is undefined (defaults to block)", async () => {
-      existsSyncImpl = () => false;
-
-      const ctx = makeVerifierContext({
-        selectorResult: {
-          outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
-        } as SelectorResult,
+      // Sub-scenario 2: onBlocker undefined (defaults to block)
+      const ctx2 = makeVerifierContext({
+        selectorResult: blockerSelectorResult,
         stageConfig: {
           enabled: true,
           sessionMode: "one-shot",
           rounds: 1,
           resolver: { type: "synthesis" },
-          postDebateVerifier: { kind: "plan-checklist" }, // no onBlocker
+          postDebateVerifier: { kind: "plan-checklist" },
         } as DebateStageConfig,
       });
-
-      const result = await planChecklistVerifier(ctx);
-      expect(result.outcome).toBe("failed");
+      expect((await planChecklistVerifier(ctx2)).outcome).toBe("failed");
     });
 
     test("returns outcome === 'passed' when no blocker findings are present", async () => {
@@ -515,10 +505,10 @@ describe("planChecklistVerifier (US-004)", () => {
   });
 
   describe("AC5: Artifact writing", () => {
-    test("writes spec-deltas.md to .nax/runs/<runId>/plan/<storyId>/ when blockers present", async () => {
+    test("writes artifact and includes path in output when blockers present; no artifact when no blockers", async () => {
+      // Sub-scenario 1: blockers present — writes file and returns path
       existsSyncImpl = () => false;
-
-      const ctx = makeVerifierContext({
+      const blockerCtx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
                 output: makeValidPRDJson([
@@ -526,32 +516,15 @@ describe("planChecklistVerifier (US-004)", () => {
           ]),
         } as SelectorResult,
       });
-
-      await planChecklistVerifier(ctx);
+      const result1 = await planChecklistVerifier(blockerCtx);
       expect(capturedWrites).toHaveLength(1);
       expect(capturedWrites[0].path).toBe(EXPECTED_ARTIFACT_PATH);
-    });
+      expect(result1.output).toBe(EXPECTED_ARTIFACT_PATH);
 
-    test("includes artifact path in returned output field when blockers present", async () => {
-      existsSyncImpl = () => false;
-
-      const ctx = makeVerifierContext({
-        selectorResult: {
-          outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
-        } as SelectorResult,
-      });
-
-      const result = await planChecklistVerifier(ctx);
-      expect(result.output).toBe(EXPECTED_ARTIFACT_PATH);
-    });
-
-    test("does not write artifact when no blocker findings are present", async () => {
+      // Sub-scenario 2: no blockers — no artifact written
+      capturedWrites.length = 0;
       existsSyncImpl = () => true;
-
-      const ctx = makeVerifierContext({
+      const noBlockerCtx = makeVerifierContext({
         selectorResult: {
           outcome: "passed",
                 output: makeValidPRDJson([
@@ -559,37 +532,13 @@ describe("planChecklistVerifier (US-004)", () => {
           ]),
         } as SelectorResult,
       });
-
-      await planChecklistVerifier(ctx);
+      await planChecklistVerifier(noBlockerCtx);
       expect(capturedWrites).toHaveLength(0);
     });
   });
 
   describe("AC6: onBlocker policy", () => {
-    test("returns outcome === 'passed' when onBlocker === 'tag-expert' despite blocker findings", async () => {
-      existsSyncImpl = () => false;
-
-      const ctx = makeVerifierContext({
-        selectorResult: {
-          outcome: "passed",
-                output: makeValidPRDJson([
-            makeValidStory({ contextFiles: [{ path: "src/missing.ts", factId: "F-001" }] }),
-          ]),
-        } as SelectorResult,
-        stageConfig: {
-          enabled: true,
-          sessionMode: "one-shot",
-          rounds: 1,
-          resolver: { type: "synthesis" },
-          postDebateVerifier: { kind: "plan-checklist", onBlocker: "tag-expert" },
-        } as DebateStageConfig,
-      });
-
-      const result = await planChecklistVerifier(ctx);
-      expect(result.outcome).toBe("passed");
-    });
-
-    test("emits artifact path as downstream signal when onBlocker === 'tag-expert'", async () => {
+    test("tag-expert: outcome passed despite blockers; artifact path as downstream signal", async () => {
       existsSyncImpl = () => false;
 
       const ctx = makeVerifierContext({

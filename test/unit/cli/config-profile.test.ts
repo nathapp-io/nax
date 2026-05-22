@@ -62,8 +62,9 @@ describe("profileListCommand", () => {
     }
   });
 
-  test("outputs profiles grouped by 'global' and 'project' scope labels", async () => {
+  test("outputs profiles grouped by global/project scope labels, listing all profiles from both scopes", async () => {
     await Bun.write(join(tempDir, "global", "profiles", "fast.json"), "{}");
+    await Bun.write(join(tempDir, "global", "profiles", "thorough.json"), "{}");
     await Bun.write(join(tempDir, ".nax", "profiles", "slow.json"), "{}");
 
     const output = await profileListCommand(tempDir);
@@ -71,6 +72,7 @@ describe("profileListCommand", () => {
     expect(output).toContain("global");
     expect(output).toContain("project");
     expect(output).toContain("fast");
+    expect(output).toContain("thorough");
     expect(output).toContain("slow");
   });
 
@@ -82,18 +84,6 @@ describe("profileListCommand", () => {
 
     // Active profile should have "*" adjacent to its name
     expect(output).toMatch(/\*[^*]*fast|fast[^*]*\*/);
-  });
-
-  test("lists profiles from both scopes together", async () => {
-    await Bun.write(join(tempDir, "global", "profiles", "thorough.json"), "{}");
-    await Bun.write(join(tempDir, ".nax", "profiles", "fast.json"), "{}");
-    await Bun.write(join(tempDir, ".nax", "profiles", "slow.json"), "{}");
-
-    const output = await profileListCommand(tempDir);
-
-    expect(output).toContain("thorough");
-    expect(output).toContain("fast");
-    expect(output).toContain("slow");
   });
 
   test("shows only 'global' section when no project profiles exist", async () => {
@@ -186,24 +176,13 @@ describe("profileShowCommand", () => {
     expect(output).toContain("my-api-key");
   });
 
-  test("includes WARNING banner when unmask=true", async () => {
+  test("includes WARNING banner when unmask=true; no WARNING banner when unmask=false", async () => {
     await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
       timeout: 30000,
     });
 
-    const output = await profileShowCommand("fast", tempDir, { unmask: true });
-
-    expect(output).toContain("WARNING");
-  });
-
-  test("does not include WARNING banner when unmask=false", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "profiles", "fast.json"), {
-      timeout: 30000,
-    });
-
-    const output = await profileShowCommand("fast", tempDir, { unmask: false });
-
-    expect(output).not.toContain("WARNING");
+    expect(await profileShowCommand("fast", tempDir, { unmask: true })).toContain("WARNING");
+    expect(await profileShowCommand("fast", tempDir, { unmask: false })).not.toContain("WARNING");
   });
 });
 
@@ -221,65 +200,39 @@ describe("profileUseCommand", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("writes 'profile' field into .nax/config.json", async () => {
-    await profileUseCommand("fast", tempDir);
+  test("writes 'profile' field into .nax/config.json and returns non-empty confirmation message", async () => {
+    const result = await profileUseCommand("fast", tempDir);
 
     const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
     expect(config.profile).toBe("fast");
-  });
-
-  test("returns a non-empty confirmation message", async () => {
-    const result = await profileUseCommand("fast", tempDir);
-
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("removes 'profile' field from .nax/config.json when using 'default'", async () => {
+  test("removes 'profile' field from .nax/config.json when using 'default' while preserving other fields", async () => {
     await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
       profile: "fast",
       timeout: 5000,
+      execution: { maxIterations: 3 },
     });
 
     await profileUseCommand("default", tempDir);
 
     const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
     expect(config.profile).toBeUndefined();
-  });
-
-  test("preserves other fields when removing profile for 'default'", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
-      profile: "fast",
-      timeout: 5000,
-      execution: { maxIterations: 3 },
-    });
-
-    await profileUseCommand("default", tempDir);
-
-    const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
     expect(config.timeout).toBe(5000);
     expect(config.execution?.maxIterations).toBe(3);
   });
 
-  test("creates config.json if it does not exist", async () => {
-    await profileUseCommand("fast", tempDir);
-
+  test("creates config.json if it does not exist; preserves existing fields when writing profile", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
-    const exists = await Bun.file(configPath).exists();
-    expect(exists).toBe(true);
-    const config = await Bun.file(configPath).json();
-    expect(config.profile).toBe("fast");
-  });
-
-  test("preserves existing config fields when writing profile", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
-      timeout: 5000,
-      execution: { maxIterations: 3 },
-    });
-
     await profileUseCommand("fast", tempDir);
+    expect(await Bun.file(configPath).exists()).toBe(true);
+    expect((await Bun.file(configPath).json()).profile).toBe("fast");
 
-    const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
+    await writeJsonAsync(configPath, { timeout: 5000, execution: { maxIterations: 3 } });
+    await profileUseCommand("fast", tempDir);
+    const config = await Bun.file(configPath).json();
     expect(config.profile).toBe("fast");
     expect(config.timeout).toBe(5000);
   });
@@ -316,41 +269,22 @@ describe("profileCurrentCommand", () => {
     }
   });
 
-  test("returns 'default' when no profile is set anywhere", async () => {
-    const result = await profileCurrentCommand(tempDir);
+  test("returns 'default' when no profile is set or config has no profile field", async () => {
+    expect(await profileCurrentCommand(tempDir)).toBe("default");
 
-    expect(result).toBe("default");
+    await writeJsonAsync(join(tempDir, ".nax", "config.json"), { timeout: 5000 });
+    expect(await profileCurrentCommand(tempDir)).toBe("default");
   });
 
   test("returns profile name from config.json when set", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
-      profile: "fast",
-    });
-
-    const result = await profileCurrentCommand(tempDir);
-
-    expect(result).toBe("fast");
+    await writeJsonAsync(join(tempDir, ".nax", "config.json"), { profile: "fast" });
+    expect(await profileCurrentCommand(tempDir)).toBe("fast");
   });
 
   test("returns NAX_PROFILE env var value over config.json", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
-      profile: "slow",
-    });
+    await writeJsonAsync(join(tempDir, ".nax", "config.json"), { profile: "slow" });
     process.env.NAX_PROFILE = "fast";
-
-    const result = await profileCurrentCommand(tempDir);
-
-    expect(result).toBe("fast");
-  });
-
-  test("returns 'default' when config.json exists but has no profile field", async () => {
-    await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
-      timeout: 5000,
-    });
-
-    const result = await profileCurrentCommand(tempDir);
-
-    expect(result).toBe("default");
+    expect(await profileCurrentCommand(tempDir)).toBe("fast");
   });
 });
 
@@ -368,46 +302,23 @@ describe("profileCreateCommand", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("creates .nax/profiles/{name}.json containing {}", async () => {
-    await profileCreateCommand("myprofile", tempDir);
-
+  test("creates .nax/profiles/{name}.json containing {}; returns file path; creates profiles dir if absent", async () => {
     const profilePath = join(tempDir, ".nax", "profiles", "myprofile.json");
-    const exists = await Bun.file(profilePath).exists();
-    expect(exists).toBe(true);
-
-    const content = await Bun.file(profilePath).json();
-    expect(content).toEqual({});
-  });
-
-  test("returns the created file path", async () => {
     const result = await profileCreateCommand("myprofile", tempDir);
+    expect(await Bun.file(profilePath).exists()).toBe(true);
+    expect(await Bun.file(profilePath).json()).toEqual({});
+    expect(result).toBe(profilePath);
 
-    const expectedPath = join(tempDir, ".nax", "profiles", "myprofile.json");
-    expect(result).toBe(expectedPath);
-  });
-
-  test("creates the profiles directory if it does not exist", async () => {
-    // .nax/profiles/ does not exist yet
+    // profiles dir does not exist yet for newprofile
     await profileCreateCommand("newprofile", tempDir);
-
-    const exists = await Bun.file(
-      join(tempDir, ".nax", "profiles", "newprofile.json"),
-    ).exists();
-    expect(exists).toBe(true);
+    expect(await Bun.file(join(tempDir, ".nax", "profiles", "newprofile.json")).exists()).toBe(true);
   });
 
-  test("throws an error when profile already exists", async () => {
+  test("throws an Error when profile already exists", async () => {
     mkdirSync(join(tempDir, ".nax", "profiles"), { recursive: true });
     await Bun.write(join(tempDir, ".nax", "profiles", "myprofile.json"), "{}");
 
-    await expect(
-      profileCreateCommand("myprofile", tempDir),
-    ).rejects.toThrow();
-  });
-
-  test("error for duplicate profile has exit code 1", async () => {
-    mkdirSync(join(tempDir, ".nax", "profiles"), { recursive: true });
-    await Bun.write(join(tempDir, ".nax", "profiles", "myprofile.json"), "{}");
+    await expect(profileCreateCommand("myprofile", tempDir)).rejects.toThrow();
 
     let thrownError: unknown;
     try {
@@ -415,8 +326,6 @@ describe("profileCreateCommand", () => {
     } catch (err) {
       thrownError = err;
     }
-
-    expect(thrownError).toBeDefined();
     expect(thrownError).toBeInstanceOf(Error);
   });
 });

@@ -5,14 +5,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promptLoaderConfigSelector } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
-import type { PromptLoaderConfig } from "../../../src/config/selectors";
 import { loadOverride } from "../../../src/prompts/loader";
-import type { PromptRole } from "../../../src/prompts/types";
+import type { PromptRole } from "../../../src/prompts/core/types";
 import { fullTest } from "../../helpers/env";
 import { makeTempDir } from "../../helpers/temp";
 import { makeNaxConfig } from "../../helpers";
@@ -21,78 +19,11 @@ import { makeNaxConfig } from "../../helpers";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal NaxConfig with only required fields (omit optional ones) */
-function makeConfig(overrides: Record<string, unknown> = {}) {
-  return makeNaxConfig({
-    version: 1,
-    models: {
-      fast: { provider: "anthropic", model: "haiku" },
-      balanced: { provider: "anthropic", model: "sonnet" },
-      powerful: { provider: "anthropic", model: "opus" },
-    },
-    autoMode: {
-      enabled: true,
-      defaultAgent: "claude",
-      fallbackOrder: ["claude"],
-      complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
-      escalation: { enabled: true, tierOrder: [{ tier: "fast", attempts: 3 }] },
-    },
-    routing: { strategy: "keyword" },
-    execution: {
-      maxIterations: 10,
-      iterationDelayMs: 2000,
-      costLimit: 5,
-      sessionTimeoutSeconds: 600,
-      verificationTimeoutSeconds: 300,
-      maxStoriesPerFeature: 500,
-      rectification: {
-        enabled: true,
-        maxRetries: 2,
-        fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
-      },
-      regressionGate: { enabled: true, timeoutSeconds: 120 },
-      contextProviderTokenBudget: 2000,
-    },
-    quality: {
-      requireTypecheck: true,
-      requireLint: true,
-      requireTests: true,
-      commands: {},
-      forceExit: false,
-      detectOpenHandles: true,
-      detectOpenHandlesRetries: 1,
-      gracePeriodMs: 5000,
-      dangerouslySkipPermissions: true,
-      drainTimeoutMs: 2000,
-      shell: "/bin/sh",
-      stripEnvVars: [],
-    },
-    tdd: {
-      maxRetries: 2,
-      autoVerifyIsolation: true,
-      strategy: "auto",
-      autoApproveVerifier: true,
-    },
-    constitution: { enabled: false, path: "constitution.md", maxTokens: 2000 },
-    analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: true, maxCodebaseSummaryTokens: 5000 },
-    review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: { enabled: false, maxRetries: 2, generateTests: false, testPath: "acceptance.test.ts" },
-    context: {
-      testCoverage: {
-        enabled: false,
-        detail: "names-only",
-        maxTokens: 500,
-        testPattern: "**/*.test.ts",
-        scopeToStory: false,
-      },
-      autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
-    },
-    ...overrides,
-  });
+function makeConfig(overrides: DeepPartial<NaxConfig> = {}) {
+  return makeNaxConfig(overrides);
 }
+
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -117,7 +48,7 @@ afterEach(() => {
     }
   }
   try {
-    rmdirSync(tmpDir, { recursive: true });
+    Bun.spawnSync(["rm", "-rf", tmpDir]);
   } catch {
     // best-effort
   }
@@ -275,7 +206,7 @@ describe("loadOverride — permission error", () => {
 
     const config = makeConfig({ prompts: { overrides: { "test-writer": relPath } } });
 
-    await expect(loadOverride("test-writer", tmpDir, config)).rejects.toThrow();
+    expect(loadOverride("test-writer", tmpDir, config)).rejects.toThrow();
   });
 
   skipOnCI("error message mentions the role or path when unreadable", async () => {

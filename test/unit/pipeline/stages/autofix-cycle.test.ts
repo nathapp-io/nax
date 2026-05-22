@@ -84,27 +84,19 @@ afterEach(() => {
 // ─── buildAutofixStrategies — implementer strategy ────────────────────────────
 
 describe("buildAutofixStrategies — implementer strategy", () => {
-  test("extractApplied stashes declarations on ctx.testEditDeclarations", () => {
+  test("extractApplied stashes declarations; no-op when output has no declarations", () => {
     const ctx = makeMinCtx();
     const [, implementer] = buildAutofixStrategies(ctx, 3);
-
-    const declarations: TestEditDeclaration[] = [
-      {
-        reason: "prd_contract",
-        file: "test/foo.spec.ts",
-        prdQuote: "fn(x: number): void",
-        testBefore: "fn()",
-        testAfter: "fn(1)",
-      },
-    ];
-
-    implementer.extractApplied?.(
-      { applied: true, testEditDeclarations: declarations },
-      // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
-      undefined as any,
-    );
-
+    const declarations: TestEditDeclaration[] = [{ reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "fn(x: number): void", testBefore: "fn()", testAfter: "fn(1)" }];
+    // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
+    implementer.extractApplied?.({ applied: true, testEditDeclarations: declarations }, undefined as any);
     expect(ctx.testEditDeclarations).toEqual(declarations);
+
+    const ctx2 = makeMinCtx();
+    const [, implementer2] = buildAutofixStrategies(ctx2, 3);
+    // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
+    implementer2.extractApplied?.({ applied: true, testEditDeclarations: [] }, undefined as any);
+    expect(ctx2.testEditDeclarations).toBeUndefined();
   });
 
   test("extractApplied appends to existing declarations rather than replacing", () => {
@@ -128,17 +120,6 @@ describe("buildAutofixStrategies — implementer strategy", () => {
     expect(ctx.testEditDeclarations).toHaveLength(2);
     expect(ctx.testEditDeclarations?.[0].file).toBe("a.spec.ts");
     expect(ctx.testEditDeclarations?.[1].file).toBe("b.spec.ts");
-  });
-
-  test("extractApplied is a no-op when output has no declarations", () => {
-    const ctx = makeMinCtx();
-    const [, implementer] = buildAutofixStrategies(ctx, 3);
-    implementer.extractApplied?.(
-      { applied: true, testEditDeclarations: [] },
-      // biome-ignore lint/suspicious/noExplicitAny: extractApplied only reads output
-      undefined as any,
-    );
-    expect(ctx.testEditDeclarations).toBeUndefined();
   });
 
   test("appliesTo returns false for prd_quote_mismatch advisory findings", () => {
@@ -249,28 +230,15 @@ describe("applyTestEditDeclarations", () => {
     expect(out[0].fixTarget).toBe("source");
   });
 
-  test("no-op on empty declarations", () => {
+  test("no-op on empty declarations; drops declaration whose FILE matches no current finding", () => {
     const story = makeStory();
     const findings: Finding[] = [makeFinding()];
     expect(applyTestEditDeclarations(findings, [], story)).toEqual(findings);
-  });
 
-  test("drops a prd_contract declaration whose FILE matches no current finding", () => {
-    const story = makeStory({ description: "fn(): void" });
-    const findings: Finding[] = [makeFinding({ file: "test/other.spec.ts" })];
-    const declarations: TestEditDeclaration[] = [
-      {
-        reason: "prd_contract",
-        file: "test/missing.spec.ts",
-        prdQuote: "fn(): void",
-        testBefore: "x",
-        testAfter: "y",
-      },
-    ];
-
-    const out = applyTestEditDeclarations(findings, declarations, story);
-
-    // No re-tagging, no mismatch finding
+    const story2 = makeStory({ description: "fn(): void" });
+    const findings2: Finding[] = [makeFinding({ file: "test/other.spec.ts" })];
+    const declarations2: TestEditDeclaration[] = [{ reason: "prd_contract", file: "test/missing.spec.ts", prdQuote: "fn(): void", testBefore: "x", testAfter: "y" }];
+    const out = applyTestEditDeclarations(findings2, declarations2, story2);
     expect(out).toHaveLength(1);
     expect(out[0].fixTarget).toBe("source");
   });
@@ -279,34 +247,23 @@ describe("applyTestEditDeclarations", () => {
 // ─── runAgentRectificationV2 ──────────────────────────────────────────────────
 
 describe("runAgentRectificationV2", () => {
-  test("returns succeeded=true when cycle resolves", async () => {
+  test("returns succeeded=true when cycle resolves; succeeded=false when findings remain", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
       ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
       return true;
     });
+    const resolved = await runAgentRectificationV2(makeCtx(), undefined, undefined, "/tmp");
+    expect(resolved.succeeded).toBe(true);
+    expect(resolved.cost).toBe(0);
 
-    const result = await runAgentRectificationV2(makeCtx(), undefined, undefined, "/tmp");
-
-    expect(result.succeeded).toBe(true);
-    expect(result.cost).toBe(0);
-  });
-
-  test("returns succeeded=false when findings remain after max attempts", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
-      ctx.reviewResult = {
-        success: false,
-        checks: [failedCheck("lint", "still failing")],
-      } as unknown as PipelineContext["reviewResult"];
+      ctx.reviewResult = { success: false, checks: [failedCheck("lint", "still failing")] } as unknown as PipelineContext["reviewResult"];
       return false;
     });
-
-    const result = await runAgentRectificationV2(makeCtx(), undefined, undefined, "/tmp");
-
-    expect(result.succeeded).toBe(false);
+    const failed = await runAgentRectificationV2(makeCtx(), undefined, undefined, "/tmp");
+    expect(failed.succeeded).toBe(false);
   });
 
   test("implementer strategy fires for source-targeted findings", async () => {
@@ -333,70 +290,29 @@ describe("runAgentRectificationV2", () => {
     expect(capturedOps).not.toContain("autofix-test-writer");
   });
 
-  test("test-writer strategy fires when check has test-targeted findings", async () => {
-    const capturedOps: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    _cycleDeps.callOp = mock(async (_ctx: unknown, op: any): Promise<any> => {
-      capturedOps.push(op.name as string);
-      return { applied: true };
-    });
-    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
-      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
-      return true;
-    });
+  test("test-writer fires for test-targeted findings (inline and adapter output)", async () => {
+    const makeOpsCapture = () => {
+      const capturedOps: string[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      _cycleDeps.callOp = mock(async (_ctx: unknown, op: any): Promise<any> => { capturedOps.push(op.name as string); return { applied: true }; });
+      _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => { ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"]; return true; });
+      return capturedOps;
+    };
 
-    const ctx = makeCtx();
-    ctx.reviewResult = {
-      success: false,
-      checks: [
-        {
-          ...failedCheck("adversarial", "test gap found"),
-          findings: [{ source: "adversarial-review", severity: "error", category: "test-gap", message: "missing test", fixTarget: "test" }],
-        },
-      ],
-    } as unknown as PipelineContext["reviewResult"];
+    // inline finding with fixTarget: "test"
+    const ops1 = makeOpsCapture();
+    const ctx1 = makeCtx();
+    ctx1.reviewResult = { success: false, checks: [{ ...failedCheck("adversarial", "test gap found"), findings: [{ source: "adversarial-review", severity: "error", category: "test-gap", message: "missing test", fixTarget: "test" }] }] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctx1, undefined, undefined, "/tmp");
+    expect(ops1).toContain("autofix-test-writer");
 
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    expect(capturedOps).toContain("autofix-test-writer");
-  });
-
-  test("test-writer strategy fires for real adversarial test-gap adapter output", async () => {
-    const capturedOps: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    _cycleDeps.callOp = mock(async (_ctx: unknown, op: any): Promise<any> => {
-      capturedOps.push(op.name as string);
-      return { applied: true };
-    });
-    _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
-      ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
-      return true;
-    });
-
-    const ctx = makeCtx();
-    ctx.reviewResult = {
-      success: false,
-      checks: [
-        {
-          ...failedCheck("adversarial", "test gap found"),
-          findings: toAdversarialReviewFindings([
-            {
-              severity: "error",
-              category: "test-gap",
-              file: "src/foo.ts",
-              line: 1,
-              issue: "missing behavioral test",
-              suggestion: "add coverage",
-            },
-          ]),
-        },
-      ],
-    } as unknown as PipelineContext["reviewResult"];
-
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    expect(capturedOps).toContain("autofix-test-writer");
-    expect(capturedOps).not.toContain("autofix-implementer");
+    // real adversarial adapter output
+    const ops2 = makeOpsCapture();
+    const ctx2 = makeCtx();
+    ctx2.reviewResult = { success: false, checks: [{ ...failedCheck("adversarial", "test gap found"), findings: toAdversarialReviewFindings([{ severity: "error", category: "test-gap", file: "src/foo.ts", line: 1, issue: "missing behavioral test", suggestion: "add coverage" }]) }] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctx2, undefined, undefined, "/tmp");
+    expect(ops2).toContain("autofix-test-writer");
+    expect(ops2).not.toContain("autofix-implementer");
   });
 
   test("buildInput for second iteration uses fresh post-recheck checks", async () => {
@@ -584,108 +500,58 @@ describe("runAgentRectificationV2", () => {
     expect(receivedFindings[0]?.fixTarget).toBe("test");
   });
 
-  test("persists iterations to autofixPriorIterations on ctx", async () => {
+  test("persists iterations to autofixPriorIterations on ctx; preserves testEditDeclarations when no findings present", async () => {
+    // Sub-scenario 1: persists iterations
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext) => {
       ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
       return true;
     });
+    const ctx1 = makeCtx();
+    await runAgentRectificationV2(ctx1, undefined, undefined, "/tmp");
+    expect(ctx1.autofixPriorIterations).toBeDefined();
+    expect(ctx1.autofixPriorIterations?.length).toBeGreaterThanOrEqual(1);
 
-    const ctx = makeCtx();
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    expect(ctx.autofixPriorIterations).toBeDefined();
-    expect(ctx.autofixPriorIterations?.length).toBeGreaterThanOrEqual(1);
-  });
-
-  test("preserves testEditDeclarations when no findings present (validate never fires)", async () => {
-    const ctx: PipelineContext = {
-      ...makeCtx(),
-      prd: { feature: "f" } as any,
-    };
-    ctx.testEditDeclarations = [
-      { reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" },
-    ];
-    // No findings → cycle exits immediately; validate() is never called, so
-    // the side-channel is NOT cleared (consumed on next pipeline retry).
-    ctx.reviewResult = { success: false, checks: [] } as unknown as PipelineContext["reviewResult"];
-    const saved = { ..._autofixDeps };
+    // Sub-scenario 2: no findings → cycle exits immediately; validate() never runs; testEditDeclarations preserved
+    _cycleDeps.callOp = savedCycleCallOp;
     _autofixDeps.recheckReview = async () => false;
-    try {
-      await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-    } finally {
-      Object.assign(_autofixDeps, saved);
-    }
-
-    expect(ctx.autofixPriorIterations).toBeDefined();
-    // Side-channel still present — validate() never ran to consume it.
-    expect(ctx.testEditDeclarations).toHaveLength(1);
+    const ctx2: PipelineContext = { ...makeCtx(), prd: { feature: "f" } as any };
+    ctx2.testEditDeclarations = [{ reason: "prd_contract", file: "test/foo.spec.ts", prdQuote: "x", testBefore: "y", testAfter: "z" }];
+    ctx2.reviewResult = { success: false, checks: [] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctx2, undefined, undefined, "/tmp");
+    expect(ctx2.autofixPriorIterations).toBeDefined();
+    expect(ctx2.testEditDeclarations).toHaveLength(1);
   });
 
-  test("validate closure forwards lite: false when mode is full (normal path)", async () => {
-    const capturedRecheckCalls: Array<{ ctx: PipelineContext; opts?: { lite?: boolean } }> = [];
+  test("validate closure: lite=false on normal path; lite=true when implementer exhausted (AC#4)", async () => {
+    // Normal path: validate called with mode "full" → lite: false
+    const fullCalls: Array<{ ctx: PipelineContext; opts?: { lite?: boolean } }> = [];
     // biome-ignore lint/suspicious/noExplicitAny: test mock
     _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
-      capturedRecheckCalls.push({ ctx, opts });
+      fullCalls.push({ ctx, opts });
       ctx.reviewResult = { success: true, checks: [] } as unknown as PipelineContext["reviewResult"];
       return true;
     });
+    const ctxFull = makeCtx();
+    ctxFull.reviewResult = { success: false, checks: [failedCheck("lint", "lint failure")] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctxFull, undefined, undefined, "/tmp");
+    expect(fullCalls.length).toBeGreaterThan(0);
+    expect(fullCalls.find((c) => c.opts?.lite === false)).toBeDefined();
+    expect(fullCalls.every((c) => c.opts?.lite !== true)).toBe(true);
 
-    const ctx = makeCtx();
-    ctx.reviewResult = {
-      success: false,
-      checks: [failedCheck("lint", "lint failure")],
-    } as unknown as PipelineContext["reviewResult"];
-
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    // In normal (full) path, validate is called with mode: "full"
-    // This should result in lite: false being passed to recheckReview — and never lite: true.
-    expect(capturedRecheckCalls.length).toBeGreaterThan(0);
-    const normalPathCall = capturedRecheckCalls.find((call) => call.opts?.lite === false);
-    expect(normalPathCall).toBeDefined();
-    expect(capturedRecheckCalls.every((call) => call.opts?.lite !== true)).toBe(true);
-  });
-
-  test("validate closure passes lite: true when autofix-implementer is exhausted (AC#4)", async () => {
-    const capturedRecheckCalls: Array<{ opts?: { lite?: boolean } }> = [];
-    // biome-ignore lint/suspicious/noExplicitAny: test mock
-    _cycleDeps.callOp = mock(async (): Promise<any> => ({ applied: true }));
+    // Exhausted path: maxAttempts: 1 exhausts implementer → allExhausted calls validate(ctx, { mode: "lite" })
+    const liteCalls: Array<{ opts?: { lite?: boolean } }> = [];
     _autofixDeps.recheckReview = mock(async (ctx: PipelineContext, opts?: { lite?: boolean }) => {
-      capturedRecheckCalls.push({ opts });
-      // Keep findings present so the cycle exits with max-attempts-per-strategy, not resolved
-      ctx.reviewResult = {
-        success: false,
-        checks: [failedCheck("lint", "still failing")],
-      } as unknown as PipelineContext["reviewResult"];
+      liteCalls.push({ opts });
+      ctx.reviewResult = { success: false, checks: [failedCheck("lint", "still failing")] } as unknown as PipelineContext["reviewResult"];
       return false;
     });
-
-    // maxAttempts: 1 exhausts the implementer after one iteration, which forces the
-    // allExhausted branch in runFixCycle to call validate(ctx, { mode: "lite" })
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          autofix: { enabled: true, maxAttempts: 1, maxTotalAttempts: 4 },
-        },
-      } as PipelineContext["config"],
-    });
-    ctx.reviewResult = {
-      success: false,
-      checks: [failedCheck("lint", "lint failure")],
-    } as unknown as PipelineContext["reviewResult"];
-
-    await runAgentRectificationV2(ctx, undefined, undefined, "/tmp");
-
-    // The exhausted-cycle path calls validate(ctx, { mode: "lite" }), which must
-    // forward lite: true to recheckReview. A regression swapping === "lite" to === "full"
-    // would break this assertion.
-    const liteCall = capturedRecheckCalls.find((call) => call.opts?.lite === true);
-    expect(liteCall).toBeDefined();
+    const ctxExhausted = makeCtx({ config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, autofix: { enabled: true, maxAttempts: 1, maxTotalAttempts: 4 } } } as PipelineContext["config"] });
+    ctxExhausted.reviewResult = { success: false, checks: [failedCheck("lint", "lint failure")] } as unknown as PipelineContext["reviewResult"];
+    await runAgentRectificationV2(ctxExhausted, undefined, undefined, "/tmp");
+    expect(liteCalls.find((c) => c.opts?.lite === true)).toBeDefined();
   });
 });
 
@@ -716,60 +582,35 @@ describe("autofixCapacityExhausted", () => {
     expect(autofixCapacityExhausted(ctx)).toBe(false);
   });
 
-  test("false when no prior iterations and at least one strategy applies", () => {
-    const ctx = makeCtx();
-    ctx.autofixPriorIterations = [];
-    expect(autofixCapacityExhausted(ctx)).toBe(false);
-  });
 
-  test("true when an active strategy has reached its per-strategy cap", () => {
-    const ctx = makeCtx({
+  test("true when per-strategy cap reached or total fixesApplied reaches maxTotalAttempts", () => {
+    // Per-strategy cap: test-writer has maxAttempts:2; two prior uses = exhausted
+    const ctx1 = makeCtx({
       reviewResult: {
         success: false,
-        checks: [
-          {
-            ...failedCheck("adversarial", "blocking"),
-            findings: toAdversarialReviewFindings([
-              {
-                severity: "error",
-                category: "assumption",
-                file: "src/x.ts",
-                line: 1,
-                issue: "bug",
-                suggestion: "fix",
-              },
-            ]),
-          },
-        ],
+        checks: [{ ...failedCheck("adversarial", "blocking"), findings: toAdversarialReviewFindings([{ severity: "error", category: "assumption", file: "src/x.ts", line: 1, issue: "bug", suggestion: "fix" }]) }],
       } as unknown as PipelineContext["reviewResult"],
     });
-    // test-writer has maxAttempts:2; two prior uses = exhausted
-    ctx.autofixPriorIterations = [
+    ctx1.autofixPriorIterations = [
       priorIteration(["autofix-test-writer", "autofix-implementer"]),
       priorIteration(["autofix-test-writer", "autofix-implementer"]),
     ];
-    expect(autofixCapacityExhausted(ctx)).toBe(true);
-  });
+    expect(autofixCapacityExhausted(ctx1)).toBe(true);
 
-  test("true when total prior fixesApplied reaches maxTotalAttempts", () => {
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          autofix: { enabled: true, maxAttempts: 5, maxTotalAttempts: 2 },
-        },
-      } as PipelineContext["config"],
+    // Total attempts cap
+    const ctx2 = makeCtx({
+      config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, autofix: { enabled: true, maxAttempts: 5, maxTotalAttempts: 2 } } } as PipelineContext["config"],
     });
-    ctx.autofixPriorIterations = [
-      priorIteration(["autofix-implementer", "autofix-implementer"]),
-    ];
-    expect(autofixCapacityExhausted(ctx)).toBe(true);
+    ctx2.autofixPriorIterations = [priorIteration(["autofix-implementer", "autofix-implementer"])];
+    expect(autofixCapacityExhausted(ctx2)).toBe(true);
   });
 
-  test("false when only implementer has been used and its cap is not reached", () => {
+  test.each([
+    ["no prior iterations", []],
+    ["only implementer used once (cap not reached)", [priorIteration(["autofix-implementer"])]],
+  ] as const)("false when %s", (_label, priorIterations) => {
     const ctx = makeCtx();
-    ctx.autofixPriorIterations = [priorIteration(["autofix-implementer"])];
+    ctx.autofixPriorIterations = priorIterations as any;
     expect(autofixCapacityExhausted(ctx)).toBe(false);
   });
 });

@@ -48,14 +48,9 @@ describe("resolveTestFilePatterns — contract validation", () => {
     ).rejects.toMatchObject({ code: "INVALID_PACKAGE_DIR" });
   });
 
-  test("accepts undefined packageDir (single-package repos)", async () => {
-    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, undefined);
-    expect(resolved.resolution).toBe("fallback");
-  });
-
-  test("accepts relative packageDir (monorepo packages)", async () => {
-    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api");
-    expect(resolved.resolution).toBe("fallback");
+  test("accepts undefined packageDir (single-package) and relative packageDir (monorepo)", async () => {
+    expect((await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, undefined)).resolution).toBe("fallback");
+    expect((await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/api")).resolution).toBe("fallback");
   });
 });
 
@@ -105,49 +100,36 @@ describe("resolveTestFilePatterns — resolution chain", () => {
     expect(resolved.resolution).toBe("root-config");
   });
 
-  test("detected: used when detection returns patterns with non-empty confidence", async () => {
-    const config = makeNaxConfig(); // no root config
+  test("detected: used when confidence non-empty; skipped when confidence is empty", async () => {
     _resolverDeps.detectTestFilePatterns = async () => ({
       patterns: ["**/*.spec.ts"],
       confidence: "high",
       sources: [{ type: "framework-config", path: "jest.config.ts", patterns: ["**/*.spec.ts"] }],
     });
+    const detected = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR);
+    expect(detected.resolution).toBe("detected");
+    expect(detected.globs).toEqual(["**/*.spec.ts"]);
 
-    const resolved = await resolveTestFilePatterns(config, WORKDIR);
-    expect(resolved.resolution).toBe("detected");
-    expect(resolved.globs).toEqual(["**/*.spec.ts"]);
-  });
-
-  test("detected: skipped when detection returns empty confidence", async () => {
-    const config = makeNaxConfig();
     _resolverDeps.detectTestFilePatterns = async () =>
       ({ patterns: [], confidence: "empty", sources: [] }) satisfies DetectionResult;
-
-    const resolved = await resolveTestFilePatterns(config, WORKDIR);
-    expect(resolved.resolution).toBe("fallback");
+    const fallback = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR);
+    expect(fallback.resolution).toBe("fallback");
   });
 
-  test("detected: uses packageDir as detection workdir so patterns are package-relative", async () => {
-    const config = makeNaxConfig(); // no root config
+  test("detected: uses packageDir as detection workdir when set; repo root when absent", async () => {
     let capturedWorkdir: string | undefined;
     _resolverDeps.detectTestFilePatterns = async (wd) => {
       capturedWorkdir = wd;
       return { patterns: ["src/**/*.test.ts"], confidence: "medium", sources: [] };
     };
-
-    await resolveTestFilePatterns(config, WORKDIR, "packages/lib");
+    await resolveTestFilePatterns(makeNaxConfig(), WORKDIR, "packages/lib");
     expect(capturedWorkdir).toBe(`${WORKDIR}/packages/lib`);
-  });
 
-  test("detected: uses repo root as detection workdir when no packageDir", async () => {
-    const config = makeNaxConfig();
-    let capturedWorkdir: string | undefined;
     _resolverDeps.detectTestFilePatterns = async (wd) => {
       capturedWorkdir = wd;
       return { patterns: [], confidence: "empty", sources: [] };
     };
-
-    await resolveTestFilePatterns(config, WORKDIR);
+    await resolveTestFilePatterns(makeNaxConfig(), WORKDIR);
     expect(capturedWorkdir).toBe(WORKDIR);
   });
 

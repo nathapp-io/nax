@@ -21,52 +21,21 @@ import { withTempDir } from "../../helpers/temp";
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — runtime detection", () => {
-  test("detects bun runtime from bun.lockb", async () => {
+  test.each([
+    { lockfile: "bun.lockb", runtime: "bun" },
+    { lockfile: "bunfig.toml", runtime: "bun" },
+    { lockfile: "package-lock.json", runtime: "node" },
+    { lockfile: "yarn.lock", runtime: "node" },
+    { lockfile: "pnpm-lock.yaml", runtime: "node" },
+    { lockfile: "bun.lockb+package-lock.json", runtime: "bun", extraFiles: ["package-lock.json"] },
+  ])("detects $lockfile → $runtime runtime", async ({ lockfile, runtime, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
+      await Bun.write(join(dir, lockfile.split("+")[0]!), lockfile.endsWith(".json") ? "{}" : "");
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
-    });
-  });
-
-  test("detects bun runtime from bunfig.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bunfig.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
-    });
-  });
-
-  test("detects node runtime from package-lock.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package-lock.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("detects node runtime from yarn.lock", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "yarn.lock"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("detects node runtime from pnpm-lock.yaml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pnpm-lock.yaml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("node");
-    });
-  });
-
-  test("bun takes priority over node when both lockfiles present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
-      await Bun.write(join(dir, "package-lock.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.runtime).toBe("bun");
+      expect(stack.runtime).toBe(runtime);
     });
   });
 
@@ -83,43 +52,17 @@ describe("detectProjectStack — runtime detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — language detection", () => {
-  test("detects typescript from tsconfig.json", async () => {
+  test.each([
+    { file: "tsconfig.json", lang: "typescript" },
+    { file: "pyproject.toml", lang: "python" },
+    { file: "setup.py", lang: "python" },
+    { file: "Cargo.toml", lang: "rust" },
+    { file: "go.mod", lang: "go" },
+  ])("detects $file → $lang language", async ({ file, lang }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
+      await Bun.write(join(dir, file), file.endsWith(".json") ? "{}" : "");
       const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("typescript");
-    });
-  });
-
-  test("detects python from pyproject.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pyproject.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("python");
-    });
-  });
-
-  test("detects python from setup.py", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "setup.py"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("python");
-    });
-  });
-
-  test("detects rust from Cargo.toml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "Cargo.toml"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("rust");
-    });
-  });
-
-  test("detects go from go.mod", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "go.mod"), "");
-      const stack = detectProjectStack(dir);
-      expect(stack.language).toBe("go");
+      expect(stack.language).toBe(lang);
     });
   });
 
@@ -136,52 +79,22 @@ describe("detectProjectStack — language detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — linter detection", () => {
-  test("detects biome from biome.json", async () => {
+  test.each([
+    { file: "biome.json", linter: "biome" },
+    { file: "biome.jsonc", linter: "biome" },
+    { file: ".eslintrc.json", linter: "eslint" },
+    { file: ".eslintrc.js", linter: "eslint", content: "module.exports = {}" },
+    { file: "eslint.config.js", linter: "eslint", content: "export default []" },
+    { file: "biome.json+.eslintrc.json", linter: "biome", extraFiles: [".eslintrc.json"] },
+  ])("detects $file → $linter linter", async ({ file, linter, content, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
+      const [primary] = file.split("+");
+      await Bun.write(join(dir, primary), content ?? (primary.endsWith(".json") ? "{}" : ""));
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
-    });
-  });
-
-  test("detects biome from biome.jsonc", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.jsonc"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
-    });
-  });
-
-  test("detects eslint from .eslintrc.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".eslintrc.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("detects eslint from .eslintrc.js", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, ".eslintrc.js"), "module.exports = {}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("detects eslint from eslint.config.js", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "eslint.config.js"), "export default []");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("eslint");
-    });
-  });
-
-  test("biome takes priority over eslint when both present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "biome.json"), "{}");
-      await Bun.write(join(dir, ".eslintrc.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.linter).toBe("biome");
+      expect(stack.linter).toBe(linter);
     });
   });
 
@@ -198,44 +111,21 @@ describe("detectProjectStack — linter detection", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectStack — monorepo detection", () => {
-  test("detects turborepo from turbo.json", async () => {
+  test.each([
+    { file: "turbo.json", mono: "turborepo" },
+    { file: "nx.json", mono: "nx" },
+    { file: "pnpm-workspace.yaml", mono: "pnpm-workspaces", content: "packages:\n  - 'packages/*'\n" },
+    { file: "package.json", mono: "bun-workspaces", content: JSON.stringify({ workspaces: ["packages/*"] }) },
+    { file: "turbo.json+nx.json", mono: "turborepo", extraFiles: ["nx.json"] },
+  ])("detects $file → $mono monorepo", async ({ file, mono, content, extraFiles }) => {
     await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
+      const [primary] = file.split("+");
+      await Bun.write(join(dir, primary), content ?? "{}");
+      if (extraFiles) {
+        for (const f of extraFiles) await Bun.write(join(dir, f), "{}");
+      }
       const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("turborepo");
-    });
-  });
-
-  test("detects nx from nx.json", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "nx.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("nx");
-    });
-  });
-
-  test("detects pnpm-workspaces from pnpm-workspace.yaml", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("pnpm-workspaces");
-    });
-  });
-
-  test("detects bun-workspaces from package.json workspaces field", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("bun-workspaces");
-    });
-  });
-
-  test("turborepo takes priority over nx when both present", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "turbo.json"), "{}");
-      await Bun.write(join(dir, "nx.json"), "{}");
-      const stack = detectProjectStack(dir);
-      expect(stack.monorepo).toBe("turborepo");
+      expect(stack.monorepo).toBe(mono);
     });
   });
 
@@ -302,202 +192,65 @@ describe("buildQualityCommands — monorepo tools", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildQualityCommands — bun + typescript", () => {
-  test("returns bun typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("bun run tsc --noEmit");
-  });
-
-  test("returns bun test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("bun test");
-  });
-
-  test("returns bun lint command when linter unknown", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("bun run lint");
-  });
-
-  test("returns biome check lint command when biome detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "biome",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("biome check .");
-  });
-
-  test("returns eslint lint command when eslint detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "bun",
-      language: "typescript",
-      linter: "eslint",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("eslint .");
+  test.each([
+    ["unknown", "typecheck", "bun run tsc --noEmit"],
+    ["unknown", "test", "bun test"],
+    ["unknown", "lint", "bun run lint"],
+    ["biome", "lint", "biome check ."],
+    ["eslint", "lint", "eslint ."],
+  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+    const commands = buildQualityCommands({ runtime: "bun", language: "typescript", linter: linter as any, monorepo: "none" });
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — node + typescript", () => {
-  test("returns npx typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("npx tsc --noEmit");
-  });
-
-  test("returns npm test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("npm test");
-  });
-
-  test("returns npm run lint command when linter unknown", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("npm run lint");
-  });
-
-  test("returns biome check lint command when biome detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "biome",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("biome check .");
-  });
-
-  test("returns eslint lint command when eslint detected", () => {
-    const commands = buildQualityCommands({
-      runtime: "node",
-      language: "typescript",
-      linter: "eslint",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("eslint .");
+  test.each([
+    ["unknown", "typecheck", "npx tsc --noEmit"],
+    ["unknown", "test", "npm test"],
+    ["unknown", "lint", "npm run lint"],
+    ["biome", "lint", "biome check ."],
+    ["eslint", "lint", "eslint ."],
+  ])("linter=%s: %s command", (linter: string, cmd: string, expected: string) => {
+    const commands = buildQualityCommands({ runtime: "node", language: "typescript", linter: linter as any, monorepo: "none" });
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — python", () => {
-  test("returns ruff lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("ruff check .");
-  });
+  const PYTHON_STACK = { runtime: "unknown" as const, language: "python" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns pytest test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("pytest");
-  });
-
-  test("does not include typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "python",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBeUndefined();
+  test.each([
+    ["lint", "ruff check ."],
+    ["test", "pytest"],
+    ["typecheck", undefined],
+  ])("%s command", (cmd: string, expected: string | undefined) => {
+    const commands = buildQualityCommands(PYTHON_STACK);
+    expect((commands as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — rust", () => {
-  test("returns cargo check typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("cargo check");
-  });
+  const RUST_STACK = { runtime: "unknown" as const, language: "rust" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns cargo clippy lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("cargo clippy");
-  });
-
-  test("returns cargo test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "rust",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("cargo test");
+  test.each([
+    ["typecheck", "cargo check"],
+    ["lint", "cargo clippy"],
+    ["test", "cargo test"],
+  ])("%s command", (cmd: string, expected: string) => {
+    expect((buildQualityCommands(RUST_STACK) as any)[cmd]).toBe(expected);
   });
 });
 
 describe("buildQualityCommands — go", () => {
-  test("returns go vet typecheck command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.typecheck).toBe("go vet ./...");
-  });
+  const GO_STACK = { runtime: "unknown" as const, language: "go" as const, linter: "unknown" as const, monorepo: "none" as const };
 
-  test("returns golangci-lint lint command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.lint).toBe("golangci-lint run");
-  });
-
-  test("returns go test command", () => {
-    const commands = buildQualityCommands({
-      runtime: "unknown",
-      language: "go",
-      linter: "unknown",
-      monorepo: "none",
-    });
-    expect(commands.test).toBe("go test ./...");
+  test.each([
+    ["typecheck", "go vet ./..."],
+    ["lint", "golangci-lint run"],
+    ["test", "go test ./..."],
+  ])("%s command", (cmd: string, expected: string) => {
+    expect((buildQualityCommands(GO_STACK) as any)[cmd]).toBe(expected);
   });
 });
 

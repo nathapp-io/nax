@@ -83,51 +83,24 @@ describe("resolveProject", () => {
   });
 
   describe("explicit directory (-d flag)", () => {
-    test("uses explicit directory when provided", () => {
-      // Setup: Create nax/config.json in test directory
+    test("uses explicit absolute directory; checks projectDir and configPath", () => {
       const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
-
-      // Change to different directory
       process.chdir(tmpdir());
-
-      // Act
       const result = resolveProject({ dir: testDir });
-
-      // Assert
       expect(result.projectDir).toBe(testDir);
       expect(result.configPath).toBe(join(naxDir, "config.json"));
     });
 
     test("resolves relative paths to absolute", () => {
-      // Setup: Create nax/config.json in test directory
       const projectDir = join(testDir, "my-project");
       const naxDir = join(projectDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
-
-      // Change to parent directory
       process.chdir(testDir);
-
-      // Act: Use relative path
       const result = resolveProject({ dir: "./my-project" });
-
-      // Assert: Returns absolute path
       expect(result.projectDir).toBe(projectDir);
-    });
-
-    test("handles absolute paths", () => {
-      // Setup: Create nax/config.json in test directory
-      const naxDir = join(testDir, ".nax");
-      mkdirSync(naxDir, { recursive: true });
-      writeFileSync(join(naxDir, "config.json"), "{}");
-
-      // Act: Use absolute path
-      const result = resolveProject({ dir: testDir });
-
-      // Assert
-      expect(result.projectDir).toBe(testDir);
     });
 
     test("throws error when explicit directory has no nax/", () => {
@@ -171,17 +144,6 @@ describe("resolveProject", () => {
       expect(result.featureDir).toBe(featureDir);
     });
 
-    test("throws error when feature does not exist", () => {
-      // Setup: Create nax/ but no features
-      const naxDir = join(testDir, ".nax");
-      mkdirSync(naxDir, { recursive: true });
-      writeFileSync(join(naxDir, "config.json"), "{}");
-      process.chdir(testDir);
-
-      // Act & Assert
-      expect(() => resolveProject({ feature: "nonexistent" })).toThrow(NaxError);
-      expect(() => resolveProject({ feature: "nonexistent" })).toThrow(/Feature not found: nonexistent/);
-    });
 
     test("lists available features when feature not found", () => {
       // Setup: Create nax/features with multiple features
@@ -207,20 +169,18 @@ describe("resolveProject", () => {
       }
     });
 
-    test("shows helpful message when no features exist", () => {
-      // Setup: Create nax/ but no features directory
+    test("throws NaxError with 'Feature not found' and 'No features found' messages when no features directory exists", () => {
       const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
       process.chdir(testDir);
-
-      // Act & Assert
       try {
-        resolveProject({ feature: "my-feature" });
+        resolveProject({ feature: "nonexistent" });
         expect.unreachable("Should have thrown error");
       } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
         const message = (err as NaxError).message;
+        expect(message).toMatch(/Feature not found: nonexistent/);
         expect(message).toContain("No features found in this project");
       }
     });
@@ -244,77 +204,48 @@ describe("resolveProject", () => {
   });
 
   describe("error context", () => {
-    test("includes helpful context in PROJECT_NOT_FOUND error", () => {
-      // Setup: Empty directory
-      const emptyDir = join(testDir, "empty");
-      mkdirSync(emptyDir, { recursive: true });
-      process.chdir(emptyDir);
-
-      // Act & Assert
-      try {
-        resolveProject();
-        expect.unreachable("Should have thrown error");
-      } catch (err) {
+    test("includes correct error codes and context fields for PROJECT_NOT_FOUND, NAX_DIR_NOT_FOUND, CONFIG_NOT_FOUND, and FEATURE_NOT_FOUND", () => {
+      // PROJECT_NOT_FOUND
+      const s1 = join(testDir, "s1-empty");
+      mkdirSync(s1, { recursive: true });
+      process.chdir(s1);
+      try { resolveProject(); expect.unreachable(); } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
-        const naxError = err as NaxError;
-        expect(naxError.code).toBe("PROJECT_NOT_FOUND");
-        expect(naxError.context?.cwd).toBe(emptyDir);
+        expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
+        expect((err as NaxError).context?.cwd).toBe(s1);
       }
-    });
 
-    test("includes helpful context in NAX_DIR_NOT_FOUND error", () => {
-      // Setup: Directory without nax/
-      const emptyDir = join(testDir, "empty");
-      mkdirSync(emptyDir, { recursive: true });
-
-      // Act & Assert
-      try {
-        resolveProject({ dir: emptyDir });
-        expect.unreachable("Should have thrown error");
-      } catch (err) {
+      // NAX_DIR_NOT_FOUND
+      const s2 = join(testDir, "s2-no-nax");
+      mkdirSync(s2, { recursive: true });
+      try { resolveProject({ dir: s2 }); expect.unreachable(); } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
-        const naxError = err as NaxError;
-        expect(naxError.code).toBe("NAX_DIR_NOT_FOUND");
-        expect(naxError.context?.projectRoot).toBe(emptyDir);
+        expect((err as NaxError).code).toBe("NAX_DIR_NOT_FOUND");
+        expect((err as NaxError).context?.projectRoot).toBe(s2);
       }
-    });
 
-    test("includes helpful context in CONFIG_NOT_FOUND error", () => {
-      // Setup: nax/ without config.json
-      const naxDir = join(testDir, ".nax");
-      mkdirSync(naxDir, { recursive: true });
-      process.chdir(testDir);
-
-      // Act & Assert
-      try {
-        resolveProject();
-        expect.unreachable("Should have thrown error");
-      } catch (err) {
+      // CONFIG_NOT_FOUND
+      const s3 = join(testDir, "s3");
+      const s3Nax = join(s3, ".nax");
+      mkdirSync(s3Nax, { recursive: true });
+      process.chdir(s3);
+      try { resolveProject(); expect.unreachable(); } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
-        const naxError = err as NaxError;
-        expect(naxError.code).toBe("CONFIG_NOT_FOUND");
-        expect(naxError.context?.configPath).toBe(join(naxDir, "config.json"));
+        expect((err as NaxError).code).toBe("CONFIG_NOT_FOUND");
+        expect((err as NaxError).context?.configPath).toBe(join(s3Nax, "config.json"));
       }
-    });
 
-    test("includes helpful context in FEATURE_NOT_FOUND error", () => {
-      // Setup: Project with features
-      const naxDir = join(testDir, ".nax");
-      const featuresDir = join(naxDir, "features");
-      mkdirSync(join(featuresDir, "existing-feature"), { recursive: true });
-      writeFileSync(join(naxDir, "config.json"), "{}");
-      process.chdir(testDir);
-
-      // Act & Assert
-      try {
-        resolveProject({ feature: "nonexistent" });
-        expect.unreachable("Should have thrown error");
-      } catch (err) {
+      // FEATURE_NOT_FOUND
+      const s4 = join(testDir, "s4");
+      const s4Nax = join(s4, ".nax");
+      mkdirSync(join(s4Nax, "features", "existing-feature"), { recursive: true });
+      writeFileSync(join(s4Nax, "config.json"), "{}");
+      process.chdir(s4);
+      try { resolveProject({ feature: "nonexistent" }); expect.unreachable(); } catch (err) {
         expect(err).toBeInstanceOf(NaxError);
-        const naxError = err as NaxError;
-        expect(naxError.code).toBe("FEATURE_NOT_FOUND");
-        expect(naxError.context?.feature).toBe("nonexistent");
-        expect(naxError.context?.availableFeatures).toEqual(["existing-feature"]);
+        expect((err as NaxError).code).toBe("FEATURE_NOT_FOUND");
+        expect((err as NaxError).context?.feature).toBe("nonexistent");
+        expect((err as NaxError).context?.availableFeatures).toEqual(["existing-feature"]);
       }
     });
   });
@@ -337,13 +268,18 @@ describe("resolveProjectAsync", () => {
     }
   });
 
-  test("resolves by filesystem path when path exists", async () => {
+  test("resolves by filesystem path (absolute) and path wins over name lookup", async () => {
     const naxDir = join(testDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(join(naxDir, "config.json"), "{}");
 
     const result = await resolveProjectAsync({ dir: testDir });
     expect(result.projectDir).toBe(testDir);
+
+    // path wins over name lookup when path exists as a real dir
+    process.chdir(join(testDir, ".."));
+    const result2 = await resolveProjectAsync({ dir: testDir });
+    expect(result2.projectDir).toBe(testDir);
   });
 
   test("resolves by project name via identity registry", async () => {
@@ -364,41 +300,40 @@ describe("resolveProjectAsync", () => {
     expect(result.projectDir).toBe(projectDir);
   });
 
-  test("path wins over name lookup when path exists", async () => {
-    // Create a directory that would match by path
-    const naxDir = join(testDir, ".nax");
-    mkdirSync(naxDir, { recursive: true });
-    writeFileSync(join(naxDir, "config.json"), "{}");
-
-    // Change to parent so testDir is a relative path component
-    process.chdir(join(testDir, ".."));
-    const result = await resolveProjectAsync({ dir: testDir });
-    expect(result.projectDir).toBe(testDir);
-  });
-
-  test("throws PROJECT_NOT_FOUND with informative message when name not in registry", async () => {
+  test("throws NaxError for name not in registry, path-with-separator not found, and corrupt identity", async () => {
+    // name not in registry
     process.chdir(testDir);
     try {
       await resolveProjectAsync({ dir: "nonexistent-project" });
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
-      const naxErr = err as NaxError;
-      expect(naxErr.code).toBe("PROJECT_NOT_FOUND");
-      expect(naxErr.message).toContain("nonexistent-project");
-      expect(naxErr.message).toContain("identity registry");
+      const e = err as NaxError;
+      expect(e.code).toBe("PROJECT_NOT_FOUND");
+      expect(e.message).toContain("nonexistent-project");
+      expect(e.message).toContain("identity registry");
     }
-  });
 
-  test("falls through to resolveProject error for paths with separators that don't exist", async () => {
+    // path with separators that don't exist
     try {
       await resolveProjectAsync({ dir: "some/nonexistent/path" });
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
-      // Should be the NAX_DIR_NOT_FOUND error from resolveProject, not PROJECT_NOT_FOUND
-      const naxErr = err as NaxError;
-      expect(["NAX_DIR_NOT_FOUND", "PROJECT_NOT_FOUND"]).toContain(naxErr.code);
+      expect(["NAX_DIR_NOT_FOUND", "PROJECT_NOT_FOUND"]).toContain((err as NaxError).code);
+    }
+
+    // corrupt identity file
+    const { globalConfigDir } = await import("../../../src/config/paths");
+    const registryDir = join(globalConfigDir(), "corrupt-project");
+    mkdirSync(registryDir, { recursive: true });
+    writeFileSync(join(registryDir, ".identity"), "not valid json{{{");
+    try {
+      await resolveProjectAsync({ dir: "corrupt-project" });
+      expect.unreachable("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NaxError);
+      expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
     }
   });
 
@@ -412,18 +347,4 @@ describe("resolveProjectAsync", () => {
     expect(result.projectDir).toBe(testDir);
   });
 
-  test("corrupt identity file falls through to informative error", async () => {
-    const { globalConfigDir } = await import("../../../src/config/paths");
-    const registryDir = join(globalConfigDir(), "corrupt-project");
-    mkdirSync(registryDir, { recursive: true });
-    writeFileSync(join(registryDir, ".identity"), "not valid json{{{");
-
-    try {
-      await resolveProjectAsync({ dir: "corrupt-project" });
-      expect.unreachable("Should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("PROJECT_NOT_FOUND");
-    }
-  });
 });

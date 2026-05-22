@@ -228,25 +228,8 @@ describe("logsCommand", () => {
   });
 
   describe("--level filter", () => {
-    test("filters logs by error level", async () => {
-      const options: LogsOptions = { dir: projectDir, level: "error" };
-
-      // Should only show error-level logs
-      await expect(logsCommand(options)).resolves.toBeUndefined();
-    });
-
-    test("filters logs by info level", async () => {
-      const options: LogsOptions = { dir: projectDir, level: "info" };
-
-      // Should show info, warn, error (all >= info)
-      await expect(logsCommand(options)).resolves.toBeUndefined();
-    });
-
-    test("filters logs by debug level", async () => {
-      const options: LogsOptions = { dir: projectDir, level: "debug" };
-
-      // Should show all logs (debug is lowest level)
-      await expect(logsCommand(options)).resolves.toBeUndefined();
+    test.each(["error", "info", "debug"] as const)("filters logs by %s level", async (level) => {
+      await expect(logsCommand({ dir: projectDir, level })).resolves.toBeUndefined();
     });
 
     test.skip("filters work with --follow mode", async () => {
@@ -255,24 +238,8 @@ describe("logsCommand", () => {
   });
 
   describe("--list (runs table)", () => {
-    test("displays table of all runs", async () => {
-      const options: LogsOptions = { dir: projectDir, list: true };
-
-      // Should display a table of runs with timestamps, status, duration
-      await expect(logsCommand(options)).resolves.toBeUndefined();
-    });
-
-    test("includes run metadata in table", async () => {
-      const options: LogsOptions = { dir: projectDir, list: true };
-
-      // Table should include: timestamp, stories count, cost, duration
-      await expect(logsCommand(options)).resolves.toBeUndefined();
-    });
-
-    test("sorts runs by timestamp descending (newest first)", async () => {
-      const options: LogsOptions = { dir: projectDir, list: true };
-
-      await expect(logsCommand(options)).resolves.toBeUndefined();
+    test("table: displays all runs with metadata, sorts by timestamp descending (newest first)", async () => {
+      await expect(logsCommand({ dir: projectDir, list: true })).resolves.toBeUndefined();
     });
 
     test("shows empty message when no runs exist", async () => {
@@ -290,17 +257,11 @@ describe("logsCommand", () => {
   });
 
   describe("--run (registry-based run selection)", () => {
-    test("displays run resolved from central registry by exact runId", async () => {
-      const options: LogsOptions = { run: "2026-02-26T09-00-00" };
-
-      await expect(logsCommand(options)).resolves.toBeUndefined();
-    });
-
-    test("displays run resolved from central registry by prefix match", async () => {
-      const options: LogsOptions = { run: "2026-02-26" };
-
-      // Should match "2026-02-26T09-00-00"
-      await expect(logsCommand(options)).resolves.toBeUndefined();
+    test.each([
+      ["exact runId", "2026-02-26T09-00-00"],
+      ["prefix match", "2026-02-26"],
+    ])("displays run resolved from central registry by %s", async (_label, run) => {
+      await expect(logsCommand({ run })).resolves.toBeUndefined();
     });
 
     test("throws with clear error when runId not found in registry", async () => {

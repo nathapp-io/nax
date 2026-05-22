@@ -62,24 +62,11 @@ function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunClea
 // ============================================================================
 
 describe("RunCleanupOptions", () => {
-  test("accepts feature field", () => {
-    const opts = makeCleanupOptions({ feature: "some-feature" });
-    expect(opts.feature).toBe("some-feature");
-  });
-
-  test("accepts prdPath field", () => {
-    const opts = makeCleanupOptions({ prdPath: "/path/to/prd.json" });
-    expect(opts.prdPath).toBe("/path/to/prd.json");
-  });
-
-  test("accepts branch field", () => {
-    const opts = makeCleanupOptions({ branch: "feat/us-003" });
-    expect(opts.branch).toBe("feat/us-003");
-  });
-
-  test("accepts version field", () => {
-    const opts = makeCleanupOptions({ version: "2.0.0" });
-    expect(opts.version).toBe("2.0.0");
+  test("accepts feature, prdPath, branch, and version fields", () => {
+    expect(makeCleanupOptions({ feature: "some-feature" }).feature).toBe("some-feature");
+    expect(makeCleanupOptions({ prdPath: "/path/to/prd.json" }).prdPath).toBe("/path/to/prd.json");
+    expect(makeCleanupOptions({ branch: "feat/us-003" }).branch).toBe("feat/us-003");
+    expect(makeCleanupOptions({ version: "2.0.0" }).version).toBe("2.0.0");
   });
 
   test("runner.ts closes runtime from finally so failure paths flush runtime sinks", async () => {
@@ -96,17 +83,12 @@ describe("RunCleanupOptions", () => {
 // ============================================================================
 
 describe("buildPostRunContext", () => {
-  test("is exported from run-cleanup module", async () => {
-    const mod = await import("../../../../src/execution/lifecycle/run-cleanup");
-    expect(typeof mod.buildPostRunContext).toBe("function");
-  });
-
-  test("constructs PostRunContext with fields from RunCleanupOptions", async () => {
+  test("is exported, constructs PostRunContext with fields, stories from prd, and empty pluginConfig", async () => {
     const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
+    expect(typeof buildPostRunContext).toBe("function");
 
-    const prd = makePrd({ stories: [makeStory("passed"), makeStory("failed"), makeStory("skipped")] });
+    const prd = makePrd({ stories: [makeStory("passed"), makeStory("failed")] });
     const opts = makeCleanupOptions({ prd, feature: "feat-x", prdPath: "/p/prd.json", branch: "main", version: "3.0.0" });
-
     const ctx = buildPostRunContext(opts, 5000, makePluginLogger());
 
     expect(ctx.runId).toBe("run-001");
@@ -117,6 +99,8 @@ describe("buildPostRunContext", () => {
     expect(ctx.workdir).toBe("/tmp/test");
     expect(ctx.totalDurationMs).toBe(5000);
     expect(ctx.totalCost).toBe(0.05);
+    expect(ctx.stories).toHaveLength(2);
+    expect(ctx.pluginConfig).toEqual({});
   });
 
   test("storySummary reflects prd story counts", async () => {
@@ -139,25 +123,6 @@ describe("buildPostRunContext", () => {
     expect(ctx.storySummary.failed).toBe(1);
     expect(ctx.storySummary.skipped).toBe(1);
     expect(ctx.storySummary.paused).toBe(1);
-  });
-
-  test("stories contains all prd userStories", async () => {
-    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
-
-    const stories = [makeStory("passed"), makeStory("failed")];
-    const prd = makePrd({ stories });
-    const opts = makeCleanupOptions({ prd });
-
-    const ctx = buildPostRunContext(opts, 1000, makePluginLogger());
-
-    expect(ctx.stories).toHaveLength(2);
-  });
-
-  test("pluginConfig defaults to empty object when not provided", async () => {
-    const { buildPostRunContext } = await import("../../../../src/execution/lifecycle/run-cleanup");
-    const opts = makeCleanupOptions();
-    const ctx = buildPostRunContext(opts, 1000, makePluginLogger());
-    expect(ctx.pluginConfig).toEqual({});
   });
 });
 
@@ -216,40 +181,15 @@ describe("cleanupRun — post-run action loop", () => {
     expect(order).toEqual(["first", "second", "third"]);
   });
 
-  test("post-run actions execute after reporters.onRunEnd()", async () => {
+  test("post-run actions execute after reporters.onRunEnd() and before teardownAll()", async () => {
     const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
-
     const callOrder: string[] = [];
 
     const reporter = {
       name: "reporter",
       onRunEnd: mock(async () => { callOrder.push("reporter.onRunEnd"); }),
     };
-
-    const action: IPostRunAction = {
-      name: "action",
-      description: "desc",
-      shouldRun: mock(async () => true),
-      execute: mock(async () => { callOrder.push("action.execute"); return { success: true, message: "done" }; }),
-    };
-
-    const opts = makeCleanupOptions({
-      pluginRegistry: makePluginRegistry([action], [reporter]),
-    });
-    await cleanupRun(opts);
-
-    const reporterIdx = callOrder.indexOf("reporter.onRunEnd");
-    const actionIdx = callOrder.indexOf("action.execute");
-    expect(reporterIdx).toBeGreaterThanOrEqual(0);
-    expect(actionIdx).toBeGreaterThan(reporterIdx);
-  });
-
-  test("post-run actions execute before teardownAll()", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
-
-    const callOrder: string[] = [];
-
-    const registry = makePluginRegistry();
+    const registry = makePluginRegistry([], [reporter]);
     registry.teardownAll = mock(async () => { callOrder.push("teardownAll"); }) as typeof registry.teardownAll;
 
     const action: IPostRunAction = {
@@ -263,9 +203,11 @@ describe("cleanupRun — post-run action loop", () => {
     const opts = makeCleanupOptions({ pluginRegistry: registry });
     await cleanupRun(opts);
 
+    const reporterIdx = callOrder.indexOf("reporter.onRunEnd");
     const actionIdx = callOrder.indexOf("action.execute");
     const teardownIdx = callOrder.indexOf("teardownAll");
-    expect(actionIdx).toBeGreaterThanOrEqual(0);
+    expect(reporterIdx).toBeGreaterThanOrEqual(0);
+    expect(actionIdx).toBeGreaterThan(reporterIdx);
     expect(teardownIdx).toBeGreaterThan(actionIdx);
   });
 });
@@ -302,43 +244,29 @@ describe("cleanupRun — action result logging", () => {
     loggerSpy?.mockRestore();
   });
 
-  test("successful execute() with url logs at info level with url", async () => {
+  test("successful execute() logs at info level; skipped result logs at info level with reason", async () => {
     const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
 
-    const result: PostRunActionResult = { success: true, message: "Published", url: "https://example.com/report" };
-    const action: IPostRunAction = {
+    const successAction: IPostRunAction = {
       name: "publisher",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => result),
+      execute: mock(async () => ({ success: true, message: "Published", url: "https://example.com/report" } as PostRunActionResult)),
     };
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([successAction]) }));
+    const infoMessages1 = logInfoCalls.map(([, msg]) => msg);
+    expect(infoMessages1.some((m) => m.includes("[post-run] publisher") && m.includes("Published"))).toBe(true);
 
-    const opts = makeCleanupOptions({ pluginRegistry: makePluginRegistry([action]) });
-    await cleanupRun(opts);
-
-    // Check that an info log was emitted containing '[post-run] publisher: Published' and url
-    const infoMessages = logInfoCalls.map(([, msg]) => msg);
-    const found = infoMessages.some((m) => m.includes("[post-run] publisher") && m.includes("Published"));
-    expect(found).toBe(true);
-  });
-
-  test("skipped result (skipped=true) logs at info level with reason", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
-
-    const result: PostRunActionResult = { success: true, message: "Nothing to do", skipped: true, reason: "no changes" };
-    const action: IPostRunAction = {
+    logInfoCalls = [];
+    const skippedAction: IPostRunAction = {
       name: "notifier",
       description: "desc",
       shouldRun: mock(async () => true),
-      execute: mock(async () => result),
+      execute: mock(async () => ({ success: true, message: "Nothing to do", skipped: true, reason: "no changes" } as PostRunActionResult)),
     };
-
-    const opts = makeCleanupOptions({ pluginRegistry: makePluginRegistry([action]) });
-    await cleanupRun(opts);
-
-    const infoMessages = logInfoCalls.map(([, msg]) => msg);
-    const found = infoMessages.some((m) => m.includes("[post-run] notifier") && m.includes("skipped") && m.includes("no changes"));
-    expect(found).toBe(true);
+    await cleanupRun(makeCleanupOptions({ pluginRegistry: makePluginRegistry([skippedAction]) }));
+    const infoMessages2 = logInfoCalls.map(([, msg]) => msg);
+    expect(infoMessages2.some((m) => m.includes("[post-run] notifier") && m.includes("skipped") && m.includes("no changes"))).toBe(true);
   });
 
   test("shouldRun()=false emits debug log", async () => {
@@ -384,40 +312,28 @@ describe("cleanupRun — action result logging", () => {
 // ============================================================================
 
 describe("cleanupRun — error tolerance", () => {
-  test("error thrown in shouldRun() does not block run completion", async () => {
+  test("error thrown in shouldRun() or execute() does not block run completion; teardownAll still called", async () => {
     const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
 
-    const action: IPostRunAction = {
+    const shouldRunAction: IPostRunAction = {
       name: "bad-should-run",
       description: "desc",
       shouldRun: mock(async () => { throw new Error("shouldRun exploded"); }),
       execute: mock(async () => ({ success: true, message: "ok" })),
     };
+    const shouldRunRegistry = makePluginRegistry([shouldRunAction]);
+    await expect(cleanupRun(makeCleanupOptions({ pluginRegistry: shouldRunRegistry }))).resolves.toBeUndefined();
+    expect(shouldRunRegistry.teardownAll).toHaveBeenCalled();
 
-    const registry = makePluginRegistry([action]);
-    const opts = makeCleanupOptions({ pluginRegistry: registry });
-
-    // Must NOT throw
-    await expect(cleanupRun(opts)).resolves.toBeUndefined();
-    // teardownAll should still be called
-    expect(registry.teardownAll).toHaveBeenCalled();
-  });
-
-  test("error thrown in execute() does not block run completion", async () => {
-    const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
-
-    const action: IPostRunAction = {
+    const executeAction: IPostRunAction = {
       name: "bad-execute",
       description: "desc",
       shouldRun: mock(async () => true),
       execute: mock(async () => { throw new Error("execute exploded"); }),
     };
-
-    const registry = makePluginRegistry([action]);
-    const opts = makeCleanupOptions({ pluginRegistry: registry });
-
-    await expect(cleanupRun(opts)).resolves.toBeUndefined();
-    expect(registry.teardownAll).toHaveBeenCalled();
+    const executeRegistry = makePluginRegistry([executeAction]);
+    await expect(cleanupRun(makeCleanupOptions({ pluginRegistry: executeRegistry }))).resolves.toBeUndefined();
+    expect(executeRegistry.teardownAll).toHaveBeenCalled();
   });
 
   test("error in one action does not prevent subsequent actions from running", async () => {

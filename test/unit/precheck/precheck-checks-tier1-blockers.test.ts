@@ -131,13 +131,6 @@ describe("checkGitRepoExists (Tier 1 blocker)", () => {
     expect(result.message).toContain("not a git repository");
   });
 
-  test("uses git rev-parse --git-dir command", async () => {
-    mkdirSync(join(testDir, ".git"));
-
-    const result = await checkGitRepoExists(testDir);
-
-    expect(result.passed).toBe(true);
-  });
 });
 
 describe("checkWorkingTreeClean (Tier 1 blocker)", () => {
@@ -156,12 +149,6 @@ describe("checkWorkingTreeClean (Tier 1 blocker)", () => {
     const result = await checkWorkingTreeClean(testDir);
 
     expect(result.name).toBe("working-tree-clean");
-    expect(result.tier).toBe("blocker");
-  });
-
-  test("returns blocker tier", async () => {
-    const result = await checkWorkingTreeClean(testDir);
-
     expect(result.tier).toBe("blocker");
   });
 
@@ -243,31 +230,15 @@ describe("checkPRDValid (Tier 1 blocker)", () => {
     expect(result.message).toContain("valid");
   });
 
-  test("fails when story is missing id", async () => {
-    const prd = createMockPRD([createMockStory({ id: "", title: "Story", description: "Description" })]);
-
+  test.each([
+    ["id", { id: "", title: "Story", description: "Description" }, "id"],
+    ["title", { id: "US-001", title: "", description: "Description" }, "title"],
+    ["description", { id: "US-001", title: "Story", description: "" }, "description"],
+  ])("fails when story is missing %s", async (_label, overrides, needle) => {
+    const prd = createMockPRD([createMockStory(overrides)]);
     const result = await checkPRDValid(prd);
-
     expect(result.passed).toBe(false);
-    expect(result.message).toContain("id");
-  });
-
-  test("fails when story is missing title", async () => {
-    const prd = createMockPRD([createMockStory({ id: "US-001", title: "", description: "Description" })]);
-
-    const result = await checkPRDValid(prd);
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("title");
-  });
-
-  test("fails when story is missing description", async () => {
-    const prd = createMockPRD([createMockStory({ id: "US-001", title: "Story", description: "" })]);
-
-    const result = await checkPRDValid(prd);
-
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("description");
+    expect(result.message).toContain(needle);
   });
 
   test("auto-defaults missing tags to empty array in-memory", async () => {
@@ -382,42 +353,20 @@ describe("checkDependenciesInstalled (Tier 1 blocker)", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  test("detects Node.js dependencies via node_modules", async () => {
-    mkdirSync(join(testDir, "node_modules"));
+  test.each([
+    ["detects node_modules", "node_modules"],
+    ["detects target (Rust)", "target"],
+    ["detects venv (Python)", "venv"],
+    ["detects vendor (PHP)", "vendor"],
+  ])("%s", async (_label, dir) => {
+    mkdirSync(join(testDir, dir));
 
     const result = await checkDependenciesInstalled(testDir);
 
     expect(result.name).toBe("dependencies-installed");
     expect(result.tier).toBe("blocker");
     expect(result.passed).toBe(true);
-    expect(result.message).toContain("node_modules");
-  });
-
-  test("detects Rust dependencies via target directory", async () => {
-    mkdirSync(join(testDir, "target"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("target");
-  });
-
-  test("detects Python dependencies via venv directory", async () => {
-    mkdirSync(join(testDir, "venv"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("venv");
-  });
-
-  test("detects PHP dependencies via vendor directory", async () => {
-    mkdirSync(join(testDir, "vendor"));
-
-    const result = await checkDependenciesInstalled(testDir);
-
-    expect(result.passed).toBe(true);
-    expect(result.message).toContain("vendor");
+    expect(result.message).toContain(dir);
   });
 
   test("fails when no dependency directories exist", async () => {
@@ -513,12 +462,6 @@ describe("checkGitUserConfigured (Tier 1 blocker)", () => {
     const result = await checkGitUserConfigured();
 
     expect(result.name).toBe("git-user-configured");
-    expect(result.tier).toBe("blocker");
-  });
-
-  test("returns blocker tier", async () => {
-    const result = await checkGitUserConfigured();
-
     expect(result.tier).toBe("blocker");
   });
 

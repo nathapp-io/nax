@@ -181,7 +181,7 @@ describe("planCommand", () => {
   //       guide, and test strategy guide
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-2: prompt includes codebase context", async () => {
+  test("AC-2: prompt includes codebase context, output schema, complexity guide, and test strategy guide", async () => {
     await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
@@ -191,6 +191,16 @@ describe("planCommand", () => {
     const prompt = capturedPlanArgs[0];
     expect(prompt).toContain("Source Roots");
     expect(prompt).toContain("Read, Grep, and Glob tools");
+    expect(prompt).toContain("userStories");
+    expect(prompt).toContain("acceptanceCriteria");
+    expect(prompt).toContain("dependencies");
+    expect(prompt).toContain("simple");
+    expect(prompt).toContain("medium");
+    expect(prompt).toContain("complex");
+    expect(prompt).toContain("expert");
+    expect(prompt).toContain("test-after");
+    expect(prompt).toContain("tdd-lite");
+    expect(prompt).toContain("three-session-tdd");
   });
 
   test("uses explicit plan model selector to choose adapter", async () => {
@@ -244,46 +254,6 @@ describe("planCommand", () => {
     expect(receivedAgentName).toBe("codex");
   });
 
-  test("AC-2: prompt includes output schema with prd.json structure", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("userStories");
-    expect(prompt).toContain("acceptanceCriteria");
-    expect(prompt).toContain("dependencies");
-  });
-
-  test("AC-2: prompt includes complexity classification guide", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("simple");
-    expect(prompt).toContain("medium");
-    expect(prompt).toContain("complex");
-    expect(prompt).toContain("expert");
-  });
-
-  test("AC-2: prompt includes test strategy guide", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const prompt = capturedPlanArgs[0];
-    expect(prompt).toContain("test-after");
-    expect(prompt).toContain("tdd-lite");
-    expect(prompt).toContain("three-session-tdd");
-  });
-
   // ──────────────────────────────────────────────────────────────────────────
   // AC-3: interactive mode (non-auto path uses runAs)
   // ──────────────────────────────────────────────────────────────────────────
@@ -324,34 +294,40 @@ describe("planCommand", () => {
   // AC-4: JSON response validated — invalid JSON or missing fields throws
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-4: throws on invalid JSON response from adapter", async () => {
+  test("AC-4: throws on invalid JSON or missing userStories; auto-fills missing project field", async () => {
+    // Scenario 1: invalid JSON → throws parse error
     _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
-            result: {
-              success: true,
-              exitCode: 0,
-              output: "not valid json {{",
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCostUsd: 0,
-              agentFallbacks: [],
-            },
+            result: { success: true, exitCode: 0, output: "not valid json {{", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
             fallbacks: [],
           }),
         }),
       }),
     );
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
-
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      }),
+      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
     ).rejects.toThrow(/parse JSON|Failed to parse/);
+
+    // Scenario 2: missing userStories → throws "userStories"
+    const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
+    badPrd.userStories = undefined;
+    _planDeps.createRuntime = mock((_cfg: any) =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({
+            result: { success: true, exitCode: 0, output: JSON.stringify(badPrd), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+            fallbacks: [],
+          }),
+        }),
+      }),
+    );
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
+    await expect(
+      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
+    ).rejects.toThrow("userStories");
   });
 
   test("AC-4: missing project field is auto-filled with feature name", async () => {
@@ -390,44 +366,11 @@ describe("planCommand", () => {
     expect(typeof written.project).toBe("string");
   });
 
-  test("AC-4: throws when required field 'userStories' is missing", async () => {
-    const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
-    badPrd.userStories = undefined;
-
-    _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockRuntime({
-        agentManager: makeMockAgentManager({
-          runWithFallbackFn: async () => ({
-            result: {
-              success: true,
-              exitCode: 0,
-              output: JSON.stringify(badPrd),
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCostUsd: 0,
-              agentFallbacks: [],
-            },
-            fallbacks: [],
-          }),
-        }),
-      }),
-    );
-    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
-
-    await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      }),
-    ).rejects.toThrow("userStories");
-  });
-
   // ──────────────────────────────────────────────────────────────────────────
   // AC-5: output written to nax/features/<feature>/prd.json
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-5: output path is nax/features/<feature>/prd.json", async () => {
+  test("AC-5: output path is nax/features/<feature>/prd.json and content is valid JSON with PRD structure", async () => {
     const result = await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "url-shortener",
@@ -437,15 +380,6 @@ describe("planCommand", () => {
     const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
     expect(result).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
-  });
-
-  test("AC-5: written content is valid JSON with PRD structure", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
     const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
     expect(written.userStories).toBeDefined();
@@ -501,65 +435,39 @@ describe("planCommand", () => {
   // AC-7: project auto-detected from package.json
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-7: project field comes from package.json name", async () => {
+  test("AC-7: project from package.json name; falls back to git remote when name absent", async () => {
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("my-awesome-pkg");
 
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.project).toBe("my-awesome-pkg");
-  });
-
-  test("AC-7: falls back to git remote when package.json has no name", async () => {
+    capturedWriteArgs = [];
     _planDeps.readPackageJson = mock(async (_workdir: string) => ({}));
     _planDeps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
       stdout: Buffer.from("https://github.com/org/repo-name.git\n"),
       exitCode: 0,
     }));
-
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "url-shortener",
-      auto: true,
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.project).toBe("repo-name");
+    await planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true });
+    expect((JSON.parse(capturedWriteArgs[0][1]) as PRD).project).toBe("repo-name");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
   // AC-8: branchName defaults to feat/<feature>, overridable via -b
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-8: branchName defaults to feat/<feature>", async () => {
+  test.each([
+    ["defaults to feat/<feature>", undefined, "feat/my-feat"],
+    ["can be overridden via branch option", "custom/branch-name", "custom/branch-name"],
+  ] as const)("AC-8: branchName %s", async (_label, branch, expected) => {
     await planCommand(tmpDir, DEFAULT_CONFIG as never, {
       from: "/spec.md",
       feature: "my-feat",
       auto: true,
+      ...(branch ? { branch } : {}),
     });
 
     const [_path, content] = capturedWriteArgs[0];
     const written = JSON.parse(content) as PRD;
-    expect(written.branchName).toBe("feat/my-feat");
-  });
-
-  test("AC-8: branchName can be overridden via branch option", async () => {
-    await planCommand(tmpDir, DEFAULT_CONFIG as never, {
-      from: "/spec.md",
-      feature: "my-feat",
-      auto: true,
-      branch: "custom/branch-name",
-    });
-
-    const [_path, content] = capturedWriteArgs[0];
-    const written = JSON.parse(content) as PRD;
-    expect(written.branchName).toBe("custom/branch-name");
+    expect(written.branchName).toBe(expected);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -603,44 +511,38 @@ describe("planCommand", () => {
   // AC-12: scanSourceRoots is invoked and rendered section is passed to builder
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-12: runPlanCommand invokes _planDeps.scanSourceRoots(workdir)", async () => {
+  test("AC-12: invokes scanSourceRoots(workdir) and renders the section in the prompt", async () => {
+    const origScanSourceRoots = _planDeps.scanSourceRoots;
+    const origCreateRuntime = _planDeps.createRuntime;
+
+    // Scenario 1: verify invocation
     let scanSourceRootsWasCalled = false;
     let scanSourceRootsArg: string | undefined;
-
-    const origScanSourceRoots = _planDeps.scanSourceRoots;
     _planDeps.scanSourceRoots = mock(async (workdir: string) => {
       scanSourceRootsWasCalled = true;
       scanSourceRootsArg = workdir;
       return [];
     });
-
     try {
       await planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
       });
-
       expect(scanSourceRootsWasCalled).toBe(true);
       expect(scanSourceRootsArg).toBe(tmpDir);
     } finally {
-      if (origScanSourceRoots) _planDeps.scanSourceRoots = origScanSourceRoots;
+      _planDeps.scanSourceRoots = origScanSourceRoots;
     }
-  });
 
-  test("AC-12: renders source roots section and passes as codebaseContext to PlanPromptBuilder", async () => {
+    // Scenario 2: verify content rendered in codebaseContext
     let capturedCodebaseContext: string | undefined;
-
-    const origCreateRuntime = _planDeps.createRuntime;
-    _planDeps.createRuntime = mock((cfg: any) =>
+    _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async (req) => {
             const prompt = req.runOptions.prompt;
-            // The codebaseContext is passed to PlanPromptBuilder.build() and becomes part of taskContext
-            if (prompt) {
-              capturedCodebaseContext = prompt;
-            }
+            if (prompt) capturedCodebaseContext = prompt;
             return {
               result: {
                 success: true,
@@ -657,22 +559,20 @@ describe("planCommand", () => {
         }),
       }),
     );
-
     _planDeps.scanSourceRoots = mock(async (_workdir: string) => [
       { path: "packages/api", language: "typescript", framework: "NestJS", testRunner: "jest" },
     ]);
-
     try {
       await planCommand(tmpDir, DEFAULT_CONFIG as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
       });
-
       expect(capturedCodebaseContext).toContain("## Source Roots");
       expect(capturedCodebaseContext).toContain("packages/api");
     } finally {
-      if (origCreateRuntime) _planDeps.createRuntime = origCreateRuntime;
+      _planDeps.createRuntime = origCreateRuntime;
+      _planDeps.scanSourceRoots = origScanSourceRoots;
     }
   });
 });
@@ -691,62 +591,32 @@ describe("buildPlanningPrompt (ENH-006)", () => {
     return `${taskContext}\n\n${outputFormat}`;
   }
 
-  test("prompt has Step 1 — understand the spec", () => {
+  test.each([
+    ["Step 1", "Understand the Spec"],
+    ["Step 2", "Analyze"],
+    ["Step 3", "Generate Implementation Stories"],
+  ])("prompt has %s", (step, text) => {
     const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 1");
-    expect(prompt).toContain("Understand the Spec");
+    expect(prompt).toContain(step);
+    expect(prompt).toContain(text);
   });
 
-  test("prompt has Step 2 — analyze", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 2");
-    expect(prompt).toContain("Analyze");
-  });
-
-  test("prompt has Step 3 — generate stories", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain("Step 3");
-    expect(prompt).toContain("Generate Implementation Stories");
-  });
-
-  test("prompt handles greenfield guidance", () => {
+  test("prompt: greenfield guidance, testStrategy order, workdir iff monorepo", () => {
     const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("greenfield project");
-  });
-
-  test("output schema includes analysis field", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain('"analysis"');
-  });
-
-  test("output schema includes contextFiles field", () => {
-    const prompt = fullPrompt(spec, ctx);
-    expect(prompt).toContain('"contextFiles"');
-  });
-
-  test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
-    const prompt = fullPrompt(spec, ctx);
     expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
-  });
-
-  test("monorepo: includes workdir field in schema", () => {
-    const prompt = fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"]);
-    expect(prompt).toContain('"workdir"');
-  });
-
-  test("non-monorepo: no workdir field in schema", () => {
-    const prompt = fullPrompt(spec, ctx);
+    expect(fullPrompt(spec, ctx, undefined, ["apps/api", "apps/web"])).toContain('"workdir"');
     expect(prompt).not.toContain('"workdir"');
   });
 
-  test("taskContext excludes output schema — no Output Schema header or JSON field listing", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).not.toContain("Output Schema");
-    expect(taskContext).not.toContain('"analysis": "string');
+  test.each(['"analysis"', '"contextFiles"'])("output schema includes %s field", (field) => {
+    expect(fullPrompt(spec, ctx)).toContain(field);
   });
 
-  test("outputFormat contains schema and format directive but not spec steps", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
+  test("taskContext excludes output schema; outputFormat contains schema but not spec steps", () => {
+    const { taskContext, outputFormat } = new PlanPromptBuilder().build(spec, ctx);
+    expect(taskContext).not.toContain("Output Schema");
+    expect(taskContext).not.toContain('"analysis": "string');
     expect(outputFormat).toContain("Output Schema");
     expect(outputFormat).toContain('"analysis"');
     expect(outputFormat).not.toContain("Step 1");
@@ -759,39 +629,22 @@ describe("buildPlanningPrompt — spec anchor (fix #346)", () => {
   const spec = "## Acceptance Criteria\n- AC-1: Returns 200 when project exists";
   const ctx = "## Codebase Structure\nsrc/projects/projects.service.ts";
 
-  test("spec anchor rules included in taskContext when specContent is non-empty", () => {
+  test("spec anchor rules in taskContext iff specContent non-empty; suggestedCriteria in outputFormat iff spec non-empty", () => {
+    const { taskContext: withSpec, outputFormat: outWithSpec } = new PlanPromptBuilder().build(spec, ctx);
+    const { taskContext: withoutSpec, outputFormat: outWithoutSpec } = new PlanPromptBuilder().build("", ctx);
+    expect(withSpec).toContain("Preserve spec ACs");
+    expect(withoutSpec).not.toContain("Preserve spec ACs");
+    expect(outWithSpec).toContain("suggestedCriteria");
+    expect(outWithoutSpec).not.toContain("suggestedCriteria");
+  });
+
+  test.each([
+    ["suggestedCriteria"],
+    ["Never silently drop"],
+    ["story scope"],
+  ])("taskContext with spec contains '%s'", (text) => {
     const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("Preserve spec ACs");
-  });
-
-  test("spec anchor rules NOT included when specContent is empty string", () => {
-    const { taskContext } = new PlanPromptBuilder().build("", ctx);
-    expect(taskContext).not.toContain("Preserve spec ACs");
-  });
-
-  test("taskContext tells planner to put invented ACs in suggestedCriteria", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("suggestedCriteria");
-  });
-
-  test("outputFormat schema includes suggestedCriteria field when spec is provided", () => {
-    const { outputFormat } = new PlanPromptBuilder().build(spec, ctx);
-    expect(outputFormat).toContain("suggestedCriteria");
-  });
-
-  test("outputFormat schema does NOT include suggestedCriteria when spec is empty", () => {
-    const { outputFormat } = new PlanPromptBuilder().build("", ctx);
-    expect(outputFormat).not.toContain("suggestedCriteria");
-  });
-
-  test("taskContext instructs planner to never drop a spec AC", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("Never silently drop");
-  });
-
-  test("taskContext instructs planner to keep story scope — no cross-story ACs", () => {
-    const { taskContext } = new PlanPromptBuilder().build(spec, ctx);
-    expect(taskContext).toContain("story scope");
+    expect(taskContext).toContain(text);
   });
 });
 
@@ -859,10 +712,8 @@ describe("assertIsValidPrd guard (#993)", () => {
     });
   }
 
-  test("chat-ack on all retry attempts with no prd.json on disk throws PLAN_ENVELOPE_LEAK", async () => {
-    // op.recover reads Bun.file(outputPath) — file not on real disk → returns null.
-    // callOp returns lastRetryTurn (envelope). assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
-    // No prd.json → catch block re-throws.
+  test("chat-ack on all retry attempts throws PLAN_ENVELOPE_LEAK when no prd.json; recovers from disk when present", async () => {
+    // Scenario 1: no prd.json on disk → catch block re-throws PLAN_ENVELOPE_LEAK
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
     _planDeps.readFile = mock(async () => SAMPLE_SPEC);
@@ -873,13 +724,9 @@ describe("assertIsValidPrd guard (#993)", () => {
         feature: "url-shortener",
       }),
     ).rejects.toThrow("envelope-shaped object");
-  });
 
-  test("chat-ack on all retry attempts triggers _planDeps disk recovery when existsSync is true", async () => {
-    // op.recover reads Bun.file(outputPath) — real file absent → returns null.
-    // callOp returns lastRetryTurn (TurnResult envelope).
-    // assertIsValidPrd throws PLAN_ENVELOPE_LEAK.
-    // planCommand catch: existsSync → true; _planDeps.readFile returns valid PRD → recovered.
+    // Scenario 2: prd.json on disk → planCommand catch block reads it and recovers
+    capturedWrites993 = [];
     _planDeps.createRuntime = mock(() => makeHopInvokingRuntime());
     _planDeps.existsSync = mock((p: string) => p.endsWith(".nax") || p.endsWith("prd.json"));
     _planDeps.readFile = mock(async (p: string) => {
@@ -894,8 +741,6 @@ describe("assertIsValidPrd guard (#993)", () => {
 
     expect(result).toContain("url-shortener");
     expect(result).toContain("prd.json");
-    // Field-equality on stable identity fields — validatePlanOutput may transform
-    // routing.reasoning, so compare id/title rather than the full object.
     expect(capturedWrites993.length).toBeGreaterThan(0);
     const written = JSON.parse(capturedWrites993[capturedWrites993.length - 1]?.[1] ?? "{}");
     const writtenIds = (written.userStories as Array<{ id: string; title: string }>).map((s) => s.id);
@@ -954,81 +799,33 @@ describe("buildPlanComposition()", () => {
     debaters: [{ agent: "claude" }, { agent: "opencode" }],
   };
 
-  test("AC-1: returns config unchanged when evidenceMode is 'current'", () => {
-    const input = { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const };
-    const result = buildPlanComposition(input);
-    expect(result).toBe(input);
-  });
-
-  test("AC-1: returns config unchanged when evidenceMode is absent", () => {
-    const input = { ...baseConfig, sessionMode: "one-shot" as const };
+  test.each([
+    ["'current'", { ...baseConfig, sessionMode: "one-shot" as const, evidenceMode: "current" as const }],
+    ["absent", { ...baseConfig, sessionMode: "one-shot" as const }],
+  ] as const)("AC-1: returns config unchanged when evidenceMode is %s", (_label, input) => {
     const result = buildPlanComposition(input as any);
     expect(result).toBe(input);
   });
 
-  test("AC-1: injects preDebatePhase grounder when evidenceMode is 'asymmetric'", () => {
+  test.each([
+    ["preDebatePhase grounder", (r: ReturnType<typeof buildPlanComposition>) => r.preDebatePhase, { kind: "grounder" }],
+    ["proposers constraints", (r: ReturnType<typeof buildPlanComposition>) => r.proposers, { citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 }],
+    ["sessionMode stateful", (r: ReturnType<typeof buildPlanComposition>) => r.sessionMode, "stateful"],
+    ["verifier-pick selector", (r: ReturnType<typeof buildPlanComposition>) => r.selector, { kind: "verifier-pick", patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 } }],
+    ["plan-checklist postDebateVerifier", (r: ReturnType<typeof buildPlanComposition>) => r.postDebateVerifier, { kind: "plan-checklist" }],
+  ])("AC-1: injects %s when evidenceMode is 'asymmetric'", (_label, getField, expected) => {
     const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.preDebatePhase).toEqual({ kind: "grounder" });
+    expect(getField(result)).toEqual(expected);
   });
 
-  test("AC-1: injects proposers constraints when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.proposers).toEqual({ citationsRequired: true, fileReadAccess: true, fileReadBudget: 10 });
-  });
-
-  test("AC-1: sets sessionMode to stateful when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.sessionMode).toBe("stateful");
-  });
-
-  test("AC-1: sets verifier-pick selector with patch when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.selector).toEqual({
-      kind: "verifier-pick",
-      patch: { enabled: true, overlapThreshold: 0.8, maxDeltas: 5 },
-    });
-  });
-
-  test("AC-1: injects plan-checklist postDebateVerifier when evidenceMode is 'asymmetric'", () => {
-    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const });
-    expect(result.postDebateVerifier).toEqual({ kind: "plan-checklist" });
-  });
-
-  test("AC-2: user-specified preDebatePhase overrides asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      preDebatePhase: { kind: "custom" as const, onFailure: "block" as const },
-    });
-    expect(result.preDebatePhase).toEqual({ kind: "custom", onFailure: "block" });
-  });
-
-  test("AC-2: user-specified selector overrides asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      selector: { kind: "synthesis" as const },
-    });
-    expect(result.selector).toEqual({ kind: "synthesis" });
-  });
-
-  test("AC-2: user-specified sessionMode overrides asymmetric default", () => {
-    // User explicitly sets one-shot — should not be replaced with stateful default.
-    const result = buildPlanComposition({
-      ...baseConfig,
-      sessionMode: "one-shot" as const,
-      evidenceMode: "asymmetric" as const,
-    });
-    expect(result.sessionMode).toBe("one-shot");
-  });
-
-  test("AC-2: user-specified proposers override asymmetric default", () => {
-    const result = buildPlanComposition({
-      ...baseConfig,
-      evidenceMode: "asymmetric" as const,
-      proposers: { citationsRequired: false },
-    });
-    expect(result.proposers).toEqual({ citationsRequired: false });
+  test.each([
+    ["preDebatePhase", { preDebatePhase: { kind: "custom" as const, onFailure: "block" as const } }, (r: ReturnType<typeof buildPlanComposition>) => r.preDebatePhase, { kind: "custom", onFailure: "block" }],
+    ["selector", { selector: { kind: "synthesis" as const } }, (r: ReturnType<typeof buildPlanComposition>) => r.selector, { kind: "synthesis" }],
+    ["sessionMode one-shot", { sessionMode: "one-shot" as const }, (r: ReturnType<typeof buildPlanComposition>) => r.sessionMode, "one-shot"],
+    ["proposers", { proposers: { citationsRequired: false } }, (r: ReturnType<typeof buildPlanComposition>) => r.proposers, { citationsRequired: false }],
+  ])("AC-2: user-specified %s overrides asymmetric default", (_label, override, getField, expected) => {
+    const result = buildPlanComposition({ ...baseConfig, evidenceMode: "asymmetric" as const, ...override } as any);
+    expect(getField(result)).toEqual(expected);
   });
 });
 
@@ -1159,91 +956,66 @@ describe("runPlanPipeline (US-005)", () => {
   });
 
   describe("AC9: planDraftOp receives manifest from groundOp + citationThreshold", () => {
-    test("calls callOp with manifest from groundOp result", async () => {
-      const capturedPrompts: string[] = [];
-      // groundOp returns a manifest with a distinctive marker in repoFacts[0].summary;
-      // renderManifestSection(manifest) includes it in the planDraftOp prompt.
+    test("passes manifest from groundOp to planDraftOp; uses citationThreshold 0.5 default", async () => {
+      // Scenario 1: manifest marker forwarded to planDraftOp prompt
+      let capturedPrompts: string[] = [];
       const distinctiveManifest = {
         repoFacts: [{ id: "F-001", kind: "file", evidence: "src/index.ts:1", summary: "DISTINCTIVE_MANIFEST_MARKER_XY9Z" }],
         specClaims: [],
         gaps: [],
       };
-      const agentManager = makePipelineAgentManager({
-        groundManifestOverride: distinctiveManifest,
-        capturedPrompts,
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
+      _planDeps.createRuntime = mock(() =>
+        makeMockRuntime({ agentManager: makePipelineAgentManager({ groundManifestOverride: distinctiveManifest, capturedPrompts }), workdir: tempWorkdir }),
+      );
       await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // capturedPrompts[1] is the planDraftOp prompt; must contain the manifest content
       expect(capturedPrompts[1]).toContain("DISTINCTIVE_MANIFEST_MARKER_XY9Z");
-    });
 
-    test("uses config.plan?.citationThreshold ?? 0.5 as default", async () => {
-      const capturedPrompts: string[] = [];
-      const agentManager = makePipelineAgentManager({ capturedPrompts });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      // No citationThreshold in config — must default to 0.5
+      // Scenario 2: no citationThreshold in config → defaults to 0.5 in planDraftOp prompt
+      capturedPrompts = [];
+      _planDeps.createRuntime = mock(() =>
+        makeMockRuntime({ agentManager: makePipelineAgentManager({ capturedPrompts }), workdir: tempWorkdir }),
+      );
       await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // The planDraftOp prompt (index 1) must include "0.5" as the citation rate
       expect(capturedPrompts[1]).toContain("0.5");
     });
   });
 
-  describe("AC10: runPlanCritic called after planDraftOp", () => {
-    test("calls runPlanCritic after planDraftOp returns", async () => {
+  describe("AC10+AC11: runPlanCritic called and prd.json written", () => {
+    test("calls runPlanCritic after planDraftOp (AC10); writes and returns prd.json path when critic passes (AC11)", async () => {
+      // AC10: custom agentManager with runCallCount to verify 3 phases
       let runCallCount = 0;
-      const agentManager = makeMockAgentManager({
+      const agentManager10 = makeMockAgentManager({
         runWithFallbackFn: async () => {
           const idx = runCallCount++;
           let output: string;
           if (idx === 0) output = makeGroundOpOutput();
           else if (idx === 1) output = makeDraftOpOutput(makePRD({ feature: "test-feature" }));
-          else output = JSON.stringify({ findings: [] }); // planCriticLlmOp (run-kind, idx=2)
+          else output = JSON.stringify({ findings: [] });
           return {
             result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
             fallbacks: [],
           };
         },
       });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // All three phases executed: groundOp → planDraftOp → planCriticLlmOp (run-kind) → prd.json written
-      expect(result).toContain("prd.json");
+      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager10, workdir: tempWorkdir }));
+      const result10 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
+      expect(result10).toContain("prd.json");
       expect(runCallCount).toBe(3);
-    });
-  });
 
-  describe("AC11: Critic passes → write prd.json to .nax/features/<feature>/prd.json", () => {
-    test("writes verdict.prd to .nax/features/<feature>/prd.json when critic passes", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
+      // AC11: standard pipeline agentManager; verify path and write
+      capturedPipelineWrites = [];
+      const agentManager11 = makePipelineAgentManager();
+      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager11, workdir: tempWorkdir }));
+      const result11 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
       const expectedPath = join(tempWorkdir, ".nax", "features", "test-feature", "prd.json");
+      expect(result11).toBe(expectedPath);
       expect(capturedPipelineWrites.length).toBeGreaterThan(0);
       expect(capturedPipelineWrites[capturedPipelineWrites.length - 1][0]).toBe(expectedPath);
-    });
-
-    test("returns the path to the written prd.json", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      expect(result).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
     });
   });
 
   describe("AC12: Critic fails → throw NaxError with PLAN_CRITIC_BLOCKED", () => {
-    test("throws NaxError with code === 'PLAN_CRITIC_BLOCKED' when critic fails", async () => {
-      // planDraftOp returns a PRD with a nonexistent contextFile → checkFilesExist produces a blocker
+    test("throws NaxError with PLAN_CRITIC_BLOCKED and specDeltasPath when critic fails", async () => {
       const blockerPrd = makePRD({
         feature: "test-feature",
         userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
@@ -1255,47 +1027,12 @@ describe("runPlanPipeline (US-005)", () => {
 
       expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).code).toBe("PLAN_CRITIC_BLOCKED");
-    });
-
-    test("NaxError context contains specDeltasPath equal to the verdict's specDeltasPath", async () => {
-      const blockerPrd = makePRD({
-        feature: "test-feature",
-        userStories: [makeStory({ contextFiles: [{ path: "absolutely-nonexistent-file-ac12.ts", factId: "F-001" }] })],
-      });
-      const agentManager = makePipelineAgentManager({ draftPrd: blockerPrd });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
-
-      expect(err).toBeInstanceOf(NaxError);
       expect((err as NaxError).context?.specDeltasPath).toBeDefined();
     });
   });
 
   describe("AC13: groundOp throws → wrap as NaxError with PLAN_PIPELINE_GROUND_FAILED", () => {
-    test("catches error from groundOp and wraps as NaxError", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("groundOp network failure"); },
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      await expect(
-        runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }),
-      ).rejects.toBeInstanceOf(NaxError);
-    });
-
-    test("wrapped error has code === 'PLAN_PIPELINE_GROUND_FAILED'", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("groundOp network failure"); },
-      });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
-
-      expect((err as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
-    });
-
-    test("wrapped error context.cause contains original error", async () => {
+    test("wraps groundOp failure as NaxError with PLAN_PIPELINE_GROUND_FAILED and cause", async () => {
       const originalError = new Error("the original groundOp failure");
       const agentManager = makeMockAgentManager({
         runWithFallbackFn: async () => { throw originalError; },
@@ -1304,29 +1041,18 @@ describe("runPlanPipeline (US-005)", () => {
 
       const err = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" }).catch((e) => e);
 
+      expect(err).toBeInstanceOf(NaxError);
+      expect((err as NaxError).code).toBe("PLAN_PIPELINE_GROUND_FAILED");
       expect((err as NaxError).context?.cause).toBe(originalError);
     });
   });
 
   describe("AC14: Finally block closes runtime", () => {
-    test("closes createPlanRuntime via rt.close() in finally block on success", async () => {
-      const agentManager = makePipelineAgentManager();
-      const mockRt = makeMockRuntime({ agentManager, workdir: tempWorkdir });
-      let closeCallCount = 0;
-      const realClose = mockRt.close.bind(mockRt);
-      mockRt.close = async () => { closeCallCount++; await realClose(); };
-      _planDeps.createRuntime = mock(() => mockRt);
-
-      await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      expect(closeCallCount).toBe(1);
-    });
-
-    test("closes createPlanRuntime via rt.close() in finally block on failure", async () => {
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async () => { throw new Error("simulated groundOp failure"); },
-      });
-      const mockRt = makeMockRuntime({ agentManager, workdir: tempWorkdir });
+    test.each([
+      ["on success", () => makeMockRuntime({ agentManager: makePipelineAgentManager(), workdir: tempWorkdir })],
+      ["on failure", () => makeMockRuntime({ agentManager: makeMockAgentManager({ runWithFallbackFn: async () => { throw new Error("simulated groundOp failure"); } }), workdir: tempWorkdir })],
+    ])("closes runtime via rt.close() in finally block %s", async (_label, makeRt) => {
+      const mockRt = makeRt();
       let closeCallCount = 0;
       const realClose = mockRt.close.bind(mockRt);
       mockRt.close = async () => { closeCallCount++; await realClose(); };
@@ -1339,7 +1065,7 @@ describe("runPlanPipeline (US-005)", () => {
   });
 
   describe("AC15: planCommand integration with pipeline mode", () => {
-    test("planCommand with resolvePlanMode() === 'pipeline' returns path from runPlanPipeline", async () => {
+    test("planCommand pipeline mode: returns path from runPlanPipeline and does not throw PLAN_PIPELINE_NOT_IMPLEMENTED", async () => {
       const agentManager = makePipelineAgentManager();
       _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
 
@@ -1354,28 +1080,8 @@ describe("runPlanPipeline (US-005)", () => {
       });
 
       expect(result).toBe(join(tempWorkdir, ".nax", "features", "test-feature", "prd.json"));
-    });
-
-    test("planCommand no longer throws PLAN_PIPELINE_NOT_IMPLEMENTED for pipeline mode", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const pipelineConfig = {
-        ...DEFAULT_CONFIG,
-        plan: { ...DEFAULT_CONFIG.plan, mode: "pipeline" as const },
-      };
-
-      const err = await planCommand(tempWorkdir, pipelineConfig as never, {
-        from: "/spec.md",
-        feature: "test-feature",
-      }).catch((e) => e);
-
-      if (err instanceof NaxError) {
-        expect((err as NaxError).code).not.toBe("PLAN_PIPELINE_NOT_IMPLEMENTED");
-      } else {
-        // Success path — planCommand returned without throwing
-        expect(typeof err).toBe("string");
-      }
+      // Verify no PLAN_PIPELINE_NOT_IMPLEMENTED was thrown (success path reached)
+      expect(typeof result).toBe("string");
     });
   });
 });

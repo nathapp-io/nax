@@ -13,24 +13,18 @@ describe("parseAgentError", () => {
     expect(result.type).toBe("auth");
   });
 
-  test("detects rate-limit from JSON statusCode", () => {
-    const result = parseAgentError('{"statusCode":429}');
-    expect(result.type).toBe("rate-limit");
+  test.each([
+    ["rate-limit", '{"statusCode":429}'],
+    ["auth", '{"statusCode":401}'],
+  ] as const)("detects %s from JSON statusCode", (type, input) => {
+    expect(parseAgentError(input).type).toBe(type);
   });
 
-  test("detects auth from JSON statusCode", () => {
-    const result = parseAgentError('{"statusCode":401}');
-    expect(result.type).toBe("auth");
-  });
-
-  test("detects rate-limit from bracketed acpx codes", () => {
-    const result = parseAgentError("acpx session failed [ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]");
-    expect(result.type).toBe("rate-limit");
-  });
-
-  test("detects auth from bracketed acpx codes", () => {
-    const result = parseAgentError("acpx auth failed [AUTH_FAILED/PERMISSION_DENIED]");
-    expect(result.type).toBe("auth");
+  test.each([
+    ["rate-limit", "acpx session failed [ACPX_RATE_LIMIT/TOO_MANY_REQUESTS]"],
+    ["auth", "acpx auth failed [AUTH_FAILED/PERMISSION_DENIED]"],
+  ] as const)("detects %s from bracketed acpx codes", (type, input) => {
+    expect(parseAgentError(input).type).toBe(type);
   });
 
   test("detects structured key-value status codes", () => {
@@ -40,14 +34,11 @@ describe("parseAgentError", () => {
     expect(auth.type).toBe("auth");
   });
 
-  test("does not infer rate-limit from free-text phrases", () => {
-    const result = parseAgentError("Rate limit hit, retry after 60");
-    expect(result.type).toBe("unknown");
-  });
-
-  test("does not infer auth from free-text phrases", () => {
-    const result = parseAgentError("Unauthorized request");
-    expect(result.type).toBe("unknown");
+  test.each([
+    ["rate-limit", "Rate limit hit, retry after 60"],
+    ["auth", "Unauthorized request"],
+  ] as const)("does not infer %s from free-text phrases", (_type, input) => {
+    expect(parseAgentError(input).type).toBe("unknown");
   });
 
   test("returns unknown for empty or unstructured errors", () => {
@@ -80,13 +71,10 @@ describe("parseAgentError", () => {
       expect(result.retryAfterSeconds).toBe(42);
     });
 
-    test("detects auth from permission_error variant", () => {
-      const stderr = 'boom {"type":"error","error":{"type":"permission_error"}}';
-      expect(parseAgentError(stderr).type).toBe("auth");
-    });
-
-    test("detects auth from invalid_api_key_error variant", () => {
-      const stderr = 'boom {"type":"error","error":{"type":"invalid_api_key_error"}}';
+    test.each([
+      ["permission_error variant", 'boom {"type":"error","error":{"type":"permission_error"}}'],
+      ["invalid_api_key_error variant", 'boom {"type":"error","error":{"type":"invalid_api_key_error"}}'],
+    ])("detects auth from %s", (_label, stderr) => {
       expect(parseAgentError(stderr).type).toBe("auth");
     });
 
@@ -95,32 +83,22 @@ describe("parseAgentError", () => {
       expect(parseAgentError(stderr).type).toBe("rate-limit");
     });
 
-    test("root JSON Anthropic envelope also classifies (not just embedded)", () => {
-      const root = '{"type":"error","error":{"type":"authentication_error"}}';
-      expect(parseAgentError(root).type).toBe("auth");
+    test.each([
+      ["root JSON Anthropic envelope", '{"type":"error","error":{"type":"authentication_error"}}'],
+      [
+        "nested JSON with braces inside a string literal",
+        'prefix {"type":"error","error":{"type":"authentication_error","message":"please set `{authHeader}` properly"}} suffix',
+      ],
+    ])("detects auth from %s", (_label, input) => {
+      expect(parseAgentError(input).type).toBe("auth");
     });
 
-    test("unrelated inner error type leaves classification unknown", () => {
-      const stderr = 'boom {"type":"error","error":{"type":"invalid_request_error"}}';
-      // Not one of the known auth/rate-limit variants.
-      expect(parseAgentError(stderr).type).toBe("unknown");
-    });
-
-    test("nested JSON with braces inside a string literal is parsed correctly", () => {
-      const stderr =
-        'prefix {"type":"error","error":{"type":"authentication_error","message":"please set `{authHeader}` properly"}} suffix';
-      expect(parseAgentError(stderr).type).toBe("auth");
-    });
-
-    test("does not misclassify when embedded JSON is unrelated", () => {
-      const stderr = 'log: {"user":"alice","event":"login"}';
-      expect(parseAgentError(stderr).type).toBe("unknown");
-    });
-
-    test("still returns unknown when no embedded JSON exists", () => {
-      // Free-text-only — no structured signal anywhere. Must stay unknown
-      // (no free-text phrase inference).
-      expect(parseAgentError("Internal error: Failed to authenticate. API Error: 401").type).toBe("unknown");
+    test.each([
+      ["unrelated inner error type", 'boom {"type":"error","error":{"type":"invalid_request_error"}}'],
+      ["embedded JSON is unrelated", 'log: {"user":"alice","event":"login"}'],
+      ["no embedded JSON exists", "Internal error: Failed to authenticate. API Error: 401"],
+    ])("%s leaves classification unknown", (_label, input) => {
+      expect(parseAgentError(input).type).toBe("unknown");
     });
   });
 
@@ -129,39 +107,32 @@ describe("parseAgentError", () => {
     // Codex-style: acpx rejects the model at sessions ensure time and emits a
     // JSON-RPC error on stdout. After the spawn-client fix, the error message
     // embeds that JSON. Message prefix is stable — from acpx model-support.ts.
-    test("detects model-not-available from embedded JSON-RPC error (Codex ensure path)", () => {
-      const stdout =
+    test.each([
+      [
+        "embedded JSON-RPC error (Codex ensure path)",
         '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
-        '"message":"Cannot apply --model \\"bad-model-xyz\\": the ACP agent did not advertise that model.' +
-        ' Available models: gpt-5.5/low, gpt-5.5/medium.","data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}';
-      const result = parseAgentError(stdout);
-      expect(result.type).toBe("model-not-available");
-    });
-
-    test("detects model-not-available for the advertise-model-support variant (Codex no ACP models)", () => {
-      const stdout =
+          '"message":"Cannot apply --model \\"bad-model-xyz\\": the ACP agent did not advertise that model.' +
+          ' Available models: gpt-5.5/low, gpt-5.5/medium.","data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}',
+      ],
+      [
+        "advertise-model-support variant (Codex no ACP models)",
         '[acp-adapter] Failed to create session: {"jsonrpc":"2.0","id":null,"error":{"code":-32603,' +
-        '"message":"Cannot apply --model \\"sonnet\\": the ACP agent did not advertise model support.",' +
-        '"data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}';
-      const result = parseAgentError(stdout);
-      expect(result.type).toBe("model-not-available");
-    });
-
-    // Claude-style: Claude Code accepts the model at session/new but rejects it
-    // when the prompt is sent. The error arrives as a flat string (no JSON).
-    test("detects model-not-available from Claude Code flat error string", () => {
-      const errorMsg =
+          '"message":"Cannot apply --model \\"sonnet\\": the ACP agent did not advertise model support.",' +
+          '"data":{"acpxCode":"RUNTIME","origin":"cli","sessionId":"unknown"}}}',
+      ],
+      // Claude-style: Claude Code accepts the model at session/new but rejects it
+      // when the prompt is sent. The error arrives as a flat string (no JSON).
+      [
+        "Claude Code flat error string",
         "Internal error: There's an issue with the selected model (bad-model-xyz)." +
-        " It may not exist or you may not have access to it. Run --model to pick a different model.";
-      const result = parseAgentError(errorMsg);
-      expect(result.type).toBe("model-not-available");
-    });
-
-    test("detects model-not-available for the replay-saved-model variant", () => {
-      const result = parseAgentError(
+          " It may not exist or you may not have access to it. Run --model to pick a different model.",
+      ],
+      [
+        "replay-saved-model variant",
         'Cannot replay saved model "claude-sonnet-4-5": the ACP agent did not advertise that model.',
-      );
-      expect(result.type).toBe("model-not-available");
+      ],
+    ])("detects model-not-available from %s", (_label, input) => {
+      expect(parseAgentError(input).type).toBe("model-not-available");
     });
 
     test("model-not-available has no retryAfterSeconds", () => {
@@ -172,18 +143,15 @@ describe("parseAgentError", () => {
       expect((result as { retryAfterSeconds?: number }).retryAfterSeconds).toBeUndefined();
     });
 
-    test("does not classify generic RUNTIME acpxCode as model-not-available", () => {
-      // RUNTIME is used for many errors — must not classify without the message prefix.
-      const result = parseAgentError(
-        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Some other runtime error",' +
-          '"data":{"acpxCode":"RUNTIME","origin":"cli"}}}',
-      );
-      expect(result.type).toBe("unknown");
-    });
-
-    test("does not classify invalid_request_error Anthropic envelope as model-not-available", () => {
-      const result = parseAgentError('boom {"type":"error","error":{"type":"invalid_request_error"}}');
-      expect(result.type).toBe("unknown");
+    test.each([
+      [
+        "generic RUNTIME acpxCode",
+        // RUNTIME is used for many errors — must not classify without the message prefix.
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Some other runtime error","data":{"acpxCode":"RUNTIME","origin":"cli"}}}',
+      ],
+      ["invalid_request_error Anthropic envelope", 'boom {"type":"error","error":{"type":"invalid_request_error"}}'],
+    ])("does not classify %s as model-not-available", (_label, input) => {
+      expect(parseAgentError(input).type).toBe("unknown");
     });
   });
 });

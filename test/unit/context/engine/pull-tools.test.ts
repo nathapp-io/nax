@@ -66,31 +66,17 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_NEIGHBOR_DESCRIPTOR", () => {
-  test("has name 'query_neighbor'", () => {
+  test("has expected name, description, inputSchema, and is in PULL_TOOL_REGISTRY", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.name).toBe("query_neighbor");
-  });
-
-  test("has a non-empty description", () => {
     expect(QUERY_NEIGHBOR_DESCRIPTOR.description.length).toBeGreaterThan(0);
-  });
-
-  test("inputSchema requires filePath", () => {
     const schema = QUERY_NEIGHBOR_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toContain("filePath");
-  });
-
-  test("maxCallsPerSession is a positive integer", () => {
-    expect(QUERY_NEIGHBOR_DESCRIPTOR.maxCallsPerSession).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR.maxCallsPerSession)).toBe(true);
-  });
-
-  test("maxTokensPerCall is a positive integer", () => {
-    expect(QUERY_NEIGHBOR_DESCRIPTOR.maxTokensPerCall).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR.maxTokensPerCall)).toBe(true);
-  });
-
-  test("PULL_TOOL_REGISTRY includes query_neighbor", () => {
     expect(PULL_TOOL_REGISTRY["query_neighbor"]).toBe(QUERY_NEIGHBOR_DESCRIPTOR);
+  });
+
+  test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
+    expect(QUERY_NEIGHBOR_DESCRIPTOR[field]).toBeGreaterThan(0);
+    expect(Number.isInteger(QUERY_NEIGHBOR_DESCRIPTOR[field])).toBe(true);
   });
 });
 
@@ -137,31 +123,24 @@ describe("PullToolBudget", () => {
     expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
-  test("isSessionExhausted() returns false when calls remain", () => {
-    const budget = new PullToolBudget(5, 50, createRunCallCounter());
+  test.each([
+    ["isSessionExhausted() when calls remain", () => new PullToolBudget(5, 50, createRunCallCounter()), false],
+    ["isSessionExhausted() when session limit reached", () => new PullToolBudget(1, 50, createRunCallCounter()), true],
+  ])("%s → %s", (_label, makeBudget, expected) => {
+    const budget = makeBudget();
     budget.consume();
-    expect(budget.isSessionExhausted()).toBe(false);
+    expect(budget.isSessionExhausted()).toBe(expected);
   });
 
-  test("isSessionExhausted() returns true when session limit reached", () => {
-    const budget = new PullToolBudget(1, 50, createRunCallCounter());
-    budget.consume();
-    expect(budget.isSessionExhausted()).toBe(true);
-  });
-
-  test("isRunExhausted() returns false when run calls remain", () => {
+  test.each([
+    ["isRunExhausted() when run calls remain", 0, false],
+    ["isRunExhausted() when run limit reached", 49, true],
+  ])("%s → %s", (_label, counterStart, expected) => {
     const counter = createRunCallCounter();
+    counter.count = counterStart;
     const budget = new PullToolBudget(5, 50, counter);
     budget.consume();
-    expect(budget.isRunExhausted()).toBe(false);
-  });
-
-  test("isRunExhausted() returns true when run limit reached", () => {
-    const counter = createRunCallCounter();
-    counter.count = 49;
-    const budget = new PullToolBudget(5, 50, counter);
-    budget.consume();
-    expect(budget.isRunExhausted()).toBe(true);
+    expect(budget.isRunExhausted()).toBe(expected);
   });
 
   test("run counter is shared — multiple budgets draw from the same pool", () => {
@@ -190,17 +169,15 @@ describe("handleQueryNeighbor", () => {
     return new PullToolBudget(sessionLimit, runLimit, createRunCallCounter());
   }
 
-  test("calls budget.consume() before fetching", async () => {
+  test("calls budget.consume() before fetching; propagates NaxError from exhausted budget", async () => {
     const budget = makeBudget();
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget);
     expect(budget.sessionCallsUsed).toBe(1);
-  });
 
-  test("propagates NaxError from exhausted budget", async () => {
-    const budget = makeBudget(0, 50); // 0 session limit — immediately exhausted
+    const exhausted = makeBudget(0, 50);
     let threw: unknown;
     try {
-      await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget);
+      await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", exhausted);
     } catch (e) {
       threw = e;
     }
@@ -208,22 +185,15 @@ describe("handleQueryNeighbor", () => {
     expect((threw as NaxError).code).toBe("PULL_TOOL_BUDGET_EXHAUSTED");
   });
 
-  test("returns neighbor content from CodeNeighborProvider", async () => {
-    // src/a.ts exists — sibling test is always added
+  test("returns neighbor content (string) for src/ file and empty string for file with no neighbors", async () => {
     _codeNeighborDeps.fileExists = async (p) => p.includes("src/a.ts");
     _codeNeighborDeps.readFile = async () => "";
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
+    expect(typeof (await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget()))).toBe("string");
 
-    const result = await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
-    expect(typeof result).toBe("string");
-  });
-
-  test("returns empty string when file has no neighbors", async () => {
-    // scripts/ file — no sibling test, no forward/reverse deps
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
-    const result = await handleQueryNeighbor({ filePath: "scripts/build.ts" }, "/repo", makeBudget());
-    expect(result).toBe("");
+    expect(await handleQueryNeighbor({ filePath: "scripts/build.ts" }, "/repo", makeBudget())).toBe("");
   });
 
   test("truncates output to maxTokensPerCall * 4 characters", async () => {
@@ -242,25 +212,22 @@ describe("handleQueryNeighbor", () => {
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
 
-  test("emits logger.info with tool=query_neighbor and resultCount matching chunk count", async () => {
+  test("emits logger.info with tool/resultCount/truncated fields", async () => {
+    // Sub-scenario 1: basic invocation — fields present, resultCount=0, resultBytes=0
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
-
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
+    const call1 = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call1?.data?.tool).toBe("query_neighbor");
+    expect(call1?.data?.resultCount).toBe(0);
+    expect(call1?.data?.resultBytes).toBe(0);
+    expect(call1?.data?.filePath).toBe("src/a.ts");
 
-    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.tool).toBe("query_neighbor");
-    expect(call?.data?.resultCount).toBe(0);
-    expect(call?.data?.resultBytes).toBe(0);
-    expect(call?.data?.filePath).toBe("src/a.ts");
-  });
-
-  test("logger emit includes truncated=true when content is truncated", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    // Sub-scenario 2: truncated=true when content exceeds cap
+    const mockLogger2 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger2 as any;
     const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: manyNeighbors, truncated: false });
@@ -268,26 +235,19 @@ describe("handleQueryNeighbor", () => {
       if (manyNeighbors.some((f) => p.includes(f))) return 'import { x } from "./a"';
       return "";
     };
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), 10);
+    const call2 = mockLogger2.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call2?.data?.truncated).toBe(true);
 
-    const maxTokensPerCall = 10; // tiny cap to force truncation
-    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), maxTokensPerCall);
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.truncated).toBe(true);
-  });
-
-  test("logger emit includes resultCount matching number of neighbor chunks", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
-    // Simulate file with test and forward/reverse deps
+    // Sub-scenario 3: resultCount>0 when neighbors found
+    const mockLogger3 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger3 as any;
     _codeNeighborDeps.fileExists = async (p) => p.includes("test/");
     _codeNeighborDeps.glob = () => ({ files: ["src/imported.ts"], truncated: false });
     _codeNeighborDeps.readFile = async () => 'import { x } from "./a"';
-
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBeGreaterThan(0);
+    const call3 = mockLogger3.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call3?.data?.resultCount).toBeGreaterThan(0);
   });
 });
 
@@ -296,31 +256,17 @@ describe("handleQueryNeighbor", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("QUERY_FEATURE_CONTEXT_DESCRIPTOR", () => {
-  test("has name 'query_feature_context'", () => {
+  test("has expected name, description, inputSchema (filter optional), and is in PULL_TOOL_REGISTRY", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name).toBe("query_feature_context");
-  });
-
-  test("has a non-empty description", () => {
     expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.description.length).toBeGreaterThan(0);
-  });
-
-  test("inputSchema has no required fields (filter is optional)", () => {
     const schema = QUERY_FEATURE_CONTEXT_DESCRIPTOR.inputSchema as { required?: string[] };
     expect(schema.required).toBeUndefined();
-  });
-
-  test("maxCallsPerSession is a positive integer", () => {
-    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxCallsPerSession).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxCallsPerSession)).toBe(true);
-  });
-
-  test("maxTokensPerCall is a positive integer", () => {
-    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxTokensPerCall).toBeGreaterThan(0);
-    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR.maxTokensPerCall)).toBe(true);
-  });
-
-  test("PULL_TOOL_REGISTRY includes query_feature_context", () => {
     expect(PULL_TOOL_REGISTRY["query_feature_context"]).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR);
+  });
+
+  test.each(["maxCallsPerSession", "maxTokensPerCall"] as const)("%s is a positive integer", (field) => {
+    expect(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field]).toBeGreaterThan(0);
+    expect(Number.isInteger(QUERY_FEATURE_CONTEXT_DESCRIPTOR[field])).toBe(true);
   });
 });
 
@@ -356,18 +302,16 @@ describe("handleQueryFeatureContext", () => {
       }) as ReturnType<typeof origCreateV1Provider>;
   }
 
-  test("calls budget.consume() before fetching", async () => {
+  test("calls budget.consume() before fetching; propagates NaxError from exhausted budget", async () => {
     mockV1Provider("## Conventions\nUse async/await.");
     const budget = makeBudget();
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", budget);
     expect(budget.sessionCallsUsed).toBe(1);
-  });
 
-  test("propagates NaxError from exhausted budget", async () => {
-    const budget = makeBudget(0, 50); // 0 session limit — immediately exhausted
+    const exhausted = makeBudget(0, 50);
     let threw: unknown;
     try {
-      await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", budget);
+      await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", exhausted);
     } catch (e) {
       threw = e;
     }
@@ -382,48 +326,24 @@ describe("handleQueryFeatureContext", () => {
     expect(result).toContain("Section B");
   });
 
-  test("returns empty string when context.md does not exist", async () => {
+  test("returns empty string when context.md absent or no sections match filter", async () => {
     mockV1Provider(null);
-    const result = await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-    expect(result).toBe("");
-  });
+    expect(await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget())).toBe("");
 
-  test("filter returns only sections containing the keyword", async () => {
     mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
-    const result = await handleQueryFeatureContext(
-      { filter: "security" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toContain("Security");
-    expect(result).not.toContain("Conventions");
+    expect(await handleQueryFeatureContext({ filter: "nonexistent-keyword-xyz" }, STORY, CONFIG, "/repo", makeBudget())).toBe("");
   });
 
-  test("filter is case-insensitive", async () => {
+  test("filter returns matching sections (case-insensitive)", async () => {
+    mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
+    const lower = await handleQueryFeatureContext({ filter: "security" }, STORY, CONFIG, "/repo", makeBudget());
+    expect(lower).toContain("Security");
+    expect(lower).not.toContain("Conventions");
+
     mockV1Provider("## Async Patterns\nPrefer async/await.\n\n## Other\nUnrelated.");
-    const result = await handleQueryFeatureContext(
-      { filter: "ASYNC" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toContain("Async Patterns");
-    expect(result).not.toContain("Other");
-  });
-
-  test("filter returns empty string when no sections match", async () => {
-    mockV1Provider("## Conventions\nUse async/await.\n\n## Security\nNever log tokens.");
-    const result = await handleQueryFeatureContext(
-      { filter: "nonexistent-keyword-xyz" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-    expect(result).toBe("");
+    const upper = await handleQueryFeatureContext({ filter: "ASYNC" }, STORY, CONFIG, "/repo", makeBudget());
+    expect(upper).toContain("Async Patterns");
+    expect(upper).not.toContain("Other");
   });
 
   test("filter with no ## headings returns full content (flat context.md)", async () => {
@@ -455,59 +375,41 @@ describe("handleQueryFeatureContext", () => {
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
 
-  test("emits logger.info with tool=query_feature_context and keyword from filter", async () => {
+  test("emits logger.info with tool=query_feature_context; keyword from filter or null", async () => {
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
     mockV1Provider("## Conventions\nUse async/await.");
-
-    await handleQueryFeatureContext(
-      { filter: "conventions" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-
-    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.tool).toBe("query_feature_context");
-    expect(call?.data?.keyword).toBe("conventions");
-    expect(call?.data?.storyId).toBe("US-001");
+    await handleQueryFeatureContext({ filter: "conventions" }, STORY, CONFIG, "/repo", makeBudget());
+    const callWithFilter = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(callWithFilter?.data?.tool).toBe("query_feature_context");
+    expect(callWithFilter?.data?.keyword).toBe("conventions");
+    expect(callWithFilter?.data?.storyId).toBe("US-001");
   });
 
-  test("logger emit includes resultCount and resultBytes", async () => {
+  test("logger includes resultCount and resultBytes (>0 when content exists, 0 when none)", async () => {
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
-    const content = "## Section\nSome content here";
-    mockV1Provider(content);
 
+    mockV1Provider("## Section\nSome content here");
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
+    const withContent = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(withContent?.data?.resultCount).toBeGreaterThan(0);
+    expect(withContent?.data?.resultBytes).toBeGreaterThan(0);
 
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBeGreaterThan(0);
-    expect(call?.data?.resultBytes).toBeGreaterThan(0);
-  });
-
-  test("logger emit includes resultCount=0 when no context exists", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    mockLogger.calls.length = 0;
     mockV1Provider(null);
-
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBe(0);
-    expect(call?.data?.resultBytes).toBe(0);
+    const noContent = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(noContent?.data?.resultCount).toBe(0);
+    expect(noContent?.data?.resultBytes).toBe(0);
   });
 
   test("logger emit includes keyword=null when no filter is provided", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    const mockLogger2 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger2 as any;
     mockV1Provider("## Section\nContent");
-
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.keyword).toBeNull();
+    const callNoFilter = mockLogger2.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(callNoFilter?.data?.keyword).toBeNull();
   });
 });

@@ -73,20 +73,14 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.manifest.includedChunks).toHaveLength(0);
   });
 
-  test("provider with chunks: bundle has pushMarkdown and digest", async () => {
+  test("provider with chunks: bundle has pushMarkdown, digest, and manifest records chunk ID", async () => {
     const provider = makeProvider("test-provider", makeChunkResult({ id: "c:1" }));
     const orch = new ContextOrchestrator([provider]);
     const bundle = await orch.assemble(BASE_REQUEST);
     expect(bundle.pushMarkdown).toContain("feature context content");
     expect(bundle.digest).toBeTruthy();
     expect(bundle.chunks).toHaveLength(1);
-  });
-
-  test("manifest records included chunk IDs", async () => {
-    const provider = makeProvider("p1", makeChunkResult({ id: "chunk:abc" }));
-    const orch = new ContextOrchestrator([provider]);
-    const bundle = await orch.assemble(BASE_REQUEST);
-    expect(bundle.manifest.includedChunks).toContain("chunk:abc");
+    expect(bundle.manifest.includedChunks).toContain("c:1");
   });
 
   test("role-filtered chunks excluded and recorded in manifest", async () => {
@@ -136,18 +130,12 @@ describe("ContextOrchestrator.assemble()", () => {
     expect(bundle.pushMarkdown).toContain("Prior stage found X.");
   });
 
-  test("manifest stage matches request.stage", async () => {
+  test("manifest stage matches request.stage; pullTools is empty when pullConfig is absent", async () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({ ...BASE_REQUEST, stage: "review" });
     expect(bundle.manifest.stage).toBe("review");
-  });
-
-  test("pullTools is empty when pullConfig is absent", async () => {
-    // Phase 4: provider-level pullTools are no longer aggregated;
-    // descriptors come from PULL_TOOL_REGISTRY via stage config.
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble(BASE_REQUEST); // BASE_REQUEST has no pullConfig
-    expect(bundle.pullTools).toEqual([]);
+    const bundle2 = await orch.assemble(BASE_REQUEST);
+    expect(bundle2.pullTools).toEqual([]);
   });
 
   test("test-coverage chunks are floor-included when score is below minScore", async () => {
@@ -227,39 +215,12 @@ describe("ContextOrchestrator.assemble() — agent profile ceiling (AC-32)", () 
 });
 
 describe("ContextOrchestrator.assemble() — pull tool capability gate (AC-33)", () => {
-  test("conservative default profile (supportsToolCalls=false) surfaces zero pull tools", async () => {
-    // Pull-tool gate is orthogonal to provider registration — use an empty
-    // test-override providerIds list so AC-16 validation does not trip on the
-    // tdd-test-writer stage config (which references providers not registered here).
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...BASE_REQUEST,
-      stage: "tdd-test-writer",
-      providerIds: [],
-      agentId: "some-unknown-agent", // → conservative default → supportsToolCalls=false
-      pullConfig: {
-        enabled: true,
-        allowedTools: [],
-        maxCallsPerSession: 5,
-      },
-    });
-    expect(bundle.pullTools).toHaveLength(0);
-  });
-
-  test("claude profile surfaces configured pull tools", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...BASE_REQUEST,
-      stage: "tdd-test-writer",
-      providerIds: [],
-      agentId: "claude",
-      pullConfig: {
-        enabled: true,
-        allowedTools: [],
-        maxCallsPerSession: 5,
-      },
-    });
-    expect(bundle.pullTools.length).toBeGreaterThan(0);
+  test("conservative profile (unknown agent) surfaces 0 pull tools; claude profile surfaces configured pull tools", async () => {
+    const base = { ...BASE_REQUEST, stage: "tdd-test-writer" as const, providerIds: [], pullConfig: { enabled: true, allowedTools: [] as string[], maxCallsPerSession: 5 } };
+    const conservative = await new ContextOrchestrator([]).assemble({ ...base, agentId: "some-unknown-agent" });
+    expect(conservative.pullTools).toHaveLength(0);
+    const claudeBundle = await new ContextOrchestrator([]).assemble({ ...base, agentId: "claude" });
+    expect(claudeBundle.pullTools.length).toBeGreaterThan(0);
   });
 });
 
@@ -273,43 +234,23 @@ describe("ContextOrchestrator.rebuildForAgent()", () => {
     const provider: IContextProvider = {
       id: "p1",
       kind: "feature",
-      fetch: async () => {
-        fetchCount++;
-        return makeChunkResult({ id: "c:1" });
-      },
+      fetch: async () => { fetchCount++; return makeChunkResult({ id: "c:1" }); },
     };
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
     expect(fetchCount).toBe(1);
 
     const rebuilt = orch.rebuildForAgent(original);
-    // No additional fetch
-    expect(fetchCount).toBe(1);
-    // Same chunks
-    expect(rebuilt.chunks).toHaveLength(original.chunks.length);
-  });
-
-  test("rebuilt bundle has same chunks as original", async () => {
-    const provider = makeProvider("p1", makeChunkResult({ id: "chunk:xyz" }));
-    const orch = new ContextOrchestrator([provider]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent(original);
+    expect(fetchCount).toBe(1); // no additional fetch
     expect(rebuilt.chunks.map((c) => c.id)).toEqual(original.chunks.map((c) => c.id));
   });
 
-  test("priorStageDigest updated in rebuilt pushMarkdown", async () => {
+  test("rebuilt bundle has updated priorStageDigest and new requestId", async () => {
     const provider = makeProvider("p1", makeChunkResult({ id: "c:1" }));
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);
     const rebuilt = orch.rebuildForAgent(original, { priorStageDigest: "Updated prior digest." });
     expect(rebuilt.pushMarkdown).toContain("Updated prior digest.");
-  });
-
-  test("rebuilt manifest has a new requestId", async () => {
-    const provider = makeProvider("p1", makeChunkResult({ id: "c:1" }));
-    const orch = new ContextOrchestrator([provider]);
-    const original = await orch.assemble(BASE_REQUEST);
-    const rebuilt = orch.rebuildForAgent(original);
     expect(rebuilt.manifest.requestId).not.toBe(original.manifest.requestId);
   });
 });
@@ -329,36 +270,21 @@ describe("Phase 4: pull tools", () => {
     providerIds: [],
   };
 
-  test("pullTools is empty when pullConfig is absent", async () => {
+  test.each([
+    ["pullConfig is absent", undefined],
+    ["pullConfig.enabled is false", { enabled: false, allowedTools: [] as string[], maxCallsPerSession: 5 }],
+  ])("pullTools is empty when %s", async (_label, pullConfig) => {
     const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig: undefined });
+    const bundle = await orch.assemble({ ...TDD_IMPLEMENTER_REQUEST, pullConfig });
     expect(bundle.pullTools).toEqual([]);
   });
 
-  test("pullTools is empty when pullConfig.enabled is false", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: false, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toEqual([]);
-  });
 
-  test("pullTools contains query_neighbor descriptor for tdd-implementer when enabled", async () => {
+  test("pullTools items are ToolDescriptor objects; maxCallsPerSession reflects pullConfig override", async () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
-  });
-
-  test("pullTools items are ToolDescriptor objects with required fields", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
+      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 3 },
     });
     const tool = bundle.pullTools[0]!;
     expect(typeof tool.name).toBe("string");
@@ -366,15 +292,7 @@ describe("Phase 4: pull tools", () => {
     expect(typeof tool.inputSchema).toBe("object");
     expect(typeof tool.maxCallsPerSession).toBe("number");
     expect(typeof tool.maxTokensPerCall).toBe("number");
-  });
-
-  test("maxCallsPerSession on descriptor reflects pullConfig override", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...TDD_IMPLEMENTER_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 3 },
-    });
-    expect(bundle.pullTools[0]?.maxCallsPerSession).toBe(3);
+    expect(tool.maxCallsPerSession).toBe(3);
   });
 
   test("allowedTools filter restricts pull tools", async () => {
@@ -387,13 +305,14 @@ describe("Phase 4: pull tools", () => {
     expect(bundle.pullTools).toEqual([]);
   });
 
-  test("empty allowedTools means all stage-configured tools are allowed", async () => {
+  test("empty allowedTools means all stage-configured tools are allowed; tdd-implementer has query_neighbor", async () => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...TDD_IMPLEMENTER_REQUEST,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
     expect(bundle.pullTools.length).toBeGreaterThan(0);
+    expect(bundle.pullTools[0]?.name).toBe("query_neighbor");
   });
 
   test("stage with no pullToolNames returns empty pullTools even when enabled", async () => {
@@ -436,33 +355,14 @@ describe("Phase 5: review stage pull tools", () => {
     providerIds: [],
   };
 
-  test("review-semantic with pullConfig enabled returns query_feature_context", async () => {
+  test.each(["review-semantic", "review-adversarial"] as const)("%s with pullConfig enabled returns query_feature_context", async (stage) => {
     const orch = new ContextOrchestrator([]);
     const bundle = await orch.assemble({
       ...REVIEW_REQUEST,
+      stage,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
     expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
-  });
-
-  test("review-adversarial with pullConfig enabled returns query_feature_context", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...REVIEW_REQUEST,
-      stage: "review-adversarial",
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
-    expect(bundle.pullTools).toHaveLength(1);
-    expect(bundle.pullTools[0]?.name).toBe("query_feature_context");
-  });
-
-  test("review-semantic pull tool descriptor matches QUERY_FEATURE_CONTEXT_DESCRIPTOR name", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      ...REVIEW_REQUEST,
-      pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
-    });
     expect(bundle.pullTools[0]?.name).toBe(QUERY_FEATURE_CONTEXT_DESCRIPTOR.name);
   });
 
@@ -475,30 +375,20 @@ describe("Phase 5: review stage pull tools", () => {
     expect(bundle.pullTools).toEqual([]);
   });
 
-  test("tdd-implementer stage does not return query_feature_context", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/project",
-      packageDir: "/project",
-      stage: "tdd-implementer",
-      role: "implementer",
-      budgetTokens: 8_000,
-      providerIds: [],
+  test("pull tool names do not bleed across stages: tdd-implementer lacks query_feature_context, review-semantic lacks query_neighbor", async () => {
+    const orchA = new ContextOrchestrator([]);
+    const bundleA = await orchA.assemble({
+      storyId: "US-001", repoRoot: "/project", packageDir: "/project",
+      stage: "tdd-implementer", role: "implementer", budgetTokens: 8_000, providerIds: [],
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
-    const names = bundle.pullTools.map((t) => t.name);
-    expect(names).not.toContain("query_feature_context");
-  });
-
-  test("review-semantic does not return query_neighbor", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
+    expect(bundleA.pullTools.map((t) => t.name)).not.toContain("query_feature_context");
+    const orchB = new ContextOrchestrator([]);
+    const bundleB = await orchB.assemble({
       ...REVIEW_REQUEST,
       pullConfig: { enabled: true, allowedTools: [], maxCallsPerSession: 5 },
     });
-    const names = bundle.pullTools.map((t) => t.name);
-    expect(names).not.toContain("query_neighbor");
+    expect(bundleB.pullTools.map((t) => t.name)).not.toContain("query_neighbor");
   });
 });
 
@@ -507,50 +397,24 @@ describe("Phase 5: review stage pull tools", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ContextOrchestrator — repoRoot + packageDir (Amendment C AC-54/AC-60/AC-61)", () => {
-  test("AC-54: ContextRequest accepts repoRoot and packageDir instead of workdir", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/repo",
-      packageDir: "/repo",
-      stage: "execution",
-      role: "implementer",
-      budgetTokens: 4_000,
-      providerIds: [],
+  test("AC-54/AC-60/AC-61: manifest records repoRoot+packageDir for monorepo and non-monorepo", async () => {
+    // Monorepo: packageDir differs from repoRoot
+    const monoBundle = await new ContextOrchestrator([]).assemble({
+      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo/packages/api",
+      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: [],
     });
-    expect(bundle).toBeDefined();
-  });
+    expect(monoBundle.manifest.repoRoot).toBe("/repo");
+    expect(monoBundle.manifest.packageDir).toBe("/repo/packages/api");
 
-  test("AC-60: manifest records repoRoot and packageDir", async () => {
-    const orch = new ContextOrchestrator([]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/repo",
-      packageDir: "/repo/packages/api",
-      stage: "execution",
-      role: "implementer",
-      budgetTokens: 4_000,
-      providerIds: [],
-    });
-    expect(bundle.manifest.repoRoot).toBe("/repo");
-    expect(bundle.manifest.packageDir).toBe("/repo/packages/api");
-  });
-
-  test("AC-61: non-monorepo — packageDir equals repoRoot, behavior unchanged", async () => {
+    // Non-monorepo: packageDir equals repoRoot
     const provider = makeProvider("p1", makeChunkResult({ id: "chunk:nm" }));
-    const orch = new ContextOrchestrator([provider]);
-    const bundle = await orch.assemble({
-      storyId: "US-001",
-      repoRoot: "/repo",
-      packageDir: "/repo",
-      stage: "execution",
-      role: "implementer",
-      budgetTokens: 4_000,
-      providerIds: ["p1"],
+    const singleBundle = await new ContextOrchestrator([provider]).assemble({
+      storyId: "US-001", repoRoot: "/repo", packageDir: "/repo",
+      stage: "execution", role: "implementer", budgetTokens: 4_000, providerIds: ["p1"],
     });
-    expect(bundle.manifest.repoRoot).toBe("/repo");
-    expect(bundle.manifest.packageDir).toBe("/repo");
-    expect(bundle.chunks.some((c) => c.id === "chunk:nm")).toBe(true);
+    expect(singleBundle.manifest.repoRoot).toBe("/repo");
+    expect(singleBundle.manifest.packageDir).toBe("/repo");
+    expect(singleBundle.chunks.some((c) => c.id === "chunk:nm")).toBe(true);
   });
 
   test("AC-60: rebuildForAgent preserves repoRoot and packageDir from prior manifest", async () => {

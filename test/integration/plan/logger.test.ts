@@ -194,28 +194,16 @@ describe("Logger", () => {
       expect(() => new Date(entry.timestamp)).not.toThrow();
     });
 
-    test("handles log entries without data field", async () => {
+    test("handles log entries without data field or without storyId", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
-
       logger.info("test", "message without data");
-      await logger.flush();
-
-      const content = readFileSync(TEST_LOG_FILE, "utf8");
-      const entry = JSON.parse(content.trim());
-
-      expect(entry.data).toBeUndefined();
-    });
-
-    test("handles log entries without storyId", async () => {
-      const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
-
       logger.info("test", "message without storyId");
       await logger.flush();
 
-      const content = readFileSync(TEST_LOG_FILE, "utf8");
-      const entry = JSON.parse(content.trim());
-
-      expect(entry.storyId).toBeUndefined();
+      const lines = readFileSync(TEST_LOG_FILE, "utf8").trim().split("\n");
+      const [e1, e2] = lines.map((l) => JSON.parse(l));
+      expect(e1.data).toBeUndefined();
+      expect(e2.storyId).toBeUndefined();
     });
 
     test("appends to existing log file", async () => {
@@ -327,111 +315,61 @@ describe("Logger", () => {
   });
 
   describe("console formatting", () => {
-    test("formats console output with timestamp, stage, and message", () => {
+    test("formats console output with timestamp, stage, message, and data as JSON", () => {
       const logger = initLogger({ level: "info", useChalk: false });
-
       const originalLog = console.log;
       const logs: string[] = [];
       console.log = (msg: string) => logs.push(msg);
-
       logger.info("routing", "Task classified");
-
-      console.log = originalLog;
-
-      expect(logs[0]).toMatch(/\[\d{2}:\d{2}:\d{2}\]/); // timestamp
-      expect(logs[0]).toContain("[routing]"); // stage
-      expect(logs[0]).toContain("Task classified"); // message
-    });
-
-    test("formats console output with data as pretty JSON", () => {
-      const logger = initLogger({ level: "info", useChalk: false });
-
-      const originalLog = console.log;
-      const logs: string[] = [];
-      console.log = (msg: string) => logs.push(msg);
-
       logger.info("routing", "Task classified", { complexity: "simple" });
-
       console.log = originalLog;
 
-      expect(logs[0]).toContain("complexity");
-      expect(logs[0]).toContain("simple");
-    });
-
-    test("supports chalk formatting when enabled", () => {
-      const logger = initLogger({ level: "info", useChalk: true });
-
-      const originalLog = console.log;
-      const logs: string[] = [];
-      console.log = (msg: string) => logs.push(msg);
-
-      logger.info("routing", "Task classified");
-
-      console.log = originalLog;
-
-      // Should contain basic formatting (timestamp, stage, message)
       expect(logs[0]).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
       expect(logs[0]).toContain("[routing]");
       expect(logs[0]).toContain("Task classified");
+      expect(logs[1]).toContain("complexity");
+      expect(logs[1]).toContain("simple");
     });
 
-    test("disables chalk formatting when useChalk is false", () => {
-      const logger = initLogger({ level: "info", useChalk: false });
-
-      const originalLog = console.log;
-      const logs: string[] = [];
-      console.log = (msg: string) => logs.push(msg);
-
-      logger.info("routing", "Task classified");
-
-      console.log = originalLog;
-
-      // Should contain basic formatting (timestamp, stage, message)
-      expect(logs[0]).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
-      expect(logs[0]).toContain("[routing]");
-      expect(logs[0]).toContain("Task classified");
+    test("produces correct format with chalk enabled or disabled", () => {
+      for (const useChalk of [true, false]) {
+        resetLogger();
+        const logger = initLogger({ level: "info", useChalk });
+        const originalLog = console.log;
+        const logs: string[] = [];
+        console.log = (msg: string) => logs.push(msg);
+        logger.info("routing", "Task classified");
+        console.log = originalLog;
+        expect(logs[0], `useChalk=${useChalk}`).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
+        expect(logs[0], `useChalk=${useChalk}`).toContain("[routing]");
+        expect(logs[0], `useChalk=${useChalk}`).toContain("Task classified");
+      }
     });
   });
 
   describe("data handling", () => {
-    test("logs complex data structures", async () => {
+    test("logs complex data structures and handles empty data object", async () => {
       const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
 
-      const complexData = {
-        nested: {
-          array: [1, 2, 3],
-          object: { key: "value" },
-        },
+      logger.info("test", "Complex data", {
+        nested: { array: [1, 2, 3], object: { key: "value" } },
         null: null,
         undefined: undefined,
         number: 42,
         boolean: true,
-      };
-
-      logger.info("test", "Complex data", complexData);
-      await logger.flush();
-
-      const content = readFileSync(TEST_LOG_FILE, "utf8");
-      const entry = JSON.parse(content.trim());
-
-      expect(entry.data.nested.array).toEqual([1, 2, 3]);
-      expect(entry.data.nested.object).toEqual({ key: "value" });
-      expect(entry.data.null).toBe(null);
-      expect(entry.data.number).toBe(42);
-      expect(entry.data.boolean).toBe(true);
-    });
-
-    test("handles empty data object", async () => {
-      const logger = initLogger({ level: "info", filePath: TEST_LOG_FILE });
-
+      });
       logger.info("test", "Empty data", {});
       await logger.flush();
 
-      const content = readFileSync(TEST_LOG_FILE, "utf8");
-      const entry = JSON.parse(content.trim());
+      const lines = readFileSync(TEST_LOG_FILE, "utf8").trim().split("\n");
+      const [complex, empty] = lines.map((l) => JSON.parse(l));
 
-      // Empty object should be included but not displayed in console
-      expect(entry.data).toEqual({});
+      expect(complex.data.nested.array).toEqual([1, 2, 3]);
+      expect(complex.data.nested.object).toEqual({ key: "value" });
+      expect(complex.data.null).toBe(null);
+      expect(complex.data.number).toBe(42);
+      expect(complex.data.boolean).toBe(true);
+      expect(empty.data).toEqual({});
     });
   });
 

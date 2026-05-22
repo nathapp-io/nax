@@ -70,41 +70,18 @@ describe("lintForNeutrality", () => {
     expect(violations).toHaveLength(0);
   });
 
-  test("flags <system-reminder> tag", () => {
-    const violations = lintForNeutrality("<system-reminder>Do this.</system-reminder>", "rules.md");
+  test.each([
+    ["<system-reminder>Do this.</system-reminder>", "XML tag", null],
+    ["See CLAUDE.md for more info.", "CLAUDE.md", "claude-reference"],
+    ["Rules are in .claude/rules/.", "directory", null],
+    ["Use the Grep tool to search files.", "tool-name phrasing", null],
+    ["IMPORTANT: Never mutate objects.", "IMPORTANT:", null],
+    ["Always write tests 🎯", "emoji", null],
+  ])("flags banned pattern in %j", (content: string, patternSubstr: string, ruleId: string | null) => {
+    const violations = lintForNeutrality(content, "rules.md");
     expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("XML tag");
-  });
-
-  test("flags CLAUDE.md reference", () => {
-    const violations = lintForNeutrality("See CLAUDE.md for more info.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("CLAUDE.md");
-    expect(violations[0]?.ruleId).toBe("claude-reference");
-  });
-
-  test("flags .claude/ directory reference", () => {
-    const violations = lintForNeutrality("Rules are in .claude/rules/.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("directory");
-  });
-
-  test("flags 'the Grep tool' phrasing", () => {
-    const violations = lintForNeutrality("Use the Grep tool to search files.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("tool-name phrasing");
-  });
-
-  test("flags 'IMPORTANT:' shout", () => {
-    const violations = lintForNeutrality("IMPORTANT: Never mutate objects.", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("IMPORTANT:");
-  });
-
-  test("flags emoji character", () => {
-    const violations = lintForNeutrality("Always write tests 🎯", "rules.md");
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations[0]?.pattern).toContain("emoji");
+    expect(violations[0]?.pattern).toContain(patternSubstr);
+    if (ruleId) expect(violations[0]?.ruleId).toBe(ruleId);
   });
 
   test("reports correct line number", () => {
@@ -147,25 +124,13 @@ describe("lintForNeutrality", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("NeutralityLintError", () => {
-  test("is a NaxError", () => {
-    const err = new NeutralityLintError([{
-      file: "a.md", lineNumber: 1, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file",
-    }]);
+  test("is a NaxError, exposes violations array, and includes file+line in message", () => {
+    const violation = { file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific file" };
+    const err = new NeutralityLintError([violation]);
     expect(err).toBeInstanceOf(NaxError);
     expect(err.code).toBe("NEUTRALITY_LINT_FAILED");
-  });
-
-  test("exposes violations array", () => {
-    const violation = { file: "a.md", lineNumber: 5, line: "IMPORTANT:", ruleId: "important-shouting", pattern: "shouting" };
-    const err = new NeutralityLintError([violation]);
     expect(err.violations).toHaveLength(1);
     expect(err.violations[0]).toEqual(violation);
-  });
-
-  test("message includes file and line number", () => {
-    const err = new NeutralityLintError([{
-      file: "coding.md", lineNumber: 12, line: "CLAUDE.md", ruleId: "claude-reference", pattern: "agent-specific",
-    }]);
     expect(err.message).toContain("coding.md");
     expect(err.message).toContain("12");
   });
@@ -291,18 +256,11 @@ Only for agent files.`,
     expect(rules[0]?.paths).toEqual(["packages/api/**"]);
   });
 
-  test("throws RulesFrontmatterError when paths: is empty string", async () => {
-    setupFiles({ "/project/.nax/rules/bad.md": `---\npaths: ""\n---\nContent.` });
-    await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
-  });
-
-  test("throws RulesFrontmatterError on malformed frontmatter", async () => {
-    setupFiles({
-      "/project/.nax/rules/bad.md": `---
-priority: [not-a-number]
----
-Broken`,
-    });
+  test.each([
+    ["empty string paths", `---\npaths: ""\n---\nContent.`],
+    ["malformed frontmatter", `---\npriority: [not-a-number]\n---\nBroken`],
+  ] as const)("throws RulesFrontmatterError for %s", async (_label, content) => {
+    setupFiles({ "/project/.nax/rules/bad.md": content });
     await expect(loadCanonicalRules("/project")).rejects.toBeInstanceOf(RulesFrontmatterError);
   });
 

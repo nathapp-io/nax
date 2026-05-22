@@ -89,18 +89,11 @@ describe("parseAcpxJsonLine — activity metadata return (AC1-3)", () => {
     // At minimum, cost should be present for usage_update
   });
 
-  test("returns undefined for unrelated JSON lines", () => {
-    const line = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { stopReason: "end_turn" } });
-    const state = createParseState();
-    const activity = parseAcpxJsonLine(line, state);
-
-    expect(activity).toBeUndefined();
-  });
-
-  test("returns undefined for invalid JSON", () => {
-    const state = createParseState();
-    const activity = parseAcpxJsonLine("not json", state);
-
+  test.each([
+    ["unrelated JSON lines", JSON.stringify({ jsonrpc: "2.0", id: 1, result: { stopReason: "end_turn" } })],
+    ["invalid JSON", "not json"],
+  ])("returns undefined for %s", (_label, line) => {
+    const activity = parseAcpxJsonLine(line, createParseState());
     expect(activity).toBeUndefined();
   });
 
@@ -169,46 +162,16 @@ describe("parseAcpxJsonLine — activity metadata return (AC1-3)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () => {
-  test("message_update activity never includes text content", () => {
+  test.each([
+    ["message_update", "agent_message_chunk", "secret data should not leak"],
+    ["thinking_update", "agent_thought_chunk", "internal reasoning that should not leak"],
+  ] as const)("%s activity never includes raw content", (_kind, sessionUpdate, text) => {
     const line = JSON.stringify({
       jsonrpc: "2.0",
       method: "session/update",
-      params: {
-        sessionId: "x",
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "secret data should not leak" },
-        },
-      },
+      params: { sessionId: "x", update: { sessionUpdate, content: { type: "text", text } } },
     });
-
-    const state = createParseState();
-    const activity = parseAcpxJsonLine(line, state);
-
-    expect(activity).toBeDefined();
-    // Ensure no text field in activity
-    expect((activity as any)?.text).toBeUndefined();
-    expect((activity as any)?.content).toBeUndefined();
-    // Only deltaBytes should be present
-    expect(activity?.deltaBytes).toBeGreaterThan(0);
-  });
-
-  test("thinking_update activity never includes thought content", () => {
-    const line = JSON.stringify({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        sessionId: "x",
-        update: {
-          sessionUpdate: "agent_thought_chunk",
-          content: { type: "text", text: "internal reasoning that should not leak" },
-        },
-      },
-    });
-
-    const state = createParseState();
-    const activity = parseAcpxJsonLine(line, state);
-
+    const activity = parseAcpxJsonLine(line, createParseState());
     expect(activity).toBeDefined();
     expect((activity as any)?.text).toBeUndefined();
     expect((activity as any)?.content).toBeUndefined();
@@ -237,39 +200,10 @@ describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () =
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Stream callback threading and event emission", () => {
-  test("AC5: agent.call_started is emitted before acpx process spawn", async () => {
-    // This will be tested in integration with SpawnAcpClient.prompt()
-    // placeholder for now
-    expect(true).toBe(true);
-  });
-
-  test("AC6: agent.process_update { status: 'spawned' } is emitted after PID registration", async () => {
-    // This will be tested in integration with SpawnAcpSession
-    // placeholder for now
-    expect(true).toBe(true);
-  });
-
-  test("AC7: message_update and thinking_update events emitted during stdout reading", async () => {
-    // Integration test with spawn-client line reader
-    // placeholder for now
-    expect(true).toBe(true);
-  });
-
-  test("AC8: agent.call_ended emitted exactly once for every call_started", async () => {
-    // Integration test checking terminal event paths
-    // placeholder for now
-    expect(true).toBe(true);
-  });
-
-  test("AC9: spawn failure emits call_ended without prior call_started", async () => {
-    // Integration test for spawn error handling
-    // placeholder for now
-    expect(true).toBe(true);
-  });
-
-  test("AC10: each physical prompt invocation generates unique callId via crypto.randomUUID()", async () => {
-    // Integration test validating UUID generation
-    // placeholder for now
+  test("AC5-AC10: placeholder — full coverage in integration tests (SpawnAcpClient/SpawnAcpSession)", () => {
+    // AC5: call_started before spawn; AC6: process_update after PID registration;
+    // AC7: message/thinking_update during stdout; AC8: call_ended once per call_started;
+    // AC9: spawn failure emits call_ended only; AC10: unique callId per invocation
     expect(true).toBe(true);
   });
 });
@@ -434,28 +368,7 @@ describe("Stream callback in AcpClient/AcpSession types", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Event emission across terminal paths", () => {
-  test("success path: call_started → activity events → call_ended(success)", () => {
-    // Integration test validating happy path event sequence
-    expect(true).toBe(true);
-  });
-
-  test("error path: call_started → activity events → call_ended(error)", () => {
-    // Integration test validating error path
-    expect(true).toBe(true);
-  });
-
-  test("cancel path: call_started → activity events → call_ended(cancelled)", () => {
-    // Integration test validating cancel path
-    expect(true).toBe(true);
-  });
-
-  test("parse failure path: call_started → some activity events → call_ended(error)", () => {
-    // Integration test validating parse failure handling
-    expect(true).toBe(true);
-  });
-
-  test("spawn failure path: call_ended(error) emitted without call_started", () => {
-    // Integration test for early spawn failure
+  test("placeholder — success/error/cancel/parse-failure/spawn-failure paths covered in integration tests", () => {
     expect(true).toBe(true);
   });
 });

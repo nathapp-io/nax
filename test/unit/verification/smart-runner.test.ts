@@ -15,51 +15,17 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("buildSmartTestCommand", () => {
-  test("returns original command when testFiles is empty", () => {
-    const result = buildSmartTestCommand([], "bun test test/");
-    expect(result).toBe("bun test test/");
-  });
-
-  test("replaces last path argument with specific test file", () => {
-    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test test/");
-    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
-  });
-
-  test("joins multiple test files with spaces", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
-      "bun test test/",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts'");
-  });
-
-  test("appends test files when command has no path argument", () => {
-    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test");
-    expect(result).toBe("bun test 'test/unit/foo.test.ts'");
-  });
-
-  test("replaces last path-like token even when flags precede it", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts"],
-      "bun test --coverage test/",
-    );
-    expect(result).toBe("bun test --coverage 'test/unit/foo.test.ts'");
-  });
-
-  test("preserves trailing flags after path argument (BUG-043)", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts"],
-      "bun test test/ --timeout=60000",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' --timeout=60000");
-  });
-
-  test("preserves trailing flags with multiple test files", () => {
-    const result = buildSmartTestCommand(
-      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
-      "bun test test/ --timeout=60000 --bail",
-    );
-    expect(result).toBe("bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts' --timeout=60000 --bail");
+  test.each([
+    ["empty testFiles returns original command", [], "bun test test/", "bun test test/"],
+    ["single test file replaces last path", ["test/unit/foo.test.ts"], "bun test test/", "bun test 'test/unit/foo.test.ts'"],
+    ["multiple test files joined with spaces", ["test/unit/foo.test.ts", "test/unit/bar.test.ts"], "bun test test/", "bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts'"],
+    ["no path arg — appends test files", ["test/unit/foo.test.ts"], "bun test", "bun test 'test/unit/foo.test.ts'"],
+    ["flags before path — replaces last path-like token", ["test/unit/foo.test.ts"], "bun test --coverage test/", "bun test --coverage 'test/unit/foo.test.ts'"],
+    ["preserves trailing flags after path (BUG-043)", ["test/unit/foo.test.ts"], "bun test test/ --timeout=60000", "bun test 'test/unit/foo.test.ts' --timeout=60000"],
+    ["preserves trailing flags with multiple files", ["test/unit/foo.test.ts", "test/unit/bar.test.ts"], "bun test test/ --timeout=60000 --bail", "bun test 'test/unit/foo.test.ts' 'test/unit/bar.test.ts' --timeout=60000 --bail"],
+  ])("%s", (_label, testFiles, command, expected) => {
+    const result = buildSmartTestCommand(testFiles as string[], command);
+    expect(result).toBe(expected);
   });
 });
 
@@ -107,59 +73,31 @@ describe("mapSourceToTests", () => {
     });
   }
 
-  test("maps src/foo/bar.ts to test/unit/foo/bar.test.ts", async () => {
+  test("maps src/foo/bar.ts to unit path; also checks integration path; returns both when both exist; only returns files on disk", async () => {
     mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
+    expect(await mapSourceToTests(["src/foo/bar.ts"], "/repo")).toEqual(["/repo/test/unit/foo/bar.test.ts"]);
 
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
-
-    expect(result).toEqual(["/repo/test/unit/foo/bar.test.ts"]);
-  });
-
-  test("also checks test/integration/ path", async () => {
     mockFileExists(["/repo/test/integration/foo/bar.test.ts"]);
+    expect(await mapSourceToTests(["src/foo/bar.ts"], "/repo")).toEqual(["/repo/test/integration/foo/bar.test.ts"]);
 
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
-
-    expect(result).toEqual(["/repo/test/integration/foo/bar.test.ts"]);
-  });
-
-  test("returns both unit and integration when both exist", async () => {
-    mockFileExists([
+    mockFileExists(["/repo/test/unit/foo/bar.test.ts", "/repo/test/integration/foo/bar.test.ts"]);
+    expect(await mapSourceToTests(["src/foo/bar.ts"], "/repo")).toEqual([
       "/repo/test/unit/foo/bar.test.ts",
       "/repo/test/integration/foo/bar.test.ts",
     ]);
 
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
-
-    expect(result).toEqual([
-      "/repo/test/unit/foo/bar.test.ts",
-      "/repo/test/integration/foo/bar.test.ts",
-    ]);
-  });
-
-  test("only returns files that exist on disk", async () => {
-    // Only unit test exists, integration does not
     mockFileExists(["/repo/test/unit/utils/helper.test.ts"]);
-
-    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo");
-
-    expect(result).toEqual(["/repo/test/unit/utils/helper.test.ts"]);
-    expect(result).not.toContain("/repo/test/integration/utils/helper.test.ts");
+    const diskOnly = await mapSourceToTests(["src/utils/helper.ts"], "/repo");
+    expect(diskOnly).toEqual(["/repo/test/unit/utils/helper.test.ts"]);
+    expect(diskOnly).not.toContain("/repo/test/integration/utils/helper.test.ts");
   });
 
-  test("returns empty array when no test files match", async () => {
-    mockFileExists([]); // nothing exists
-
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty array for empty sourceFiles input", async () => {
-    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests([], "/repo");
-
+  test.each([
+    ["no test files match", () => mockFileExists([]), ["src/foo/bar.ts"] as string[]],
+    ["empty sourceFiles input", () => mockFileExists(["/repo/test/unit/foo/bar.test.ts"]), [] as string[]],
+  ])("returns empty array when %s", async (_label, setup, files) => {
+    setup();
+    const result = await mapSourceToTests(files, "/repo");
     expect(result).toEqual([]);
   });
 
@@ -273,23 +211,12 @@ describe("getChangedNonTestFiles", () => {
     ]);
   });
 
-  test("returns empty array when git exits with non-zero code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
-
+  test.each([
+    ["exits with non-zero code", () => { (_gitDeps as any).spawn = mock(() => makeProc("", 128)); }],
+    ["throws (not a repo)", () => { (_gitDeps as any).spawn = mock(() => { throw new Error("git not found"); }); }],
+  ])("returns empty array when git %s", async (_label, setup) => {
+    setup();
     const result = await getChangedNonTestFiles("/fake/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty array when git throws (e.g. not a repo)", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => {
-      throw new Error("git not found");
-    }) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedNonTestFiles("/fake/repo");
-
     expect(result).toEqual([]);
   });
 
@@ -306,7 +233,7 @@ describe("getChangedNonTestFiles", () => {
 
   test("returns empty array when no files changed", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
+    (_gitDeps as any).spawn = mock(() => makeProc("", 0));
 
     const result = await getChangedNonTestFiles("/fake/repo");
 
@@ -386,51 +313,29 @@ describe("getChangedNonTestFiles", () => {
   });
 
   // Issue #565 — git root ≠ project root
-  test("filters correctly when project root is nested inside git root", async () => {
-    // Scenario: nax-dogfood is the git root, fixtures/monorepo-tiny is the project root.
-    // git diff returns paths relative to the git root, so they include the extra prefix.
-    const gitOutput = [
+  test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
+    // Scenario 1: nax-dogfood is the git root, fixtures/monorepo-tiny is the project root.
+    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc([
       "fixtures/monorepo-tiny/packages/lib/src/util.ts",
       "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
       "other-package/src/index.ts",
-    ].join("\n");
+    ].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedNonTestFiles(
+      "/big-repo/fixtures/monorepo-tiny", undefined, "packages/lib", [/\.test\.ts$/], undefined, "/big-repo/fixtures/monorepo-tiny",
+    )).toEqual(["packages/lib/src/util.ts"]);
 
-    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // Scenario 2: project root equals git root — no offset
+    _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedNonTestFiles(
-      "/big-repo/fixtures/monorepo-tiny",
-      undefined,
-      "packages/lib",
-      [/\.test\.ts$/],
-      undefined,
-      "/big-repo/fixtures/monorepo-tiny", // repoRoot
-    );
-
-    expect(result).toEqual(["packages/lib/src/util.ts"]);
-  });
-
-  test("behavior unchanged when project root equals git root", async () => {
-    const gitOutput = [
+    _gitDeps.spawn = mock(() => makeProc([
       "packages/lib/src/util.ts",
       "packages/lib/src/util.test.ts",
-    ].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-    // default stub already returns workdir as git root — no override needed
-
-    const result = await getChangedNonTestFiles(
-      "/fake/repo",
-      undefined,
-      "packages/lib",
-      [/\.test\.ts$/],
-      undefined,
-      "/fake/repo", // repoRoot equals git root — no offset
-    );
-
-    expect(result).toEqual(["packages/lib/src/util.ts"]);
+    ].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedNonTestFiles(
+      "/fake/repo", undefined, "packages/lib", [/\.test\.ts$/], undefined, "/fake/repo",
+    )).toEqual(["packages/lib/src/util.ts"]);
   });
 });
 
@@ -453,48 +358,23 @@ describe("getChangedTestFiles", () => {
 
   const TS_TEST_REGEX = [/\.test\.ts$/, /\.spec\.ts$/];
 
-  test("returns absolute paths of changed co-located test files", async () => {
-    const gitOutput = [
-      "packages/lib/src/util.ts",
-      "packages/lib/src/util.test.ts",
-    ].join("\n");
+  test("returns absolute paths of co-located, separated, and both test file layouts", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(["packages/lib/src/util.ts", "packages/lib/src/util.test.ts"].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX))
+      .toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
-
-    expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
-  });
-
-  test("returns absolute paths of changed separated test files", async () => {
-    const gitOutput = [
-      "packages/lib/src/util.ts",
-      "packages/lib/test/unit/util.test.ts",
-    ].join("\n");
+    _gitDeps.spawn = mock(() => makeProc(["packages/lib/src/util.ts", "packages/lib/test/unit/util.test.ts"].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX))
+      .toEqual(["/fake/repo/packages/lib/test/unit/util.test.ts"]);
 
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
-
-    expect(result).toEqual(["/fake/repo/packages/lib/test/unit/util.test.ts"]);
-  });
-
-  test("detects both co-located and separated test files in the same diff", async () => {
-    const gitOutput = [
-      "packages/lib/src/util.test.ts",
-      "packages/lib/test/unit/other.test.ts",
-    ].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
-
-    expect(result).toHaveLength(2);
-    expect(result).toContain("/fake/repo/packages/lib/src/util.test.ts");
-    expect(result).toContain("/fake/repo/packages/lib/test/unit/other.test.ts");
+    _gitDeps.spawn = mock(() => makeProc(["packages/lib/src/util.test.ts", "packages/lib/test/unit/other.test.ts"].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    const both = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
+    expect(both).toHaveLength(2);
+    expect(both).toContain("/fake/repo/packages/lib/src/util.test.ts");
+    expect(both).toContain("/fake/repo/packages/lib/test/unit/other.test.ts");
   });
 
   test("scopes to packagePrefix — ignores test files from other packages", async () => {
@@ -511,34 +391,14 @@ describe("getChangedTestFiles", () => {
     expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
   });
 
-  test("returns empty when no test files changed", async () => {
-    const gitOutput = ["packages/lib/src/util.ts"].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", TS_TEST_REGEX);
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty when testFileRegex is empty", async () => {
-    const gitOutput = ["packages/lib/src/util.test.ts"].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo/packages/lib", "/fake/repo", undefined, "packages/lib", []);
-
-    expect(result).toEqual([]);
-  });
-
-  test("returns empty when git exits with non-zero code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles("/fake/repo", "/fake/repo", undefined, undefined, TS_TEST_REGEX);
-
+  test.each([
+    ["no test files changed", () => { (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.ts", 0)); }, "packages/lib" as const, TS_TEST_REGEX],
+    ["testFileRegex is empty", () => { (_gitDeps as any).spawn = mock(() => makeProc("packages/lib/src/util.test.ts", 0)); }, "packages/lib" as const, [] as RegExp[]],
+    ["git exits with non-zero code", () => { (_gitDeps as any).spawn = mock(() => makeProc("", 128)); }, undefined as const, TS_TEST_REGEX],
+  ])("returns empty when %s", async (_label, setup, prefix, regex) => {
+    setup();
+    const workdir = prefix ? "/fake/repo/packages/lib" : "/fake/repo";
+    const result = await getChangedTestFiles(workdir, "/fake/repo", undefined, prefix, regex);
     expect(result).toEqual([]);
   });
 
@@ -574,48 +434,28 @@ describe("getChangedTestFiles", () => {
   });
 
   // Issue #565 — git root ≠ project root
-  test("filters correctly when project root is nested inside git root", async () => {
-    // git diff returns paths relative to the true git root (big-repo),
-    // but packagePrefix is relative to the project root (fixtures/monorepo-tiny).
-    const gitOutput = [
+  test("filters correctly when project root is nested inside git root; behavior unchanged when roots are equal", async () => {
+    // Scenario 1: git root differs from project root — paths include extra prefix
+    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc([
       "fixtures/monorepo-tiny/packages/lib/src/util.ts",
       "fixtures/monorepo-tiny/packages/lib/src/util.test.ts",
       "other/src/index.test.ts",
-    ].join("\n");
+    ].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedTestFiles(
+      "/big-repo/fixtures/monorepo-tiny", "/big-repo/fixtures/monorepo-tiny", undefined, "packages/lib", [/\.test\.ts$/],
+    )).toEqual(["/big-repo/fixtures/monorepo-tiny/packages/lib/src/util.test.ts"]);
 
-    _gitUtilDeps.getGitRoot = mock(async () => "/big-repo");
+    // Scenario 2: project root equals git root — no offset
+    _gitUtilDeps.getGitRoot = mock(async (_wd: string) => null);
     // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-
-    const result = await getChangedTestFiles(
-      "/big-repo/fixtures/monorepo-tiny",
-      "/big-repo/fixtures/monorepo-tiny",
-      undefined,
-      "packages/lib",
-      [/\.test\.ts$/],
-    );
-
-    expect(result).toEqual(["/big-repo/fixtures/monorepo-tiny/packages/lib/src/util.test.ts"]);
-  });
-
-  test("behavior unchanged when project root equals git root", async () => {
-    const gitOutput = [
+    _gitDeps.spawn = mock(() => makeProc([
       "packages/lib/src/util.ts",
       "packages/lib/src/util.test.ts",
-    ].join("\n");
-
-    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
-    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
-    // default stub already returns workdir as git root — no override needed
-
-    const result = await getChangedTestFiles(
-      "/fake/repo",
-      "/fake/repo",
-      undefined,
-      "packages/lib",
-      [/\.test\.ts$/],
-    );
-
-    expect(result).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
+    ].join("\n"), 0)) as unknown as typeof _gitDeps.spawn;
+    expect(await getChangedTestFiles(
+      "/fake/repo", "/fake/repo", undefined, "packages/lib", [/\.test\.ts$/],
+    )).toEqual(["/fake/repo/packages/lib/src/util.test.ts"]);
   });
 });

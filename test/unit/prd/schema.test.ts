@@ -32,25 +32,18 @@ describe("extractJsonFromMarkdown", () => {
     expect(extractJsonFromMarkdown(json)).toBe(json);
   });
 
-  test("extracts from ```json ... ``` block", () => {
-    const text = '```json\n{"a":1}\n```';
-    expect(extractJsonFromMarkdown(text)).toBe('{"a":1}');
+  test.each([
+    ["```json block", '```json\n{"a":1}\n```', '{"a":1}'],
+    ["plain ``` block", '```\n{"b":2}\n```', '{"b":2}'],
+  ])("extracts from %s", (_label, text, expected) => {
+    expect(extractJsonFromMarkdown(text)).toBe(expected);
   });
 
-  test("extracts from ``` ... ``` block (no language tag)", () => {
-    const text = '```\n{"b":2}\n```';
-    expect(extractJsonFromMarkdown(text)).toBe('{"b":2}');
-  });
+  test("trims whitespace inside code block; handles multiline JSON", () => {
+    expect(extractJsonFromMarkdown('```json\n  { "c": 3 }  \n```').trim()).toBe('{ "c": 3 }');
 
-  test("trims whitespace inside code block", () => {
-    const text = '```json\n  { "c": 3 }  \n```';
-    expect(extractJsonFromMarkdown(text).trim()).toBe('{ "c": 3 }');
-  });
-
-  test("handles multiline JSON inside code block", () => {
     const inner = '{\n  "userStories": []\n}';
-    const text = `\`\`\`json\n${inner}\n\`\`\``;
-    expect(extractJsonFromMarkdown(text)).toBe(inner);
+    expect(extractJsonFromMarkdown(`\`\`\`json\n${inner}\n\`\`\``)).toBe(inner);
   });
 });
 
@@ -59,38 +52,24 @@ describe("extractJsonFromMarkdown", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — valid input", () => {
-  test("returns a PRD with auto-filled metadata", () => {
-    const input = makeInput();
-    const prd = validatePlanOutput(input, "my-feature", "feat/my-feature");
+  test("returns a PRD with auto-filled metadata; parses JSON string input", () => {
+    const prd = validatePlanOutput(makeInput(), "my-feature", "feat/my-feature");
     expect(prd.feature).toBe("my-feature");
     expect(prd.branchName).toBe("feat/my-feature");
     expect(prd.createdAt).toBeTruthy();
     expect(prd.updatedAt).toBeTruthy();
     expect(prd.userStories).toHaveLength(1);
+
+    expect(validatePlanOutput(JSON.stringify(makeInput()), "feat", "branch").userStories).toHaveLength(1);
   });
 
-  test("parses JSON string input", () => {
-    const json = JSON.stringify(makeInput());
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories).toHaveLength(1);
-  });
-
-  test("forces story status to 'pending'", () => {
-    const input = makeInput([makeStory({ status: "passed" })]);
+  test.each([
+    ["status to 'pending'", makeInput([makeStory({ status: "passed" })]), (s: any) => s.status, "pending"],
+    ["passes to false", makeInput([makeStory({ passes: true })]), (s: any) => s.passes, false],
+    ["attempts to 0", makeInput([makeStory({ attempts: 5 })]), (s: any) => s.attempts, 0],
+  ])("forces %s", (_label, input, getField, expected) => {
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.status).toBe("pending");
-  });
-
-  test("forces passes to false", () => {
-    const input = makeInput([makeStory({ passes: true })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.passes).toBe(false);
-  });
-
-  test("forces attempts to 0", () => {
-    const input = makeInput([makeStory({ attempts: 5 })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.attempts).toBe(0);
+    expect(getField(prd.userStories[0]!)).toBe(expected);
   });
 
   test("forces escalations to empty array", () => {
@@ -116,52 +95,19 @@ describe("validatePlanOutput — valid input", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — missing required fields", () => {
-  test("throws when userStories is missing", () => {
-    expect(() => validatePlanOutput({}, "feat", "branch")).toThrow(/userStories/);
-  });
-
-  test("throws when userStories is empty array", () => {
-    expect(() => validatePlanOutput({ userStories: [] }, "feat", "branch")).toThrow(/userStories/);
-  });
-
-  test("throws when story id is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: undefined })]), "feat", "branch")).toThrow(/id/);
-  });
-
-  test("throws when story id is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ id: "" })]), "feat", "branch")).toThrow(/id/);
-  });
-
-  test("throws when story title is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ title: undefined })]), "feat", "branch")).toThrow(/title/);
-  });
-
-  test("throws when story title is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ title: "" })]), "feat", "branch")).toThrow(/title/);
-  });
-
-  test("throws when story description is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ description: undefined })]), "feat", "branch")).toThrow(
-      /description/,
-    );
-  });
-
-  test("throws when story description is empty string", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ description: "" })]), "feat", "branch")).toThrow(
-      /description/,
-    );
-  });
-
-  test("throws when acceptanceCriteria is missing", () => {
-    expect(() =>
-      validatePlanOutput(makeInput([makeStory({ acceptanceCriteria: undefined })]), "feat", "branch"),
-    ).toThrow(/acceptanceCriteria/);
-  });
-
-  test("throws when acceptanceCriteria is empty array", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ acceptanceCriteria: [] })]), "feat", "branch")).toThrow(
-      /acceptanceCriteria/,
-    );
+  test.each([
+    ["userStories missing", {}, /userStories/],
+    ["userStories empty array", { userStories: [] }, /userStories/],
+    ["story id missing", makeInput([makeStory({ id: undefined })]), /id/],
+    ["story id empty string", makeInput([makeStory({ id: "" })]), /id/],
+    ["story title missing", makeInput([makeStory({ title: undefined })]), /title/],
+    ["story title empty string", makeInput([makeStory({ title: "" })]), /title/],
+    ["story description missing", makeInput([makeStory({ description: undefined })]), /description/],
+    ["story description empty string", makeInput([makeStory({ description: "" })]), /description/],
+    ["acceptanceCriteria missing", makeInput([makeStory({ acceptanceCriteria: undefined })]), /acceptanceCriteria/],
+    ["acceptanceCriteria empty array", makeInput([makeStory({ acceptanceCriteria: [] })]), /acceptanceCriteria/],
+  ])("throws when %s", (_, input, pattern) => {
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 });
 
@@ -170,16 +116,11 @@ describe("validatePlanOutput — missing required fields", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — complexity validation", () => {
-  test("throws on invalid complexity with valid options in message", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ complexity: "easy" })]), "feat", "branch")).toThrow(
-      /simple|medium|complex|expert/,
-    );
-  });
-
-  test("throws when complexity is missing", () => {
-    expect(() => validatePlanOutput(makeInput([makeStory({ complexity: undefined })]), "feat", "branch")).toThrow(
-      /complexity/,
-    );
+  test.each([
+    ["invalid value 'easy'", makeInput([makeStory({ complexity: "easy" })]), /simple|medium|complex|expert/],
+    ["missing", makeInput([makeStory({ complexity: undefined })]), /complexity/],
+  ])("throws when complexity is %s", (_, input, pattern) => {
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 });
 
@@ -188,17 +129,9 @@ describe("validatePlanOutput — complexity validation", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — dependency validation", () => {
-  test("throws when dependency references non-existent story ID", () => {
-    const stories = [makeStory({ id: "ST-001", dependencies: ["ST-999"] })];
-    expect(() => validatePlanOutput(makeInput(stories), "feat", "branch")).toThrow(/ST-999/);
-  });
-
-  test("valid cross-story dependencies pass", () => {
-    const stories = [
-      makeStory({ id: "ST-001", dependencies: [] }),
-      makeStory({ id: "ST-002", dependencies: ["ST-001"] }),
-    ];
-    expect(() => validatePlanOutput(makeInput(stories), "feat", "branch")).not.toThrow();
+  test("throws for non-existent dependency ID; valid cross-story deps pass", () => {
+    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: ["ST-999"] })]), "feat", "branch")).toThrow(/ST-999/);
+    expect(() => validatePlanOutput(makeInput([makeStory({ id: "ST-001", dependencies: [] }), makeStory({ id: "ST-002", dependencies: ["ST-001"] })]), "feat", "branch")).not.toThrow();
   });
 });
 
@@ -222,17 +155,11 @@ describe("validatePlanOutput — status forced to pending (AC-5)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — markdown extraction (AC-6)", () => {
-  test("parses JSON wrapped in ```json block", () => {
-    const json = JSON.stringify(makeInput());
-    const wrapped = `\`\`\`json\n${json}\n\`\`\``;
-    const prd = validatePlanOutput(wrapped, "feat", "branch");
-    expect(prd.userStories).toHaveLength(1);
-  });
-
-  test("parses JSON wrapped in plain ``` block", () => {
-    const json = JSON.stringify(makeInput());
-    const wrapped = `\`\`\`\n${json}\n\`\`\``;
-    const prd = validatePlanOutput(wrapped, "feat", "branch");
+  test.each([
+    ["```json block", (json: string) => `\`\`\`json\n${json}\n\`\`\``],
+    ["plain ``` block", (json: string) => `\`\`\`\n${json}\n\`\`\``],
+  ])("parses JSON wrapped in %s", (_label, wrap) => {
+    const prd = validatePlanOutput(wrap(JSON.stringify(makeInput())), "feat", "branch");
     expect(prd.userStories).toHaveLength(1);
   });
 });
@@ -248,137 +175,57 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
   });
 
-  test("normalizes story ID from ST001 to ST-001", () => {
-    const input = makeInput([makeStory({ id: "ST001" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.id).toBe("ST-001");
+  test.each([
+    ["ST001", "ST-001"],
+    ["`US-001`", "US-001"],
+    ["`ST001`", "ST-001"],
+  ])("normalizes story ID %s → %s", (id, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ id })]), "feat", "branch");
+    expect(prd.userStories[0]!.id).toBe(expected);
   });
 
-  test("strips backtick wrapping from story ID (LLM markdown artifact from interactive plan)", () => {
-    // Claude sometimes wraps IDs in backticks for emphasis when writing directly to file.
-    // The JSON is valid so nax run works, but validatePlanOutput was crashing on the backtick.
-    const input = makeInput([makeStory({ id: "`US-001`" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.id).toBe("US-001");
+  test.each([
+    ["Simple", "simple"],
+    ["COMPLEX", "complex"],
+  ])("normalizes complexity '%s' to '%s'", (input, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ complexity: input })]), "feat", "branch");
+    expect(prd.userStories[0]!.routing?.complexity).toBe(expected as any);
   });
 
-  test("strips backtick wrapping and normalizes separator-less ID (e.g. `ST001`)", () => {
-    const input = makeInput([makeStory({ id: "`ST001`" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.id).toBe("ST-001");
+  test.each([
+    ["maps legacy 'tdd-lite' alias", "tdd-lite", "three-session-tdd-lite"],
+    ["accepts valid 'tdd-simple' as-is", "tdd-simple", "tdd-simple"],
+    ["falls back to test-after for unknown", "unknown-strategy", "test-after"],
+  ] as const)("testStrategy: %s", (_label, input, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ testStrategy: input })]), "feat", "branch");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe(expected as any);
   });
 
-  test("normalizes complexity 'Simple' to 'simple'", () => {
-    const input = makeInput([makeStory({ complexity: "Simple" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.complexity).toBe("simple");
-  });
-
-  test("normalizes complexity 'COMPLEX' to 'complex'", () => {
-    const input = makeInput([makeStory({ complexity: "COMPLEX" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.complexity).toBe("complex");
-  });
-
-  test("maps legacy testStrategy 'tdd-lite' alias to 'three-session-tdd-lite'", () => {
-    const input = makeInput([makeStory({ testStrategy: "tdd-lite" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("three-session-tdd-lite");
-  });
-
-  test("accepts valid testStrategy 'tdd-simple' as-is", () => {
-    const input = makeInput([makeStory({ testStrategy: "tdd-simple" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
-  });
-
-  test("falls back to test-after for unknown testStrategy values", () => {
-    const input = makeInput([makeStory({ testStrategy: "unknown-strategy" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("test-after");
-  });
-
-  test("fixes \\xNN escape (LLM quirk — not valid JSON) to \\u00NN", () => {
-    // \x41 = 'A' in some languages, not valid JSON (should be \u0041)
-    const escaped = "\\x41";
+  test.each([
+    ["\\xNN escape (LLM quirk)", "\\x41", "A"],
+    ["\\u0041 (covers \\uXXX/\\uXX/\\uX short-unicode variants)", "\\u0041", "A"],
+  ] as const)("fixes %s to correct unicode char", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
     expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
+    expect(validatePlanOutput(json, "feat", "branch").userStories[0]!.description).toBe(expected);
   });
 
-  test("fixes \\xN escape (single hex digit) to \\u000N", () => {
-    const escaped = "\\x41";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uXXX (3 hex digits) to \\u0XXX", () => {
-    // \u0041 = 'A' — LLM may output \u041 (3 digits, missing leading zero)
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uXX (2 hex digits) to \\u00XX", () => {
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("fixes \\uX (1 hex digit) to \\u000X", () => {
-    const escaped = "\\u0041";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("A");
-  });
-
-  test("strips backslash from invalid \\u escape with no hex digits", () => {
-    // \u followed by non-hex chars: strip the backslash, let JSON.parse handle the rest
-    const escaped = "\\uQQQQ";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-  });
-
-  test("strips backslash from bare invalid escape (\\N where N is not a valid escape char)", () => {
-    // A literal backslash before a random char that is not a JSON escape
-    const escaped = "foo\\nbar"; // \n is valid, but \a is not
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    expect(() => validatePlanOutput(json, "feat", "branch")).not.toThrow();
-    const prd = validatePlanOutput(json, "feat", "branch");
-    // \n is valid → stays as newline; \a backslash stripped → "foo\nbar" with literal \a
-    // Actually \n stays (valid), \a backslash removed → "foo\nbar" (but 'a' literal)
-    // description becomes "foo\nbar" where \n is real newline, a is literal 'a'
+  test("strips backslash from invalid \\u (no hex digits) and bare invalid escape sequences", () => {
+    const makeJson = (esc: string) =>
+      `{"userStories":[{"id":"ST-001","title":"T","description":"${esc}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
+    expect(() => validatePlanOutput(makeJson("\\uQQQQ"), "feat", "branch")).not.toThrow();
+    const prd = validatePlanOutput(makeJson("foo\\nbar"), "feat", "branch");
+    expect(() => validatePlanOutput(makeJson("foo\\nbar"), "feat", "branch")).not.toThrow();
     expect(prd.userStories[0]!.description).toContain("a");
   });
 
-  test("preserves valid unicode escapes \\uXXXX unchanged", () => {
-    const escaped = "\\u0041\\u0042\\u0043"; // "ABC"
+  test.each<[string, string, string]>([
+    ["valid \\uXXXX", "\\u0041\\u0042\\u0043", "ABC"],
+    ["valid JSON escapes \\n \\t \\\" \\\\ \\/ \\r", "line1\\nline2\\ttab\\u0022quote\\\\backslash\\/slash\\rCR", 'line1\nline2\ttab"quote\\backslash/slash\rCR'],
+    ["\\\\( regex — regression for sanitizeInvalidEscapes", "regex /expect\\\\(|foo/", "regex /expect\\(|foo/"],
+  ])("preserves %s unchanged in description", (_label, escaped, expected) => {
     const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("ABC");
-  });
-
-  test("preserves all valid JSON escape sequences (\\n \\t \\\" \\\\ \\/ \\r)", () => {
-    // Use template literals to avoid JS escape confusion. Valid JSON escapes: \" \\ \/ \n \r \t \b \f
-    // In JSON inside template literal: \n=LF, \t=Tab, \\=backslash, \"=doublequote, \/=slash, \r=CR
-    const escaped = "line1\\nline2\\ttab\\u0022quote\\\\backslash\\/slash\\rCR";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe('line1\nline2\ttab"quote\\backslash/slash\rCR');
-  });
-
-  test("preserves \\\\( (valid JSON escaped backslash+paren) — regression for sanitizeInvalidEscapes corruption", () => {
-    // \\( in JSON represents the string \( (backslash-paren), as seen in regex literals in descriptions.
-    // The old code would incorrectly strip the second \ in \\(, producing \( which JSON.parse rejects.
-    const escaped = "regex /expect\\\\(|foo/";
-    const json = `{"userStories":[{"id":"ST-001","title":"T","description":"${escaped}","acceptanceCriteria":["AC-1"],"complexity":"simple","testStrategy":"tdd-simple","dependencies":[]}]}`;
-    const prd = validatePlanOutput(json, "feat", "branch");
-    expect(prd.userStories[0]!.description).toBe("regex /expect\\(|foo/");
+    expect(validatePlanOutput(json, "feat", "branch").userStories[0]!.description).toBe(expected);
   });
 
   test("fixes \\x escape in markdown-wrapped JSON", () => {
@@ -394,37 +241,27 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — workdir validation (MW-001)", () => {
-  test("valid relative workdir is accepted and preserved", () => {
-    const input = makeInput([makeStory({ workdir: "packages/api" })]);
+  test.each([
+    ["valid relative path", "packages/api"],
+    ["nested relative path", "packages/api/src"],
+  ])("accepts %s", (_, workdir) => {
+    const input = makeInput([makeStory({ workdir })]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBe("packages/api");
+    expect(prd.userStories[0]!.workdir).toBe(workdir);
+  });
+
+  test.each([
+    ["leading slash (absolute path)", "/packages/api", /leading \//],
+    ["contains '..'", "../sibling-package", /\.\./],
+    ["not a string", 42, /workdir.*string/],
+  ])("throws when workdir %s", (_, workdir, pattern) => {
+    const input = makeInput([makeStory({ workdir })]);
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(pattern);
   });
 
   test("workdir is optional — omitting it leaves field undefined", () => {
-    const input = makeInput([makeStory()]);
-    const prd = validatePlanOutput(input, "feat", "branch");
+    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "branch");
     expect(prd.userStories[0]!.workdir).toBeUndefined();
-  });
-
-  test("throws when workdir has leading slash (absolute path)", () => {
-    const input = makeInput([makeStory({ workdir: "/packages/api" })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/leading \//);
-  });
-
-  test("throws when workdir contains '..'", () => {
-    const input = makeInput([makeStory({ workdir: "../sibling-package" })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/\.\./);
-  });
-
-  test("throws when workdir is not a string", () => {
-    const input = makeInput([makeStory({ workdir: 42 })]);
-    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/workdir.*string/);
-  });
-
-  test("nested workdir path is valid", () => {
-    const input = makeInput([makeStory({ workdir: "packages/api/src" })]);
-    const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.workdir).toBe("packages/api/src");
   });
 });
 
@@ -433,18 +270,14 @@ describe("validatePlanOutput — workdir validation (MW-001)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
-  test("throws descriptive error for malformed JSON string", () => {
+  test("throws descriptive error with json/parse context for malformed JSON string", () => {
     expect(() => validatePlanOutput("{not valid json}", "feat", "branch")).toThrow();
-  });
-
-  test("error message contains context about parse failure", () => {
     let errorMessage = "";
     try {
       validatePlanOutput("{bad: json}", "feat", "branch");
     } catch (err) {
       errorMessage = (err as Error).message;
     }
-    // Should contain some indication it's a parse/JSON error
     expect(errorMessage.toLowerCase()).toMatch(/json|parse/);
   });
 });
@@ -454,25 +287,19 @@ describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
-  test("preserves top-level analysis field when present", () => {
+  test("preserves top-level analysis field and trims whitespace", () => {
     const input = makeInput([makeStory()]);
     const prd = validatePlanOutput({ ...input, analysis: "Codebase analysis: auth uses passport-jwt" }, "feat", "feat/feat");
     expect(prd.analysis).toBe("Codebase analysis: auth uses passport-jwt");
+    const prdTrimmed = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
+    expect(prdTrimmed.analysis).toBe("some analysis");
   });
 
-  test("trims whitespace from analysis field", () => {
-    const input = makeInput([makeStory()]);
-    const prd = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
-    expect(prd.analysis).toBe("some analysis");
-  });
-
-  test("omits analysis field when not present", () => {
-    const prd = validatePlanOutput(makeInput(), "feat", "feat/feat");
-    expect(prd.analysis).toBeUndefined();
-  });
-
-  test("omits analysis field when empty string", () => {
-    const prd = validatePlanOutput({ ...makeInput(), analysis: "  " }, "feat", "feat/feat");
+  test.each([
+    ["not present", makeInput()],
+    ["empty string", { ...makeInput(), analysis: "  " }],
+  ] as const)("omits analysis field when %s", (_label, input) => {
+    const prd = validatePlanOutput(input, "feat", "feat/feat");
     expect(prd.analysis).toBeUndefined();
   });
 
@@ -488,13 +315,10 @@ describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
     expect(prd.userStories[0].contextFiles).toEqual(["src/auth.ts", "src/app.module.ts"]);
   });
 
-  test("omits contextFiles when not present on story", () => {
-    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    expect(prd.userStories[0].contextFiles).toBeUndefined();
-  });
-
-  test("omits contextFiles when empty array", () => {
-    const story = makeStory({ contextFiles: [] });
+  test.each([
+    ["not present on story", makeStory()],
+    ["empty array", makeStory({ contextFiles: [] })],
+  ])("omits contextFiles when %s", (_label, story) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(prd.userStories[0].contextFiles).toBeUndefined();
   });
@@ -505,37 +329,22 @@ describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
-  test("throws when a contextFiles entry contains '..'", () => {
-    const story = makeStory({ contextFiles: ["../../../etc/passwd"] });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      /contextFiles.*\.\./i,
-    );
+  test.each([
+    ["contains '..'", "../../../etc/passwd", /contextFiles.*\.\./i],
+    ["is an absolute path", "/etc/passwd", /contextFiles.*absolute/i],
+    ["subtle traversal", "foo/../../../etc/passwd", /contextFiles.*\.\./i],
+  ])("throws when a contextFiles entry %s", (_label, path, pattern) => {
+    const story = makeStory({ contextFiles: [path] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(pattern);
   });
 
-  test("throws when a contextFiles entry is an absolute path", () => {
-    const story = makeStory({ contextFiles: ["/etc/passwd"] });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      /contextFiles.*absolute/i,
-    );
-  });
-
-  test("throws on subtle traversal: foo/../../../etc/passwd", () => {
-    const story = makeStory({ contextFiles: ["foo/../../../etc/passwd"] });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      /contextFiles.*\.\./i,
-    );
-  });
-
-  test("accepts valid relative contextFiles paths", () => {
+  test("accepts valid relative contextFiles paths including nested without traversal", () => {
     const story = makeStory({ contextFiles: ["src/auth.ts", "test/auth.test.ts"] });
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
     expect(prd.userStories[0].contextFiles).toEqual(["src/auth.ts", "test/auth.test.ts"]);
-  });
-
-  test("accepts nested relative paths without traversal", () => {
-    const story = makeStory({ contextFiles: ["packages/api/src/index.ts"] });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].contextFiles).toEqual(["packages/api/src/index.ts"]);
+    const nested = makeStory({ contextFiles: ["packages/api/src/index.ts"] });
+    const prd2 = validatePlanOutput(makeInput([nested]), "feat", "feat/feat");
+    expect(prd2.userStories[0].contextFiles).toEqual(["packages/api/src/index.ts"]);
   });
 });
 
@@ -544,9 +353,11 @@ describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
 // ---------------------------------------------------------------------------
 
 describe("suggestedCriteria", () => {
-  test("absent — validates and omits field", () => {
-    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  test.each([
+    ["absent", makeStory()],
+    ["empty array", makeStory({ suggestedCriteria: [] })],
+  ])("omits suggestedCriteria when %s", (_label, story) => {
+    expect(validatePlanOutput(makeInput([story]), "feat", "feat/feat").userStories[0].suggestedCriteria).toBeUndefined();
   });
 
   test("valid string[] — passes through", () => {
@@ -555,43 +366,19 @@ describe("suggestedCriteria", () => {
     expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
   });
 
-  test("empty array — stripped to undefined", () => {
-    const story = makeStory({ suggestedCriteria: [] });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toBeUndefined();
+  test.each([
+    ["{criterion, rationale} objects", [{ criterion: "edge case A", rationale: "debater suggested" }, { criterion: "edge case B", rationale: "another reason" }], ["edge case A", "edge case B"]],
+    ["mixed strings and objects", ["plain string", { criterion: "from object" }], ["plain string", "from object"]],
+  ])("coerces %s to plain strings", (_label, suggestedCriteria, expected) => {
+    const prd = validatePlanOutput(makeInput([makeStory({ suggestedCriteria })]), "feat", "feat/feat");
+    expect(prd.userStories[0].suggestedCriteria).toEqual(expected);
   });
 
-  test("{criterion, rationale} objects — coerced to plain strings", () => {
-    const story = makeStory({
-      suggestedCriteria: [
-        { criterion: "edge case A", rationale: "debater suggested" },
-        { criterion: "edge case B", rationale: "another reason" },
-      ],
-    });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toEqual(["edge case A", "edge case B"]);
-  });
-
-  test("mixed strings and {criterion} objects — coerced uniformly", () => {
-    const story = makeStory({
-      suggestedCriteria: ["plain string", { criterion: "from object" }],
-    });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0].suggestedCriteria).toEqual(["plain string", "from object"]);
-  });
-
-  test("non-string elements — throws", () => {
-    const story = makeStory({ suggestedCriteria: ["valid", 42] });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      "suggestedCriteria[1] must be a string",
-    );
-  });
-
-  test("non-array — throws", () => {
-    const story = makeStory({ suggestedCriteria: "not an array" });
-    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(
-      "suggestedCriteria must be an array",
-    );
+  test.each([
+    ["non-string element", makeStory({ suggestedCriteria: ["valid", 42] }), "suggestedCriteria[1] must be a string"],
+    ["non-array", makeStory({ suggestedCriteria: "not an array" }), "suggestedCriteria must be an array"],
+  ])("throws for %s", (_label, story, expectedMsg) => {
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(expectedMsg);
   });
 });
 
@@ -600,30 +387,28 @@ describe("suggestedCriteria", () => {
 // ---------------------------------------------------------------------------
 
 describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
-  test("AC4: accepts legacy PRD without verifiedBy, intent, or contextFiles factId", () => {
-    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
-    const story = prd.userStories[0]!;
+  test("AC4+AC5: accepts legacy PRD without citation fields; omits verifiedBy from stories that lack it", () => {
+    const prd1 = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
+    const story = prd1.userStories[0]!;
     expect(story.verifiedBy).toBeUndefined();
     expect(story.intent).toBeUndefined();
     expect(story.contextFiles).toBeUndefined();
+
+    const stories = [
+      makeStory({ id: "ST-001" }),
+      makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
+    ];
+    const prd2 = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
+    expect(prd2.userStories[0]!.verifiedBy).toBeUndefined();
+    expect(prd2.userStories[1]!.verifiedBy?.kind).toBe("file");
   });
 
-  test("AC5: preserves verifiedBy when present", () => {
-    const story = makeStory({
-      verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] },
-    });
+  test.each([
+    ["verifiedBy", makeStory({ verifiedBy: { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] } }), (s: any) => s.verifiedBy, { kind: "test", anchor: "src/foo.test.ts#should work", factIds: ["fact-001"] }],
+    ["intent", makeStory({ intent: true }), (s: any) => s.intent, true],
+  ])("AC5: preserves %s when present", (_label, story, getField, expected) => {
     const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0]!.verifiedBy).toEqual({
-      kind: "test",
-      anchor: "src/foo.test.ts#should work",
-      factIds: ["fact-001"],
-    });
-  });
-
-  test("AC5: preserves intent when present", () => {
-    const story = makeStory({ intent: true });
-    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
-    expect(prd.userStories[0]!.intent).toBe(true);
+    expect(getField(prd.userStories[0]!)).toEqual(expected);
   });
 
   test("AC5: preserves contextFiles[].factId when present", () => {
@@ -649,13 +434,4 @@ describe("validatePlanOutput — Phase 2 citation fields (AC4-AC6)", () => {
     expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(/verifiedBy.*kind/i);
   });
 
-  test("AC5: omits verifiedBy when not present (no pollution of existing stories)", () => {
-    const stories = [
-      makeStory({ id: "ST-001" }),
-      makeStory({ id: "ST-002", verifiedBy: { kind: "file", anchor: "src/x.ts", factIds: [] } }),
-    ];
-    const prd = validatePlanOutput(makeInput(stories), "feat", "feat/feat");
-    expect(prd.userStories[0]!.verifiedBy).toBeUndefined();
-    expect(prd.userStories[1]!.verifiedBy?.kind).toBe("file");
-  });
 });

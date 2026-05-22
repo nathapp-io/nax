@@ -21,16 +21,9 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * the tdd module index.
    */
   describe("Slice C: Remove legacy function exports (runThreeSessionTdd, legacy full-suite gate)", () => {
-    test("runThreeSessionTdd is not exported from src/tdd/index.ts", () => {
-      // After migration, this function should not exist in the public API
+    test("runThreeSessionTdd and legacy full-suite gate are not exported from src/tdd/index.ts", () => {
       expect((tddIndex as any).runThreeSessionTdd).toBeUndefined();
-    });
-
-    test("legacy full-suite gate function is not exported from src/tdd/index.ts", () => {
-      // After migration, the old function should not exist in the public API.
-      // The functionality moved to src/operations/full-suite-gate.ts as fullSuiteGateOp.
-      const legacyGateName = ["runFull", "SuiteGate"].join("");
-      expect((tddIndex as any)[legacyGateName]).toBeUndefined();
+      expect((tddIndex as any)[["runFull", "SuiteGate"].join("")]).toBeUndefined();
     });
 
     test("consolidated TDD operations are exported: testWriterOp, implementerOp, verifierOp", () => {
@@ -58,14 +51,8 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * namespace trick is gone and no runtime symbol leaks.
    */
   describe("Slice D: Type export (StoryRunResult in tdd barrel)", () => {
-    test("old type name is not exported from tdd barrel as runtime value", () => {
-      const oldKey = ["Three", "SessionTdd", "Result"].join("");
-      expect((tddIndex as any)[oldKey]).toBeUndefined();
-    });
-
-    test("StoryRunResult does not leak as a runtime value", () => {
-      // Post-US-005-cleanup: api-surface.ts namespace trick is gone.
-      // Types are compile-time only — no runtime sentinel.
+    test("old type names do not leak as runtime values", () => {
+      expect((tddIndex as any)[["Three", "SessionTdd", "Result"].join("")]).toBeUndefined();
       expect((tddIndex as any).StoryRunResult).toBeUndefined();
     });
   });
@@ -75,28 +62,13 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * This is verified by checking that the new operation types are correctly structured
    */
   describe("Slice A: Consolidated entrypoints preserve behavior semantics", () => {
-    test("testWriterOp can be called via callOp with proper input/output types", () => {
-      // The operation should be properly typed for use with callOp
-      const testWriterOp = (tddIndex as any).testWriterOp;
-      expect(testWriterOp).toHaveProperty("name");
-      expect(testWriterOp).toHaveProperty("kind");
-      expect(testWriterOp.kind).toBe("run");
-    });
-
-    test("implementerOp can be called via callOp with proper input/output types", () => {
-      // The operation should be properly typed for use with callOp
-      const implementerOp = (tddIndex as any).implementerOp;
-      expect(implementerOp).toHaveProperty("name");
-      expect(implementerOp).toHaveProperty("kind");
-      expect(implementerOp.kind).toBe("run");
-    });
-
-    test("verifierOp can be called via callOp with proper input/output types", () => {
-      // The operation should be properly typed for use with callOp
-      const verifierOp = (tddIndex as any).verifierOp;
-      expect(verifierOp).toHaveProperty("name");
-      expect(verifierOp).toHaveProperty("kind");
-      expect(verifierOp.kind).toBe("run");
+    test("testWriterOp, implementerOp, verifierOp are exported with kind 'run'", () => {
+      for (const opName of ["testWriterOp", "implementerOp", "verifierOp"]) {
+        const op = (tddIndex as any)[opName];
+        expect(op).toHaveProperty("name");
+        expect(op).toHaveProperty("kind");
+        expect(op.kind).toBe("run");
+      }
     });
   });
 
@@ -105,11 +77,6 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * This is ensured by checking that only the public surface remains
    */
   describe("Slice B: Internal API shape tests are retired", () => {
-    test("runThreeSessionTddFromCtx is removed from exports", () => {
-      // Internal implementation detail that should not be public
-      expect((tddIndex as any).runThreeSessionTddFromCtx).toBeUndefined();
-    });
-
     test("Public exports only include stabilized surface", () => {
       // Count the expected exports to ensure only necessary ones remain
       const publicExports = Object.keys(tddIndex).filter((key) => !key.startsWith("_"));
@@ -146,32 +113,11 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * Check that no lingering references to old APIs remain in module structure
    */
   describe("Slice E: Cleanup of obsolete references", () => {
-    test("index.ts does not import or re-export runThreeSessionTdd", () => {
-      // Verify through structural test that the function is not available
-      const hasRunThreeSessionTdd = "runThreeSessionTdd" in tddIndex;
-      expect(hasRunThreeSessionTdd).toBe(false);
-    });
-
-    test("index.ts does not import or re-export legacy full-suite gate function", () => {
-      // Verify through structural test that the legacy function is not available.
-      // The functionality moved to src/operations/full-suite-gate.ts as fullSuiteGateOp.
-      const legacyName = ["runFull", "SuiteGate"].join("");
-      const hasLegacyGate = legacyName in tddIndex;
-      expect(hasLegacyGate).toBe(false);
-    });
-
-    test("old type name is not exported from tdd surface", () => {
-      // Old type name should be completely removed from public surface
-      const oldName = ["Three", "SessionTddResult"].join("");
-      const hasOldType = oldName in tddIndex;
-      expect(hasOldType).toBe(false);
-    });
-
-    test("Type re-exports do not leak as runtime values", () => {
-      // Types are erased at compile time. After api-surface.ts deletion, none
-      // of these should appear as runtime properties of the barrel.
-      // Compile-time presence is verified by tsc + story-run-result-shape.test.ts.
-      const typeExports = [
+    test("legacy symbols and type re-exports do not appear as runtime values", () => {
+      const absent = [
+        "runThreeSessionTdd",
+        ["runFull", "SuiteGate"].join(""),
+        ["Three", "SessionTddResult"].join(""),
         "TddSessionRole",
         "FailureCategory",
         "IsolationCheck",
@@ -181,9 +127,8 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
         "VerdictCategorization",
         "StoryRunResult",
       ];
-
-      for (const typeExport of typeExports) {
-        expect((tddIndex as any)[typeExport]).toBeUndefined();
+      for (const name of absent) {
+        expect((tddIndex as any)[name]).toBeUndefined();
       }
     });
   });
@@ -203,14 +148,6 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
         ("runThreeSessionTdd" in tddIndex || legacyGateName in tddIndex) &&
         !("testWriterOp" in tddIndex);
       expect(hasOldApiOnly).toBe(false);
-    });
-
-    test("Type system is updated: old type name has no runtime leak", () => {
-      // Types are erased at compile time; we only verify no runtime leak.
-      // Compile-time presence of StoryRunResult is verified by story-run-result-shape.test.ts.
-      const oldName = ["Three", "SessionTddResult"].join("");
-      expect((tddIndex as any)[oldName]).toBeUndefined();
-      expect((tddIndex as any).StoryRunResult).toBeUndefined();
     });
 
     test("All consolidated operations are exported for use in orchestration", () => {
@@ -236,25 +173,17 @@ describe("Retire legacy TDD surfaces (Slice A-E migration)", () => {
    * truncateTestOutput and their supporting types are absent from the barrel.
    */
   describe("Slice F: Direct-dispatch TDD layer retired (issue #1067)", () => {
-    test("runTddSessionOp is not exported from the tdd barrel", () => {
-      expect((tddIndex as any).runTddSessionOp).toBeUndefined();
-    });
-
-    test("runTddSession is not exported from the tdd barrel", () => {
-      expect((tddIndex as any).runTddSession).toBeUndefined();
-    });
-
-    test("assembleTddSessionResult is not exported from the tdd barrel", () => {
-      expect((tddIndex as any).assembleTddSessionResult).toBeUndefined();
-    });
-
-    test("truncateTestOutput is not exported from the tdd barrel", () => {
-      expect((tddIndex as any).truncateTestOutput).toBeUndefined();
-    });
-
-    test("Supporting types do not leak as runtime values", () => {
-      const retiredTypes = ["TddSessionOpOptions", "TddSessionBinding", "ThreeSessionTddOptions"];
-      for (const name of retiredTypes) {
+    test("retired Slice F symbols are not exported from the tdd barrel", () => {
+      const retiredSymbols = [
+        "runTddSessionOp",
+        "runTddSession",
+        "assembleTddSessionResult",
+        "truncateTestOutput",
+        "TddSessionOpOptions",
+        "TddSessionBinding",
+        "ThreeSessionTddOptions",
+      ];
+      for (const name of retiredSymbols) {
         expect((tddIndex as any)[name]).toBeUndefined();
       }
     });

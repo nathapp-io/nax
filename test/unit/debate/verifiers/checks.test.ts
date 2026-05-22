@@ -91,24 +91,14 @@ const intentUnverifiedClaim = (id: string): FactsManifest["specClaims"][0] => ({
 // ---------------------------------------------------------------------------
 
 describe("checks.ts exports (AC1)", () => {
-  test("checkFilesExist is a function", () => {
-    expect(typeof checkFilesExist).toBe("function");
-  });
-
-  test("checkAcAnchored is a function", () => {
-    expect(typeof checkAcAnchored).toBe("function");
-  });
-
-  test("checkClaimsCited is a function", () => {
-    expect(typeof checkClaimsCited).toBe("function");
-  });
-
-  test("checkNoContradictions is a function", () => {
-    expect(typeof checkNoContradictions).toBe("function");
-  });
-
-  test("checkSpecCoverage is a function", () => {
-    expect(typeof checkSpecCoverage).toBe("function");
+  test.each<[string, CallableFunction]>([
+    ["checkFilesExist", checkFilesExist],
+    ["checkAcAnchored", checkAcAnchored],
+    ["checkClaimsCited", checkClaimsCited],
+    ["checkNoContradictions", checkNoContradictions],
+    ["checkSpecCoverage", checkSpecCoverage],
+  ])("%s is a function", (_name, fn) => {
+    expect(typeof fn).toBe("function");
   });
 });
 
@@ -117,19 +107,17 @@ describe("checks.ts exports (AC1)", () => {
 // ---------------------------------------------------------------------------
 
 describe("checkFilesExist (AC2)", () => {
-  test("uncited contextFiles entries that don't exist are flagged as `major` (may be new files)", () => {
-    const prd = makePrd([
-      makeStory({
-        contextFiles: [{ path: "src/foo.ts" }, { path: "src/bar.ts" }],
-      }),
-    ]);
-    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
+  test("uncited object-entries and plain string entries without factId are flagged as major", () => {
+    const prd1 = makePrd([makeStory({ contextFiles: [{ path: "src/foo.ts" }, { path: "src/bar.ts" }] })]);
+    const findings1 = checkFilesExist(prd1, "/workdir", { existsSync: () => false });
+    expect(findings1).toHaveLength(2);
+    for (const f of findings1) { expect(f.severity).toBe("major"); expect(f.checklistItem).toBe("files-exist"); }
 
-    expect(findings).toHaveLength(2);
-    for (const f of findings) {
-      expect(f.severity).toBe("major");
-      expect(f.checklistItem).toBe("files-exist");
-    }
+    const prd2 = makePrd([makeStory({ contextFiles: ["src/plain.ts"] })]);
+    const findings2 = checkFilesExist(prd2, "/workdir", { existsSync: () => false });
+    expect(findings2).toHaveLength(1);
+    expect((findings2[0] as Record<string, unknown>).path).toBe("src/plain.ts");
+    expect(findings2[0]?.severity).toBe("major");
   });
 
   test("contextFiles entry with manifest factId that does not exist on disk is a `blocker` (grounding broken)", () => {
@@ -154,27 +142,9 @@ describe("checkFilesExist (AC2)", () => {
     expect((findings[0] as Record<string, unknown>).storyId).toBe("US-001");
   });
 
-  test("returns empty array when all contextFiles exist", () => {
-    const prd = makePrd([makeStory({ contextFiles: [{ path: "src/exists.ts" }] })]);
-    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => true });
-
-    expect(findings).toHaveLength(0);
-  });
-
-  test("returns empty array when story has no contextFiles", () => {
-    const prd = makePrd([makeStory()]);
-    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
-
-    expect(findings).toHaveLength(0);
-  });
-
-  test("handles string contextFiles entries (treated as uncited, severity `major`)", () => {
-    const prd = makePrd([makeStory({ contextFiles: ["src/plain.ts"] })]);
-    const findings = checkFilesExist(prd, "/workdir", { existsSync: () => false });
-
-    expect(findings).toHaveLength(1);
-    expect((findings[0] as Record<string, unknown>).path).toBe("src/plain.ts");
-    expect(findings[0]?.severity).toBe("major");
+  test("returns empty array when all contextFiles exist or when story has no contextFiles", () => {
+    expect(checkFilesExist(makePrd([makeStory({ contextFiles: [{ path: "src/exists.ts" }] })]), "/workdir", { existsSync: () => true })).toHaveLength(0);
+    expect(checkFilesExist(makePrd([makeStory()]), "/workdir", { existsSync: () => false })).toHaveLength(0);
   });
 
   test("mixed: cited-and-missing + uncited-and-missing yields one blocker + one major", () => {
@@ -198,38 +168,18 @@ describe("checkFilesExist (AC2)", () => {
 // ---------------------------------------------------------------------------
 
 describe("checkAcAnchored (AC3)", () => {
-  test("returns one major finding per story with no verifiedBy and intent not true", () => {
-    const prd = makePrd([makeStory(), makeStory({ id: "US-002" })]);
+  test("returns one major finding with storyId per story with no verifiedBy and intent not true", () => {
+    const prd = makePrd([makeStory({ id: "US-042" }), makeStory({ id: "US-002" })]);
     const findings = checkAcAnchored(prd);
-
     expect(findings).toHaveLength(2);
-    for (const f of findings) {
-      expect(f.severity).toBe("major");
-      expect(f.checklistItem).toBe("ac-anchored");
-    }
-  });
-
-  test("returns no finding for story with verifiedBy anchor", () => {
-    const prd = makePrd([
-      makeStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } }),
-    ]);
-    const findings = checkAcAnchored(prd);
-
-    expect(findings).toHaveLength(0);
-  });
-
-  test("returns no finding for story with intent=true", () => {
-    const prd = makePrd([makeStory({ intent: true })]);
-    const findings = checkAcAnchored(prd);
-
-    expect(findings).toHaveLength(0);
-  });
-
-  test("includes storyId in the finding", () => {
-    const prd = makePrd([makeStory({ id: "US-042" })]);
-    const findings = checkAcAnchored(prd);
-
+    expect(findings[0]?.severity).toBe("major");
+    expect(findings[0]?.checklistItem).toBe("ac-anchored");
     expect((findings[0] as Record<string, unknown>).storyId).toBe("US-042");
+  });
+
+  test("returns no finding for story with verifiedBy anchor or with intent=true", () => {
+    expect(checkAcAnchored(makePrd([makeStory({ verifiedBy: { kind: "test", anchor: "test-name", factIds: [] } })]))).toHaveLength(0);
+    expect(checkAcAnchored(makePrd([makeStory({ intent: true })]))).toHaveLength(0);
   });
 });
 
@@ -237,30 +187,11 @@ describe("checkAcAnchored (AC3)", () => {
 // AC4: checkClaimsCited — null manifest
 // ---------------------------------------------------------------------------
 
-describe("checkClaimsCited — null manifest (AC4)", () => {
-  test("returns [] when manifest is null", () => {
-    const findings = checkClaimsCited(null, 0.5);
-    expect(findings).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC5: checkClaimsCited — rate meets threshold
-// ---------------------------------------------------------------------------
-
-describe("checkClaimsCited — rate meets threshold (AC5)", () => {
-  test("returns [] when 2 verified + 1 unverified → rate 0.666 >= 0.5", () => {
-    const manifest = makeManifest({
-      specClaims: [verifiedClaim("S-001"), verifiedClaim("S-002"), unverifiedClaim("S-003")],
-    });
-    const findings = checkClaimsCited(manifest, 0.5);
-    expect(findings).toEqual([]);
-  });
-
-  test("returns [] for empty specClaims", () => {
-    const manifest = makeManifest({ specClaims: [] });
-    const findings = checkClaimsCited(manifest, 0.5);
-    expect(findings).toEqual([]);
+describe("checkClaimsCited — null manifest and rate meets threshold (AC4+AC5)", () => {
+  test("returns [] when manifest is null, when specClaims is empty, and when rate >= threshold", () => {
+    expect(checkClaimsCited(null, 0.5)).toEqual([]);
+    expect(checkClaimsCited(makeManifest({ specClaims: [] }), 0.5)).toEqual([]);
+    expect(checkClaimsCited(makeManifest({ specClaims: [verifiedClaim("S-001"), verifiedClaim("S-002"), unverifiedClaim("S-003")] }), 0.5)).toEqual([]);
   });
 });
 
@@ -301,24 +232,11 @@ describe("checkNoContradictions (AC7)", () => {
     expect((findings[0] as Record<string, unknown>).specId).toBe("S-001");
   });
 
-  test("returns empty array when manifest is null", () => {
+  test("returns [] when manifest is null, when no claims are contradicted, and when no factId present", () => {
     const prd = makePrd([makeStory({ contextFiles: [{ path: "src/a.ts", factId: "S-001" }] })]);
-    const findings = checkNoContradictions(prd, null);
-    expect(findings).toEqual([]);
-  });
-
-  test("returns empty array when no claims are contradicted", () => {
-    const manifest = makeManifest({ specClaims: [verifiedClaim("S-001")] });
-    const prd = makePrd([makeStory({ contextFiles: [{ path: "src/a.ts", factId: "S-001" }] })]);
-    const findings = checkNoContradictions(prd, manifest);
-    expect(findings).toEqual([]);
-  });
-
-  test("returns no finding for contextFiles entries without factId", () => {
-    const manifest = makeManifest({ specClaims: [contradictedClaim("S-001")] });
-    const prd = makePrd([makeStory({ contextFiles: [{ path: "src/a.ts" }] })]);
-    const findings = checkNoContradictions(prd, manifest);
-    expect(findings).toEqual([]);
+    expect(checkNoContradictions(prd, null)).toEqual([]);
+    expect(checkNoContradictions(prd, makeManifest({ specClaims: [verifiedClaim("S-001")] }))).toEqual([]);
+    expect(checkNoContradictions(makePrd([makeStory({ contextFiles: [{ path: "src/a.ts" }] })]), makeManifest({ specClaims: [contradictedClaim("S-001")] }))).toEqual([]);
   });
 });
 
@@ -340,25 +258,10 @@ describe("checkSpecCoverage (AC8)", () => {
     }
   });
 
-  test("returns no finding for intent specClaims even when unverified", () => {
-    const manifest = makeManifest({
-      specClaims: [intentUnverifiedClaim("S-001")],
-    });
-    const findings = checkSpecCoverage(manifest);
-    expect(findings).toHaveLength(0);
-  });
-
-  test("returns no finding for verified factual specClaims", () => {
-    const manifest = makeManifest({
-      specClaims: [verifiedClaim("S-001")],
-    });
-    const findings = checkSpecCoverage(manifest);
-    expect(findings).toHaveLength(0);
-  });
-
-  test("returns empty array when manifest is null", () => {
-    const findings = checkSpecCoverage(null);
-    expect(findings).toEqual([]);
+  test("returns no finding for intent claims, verified factual claims, and null manifest", () => {
+    expect(checkSpecCoverage(makeManifest({ specClaims: [intentUnverifiedClaim("S-001")] }))).toHaveLength(0);
+    expect(checkSpecCoverage(makeManifest({ specClaims: [verifiedClaim("S-001")] }))).toHaveLength(0);
+    expect(checkSpecCoverage(null)).toEqual([]);
   });
 
   test("includes specId in the finding", () => {

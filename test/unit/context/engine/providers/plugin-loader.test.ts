@@ -115,30 +115,18 @@ describe("loadPluginProviders — empty / disabled", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadPluginProviders — load failures (non-fatal)", () => {
-  test("skips provider when import throws", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => {
-      throw new Error("module not found");
-    };
-    const result = await loadPluginProviders([makeConfig("missing-pkg")], "/repo");
-    expect(result).toEqual([]);
-  });
-
-  test("skips provider when module does not export a valid IContextProvider", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: { notAProvider: true } });
-    const result = await loadPluginProviders([makeConfig("bad-export")], "/repo");
-    expect(result).toEqual([]);
-  });
-
-  test("skips provider when export has id but no fetch", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: { id: "p1", kind: "rag" } });
-    const result = await loadPluginProviders([makeConfig("no-fetch")], "/repo");
-    expect(result).toEqual([]);
-  });
-
-  test("skips provider when import resolves to null", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => null;
-    const result = await loadPluginProviders([makeConfig("null-pkg")], "/repo");
-    expect(result).toEqual([]);
+  test("skips provider when import throws, bad export, id-but-no-fetch, or null", async () => {
+    const scenarios: [string, () => Promise<unknown>][] = [
+      ["import throws", async () => { throw new Error("module not found"); }],
+      ["bad export", async () => ({ default: { notAProvider: true } })],
+      ["id but no fetch", async () => ({ default: { id: "p1", kind: "rag" } })],
+      ["null import", async () => null],
+    ];
+    for (const [label, imp] of scenarios) {
+      _pluginLoaderDeps.dynamicImport = imp as typeof _pluginLoaderDeps.dynamicImport;
+      const result = await loadPluginProviders([makeConfig("pkg")], "/repo");
+      expect(result, label).toEqual([]);
+    }
   });
 
   test("skips provider when module path escapes workdir", async () => {
@@ -174,33 +162,22 @@ describe("loadPluginProviders — load failures (non-fatal)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("loadPluginProviders — export shape variants", () => {
-  test("accepts ES default export", async () => {
-    const provider = makeProvider("default-export");
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: provider });
-    const result = await loadPluginProviders([makeConfig("pkg")], "/repo");
-    expect(result[0].id).toBe("default-export");
-  });
+  test("accepts ES default, named 'provider', prefers named over default, and CJS-style exports", async () => {
+    // ES default export
+    _pluginLoaderDeps.dynamicImport = async () => ({ default: makeProvider("default-export") });
+    expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("default-export");
 
-  test("accepts named 'provider' export", async () => {
-    const provider = makeProvider("named-export");
-    _pluginLoaderDeps.dynamicImport = async () => ({ provider });
-    const result = await loadPluginProviders([makeConfig("pkg")], "/repo");
-    expect(result[0].id).toBe("named-export");
-  });
+    // Named 'provider' export
+    _pluginLoaderDeps.dynamicImport = async () => ({ provider: makeProvider("named-export") });
+    expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("named-export");
 
-  test("prefers named 'provider' export over default", async () => {
-    const named = makeProvider("named");
-    const defaultP = makeProvider("default");
-    _pluginLoaderDeps.dynamicImport = async () => ({ provider: named, default: defaultP });
-    const result = await loadPluginProviders([makeConfig("pkg")], "/repo");
-    expect(result[0].id).toBe("named");
-  });
+    // Named 'provider' preferred over default
+    _pluginLoaderDeps.dynamicImport = async () => ({ provider: makeProvider("named"), default: makeProvider("default") });
+    expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("named");
 
-  test("accepts module-as-provider (CommonJS-style)", async () => {
-    const provider = makeProvider("cjs-export");
-    _pluginLoaderDeps.dynamicImport = async () => provider;
-    const result = await loadPluginProviders([makeConfig("pkg")], "/repo");
-    expect(result[0].id).toBe("cjs-export");
+    // CommonJS-style (module-as-provider)
+    _pluginLoaderDeps.dynamicImport = async () => makeProvider("cjs-export") as unknown as Record<string, unknown>;
+    expect((await loadPluginProviders([makeConfig("pkg")], "/repo"))[0].id).toBe("cjs-export");
   });
 });
 
@@ -277,21 +254,11 @@ describe("loadPluginProviders — parallel loading", () => {
     expect(ids).toEqual(["graph", "kb", "rag"]);
   });
 
-  test("rag provider kind passes validation", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: makeProvider("r1", "rag") });
-    const result = await loadPluginProviders([makeConfig("rag-pkg")], "/repo");
-    expect(result[0].kind).toBe("rag");
-  });
-
-  test("graph provider kind passes validation", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: makeProvider("g1", "graph") });
-    const result = await loadPluginProviders([makeConfig("graph-pkg")], "/repo");
-    expect(result[0].kind).toBe("graph");
-  });
-
-  test("kb provider kind passes validation", async () => {
-    _pluginLoaderDeps.dynamicImport = async () => ({ default: makeProvider("k1", "kb") });
-    const result = await loadPluginProviders([makeConfig("kb-pkg")], "/repo");
-    expect(result[0].kind).toBe("kb");
+  test("rag, graph, and kb provider kinds all pass validation", async () => {
+    for (const kind of ["rag", "graph", "kb"] as const) {
+      _pluginLoaderDeps.dynamicImport = async () => ({ default: makeProvider(`${kind}-id`, kind) });
+      const result = await loadPluginProviders([makeConfig(`${kind}-pkg`)], "/repo");
+      expect(result[0].kind, kind).toBe(kind);
+    }
   });
 });
