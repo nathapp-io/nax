@@ -43,34 +43,13 @@ function createMockStory(id: string, status: StoryDisplayState["status"]): Story
 }
 
 describe("Layout breakpoints", () => {
-  test("single column mode for width < 80", () => {
-    const width = 70;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("single");
-  });
-
-  test("narrow mode for width 80-140", () => {
-    const width = 100;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("narrow");
-  });
-
-  test("wide mode for width > 140", () => {
-    const width = 150;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("wide");
-  });
-
-  test("breakpoint at exactly 80 cols is narrow mode", () => {
-    const width = 80;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("narrow");
-  });
-
-  test("breakpoint at exactly 140 cols is wide mode", () => {
-    const width = 140;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("wide");
+  test("single below 80, narrow 80–139, wide 140+; boundary values exact", () => {
+    const mode = (w: number) => (w < 80 ? "single" : w < 140 ? "narrow" : "wide");
+    expect(mode(70)).toBe("single");
+    expect(mode(100)).toBe("narrow");
+    expect(mode(150)).toBe("wide");
+    expect(mode(80)).toBe("narrow");
+    expect(mode(140)).toBe("wide");
   });
 });
 
@@ -229,23 +208,13 @@ describe("StoriesPanel — scrolling", () => {
 });
 
 describe("Minimum terminal size", () => {
-  test("MIN_TERMINAL_WIDTH is 60", () => {
+  test("MIN_TERMINAL_WIDTH is 60; warns when below", () => {
     expect(MIN_TERMINAL_WIDTH).toBe(60);
+    expect(50 < MIN_TERMINAL_WIDTH).toBe(true);
   });
 
-  test("App shows warning when terminal width < MIN_TERMINAL_WIDTH", () => {
-    // We can't easily mock process.stdout.columns in Bun tests,
-    // but we can test the constant and verify the logic separately
-    const terminalWidth = 50;
-    const shouldWarn = terminalWidth < MIN_TERMINAL_WIDTH;
-    expect(shouldWarn).toBe(true);
-  });
-
-  test("COMPACT_MAX_VISIBLE_STORIES is 8", () => {
+  test("COMPACT_MAX_VISIBLE_STORIES is 8; MAX_VISIBLE_STORIES is 15", () => {
     expect(COMPACT_MAX_VISIBLE_STORIES).toBe(8);
-  });
-
-  test("MAX_VISIBLE_STORIES is 15", () => {
     expect(MAX_VISIBLE_STORIES).toBe(15);
   });
 });
@@ -268,45 +237,17 @@ describe("Edge cases", () => {
     expect(output).toContain("Time:");
   });
 
-  test("handles exactly MAX_VISIBLE_STORIES stories (no scrolling)", () => {
-    const stories = Array.from({ length: MAX_VISIBLE_STORIES }, (_, i) =>
-      createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"),
-    );
+  test("no scroll at exactly MAX_VISIBLE_STORIES; scroll indicator at MAX+1", () => {
+    const atMax = Array.from({ length: MAX_VISIBLE_STORIES }, (_, i) => createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"));
+    const out1 = render(createElement(StoriesPanel, { stories: atMax, totalCost: 0.15, elapsedMs: 90000, width: 30 })).lastFrame();
+    expect(out1).not.toContain("▲");
+    expect(out1).not.toContain("▼");
+    expect(out1).not.toContain("total");
 
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0.15,
-        elapsedMs: 90000,
-        width: 30,
-      }),
-    );
-
-    const output = lastFrame();
-    // All stories visible, no scroll indicators
-    expect(output).not.toContain("▲");
-    expect(output).not.toContain("▼");
-    expect(output).not.toContain("total");
-  });
-
-  test("handles exactly MAX_VISIBLE_STORIES + 1 stories (needs scrolling)", () => {
-    const stories = Array.from({ length: MAX_VISIBLE_STORIES + 1 }, (_, i) =>
-      createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"),
-    );
-
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0.16,
-        elapsedMs: 90000,
-        width: 30,
-      }),
-    );
-
-    const output = lastFrame();
-    // Should show scroll indicator
-    expect(output).toContain("▼");
-    expect(output).toContain("1 more below");
+    const overMax = Array.from({ length: MAX_VISIBLE_STORIES + 1 }, (_, i) => createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"));
+    const out2 = render(createElement(StoriesPanel, { stories: overMax, totalCost: 0.16, elapsedMs: 90000, width: 30 })).lastFrame();
+    expect(out2).toContain("▼");
+    expect(out2).toContain("1 more below");
   });
 
   test("handles very long story ID in compact mode", () => {
@@ -345,35 +286,13 @@ describe("Edge cases", () => {
     expect(output).toContain("0m 0s");
   });
 
-  test("handles large cost value formatting", () => {
+  test("large cost: 4 decimal places in normal mode; 2 decimal places in compact mode", () => {
     const stories = [createMockStory("US-001", "passed")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 123.456789,
-        elapsedMs: 3600000, // 1 hour
-        width: 30,
-      }),
-    );
+    const out1 = render(createElement(StoriesPanel, { stories, totalCost: 123.456789, elapsedMs: 3600000, width: 30 })).lastFrame();
+    expect(out1).toContain("$123.4568");
+    expect(out1).toContain("60m 0s");
 
-    const output = lastFrame();
-    expect(output).toContain("$123.4568"); // 4 decimal places
-    expect(output).toContain("60m 0s"); // 60 minutes
-  });
-
-  test("compact mode with large cost shows 2 decimal places", () => {
-    const stories = [createMockStory("US-001", "passed")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 123.456789,
-        elapsedMs: 3600000,
-        width: 30,
-        compact: true,
-      }),
-    );
-
-    const output = lastFrame();
-    expect(output).toContain("$123.46"); // 2 decimal places in compact mode
+    const out2 = render(createElement(StoriesPanel, { stories, totalCost: 123.456789, elapsedMs: 3600000, width: 30, compact: true })).lastFrame();
+    expect(out2).toContain("$123.46");
   });
 });
