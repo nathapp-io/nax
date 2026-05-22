@@ -88,42 +88,22 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ReviewOrchestrator — pluginMode deferred", () => {
-  test("does NOT call plugin reviewer check() when pluginMode is deferred", async () => {
+  test("does NOT call plugin reviewer check(), returns success and pluginFailed=false even with failing reviewers", async () => {
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
     const orchestrator = new ReviewOrchestrator();
 
     await orchestrator.review({ reviewConfig: makeReviewConfig("deferred"), workdir: "/tmp/workdir", executionConfig: minimalExecConfig, plugins: registry });
-
     expect(reviewer.check).not.toHaveBeenCalled();
-  });
 
-  test("returns success when built-in checks pass and pluginMode is deferred", async () => {
-    const registry = makeRegistry([makeReviewer("semgrep", false)]);
-    const orchestrator = new ReviewOrchestrator();
-
-    const result = await orchestrator.review({
+    const failingRegistry = makeRegistry([makeReviewer("semgrep", false), makeReviewer("license", false)]);
+    const result = await new ReviewOrchestrator().review({
       reviewConfig: makeReviewConfig("deferred"),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
-      plugins: registry,
+      plugins: failingRegistry,
     });
-
     expect(result.success).toBe(true);
-    expect(result.pluginFailed).toBe(false);
-  });
-
-  test("does NOT set pluginFailed when pluginMode is deferred (even with failing reviewers registered)", async () => {
-    const registry = makeRegistry([makeReviewer("semgrep", false), makeReviewer("license", false)]);
-    const orchestrator = new ReviewOrchestrator();
-
-    const result = await orchestrator.review({
-      reviewConfig: makeReviewConfig("deferred"),
-      workdir: "/tmp/workdir",
-      executionConfig: minimalExecConfig,
-      plugins: registry,
-    });
-
     expect(result.pluginFailed).toBe(false);
   });
 
@@ -159,27 +139,21 @@ describe("ReviewOrchestrator — pluginMode deferred", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ReviewOrchestrator — pluginMode per-story (no regression)", () => {
-  test("calls plugin reviewer check() when pluginMode is per-story", async () => {
+  test("calls plugin reviewer check() and returns pluginFailed=true when reviewer fails and pluginMode is per-story", async () => {
     const reviewer = makeReviewer("semgrep");
     const registry = makeRegistry([reviewer]);
     const orchestrator = new ReviewOrchestrator();
 
     await orchestrator.review({ reviewConfig: makeReviewConfig("per-story"), workdir: "/tmp/workdir", executionConfig: minimalExecConfig, plugins: registry });
-
     expect(reviewer.check).toHaveBeenCalledTimes(1);
-  });
 
-  test("returns pluginFailed true when reviewer fails and pluginMode is per-story", async () => {
-    const registry = makeRegistry([makeReviewer("semgrep", false)]);
-    const orchestrator = new ReviewOrchestrator();
-
-    const result = await orchestrator.review({
+    const failingRegistry = makeRegistry([makeReviewer("semgrep", false)]);
+    const result = await new ReviewOrchestrator().review({
       reviewConfig: makeReviewConfig("per-story"),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
-      plugins: registry,
+      plugins: failingRegistry,
     });
-
     expect(result.success).toBe(false);
     expect(result.pluginFailed).toBe(true);
   });
@@ -236,7 +210,7 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     _reviewAdversarialDeps.runAdversarialReview = mock(async () => makeSemanticCheckResult(true));
   });
 
-  test("mechanical failure gates semantic check by default and marks it skipped", async () => {
+  test("mechanical failure gates semantic (skipped, mechanicalFailedOnly=undefined) when gate enabled", async () => {
     _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
     const orchestrator = new ReviewOrchestrator();
 
@@ -248,9 +222,10 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     expect(semanticCheck?.skipped).toBe(true);
     expect(semanticCheck?.success).toBe(true);
     expect(result.success).toBe(false);
+    expect(result.mechanicalFailedOnly).toBeUndefined();
   });
 
-  test("gate disabled runs semantic check even when mechanical fails", async () => {
+  test("gate disabled runs semantic even when mechanical fails; mechanicalFailedOnly false when semantic also fails", async () => {
     let callCount = 0;
     _runnerDeps.getUncommittedFiles = mock(async () => {
       callCount += 1;
@@ -269,35 +244,21 @@ describe("ReviewOrchestrator — mechanical / LLM isolation (#405)", () => {
     expect(semanticCheck?.skipped).toBeUndefined();
     expect(result.mechanicalFailedOnly).toBe(true);
     expect(result.success).toBe(false);
-  });
 
-  test("mechanicalFailedOnly is undefined when semantic is gated", async () => {
-    _runnerDeps.getUncommittedFiles = mock(async () => ["src/changed.ts"]);
-    const orchestrator = new ReviewOrchestrator();
-
-    const result = await orchestrator.review({ reviewConfig: makeConfigWithSemantic(["lint"], true), workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
-
-    expect(result.mechanicalFailedOnly).toBeUndefined();
-  });
-
-  test("mechanicalFailedOnly is false when gate disabled and semantic fails", async () => {
-    // Same call-counter trick: dirty for mechanical, clean for LLM so semantic actually runs.
-    let callCount = 0;
+    // When gate disabled and semantic fails, mechanicalFailedOnly=false
+    let callCount2 = 0;
     _runnerDeps.getUncommittedFiles = mock(async () => {
-      callCount++;
-      return callCount === 1 ? ["src/changed.ts"] : [];
+      callCount2++;
+      return callCount2 === 1 ? ["src/changed.ts"] : [];
     });
     _reviewSemanticDeps.runSemanticReview = mock(async () => makeSemanticCheckResult(false));
-    const orchestrator = new ReviewOrchestrator();
-
-    const result = await orchestrator.review({
+    const result2 = await new ReviewOrchestrator().review({
       reviewConfig: makeConfigWithSemantic(["lint"], false),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
     });
-
-    expect(result.success).toBe(false);
-    expect(result.mechanicalFailedOnly).toBe(false);
+    expect(result2.success).toBe(false);
+    expect(result2.mechanicalFailedOnly).toBe(false);
   });
 
   test("mechanicalFailedOnly is undefined when no LLM checks configured", async () => {
@@ -398,53 +359,54 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     expect(result.success).toBe(true);
   });
 
-  test("skips only semantic when semantic is in retrySkipChecks — adversarial runs via sequential path", async () => {
-    // Only adversarial is active → canParallelize condition (needs both) fails → sequential path.
-    // Sequential path calls _reviewAdversarialDeps.runAdversarialReview (runner.ts), not _orchestratorDeps.
+  test("skips only semantic when semantic in retrySkipChecks, skips only adversarial when adversarial in retrySkipChecks", async () => {
+    // Semantic-only skip: adversarial runs via sequential path (canParallelize fails without both)
     _reviewAdversarialDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
-    const orchestrator = new ReviewOrchestrator();
-    const retrySkipChecks = new Set(["semantic"]);
-
-    await orchestrator.review({
+    await new ReviewOrchestrator().review({
       reviewConfig: makeParallelConfig(),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
-      retrySkipChecks,
+      retrySkipChecks: new Set(["semantic"]),
     });
-
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
     expect(_reviewAdversarialDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
-  });
 
-  test("skips only adversarial when adversarial is in retrySkipChecks — semantic runs via sequential path", async () => {
-    // Only semantic is active → canParallelize condition (needs both) fails → sequential path.
-    // Sequential path calls _reviewSemanticDeps.runSemanticReview (runner.ts), not _orchestratorDeps.
+    // Reset mocks
+    _orchestratorDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
+    _orchestratorDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
+
+    // Adversarial-only skip: semantic runs via sequential path
     _reviewSemanticDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
-    const orchestrator = new ReviewOrchestrator();
-    const retrySkipChecks = new Set(["adversarial"]);
-
-    await orchestrator.review({
+    await new ReviewOrchestrator().review({
       reviewConfig: makeParallelConfig(),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
-      retrySkipChecks,
+      retrySkipChecks: new Set(["adversarial"]),
     });
-
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
     expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
   });
 
-  test("runs both reviewers when retrySkipChecks is empty", async () => {
-    const orchestrator = new ReviewOrchestrator();
-
-    await orchestrator.review({
+  test("runs both reviewers when retrySkipChecks is empty or does not include LLM checks", async () => {
+    await new ReviewOrchestrator().review({
       reviewConfig: makeParallelConfig(),
       workdir: "/tmp/workdir",
       executionConfig: minimalExecConfig,
     });
+    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
+    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
 
+    _orchestratorDeps.runSemanticReview = mock(async () => makePassedCheck("semantic"));
+    _orchestratorDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
+
+    await new ReviewOrchestrator().review({
+      reviewConfig: makeParallelConfig(),
+      workdir: "/tmp/workdir",
+      executionConfig: minimalExecConfig,
+      retrySkipChecks: new Set(["lint", "build"]),
+    });
     expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
     expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
   });
@@ -460,21 +422,6 @@ describe("ReviewOrchestrator — retrySkipChecks in parallel LLM dispatch (#136)
     await orchestrator.review({ reviewConfig: makeParallelConfig(), workdir: "/tmp/workdir", executionConfig: minimalExecConfig });
 
     expect(observedDiffMode).toBe("ref");
-  });
-
-  test("runs both reviewers when retrySkipChecks does not include LLM checks", async () => {
-    const orchestrator = new ReviewOrchestrator();
-    const retrySkipChecks = new Set(["lint", "build"]);
-
-    await orchestrator.review({
-      reviewConfig: makeParallelConfig(),
-      workdir: "/tmp/workdir",
-      executionConfig: minimalExecConfig,
-      retrySkipChecks,
-    });
-
-    expect(_orchestratorDeps.runSemanticReview).toHaveBeenCalledTimes(1);
-    expect(_orchestratorDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
   });
 
   test("aggregates failureReason across multiple failing LLM reviewers", async () => {
@@ -515,48 +462,38 @@ describe("ReviewOrchestrator — sequential LLM projectDir forwarding (#838)", (
     _orchestratorDeps.runAdversarialReview = mock(async () => makePassedCheck("adversarial"));
   });
 
-  test("forwards defined projectDir to sequential semantic review", async () => {
-    let observedProjectDir: string | undefined;
-    _reviewSemanticDeps.runSemanticReview = mock(async (opts: Parameters<typeof _reviewSemanticDeps.runSemanticReview>[0]) => {
-      observedProjectDir = opts.projectDir;
-      return makePassedCheck("semantic");
-    });
-
-    const orchestrator = new ReviewOrchestrator();
+  test("forwards defined projectDir to sequential semantic and adversarial review", async () => {
+    let observedSemanticProjectDir: string | undefined;
+    let observedAdversarialProjectDir: string | undefined;
     const projectDir = "/tmp/project-root";
 
-    await orchestrator.review({
+    _reviewSemanticDeps.runSemanticReview = mock(async (opts: Parameters<typeof _reviewSemanticDeps.runSemanticReview>[0]) => {
+      observedSemanticProjectDir = opts.projectDir;
+      return makePassedCheck("semantic");
+    });
+    await new ReviewOrchestrator().review({
       reviewConfig: makeSequentialConfig(["semantic"]),
       workdir: "/tmp/project-root/packages/pkg-a",
       projectDir,
       executionConfig: minimalExecConfig,
     });
-
     expect(_orchestratorDeps.runSemanticReview).not.toHaveBeenCalled();
     expect(_reviewSemanticDeps.runSemanticReview).toHaveBeenCalledTimes(1);
-    expect(observedProjectDir).toBe(projectDir);
-  });
+    expect(observedSemanticProjectDir).toBe(projectDir);
 
-  test("forwards defined projectDir to sequential adversarial review", async () => {
-    let observedProjectDir: string | undefined;
     _reviewAdversarialDeps.runAdversarialReview = mock(async (opts: Parameters<typeof _reviewAdversarialDeps.runAdversarialReview>[0]) => {
-      observedProjectDir = opts.projectDir;
+      observedAdversarialProjectDir = opts.projectDir;
       return makePassedCheck("adversarial");
     });
-
-    const orchestrator = new ReviewOrchestrator();
-    const projectDir = "/tmp/project-root";
-
-    await orchestrator.review({
+    await new ReviewOrchestrator().review({
       reviewConfig: makeSequentialConfig(["adversarial"]),
       workdir: "/tmp/project-root/packages/pkg-a",
       projectDir,
       executionConfig: minimalExecConfig,
     });
-
     expect(_orchestratorDeps.runAdversarialReview).not.toHaveBeenCalled();
     expect(_reviewAdversarialDeps.runAdversarialReview).toHaveBeenCalledTimes(1);
-    expect(observedProjectDir).toBe(projectDir);
+    expect(observedAdversarialProjectDir).toBe(projectDir);
   });
 
   test("preserves undefined projectDir in sequential review when not provided", async () => {
