@@ -50,28 +50,16 @@ const createMockPRD = (stories: UserStory[]): PRD => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("hookCtx", () => {
-  it("creates hook context with minimal args", () => {
-    const ctx = hookCtx("my-feature");
-    expect(ctx.event).toBe("on-start");
-    expect(ctx.feature).toBe("my-feature");
-  });
+  it("creates ctx with minimal args, merges optional fields, overrides defaults", () => {
+    const minimal = hookCtx("my-feature");
+    expect(minimal.event).toBe("on-start");
+    expect(minimal.feature).toBe("my-feature");
 
-  it("merges optional fields", () => {
-    const ctx = hookCtx("my-feature", {
-      storyId: "US-001",
-      cost: 0.42,
-    });
-    expect(ctx.event).toBe("on-start");
-    expect(ctx.feature).toBe("my-feature");
-    expect(ctx.storyId).toBe("US-001");
-    expect(ctx.cost).toBe(0.42);
-  });
+    const withOpts = hookCtx("my-feature", { storyId: "US-001", cost: 0.42 });
+    expect(withOpts.storyId).toBe("US-001");
+    expect(withOpts.cost).toBe(0.42);
 
-  it("overrides defaults with opts", () => {
-    const ctx = hookCtx("my-feature", {
-      storyId: "US-999",
-    });
-    expect(ctx.storyId).toBe("US-999");
+    expect(hookCtx("my-feature", { storyId: "US-999" }).storyId).toBe("US-999");
   });
 });
 
@@ -158,34 +146,28 @@ describe("getAllReadyStories", () => {
     expect(ready[0].id).toBe("US-002");
   });
 
-  it("treats external dependencies (not in this PRD) as fulfilled", () => {
-    // VCS-P2-001 is from a prior phase and not in this PRD — US-001 should be ready
-    const prd = createMockPRD([mockStory("US-001", false, "pending", ["VCS-P2-001"])]);
+  it("external deps: fulfilled when missing from PRD; ready when internal done; blocked when internal not done", () => {
+    // external-only dep is treated as fulfilled
+    const extOnly = createMockPRD([mockStory("US-001", false, "pending", ["VCS-P2-001"])]);
+    const extOnlyReady = getAllReadyStories(extOnly);
+    expect(extOnlyReady.length).toBe(1);
+    expect(extOnlyReady[0].id).toBe("US-001");
 
-    const ready = getAllReadyStories(prd);
-    expect(ready.length).toBe(1);
-    expect(ready[0].id).toBe("US-001");
-  });
-
-  it("handles mix of external and internal dependencies — ready when internal dep is done", () => {
-    const prd = createMockPRD([
-      mockStory("US-001", true, "pending"), // internal dep, completed
-      mockStory("US-002", false, "pending", ["EXT-PHASE1-001", "US-001"]), // one external + one internal
-    ]);
-
-    const ready = getAllReadyStories(prd);
-    expect(ready.length).toBe(1);
-    expect(ready[0].id).toBe("US-002");
-  });
-
-  it("blocks story when internal dep is not yet done, even if external dep would pass", () => {
-    const prd = createMockPRD([
-      mockStory("US-001", false, "pending"), // internal dep, NOT done
+    // mixed: external + internal (done) → ready
+    const mixDone = createMockPRD([
+      mockStory("US-001", true, "pending"),
       mockStory("US-002", false, "pending", ["EXT-PHASE1-001", "US-001"]),
     ]);
+    const mixDoneReady = getAllReadyStories(mixDone);
+    expect(mixDoneReady.length).toBe(1);
+    expect(mixDoneReady[0].id).toBe("US-002");
 
-    const ready = getAllReadyStories(prd);
-    expect(ready.map((s) => s.id)).toEqual(["US-001"]); // only US-001 is ready, not US-002
+    // mixed: external + internal (not done) → blocked
+    const mixBlocked = createMockPRD([
+      mockStory("US-001", false, "pending"),
+      mockStory("US-002", false, "pending", ["EXT-PHASE1-001", "US-001"]),
+    ]);
+    expect(getAllReadyStories(mixBlocked).map((s) => s.id)).toEqual(["US-001"]);
   });
 });
 
@@ -211,40 +193,14 @@ describe("acquireLock / releaseLock", () => {
     }
   });
 
-  it("acquires lock when no lock exists", async () => {
-    const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(true);
-
-    // Verify lock file was created
+  it("acquire → locked (no double-acquire) → release → reacquire lifecycle", async () => {
     const lockPath = path.join(testDir, "nax.lock");
+    expect(await acquireLock(testDir)).toBe(true);
     expect(fs.existsSync(lockPath)).toBe(true);
-  });
-
-  it("fails to acquire lock when already locked", async () => {
-    const first = await acquireLock(testDir);
-    expect(first).toBe(true);
-
-    const second = await acquireLock(testDir);
-    expect(second).toBe(false);
-  });
-
-  it("releases lock successfully", async () => {
-    await acquireLock(testDir);
+    expect(await acquireLock(testDir)).toBe(false);
     await releaseLock(testDir);
-
-    // Verify lock file was removed
-    const lockPath = path.join(testDir, "nax.lock");
     expect(fs.existsSync(lockPath)).toBe(false);
-  });
-
-  it("can reacquire lock after release", async () => {
-    const first = await acquireLock(testDir);
-    expect(first).toBe(true);
-
-    await releaseLock(testDir);
-
-    const second = await acquireLock(testDir);
-    expect(second).toBe(true);
+    expect(await acquireLock(testDir)).toBe(true);
   });
 
   it("removes stale lock from dead process", async () => {
@@ -320,29 +276,9 @@ describe("formatProgress", () => {
     expect(progress).toContain("complete");
   });
 
-  it("calculates ETA correctly", () => {
-    const counts: StoryCounts = {
-      total: 10,
-      passed: 5,
-      failed: 0,
-      pending: 5,
-    };
-
-    // 5 completed in 600000ms (10 minutes) = 120000ms per story
-    // 5 remaining = 600000ms (10 minutes)
-    const progress = formatProgress(counts, 1.0, 5.0, 600000, 10);
-    expect(progress).toContain("~10 min remaining");
-  });
-
-  it("handles zero elapsed time", () => {
-    const counts: StoryCounts = {
-      total: 10,
-      passed: 1,
-      failed: 0,
-      pending: 9,
-    };
-
-    const progress = formatProgress(counts, 0.1, 5.0, 0, 10);
-    expect(progress).toContain("~0 min remaining");
+  it("calculates ETA correctly; handles zero elapsed time", () => {
+    // 5 completed in 600000ms = ~10 min remaining for 5 more
+    expect(formatProgress({ total: 10, passed: 5, failed: 0, pending: 5 }, 1.0, 5.0, 600000, 10)).toContain("~10 min remaining");
+    expect(formatProgress({ total: 10, passed: 1, failed: 0, pending: 9 }, 0.1, 5.0, 0, 10)).toContain("~0 min remaining");
   });
 });
