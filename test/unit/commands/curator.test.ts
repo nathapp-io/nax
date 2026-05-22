@@ -159,18 +159,14 @@ afterEach(() => {
 
 describe("curatorStatus", () => {
   describe("project resolution", () => {
-    test("resolves project and loads config when no --project given", async () => {
-      await curatorStatus({});
-      expect(_deps.resolveProject).toHaveBeenCalled();
-      expect(_deps.loadConfig).toHaveBeenCalled();
-    });
-
-    test("uses projectOutputDir with config name as project key", async () => {
+    test("resolves project and loads config; uses projectOutputDir with config name as project key", async () => {
       const runDir = join(outputDir, "runs", "run-001");
       mkdirSync(runDir, { recursive: true });
       writeObservations(runDir, [makeObservation("verdict")]);
 
       await curatorStatus({});
+      expect(_deps.resolveProject).toHaveBeenCalled();
+      expect(_deps.loadConfig).toHaveBeenCalled();
       expect(_deps.projectOutputDir).toHaveBeenCalledWith("test-proj", undefined);
     });
   });
@@ -201,21 +197,19 @@ describe("curatorStatus", () => {
   });
 
   describe("explicit run mode", () => {
-    test("uses the specified --run runId", async () => {
+    test("uses the specified --run runId; reports error for nonexistent runId", async () => {
       const runDir = join(outputDir, "runs", "run-042");
       mkdirSync(runDir, { recursive: true });
       writeObservations(runDir, [makeObservation("verdict", "run-042")]);
 
       await curatorStatus({ run: "run-042" });
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("run-042");
-    });
+      expect(capturedOutput.join("\n")).toContain("run-042");
 
-    test("reports clear error when specified runId does not exist", async () => {
+      capturedOutput.length = 0;
       await curatorStatus({ run: "nonexistent-run" });
-      const out = capturedOutput.join("\n");
-      expect(out).toContain("nonexistent-run");
-      expect(out.toLowerCase()).toMatch(/not found|does not exist|missing/);
+      const out2 = capturedOutput.join("\n");
+      expect(out2).toContain("nonexistent-run");
+      expect(out2.toLowerCase()).toMatch(/not found|does not exist|missing/);
     });
   });
 
