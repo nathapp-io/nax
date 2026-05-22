@@ -145,33 +145,17 @@ describe("extractFilesFromLintOutput", () => {
     expect(extractFilesFromLintOutput(output)).toContain(expected);
   });
 
-  test("multiple test files deduplicated", () => {
-    const output = `
-src/foo.test.ts:1:5 lint/error
-src/foo.test.ts:2:8 lint/error
-src/bar.spec.ts:10:3 lint/error
-`.trim();
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("src/foo.test.ts");
-    expect(files).toContain("src/bar.spec.ts");
-    // deduplicated — foo.test.ts appears only once
-    expect(files.filter((f) => f === "src/foo.test.ts")).toHaveLength(1);
-  });
+  test("deduplicates multiple entries for same file, extracts mixed test+source files, and handles absolute paths", () => {
+    const dedup = extractFilesFromLintOutput("src/foo.test.ts:1:5 lint/error\nsrc/foo.test.ts:2:8 lint/error\nsrc/bar.spec.ts:10:3 lint/error");
+    expect(dedup).toContain("src/foo.test.ts");
+    expect(dedup).toContain("src/bar.spec.ts");
+    expect(dedup.filter((f) => f === "src/foo.test.ts")).toHaveLength(1);
 
-  test("mixed test and source files extracted", () => {
-    const output = `
-src/service.ts:10:3 lint/error message
-test/unit/service.test.ts:5:1 lint/error message
-`.trim();
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("src/service.ts");
-    expect(files).toContain("test/unit/service.test.ts");
-  });
+    const mixed = extractFilesFromLintOutput("src/service.ts:10:3 lint/error message\ntest/unit/service.test.ts:5:1 lint/error message");
+    expect(mixed).toContain("src/service.ts");
+    expect(mixed).toContain("test/unit/service.test.ts");
 
-  test("absolute paths extracted", () => {
-    const output = "/home/user/project/src/foo.test.ts:5:3 lint/error message";
-    const files = extractFilesFromLintOutput(output);
-    expect(files).toContain("/home/user/project/src/foo.test.ts");
+    expect(extractFilesFromLintOutput("/home/user/project/src/foo.test.ts:5:3 lint/error message")).toContain("/home/user/project/src/foo.test.ts");
   });
 
   test("ESLint json output extracts file paths", () => {
@@ -323,13 +307,15 @@ describe("splitFindingsByScope — structured findings path", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("splitFindingsByScope — lint output path", () => {
-  test("lint empty → both null; unparseable → conservative sourceFindings only", () => {
-    const empty = splitFindingsByScope(makeLintCheck(""));
-    expect(empty.testFindings).toBeNull();
-    expect(empty.sourceFindings).toBeNull();
-    const unparseable = splitFindingsByScope(makeLintCheck("Lint failed with unknown format\nPlease check your code"));
-    expect(unparseable.testFindings).toBeNull();
-    expect(unparseable.sourceFindings).not.toBeNull();
+  test("empty lint/typecheck → both null; unparseable lint/typecheck → conservative sourceFindings only", () => {
+    expect(splitFindingsByScope(makeLintCheck("")).testFindings).toBeNull();
+    expect(splitFindingsByScope(makeLintCheck("")).sourceFindings).toBeNull();
+    expect(splitFindingsByScope(makeLintCheck("Lint failed with unknown format\nPlease check your code")).testFindings).toBeNull();
+    expect(splitFindingsByScope(makeLintCheck("Lint failed with unknown format\nPlease check your code")).sourceFindings).not.toBeNull();
+    expect(splitFindingsByScope(makeTypecheckCheck("")).testFindings).toBeNull();
+    expect(splitFindingsByScope(makeTypecheckCheck("")).sourceFindings).toBeNull();
+    expect(splitFindingsByScope(makeTypecheckCheck("Typecheck failed with unknown format")).testFindings).toBeNull();
+    expect(splitFindingsByScope(makeTypecheckCheck("Typecheck failed with unknown format")).sourceFindings).not.toBeNull();
   });
 
   test.each([
@@ -358,57 +344,31 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
     expect(sourceFindings?.output).not.toContain("src/service.test.ts:5:1");
   });
 
-  test("lint scoped checks carry scoped output only", () => {
+  test("lint scoped checks carry scoped output only and testFindings.findings is undefined (not a structured split)", () => {
     const output = "src/foo.test.ts:1:5 lint/style/noNonNullAssertion\n  ✖ Non-null assertion";
-    const check = makeLintCheck(output);
-    const { testFindings } = splitFindingsByScope(check);
+    const { testFindings } = splitFindingsByScope(makeLintCheck(output));
     expect(testFindings!.output).toBe(output);
-  });
-
-  test("lint check is not a structured-findings split — testFindings.findings is undefined", () => {
-    const output = "src/foo.test.ts:1:5 lint/style/noNonNullAssertion";
-    const check = makeLintCheck(output);
-    const { testFindings } = splitFindingsByScope(check);
-    expect(testFindings).not.toBeNull();
     expect(testFindings!.findings).toBeUndefined();
   });
 
-  test("lint check with eslint json output splits test and source diagnostics", () => {
-    const output = JSON.stringify([
-      {
-        filePath: "src/service.ts",
-        messages: [{ line: 10, column: 3, severity: 2, ruleId: "no-var", message: "Use const." }],
-      },
-      {
-        filePath: "src/service.test.ts",
-        messages: [{ line: 5, column: 1, severity: 2, ruleId: "no-var", message: "Use const in test." }],
-      },
+  test("lint check with eslint json array and json-with-metadata formats both split test and source diagnostics", () => {
+    const jsonArray = JSON.stringify([
+      { filePath: "src/service.ts", messages: [{ line: 10, column: 3, severity: 2, ruleId: "no-var", message: "Use const." }] },
+      { filePath: "src/service.test.ts", messages: [{ line: 5, column: 1, severity: 2, ruleId: "no-var", message: "Use const in test." }] },
     ]);
-    const check = makeLintCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings?.output).toContain("src/service.test.ts");
-    expect(testFindings?.output).not.toContain("src/service.ts");
-    expect(sourceFindings?.output).toContain("src/service.ts");
-    expect(sourceFindings?.output).not.toContain("src/service.test.ts");
-  });
+    const r1 = splitFindingsByScope(makeLintCheck(jsonArray));
+    expect(r1.testFindings?.output).toContain("src/service.test.ts");
+    expect(r1.testFindings?.output).not.toContain("src/service.ts");
+    expect(r1.sourceFindings?.output).toContain("src/service.ts");
+    expect(r1.sourceFindings?.output).not.toContain("src/service.test.ts");
 
-  test("lint check with eslint json-with-metadata output splits correctly", () => {
-    const output = JSON.stringify({
-      results: [
-        {
-          filePath: "src/core.ts",
-          messages: [{ line: 1, column: 1, severity: 2, ruleId: "x", message: "core error" }],
-        },
-        {
-          filePath: "test/unit/core.test.ts",
-          messages: [{ line: 2, column: 1, severity: 2, ruleId: "x", message: "test error" }],
-        },
-      ],
-    });
-    const check = makeLintCheck(output);
-    const { testFindings, sourceFindings } = splitFindingsByScope(check);
-    expect(testFindings?.output).toContain("test/unit/core.test.ts");
-    expect(sourceFindings?.output).toContain("src/core.ts");
+    const jsonMeta = JSON.stringify({ results: [
+      { filePath: "src/core.ts", messages: [{ line: 1, column: 1, severity: 2, ruleId: "x", message: "core error" }] },
+      { filePath: "test/unit/core.test.ts", messages: [{ line: 2, column: 1, severity: 2, ruleId: "x", message: "test error" }] },
+    ]});
+    const r2 = splitFindingsByScope(makeLintCheck(jsonMeta));
+    expect(r2.testFindings?.output).toContain("test/unit/core.test.ts");
+    expect(r2.sourceFindings?.output).toContain("src/core.ts");
   });
 
   test("lint parsing can be disabled with format none", () => {
@@ -462,14 +422,6 @@ src/service.test.ts:5:1 lint/style/noNonNullAssertion
 });
 
 describe("splitFindingsByScope — typecheck output path", () => {
-  test("typecheck empty → both null; unparseable → conservative sourceFindings only", () => {
-    const empty = splitFindingsByScope(makeTypecheckCheck(""));
-    expect(empty.testFindings).toBeNull();
-    expect(empty.sourceFindings).toBeNull();
-    const unparseable = splitFindingsByScope(makeTypecheckCheck("Typecheck failed with unknown format"));
-    expect(unparseable.testFindings).toBeNull();
-    expect(unparseable.sourceFindings).not.toBeNull();
-  });
 
   test.each([
     ["all test-file diagnostics", "src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.\ntest/unit/foo.test.ts(2,1): error TS2552: Cannot find name 'describe'.", true, false],
@@ -509,37 +461,19 @@ src/service.test.ts(5,1): error TS2304: Cannot find name 'expect'.
 });
 
 describe("filterLintOutputToFiles", () => {
-  test("filters block output to target file blocks only", () => {
-    const output = `
-src/service.ts:10:3 lint/style/useConst
-  ✖ Use const.
+  test("filters to target file blocks, strips summary lines, and returns null when target absent", () => {
+    const out1 = "src/service.ts:10:3 lint/style/useConst\n  ✖ Use const.\n\nsrc/service.test.ts:5:1 lint/style/noNonNullAssertion\n  ✖ avoid non-null assertion.\n\nFound 2 errors.";
+    const f1 = filterLintOutputToFiles(out1, new Set(["src/service.test.ts"]));
+    expect(f1).not.toBeNull();
+    expect(f1).toContain("src/service.test.ts:5:1");
+    expect(f1).not.toContain("src/service.ts:10:3");
+    expect(f1).not.toContain("Found 2 errors.");
 
-src/service.test.ts:5:1 lint/style/noNonNullAssertion
-  ✖ avoid non-null assertion.
-
-Found 2 errors.
-`.trim();
-    const filtered = filterLintOutputToFiles(output, new Set(["src/service.test.ts"]));
-    expect(filtered).not.toBeNull();
-    expect(filtered).toContain("src/service.test.ts:5:1");
-    expect(filtered).not.toContain("src/service.ts:10:3");
-    expect(filtered).not.toContain("Found 2 errors.");
-  });
-
-  test("strips summary lines that appear before next block; returns null when target files absent", () => {
-    const output = `
-src/service.ts:10:3 lint/style/useConst
-  ✖ Use const.
-Found 1 error.
-
-src/service.test.ts:5:1 lint/style/noNonNullAssertion
-  ✖ avoid non-null assertion.
-`.trim();
-    const sourceOnly = filterLintOutputToFiles(output, new Set(["src/service.ts"]));
-    expect(sourceOnly).not.toBeNull();
-    expect(sourceOnly).toContain("src/service.ts:10:3");
-    expect(sourceOnly).not.toContain("Found 1 error.");
-
+    const out2 = "src/service.ts:10:3 lint/style/useConst\n  ✖ Use const.\nFound 1 error.\n\nsrc/service.test.ts:5:1 lint/style/noNonNullAssertion\n  ✖ avoid non-null assertion.";
+    const f2 = filterLintOutputToFiles(out2, new Set(["src/service.ts"]));
+    expect(f2).not.toBeNull();
+    expect(f2).toContain("src/service.ts:10:3");
+    expect(f2).not.toContain("Found 1 error.");
     expect(filterLintOutputToFiles("src/service.ts:10:3 lint/style/useConst", new Set(["src/other.ts"]))).toBeNull();
   });
 });
