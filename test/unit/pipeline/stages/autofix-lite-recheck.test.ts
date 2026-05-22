@@ -77,36 +77,12 @@ describe("recheckReview — backward-compatible non-lite behavior (AC2)", () => 
     _autofixDeps.runReviewStage = savedRunReviewStage;
   });
 
-  test("returns true when reviewResult.success is true (no opts)", async () => {
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {
-      // does not change reviewResult
-    };
-    const result = await _autofixDeps.recheckReview(ctx);
-    expect(result).toBe(true);
-  });
-
-  test("returns false when reviewResult.success is false (no opts)", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailingReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {
-      // does not change reviewResult
-    };
-    const result = await _autofixDeps.recheckReview(ctx);
-    expect(result).toBe(false);
-  });
-
-  test("returns true when reviewResult.success is true with empty opts {}", async () => {
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult() });
+  test("returns true/false based on reviewResult.success — no opts and empty opts behave identically", async () => {
     _autofixDeps.runReviewStage = async (_c) => {};
-    const result = await _autofixDeps.recheckReview(ctx, {});
-    expect(result).toBe(true);
-  });
-
-  test("returns false when reviewResult.success is false with empty opts {}", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailingReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    const result = await _autofixDeps.recheckReview(ctx, {});
-    expect(result).toBe(false);
+    expect(await _autofixDeps.recheckReview(makeCtx({ reviewResult: makePassingReviewResult() }))).toBe(true);
+    expect(await _autofixDeps.recheckReview(makeCtx({ reviewResult: makeFailingReviewResult() }))).toBe(false);
+    expect(await _autofixDeps.recheckReview(makeCtx({ reviewResult: makePassingReviewResult() }), {})).toBe(true);
+    expect(await _autofixDeps.recheckReview(makeCtx({ reviewResult: makeFailingReviewResult() }), {})).toBe(false);
   });
 });
 
@@ -151,40 +127,27 @@ describe("recheckReview — lite mode augments retrySkipChecks (AC3)", () => {
     expect(capturedSkipChecks?.has("semantic")).toBe(true);
   });
 
-  test("restores original retrySkipChecks after the call (was undefined)", async () => {
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult() });
+  test("restores retrySkipChecks on success (undefined) + on success (Set) + on throw (undefined) + on throw (Set)", async () => {
     _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx, { lite: true });
-    expect(ctx.retrySkipChecks).toBeUndefined();
-  });
+    const ctx1 = makeCtx({ reviewResult: makePassingReviewResult() });
+    await _autofixDeps.recheckReview(ctx1, { lite: true });
+    expect(ctx1.retrySkipChecks).toBeUndefined();
 
-  test("restores original retrySkipChecks after the call (was Set(['lint']))", async () => {
     const original = new Set(["lint"]);
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult(), retrySkipChecks: original });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx, { lite: true });
-    expect(ctx.retrySkipChecks).toBe(original);
-    expect(ctx.retrySkipChecks?.size).toBe(1);
-    expect(ctx.retrySkipChecks?.has("lint")).toBe(true);
-  });
+    const ctx2 = makeCtx({ reviewResult: makePassingReviewResult(), retrySkipChecks: original });
+    await _autofixDeps.recheckReview(ctx2, { lite: true });
+    expect(ctx2.retrySkipChecks).toBe(original);
+    expect(ctx2.retrySkipChecks?.size).toBe(1);
 
-  test("restores original retrySkipChecks even when runReviewStage throws", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailingReviewResult() });
-    _autofixDeps.runReviewStage = async () => {
-      throw new Error("review failed");
-    };
-    await expect(_autofixDeps.recheckReview(ctx, { lite: true })).rejects.toThrow("review failed");
-    expect(ctx.retrySkipChecks).toBeUndefined();
-  });
+    _autofixDeps.runReviewStage = async () => { throw new Error("review failed"); };
+    const ctx3 = makeCtx({ reviewResult: makeFailingReviewResult() });
+    await expect(_autofixDeps.recheckReview(ctx3, { lite: true })).rejects.toThrow("review failed");
+    expect(ctx3.retrySkipChecks).toBeUndefined();
 
-  test("restores existing retrySkipChecks even when runReviewStage throws", async () => {
-    const original = new Set(["lint"]);
-    const ctx = makeCtx({ reviewResult: makeFailingReviewResult(), retrySkipChecks: original });
-    _autofixDeps.runReviewStage = async () => {
-      throw new Error("review failed");
-    };
-    await expect(_autofixDeps.recheckReview(ctx, { lite: true })).rejects.toThrow("review failed");
-    expect(ctx.retrySkipChecks).toBe(original);
+    const original4 = new Set(["lint"]);
+    const ctx4 = makeCtx({ reviewResult: makeFailingReviewResult(), retrySkipChecks: original4 });
+    await expect(_autofixDeps.recheckReview(ctx4, { lite: true })).rejects.toThrow("review failed");
+    expect(ctx4.retrySkipChecks).toBe(original4);
   });
 });
 
@@ -214,27 +177,20 @@ describe("recheckReview — lite mode sets skipLLMReviewers (AC4)", () => {
     expect(capturedSkipLLMReviewers).toBe(true);
   });
 
-  test("restores skipLLMReviewers to undefined after the call (was undefined)", async () => {
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult() });
+  test("restores skipLLMReviewers on success (undefined) + on success (false) + on throw (undefined)", async () => {
     _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx, { lite: true });
-    expect(ctx.skipLLMReviewers).toBeUndefined();
-  });
+    const ctx1 = makeCtx({ reviewResult: makePassingReviewResult() });
+    await _autofixDeps.recheckReview(ctx1, { lite: true });
+    expect(ctx1.skipLLMReviewers).toBeUndefined();
 
-  test("restores skipLLMReviewers to false after the call (was false)", async () => {
-    const ctx = makeCtx({ reviewResult: makePassingReviewResult(), skipLLMReviewers: false });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx, { lite: true });
-    expect(ctx.skipLLMReviewers).toBe(false);
-  });
+    const ctx2 = makeCtx({ reviewResult: makePassingReviewResult(), skipLLMReviewers: false });
+    await _autofixDeps.recheckReview(ctx2, { lite: true });
+    expect(ctx2.skipLLMReviewers).toBe(false);
 
-  test("restores skipLLMReviewers to undefined even when runReviewStage throws", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailingReviewResult() });
-    _autofixDeps.runReviewStage = async () => {
-      throw new Error("review stage error");
-    };
-    await expect(_autofixDeps.recheckReview(ctx, { lite: true })).rejects.toThrow("review stage error");
-    expect(ctx.skipLLMReviewers).toBeUndefined();
+    _autofixDeps.runReviewStage = async () => { throw new Error("review stage error"); };
+    const ctx3 = makeCtx({ reviewResult: makeFailingReviewResult() });
+    await expect(_autofixDeps.recheckReview(ctx3, { lite: true })).rejects.toThrow("review stage error");
+    expect(ctx3.skipLLMReviewers).toBeUndefined();
   });
 });
 
@@ -283,31 +239,12 @@ describe("recheckReview — non-lite failOpen returns false, no mutation (AC1, A
     _autofixDeps.runReviewStage = savedRunReviewStage;
   });
 
-  test("returns false when failOpen check exists and lite is not set", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailOpenReviewResult() });
+  test("returns false for failOpen (lite not set, lite=false); does not mutate retrySkipChecks or skipLLMReviewers", async () => {
     _autofixDeps.runReviewStage = async (_c) => {};
-    const result = await _autofixDeps.recheckReview(ctx);
-    expect(result).toBe(false);
-  });
-
-  test("returns false when failOpen check exists and lite=false", async () => {
     const ctx = makeCtx({ reviewResult: makeFailOpenReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    const result = await _autofixDeps.recheckReview(ctx, { lite: false });
-    expect(result).toBe(false);
-  });
-
-  test("does not mutate retrySkipChecks when not in lite mode", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailOpenReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx);
+    expect(await _autofixDeps.recheckReview(ctx)).toBe(false);
+    expect(await _autofixDeps.recheckReview(ctx, { lite: false })).toBe(false);
     expect(ctx.retrySkipChecks).toBeUndefined();
-  });
-
-  test("does not mutate skipLLMReviewers when not in lite mode", async () => {
-    const ctx = makeCtx({ reviewResult: makeFailOpenReviewResult() });
-    _autofixDeps.runReviewStage = async (_c) => {};
-    await _autofixDeps.recheckReview(ctx);
     expect(ctx.skipLLMReviewers).toBeUndefined();
   });
 
@@ -361,35 +298,9 @@ describe("recheckReview — lite mode propagates throw after restoring ctx (AC13
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("_autofixDeps.runReviewStage (AC7, AC8)", () => {
-  test("exists on _autofixDeps with correct signature", () => {
+  test("exists as function; resolves when disabled; resolves when enabled (AC7, AC8)", async () => {
     expect(typeof _autofixDeps.runReviewStage).toBe("function");
-  });
-
-  test("returns void (does not throw) when reviewStage.enabled returns false (AC8)", async () => {
-    // reviewStage.enabled checks ctx.config.review.enabled
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        review: { ...DEFAULT_CONFIG.review, enabled: false },
-      } as any,
-    });
-    // Should not throw even though the stage is disabled
-    await expect(_autofixDeps.runReviewStage(ctx)).resolves.toBeUndefined();
-  });
-
-  test("calls reviewStage.execute when enabled returns true and updates ctx.reviewResult (AC7)", async () => {
-    // reviewStage.enabled checks ctx.config.review.enabled
-    const ctx = makeCtx({
-      config: {
-        ...DEFAULT_CONFIG,
-        review: { ...DEFAULT_CONFIG.review, enabled: true },
-      } as any,
-    });
-
-    // We can't spy on reviewStage.execute without mock.module() (banned).
-    // Verify the injection point itself: it resolves and doesn't throw.
-    // Full execute-path behavior is covered by the recheckReview lite-mode
-    // integration tests above (which exercise the full stack via _autofixDeps).
-    await expect(_autofixDeps.runReviewStage(ctx)).resolves.toBeUndefined();
+    await expect(_autofixDeps.runReviewStage(makeCtx({ config: { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, enabled: false } } as any }))).resolves.toBeUndefined();
+    await expect(_autofixDeps.runReviewStage(makeCtx({ config: { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, enabled: true } } as any }))).resolves.toBeUndefined();
   });
 });
