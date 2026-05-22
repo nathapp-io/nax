@@ -112,11 +112,11 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks).toHaveLength(0);
   });
 
-  test("returns empty when file is not in src/ and has no reverse deps", async () => {
-    // Files outside src/ (e.g. config files) have no sibling test path or forward deps
+  test("returns empty for non-src files (scripts/) and for test files themselves", async () => {
     setupDeps({ globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["scripts/build.ts"] }));
-    expect(result.chunks).toHaveLength(0);
+    expect((await provider.fetch(makeRequest({ touchedFiles: ["scripts/build.ts"] }))).chunks).toHaveLength(0);
+    setupDeps({ files: { "test/unit/foo.test.ts": "" }, globFiles: [] });
+    expect((await provider.fetch(makeRequest({ touchedFiles: ["test/unit/foo.test.ts"] }))).chunks).toHaveLength(0);
   });
 
   test("includes sibling test for src/ files regardless of disk existence", async () => {
@@ -179,11 +179,12 @@ describe("CodeNeighborProvider", () => {
     expect(content).toContain("src/b.ts");
   });
 
-  test("chunk tokens equals ceil(content.length / 4)", async () => {
+  test("chunk tokens equals ceil(content.length / 4); pullTools is always empty", async () => {
     setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     const chunk = result.chunks[0]!;
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
+    expect(result.pullTools).toEqual([]);
   });
 
   test("chunk content is capped at MAX_CHUNK_TOKENS * 4 characters", async () => {
@@ -199,15 +200,6 @@ describe("CodeNeighborProvider", () => {
       expect(chunk.content.length).toBeLessThanOrEqual(500 * 4);
       expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
     }
-  });
-
-  test("sibling test path: non-src files produce no sibling", async () => {
-    // test/ files themselves have no sibling
-    setupDeps({ files: { "test/unit/foo.test.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["test/unit/foo.test.ts"] }));
-    // No forward deps, no sibling test — chunk only if reverse deps exist
-    // With empty glob, result should be empty
-    expect(result.chunks).toHaveLength(0);
   });
 
   test.each([
@@ -265,25 +257,21 @@ describe("CodeNeighborProvider", () => {
     expect(mirrored.chunks[0]?.content ?? "").toContain("test/unit/calc.test.ts");
   });
 
-  test("Go pattern: src/foo.go → src/foo_test.go (language-agnostic)", async () => {
+  test("Go pattern: src/foo.go → src/foo_test.go; src/foo_test.go does not hallucinate _test_test.go (#526 Bug 1)", async () => {
     setupDeps({ files: { "src/foo.go": "", "src/foo_test.go": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({
+    const r1 = await provider.fetch(makeRequest({
       touchedFiles: ["src/foo.go"],
       resolvedTestPatterns: makePatterns(["**/*_test.go"]),
     }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("src/foo_test.go");
-    expect(content).not.toContain(".test.ts");
-  });
+    expect(r1.chunks[0]?.content ?? "").toContain("src/foo_test.go");
+    expect(r1.chunks[0]?.content ?? "").not.toContain(".test.ts");
 
-  test("Go pattern: src/foo_test.go input does not hallucinate _test_test.go (#526 Bug 1, language-agnostic)", async () => {
     setupDeps({ files: { "src/foo_test.go": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({
+    const r2 = await provider.fetch(makeRequest({
       touchedFiles: ["src/foo_test.go"],
       resolvedTestPatterns: makePatterns(["**/*_test.go"]),
     }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).not.toContain("_test_test.go");
+    expect(r2.chunks[0]?.content ?? "").not.toContain("_test_test.go");
   });
 
   test("monorepo-tiny: colocated test wins; mirrored hint preserves package prefix when absent", async () => {
@@ -298,43 +286,25 @@ describe("CodeNeighborProvider", () => {
     expect(mirrored.chunks[0]?.content ?? "").toContain("packages/lib/test/unit/util.test.ts");
   });
 
-  test("reverse-dep scan continues past self-reference (continue, not break)", async () => {
-    // When the touched file appears in the glob results, the scan must continue
-    // past it to find other reverse deps — a break would terminate early.
+  test("self-reference: reverse-dep scan continues past self; self not listed as neighbor", async () => {
     setupDeps({
       files: {
         "src/utils/target.ts": "",
         "src/service.ts": 'import { x } from "./utils/target"',
       },
-      // Put the touched file first in glob order to trigger the continue path
       globFiles: ["src/utils/target.ts", "src/service.ts"],
     });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/utils/target.ts"] }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("src/service.ts");
-  });
+    const r1 = await provider.fetch(makeRequest({ touchedFiles: ["src/utils/target.ts"] }));
+    expect(r1.chunks[0]?.content ?? "").toContain("src/service.ts");
 
-  test("does not include the touched file itself as a neighbor", async () => {
-    setupDeps({
-      files: { "src/a.ts": 'import "./a"' }, // import of itself — should not appear
-      globFiles: [],
-    });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
-    const content = result.chunks[0]?.content ?? "";
-    // The file header "src/a.ts" appears once (as the section title), but should
-    // not appear in the neighbor list beneath it
-    const lines = content.split("\n");
-    const neighborLines = lines.filter((l) => l.startsWith("- "));
+    setupDeps({ files: { "src/a.ts": 'import "./a"' }, globFiles: [] });
+    const r2 = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
+    const neighborLines = (r2.chunks[0]?.content ?? "").split("\n").filter((l) => l.startsWith("- "));
     for (const line of neighborLines) {
       expect(line).not.toBe("- src/a.ts");
     }
   });
 
-  test("pullTools is always empty", async () => {
-    setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
-    expect(result.pullTools).toEqual([]);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -389,40 +359,32 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     expect(cwds).not.toContain("/repo");
   });
 
-  test("non-monorepo: neighborScope 'package' uses repoRoot when packageDir === repoRoot", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
-    await p.fetch(makeRequest({ touchedFiles: ["src/a.ts"] })); // packageDir === repoRoot
-    expect(cwds).toContain("/repo");
+  test("non-monorepo (packageDir === repoRoot): default scope uses repoRoot; crossPackageDepth 1 does not duplicate cross-package scan", async () => {
+    const cwds1 = captureGlobCwds();
+    const p1 = new CodeNeighborProvider({ neighborScope: "package" } as CodeNeighborProviderOptions);
+    await p1.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
+    expect(cwds1).toContain("/repo");
+
+    const cwds2 = captureGlobCwds();
+    const p2 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p2.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
+    expect(cwds2.filter((c) => c === "/repo")).toHaveLength(1);
   });
 
-  test("crossPackageDepth 1 with neighborScope 'package' — falls back to repoRoot when no workspace detected", async () => {
-    const cwds = captureGlobCwds();
-    // discoverWorkspacePackages already returns [] from beforeEach → fallback to repoRoot
-    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(cwds).toContain("/repo/packages/api");
-    expect(cwds).toContain("/repo");
-  });
+  test("crossPackageDepth 1: falls back to repoRoot when no workspace; scans detected packages otherwise", async () => {
+    const cwds1 = captureGlobCwds();
+    const p1 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p1.fetch(MONOREPO_REQUEST);
+    expect(cwds1).toContain("/repo/packages/api");
+    expect(cwds1).toContain("/repo");
 
-  test("crossPackageDepth 1 — workspace detection scans detected package dirs (excludes current packageDir)", async () => {
-    const cwds = captureGlobCwds();
-    // Simulate workspace detection finding packages/api and packages/web
+    const cwds2 = captureGlobCwds();
     _codeNeighborDeps.discoverWorkspacePackages = async () => ["packages/api", "packages/web"];
-    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    // packages/api is the current packageDir — excluded
-    expect(cwds).toContain("/repo/packages/api"); // primary workdir scan
-    expect(cwds).toContain("/repo/packages/web"); // cross-package scan
-    expect(cwds).not.toContain("/repo"); // not fallback — workspace was detected
-  });
-
-  test("crossPackageDepth 1 — non-monorepo (packageDir === repoRoot) skips cross-package scan", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
-    await p.fetch(makeRequest({ touchedFiles: ["src/a.ts"] })); // packageDir === repoRoot
-    // Only one glob call (primary workdir), no cross-package
-    expect(cwds.filter((c) => c === "/repo")).toHaveLength(1);
+    const p2 = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 1 } as CodeNeighborProviderOptions);
+    await p2.fetch(MONOREPO_REQUEST);
+    expect(cwds2).toContain("/repo/packages/api");
+    expect(cwds2).toContain("/repo/packages/web");
+    expect(cwds2).not.toContain("/repo");
   });
 });
 
@@ -544,27 +506,23 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
     cleanupTempDir(tmpDir);
   });
 
-  test("excludes node_modules/,.nax/,nested .nax/ and includes lib/ and src/ files", () => {
+  test("excludes node_modules/,.nax/,nested .nax/; excluded dirs don't count against MAX_GLOB_FILES cap", () => {
     const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
     expect(files.some((f) => f.startsWith(".nax/"))).toBe(false);
     expect(files.some((f) => f.includes("/.nax/"))).toBe(false);
     expect(files).toContain("lib/utils.ts");
     expect(files).toContain("src/main.ts");
-  });
 
-  test("excluded dirs do not count against MAX_GLOB_FILES cap", () => {
-    // Create 205 node_modules files — old code let these eat the cap
     const nmDir = join(tmpDir, "node_modules", "bigpkg");
     mkdirSync(nmDir, { recursive: true });
     for (let i = 0; i < 205; i++) {
       writeFileSync(join(nmDir, `mod${i}.ts`), "");
     }
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
-    // Real source files are still returned despite node_modules flood
-    expect(files).toContain("lib/utils.ts");
-    expect(files).toContain("src/main.ts");
-    expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
+    const { files: files2 } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
+    expect(files2).toContain("lib/utils.ts");
+    expect(files2).toContain("src/main.ts");
+    expect(files2.some((f) => f.startsWith("node_modules/"))).toBe(false);
   });
 
   test("respects naxIgnoreIndex matchers passed as third arg", () => {
