@@ -58,10 +58,30 @@ const DEFAULTS = {
 // ---------------------------------------------------------------------------
 
 describe("RectifierPromptBuilder.firstAttemptDelta", () => {
-  test("contains failed check output and check name/exit code in section header", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("typecheck", "Unexpected token at line 10", 2)], 2);
-    expect(prompt).toContain("Unexpected token at line 10");
-    expect(prompt).toContain("### typecheck (exit 2)");
+  test("contains failed check output, check name/exit code, UNRESOLVED/fix instructions, excludes story sections, handles multiple checks", () => {
+    const checks = [
+      makeCheck("lint", "lint error output"),
+      makeCheck("typecheck", "typecheck error output"),
+    ];
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
+    // Content
+    expect(prompt).toContain("lint error output");
+    expect(prompt).toContain("typecheck error output");
+    expect(prompt).toContain("### lint");
+    expect(prompt).toContain("### typecheck");
+    // Single-check header format with exit code
+    const singlePrompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("typecheck", "Unexpected token at line 10", 2)], 2);
+    expect(singlePrompt).toContain("Unexpected token at line 10");
+    expect(singlePrompt).toContain("### typecheck (exit 2)");
+    // UNRESOLVED + fix instructions + exclusions
+    const fixPrompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], 2);
+    expect(fixPrompt).toContain("UNRESOLVED:");
+    expect(fixPrompt).toContain("Fix in priority order");
+    expect(fixPrompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
+    expect(fixPrompt).toContain("Commit your changes when all checks pass");
+    expect(fixPrompt.toLowerCase()).not.toContain("### acceptance criteria");
+    expect(fixPrompt).not.toMatch(/^Story:/m);
+    expect(fixPrompt.toLowerCase()).not.toContain("constitution");
   });
 
   test.each([
@@ -94,31 +114,6 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
 
     const withoutFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "some lint error")], 2);
     expect(withoutFindings).not.toContain("Structured findings:");
-  });
-
-  test("contains UNRESOLVED escape hatch, fix instructions, and excludes story sections", () => {
-    const prompt = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "error")], 2);
-    expect(prompt).toContain("UNRESOLVED:");
-    expect(prompt).toContain("Fix in priority order");
-    expect(prompt).toContain("re-run the failing check(s) at that level to verify they pass before moving on");
-    expect(prompt).toContain("Commit your changes when all checks pass");
-    expect(prompt.toLowerCase()).not.toContain("### acceptance criteria");
-    expect(prompt).not.toMatch(/^Story:/m);
-    expect(prompt.toLowerCase()).not.toContain("constitution");
-  });
-
-  test("handles multiple failed checks", () => {
-    const checks = [
-      makeCheck("lint", "lint error output"),
-      makeCheck("typecheck", "typecheck error output"),
-    ];
-
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 2);
-
-    expect(prompt).toContain("### lint");
-    expect(prompt).toContain("### typecheck");
-    expect(prompt).toContain("lint error output");
-    expect(prompt).toContain("typecheck error output");
   });
 });
 
@@ -167,12 +162,20 @@ describe("RectifierPromptBuilder.continuation", () => {
     else expect(prompt).not.toContain("URGENT");
   });
 
-  test("UNRESOLVED present in every continuation; 'final attempt' note at urgencyAtAttempt", () => {
+  test("UNRESOLVED present in every continuation, 'final attempt' at urgencyAtAttempt; handles multiple failed checks", () => {
     for (const attempt of [1, 2, 3]) {
       const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
       expect(prompt).toContain("UNRESOLVED:");
     }
     expect(RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3)).toContain("final attempt");
+
+    const multiPrompt = RectifierPromptBuilder.continuation(
+      [makeCheck("lint", "lint error output"), makeCheck("typecheck", "typecheck error output"), makeCheck("semantic", "semantic error output")],
+      ...Object.values(DEFAULTS) as [number, number, number],
+    );
+    expect(multiPrompt).toContain("### lint");
+    expect(multiPrompt).toContain("### typecheck");
+    expect(multiPrompt).toContain("### semantic");
   });
 
   test.each([
@@ -199,23 +202,6 @@ describe("RectifierPromptBuilder.continuation", () => {
     expect(zCount).toBeLessThanOrEqual(4000);
     // And the original 10000 chars were cut down
     expect(zCount).toBeLessThan(10_000);
-  });
-
-  test("handles multiple failed checks", () => {
-    const checks = [
-      makeCheck("lint", "lint error output"),
-      makeCheck("typecheck", "typecheck error output"),
-      makeCheck("semantic", "semantic error output"),
-    ];
-
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...Object.values(DEFAULTS) as [number, number, number],
-    );
-
-    expect(prompt).toContain("### lint");
-    expect(prompt).toContain("### typecheck");
-    expect(prompt).toContain("### semantic");
   });
 });
 
@@ -256,13 +242,24 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     } as any;
   }
 
-  test("contains the finding message and file path with severity in finding line", () => {
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage")],
-      makeStory(),
-    );
+  test("adversarial check: finding message/file/severity, multiple findings, adversarial opener, section label, and spec instruction", () => {
+    const checks = [
+      makeTestFileCheck("test/unit/bar.test.ts", "Incomplete test coverage"),
+      makeTestFileCheck("test/unit/baz.test.ts", "Second finding"),
+    ];
+    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
+    // Finding content
     expect(prompt).toContain("Incomplete test coverage");
     expect(prompt).toContain("[error] test/unit/bar.test.ts:10 — Incomplete test coverage");
+    // Multiple findings
+    expect(prompt).toContain("Second finding");
+    expect(prompt).toContain("test/unit/baz.test.ts");
+    // Adversarial-specific
+    expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
+    expect(prompt).toContain("### Test File Findings (adversarial review)");
+    expect(prompt).toContain("Do NOT delete a failing test");
+    expect(prompt).toContain("SPECIFICATION");
+    expect(prompt).toContain("not the current behavior");
   });
 
   test.each([
@@ -286,30 +283,6 @@ describe("RectifierPromptBuilder.testWriterRectification", () => {
     expect(prompt).toContain("Do NOT delete a failing test");
     expect(prompt).toContain("Do NOT modify source implementation files");
     expect(prompt).toContain("Commit your fixes when done");
-  });
-
-  test("handles multiple findings across multiple checks", () => {
-    const checks = [
-      makeTestFileCheck("test/unit/foo.test.ts", "First finding"),
-      makeTestFileCheck("test/unit/bar.test.ts", "Second finding"),
-    ];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("First finding");
-    expect(prompt).toContain("Second finding");
-    expect(prompt).toContain("test/unit/foo.test.ts");
-    expect(prompt).toContain("test/unit/bar.test.ts");
-  });
-
-  test("adversarial check: uses adversarial opener, section label, and spec instruction", () => {
-    const checks = [makeTestFileCheck("test/unit/foo.test.ts", "finding")];
-    const prompt = RectifierPromptBuilder.testWriterRectification(checks, makeStory());
-
-    expect(prompt).toContain("You are fixing test file issues flagged by an adversarial code reviewer.");
-    expect(prompt).toContain("### Test File Findings (adversarial review)");
-    expect(prompt).toContain("Do NOT delete a failing test");
-    expect(prompt).toContain("SPECIFICATION");
-    expect(prompt).toContain("not the current behavior");
   });
 
   test("lint-only check: uses lint opener, includes raw output, and simplified note", () => {
@@ -476,33 +449,15 @@ describe("RectifierPromptBuilder.testWriterRectification — mock-restructure mo
     expect(prompt).toContain(expected);
   });
 
-  test("returned prompt contains the verbatim handoffReason text", () => {
+  test("returned prompt contains verbatim handoffReason and lists every handoffFile under heading", () => {
     const handoffReason = "Mocks reference primitives the new code bypasses via callOp dispatch";
-    const prompt = RectifierPromptBuilder.testWriterRectification(
-      [makeCheck("adversarial", "output")],
-      makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason,
-        handoffFiles: ["test/unit/foo.test.ts"],
-      },
-    );
-
-    expect(prompt).toContain(handoffReason);
-  });
-
-  test("returned prompt lists every handoffFile under 'Files to rewrite (only these)' heading", () => {
     const handoffFiles = ["test/unit/agents/adapter.test.ts", "test/unit/pipeline/stages/autofix.test.ts"];
     const prompt = RectifierPromptBuilder.testWriterRectification(
       [makeCheck("adversarial", "output")],
       makeStory(),
-      {
-        mode: "mock-restructure",
-        handoffReason: "reason",
-        handoffFiles,
-      },
+      { mode: "mock-restructure", handoffReason, handoffFiles },
     );
-
+    expect(prompt).toContain(handoffReason);
     expect(prompt).toContain("Files to rewrite (only these)");
     for (const file of handoffFiles) {
       expect(prompt).toContain(file);
@@ -568,20 +523,17 @@ describe("RectifierPromptBuilder.reviewRectification — blocking-only defensive
     };
   }
 
-  test("blockingThreshold='error' (default) drops advisory and info findings, keeps error", () => {
+  test("blockingThreshold='error' drops advisory/info findings; absent threshold defaults to error (advisory excluded)", () => {
     const checks = [makeMixedSeverityCheck()];
-    const prompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
-    expect(prompt).toContain("a.ts:1");
-    expect(prompt).not.toContain("b.ts:2");
-    expect(prompt).not.toContain("c.ts:3");
-  });
 
-  test("absent blockingThreshold defaults to error — advisory findings are excluded", () => {
-    const checks = [makeMixedSeverityCheck()];
-    const prompt = RectifierPromptBuilder.reviewRectification(checks, makeStory());
+    const deltaPrompt = RectifierPromptBuilder.firstAttemptDelta(checks, 3);
+    expect(deltaPrompt).toContain("a.ts:1");
+    expect(deltaPrompt).not.toContain("b.ts:2");
+    expect(deltaPrompt).not.toContain("c.ts:3");
+
+    const reviewPrompt = RectifierPromptBuilder.reviewRectification(checks, makeStory());
     // The semantic path uses formatCheckErrors (raw output), not structured findings
-    // — the blocking filter applies when findings are rendered in check blocks
-    expect(prompt).toContain("Semantic review failed");
+    expect(reviewPrompt).toContain("Semantic review failed");
   });
 });
 
