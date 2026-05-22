@@ -153,6 +153,38 @@ describe("buildBehavioralGuardrailsSection", () => {
     });
   });
 
+  // Combined roles (single-session, tdd-simple, batch) write both tests and source —
+  // their guardrails must include both test-scope AND source-scope Simplicity rules.
+  describe("combined roles include both test-scope and source-scope Simplicity", () => {
+    const combinedRoles: GuardrailRole[] = ["single-session", "tdd-simple", "batch"];
+
+    test.each(combinedRoles)('role="%s" lite: includes test-scope Simplicity', (role) => {
+      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
+      expect(result).toContain("Simplicity (tests)");
+    });
+
+    test.each(combinedRoles)('role="%s" lite: includes source-scope Simplicity', (role) => {
+      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
+      expect(result).toContain("Simplicity (source)");
+    });
+
+    test.each(combinedRoles)('role="%s" strict: includes test-scope Simplicity', (role) => {
+      const result = buildBehavioralGuardrailsSection(role, "strict") as string;
+      expect(result).toContain("## Simplicity (Tests)");
+    });
+
+    test.each(combinedRoles)('role="%s" strict: includes source-scope Simplicity', (role) => {
+      const result = buildBehavioralGuardrailsSection(role, "strict") as string;
+      expect(result).toContain("## Simplicity (Source)");
+    });
+
+    test('pure implementer lite: does NOT include test-scope Simplicity', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "lite") as string;
+      expect(result).not.toContain("Simplicity (tests)");
+      expect(result).not.toContain("Simplicity (source)");
+    });
+  });
+
   // Pure function: same inputs yield same output
   describe("purity", () => {
     test("returns same output for same inputs", () => {

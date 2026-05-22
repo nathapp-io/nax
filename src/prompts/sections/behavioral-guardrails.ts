@@ -25,6 +25,10 @@ export function buildBehavioralGuardrailsSection(
     return buildTestWriterGuardrails(level);
   }
 
+  if (role === "single-session" || role === "tdd-simple" || role === "batch") {
+    return buildCombinedGuardrails(level);
+  }
+
   return buildImplementerGuardrails(level);
 }
 
@@ -41,6 +45,42 @@ function buildTestWriterGuardrails(level: GuardrailLevel): string {
     );
   }
   return lines.join("\n");
+}
+
+function buildCombinedGuardrails(level: GuardrailLevel): string {
+  if (level === "lite") {
+    return `# Behavioral Guardrails
+
+- Simplicity (tests): write tests that cover the acceptance criteria only. No tests for behaviors the story does not require.
+- Simplicity (source): write the minimum source code that makes the tests pass. No speculative abstractions, configurability, or error handling for scenarios that cannot occur.
+- Surgical: every changed line must trace to the story. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires.
+- Anti-cheat: do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run.
+- Orphans: remove imports/variables/helpers that YOUR changes made unused. Do not delete pre-existing dead code.
+- Commit: include the story ID when known — \`feat(<story-id>): <description>\`.`;
+  }
+
+  return `# Behavioral Guardrails
+
+## Simplicity (Tests)
+Write tests that cover the acceptance criteria only. No tests for behaviors the story does not require. Every test you add is a constraint the implementer must satisfy — do not over-constrain with speculative behavior.
+
+## Simplicity (Source)
+Write the minimum source code that makes the tests pass. Every line you add is a line someone else must read, understand, and maintain. Do not add speculative abstractions, configurability, or error handling for scenarios that cannot occur given the story's constraints.
+
+## Surgical
+Every changed line must trace directly to a story requirement or a failing test. Do not refactor adjacent code, reformat unrelated files, or rename symbols beyond what the story requires. Reviewers will flag any change that cannot be linked to a specific requirement.
+
+## Anti-cheat
+Do not weaken assertions, catch-and-swallow exceptions in tests, or add tautological assertions to coerce a green run. A green test suite achieved by weakening tests is not a passing implementation — it is a failing one with hidden evidence.
+
+## Orphans
+Remove imports, variables, and helpers that YOUR changes made unused. Do not delete pre-existing dead code that was already there before your changes.
+
+## Commit
+Include the story ID when known — \`feat(<story-id>): <description>\`.
+
+## State Assumptions
+When the story is ambiguous, pick an interpretation, proceed, and document the choice in the commit body under \`Assumptions:\`. Do not invent requirements; do not silently choose when the story is genuinely under-specified — note it.`;
 }
 
 function buildImplementerGuardrails(level: GuardrailLevel): string {
