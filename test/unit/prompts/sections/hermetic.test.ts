@@ -22,29 +22,13 @@ describe("buildHermeticSection", () => {
   });
 
   describe("base content", () => {
-    test("includes hermetic requirement statement", () => {
+    test("includes hermetic requirement, CLI/database/HTTP boundaries, and injectable deps pattern", () => {
       const result = buildHermeticSection("test-writer", undefined, undefined);
       expect(result).toContain("hermetic");
       expect(result).toContain("Mock all I/O boundaries");
-    });
-
-    test("covers CLI spawning boundary", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
       expect(result).toContain("CLI tool spawning");
-    });
-
-    test("covers database/cache boundary", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
       expect(result).toContain("database and cache clients");
-    });
-
-    test("covers HTTP/gRPC boundary", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
       expect(result).toContain("HTTP/gRPC");
-    });
-
-    test("mentions injectable deps pattern", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
       expect(result).toContain("injectable deps");
     });
   });
@@ -67,12 +51,9 @@ describe("buildHermeticSection", () => {
   });
 
   describe("mockGuidance", () => {
-    test("no mention when undefined", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined);
-      expect(result).not.toContain("Mocking guidance");
-    });
+    test("no mention when undefined; injects guidance verbatim when provided", () => {
+      expect(buildHermeticSection("test-writer", undefined, undefined)).not.toContain("Mocking guidance");
 
-    test("injects guidance verbatim", () => {
       const guidance = "Use injectable deps for CLI spawning, ioredis-mock for Redis";
       const result = buildHermeticSection("test-writer", undefined, guidance);
       expect(result).toContain("Mocking guidance for this project");
@@ -81,26 +62,27 @@ describe("buildHermeticSection", () => {
   });
 
   describe("language-aware guidance (US-009)", () => {
-    test("Go language derives interface-based mocking guidance", () => {
+    test("Go language derives interface-based mocking guidance and preserves base content", () => {
       const result = buildHermeticSection("test-writer", undefined, undefined, { language: "go" });
       expect(result).toContain("Define interfaces for external dependencies");
       expect(result).toContain("constructor injection");
+      expect(result).toContain("hermetic");
+      expect(result).toContain("Mock all I/O boundaries");
+      expect(result).toContain("CLI tool spawning");
     });
 
-    test("Rust language derives mockall-based guidance", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "rust" });
-      expect(result).toContain("mockall");
+    test("Rust derives mockall guidance; Python derives unittest.mock and pytest-mock guidance", () => {
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "rust" })).toContain("mockall");
+
+      const py = buildHermeticSection("test-writer", undefined, undefined, { language: "python" });
+      expect(py).toContain("unittest.mock.patch");
+      expect(py).toContain("pytest-mock");
     });
 
-    test("Python language derives unittest.mock and pytest-mock guidance", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "python" });
-      expect(result).toContain("unittest.mock.patch");
-      expect(result).toContain("pytest-mock");
-    });
-
-    test("TypeScript language preserves existing guidance when no profile or profile lacks language", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "typescript" });
-      expect(result).toContain("injectable deps");
+    test("TypeScript, undefined profile, and unsupported language all fall back to injectable deps", () => {
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "typescript" })).toContain("injectable deps");
+      expect(buildHermeticSection("test-writer", undefined, undefined, undefined)).toContain("injectable deps");
+      expect(buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any })).toContain("injectable deps");
     });
 
     test("explicit mockGuidance overrides language-derived guidance", () => {
@@ -114,21 +96,9 @@ describe("buildHermeticSection", () => {
       expect(result).not.toContain("Define interfaces for external dependencies");
     });
 
-    test("undefined profile does not break existing behavior", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, undefined);
-      expect(result).toContain("injectable deps");
-    });
-
     test("verifier role returns empty string regardless of language", () => {
       const result = buildHermeticSection("verifier", undefined, undefined, { language: "go" });
       expect(result).toBe("");
-    });
-
-    test("language-aware guidance preserves base content", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "go" });
-      expect(result).toContain("hermetic");
-      expect(result).toContain("Mock all I/O boundaries");
-      expect(result).toContain("CLI tool spawning");
     });
 
     test("language-aware guidance combines with externalBoundaries", () => {
@@ -141,11 +111,6 @@ describe("buildHermeticSection", () => {
       expect(result).toContain("Define interfaces for external dependencies");
       expect(result).toContain("`redis`");
       expect(result).toContain("`claude`");
-    });
-
-    test("unsupported language falls back to default TypeScript guidance", () => {
-      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any });
-      expect(result).toContain("injectable deps");
     });
   });
 
@@ -182,27 +147,23 @@ describe("PromptBuilder hermetic integration", () => {
     expect(prompt).toContain("# Hermetic Test Requirement");
   });
 
-  test("hermetic section NOT injected when hermetic=false", async () => {
-    const prompt = await PromptBuilder.for("tdd-simple")
+  test("hermetic section NOT injected when hermetic=false, hermeticConfig not called, or verifier role with hermetic=true", async () => {
+    const promptFalse = await PromptBuilder.for("tdd-simple")
       .story(makeStory())
       .hermeticConfig({ hermetic: false })
       .build();
-    expect(prompt).not.toContain("# Hermetic Test Requirement");
-  });
+    expect(promptFalse).not.toContain("# Hermetic Test Requirement");
 
-  test("hermetic section NOT injected when hermeticConfig not called", async () => {
-    const prompt = await PromptBuilder.for("tdd-simple")
+    const promptNone = await PromptBuilder.for("tdd-simple")
       .story(makeStory())
       .build();
-    expect(prompt).not.toContain("# Hermetic Test Requirement");
-  });
+    expect(promptNone).not.toContain("# Hermetic Test Requirement");
 
-  test("hermetic section NOT injected for verifier even with hermetic=true", async () => {
-    const prompt = await PromptBuilder.for("verifier")
+    const promptVerifier = await PromptBuilder.for("verifier")
       .story(makeStory())
       .hermeticConfig({ hermetic: true })
       .build();
-    expect(prompt).not.toContain("# Hermetic Test Requirement");
+    expect(promptVerifier).not.toContain("# Hermetic Test Requirement");
   });
 
   test("boundaries and guidance appear in prompt", async () => {
