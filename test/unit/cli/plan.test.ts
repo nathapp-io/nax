@@ -294,34 +294,40 @@ describe("planCommand", () => {
   // AC-4: JSON response validated — invalid JSON or missing fields throws
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-4: throws on invalid JSON response from adapter", async () => {
+  test("AC-4: throws on invalid JSON or missing userStories; auto-fills missing project field", async () => {
+    // Scenario 1: invalid JSON → throws parse error
     _planDeps.createRuntime = mock((_cfg: any) =>
       makeMockRuntime({
         agentManager: makeMockAgentManager({
           runWithFallbackFn: async () => ({
-            result: {
-              success: true,
-              exitCode: 0,
-              output: "not valid json {{",
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCostUsd: 0,
-              agentFallbacks: [],
-            },
+            result: { success: true, exitCode: 0, output: "not valid json {{", rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
             fallbacks: [],
           }),
         }),
       }),
     );
     _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
-
     await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      }),
+      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
     ).rejects.toThrow(/parse JSON|Failed to parse/);
+
+    // Scenario 2: missing userStories → throws "userStories"
+    const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
+    badPrd.userStories = undefined;
+    _planDeps.createRuntime = mock((_cfg: any) =>
+      makeMockRuntime({
+        agentManager: makeMockAgentManager({
+          runWithFallbackFn: async () => ({
+            result: { success: true, exitCode: 0, output: JSON.stringify(badPrd), rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
+            fallbacks: [],
+          }),
+        }),
+      }),
+    );
+    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
+    await expect(
+      planCommand(tmpDir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "url-shortener", auto: true }),
+    ).rejects.toThrow("userStories");
   });
 
   test("AC-4: missing project field is auto-filled with feature name", async () => {
@@ -358,39 +364,6 @@ describe("planCommand", () => {
     const written = JSON.parse(capturedWriteArgs[0]?.[1]);
     expect(written.project).toBeDefined();
     expect(typeof written.project).toBe("string");
-  });
-
-  test("AC-4: throws when required field 'userStories' is missing", async () => {
-    const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
-    badPrd.userStories = undefined;
-
-    _planDeps.createRuntime = mock((_cfg: any) =>
-      makeMockRuntime({
-        agentManager: makeMockAgentManager({
-          runWithFallbackFn: async () => ({
-            result: {
-              success: true,
-              exitCode: 0,
-              output: JSON.stringify(badPrd),
-              rateLimited: false,
-              durationMs: 1,
-              estimatedCostUsd: 0,
-              agentFallbacks: [],
-            },
-            fallbacks: [],
-          }),
-        }),
-      }),
-    );
-    _planDeps.existsSync = mock((path: string) => path.endsWith(".nax"));
-
-    await expect(
-      planCommand(tmpDir, DEFAULT_CONFIG as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      }),
-    ).rejects.toThrow("userStories");
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1007,41 +980,35 @@ describe("runPlanPipeline (US-005)", () => {
     });
   });
 
-  describe("AC10: runPlanCritic called after planDraftOp", () => {
-    test("calls runPlanCritic after planDraftOp returns", async () => {
+  describe("AC10+AC11: runPlanCritic called and prd.json written", () => {
+    test("calls runPlanCritic after planDraftOp (AC10); writes and returns prd.json path when critic passes (AC11)", async () => {
+      // AC10: custom agentManager with runCallCount to verify 3 phases
       let runCallCount = 0;
-      const agentManager = makeMockAgentManager({
+      const agentManager10 = makeMockAgentManager({
         runWithFallbackFn: async () => {
           const idx = runCallCount++;
           let output: string;
           if (idx === 0) output = makeGroundOpOutput();
           else if (idx === 1) output = makeDraftOpOutput(makePRD({ feature: "test-feature" }));
-          else output = JSON.stringify({ findings: [] }); // planCriticLlmOp (run-kind, idx=2)
+          else output = JSON.stringify({ findings: [] });
           return {
             result: { success: true, exitCode: 0, output, rateLimited: false, durationMs: 1, estimatedCostUsd: 0, agentFallbacks: [] },
             fallbacks: [],
           };
         },
       });
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
-      // All three phases executed: groundOp → planDraftOp → planCriticLlmOp (run-kind) → prd.json written
-      expect(result).toContain("prd.json");
+      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager10, workdir: tempWorkdir }));
+      const result10 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
+      expect(result10).toContain("prd.json");
       expect(runCallCount).toBe(3);
-    });
-  });
 
-  describe("AC11: Critic passes → write prd.json to .nax/features/<feature>/prd.json", () => {
-    test("writes and returns .nax/features/<feature>/prd.json when critic passes", async () => {
-      const agentManager = makePipelineAgentManager();
-      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager, workdir: tempWorkdir }));
-
-      const result = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
-
+      // AC11: standard pipeline agentManager; verify path and write
+      capturedPipelineWrites = [];
+      const agentManager11 = makePipelineAgentManager();
+      _planDeps.createRuntime = mock(() => makeMockRuntime({ agentManager: agentManager11, workdir: tempWorkdir }));
+      const result11 = await runPlanPipeline(tempWorkdir, DEFAULT_CONFIG as never, { from: "/spec.md", feature: "test-feature" });
       const expectedPath = join(tempWorkdir, ".nax", "features", "test-feature", "prd.json");
-      expect(result).toBe(expectedPath);
+      expect(result11).toBe(expectedPath);
       expect(capturedPipelineWrites.length).toBeGreaterThan(0);
       expect(capturedPipelineWrites[capturedPipelineWrites.length - 1][0]).toBe(expectedPath);
     });
