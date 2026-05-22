@@ -230,7 +230,7 @@ export class TddPromptBuilder {
     }
 
     // (6.7) Behavioral Guardrails
-    const guardrailLevel = this.loaderConfig_?.prompts?.behavioralGuardrails ?? "lite";
+    const guardrailLevel = this.loaderConfig_?.prompts.behavioralGuardrails ?? "lite";
     const guardrailVariant = this.options.variant as "standard" | "lite" | undefined;
     const guardrailIsolation = this.options.isolation as "strict" | "lite" | undefined;
     const guardrails = buildBehavioralGuardrailsSection(

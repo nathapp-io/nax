@@ -305,6 +305,7 @@ export async function runRectificationLoop(
         failures: failureRecords,
         testCommand,
         conventions: true,
+        guardrailLevel: config.prompts.behavioralGuardrails,
       });
       const rectPromise = Promise.resolve(rectPrompt);
 

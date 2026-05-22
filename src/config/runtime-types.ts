@@ -483,7 +483,7 @@ export interface PromptsConfig {
   overrides?: Partial<
     Record<"no-test" | "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch", string>
   >;
-  behavioralGuardrails?: "off" | "lite" | "strict";
+  behavioralGuardrails: "off" | "lite" | "strict";
 }
 
 /** Hermetic test enforcement configuration (ENH-010) */
@@ -567,7 +567,7 @@ export interface NaxConfig {
   /** Precheck settings (v0.16.0) */
   precheck?: PrecheckConfig;
   /** Prompt override settings (PB-003) */
-  prompts?: PromptsConfig;
+  prompts: PromptsConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
   /** Generate settings */

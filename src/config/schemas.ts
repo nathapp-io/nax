@@ -332,7 +332,7 @@ export const NaxConfigSchema = z
         maxReplanAttempts: 3,
       },
     }),
-    prompts: PromptsConfigSchema.optional(),
+    prompts: PromptsConfigSchema.default({ behavioralGuardrails: "lite" }),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
     debate: DebateConfigSchema.optional().default(() => ({
