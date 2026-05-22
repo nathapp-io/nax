@@ -41,21 +41,11 @@ describe("createRuntime", () => {
     expect(view.packageDir).toBe("");
   });
 
-  test("close() resolves without error", async () => {
+  test("close() resolves, aborts signal, and is idempotent", async () => {
     const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
     await expect(rt.close()).resolves.toBeUndefined();
-  });
-
-  test("signal aborted after close()", async () => {
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
-    await rt.close();
     expect(rt.signal.aborted).toBe(true);
-  });
-
-  test("close() is idempotent", async () => {
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
-    await rt.close();
-    await rt.close();
+    await rt.close(); // idempotent
     expect(rt.signal.aborted).toBe(true);
   });
 
@@ -117,157 +107,48 @@ describe("createRuntime", () => {
     expect(rt.promptAuditor).toBeDefined();
   });
 
-  test("reviewAuditor exists and is silent when review.audit.enabled is false", () => {
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
-    expect(() =>
-      rt.reviewAuditor.recordDecision({
-        reviewer: "semantic",
-        storyId: "US-001",
-        parsed: true,
-        passed: true,
-        result: { passed: true, findings: [] },
-      }),
-    ).not.toThrow();
+  test("reviewAuditor is silent (disabled) or real (enabled) — both don't throw on recordDecision", () => {
+    const rt1 = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
+    expect(() => rt1.reviewAuditor.recordDecision({ reviewer: "semantic", storyId: "US-001", parsed: true, passed: true, result: { passed: true, findings: [] } })).not.toThrow();
+
+    const rt2 = makeRuntime(makeNaxConfig({ review: { audit: { enabled: true } } }), "/tmp/test", { featureName: "my-feature" });
+    expect(() => rt2.reviewAuditor.recordDecision({ reviewer: "adversarial", storyId: "US-001", parsed: true, passed: true, result: { passed: true, findings: [] } })).not.toThrow();
   });
 
-  test("reviewAuditor is real when review.audit.enabled is true", () => {
-    const config = makeNaxConfig({ review: { audit: { enabled: true } } });
-    const rt = makeRuntime(config, "/tmp/test", { featureName: "my-feature" });
-    expect(() =>
-      rt.reviewAuditor.recordDecision({
-        reviewer: "adversarial",
-        storyId: "US-001",
-        parsed: true,
-        passed: true,
-        result: { passed: true, findings: [] },
-      }),
-    ).not.toThrow();
-  });
-
-  test("close() resolves when flush() throws", async () => {
-    const flushError = new Error("flush failed");
-    const promptAuditor = {
-      record() {},
-      recordError() {},
-      async flush() { throw flushError; },
-    };
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor });
-    await expect(rt.close()).resolves.toBeUndefined();
-  });
-
-  test("close() resolves when drain() throws", async () => {
-    const drainError = new Error("drain failed");
-    const costAggregator = {
-      record() {},
-      recordError() {},
-      recordOperationSummary() {},
-      snapshot() {
-        return {
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        };
-      },
-      byAgent() { return {}; },
-      byStage() { return {}; },
-      byStory() { return {}; },
-      async drain() { throw drainError; },
-    };
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { costAggregator });
-    await expect(rt.close()).resolves.toBeUndefined();
-  });
-
-  test("close() resolves when both flush() and drain() throw", async () => {
-    const promptAuditor = {
-      record() {},
-      recordError() {},
-      async flush() { throw new Error("flush failed"); },
-    };
-    const costAggregator = {
-      record() {},
-      recordError() {},
-      recordOperationSummary() {},
-      snapshot() {
-        return {
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        };
-      },
-      byAgent() { return {}; },
-      byStage() { return {}; },
-      byStory() { return {}; },
+  test("close() resolves when flush() throws, drain() throws, or both throw", async () => {
+    const makeThrowingAuditor = () => ({ record() {}, recordError() {}, async flush() { throw new Error("flush failed"); } });
+    const makeThrowingAggregator = () => ({
+      record() {}, recordError() {}, recordOperationSummary() {},
+      snapshot() { return { totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; }, byStage() { return {}; }, byStory() { return {}; },
       async drain() { throw new Error("drain failed"); },
-    };
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
-    await expect(rt.close()).resolves.toBeUndefined();
+    });
+
+    await expect(makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor: makeThrowingAuditor() }).close()).resolves.toBeUndefined();
+    await expect(makeRuntime(DEFAULT_CONFIG, "/tmp/test", { costAggregator: makeThrowingAggregator() }).close()).resolves.toBeUndefined();
+    await expect(makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor: makeThrowingAuditor(), costAggregator: makeThrowingAggregator() }).close()).resolves.toBeUndefined();
   });
 
-  test("close() calls drain() even when flush() throws", async () => {
+  test("close() calls both flush() and drain() regardless of which throws", async () => {
+    const makeSnapshotAggregator = (drainFn: () => Promise<void>) => ({
+      record() {}, recordError() {}, recordOperationSummary() {},
+      snapshot() { return { totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }; },
+      byAgent() { return {}; }, byStage() { return {}; }, byStory() { return {}; },
+      drain: drainFn,
+    });
+
     let drainCalled = false;
-    const promptAuditor = {
-      record() {},
-      recordError() {},
-      async flush() { throw new Error("flush failed"); },
-    };
-    const costAggregator = {
-      record() {},
-      recordError() {},
-      recordOperationSummary() {},
-      snapshot() {
-        return {
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        };
-      },
-      byAgent() { return {}; },
-      byStage() { return {}; },
-      byStory() { return {}; },
-      async drain() { drainCalled = true; },
-    };
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
-    await rt.close();
+    await makeRuntime(DEFAULT_CONFIG, "/tmp/test", {
+      promptAuditor: { record() {}, recordError() {}, async flush() { throw new Error("flush failed"); } },
+      costAggregator: makeSnapshotAggregator(async () => { drainCalled = true; }),
+    }).close();
     expect(drainCalled).toBe(true);
-  });
 
-  test("close() calls flush() even when drain() throws", async () => {
     let flushCalled = false;
-    const promptAuditor = {
-      record() {},
-      recordError() {},
-      async flush() { flushCalled = true; },
-    };
-    const costAggregator = {
-      record() {},
-      recordError() {},
-      recordOperationSummary() {},
-      snapshot() {
-        return {
-          totalCostUsd: 0,
-          totalEstimatedCostUsd: 0,
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          callCount: 0,
-          errorCount: 0,
-        };
-      },
-      byAgent() { return {}; },
-      byStage() { return {}; },
-      byStory() { return {}; },
-      async drain() { throw new Error("drain failed"); },
-    };
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test", { promptAuditor, costAggregator });
-    await rt.close();
+    await makeRuntime(DEFAULT_CONFIG, "/tmp/test", {
+      promptAuditor: { record() {}, recordError() {}, async flush() { flushCalled = true; } },
+      costAggregator: makeSnapshotAggregator(async () => { throw new Error("drain failed"); }),
+    }).close();
     expect(flushCalled).toBe(true);
   });
 
@@ -287,19 +168,15 @@ describe("createRuntime", () => {
 });
 
 describe("createRuntime outputDir", () => {
-  test("sets outputDir to ~/.nax/<basename> when name is absent", () => {
-    const config = NaxConfigSchema.parse({});
-    const runtime = makeRuntime(config, "/tmp/my-project");
-    expect(runtime.outputDir).toBe(path.join(globalConfigDir(), "my-project"));
-    expect(runtime.projectKey).toBe("my-project");
-    expect(runtime.globalDir).toBe(path.join(globalConfigDir(), "global"));
-  });
+  test("outputDir uses basename when name absent; uses config.name as projectKey when present", () => {
+    const rt1 = makeRuntime(NaxConfigSchema.parse({}), "/tmp/my-project");
+    expect(rt1.outputDir).toBe(path.join(globalConfigDir(), "my-project"));
+    expect(rt1.projectKey).toBe("my-project");
+    expect(rt1.globalDir).toBe(path.join(globalConfigDir(), "global"));
 
-  test("uses config.name as projectKey when present", () => {
-    const config = NaxConfigSchema.parse({ name: "koda" });
-    const runtime = makeRuntime(config, "/tmp/any-path");
-    expect(runtime.projectKey).toBe("koda");
-    expect(runtime.outputDir).toBe(path.join(globalConfigDir(), "koda"));
+    const rt2 = makeRuntime(NaxConfigSchema.parse({ name: "koda" }), "/tmp/any-path");
+    expect(rt2.projectKey).toBe("koda");
+    expect(rt2.outputDir).toBe(path.join(globalConfigDir(), "koda"));
   });
 });
 
@@ -310,23 +187,16 @@ describe("makeTestRuntime", () => {
     blockRuntimes.length = 0;
   });
 
-  test("produces a valid NaxRuntime with defaults", () => {
+  test("produces valid runtime with defaults; accepts workdir override; has runId", () => {
     const rt = makeTestRuntime();
     blockRuntimes.push(rt);
     expect(rt.configLoader).toBeDefined();
     expect(rt.agentManager).toBeDefined();
     expect(rt.packages.repo().packageDir).toBe("");
-  });
-
-  test("accepts config override", () => {
-    const rt = makeTestRuntime({ workdir: "/tmp/custom" });
-    blockRuntimes.push(rt);
-    expect(rt.workdir).toBe("/tmp/custom");
-  });
-
-  test("makeTestRuntime produces runtime with runId", () => {
-    const rt = makeTestRuntime();
-    blockRuntimes.push(rt);
     expect(rt.runId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const rt2 = makeTestRuntime({ workdir: "/tmp/custom" });
+    blockRuntimes.push(rt2);
+    expect(rt2.workdir).toBe("/tmp/custom");
   });
 });
