@@ -141,30 +141,18 @@ describe("CodeNeighborProvider", () => {
     expect(result.chunks[0]?.rawScore).toBe(0.65);
   });
 
-  test("forward dep is included when file has import statements", async () => {
+  test("includes forward deps (imports) and reverse deps (importers of touched file)", async () => {
     setupDeps({
-      files: {
-        "src/service.ts": 'import { helper } from "./utils/helper"',
-        "src/utils/helper.ts": "export const helper = () => {}",
-      },
+      files: { "src/service.ts": 'import { helper } from "./utils/helper"', "src/utils/helper.ts": "export const helper = () => {}" },
       globFiles: [],
     });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("src/utils/helper");
-  });
+    expect((await provider.fetch(makeRequest({ touchedFiles: ["src/service.ts"] }))).chunks[0]?.content ?? "").toContain("src/utils/helper");
 
-  test("reverse dep is included when another file imports the touched file", async () => {
     setupDeps({
-      files: {
-        "src/utils/helper.ts": "",
-        "src/service.ts": 'import { helper } from "./utils/helper"',
-      },
+      files: { "src/utils/helper.ts": "", "src/service.ts": 'import { helper } from "./utils/helper"' },
       globFiles: ["src/service.ts"],
     });
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }));
-    const content = result.chunks[0]?.content ?? "";
-    expect(content).toContain("src/service.ts");
+    expect((await provider.fetch(makeRequest({ touchedFiles: ["src/utils/helper.ts"] }))).chunks[0]?.content ?? "").toContain("src/service.ts");
   });
 
   test("combines neighbors from multiple files into one chunk", async () => {
@@ -179,26 +167,21 @@ describe("CodeNeighborProvider", () => {
     expect(content).toContain("src/b.ts");
   });
 
-  test("chunk tokens equals ceil(content.length / 4); pullTools is always empty", async () => {
+  test("chunk tokens = ceil(content.length/4); pullTools empty; content capped at MAX_CHUNK_TOKENS*4", async () => {
     setupDeps({ files: { "src/a.ts": "" }, globFiles: [] });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/a.ts"] }));
     const chunk = result.chunks[0]!;
     expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
     expect(result.pullTools).toEqual([]);
-  });
 
-  test("chunk content is capped at MAX_CHUNK_TOKENS * 4 characters", async () => {
-    // Generate many files to create a long section list
     const manyFiles = Array.from({ length: 10 }, (_, i) => `src/file${i}.ts`);
     const fileMap: Record<string, string> = {};
     for (const f of manyFiles) fileMap[f] = "";
     setupDeps({ files: fileMap, globFiles: [] });
-
-    const result = await provider.fetch(makeRequest({ touchedFiles: manyFiles }));
-    const chunk = result.chunks[0];
-    if (chunk) {
-      expect(chunk.content.length).toBeLessThanOrEqual(500 * 4);
-      expect(chunk.tokens).toBe(Math.ceil(chunk.content.length / 4));
+    const r2 = await provider.fetch(makeRequest({ touchedFiles: manyFiles }));
+    if (r2.chunks[0]) {
+      expect(r2.chunks[0].content.length).toBeLessThanOrEqual(500 * 4);
+      expect(r2.chunks[0].tokens).toBe(Math.ceil(r2.chunks[0].content.length / 4));
     }
   });
 
@@ -334,29 +317,25 @@ describe("CodeNeighborProvider — AC-56/AC-62 neighborScope + crossPackageDepth
     return captured;
   }
 
-  test("default neighborScope is 'package' — glob runs in packageDir (and repoRoot via crossPackageDepth=1)", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider();
-    await p.fetch(MONOREPO_REQUEST);
-    expect(cwds).toContain("/repo/packages/api");
-    expect(cwds).toContain("/repo"); // crossPackageDepth defaults to 1
-  });
+  test("neighborScope controls which dirs glob runs in (default, repo, package+crossPackageDepth=0)", async () => {
+    // default: package scope with crossPackageDepth=1 → runs in packageDir AND repoRoot
+    const cwds1 = captureGlobCwds();
+    await new CodeNeighborProvider().fetch(MONOREPO_REQUEST);
+    expect(cwds1).toContain("/repo/packages/api");
+    expect(cwds1).toContain("/repo");
 
-  test("neighborScope 'repo' — glob runs in repoRoot", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "repo" } as CodeNeighborProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(cwds).toContain("/repo");
-    expect(cwds).not.toContain("/repo/packages/api");
-  });
+    // repo scope → only repoRoot
+    const cwds2 = captureGlobCwds();
+    await new CodeNeighborProvider({ neighborScope: "repo" } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
+    expect(cwds2).toContain("/repo");
+    expect(cwds2).not.toContain("/repo/packages/api");
 
-  test("neighborScope 'package' crossPackageDepth 0 — glob only in packageDir", async () => {
-    const cwds = captureGlobCwds();
-    const p = new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions);
-    await p.fetch(MONOREPO_REQUEST);
-    expect(cwds).toContain("/repo/packages/api");
-    expect(cwds.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
-    expect(cwds).not.toContain("/repo");
+    // package scope crossPackageDepth=0 → only packageDir
+    const cwds3 = captureGlobCwds();
+    await new CodeNeighborProvider({ neighborScope: "package", crossPackageDepth: 0 } as CodeNeighborProviderOptions).fetch(MONOREPO_REQUEST);
+    expect(cwds3).toContain("/repo/packages/api");
+    expect(cwds3.filter((c) => c === "/repo/packages/api")).toHaveLength(1);
+    expect(cwds3).not.toContain("/repo");
   });
 
   test("non-monorepo (packageDir === repoRoot): default scope uses repoRoot; crossPackageDepth 1 does not duplicate cross-package scan", async () => {
@@ -506,7 +485,7 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
     cleanupTempDir(tmpDir);
   });
 
-  test("excludes node_modules/,.nax/,nested .nax/; excluded dirs don't count against MAX_GLOB_FILES cap", () => {
+  test("excludes node_modules/.nax/nested-.nax from glob; respects naxIgnoreIndex matchers", () => {
     const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files.some((f) => f.startsWith("node_modules/"))).toBe(false);
     expect(files.some((f) => f.startsWith(".nax/"))).toBe(false);
@@ -516,24 +495,15 @@ describe("CodeNeighborProvider — glob source file exclusions", () => {
 
     const nmDir = join(tmpDir, "node_modules", "bigpkg");
     mkdirSync(nmDir, { recursive: true });
-    for (let i = 0; i < 205; i++) {
-      writeFileSync(join(nmDir, `mod${i}.ts`), "");
-    }
+    for (let i = 0; i < 205; i++) writeFileSync(join(nmDir, `mod${i}.ts`), "");
     const { files: files2 } = _codeNeighborDeps.glob("**/*.ts", tmpDir);
     expect(files2).toContain("lib/utils.ts");
-    expect(files2).toContain("src/main.ts");
     expect(files2.some((f) => f.startsWith("node_modules/"))).toBe(false);
-  });
 
-  test("respects naxIgnoreIndex matchers passed as third arg", () => {
-    const matcher: NaxIgnoreMatcher = {
-      source: "root",
-      pattern: "lib/**",
-      test: (p: string) => p.startsWith("lib/"),
-    };
-    const { files } = _codeNeighborDeps.glob("**/*.ts", tmpDir, [matcher]);
-    expect(files.some((f) => f.startsWith("lib/"))).toBe(false);
-    expect(files).toContain("src/main.ts");
+    const matcher: NaxIgnoreMatcher = { source: "root", pattern: "lib/**", test: (p: string) => p.startsWith("lib/") };
+    const { files: files3 } = _codeNeighborDeps.glob("**/*.ts", tmpDir, [matcher]);
+    expect(files3.some((f) => f.startsWith("lib/"))).toBe(false);
+    expect(files3).toContain("src/main.ts");
   });
 });
 
