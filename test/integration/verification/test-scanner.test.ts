@@ -55,22 +55,14 @@ test("standalone test 2", () => {});
     expect(result.describes[0].tests).toHaveLength(2);
   });
 
-  test("returns empty for file with no tests", () => {
-    const source = "export function helper() { return 42; }";
-    const result = extractTestStructure(source);
-    expect(result.testCount).toBe(0);
-    expect(result.describes).toHaveLength(0);
-  });
+  test("returns empty for no tests; handles single describe with nested test", () => {
+    const empty = extractTestStructure("export function helper() { return 42; }");
+    expect(empty.testCount).toBe(0);
+    expect(empty.describes).toHaveLength(0);
 
-  test("handles mixed describe and top-level tests", () => {
-    const source = `
-describe("Suite", () => {
-  test("in suite", () => {});
-});
-`;
-    const result = extractTestStructure(source);
-    expect(result.testCount).toBe(1);
-    expect(result.describes).toHaveLength(1);
+    const mixed = extractTestStructure(`describe("Suite", () => { test("in suite", () => {}); });`);
+    expect(mixed.testCount).toBe(1);
+    expect(mixed.describes).toHaveLength(1);
   });
 });
 
@@ -88,33 +80,26 @@ describe("formatTestSummary", () => {
     },
   ];
 
-  test("names-only shows file and count", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("test/store.test.ts");
-    expect(result).toContain("(5 tests)");
-    expect(result).toContain("test/validation.test.ts");
-    expect(result).toContain("(3 tests)");
-    expect(result).not.toContain("CRUD");
-  });
+  test("all three detail levels produce correct output; header and empty input", () => {
+    const namesOnly = formatTestSummary(files, "names-only");
+    expect(namesOnly).toContain("test/store.test.ts");
+    expect(namesOnly).toContain("(5 tests)");
+    expect(namesOnly).toContain("test/validation.test.ts");
+    expect(namesOnly).toContain("(3 tests)");
+    expect(namesOnly).not.toContain("CRUD");
+    expect(namesOnly).toContain("8 tests across 2 files");
+    expect(namesOnly).toContain("DO NOT duplicate");
 
-  test("names-and-counts shows describe blocks", () => {
-    const result = formatTestSummary(files, "names-and-counts");
-    expect(result).toContain("CRUD (5 tests)");
-    expect(result).toContain("Input validation (3 tests)");
-    expect(result).not.toContain("create");
-  });
+    const namesAndCounts = formatTestSummary(files, "names-and-counts");
+    expect(namesAndCounts).toContain("CRUD (5 tests)");
+    expect(namesAndCounts).toContain("Input validation (3 tests)");
+    expect(namesAndCounts).not.toContain("create");
 
-  test("describe-blocks shows individual test names", () => {
-    const result = formatTestSummary(files, "describe-blocks");
-    expect(result).toContain("create");
-    expect(result).toContain("read");
-    expect(result).toContain("required name");
-  });
+    const describeBlocks = formatTestSummary(files, "describe-blocks");
+    expect(describeBlocks).toContain("create");
+    expect(describeBlocks).toContain("read");
+    expect(describeBlocks).toContain("required name");
 
-  test("header shows total count, includes dedup instruction, empty input → empty string", () => {
-    const result = formatTestSummary(files, "names-only");
-    expect(result).toContain("8 tests across 2 files");
-    expect(result).toContain("DO NOT duplicate");
     expect(formatTestSummary([], "names-only")).toBe("");
   });
 });
@@ -133,13 +118,11 @@ describe("truncateToTokenBudget", () => {
     },
   ];
 
-  test("uses preferred detail if within budget", () => {
-    const result = truncateToTokenBudget(files, 5000, "describe-blocks");
-    expect(result.detail).toBe("describe-blocks");
-    expect(result.truncated).toBe(false);
-  });
+  test("uses preferred detail when within budget; falls back and truncates when budget is too tight", () => {
+    const large = truncateToTokenBudget(files, 5000, "describe-blocks");
+    expect(large.detail).toBe("describe-blocks");
+    expect(large.truncated).toBe(false);
 
-  test("falls back and truncates when budget is too tight", () => {
     expect(truncateToTokenBudget(files, 50, "describe-blocks").truncated).toBe(true);
     const tiny = truncateToTokenBudget(files, 10, "describe-blocks");
     expect(tiny.truncated).toBe(true);
@@ -170,22 +153,17 @@ describe("deriveTestPatterns", () => {
     for (const p of expected) expect(patterns).toContain(p);
   });
 
-  test("strips common suffixes like .service, .controller, .module", () => {
-    const contextFiles = ["src/user.service.ts", "src/api.controller.ts", "src/app.module.ts"];
-    const patterns = deriveTestPatterns(contextFiles);
-
-    // Should include both full and simplified patterns
+  test("strips common suffixes; returns empty for empty input; deduplicates patterns", () => {
+    const patterns = deriveTestPatterns(["src/user.service.ts", "src/api.controller.ts", "src/app.module.ts"]);
     expect(patterns).toContain("user.service.test.ts");
-    expect(patterns).toContain("user.test.ts"); // Simplified
+    expect(patterns).toContain("user.test.ts");
     expect(patterns).toContain("api.controller.test.ts");
-    expect(patterns).toContain("api.test.ts"); // Simplified
-  });
+    expect(patterns).toContain("api.test.ts");
 
-  test("returns empty array for empty input and deduplicates patterns", () => {
     expect(deriveTestPatterns([])).toEqual([]);
 
-    const patterns = deriveTestPatterns(["src/foo.ts", "src/foo.service.ts"]);
-    expect(patterns.filter((p) => p === "foo.test.ts")).toHaveLength(1);
+    const deduped = deriveTestPatterns(["src/foo.ts", "src/foo.service.ts"]);
+    expect(deduped.filter((p) => p === "foo.test.ts")).toHaveLength(1);
   });
 });
 
