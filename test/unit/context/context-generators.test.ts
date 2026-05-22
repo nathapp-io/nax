@@ -46,23 +46,19 @@ const contextWithMetadata: ContextContent = {
 
 describe("Context Generators", () => {
   describe("Claude Generator", () => {
-    test("should generate CLAUDE.md with correct format", () => {
-      const result = claudeGenerator.generate(sampleContext);
+    test("generates CLAUDE.md with correct format, preserves context, and includes metadata when provided", () => {
+      const r = claudeGenerator.generate(sampleContext);
+      expect(r).toContain("# Project Context");
+      expect(r).toContain("auto-generated from `.nax/context.md`");
+      expect(r).toContain("DO NOT EDIT MANUALLY");
+      expect(r).toContain("## Architecture");
+      expect(r).toContain("Microservices with Docker");
 
-      expect(result).toContain("# Project Context");
-      expect(result).toContain("auto-generated from `.nax/context.md`");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
-      expect(result).toContain("## Architecture");
-      expect(result).toContain("Microservices with Docker");
-    });
-
-    test("should include metadata section when provided", () => {
-      const result = claudeGenerator.generate(contextWithMetadata);
-
-      expect(result).toContain("## Project Metadata");
-      expect(result).toContain("@myapp/core");
-      expect(result).toContain("TypeScript");
-      expect(result).toContain("express");
+      const rm = claudeGenerator.generate(contextWithMetadata);
+      expect(rm).toContain("## Project Metadata");
+      expect(rm).toContain("@myapp/core");
+      expect(rm).toContain("TypeScript");
+      expect(rm).toContain("express");
     });
   });
 
@@ -79,212 +75,130 @@ describe("Context Generators", () => {
   });
 
   describe("Codex Generator", () => {
-    test("should generate codex.md with correct format", () => {
-      const result = codexGenerator.generate(sampleContext);
+    test("generates codex.md with correct format, metadata, preserved content, and empty context", () => {
+      const r = codexGenerator.generate(sampleContext);
+      expect(r).toContain("# Codex Instructions");
+      expect(r).toContain("auto-generated from `.nax/context.md`");
+      expect(r).toContain("DO NOT EDIT MANUALLY");
+      expect(r).toContain("## Architecture");
+      expect(r).toContain("## Testing Requirements");
+      expect(r).toContain("## Development Workflow");
+      expect(r).toContain("Feature branches");
+      expect(r).toContain("Conventional commits");
 
-      expect(result).toContain("# Codex Instructions");
-      expect(result).toContain("auto-generated from `.nax/context.md`");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
-      expect(result).toContain("## Architecture");
-      expect(result).toContain("Microservices with Docker");
-    });
+      const rm = codexGenerator.generate(contextWithMetadata);
+      expect(rm).toContain("## Project Metadata");
+      expect(rm).toContain("@myapp/core");
+      expect(rm).toContain("TypeScript");
+      expect(rm).toContain("express, zod, prisma");
 
-    test("should include metadata section when provided", () => {
-      const result = codexGenerator.generate(contextWithMetadata);
-
-      expect(result).toContain("## Project Metadata");
-      expect(result).toContain("@myapp/core");
-      expect(result).toContain("TypeScript");
-      expect(result).toContain("express, zod, prisma");
-    });
-
-    test("should preserve context content correctly", () => {
-      const result = codexGenerator.generate(sampleContext);
-
-      expect(result).toContain("## Testing Requirements");
-      expect(result).toContain("## Development Workflow");
-      expect(result).toContain("Feature branches");
-      expect(result).toContain("Conventional commits");
-    });
-
-    test("should handle empty context", () => {
-      const emptyContext: ContextContent = { markdown: "" };
-      const result = codexGenerator.generate(emptyContext);
-
-      // Should still have header and basic structure
-      expect(result.length).toBeGreaterThan(0);
-      expect(result).toContain("# Codex Instructions");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
+      const re = codexGenerator.generate({ markdown: "" });
+      expect(re.length).toBeGreaterThan(0);
+      expect(re).toContain("# Codex Instructions");
+      expect(re).toContain("DO NOT EDIT MANUALLY");
     });
   });
 
   describe("All Generators", () => {
-    test("should preserve original context content", () => {
-      const generators = [claudeGenerator, opencodeGenerator, codexGenerator];
-
-      for (const generator of generators) {
+    test("preserve original context content; have unique output filenames and generator names", () => {
+      for (const generator of [claudeGenerator, opencodeGenerator, codexGenerator]) {
         const result = generator.generate(sampleContext);
-        expect(result).toContain("## Architecture");
-        expect(result).toContain("Microservices with Docker");
+        expect(result, generator.name).toContain("## Architecture");
+        expect(result, generator.name).toContain("Microservices with Docker");
       }
-    });
 
-    test("should have unique output filenames", () => {
       const filenames = [claudeGenerator.outputFile, opencodeGenerator.outputFile, codexGenerator.outputFile];
-      const uniqueFilenames = new Set(filenames);
+      expect(new Set(filenames).size).toBe(3);
 
-      expect(uniqueFilenames.size).toBe(3);
-    });
-
-    test("should have unique generator names", () => {
       const names = [claudeGenerator.name, opencodeGenerator.name, codexGenerator.name];
-      const uniqueNames = new Set(names);
-
-      expect(uniqueNames.size).toBe(3);
+      expect(new Set(names).size).toBe(3);
     });
   });
 
   describe("Gemini Generator", () => {
-    test("should generate GEMINI.md with correct format", () => {
-      const result = geminiGenerator.generate(sampleContext);
+    test("generates GEMINI.md with correct format, metadata, preserved content, and empty context", () => {
+      const r = geminiGenerator.generate(sampleContext);
+      expect(r).toContain("# Gemini CLI Context");
+      expect(r).toContain("auto-generated from `.nax/context.md`");
+      expect(r).toContain("DO NOT EDIT MANUALLY");
+      expect(r).toContain("## Architecture");
+      expect(r).toContain("## Testing Requirements");
+      expect(r).toContain("## Development Workflow");
+      expect(r).toContain("Feature branches");
+      expect(r).toContain("Conventional commits");
 
-      expect(result).toContain("# Gemini CLI Context");
-      expect(result).toContain("auto-generated from `.nax/context.md`");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
-      expect(result).toContain("## Architecture");
-      expect(result).toContain("Microservices with Docker");
-    });
+      const rm = geminiGenerator.generate(contextWithMetadata);
+      expect(rm).toContain("## Project Metadata");
+      expect(rm).toContain("@myapp/core");
+      expect(rm).toContain("TypeScript");
+      expect(rm).toContain("express");
 
-    test("should include metadata section when provided", () => {
-      const result = geminiGenerator.generate(contextWithMetadata);
-
-      expect(result).toContain("## Project Metadata");
-      expect(result).toContain("@myapp/core");
-      expect(result).toContain("TypeScript");
-      expect(result).toContain("express");
-    });
-
-    test("should preserve context content correctly", () => {
-      const result = geminiGenerator.generate(sampleContext);
-
-      expect(result).toContain("## Testing Requirements");
-      expect(result).toContain("## Development Workflow");
-      expect(result).toContain("Feature branches");
-      expect(result).toContain("Conventional commits");
-    });
-
-    test("should handle empty context", () => {
-      const emptyContext: ContextContent = { markdown: "" };
-      const result = geminiGenerator.generate(emptyContext);
-
-      // Should still have header and basic structure
-      expect(result.length).toBeGreaterThan(0);
-      expect(result).toContain("# Gemini CLI Context");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
+      const re = geminiGenerator.generate({ markdown: "" });
+      expect(re.length).toBeGreaterThan(0);
+      expect(re).toContain("# Gemini CLI Context");
+      expect(re).toContain("DO NOT EDIT MANUALLY");
     });
   });
 
   describe("Codex Naming Conventions", () => {
-    test("should support codex.md naming convention", () => {
+    test("codex uses codex.md, opencode uses AGENTS.md, both include context with distinct headers", () => {
       expect(codexGenerator.outputFile).toBe("codex.md");
-    });
-
-    test("should support AGENTS.md naming convention via OpenCode", () => {
       expect(opencodeGenerator.outputFile).toBe("AGENTS.md");
-    });
 
-    test("should allow choosing between naming conventions", () => {
       const codexResult = codexGenerator.generate(sampleContext);
       const agentsResult = opencodeGenerator.generate(sampleContext);
-
-      // Both should have the context but different headers
       expect(codexResult).toContain("# Codex Instructions");
       expect(agentsResult).toContain("# Agent Instructions");
-
-      // Both should include the actual context
       expect(codexResult).toContain("## Architecture");
       expect(agentsResult).toContain("## Architecture");
     });
   });
 
   describe("Aider Generator", () => {
-    test("should generate .aider.conf.yml with correct format", () => {
-      const result = aiderGenerator.generate(sampleContext);
+    test("generates .aider.conf.yml with correct format, metadata, preserved content, and empty context", () => {
+      const r = aiderGenerator.generate(sampleContext);
+      expect(r).toContain("# Aider Configuration");
+      expect(r).toContain("Auto-generated from .nax/context.md");
+      expect(r).toContain("DO NOT EDIT MANUALLY");
+      expect(r).toContain("## Architecture");
+      expect(r).toContain("## Testing Requirements");
+      expect(r).toContain("## Development Workflow");
+      expect(r).toContain("Feature branches");
+      expect(r).toContain("Conventional commits");
 
-      expect(result).toContain("# Aider Configuration");
-      expect(result).toContain("Auto-generated from .nax/context.md");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
-      expect(result).toContain("## Architecture");
-      expect(result).toContain("Microservices with Docker");
-    });
+      const rm = aiderGenerator.generate(contextWithMetadata);
+      expect(rm).toContain("## Project Metadata");
+      expect(rm).toContain("@myapp/core");
+      expect(rm).toContain("TypeScript");
+      expect(rm).toContain("express");
 
-    test("should include metadata section when provided", () => {
-      const result = aiderGenerator.generate(contextWithMetadata);
-
-      expect(result).toContain("## Project Metadata");
-      expect(result).toContain("@myapp/core");
-      expect(result).toContain("TypeScript");
-      expect(result).toContain("express");
-    });
-
-    test("should preserve context content correctly", () => {
-      const result = aiderGenerator.generate(sampleContext);
-
-      expect(result).toContain("## Testing Requirements");
-      expect(result).toContain("## Development Workflow");
-      expect(result).toContain("Feature branches");
-      expect(result).toContain("Conventional commits");
-    });
-
-    test("should handle empty context", () => {
-      const emptyContext: ContextContent = { markdown: "" };
-      const result = aiderGenerator.generate(emptyContext);
-
-      // Should still have header and basic structure
-      expect(result.length).toBeGreaterThan(0);
-      expect(result).toContain("# Aider Configuration");
-      expect(result).toContain("DO NOT EDIT MANUALLY");
+      const re = aiderGenerator.generate({ markdown: "" });
+      expect(re.length).toBeGreaterThan(0);
+      expect(re).toContain("# Aider Configuration");
+      expect(re).toContain("DO NOT EDIT MANUALLY");
     });
   });
 
   describe("All New Generators", () => {
-    test("should have new agents codex, opencode, gemini, aider registered", () => {
-      const newAgentGenerators = [codexGenerator, opencodeGenerator, geminiGenerator, aiderGenerator];
+    test("codex, opencode, gemini, aider are registered with name/outputFile/generate; all produce content with DO NOT EDIT MANUALLY", () => {
+      for (const generator of [codexGenerator, opencodeGenerator, geminiGenerator, aiderGenerator]) {
+        expect(generator.name, generator.name).toBeDefined();
+        expect(generator.outputFile, generator.name).toBeDefined();
+        expect(generator.generate, generator.name).toBeDefined();
 
-      for (const generator of newAgentGenerators) {
-        expect(generator.name).toBeDefined();
-        expect(generator.outputFile).toBeDefined();
-        expect(generator.generate).toBeDefined();
-      }
-    });
-
-    test("should support all required new agents", () => {
-      const generatorMap = {
-        codex: codexGenerator,
-        opencode: opencodeGenerator,
-        gemini: geminiGenerator,
-        aider: aiderGenerator,
-      };
-
-      expect(Object.keys(generatorMap)).toContain("codex");
-      expect(Object.keys(generatorMap)).toContain("opencode");
-      expect(Object.keys(generatorMap)).toContain("gemini");
-      expect(Object.keys(generatorMap)).toContain("aider");
-    });
-
-    test("should generate content for all new agents", () => {
-      const generators = [codexGenerator, opencodeGenerator, geminiGenerator, aiderGenerator];
-
-      for (const generator of generators) {
         const result = generator.generate(sampleContext);
-        expect(result.length).toBeGreaterThan(0);
-        expect(result).toContain("DO NOT EDIT MANUALLY");
-        // Aider uses different format
+        expect(result.length, generator.name).toBeGreaterThan(0);
+        expect(result, generator.name).toContain("DO NOT EDIT MANUALLY");
         if (generator.name === "aider") {
-          expect(result).toContain("Auto-generated from .nax/context.md");
+          expect(result, generator.name).toContain("Auto-generated from .nax/context.md");
         } else {
-          expect(result).toContain("auto-generated from `.nax/context.md`");
+          expect(result, generator.name).toContain("auto-generated from `.nax/context.md`");
         }
+      }
+
+      const generatorNames = ["codex", "opencode", "gemini", "aider"];
+      for (const name of generatorNames) {
+        expect([codexGenerator.name, opencodeGenerator.name, geminiGenerator.name, aiderGenerator.name]).toContain(name);
       }
     });
   });
