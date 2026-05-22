@@ -154,225 +154,52 @@ describe("Pipeline Runner", () => {
       expect(executedStages).toEqual(["enabled1", "enabled2"]);
     });
 
-    test("stops when stage returns skip", async () => {
-      const executedStages: string[] = [];
-
-      const stages: PipelineStage[] = [
-        {
-          name: "stage1",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage1");
-            return { action: "continue" };
-          },
-        },
-        {
-          name: "skipStage",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("skipStage");
-            return { action: "skip", reason: "Story already completed" };
-          },
-        },
-        {
-          name: "stage3",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage3");
-            return { action: "continue" };
-          },
-        },
+    test("stops pipeline when stage returns skip, fail, escalate, or pause", async () => {
+      const scenarios = [
+        { action: "skip" as const, name: "skipStage", stageReturn: { action: "skip" as const, reason: "Story already completed" }, expectedReason: "Story already completed" },
+        { action: "fail" as const, name: "failStage", stageReturn: { action: "fail" as const, reason: "Tests failed" }, expectedReason: "Tests failed" },
+        { action: "escalate" as const, name: "escalateStage", stageReturn: { action: "escalate" as const }, expectedReason: "Stage requested escalation to higher tier" },
+        { action: "pause" as const, name: "pauseStage", stageReturn: { action: "pause" as const, reason: "User intervention required" }, expectedReason: "User intervention required" },
       ];
 
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("skip");
-      expect(result.reason).toBe("Story already completed");
-      expect(result.stoppedAtStage).toBe("skipStage");
-      expect(executedStages).toEqual(["stage1", "skipStage"]);
+      for (const { action, name, stageReturn, expectedReason } of scenarios) {
+        const executedStages: string[] = [];
+        const stages: PipelineStage[] = [
+          { name: "stage1", enabled: () => true, execute: async () => { executedStages.push("stage1"); return { action: "continue" }; } },
+          { name, enabled: () => true, execute: async () => { executedStages.push(name); return stageReturn as never; } },
+          { name: "stage3", enabled: () => true, execute: async () => { executedStages.push("stage3"); return { action: "continue" }; } },
+        ];
+        const result = await runPipeline(stages, createTestContext());
+        expect(result.success, action).toBe(false);
+        expect(result.finalAction, action).toBe(action);
+        expect(result.reason, action).toBe(expectedReason);
+        expect(result.stoppedAtStage, action).toBe(name);
+        expect(executedStages, action).toEqual(["stage1", name]);
+      }
     });
 
-    test("stops when stage returns fail", async () => {
+    test("handles stage execution errors and non-Error exceptions", async () => {
       const executedStages: string[] = [];
-
       const stages: PipelineStage[] = [
-        {
-          name: "stage1",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage1");
-            return { action: "continue" };
-          },
-        },
-        {
-          name: "failStage",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("failStage");
-            return { action: "fail", reason: "Tests failed" };
-          },
-        },
-        {
-          name: "stage3",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage3");
-            return { action: "continue" };
-          },
-        },
+        { name: "stage1", enabled: () => true, execute: async () => { executedStages.push("stage1"); return { action: "continue" }; } },
+        { name: "errorStage", enabled: () => true, execute: async () => { executedStages.push("errorStage"); throw new Error("Stage execution failed"); } },
+        { name: "stage3", enabled: () => true, execute: async () => { executedStages.push("stage3"); return { action: "continue" }; } },
       ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("fail");
-      expect(result.reason).toBe("Tests failed");
-      expect(result.stoppedAtStage).toBe("failStage");
-      expect(executedStages).toEqual(["stage1", "failStage"]);
-    });
-
-    test("stops when stage returns escalate", async () => {
-      const executedStages: string[] = [];
-
-      const stages: PipelineStage[] = [
-        {
-          name: "stage1",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage1");
-            return { action: "continue" };
-          },
-        },
-        {
-          name: "escalateStage",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("escalateStage");
-            return { action: "escalate" };
-          },
-        },
-        {
-          name: "stage3",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage3");
-            return { action: "continue" };
-          },
-        },
-      ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("escalate");
-      expect(result.reason).toBe("Stage requested escalation to higher tier");
-      expect(result.stoppedAtStage).toBe("escalateStage");
-      expect(executedStages).toEqual(["stage1", "escalateStage"]);
-    });
-
-    test("stops when stage returns pause", async () => {
-      const executedStages: string[] = [];
-
-      const stages: PipelineStage[] = [
-        {
-          name: "stage1",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage1");
-            return { action: "continue" };
-          },
-        },
-        {
-          name: "pauseStage",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("pauseStage");
-            return { action: "pause", reason: "User intervention required" };
-          },
-        },
-        {
-          name: "stage3",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage3");
-            return { action: "continue" };
-          },
-        },
-      ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("pause");
-      expect(result.reason).toBe("User intervention required");
-      expect(result.stoppedAtStage).toBe("pauseStage");
-      expect(executedStages).toEqual(["stage1", "pauseStage"]);
-    });
-
-    test("handles stage execution errors", async () => {
-      const executedStages: string[] = [];
-
-      const stages: PipelineStage[] = [
-        {
-          name: "stage1",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage1");
-            return { action: "continue" };
-          },
-        },
-        {
-          name: "errorStage",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("errorStage");
-            throw new Error("Stage execution failed");
-          },
-        },
-        {
-          name: "stage3",
-          enabled: () => true,
-          execute: async () => {
-            executedStages.push("stage3");
-            return { action: "continue" };
-          },
-        },
-      ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("fail");
-      expect(result.reason).toContain('Stage "errorStage" threw error');
-      expect(result.reason).toContain("Stage execution failed");
-      expect(result.stoppedAtStage).toBe("errorStage");
+      const r1 = await runPipeline(stages, createTestContext());
+      expect(r1.success).toBe(false);
+      expect(r1.finalAction).toBe("fail");
+      expect(r1.reason).toContain('Stage "errorStage" threw error');
+      expect(r1.reason).toContain("Stage execution failed");
+      expect(r1.stoppedAtStage).toBe("errorStage");
       expect(executedStages).toEqual(["stage1", "errorStage"]);
-    });
 
-    test("handles non-Error exceptions", async () => {
-      const stages: PipelineStage[] = [
-        {
-          name: "throwStringStage",
-          enabled: () => true,
-          execute: async () => {
-            throw "String error message";
-          },
-        },
-      ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.finalAction).toBe("fail");
-      expect(result.reason).toContain('Stage "throwStringStage" threw error');
-      expect(result.reason).toContain("String error message");
+      const r2 = await runPipeline(
+        [{ name: "throwStringStage", enabled: () => true, execute: async () => { throw "String error message"; } }],
+        createTestContext(),
+      );
+      expect(r2.success).toBe(false);
+      expect(r2.reason).toContain('Stage "throwStringStage" threw error');
+      expect(r2.reason).toContain("String error message");
     });
 
     test("passes context through stages", async () => {
@@ -464,38 +291,18 @@ describe("Pipeline Runner", () => {
       expect(result.success).toBe(true);
     });
 
-    test("empty pipeline succeeds immediately", async () => {
-      const stages: PipelineStage[] = [];
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
+    test("empty pipeline and all-disabled pipeline succeed immediately", async () => {
+      const r1 = await runPipeline([], createTestContext());
+      expect(r1.success).toBe(true);
+      expect(r1.finalAction).toBe("complete");
 
-      expect(result.success).toBe(true);
-      expect(result.finalAction).toBe("complete");
-    });
-
-    test("pipeline with only disabled stages succeeds", async () => {
       const stages: PipelineStage[] = [
-        {
-          name: "disabled1",
-          enabled: () => false,
-          execute: async () => {
-            throw new Error("Should not execute");
-          },
-        },
-        {
-          name: "disabled2",
-          enabled: () => false,
-          execute: async () => {
-            throw new Error("Should not execute");
-          },
-        },
+        { name: "disabled1", enabled: () => false, execute: async () => { throw new Error("Should not execute"); } },
+        { name: "disabled2", enabled: () => false, execute: async () => { throw new Error("Should not execute"); } },
       ];
-
-      const ctx = createTestContext();
-      const result = await runPipeline(stages, ctx);
-
-      expect(result.success).toBe(true);
-      expect(result.finalAction).toBe("complete");
+      const r2 = await runPipeline(stages, createTestContext());
+      expect(r2.success).toBe(true);
+      expect(r2.finalAction).toBe("complete");
     });
 
     test("multiple skip stages only report first", async () => {
@@ -560,97 +367,47 @@ describe("routeTddFailure", () => {
   }
 
   describe("isolation-violation", () => {
-    test("strict mode (not lite) → escalate + sets ctx.retryAsLite=true", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("isolation-violation", false, ctx, "isolation error");
+    test("strict mode sets retryAsLite=true; lite mode does not", () => {
+      const ctx1 = makeCtx();
+      expect(routeTddFailure("isolation-violation", false, ctx1, "isolation error").action).toBe("escalate");
+      expect(ctx1.retryAsLite).toBe(true);
 
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBe(true);
-    });
-
-    test("lite mode → escalate, does NOT set ctx.retryAsLite", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("isolation-violation", true, ctx, "isolation error lite");
-
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBeUndefined();
+      const ctx2 = makeCtx();
+      expect(routeTddFailure("isolation-violation", true, ctx2, "isolation error lite").action).toBe("escalate");
+      expect(ctx2.retryAsLite).toBeUndefined();
     });
   });
 
   describe("session-failure", () => {
-    test("returns escalate", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("session-failure", false, ctx, "session crashed");
-
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBeUndefined();
-    });
-
-    test("lite mode also returns escalate", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("session-failure", true, ctx);
-
-      expect(result.action).toBe("escalate");
+    test("escalates in strict and lite mode; does not set retryAsLite", () => {
+      const ctx1 = makeCtx();
+      expect(routeTddFailure("session-failure", false, ctx1, "session crashed").action).toBe("escalate");
+      expect(ctx1.retryAsLite).toBeUndefined();
+      expect(routeTddFailure("session-failure", true, makeCtx()).action).toBe("escalate");
     });
   });
 
-  describe("tests-failing", () => {
-    test("returns escalate", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("tests-failing", false, ctx, "tests still failing");
-
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBeUndefined();
-    });
-  });
-
-  describe("full-suite-gate-exhausted", () => {
-    test("returns escalate", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("full-suite-gate-exhausted", false, ctx, "full suite gate exhausted");
-
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBeUndefined();
-    });
-  });
-
-  describe("verifier-rejected", () => {
-    test("returns escalate", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure("verifier-rejected", false, ctx, "verifier said no");
-
-      expect(result.action).toBe("escalate");
-      expect(ctx.retryAsLite).toBeUndefined();
+  describe("tests-failing, full-suite-gate-exhausted, verifier-rejected", () => {
+    test("all return escalate without setting retryAsLite", () => {
+      for (const cat of ["tests-failing", "full-suite-gate-exhausted", "verifier-rejected"] as const) {
+        const ctx = makeCtx();
+        expect(routeTddFailure(cat, false, ctx, `${cat} reason`).action, cat).toBe("escalate");
+        expect(ctx.retryAsLite, cat).toBeUndefined();
+      }
     });
   });
 
   describe("no failureCategory (backward compat)", () => {
-    test("undefined category → pause with reviewReason", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure(undefined, false, ctx, "human review needed");
+    test("undefined category → pause with reviewReason, default message, and in lite mode", () => {
+      const r1 = routeTddFailure(undefined, false, makeCtx(), "human review needed");
+      expect(r1.action).toBe("pause");
+      if (r1.action === "pause") expect(r1.reason).toBe("human review needed");
 
-      expect(result.action).toBe("pause");
-      if (result.action === "pause") {
-        expect(result.reason).toBe("human review needed");
-      }
-      expect(ctx.retryAsLite).toBeUndefined();
-    });
+      const r2 = routeTddFailure(undefined, false, makeCtx());
+      expect(r2.action).toBe("pause");
+      if (r2.action === "pause") expect(r2.reason).toBe("Three-session TDD requires review");
 
-    test("undefined category with no reviewReason → pause with default message", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure(undefined, false, ctx);
-
-      expect(result.action).toBe("pause");
-      if (result.action === "pause") {
-        expect(result.reason).toBe("Three-session TDD requires review");
-      }
-    });
-
-    test("undefined category in lite mode → pause (not escalate)", () => {
-      const ctx = makeCtx();
-      const result = routeTddFailure(undefined, true, ctx, "lite mode no category");
-
-      expect(result.action).toBe("pause");
+      expect(routeTddFailure(undefined, true, makeCtx(), "lite mode no category").action).toBe("pause");
     });
   });
 
