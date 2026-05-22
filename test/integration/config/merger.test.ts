@@ -80,80 +80,21 @@ describe("config/merger", () => {
   });
 
   describe("array replacement", () => {
-    test("replaces arrays instead of merging", () => {
-      const base = { items: [1, 2, 3] };
-      const override = { items: [4, 5] };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({ items: [4, 5] });
-    });
-
-    test("replaces nested arrays", () => {
-      const base = {
-        config: {
-          tiers: ["fast", "balanced"],
-        },
-      };
-      const override = {
-        config: {
-          tiers: ["powerful"],
-        },
-      };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({
-        config: {
-          tiers: ["powerful"],
-        },
-      });
-    });
-
-    test("handles empty arrays", () => {
-      const base = { items: [1, 2, 3] };
-      const override = { items: [] };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({ items: [] });
+    test("replaces arrays (flat, nested, and empty) instead of merging", () => {
+      expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [4, 5] })).toEqual({ items: [4, 5] });
+      expect(deepMergeConfig({ config: { tiers: ["fast", "balanced"] } }, { config: { tiers: ["powerful"] } })).toEqual({ config: { tiers: ["powerful"] } });
+      expect(deepMergeConfig({ items: [1, 2, 3] }, { items: [] })).toEqual({ items: [] });
     });
   });
 
   describe("null value handling", () => {
-    test("removes keys when override is null", () => {
-      const base = { a: 1, b: 2, c: 3 };
-      const override = { b: null };
-      const result = deepMergeConfig(base, override);
+    test("removes keys when override is null (flat, nested, multiple)", () => {
+      const r1 = deepMergeConfig({ a: 1, b: 2, c: 3 }, { b: null });
+      expect(r1).toEqual({ a: 1, c: 3 });
+      expect("b" in r1).toBe(false);
 
-      expect(result).toEqual({ a: 1, c: 3 });
-      expect("b" in result).toBe(false);
-    });
-
-    test("removes nested keys when override is null", () => {
-      const base = {
-        config: {
-          a: 1,
-          b: 2,
-        },
-      };
-      const override = {
-        config: {
-          b: null,
-        },
-      };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({
-        config: {
-          a: 1,
-        },
-      });
-    });
-
-    test("handles multiple null values", () => {
-      const base = { a: 1, b: 2, c: 3, d: 4 };
-      const override = { b: null, d: null };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({ a: 1, c: 3 });
+      expect(deepMergeConfig({ config: { a: 1, b: 2 } }, { config: { b: null } })).toEqual({ config: { a: 1 } });
+      expect(deepMergeConfig({ a: 1, b: 2, c: 3, d: 4 }, { b: null, d: null })).toEqual({ a: 1, c: 3 });
     });
   });
 
@@ -401,66 +342,24 @@ describe("config/merger", () => {
   });
 
   describe("immutability", () => {
-    test("does not mutate base object", () => {
+    test("does not mutate base or override objects", () => {
       const base = { a: 1, b: { c: 2 } };
       const override = { b: { c: 3, d: 4 } };
-      const original = structuredClone(base);
-
+      const origBase = structuredClone(base);
+      const origOverride = structuredClone(override);
       deepMergeConfig(base, override);
-
-      expect(base).toEqual(original);
-    });
-
-    test("does not mutate override object", () => {
-      const base = { a: 1 };
-      const override = { b: 2 };
-      const original = structuredClone(override);
-
-      deepMergeConfig(base, override);
-
-      expect(override).toEqual(original);
+      expect(base).toEqual(origBase);
+      expect(override).toEqual(origOverride);
     });
   });
 
   describe("edge cases", () => {
-    test("handles undefined values in override", () => {
-      const base = { a: 1, b: 2 };
-      const override = { a: undefined, c: 3 };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({ a: 1, b: 2, c: 3 });
-    });
-
-    test("handles primitive type changes", () => {
-      const base = { value: 42 };
-      const override = { value: "string" };
-      const result = deepMergeConfig(base, override);
-
-      expect(result.value).toBe("string");
-    });
-
-    test("handles object to primitive changes", () => {
-      const base = { config: { a: 1, b: 2 } };
-      const override = { config: "simple" };
-      const result = deepMergeConfig(base, override);
-
-      expect(result.config).toBe("simple");
-    });
-
-    test("handles empty objects", () => {
-      const base = {};
-      const override = { a: 1 };
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({ a: 1 });
-    });
-
-    test("handles both empty objects", () => {
-      const base = {};
-      const override = {};
-      const result = deepMergeConfig(base, override);
-
-      expect(result).toEqual({});
+    test("handles undefined in override, type changes, object-to-primitive, empty and both-empty objects", () => {
+      expect(deepMergeConfig({ a: 1, b: 2 }, { a: undefined, c: 3 })).toEqual({ a: 1, b: 2, c: 3 });
+      expect(deepMergeConfig({ value: 42 }, { value: "string" }).value).toBe("string");
+      expect(deepMergeConfig({ config: { a: 1, b: 2 } }, { config: "simple" }).config).toBe("simple");
+      expect(deepMergeConfig({}, { a: 1 })).toEqual({ a: 1 });
+      expect(deepMergeConfig({}, {})).toEqual({});
     });
   });
 });
