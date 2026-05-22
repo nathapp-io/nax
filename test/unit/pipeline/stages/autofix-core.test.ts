@@ -58,32 +58,30 @@ describe("autofixStage", () => {
     expect(autofixStage.enabled(makeTestCtx())).toBe(false);
   });
 
-  test("escalates when no fix commands configured and agent rectification fails", async () => {
+  test("escalates when agent rectification fails (no fix commands or recheck fails after mechanical fix)", async () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
-    const ctx = makeCtx({
+    const noFixCtx = makeCtx({
       reviewResult: makeFailedReviewResult([{ check: "lint", output: "Unexpected token" }]),
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          commands: { test: "bun test" },
-          autofix: { enabled: true },
-        },
-      } as any,
+      config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" }, autofix: { enabled: true } } } as any,
     });
-    const result = await autofixStage.execute(ctx);
+    expect((await autofixStage.execute(noFixCtx)).action).toBe("escalate");
+
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "lint error", durationMs: 0, timedOut: false });
+    _autofixDeps.recheckReview = async () => false;
+    const recheckFailCtx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
+    expect((await autofixStage.execute(recheckFailCtx)).action).toBe("escalate");
 
     Object.assign(_autofixDeps, saved);
-
-    expect(result.action).toBe("escalate");
   });
 
-  test("returns retry when recheck passes", async () => {
+  test("returns retry when recheck passes; skips agent rectification when mechanical fix succeeds", async () => {
     const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
     _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => true;
+    _autofixDeps.runAgentRectification = async () => { agentRectificationCalled = true; return { succeeded: true, cost: 0 }; };
 
     const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
     const result = await autofixStage.execute(ctx);
@@ -92,6 +90,7 @@ describe("autofixStage", () => {
 
     expect(result.action).toBe("retry");
     if (result.action === "retry") expect(result.fromStage).toBe("review");
+    expect(agentRectificationCalled).toBe(false);
   });
 
   test("uses review lintFixScoped before quality lintFixScoped with shell-quoted scope files", async () => {
@@ -316,20 +315,6 @@ describe("autofixStage", () => {
     expect(ctx.retrySkipChecks?.has("semantic")).toBe(false);
   });
 
-  test("escalates when recheck still fails and agent rectification also fails", async () => {
-    const saved = { ..._autofixDeps };
-    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "lint error", durationMs: 0, timedOut: false });
-    _autofixDeps.recheckReview = async () => false;
-    _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
-
-    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
-    const result = await autofixStage.execute(ctx);
-
-    Object.assign(_autofixDeps, saved);
-
-    expect(result.action).toBe("escalate");
-  });
-
   test("agent rectification runs: when no fix commands configured and when mechanical fix fails", async () => {
     const saved = { ..._autofixDeps };
 
@@ -421,74 +406,17 @@ describe("autofixStage", () => {
     expect(ctx.retrySkipChecks?.has("typecheck")).toBe(false);
   });
 
-  test("zero progress — escalates immediately even when budget remains", async () => {
+  test("zero progress escalates immediately even with budget; budget exhaustion escalates despite partial progress", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
-      mockCtx.autofixAttempt = 3;
-      return { succeeded: false, cost: 1.5 };
-    };
+    const baseCfg = { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" }, autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 } } } as any;
 
-    const ctx = makeCtx({
-      reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          commands: { test: "bun test" },
-          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
-        },
-      } as any,
-    });
-    const result = await autofixStage.execute(ctx);
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => { mockCtx.autofixAttempt = 3; return { succeeded: false, cost: 1.5 }; };
+    expect((await autofixStage.execute(makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]), config: baseCfg }))).action).toBe("escalate");
+
+    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => { mockCtx.autofixAttempt = 12; mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS2345: Type error" }]); return { succeeded: false, cost: 0.5 }; };
+    expect((await autofixStage.execute(makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]), config: baseCfg }))).action).toBe("escalate");
 
     Object.assign(_autofixDeps, saved);
-
-    expect(result.action).toBe("escalate");
-  });
-
-  test("budget exhausted — escalates even when partial progress was made", async () => {
-    const saved = { ..._autofixDeps };
-    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
-      mockCtx.autofixAttempt = 12;
-      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS2345: Type error" }]);
-      return { succeeded: false, cost: 0.5 };
-    };
-
-    const ctx = makeCtx({
-      reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
-      config: {
-        ...DEFAULT_CONFIG,
-        quality: {
-          ...DEFAULT_CONFIG.quality,
-          commands: { test: "bun test" },
-          autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
-        },
-      } as any,
-    });
-    const result = await autofixStage.execute(ctx);
-
-    Object.assign(_autofixDeps, saved);
-
-    expect(result.action).toBe("escalate");
-  });
-
-  test("agent rectification skipped when review passes after mechanical fix", async () => {
-    const saved = { ..._autofixDeps };
-    let agentRectificationCalled = false;
-    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
-    _autofixDeps.recheckReview = async () => true;
-    _autofixDeps.runAgentRectification = async () => {
-      agentRectificationCalled = true;
-      return { succeeded: true, cost: 0 };
-    };
-
-    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
-    const result = await autofixStage.execute(ctx);
-
-    Object.assign(_autofixDeps, saved);
-
-    expect(result.action).toBe("retry");
-    expect(agentRectificationCalled).toBe(false);
   });
 
   test("typecheck failure skips mechanical fix and goes straight to agent rectification", async () => {
@@ -513,38 +441,20 @@ describe("autofixStage", () => {
     expect(agentRectificationCalled).toBe(true);
   });
 
-  test("prompt includes failed check output", async () => {
+  test("prompt includes failed check output, story ID, check name; includes scope constraint when workdir set", () => {
     const errorText = "Unused variable 'fooBar' at line 42";
     const failedChecks: ReviewCheckResult[] = [
-      {
-        check: "lint",
-        success: false,
-        command: "biome check",
-        exitCode: 1,
-        output: errorText,
-        durationMs: 50,
-      },
+      { check: "lint", success: false, command: "biome check", exitCode: 1, output: errorText, durationMs: 50 },
     ];
-    const story = { id: "US-002", title: "Add feature" } as any;
-
-    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, story);
-
+    const prompt = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature" } as any);
     expect(prompt).toContain(errorText);
     expect(prompt).toContain("US-002");
     expect(prompt).toContain("lint");
-  });
+    expect(prompt).not.toContain("Only modify files within");
 
-  test("ENH-008: includes scope constraint when workdir set, excludes when not set", () => {
-    const failedChecks: ReviewCheckResult[] = [
-      { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
-    ];
-
-    const promptWithWorkdir = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature", workdir: "apps/api" } as any);
-    expect(promptWithWorkdir).toContain("Only modify files within `apps/api/`");
-    expect(promptWithWorkdir).toContain("Do NOT touch files outside this directory");
-
-    const promptWithoutWorkdir = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature" } as any);
-    expect(promptWithoutWorkdir).not.toContain("Only modify files within");
+    const withWorkdir = RectifierPromptBuilder.reviewRectification(failedChecks, { id: "US-002", title: "Add feature", workdir: "apps/api" } as any);
+    expect(withWorkdir).toContain("Only modify files within `apps/api/`");
+    expect(withWorkdir).toContain("Do NOT touch files outside this directory");
   });
 });
 
@@ -613,36 +523,7 @@ describe("autofixStage — capacity gate on partial-progress retry (#951 Bug 2)"
     };
   }
 
-  test("escalates instead of retrying review when prior iterations exhaust the active strategy cap", async () => {
-    const saved = { ..._autofixDeps };
-    // After rectification: lint passes (nowPassing), typecheck still fails (currentlyFailing).
-    _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
-      mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]);
-      return { succeeded: false, cost: 0 };
-    };
-
-    try {
-      const ctx = makeCtx({
-        reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
-        config: {
-          ...DEFAULT_CONFIG,
-          quality: {
-            ...DEFAULT_CONFIG.quality,
-            commands: { test: "bun test" },
-            // maxAttempts=2 so two prior implementer fixes exhaust the per-strategy cap.
-            autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 12 },
-          },
-        } as any,
-      });
-      ctx.autofixPriorIterations = [priorIter(["autofix-implementer", "autofix-implementer"])];
-      const result = await autofixStage.execute(ctx);
-      expect(result.action).toBe("escalate");
-    } finally {
-      Object.assign(_autofixDeps, saved);
-    }
-  });
-
-  test("still retries when at least one applicable strategy has remaining capacity", async () => {
+  test("escalates when prior iterations exhaust strategy cap; retries when capacity remains", async () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runAgentRectification = async (mockCtx: PipelineContext) => {
       mockCtx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "ts err" }]);
@@ -650,22 +531,21 @@ describe("autofixStage — capacity gate on partial-progress retry (#951 Bug 2)"
     };
 
     try {
-      const ctx = makeCtx({
+      const exhaustedCtx = makeCtx({
         reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
-        config: {
-          ...DEFAULT_CONFIG,
-          quality: {
-            ...DEFAULT_CONFIG.quality,
-            commands: { test: "bun test" },
-            autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 },
-          },
-        } as any,
+        config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" }, autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 12 } } } as any,
       });
-      // 1/3 implementer attempts used — capacity remains.
-      ctx.autofixPriorIterations = [priorIter(["autofix-implementer"])];
-      const result = await autofixStage.execute(ctx);
-      expect(result.action).toBe("retry");
-      if (result.action === "retry") expect(result.fromStage).toBe("review");
+      exhaustedCtx.autofixPriorIterations = [priorIter(["autofix-implementer", "autofix-implementer"])];
+      expect((await autofixStage.execute(exhaustedCtx)).action).toBe("escalate");
+
+      const remainingCtx = makeCtx({
+        reviewResult: makeFailedReviewResult([{ check: "lint" }, { check: "typecheck" }]),
+        config: { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" }, autofix: { enabled: true, maxAttempts: 3, maxTotalAttempts: 12 } } } as any,
+      });
+      remainingCtx.autofixPriorIterations = [priorIter(["autofix-implementer"])];
+      const retryResult = await autofixStage.execute(remainingCtx);
+      expect(retryResult.action).toBe("retry");
+      if (retryResult.action === "retry") expect(retryResult.fromStage).toBe("review");
     } finally {
       Object.assign(_autofixDeps, saved);
     }
