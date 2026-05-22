@@ -73,21 +73,12 @@ function createTestPRD(stories: Array<{ id: string; status: string }>): PRD {
 }
 
 describe("acceptanceStage.enabled", () => {
-  test("disabled when acceptance validation is disabled in config", () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd, {
-      acceptance: {
-        enabled: false,
-        maxRetries: 2,
-        generateTests: true,
-        testPath: "acceptance.test.ts",
-      },
+  test("disabled when acceptance disabled in config, or any story is pending/in-progress", () => {
+    const ctxDisabled = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]), {
+      acceptance: { enabled: false, maxRetries: 2, generateTests: true, testPath: "acceptance.test.ts" },
     });
+    expect(acceptanceStage.enabled(ctxDisabled)).toBe(false);
 
-    expect(acceptanceStage.enabled(ctx)).toBe(false);
-  });
-
-  test("disabled when any story is pending or in-progress", () => {
     const ctxPending = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]));
     expect(acceptanceStage.enabled(ctxPending)).toBe(false);
 
@@ -301,15 +292,7 @@ describe("broken", () => {
 
 // BUG-083: Acceptance test scoping — runs only acceptance.test.ts, not full project suite
 describe("BUG-083: acceptance command scoping", () => {
-  test("AC-1: runs bun test <acceptance-file> --timeout=60000 by default (not quality.commands.test)", async () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd, {
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        commands: { test: "echo 'full-suite-ran'" }, // This must NOT be used
-      },
-    });
-
+  test("AC-1+AC-6: quality.commands.test is not used for acceptance runner", async () => {
     const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
@@ -319,23 +302,22 @@ describe("test-feature", () => {
 });`,
     );
 
-    const result = await acceptanceStage.execute(ctx);
+    // AC-1: echo command (would run differently if used, but result must be "continue")
+    const ctx1 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]), {
+      quality: { ...DEFAULT_CONFIG.quality, commands: { test: "echo 'full-suite-ran'" } },
+    });
+    expect((await acceptanceStage.execute(ctx1)).action).toBe("continue");
+    expect(ctx1.acceptanceFailures).toBeUndefined();
 
-    // Must pass (the acceptance test itself passes)
-    expect(result.action).toBe("continue");
-    // ctx.acceptanceFailures must not be set (no failures)
-    expect(ctx.acceptanceFailures).toBeUndefined();
+    // AC-6: "exit 1" would fail if used — must be ignored
+    const ctx6 = createTestContext(createTestPRD([{ id: "US-001", status: "passed" }]), {
+      quality: { ...DEFAULT_CONFIG.quality, commands: { test: "exit 1" } },
+    });
+    expect((await acceptanceStage.execute(ctx6)).action).toBe("continue");
   });
 
-  test("AC-3: acceptance.command with {{FILE}} is substituted and executed", async () => {
+  test("AC-3+AC-4: custom acceptance.command with and without {{FILE}} substitution", async () => {
     const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd, {
-      acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
-        command: "bun test {{FILE}} --timeout=60000",
-      },
-    });
-
     const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
@@ -345,55 +327,12 @@ describe("test-feature", () => {
 });`,
     );
 
-    const result = await acceptanceStage.execute(ctx);
-    expect(result.action).toBe("continue");
-  });
+    // AC-3: {{FILE}} is substituted
+    const ctx3 = createTestContext(prd, { acceptance: { ...DEFAULT_CONFIG.acceptance, command: "bun test {{FILE}} --timeout=60000" } });
+    expect((await acceptanceStage.execute(ctx3)).action).toBe("continue");
 
-  test("AC-4: acceptance.command without {{FILE}} is executed verbatim", async () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-
-    // Point to the real acceptance test file using absolute path in command
-    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
-    await Bun.write(
-      testPath,
-      `import { describe, test, expect } from "bun:test";
-describe("test-feature", () => {
-  test("AC-1: passes", () => { expect(true).toBe(true); });
-});`,
-    );
-
-    const ctx = createTestContext(prd, {
-      acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
-        command: `bun test ${testPath} --timeout=60000`,
-      },
-    });
-
-    const result = await acceptanceStage.execute(ctx);
-    expect(result.action).toBe("continue");
-  });
-
-  test("AC-6: quality.commands.test has no effect on acceptance runner", async () => {
-    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
-    const ctx = createTestContext(prd, {
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        commands: { test: "exit 1" }, // Would fail if used — must be ignored
-      },
-    });
-
-    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
-    await Bun.write(
-      testPath,
-      `import { describe, test, expect } from "bun:test";
-describe("test-feature", () => {
-  test("AC-1: passes", () => { expect(true).toBe(true); });
-});`,
-    );
-
-    const result = await acceptanceStage.execute(ctx);
-
-    // Would be "fail" if quality.commands.test ("exit 1") was used instead of bun test
-    expect(result.action).toBe("continue");
+    // AC-4: no {{FILE}} — executed verbatim with absolute path
+    const ctx4 = createTestContext(prd, { acceptance: { ...DEFAULT_CONFIG.acceptance, command: `bun test ${testPath} --timeout=60000` } });
+    expect((await acceptanceStage.execute(ctx4)).action).toBe("continue");
   });
 });
