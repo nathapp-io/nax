@@ -169,17 +169,15 @@ describe("handleQueryNeighbor", () => {
     return new PullToolBudget(sessionLimit, runLimit, createRunCallCounter());
   }
 
-  test("calls budget.consume() before fetching", async () => {
+  test("calls budget.consume() before fetching; propagates NaxError from exhausted budget", async () => {
     const budget = makeBudget();
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget);
     expect(budget.sessionCallsUsed).toBe(1);
-  });
 
-  test("propagates NaxError from exhausted budget", async () => {
-    const budget = makeBudget(0, 50); // 0 session limit — immediately exhausted
+    const exhausted = makeBudget(0, 50);
     let threw: unknown;
     try {
-      await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", budget);
+      await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", exhausted);
     } catch (e) {
       threw = e;
     }
@@ -214,25 +212,22 @@ describe("handleQueryNeighbor", () => {
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
 
-  test("emits logger.info with tool=query_neighbor and resultCount matching chunk count", async () => {
+  test("emits logger.info with tool/resultCount/truncated fields", async () => {
+    // Sub-scenario 1: basic invocation — fields present, resultCount=0, resultBytes=0
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: [], truncated: false });
-
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
+    const call1 = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call1?.data?.tool).toBe("query_neighbor");
+    expect(call1?.data?.resultCount).toBe(0);
+    expect(call1?.data?.resultBytes).toBe(0);
+    expect(call1?.data?.filePath).toBe("src/a.ts");
 
-    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.tool).toBe("query_neighbor");
-    expect(call?.data?.resultCount).toBe(0);
-    expect(call?.data?.resultBytes).toBe(0);
-    expect(call?.data?.filePath).toBe("src/a.ts");
-  });
-
-  test("logger emit includes truncated=true when content is truncated", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    // Sub-scenario 2: truncated=true when content exceeds cap
+    const mockLogger2 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger2 as any;
     const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
     _codeNeighborDeps.fileExists = async () => false;
     _codeNeighborDeps.glob = () => ({ files: manyNeighbors, truncated: false });
@@ -240,26 +235,19 @@ describe("handleQueryNeighbor", () => {
       if (manyNeighbors.some((f) => p.includes(f))) return 'import { x } from "./a"';
       return "";
     };
+    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), 10);
+    const call2 = mockLogger2.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call2?.data?.truncated).toBe(true);
 
-    const maxTokensPerCall = 10; // tiny cap to force truncation
-    await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), maxTokensPerCall);
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.truncated).toBe(true);
-  });
-
-  test("logger emit includes resultCount matching number of neighbor chunks", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
-    // Simulate file with test and forward/reverse deps
+    // Sub-scenario 3: resultCount>0 when neighbors found
+    const mockLogger3 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger3 as any;
     _codeNeighborDeps.fileExists = async (p) => p.includes("test/");
     _codeNeighborDeps.glob = () => ({ files: ["src/imported.ts"], truncated: false });
     _codeNeighborDeps.readFile = async () => 'import { x } from "./a"';
-
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.resultCount).toBeGreaterThan(0);
+    const call3 = mockLogger3.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(call3?.data?.resultCount).toBeGreaterThan(0);
   });
 });
 
@@ -314,18 +302,16 @@ describe("handleQueryFeatureContext", () => {
       }) as ReturnType<typeof origCreateV1Provider>;
   }
 
-  test("calls budget.consume() before fetching", async () => {
+  test("calls budget.consume() before fetching; propagates NaxError from exhausted budget", async () => {
     mockV1Provider("## Conventions\nUse async/await.");
     const budget = makeBudget();
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", budget);
     expect(budget.sessionCallsUsed).toBe(1);
-  });
 
-  test("propagates NaxError from exhausted budget", async () => {
-    const budget = makeBudget(0, 50); // 0 session limit — immediately exhausted
+    const exhausted = makeBudget(0, 50);
     let threw: unknown;
     try {
-      await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", budget);
+      await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", exhausted);
     } catch (e) {
       threw = e;
     }
@@ -389,24 +375,15 @@ describe("handleQueryFeatureContext", () => {
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
   });
 
-  test("emits logger.info with tool=query_feature_context and keyword from filter", async () => {
+  test("emits logger.info with tool=query_feature_context; keyword from filter or null", async () => {
     const mockLogger = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger as any;
     mockV1Provider("## Conventions\nUse async/await.");
-
-    await handleQueryFeatureContext(
-      { filter: "conventions" },
-      STORY,
-      CONFIG,
-      "/repo",
-      makeBudget(),
-    );
-
-    expect(mockLogger.calls.some((c) => c.stage === "pull-tool" && c.message === "invoked")).toBe(true);
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.tool).toBe("query_feature_context");
-    expect(call?.data?.keyword).toBe("conventions");
-    expect(call?.data?.storyId).toBe("US-001");
+    await handleQueryFeatureContext({ filter: "conventions" }, STORY, CONFIG, "/repo", makeBudget());
+    const callWithFilter = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(callWithFilter?.data?.tool).toBe("query_feature_context");
+    expect(callWithFilter?.data?.keyword).toBe("conventions");
+    expect(callWithFilter?.data?.storyId).toBe("US-001");
   });
 
   test("logger includes resultCount and resultBytes (>0 when content exists, 0 when none)", async () => {
@@ -428,13 +405,11 @@ describe("handleQueryFeatureContext", () => {
   });
 
   test("logger emit includes keyword=null when no filter is provided", async () => {
-    const mockLogger = makeLogger();
-    _pullToolsDeps.getLogger = () => mockLogger as any;
+    const mockLogger2 = makeLogger();
+    _pullToolsDeps.getLogger = () => mockLogger2 as any;
     mockV1Provider("## Section\nContent");
-
     await handleQueryFeatureContext({}, STORY, CONFIG, "/repo", makeBudget());
-
-    const call = mockLogger.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
-    expect(call?.data?.keyword).toBeNull();
+    const callNoFilter = mockLogger2.calls.find((c) => c.stage === "pull-tool" && c.message === "invoked");
+    expect(callNoFilter?.data?.keyword).toBeNull();
   });
 });
