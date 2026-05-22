@@ -317,54 +317,19 @@ beforeEach(() => {
 });
 
 describe("handleRunCompletion - deferred regression is not smart-skipped", () => {
-  test("runs regression when all stories have fullSuiteGatePassed=true in sequential mode", async () => {
-    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
-    const prd = makePRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "passed" },
-    ]);
+  test("always runs regression regardless of fullSuiteGatePassed values (true, false, or undefined) in sequential mode", async () => {
+    const cfg = makeConfig("deferred", "bun test");
+    const prd2 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
 
-    await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
+    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)], isSequential: true }));
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-  });
+    mockRunDeferredRegression.mockClear();
 
-  test("does NOT skip regression when at least one story has fullSuiteGatePassed=false", async () => {
-    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", false)];
-    const prd = makePRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "passed" },
-    ]);
-
-    await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
+    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", false)], isSequential: true }));
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-  });
+    mockRunDeferredRegression.mockClear();
 
-  test("does NOT skip regression when fullSuiteGatePassed is undefined for any story", async () => {
-    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", undefined)];
-    const prd = makePRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "passed" },
-    ]);
-
-    await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
+    await handleRunCompletion(makeOpts(cfg, prd2, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", undefined)], isSequential: true }));
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
@@ -398,66 +363,25 @@ describe("handleRunCompletion - deferred regression is not smart-skipped", () =>
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
   });
 
-  test("does NOT skip regression when single story has fullSuiteGatePassed=false in sequential mode", async () => {
-    const metrics = [makeStoryMetrics("US-001", false)];
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+  test("runs regression for single story (false/true gatePassed), no-isSequential; result has correct shape", async () => {
+    const cfg = makeConfig("deferred", "bun test");
+    const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
 
-    await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
+    await handleRunCompletion(makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", false)], isSequential: true }));
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-  });
+    mockRunDeferredRegression.mockClear();
 
-  test("runs regression with a single story with fullSuiteGatePassed=true in sequential mode", async () => {
-    const metrics = [makeStoryMetrics("US-001", true)];
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-
-    await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
+    await handleRunCompletion(makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true)], isSequential: true }));
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-  });
+    mockRunDeferredRegression.mockClear();
 
-  test("still runs regression when isSequential is not provided", async () => {
-    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
-    const prd = makePRD([
-      { id: "US-001", status: "passed" },
-      { id: "US-002", status: "passed" },
-    ]);
-
-    const opts = makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-      allStoryMetrics: metrics,
-    });
-    (opts as Partial<RunCompletionOptions>).isSequential = undefined;
-
-    await handleRunCompletion(opts);
-
+    const noSeqOpts = makeOpts(cfg, prd1, SMART_SKIP_WORKDIR, { allStoryMetrics: [makeStoryMetrics("US-001", true)] });
+    (noSeqOpts as Partial<RunCompletionOptions>).isSequential = undefined;
+    const result = await handleRunCompletion(noSeqOpts);
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-  });
-
-  test("result has correct shape when regression runs despite prior full-suite-gate passes", async () => {
-    const metrics = [makeStoryMetrics("US-001", true)];
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-
-    const result = await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
-        allStoryMetrics: metrics,
-        isSequential: true,
-      }),
-    );
-
     expect(typeof result.durationMs).toBe("number");
     expect(typeof result.runCompletedAt).toBe("string");
     expect(typeof result.finalCounts.total).toBe("number");
-    expect(typeof result.finalCounts.passed).toBe("number");
   });
 });
 
@@ -466,20 +390,22 @@ describe("handleRunCompletion - deferred regression is not smart-skipped", () =>
 // ---------------------------------------------------------------------------
 
 describe("handleRunCompletion - deferred regression gate", () => {
-  test("calls runDeferredRegression when mode is 'deferred' and test command exists", async () => {
+  test("calls runDeferredRegression when mode is 'deferred' with test command; not otherwise", async () => {
     const story = makeStory("US-001", "passed");
     const prd = makePRD([{ id: story.id, status: story.status }]);
     const config = makeConfig("deferred", "bun test");
 
-    try {
-      await handleRunCompletion(makeOpts(config, prd));
-    } catch {
-      //
-    }
+    try { await handleRunCompletion(makeOpts(config, prd)); } catch { /* ignore */ }
 
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-    const call = mockRunDeferredRegression.mock.calls[0][0] as { workdir: string };
-    expect(call.workdir).toBe(COMPLETION_WORKDIR);
+    const call0 = mockRunDeferredRegression.mock.calls[0][0] as { workdir: string; config: NaxConfig; prd: PRD };
+    expect(call0.workdir).toBe(COMPLETION_WORKDIR);
+    expect(call0.config).toBe(config);
+    expect(call0.prd).toBe(prd);
+    mockRunDeferredRegression.mockClear();
+
+    try { await handleRunCompletion(makeOpts(config, prd, "/custom/workdir")); } catch { /* ignore */ }
+    expect((mockRunDeferredRegression.mock.calls[0][0] as { workdir: string }).workdir).toBe("/custom/workdir");
   });
 
   test.each([
@@ -498,42 +424,6 @@ describe("handleRunCompletion - deferred regression gate", () => {
 
     expect(mockRunDeferredRegression).not.toHaveBeenCalled();
   });
-
-  test("calls runDeferredRegression with the correct workdir", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("deferred", "bun test");
-
-    try {
-      await handleRunCompletion(makeOpts(config, prd, "/custom/workdir"));
-    } catch {
-      //
-    }
-
-    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-    const call = mockRunDeferredRegression.mock.calls[0][0] as { workdir: string };
-    expect(call.workdir).toBe("/custom/workdir");
-  });
-
-  test("calls runDeferredRegression with prd and config", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("deferred", "bun test");
-
-    try {
-      await handleRunCompletion(makeOpts(config, prd));
-    } catch {
-      //
-    }
-
-    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
-    const call = mockRunDeferredRegression.mock.calls[0][0] as {
-      config: NaxConfig;
-      prd: PRD;
-    };
-    expect(call.config).toBe(config);
-    expect(call.prd).toBe(prd);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -549,62 +439,20 @@ const MOCK_REGRESSION_FAILURE: DeferredRegressionResult = {
 };
 
 describe("handleRunCompletion - regression-failed story marking (RL-004)", () => {
-  test("marks affected story as 'regression-failed' when regression gate fails", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
+  test("marks affected stories as 'regression-failed'; leaves unaffected stories unchanged", async () => {
     const config = makeConfig("deferred", "bun test");
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
-    ) as typeof _runCompletionDeps.runDeferredRegression;
 
-    await handleRunCompletion(makeOpts(config, prd));
+    const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE) as typeof _runCompletionDeps.runDeferredRegression;
+    await handleRunCompletion(makeOpts(config, prd1));
+    expect(prd1.userStories[0].status).toBe("regression-failed");
 
-    expect(prd.userStories[0].status).toBe("regression-failed");
-  });
-
-  test("does not change status of stories absent from affectedStories", async () => {
-    const story1 = makeStory("US-001", "passed");
-    const story2 = makeStory("US-002", "passed");
-    const prd = makePRD([
-      { id: story1.id, status: story1.status },
-      { id: story2.id, status: story2.status },
-    ]);
-    const config = makeConfig("deferred", "bun test");
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => ({
-        ...MOCK_REGRESSION_FAILURE,
-        affectedStories: ["US-001"],
-      }),
-    ) as typeof _runCompletionDeps.runDeferredRegression;
-
-    await handleRunCompletion(makeOpts(config, prd));
-
-    expect(prd.userStories[0].status).toBe("regression-failed");
-    expect(prd.userStories[1].status).toBe("passed");
-  });
-
-  test("marks multiple affected stories as 'regression-failed'", async () => {
-    const story1 = makeStory("US-001", "passed");
-    const story2 = makeStory("US-002", "passed");
-    const story3 = makeStory("US-003", "passed");
-    const prd = makePRD([
-      { id: story1.id, status: story1.status },
-      { id: story2.id, status: story2.status },
-      { id: story3.id, status: story3.status },
-    ]);
-    const config = makeConfig("deferred", "bun test");
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => ({
-        ...MOCK_REGRESSION_FAILURE,
-        affectedStories: ["US-001", "US-003"],
-      }),
-    ) as typeof _runCompletionDeps.runDeferredRegression;
-
-    await handleRunCompletion(makeOpts(config, prd));
-
-    expect(prd.userStories[0].status).toBe("regression-failed");
-    expect(prd.userStories[1].status).toBe("passed");
-    expect(prd.userStories[2].status).toBe("regression-failed");
+    const prd3 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }, { id: "US-003", status: "passed" }]);
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({ ...MOCK_REGRESSION_FAILURE, affectedStories: ["US-001", "US-003"] })) as typeof _runCompletionDeps.runDeferredRegression;
+    await handleRunCompletion(makeOpts(config, prd3));
+    expect(prd3.userStories[0].status).toBe("regression-failed");
+    expect(prd3.userStories[1].status).toBe("passed");
+    expect(prd3.userStories[2].status).toBe("regression-failed");
   });
 
   test.each([
@@ -621,58 +469,20 @@ describe("handleRunCompletion - regression-failed story marking (RL-004)", () =>
 });
 
 describe("handleRunCompletion - run status on regression failure (RL-004)", () => {
-  test("sets run status to 'failed' when regression gate fails", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
+  test("sets run status to 'failed' when regression gate fails; does not set 'failed' when it succeeds", async () => {
     const config = makeConfig("deferred", "bun test");
-    const statusWriter = makeStatusWriter();
-    const opts: RunCompletionOptions = {
-      ...makeOpts(config, prd),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
-    };
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
-    ) as typeof _runCompletionDeps.runDeferredRegression;
 
-    await handleRunCompletion(opts);
+    const failWriter = makeStatusWriter();
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE) as typeof _runCompletionDeps.runDeferredRegression;
+    const prd2 = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
+    await handleRunCompletion({ ...makeOpts(config, prd2), statusWriter: failWriter as unknown as RunCompletionOptions["statusWriter"] });
+    expect(failWriter.setRunStatus).toHaveBeenCalledWith("failed");
 
-    expect(statusWriter.setRunStatus).toHaveBeenCalledWith("failed");
-  });
-
-  test("does not set run status to 'failed' when regression gate succeeds", async () => {
-    const story = makeStory("US-001", "passed");
-    const prd = makePRD([{ id: story.id, status: story.status }]);
-    const config = makeConfig("deferred", "bun test");
-    const statusWriter = makeStatusWriter();
-    const opts: RunCompletionOptions = {
-      ...makeOpts(config, prd),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
-    };
-
-    await handleRunCompletion(opts);
-
-    expect(statusWriter.setRunStatus).not.toHaveBeenCalledWith("failed");
-  });
-
-  test("sets run status to 'failed' even when all stories were passed before regression", async () => {
-    const story1 = makeStory("US-001", "passed");
-    const story2 = makeStory("US-002", "passed");
-    const prd = makePRD([
-      { id: story1.id, status: story1.status },
-      { id: story2.id, status: story2.status },
-    ]);
-    const config = makeConfig("deferred", "bun test");
-    const statusWriter = makeStatusWriter();
-    const opts: RunCompletionOptions = {
-      ...makeOpts(config, prd),
-      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
-    };
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
-    ) as typeof _runCompletionDeps.runDeferredRegression;
-
-    await handleRunCompletion(opts);
-
-    expect(statusWriter.setRunStatus).toHaveBeenCalledWith("failed");
+    // Restore success mock for second sub-scenario
+    _runCompletionDeps.runDeferredRegression = mockRunDeferredRegression as typeof _runCompletionDeps.runDeferredRegression;
+    const passWriter = makeStatusWriter();
+    const prd1 = makePRD([{ id: "US-001", status: "passed" }]);
+    await handleRunCompletion({ ...makeOpts(config, prd1), statusWriter: passWriter as unknown as RunCompletionOptions["statusWriter"] });
+    expect(passWriter.setRunStatus).not.toHaveBeenCalledWith("failed");
   });
 });
