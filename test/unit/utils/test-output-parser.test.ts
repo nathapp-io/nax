@@ -197,67 +197,24 @@ Error: JS test error
     expect(result.failures[0].file).toBe("test/example.test.js");
   });
 
-  test("handles failures without file context", () => {
-    const output = `
-bun test v1.0.0
+  test("handles failures without file context; failures with no error message", () => {
+    const noFile = parseTestOutput(`bun test v1.0.0\n\n✗ orphan test [1.0ms]\n\n(fail) orphan test [1.0ms]\nError: No file context\n  at /path/to/unknown.ts:1:1\n\n0 passed, 1 failed [1.0ms]`);
+    expect(noFile.failures).toHaveLength(1);
+    expect(noFile.failures[0].file).toBe("unknown");
 
-✗ orphan test [1.0ms]
-
-(fail) orphan test [1.0ms]
-Error: No file context
-  at /path/to/unknown.ts:1:1
-
-0 passed, 1 failed [1.0ms]
-    `.trim();
-
-    const result = parseTestOutput(output);
-
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0].file).toBe("unknown");
-  });
-
-  test("handles failures with no error message", () => {
-    const output = `
-bun test v1.0.0
-
-test/minimal.test.ts:
-✗ minimal fail [0.5ms]
-
-(fail) minimal fail [0.5ms]
-
-0 passed, 1 failed [0.5ms]
-    `.trim();
-
-    const result = parseTestOutput(output);
-
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0].error).toBe("Unknown error");
-    expect(result.failures[0].stackTrace).toHaveLength(0);
+    const noMsg = parseTestOutput(`bun test v1.0.0\n\ntest/minimal.test.ts:\n✗ minimal fail [0.5ms]\n\n(fail) minimal fail [0.5ms]\n\n0 passed, 1 failed [0.5ms]`);
+    expect(noMsg.failures).toHaveLength(1);
+    expect(noMsg.failures[0].error).toBe("Unknown error");
+    expect(noMsg.failures[0].stackTrace).toHaveLength(0);
   });
 
   describe("Jest output — Console pseudo-failure filtering", () => {
 
-    test("does not capture '● Console' when mixed with real failures", () => {
-      const output = `
-FAIL src/commands/kb-import.spec.ts
-  ● Console
+    test("does not capture '● Console' when mixed with real failures or in single/multiple files", () => {
+      const mixed = parseTestOutput(`FAIL src/commands/kb-import.spec.ts\n  ● Console\n\n    console.error\n      error during test\n\n  ● kb import > AC1 › exits 0 and prints success\n\n    Error: expected 0, got 1\n\nTests:       0 passed, 1 failed, 1 total`);
+      expect(mixed.failures).toHaveLength(1);
+      expect(mixed.failures[0].testName).toBe("kb import > AC1 › exits 0 and prints success");
 
-    console.error
-      error during test
-
-  ● kb import > AC1 › exits 0 and prints success
-
-    Error: expected 0, got 1
-
-Tests:       0 passed, 1 failed, 1 total
-      `.trim();
-
-      const result = parseTestOutput(output);
-      expect(result.failures).toHaveLength(1);
-      expect(result.failures[0].testName).toBe("kb import > AC1 › exits 0 and prints success");
-    });
-
-    test("does not capture '● Console' — single or multiple files", () => {
       const single = parseTestOutput(`FAIL src/commands/comment.spec.ts\n  ● Console\n\n    console.error\n      Some error logged during a test\n\nTests:       1 passed, 0 failed, 1 total`);
       expect(single.failures).toHaveLength(0);
       expect(single.passed).toBe(1);
@@ -290,21 +247,18 @@ Error: Alternative marks error
   });
 
   // BUG-060 (issue #989): (fail) lines in batch output must increment `failed`
-  test("counts failed correctly when only (fail) lines appear (no cross-mark glyphs)", () => {
-    const output = `
-test/example.test.ts:
-(fail) suite > test name [10.00ms]
-(fail) suite > test name 2 [2.00ms]
+  test("counts (fail) lines with or without summary; summary backstop dominates", () => {
+    // Sub-scenario 1: (fail) lines with summary — summary wins
+    const withSummary = parseTestOutput(`test/example.test.ts:\n(fail) suite > test name [10.00ms]\n(fail) suite > test name 2 [2.00ms]\n\n 38 pass\n 23 fail\nRan 61 tests across 3 files.`);
+    expect(withSummary.failed).toBe(23);
+    expect(withSummary.passed).toBe(38);
+    expect(withSummary.failures).toHaveLength(2);
 
- 38 pass
- 23 fail
-Ran 61 tests across 3 files.`.trim();
-
-    const result = parseTestOutput(output);
-
-    expect(result.failed).toBe(23);
-    expect(result.passed).toBe(38);
-    expect(result.failures).toHaveLength(2);
+    // Sub-scenario 2: (fail) lines without summary
+    const noSummary = parseTestOutput(`test/unit/cli/plan.test.ts:\n(fail) plan > AC-1 [3.00ms]\nError: Expected true\n  at test.ts:12:5\n(fail) plan > AC-2 [2.00ms]\nError: Expected false\n  at test.ts:22:5`);
+    expect(noSummary.failed).toBe(2);
+    expect(noSummary.passed).toBe(0);
+    expect(noSummary.failures).toHaveLength(2);
   });
 
   // BUG-060: summary line counts dominate per-line glyph counts
@@ -323,24 +277,6 @@ Ran 18 tests across 1 file.`.trim();
     expect(result.failed).toBe(9);
     expect(result.passed).toBe(9);
     expect(result.failures).toHaveLength(1);
-  });
-
-  // BUG-060: (fail) lines increment failed even without a summary line
-  test("increments failed counter for each (fail) line even with no summary line", () => {
-    const output = `
-test/unit/cli/plan.test.ts:
-(fail) plan > AC-1 [3.00ms]
-Error: Expected true
-  at test.ts:12:5
-(fail) plan > AC-2 [2.00ms]
-Error: Expected false
-  at test.ts:22:5`.trim();
-
-    const result = parseTestOutput(output);
-
-    expect(result.failed).toBe(2);
-    expect(result.passed).toBe(0);
-    expect(result.failures).toHaveLength(2);
   });
 
   // BUG-060: verbose mode must not double-count — ✗ glyph + (fail) block for same test
@@ -371,23 +307,10 @@ Error: Expected false
 });
 
 describe("formatFailureSummary", () => {
-  test("returns 'No test failures' for empty array", () => {
-    const result = formatFailureSummary([]);
-    expect(result).toBe("No test failures");
-  });
+  test("returns 'No test failures' for empty array; formats single failure correctly", () => {
+    expect(formatFailureSummary([])).toBe("No test failures");
 
-  test("formats single failure", () => {
-    const failures: TestFailure[] = [
-      {
-        file: "test/example.test.ts",
-        testName: "failing test",
-        error: "Expected 1 to equal 2",
-        stackTrace: ["at /path/to/file.ts:10:15"],
-      },
-    ];
-
-    const result = formatFailureSummary(failures);
-
+    const result = formatFailureSummary([{ file: "test/example.test.ts", testName: "failing test", error: "Expected 1 to equal 2", stackTrace: ["at /path/to/file.ts:10:15"] }]);
     expect(result).toContain("1. test/example.test.ts > failing test");
     expect(result).toContain("Error: Expected 1 to equal 2");
     expect(result).toContain("at /path/to/file.ts:10:15");
