@@ -100,14 +100,12 @@ const createMockPRD = (stories: UserStory[] = []): PRD => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("checkTestCommand (Tier 2 warning)", () => {
-  test("passes when test command is configured", async () => {
-    const config = createMockConfig({ testCommand: "bun test" });
-
-    const result = await checkTestCommand(config);
-
+  test("passes and reflects command in message when test command is configured", async () => {
+    const result = await checkTestCommand(createMockConfig({ testCommand: "custom-test-cmd" }));
     expect(result.name).toBe("test-command-works");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
+    expect(result.message).toContain("custom-test-cmd");
   });
 
   test.each([null, false])("skips silently when test command is %s", async (testCommand) => {
@@ -116,25 +114,15 @@ describe("checkTestCommand (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
     expect(result.message).toContain("default");
   });
-
-  test("reads command from config.execution", async () => {
-    const config = createMockConfig({ testCommand: "custom-test-cmd" });
-
-    const result = await checkTestCommand(config);
-
-    expect(result.message).toContain("custom-test-cmd");
-  });
 });
 
 describe("checkLintCommand (Tier 2 warning)", () => {
-  test("passes when lint command is configured", async () => {
-    const config = createMockConfig({ lintCommand: "bun run lint" });
-
-    const result = await checkLintCommand(config);
-
+  test("passes and reflects command in message when lint command is configured", async () => {
+    const result = await checkLintCommand(createMockConfig({ lintCommand: "custom-lint-cmd" }));
     expect(result.name).toBe("lint-command-works");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
+    expect(result.message).toContain("custom-lint-cmd");
   });
 
   test.each([null, false])("skips silently when lint command is %s", async (lintCommand) => {
@@ -143,25 +131,15 @@ describe("checkLintCommand (Tier 2 warning)", () => {
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
   });
-
-  test("reads command from config.execution", async () => {
-    const config = createMockConfig({ lintCommand: "custom-lint-cmd" });
-
-    const result = await checkLintCommand(config);
-
-    expect(result.message).toContain("custom-lint-cmd");
-  });
 });
 
 describe("checkTypecheckCommand (Tier 2 warning)", () => {
-  test("passes when typecheck command is configured", async () => {
-    const config = createMockConfig({ typecheckCommand: "bun run typecheck" });
-
-    const result = await checkTypecheckCommand(config);
-
+  test("passes and reflects command in message when typecheck command is configured", async () => {
+    const result = await checkTypecheckCommand(createMockConfig({ typecheckCommand: "tsc --noEmit" }));
     expect(result.name).toBe("typecheck-command-works");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
+    expect(result.message).toContain("tsc");
   });
 
   test.each([null, false])("skips silently when typecheck command is %s", async (typecheckCommand) => {
@@ -169,14 +147,6 @@ describe("checkTypecheckCommand (Tier 2 warning)", () => {
     const result = await checkTypecheckCommand(config);
     expect(result.passed).toBe(true);
     expect(result.message).toContain("skip");
-  });
-
-  test("reads command from config.execution", async () => {
-    const config = createMockConfig({ typecheckCommand: "tsc --noEmit" });
-
-    const result = await checkTypecheckCommand(config);
-
-    expect(result.message).toContain("tsc");
   });
 });
 
@@ -195,58 +165,36 @@ describe("checkClaudeMdExists (Tier 2 warning)", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  test("passes when CLAUDE.md exists", async () => {
+  test("passes when CLAUDE.md exists; fails when it does not exist", async () => {
+    let result = await checkClaudeMdExists(testDir);
+    expect(result.tier).toBe("warning");
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain("not found");
+
     writeFileSync(join(testDir, "CLAUDE.md"), "# Project instructions");
-
-    const result = await checkClaudeMdExists(testDir);
-
+    result = await checkClaudeMdExists(testDir);
     expect(result.name).toBe("claude-md-exists");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
     expect(result.message).toContain("CLAUDE.md");
   });
 
-  test("fails when CLAUDE.md does not exist", async () => {
-    const result = await checkClaudeMdExists(testDir);
-
-    expect(result.tier).toBe("warning");
-    expect(result.passed).toBe(false);
-    expect(result.message).toContain("not found");
-  });
-
 });
 
 describe("checkDiskSpace (Tier 2 warning)", () => {
-  test("passes when disk space is above 1GB", async () => {
+  test("returns warning check with name, tier, and message; contains 1GB when below threshold", async () => {
     const result = await checkDiskSpace();
-
     expect(result.name).toBe("disk-space-sufficient");
     expect(result.tier).toBe("warning");
-  });
-
-  test("fails when disk space is below 1GB", async () => {
-    const result = await checkDiskSpace();
-
-    expect(result.tier).toBe("warning");
-    if (!result.passed) {
-      expect(result.message).toContain("1GB");
-    }
-  });
-
-  test("provides disk space information in message", async () => {
-    const result = await checkDiskSpace();
-
-    expect(result.message).toBeDefined();
+    if (!result.passed) expect(result.message).toContain("1GB");
     expect(typeof result.message).toBe("string");
   });
 });
 
 describe("checkPendingStories (Tier 2 warning)", () => {
-  test("passes when there are pending stories", async () => {
-    const prd = createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "pending" })]);
-
-    const result = await checkPendingStories(prd);
-
+  test("passes when pending or in-progress stories exist; counts both as actionable", async () => {
+    expect((await checkPendingStories(createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "pending" })]))).passed).toBe(true);
+    const result = await checkPendingStories(createMockPRD([createMockStory({ status: "pending" }), createMockStory({ status: "in-progress" }), createMockStory({ status: "passed" })]));
     expect(result.name).toBe("has-pending-stories");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
@@ -261,58 +209,23 @@ describe("checkPendingStories (Tier 2 warning)", () => {
     expect(result.passed).toBe(false);
     expect(result.message).toContain("no pending");
   });
-
-  test("counts pending and in-progress as actionable", async () => {
-    const prd = createMockPRD([
-      createMockStory({ status: "pending" }),
-      createMockStory({ status: "in-progress" }),
-      createMockStory({ status: "passed" }),
-    ]);
-
-    const result = await checkPendingStories(prd);
-
-    expect(result.passed).toBe(true);
-  });
 });
 
 describe("checkOptionalCommands (Tier 2 warning)", () => {
-  test("warns when optional commands are missing", async () => {
-    const config = createMockConfig({
-      testCommand: null as any,
-      lintCommand: null as any,
-      typecheckCommand: null as any,
-    });
-
-    const result = await checkOptionalCommands(config);
-
+  test("warns and lists missing commands when optional commands are absent", async () => {
+    let result = await checkOptionalCommands(createMockConfig({ testCommand: null as any, lintCommand: null as any, typecheckCommand: null as any }));
     expect(result.name).toBe("optional-commands-configured");
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(false);
+
+    result = await checkOptionalCommands(createMockConfig({ testCommand: "bun test", lintCommand: null as any, typecheckCommand: null as any }));
+    expect(result.message).toContain("lint");
+    expect(result.message).toContain("typecheck");
   });
 
   test("passes when all optional commands are configured", async () => {
-    const config = createMockConfig({
-      testCommand: "bun test",
-      lintCommand: "bun run lint",
-      typecheckCommand: "bun run typecheck",
-    });
-
-    const result = await checkOptionalCommands(config);
-
+    const result = await checkOptionalCommands(createMockConfig({ testCommand: "bun test", lintCommand: "bun run lint", typecheckCommand: "bun run typecheck" }));
     expect(result.passed).toBe(true);
-  });
-
-  test("lists which commands are missing", async () => {
-    const config = createMockConfig({
-      testCommand: "bun test",
-      lintCommand: null as any,
-      typecheckCommand: null as any,
-    });
-
-    const result = await checkOptionalCommands(config);
-
-    expect(result.message).toContain("lint");
-    expect(result.message).toContain("typecheck");
   });
 });
 
@@ -352,65 +265,29 @@ nax.lock
     expect(result.passed).toBe(true);
   });
 
-  test("fails when .gitignore does not exist", async () => {
-    const result = await checkGitignoreCoversNax(testDir);
-
+  test("fails when .gitignore is absent or missing any required nax pattern", async () => {
+    // No .gitignore
+    let result = await checkGitignoreCoversNax(testDir);
     expect(result.tier).toBe("warning");
     expect(result.passed).toBe(false);
     expect(result.message).toContain(".gitignore");
-  });
 
-  test("fails when .gitignore exists but does not cover nax.lock", async () => {
+    // Missing nax.lock
     writeFileSync(join(testDir, ".gitignore"), "node_modules/");
-
-    const result = await checkGitignoreCoversNax(testDir);
-
+    result = await checkGitignoreCoversNax(testDir);
     expect(result.passed).toBe(false);
     expect(result.message).toContain("nax.lock");
-  });
 
-  test("fails when .gitignore exists but does not cover runs directories", async () => {
-    writeFileSync(
-      join(testDir, ".gitignore"),
-      `
-nax.lock
-nax/metrics.json
-nax/features/*/status.json
-.nax-pids
-.nax-wt/
-`.trim(),
-    );
-
-    const result = await checkGitignoreCoversNax(testDir);
-
+    // Missing runs dirs
+    writeFileSync(join(testDir, ".gitignore"), "nax.lock\nnax/metrics.json\nnax/features/*/status.json\n.nax-pids\n.nax-wt/");
+    result = await checkGitignoreCoversNax(testDir);
     expect(result.passed).toBe(false);
     expect(result.message).toContain("runs");
-  });
 
-  test("fails when .gitignore exists but does not cover .nax-pids", async () => {
-    writeFileSync(
-      join(testDir, ".gitignore"),
-      `
-nax.lock
-nax/**/runs/
-nax/metrics.json
-nax/features/*/status.json
-.nax-wt/
-`.trim(),
-    );
-
-    const result = await checkGitignoreCoversNax(testDir);
-
+    // Missing .nax-pids
+    writeFileSync(join(testDir, ".gitignore"), "nax.lock\nnax/**/runs/\nnax/metrics.json\nnax/features/*/status.json\n.nax-wt/");
+    result = await checkGitignoreCoversNax(testDir);
     expect(result.passed).toBe(false);
     expect(result.message).toContain(".nax-pids");
-  });
-
-  test("checks all nax runtime file patterns", async () => {
-    writeFileSync(join(testDir, ".gitignore"), "# Empty");
-
-    const result = await checkGitignoreCoversNax(testDir);
-
-    expect(result.passed).toBe(false);
-    expect(result.message.toLowerCase()).toMatch(/nax\.lock|runs|\.nax-pids/);
   });
 });
