@@ -209,6 +209,7 @@ export const PromptsConfigSchema = z.object({
       z.string().min(1, "Override path must be non-empty"),
     )
     .optional(),
+  behavioralGuardrails: z.enum(["off", "lite", "strict"]).default("lite"),
 });
 
 export const ProjectProfileSchema = z.object({
