@@ -22,102 +22,29 @@ describe("shouldRetryRectification", () => {
     urgencyAtAttempt: 3,
   };
 
-  test("should retry when attempt < maxRetries and failures exist", () => {
-    const state: RectificationState = {
-      attempt: 0,
-      initialFailures: 5,
-      currentFailures: 3,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(true);
+  test("returns true when attempt < maxRetries and failures exist, decreased, stable, or increased with abort=false", () => {
+    const trueScenarios: Array<{ state: RectificationState; config: RectificationConfig; label: string }> = [
+      { state: { attempt: 0, initialFailures: 5, currentFailures: 3 }, config: baseConfig, label: "attempt 0, failures decreasing" },
+      { state: { attempt: 1, initialFailures: 5, currentFailures: 2 }, config: baseConfig, label: "attempt 1, progress" },
+      { state: { attempt: 1, initialFailures: 5, currentFailures: 5 }, config: baseConfig, label: "attempt 1, failures same" },
+      { state: { attempt: 1, initialFailures: 3, currentFailures: 5 }, config: { ...baseConfig, abortOnIncreasingFailures: false }, label: "increased but abort=false" },
+    ];
+    for (const { state, config, label } of trueScenarios) {
+      expect(shouldRetryRectification(state, config), label).toBe(true);
+    }
   });
 
-  test("should retry on attempt 1 when maxRetries is 2", () => {
-    const state: RectificationState = {
-      attempt: 1,
-      initialFailures: 5,
-      currentFailures: 2,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(true);
-  });
-
-  test("should NOT retry when attempt >= maxRetries", () => {
-    const state: RectificationState = {
-      attempt: 2,
-      initialFailures: 5,
-      currentFailures: 3,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(false);
-  });
-
-  test("should NOT retry when currentFailures = 0 (all passing)", () => {
-    const state: RectificationState = {
-      attempt: 0,
-      initialFailures: 5,
-      currentFailures: 0,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(false);
-  });
-
-  test("should abort when failures increase and abortOnIncreasingFailures = true", () => {
-    const state: RectificationState = {
-      attempt: 1,
-      initialFailures: 3,
-      currentFailures: 5, // regression!
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(false);
-  });
-
-  test("should continue when failures increase but abortOnIncreasingFailures = false", () => {
-    const config: RectificationConfig = {
-      ...baseConfig,
-      abortOnIncreasingFailures: false,
-    };
-    const state: RectificationState = {
-      attempt: 1,
-      initialFailures: 3,
-      currentFailures: 5,
-    };
-    expect(shouldRetryRectification(state, config)).toBe(true);
-  });
-
-  test("should retry when failures decreased (progress)", () => {
-    const state: RectificationState = {
-      attempt: 1,
-      initialFailures: 5,
-      currentFailures: 2,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(true);
-  });
-
-  test("should retry when failures stayed same", () => {
-    const state: RectificationState = {
-      attempt: 1,
-      initialFailures: 5,
-      currentFailures: 5,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(true);
-  });
-
-  test("should NOT retry at maxRetries even if failures exist", () => {
-    const state: RectificationState = {
-      attempt: 2,
-      initialFailures: 5,
-      currentFailures: 1,
-    };
-    expect(shouldRetryRectification(state, baseConfig)).toBe(false);
-  });
-
-  test("should handle maxRetries = 0 (no retries allowed)", () => {
-    const config: RectificationConfig = {
-      ...baseConfig,
-      maxRetries: 0,
-    };
-    const state: RectificationState = {
-      attempt: 0,
-      initialFailures: 5,
-      currentFailures: 5,
-    };
-    expect(shouldRetryRectification(state, config)).toBe(false);
+  test("returns false when attempt >= maxRetries, no failures, increasing failures with abort=true, or maxRetries=0", () => {
+    const falseScenarios: Array<{ state: RectificationState; config: RectificationConfig; label: string }> = [
+      { state: { attempt: 2, initialFailures: 5, currentFailures: 3 }, config: baseConfig, label: "attempt >= maxRetries" },
+      { state: { attempt: 0, initialFailures: 5, currentFailures: 0 }, config: baseConfig, label: "currentFailures = 0" },
+      { state: { attempt: 1, initialFailures: 3, currentFailures: 5 }, config: baseConfig, label: "failures increased with abort=true" },
+      { state: { attempt: 2, initialFailures: 5, currentFailures: 1 }, config: baseConfig, label: "at maxRetries even if failures exist" },
+      { state: { attempt: 0, initialFailures: 5, currentFailures: 5 }, config: { ...baseConfig, maxRetries: 0 }, label: "maxRetries=0" },
+    ];
+    for (const { state, config, label } of falseScenarios) {
+      expect(shouldRetryRectification(state, config), label).toBe(false);
+    }
   });
 });
 
@@ -166,232 +93,94 @@ describe("createEscalatedRectificationPrompt", () => {
     urgencyAtAttempt: 3,
   };
 
-  test("should include 'Previous Rectification Attempts' section header", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      2,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
+  test("includes 'Previous Rectification Attempts' header, prior attempt count, and original tier", () => {
+    const prompt = RectifierPromptBuilder.escalated(mockFailures, mockStory, 2, "balanced", "powerful", baseConfig);
     expect(prompt).toContain("Previous Rectification Attempts");
-  });
-
-  test("should include prior attempt count and original tier in the section", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      2,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
     expect(prompt).toMatch(/(?:prior|previous).*:.*2/i);
     expect(prompt).toContain("balanced");
   });
 
-  test("should list all test names when failures <= 10", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "fast",
-      "balanced",
-      baseConfig,
-    );
+  test("lists all test names when failures <= 10; includes first 10 and 'and N more' when failures > 10; handles exactly 10 without 'and N more'", () => {
+    // <= 10 failures: all test names listed
+    const prompt = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "fast", "balanced", baseConfig);
     expect(prompt).toContain("login > should return JWT on valid credentials");
     expect(prompt).toContain("JWT middleware > should reject invalid tokens");
-  });
 
-  test("should include first 10 test names and 'and N more' when failures > 10", () => {
+    // > 10 failures: first 10 + "and N more"
     const manyFailures: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
       file: `test/file${i}.test.ts`,
       testName: `test ${i}`,
       error: `Error ${i}`,
       stackTrace: [],
     }));
-
-    const prompt = RectifierPromptBuilder.escalated(
-      manyFailures,
-      mockStory,
-      2,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-
-    // Should include first 10 test names
+    const promptMany = RectifierPromptBuilder.escalated(manyFailures, mockStory, 2, "balanced", "powerful", baseConfig);
     for (let i = 0; i < 10; i++) {
-      expect(prompt).toContain(`test ${i}`);
+      expect(promptMany).toContain(`test ${i}`);
     }
+    expect(promptMany).toContain("and 5 more");
 
-    // Should include "and 5 more" (15 - 10 = 5)
-    expect(prompt).toContain("and 5 more");
-  });
-
-  test("should include escalation direction with both source and target tiers", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      2,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-    expect(prompt).toContain("balanced");
-    expect(prompt).toContain("powerful");
-    // Should have some indication of escalation/direction
-    expect(prompt.toLowerCase()).toMatch(/escalat/);
-  });
-
-  test("should handle escalation from fast to balanced", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "fast",
-      "balanced",
-      baseConfig,
-    );
-    expect(prompt).toContain("fast");
-    expect(prompt).toContain("balanced");
-  });
-
-  test("should include story context (title, description, acceptance criteria)", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-    expect(prompt).toContain("Add user authentication");
-    expect(prompt).toContain("Implement JWT-based authentication for API endpoints");
-    expect(prompt).toContain("Users can log in with email/password");
-  });
-
-  test("should include failure summary", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-    expect(prompt).toContain("test/auth.test.ts");
-    expect(prompt).toContain("Expected status 200, got 401");
-  });
-
-  test("should respect maxFailureSummaryChars config", () => {
-    const smallConfig: RectificationConfig = {
-      enabled: true,
-      maxRetries: 2,
-      fullSuiteTimeoutSeconds: 120,
-      maxFailureSummaryChars: 100,
-      abortOnIncreasingFailures: true,
-      escalateOnExhaustion: true,
-      rethinkAtAttempt: 2,
-      urgencyAtAttempt: 3,
-    };
-
-    const manyFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
-      file: `test/file${i}.test.ts`,
-      testName: `test ${i}`,
-      error: `Error ${i}: Some long error message that takes up space`,
-      stackTrace: [],
-    }));
-
-    const prompt = RectifierPromptBuilder.escalated(
-      manyFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      smallConfig,
-    );
-
-    expect(prompt).toMatch(/truncated/i);
-  });
-
-  test("should handle exactly 10 failures without 'and N more'", () => {
+    // Exactly 10 failures: no "and N more"
     const tenFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
       file: `test/file${i}.test.ts`,
       testName: `test ${i}`,
       error: `Error ${i}`,
       stackTrace: [],
     }));
-
-    const prompt = RectifierPromptBuilder.escalated(
-      tenFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-
-    // Should include all 10 test names
+    const promptTen = RectifierPromptBuilder.escalated(tenFailures, mockStory, 1, "balanced", "powerful", baseConfig);
     for (let i = 0; i < 10; i++) {
-      expect(prompt).toContain(`test ${i}`);
+      expect(promptTen).toContain(`test ${i}`);
     }
-
-    // Should NOT include "and N more" when exactly 10
-    expect(prompt).not.toMatch(/and \d+ more/);
+    expect(promptTen).not.toMatch(/and \d+ more/);
   });
 
-  test("should include instructions for the agent", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-    // Should have some guidance for the escalated attempt
-    expect(prompt.toLowerCase()).toMatch(/fix|implement|correct/);
+  test("includes escalation direction (source and target tiers) for both fast→balanced and balanced→powerful", () => {
+    const prompt1 = RectifierPromptBuilder.escalated(mockFailures, mockStory, 2, "balanced", "powerful", baseConfig);
+    expect(prompt1).toContain("balanced");
+    expect(prompt1).toContain("powerful");
+    expect(prompt1.toLowerCase()).toMatch(/escalat/);
+
+    const prompt2 = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "fast", "balanced", baseConfig);
+    expect(prompt2).toContain("fast");
+    expect(prompt2).toContain("balanced");
   });
 
-  test("uses configured testCommand in NEVER run filter instruction", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-      "jest",
-    );
-    expect(prompt).toContain("NEVER run `jest` without a file filter");
-    expect(prompt).not.toContain("NEVER run `bun test`");
+  test("includes story context (title, description, acceptance criteria) and failure summary", () => {
+    const prompt = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig);
+    expect(prompt).toContain("Add user authentication");
+    expect(prompt).toContain("Implement JWT-based authentication for API endpoints");
+    expect(prompt).toContain("Users can log in with email/password");
+    expect(prompt).toContain("test/auth.test.ts");
+    expect(prompt).toContain("Expected status 200, got 401");
   });
 
-  test("uses neutral filter instruction when no testCommand provided (#543)", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-    );
-    expect(prompt).toContain("never run the full test suite without a file filter");
-    expect(prompt).not.toContain("bun test");
+  test("respects maxFailureSummaryChars config and includes agent instructions", () => {
+    const smallConfig: RectificationConfig = {
+      ...baseConfig,
+      maxFailureSummaryChars: 100,
+    };
+    const manyFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}: Some long error message that takes up space`,
+      stackTrace: [],
+    }));
+    const prompt = RectifierPromptBuilder.escalated(manyFailures, mockStory, 1, "balanced", "powerful", smallConfig);
+    expect(prompt).toMatch(/truncated/i);
+
+    const promptInstr = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig);
+    expect(promptInstr.toLowerCase()).toMatch(/fix|implement|correct/);
   });
 
-  test("references configured test command when provided", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      mockFailures,
-      mockStory,
-      1,
-      "balanced",
-      "powerful",
-      baseConfig,
-      "go test",
-    );
-    expect(prompt).toContain("NEVER run `go test` without a file filter");
+  test("uses configured testCommand in NEVER run filter; neutral instruction when no testCommand provided", () => {
+    const promptWithCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig, "jest");
+    expect(promptWithCmd).toContain("NEVER run `jest` without a file filter");
+    expect(promptWithCmd).not.toContain("NEVER run `bun test`");
+
+    const promptGoCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig, "go test");
+    expect(promptGoCmd).toContain("NEVER run `go test` without a file filter");
+
+    const promptNoCmd = RectifierPromptBuilder.escalated(mockFailures, mockStory, 1, "balanced", "powerful", baseConfig);
+    expect(promptNoCmd).toContain("never run the full test suite without a file filter");
+    expect(promptNoCmd).not.toContain("bun test");
   });
 });
