@@ -424,8 +424,9 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
 
     _rectificationDeps.agentManager = mockAgentManager as any;
 
-    // Return more failures than initial to trigger abortOnIncreasingFailures
-    // Initial output has 1 failure; retry output has 5 failures
+    // The pre-check (first runVerification call) establishes the full-suite baseline.
+    // Subsequent calls (post-attempt verify) return 5 failures to trigger abort.
+    // Initial testOutput has 1 failure; pre-check confirms 1; post-attempt shows 5 → regression.
     const worseOutput =
       "✗ test1 [1ms]\n(fail) test1 [1ms]\nerror: err\n" +
       "✗ test2 [1ms]\n(fail) test2 [1ms]\nerror: err\n" +
@@ -434,9 +435,14 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       "✗ test5 [1ms]\n(fail) test5 [1ms]\nerror: err\n" +
       "5 passed, 5 failed [5ms]";
 
-    _rectificationDeps.runVerification = mock(async () =>
-      makeVerificationResult(false, worseOutput),
-    );
+    let verifyCallCount = 0;
+    _rectificationDeps.runVerification = mock(async () => {
+      // First call is the pre-check: return the same 1-failure baseline as testOutput.
+      // Subsequent calls are post-attempt verifies: return 5 failures (regression).
+      verifyCallCount++;
+      if (verifyCallCount === 1) return makeVerificationResult(false, FAILING_TEST_OUTPUT);
+      return makeVerificationResult(false, worseOutput);
+    });
 
     const config = makeConfig({
       execution: {

@@ -248,11 +248,39 @@ export async function runRectificationLoop(
     },
   });
 
-  // Initial failure snapshot for the retry loop
-  const initialFailure: RectificationFailure = {
-    testOutput,
-    testSummary,
-  };
+  // Establish the initial failure snapshot for the retry loop. The testOutput
+  // passed in comes from the pipeline's verify stage, which may have used a
+  // scoped/smart runner covering fewer files than testCommand (the full suite).
+  // If abortOnIncreasingFailures is enabled we need the full-suite baseline so
+  // shouldAbort doesn't fire on scope-expansion (e.g. scoped=3 failures vs.
+  // full-suite=4 pre-existing failures). Run a pre-check with testCommand first
+  // and use its output as both the baseline and the agent's context.
+  let initialFailure: RectificationFailure = { testOutput, testSummary };
+  if (rectificationConfig.abortOnIncreasingFailures) {
+    const preCheck = await _rectificationDeps.runVerification({
+      workdir,
+      expectedFiles: getExpectedFiles(story),
+      command: testCommand,
+      timeoutSeconds,
+      forceExit: config.quality.forceExit,
+      detectOpenHandles: config.quality.detectOpenHandles,
+      detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+      timeoutRetryCount: 0,
+      gracePeriodMs: config.quality.gracePeriodMs,
+      drainTimeoutMs: config.quality.drainTimeoutMs,
+      shell: config.quality.shell,
+      stripEnvVars: config.quality.stripEnvVars,
+    });
+    if (preCheck.output) {
+      const preCheckSummary = parseTestOutput(preCheck.output);
+      initialFailure = { testOutput: preCheck.output, testSummary: preCheckSummary };
+    } else {
+      logger?.warn("rectification", "pre-check returned no output — abort baseline may be scope-mismatched", {
+        storyId: story.id,
+        preCheckStatus: preCheck.status,
+      });
+    }
+  }
 
   const outcome = await runRetryLoop<RectificationFailure, RectificationAttemptResult>({
     stage: "rectification",

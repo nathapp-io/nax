@@ -1045,6 +1045,49 @@ Error: Test failed
 
     expect(result.succeeded).toBe(true);
     expect(agentRunCount).toBe(1);
+    // +1 for the pre-check that establishes the full-suite baseline before the loop
+    // (runs when abortOnIncreasingFailures is enabled, which is the default).
+    expect(verificationCalls).toBe(2);
+  });
+
+  test("skips pre-check when abortOnIncreasingFailures is disabled", async () => {
+    let verificationCalls = 0;
+    const mockAgentManager = makeMockAgentManager({
+      runAsSessionFn: mock(async () => ({
+        output: "",
+        estimatedCostUsd: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        internalRoundTrips: 0,
+      })),
+    });
+    _rectificationDeps.agentManager = mockAgentManager;
+    _rectificationDeps.runVerification = mock(async () => {
+      verificationCalls++;
+      return {
+        success: true,
+        status: "SUCCESS" as const,
+        output: "1 passed, 0 failed [1ms]",
+        countsTowardEscalation: false,
+      };
+    });
+
+    const runtime = makeMockRuntime();
+
+    const result = await runRectificationLoop({
+      config: makeConfig({
+        execution: { rectification: { abortOnIncreasingFailures: false } },
+      } as any),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-NO-ABORT" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+      agentManager: mockAgentManager,
+      runtime,
+    });
+
+    expect(result.succeeded).toBe(true);
+    // No pre-check: only the single verify call from the passing loop attempt.
     expect(verificationCalls).toBe(1);
   });
 });
