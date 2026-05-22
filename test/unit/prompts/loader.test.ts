@@ -258,9 +258,9 @@ describe("NaxConfig.prompts type shape", () => {
     expect(config.prompts?.overrides?.implementer).toBe(".nax/prompts/impl.md");
   });
 
-  test("config without prompts block compiles fine", () => {
+  test("config without prompts block defaults to lite guardrails", () => {
     const config = makeConfig();
-    expect(config.prompts).toBeUndefined();
+    expect(config.prompts).toEqual({ behavioralGuardrails: "lite" });
   });
 
   test("promptLoaderConfigSelector picks prompts, context, project", () => {
@@ -270,7 +270,7 @@ describe("NaxConfig.prompts type shape", () => {
   });
 
   test("loadOverride accepts a Pick<NaxConfig, 'prompts'> literal (no NaxConfig cast)", async () => {
-    const config = { prompts: { overrides: {} } } satisfies Pick<NaxConfig, "prompts">;
+    const config = { prompts: { overrides: {}, behavioralGuardrails: "lite" as const } } satisfies Pick<NaxConfig, "prompts">;
     const result = await loadOverride("test-writer", "/tmp/nonexistent-loader-test", config);
     expect(result).toBeNull();
   });
