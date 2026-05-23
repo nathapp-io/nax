@@ -159,22 +159,9 @@ export function buildPlanForStrategy(
       strategies.push(makeFullSuiteRectifyStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
-      strategies.push(
-        makeAutofixImplementerStrategy(ctx as unknown as PipelineContext) as FixStrategy<
-          Finding,
-          unknown,
-          unknown,
-          unknown
-        >,
-      );
-      strategies.push(
-        makeAutofixTestWriterStrategy(ctx as unknown as PipelineContext) as FixStrategy<
-          Finding,
-          unknown,
-          unknown,
-          unknown
-        >,
-      );
+      const pipelineCtx = { ...ctx, config } as unknown as PipelineContext;
+      strategies.push(makeAutofixImplementerStrategy(pipelineCtx) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeAutofixTestWriterStrategy(pipelineCtx) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
 
     const rectOpts: RectificationPhaseOptions = {

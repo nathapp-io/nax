@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { TestStrategy } from "@/config/schema-types";
 import { buildPlanForStrategy, ExecutionPlan } from "@/execution";
 import type { PlanInputs } from "@/execution";
-import { _storyOrchestratorDeps } from "@/execution/story-orchestrator";
+import { _storyOrchestratorDeps } from "@/execution";
 import type { UserStory } from "@/prd/types";
 import {
   makeMockCallContext,

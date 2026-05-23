@@ -13,8 +13,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution/story-orchestrator";
-import type { StoryOrchestratorResult } from "@/execution/story-orchestrator";
+import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import type { StoryOrchestratorResult } from "@/execution";
 import type { FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import { pickSelector } from "@/config";
