@@ -82,3 +82,9 @@ export type {
   FullSuiteGateDeps,
 } from "./full-suite-gate";
 export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
+export { lintCheckOp, _lintCheckDeps } from "./lint-check";
+export type { LintCheckInput, LintCheckOutput, LintCheckDeps } from "./lint-check";
+export { typecheckCheckOp, _typecheckCheckDeps } from "./typecheck-check";
+export type { TypecheckCheckInput, TypecheckCheckOutput, TypecheckCheckDeps } from "./typecheck-check";
+export { verifyScopedOp, _verifyScopedDeps } from "./verify-scoped";
+export type { VerifyScopedInput, VerifyScopedOutput, VerifyScopedDeps } from "./verify-scoped";

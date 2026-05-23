@@ -7,9 +7,12 @@ import {
   fullSuiteGateOp,
   greenfieldGateOp,
   implementerOp,
+  lintCheckOp,
   semanticReviewOp,
   testWriterOp,
+  typecheckCheckOp,
   verifierOp,
+  verifyScopedOp,
 } from "../operations";
 import type {
   AdversarialReviewInput,
@@ -18,11 +21,14 @@ import type {
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
+  LintCheckInput,
   Operation,
   RunOperation,
   SemanticReviewInput,
   TestWriterInput,
+  TypecheckCheckInput,
   VerifierInput,
+  VerifyScopedInput,
 } from "../operations";
 import { callOp } from "../operations/call";
 import { errorMessage } from "../utils/errors";
@@ -62,6 +68,9 @@ type PhaseKind =
   | "implementer"
   | "full-suite-gate"
   | "verifier"
+  | "verify-scoped"
+  | "lint-check"
+  | "typecheck-check"
   | "semantic-review"
   | "adversarial-review";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
@@ -78,6 +87,9 @@ interface InternalBuildState {
   greenfieldGate?: InternalPhase;
   fullSuiteGate?: InternalPhase;
   verifier?: InternalPhase;
+  verifyScoped?: InternalPhase;
+  lintCheck?: InternalPhase;
+  typecheckCheck?: InternalPhase;
   semanticReview?: InternalPhase;
   adversarialReview?: InternalPhase;
   rectification?: RectificationPhaseOptions;
@@ -89,6 +101,9 @@ const CANONICAL_ORDER: readonly PhaseKind[] = [
   "implementer",
   "full-suite-gate",
   "verifier",
+  "verify-scoped",
+  "lint-check",
+  "typecheck-check",
   "semantic-review",
   "adversarial-review",
 ];
@@ -109,6 +124,9 @@ const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState> = {
   implementer: "implementer",
   "full-suite-gate": "fullSuiteGate",
   verifier: "verifier",
+  "verify-scoped": "verifyScoped",
+  "lint-check": "lintCheck",
+  "typecheck-check": "typecheckCheck",
   "semantic-review": "semanticReview",
   "adversarial-review": "adversarialReview",
 };
@@ -133,6 +151,9 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
     if (kind === "implementer" && state.implementer) return [state.implementer];
     if (kind === "full-suite-gate" && state.fullSuiteGate) return [state.fullSuiteGate];
     if (kind === "verifier" && state.verifier) return [state.verifier];
+    if (kind === "verify-scoped" && state.verifyScoped) return [state.verifyScoped];
+    if (kind === "lint-check" && state.lintCheck) return [state.lintCheck];
+    if (kind === "typecheck-check" && state.typecheckCheck) return [state.typecheckCheck];
     if (kind === "semantic-review" && state.semanticReview) return [state.semanticReview];
     if (kind === "adversarial-review" && state.adversarialReview) return [state.adversarialReview];
     return [];
@@ -544,6 +565,27 @@ export class StoryOrchestratorBuilder {
   addFullSuiteGate(input: FullSuiteGateInput): this;
   addFullSuiteGate(value: FullSuiteGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "full-suite-gate", isSlot(value) ? value : { op: fullSuiteGateOp, input: value });
+    return this;
+  }
+
+  addVerifyScoped<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addVerifyScoped(input: VerifyScopedInput): this;
+  addVerifyScoped(value: VerifyScopedInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "verify-scoped", isSlot(value) ? value : { op: verifyScopedOp, input: value });
+    return this;
+  }
+
+  addLintCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addLintCheck(input: LintCheckInput): this;
+  addLintCheck(value: LintCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "lint-check", isSlot(value) ? value : { op: lintCheckOp, input: value });
+    return this;
+  }
+
+  addTypecheckCheck<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTypecheckCheck(input: TypecheckCheckInput): this;
+  addTypecheckCheck(value: TypecheckCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "typecheck-check", isSlot(value) ? value : { op: typecheckCheckOp, input: value });
     return this;
   }
 
