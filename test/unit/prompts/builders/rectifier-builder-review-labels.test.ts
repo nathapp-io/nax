@@ -184,4 +184,79 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
     expect(prompt).not.toContain("semantic review");
     expect(prompt.toLowerCase()).not.toContain("adversarial review findings");
   });
+
+  test("renders structured findings before raw output for mechanical checks", () => {
+    const checks: ReviewCheckResult[] = [
+      {
+        ...makeCheck("lint", "src/foo.ts:1:1 raw lint line"),
+        findings: [
+          {
+            ruleId: "lint/rule",
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            message: "Structured lint issue",
+            source: "lint",
+          },
+        ],
+      },
+    ];
+    const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
+
+    const structuredIdx = prompt.indexOf("Structured findings:");
+    const rawIdx = prompt.indexOf("Raw output excerpt:");
+    expect(structuredIdx).toBeGreaterThan(-1);
+    expect(rawIdx).toBeGreaterThan(-1);
+    expect(structuredIdx).toBeLessThan(rawIdx);
+  });
+
+  test("caps raw output excerpt when structured findings exist", () => {
+    const hugeOutput = `{${"x".repeat(10_000)}}`;
+    const checks: ReviewCheckResult[] = [
+      {
+        ...makeCheck("lint", hugeOutput),
+        findings: [
+          {
+            ruleId: "lint/rule",
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            message: "Structured lint issue",
+            source: "lint",
+          },
+        ],
+      },
+    ];
+    const prompt = RectifierPromptBuilder.reviewRectification(checks, STORY);
+    expect(prompt).toContain("truncated");
+    const xCount = (prompt.match(/x/g) ?? []).length;
+    expect(xCount).toBeLessThan(10_000);
+  });
+
+  test("uses blockingThreshold mapping for structured findings", () => {
+    const checks: ReviewCheckResult[] = [
+      {
+        ...makeCheck("semantic", "raw semantic output"),
+        findings: [
+          {
+            ruleId: "semantic/rule",
+            severity: "warning",
+            file: "src/foo.ts",
+            line: 12,
+            message: "Warning-level finding",
+            source: "semantic-review",
+          },
+        ],
+      },
+    ];
+
+    const promptDefault = RectifierPromptBuilder.reviewRectification(checks, STORY);
+    expect(promptDefault).not.toContain("Structured findings:");
+
+    const promptWarning = RectifierPromptBuilder.reviewRectification(checks, STORY, {
+      blockingThreshold: "warning",
+    });
+    expect(promptWarning).toContain("Structured findings:");
+    expect(promptWarning).toContain("Warning-level finding");
+  });
 });

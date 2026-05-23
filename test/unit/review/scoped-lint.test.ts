@@ -177,6 +177,7 @@ describe("runScopedLintCheck", () => {
     expect(result.output).not.toContain("src/out.ts");
     expect(result.lintScope?.status).toBe("in_scope");
     expect(result.lintScope?.outOfScopeDiagnosticCount).toBe(1);
+    expect(result.findings?.every((f) => f.file.includes("src/in.ts"))).toBe(true);
   });
 
   test("degraded mode fails closed when lint output is unparseable", async () => {
@@ -228,5 +229,29 @@ describe("runScopedLintCheck", () => {
     expect(result.lintScope?.status).toBe("out_of_scope");
     expect(result.lintScope?.packageGroups).toEqual([{ packageDir: "packages/api", files: ["packages/api/src/in.ts"] }]);
     expect(result.output).toContain("out of story scope");
+  });
+
+  test("attaches findings for failing scoped lint results when output is parseable", async () => {
+    _scopedLintDeps.runLintCommand = mock(async (_workdir, _storyId, _env, command) => ({
+      command,
+      success: false,
+      exitCode: 1,
+      output: "src/alpha.ts:10:4 Unexpected console statement",
+      durationMs: 7,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: { ...baseReviewConfig.commands, lintScoped: "custom-lint {{files}}" },
+      lintOutputFormat: "text",
+      qualityCommands: {},
+      workdir: "/repo",
+      storyId: "US-001",
+      storyGitRef: "abc123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.findings?.length).toBeGreaterThan(0);
+    expect(result.findings?.[0]?.file).toContain("src/alpha.ts");
   });
 });
