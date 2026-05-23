@@ -27,15 +27,24 @@ export const _mechanicalLintFixDeps: MechanicalLintFixDeps = {
 
 const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, MechanicalLintFixOutput, QualityConfig> = {
   kind: "deterministic",
-  name: "",
+  name: "mechanical-lintfix",
   stage: "rectification",
   config: qualityConfigSelector,
   async execute(
-    _input: MechanicalLintFixInput,
-    _ctx: CallContext,
-    _deps: MechanicalLintFixDeps = _mechanicalLintFixDeps,
+    input: MechanicalLintFixInput,
+    ctx: CallContext,
+    deps: MechanicalLintFixDeps = _mechanicalLintFixDeps,
   ): Promise<MechanicalLintFixOutput> {
-    return { applied: false as unknown as true, exitCode: -1 };
+    const broad = (ctx as any).config?.quality?.commands?.lintFix as string | undefined;
+    if (!broad) return { applied: true, exitCode: 0 };
+    const command = input.scopeFiles?.length ? `${broad} ${input.scopeFiles.join(" ")}` : broad;
+    const result = await deps.runQualityCommand({
+      commandName: "lintFix",
+      command,
+      workdir: input.workdir,
+      storyId: input.storyId,
+    });
+    return { applied: true, exitCode: result.exitCode };
   },
 };
 
@@ -46,12 +55,16 @@ export function makeMechanicalLintFixStrategy(): FixStrategy<
   QualityConfig
 > {
   return {
-    name: "",
-    appliesTo: () => null as unknown as boolean,
+    name: "mechanical-lintfix",
+    appliesTo: (f) => f.source === "lint",
     fixOp: mechanicalLintFixOp,
-    buildInput: () => null as any,
-    extractApplied: () => ({ targetFiles: [], summary: "" }),
-    maxAttempts: 0,
+    buildInput: (_findings, _prior, cycleCtx) => ({
+      workdir: cycleCtx.packageDir,
+      storyId: cycleCtx.storyId,
+      scopeFiles: undefined,
+    }),
+    extractApplied: () => ({ targetFiles: [], summary: "lint --fix" }),
+    maxAttempts: 1,
     coRun: "exclusive",
   };
 }

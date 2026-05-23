@@ -25,20 +25,32 @@ export const _mechanicalFormatFixDeps: MechanicalFormatFixDeps = {
   runQualityCommand,
 };
 
-const mechanicalFormatFixOp: DeterministicOperation<MechanicalFormatFixInput, MechanicalFormatFixOutput, QualityConfig> =
-  {
-    kind: "deterministic",
-    name: "",
-    stage: "rectification",
-    config: qualityConfigSelector,
-    async execute(
-      _input: MechanicalFormatFixInput,
-      _ctx: CallContext,
-      _deps: MechanicalFormatFixDeps = _mechanicalFormatFixDeps,
-    ): Promise<MechanicalFormatFixOutput> {
-      return { applied: false as unknown as true, exitCode: -1 };
-    },
-  };
+const mechanicalFormatFixOp: DeterministicOperation<
+  MechanicalFormatFixInput,
+  MechanicalFormatFixOutput,
+  QualityConfig
+> = {
+  kind: "deterministic",
+  name: "mechanical-formatfix",
+  stage: "rectification",
+  config: qualityConfigSelector,
+  async execute(
+    input: MechanicalFormatFixInput,
+    ctx: CallContext,
+    deps: MechanicalFormatFixDeps = _mechanicalFormatFixDeps,
+  ): Promise<MechanicalFormatFixOutput> {
+    const broad = (ctx as any).config?.quality?.commands?.formatFix as string | undefined;
+    if (!broad) return { applied: true, exitCode: 0 };
+    const command = input.scopeFiles?.length ? `${broad} ${input.scopeFiles.join(" ")}` : broad;
+    const result = await deps.runQualityCommand({
+      commandName: "formatFix",
+      command,
+      workdir: input.workdir,
+      storyId: input.storyId,
+    });
+    return { applied: true, exitCode: result.exitCode };
+  },
+};
 
 export function makeMechanicalFormatFixStrategy(): FixStrategy<
   Finding,
@@ -47,12 +59,16 @@ export function makeMechanicalFormatFixStrategy(): FixStrategy<
   QualityConfig
 > {
   return {
-    name: "",
-    appliesTo: () => null as unknown as boolean,
+    name: "mechanical-formatfix",
+    appliesTo: (f) => f.source === "lint",
     fixOp: mechanicalFormatFixOp,
-    buildInput: () => null as any,
-    extractApplied: () => ({ targetFiles: [], summary: "" }),
-    maxAttempts: 0,
+    buildInput: (_findings, _prior, cycleCtx) => ({
+      workdir: cycleCtx.packageDir,
+      storyId: cycleCtx.storyId,
+      scopeFiles: undefined,
+    }),
+    extractApplied: () => ({ targetFiles: [], summary: "format --fix" }),
+    maxAttempts: 1,
     coRun: "exclusive",
   };
 }
