@@ -3,7 +3,7 @@
   "feature": "execution-unification",
   "branchName": "feat/execution-unification",
   "createdAt": "2026-05-23T00:00:00.000Z",
-  "updatedAt": "2026-05-23T09:31:47.803Z",
+  "updatedAt": "2026-05-23T10:02:07.238Z",
   "userStories": [
     {
       "id": "US-001",
@@ -118,8 +118,8 @@
         "operations"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -175,7 +175,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/autofix-cycle.ts",
@@ -190,7 +192,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a8a4de0951a37d2f16da60404efe2eedd889176e"
     },
     {
       "id": "US-005a",
