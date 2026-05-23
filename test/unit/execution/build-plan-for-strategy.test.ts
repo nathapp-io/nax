@@ -7,17 +7,20 @@
  *
  * Use plan.phaseNames() to inspect the set of included phases.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { TestStrategy } from "@/config/schema-types";
 import { buildPlanForStrategy, ExecutionPlan } from "@/execution";
 import type { PlanInputs } from "@/execution";
+import { _storyOrchestratorDeps } from "@/execution/story-orchestrator";
 import type { UserStory } from "@/prd/types";
 import {
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
   makeStory,
+  makeTestRuntime,
 } from "@test/helpers";
+import type { NaxRuntime } from "@/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed input factories — populate the slot inputs each test needs
@@ -425,6 +428,197 @@ describe("buildPlanForStrategy — rectification", () => {
     });
     const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("rectification");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC3: new check phases wired in buildPlanForStrategy
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => {
+  test("AC3: non-TDD + verifyScoped input → plan includes 'verify-scoped' phase", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeNonTddInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("verify-scoped");
+  });
+
+  test("AC3: lintCheck input → plan includes 'lint-check' phase", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeNonTddInputs(story, {
+      lintCheck: { workdir: "/tmp/test", storyId: story.id },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("lint-check");
+  });
+
+  test("AC3: typecheckCheck input → plan includes 'typecheck-check' phase", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeNonTddInputs(story, {
+      typecheckCheck: { workdir: "/tmp/test", storyId: story.id },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("typecheck-check");
+  });
+
+  test("AC3: TDD strategy does NOT receive verifyScoped phase (verifyScoped is non-TDD only)", () => {
+    const story = makeStory({ attempts: 1 });
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeTddRetryInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    expect(plan.phaseNames()).not.toContain("verify-scoped");
+  });
+
+  test("AC3: canonical order places check phases after implementer: verify-scoped, lint-check, typecheck-check", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeNonTddInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+      lintCheck: { workdir: "/tmp/test", storyId: story.id },
+      typecheckCheck: { workdir: "/tmp/test", storyId: story.id },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const names = plan.phaseNames();
+    const implIdx = names.indexOf("implementer");
+    expect(implIdx).toBeGreaterThanOrEqual(0);
+    expect(names.indexOf("verify-scoped")).toBeGreaterThan(implIdx);
+    expect(names.indexOf("lint-check")).toBeGreaterThan(implIdx);
+    expect(names.indexOf("typecheck-check")).toBeGreaterThan(implIdx);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC4: fix strategy assembly in buildPlanForStrategy
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
+  let capturedStrategyNames: string[] = [];
+  let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
+  let origCallOp: typeof _storyOrchestratorDeps.callOp;
+  let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
+  let runtime: NaxRuntime;
+
+  beforeEach(() => {
+    capturedStrategyNames = [];
+    origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    origCallOp = _storyOrchestratorDeps.callOp;
+    origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
+
+    _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
+    // Mock callOp: verifier returns failing output with test-runner finding so rectification triggers
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verifier") {
+        return { success: false, findings: [{ source: "test-runner", severity: "error", message: "test failed" }] };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: { strategies: Array<{ name: string }> }) => {
+      capturedStrategyNames = cycle.strategies.map((s) => s.name);
+      return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+  });
+
+  afterEach(async () => {
+    _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    _storyOrchestratorDeps.callOp = origCallOp;
+    _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
+    await runtime?.close();
+  });
+
+  function makeCtxWithRuntime(config = makeNaxConfig()) {
+    runtime = makeTestRuntime({ config });
+    return makeMockCallContext({ runtime });
+  }
+
+  test("AC4: lintFix command configured → mechanical-lintfix strategy assembled in rectification", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { commands: { lintFix: "bun run lint:fix" } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("mechanical-lintfix");
+  });
+
+  test("AC4: formatFix command configured → mechanical-formatfix strategy assembled in rectification", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { commands: { formatFix: "bun run format:fix" } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("mechanical-formatfix");
+  });
+
+  test("AC4: autofix enabled → autofix-implementer strategy assembled in rectification", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("autofix-implementer");
+  });
+
+  test("AC4: autofix enabled → autofix-test-writer strategy assembled in rectification", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("autofix-test-writer");
+  });
+
+  test("AC4: no fix commands + autofix disabled → no mechanical or autofix strategies assembled", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { commands: {}, autofix: { enabled: false } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    // Only the fullSuiteRectifyStrategy should be present (prepended by buildPlanForStrategy for TDD+gate)
+    expect(capturedStrategyNames).not.toContain("mechanical-lintfix");
+    expect(capturedStrategyNames).not.toContain("mechanical-formatfix");
+    expect(capturedStrategyNames).not.toContain("autofix-implementer");
+    expect(capturedStrategyNames).not.toContain("autofix-test-writer");
   });
 });
 

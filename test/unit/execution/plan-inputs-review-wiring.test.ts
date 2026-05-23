@@ -125,6 +125,36 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.adversarialReview).toBeUndefined();
   });
 
+  // US-005 AC2: inlineReviewEnabled gate removed from semanticReview/adversarialReview
+  test("AC2: populates semanticReview WITHOUT inlineReview=true when review.enabled + checks includes 'semantic'", async () => {
+    // After AC2, the inlineReviewEnabled gate is removed — semanticReview populates based on
+    // review.enabled + checks membership alone, not the inlineReview flag.
+    const ctx = makeCtx({
+      execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeDefined();
+  });
+
+  test("AC2: populates adversarialReview WITHOUT inlineReview=true when review.enabled + checks includes 'adversarial'", async () => {
+    const ctx = makeCtx({
+      execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["adversarial"],
+        adversarial: DEFAULT_ADVERSARIAL,
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.adversarialReview).toBeDefined();
+  });
+
   // AC2: rectification is no longer gated by inlineReviewEnabled
   test("populates rectification when rectification.enabled=true even when inlineReview=false", async () => {
     const ctx = makeCtx({
