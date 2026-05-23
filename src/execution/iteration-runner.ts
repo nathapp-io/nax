@@ -15,7 +15,6 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
 import { markStoryFailed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { reviewOrchestrator } from "../review/orchestrator";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { prepareWorktreeDependencies } from "../worktree/dependencies";
@@ -128,7 +127,6 @@ export async function runIteration(
       });
     } catch (error) {
       markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
-      reviewOrchestrator.clearStory(story.id);
       await savePRD(prd, ctx.prdPath);
       try {
         await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, story.id);
@@ -200,20 +198,6 @@ export async function runIteration(
 
   const pipelineResult = await _iterationRunnerDeps.runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
 
-  // #410: Destroy reviewerSession on escalation — completion stage is bypassed when the pipeline
-  // returns escalate, so we must clean up here to avoid leaking the ACP reviewer session.
-  const reviewerSessionOnEscalate = pipelineResult.context.reviewerSession;
-  if (pipelineResult.finalAction === "escalate" && reviewerSessionOnEscalate?.active) {
-    try {
-      await reviewerSessionOnEscalate.destroy();
-    } catch (err) {
-      getLogger().warn("iteration-runner", "Failed to destroy reviewerSession on escalation — continuing", {
-        storyId: story.id,
-        error: errorMessage(err),
-      });
-    }
-  }
-
   // Tear down warm story sessions (implementer + per-role) on escalation so the
   // next attempt opens fresh ACP sessions. Without this, warm-lifetime sessions
   // stay in SessionManager._liveHandles / persist as descriptors, and the next
@@ -240,12 +224,6 @@ export async function runIteration(
         });
       }
     }
-  }
-
-  // Propagate reviewSummary to status writer so it appears in status.json
-  const reviewSummaryFromPipeline = pipelineResult.context.reviewResult?.reviewSummary;
-  if (reviewSummaryFromPipeline) {
-    ctx.statusWriter.setReviewSummary(reviewSummaryFromPipeline);
   }
 
   const currentPrd = pipelineResult.context.prd;
@@ -308,8 +286,6 @@ export async function runIteration(
   pipelineContext.prompt = undefined;
   pipelineContext.contextMarkdown = undefined;
   pipelineContext.builtContext = undefined;
-  pipelineContext.verifyResult = undefined;
-  pipelineContext.reviewResult = undefined;
   pipelineContext.constitution = undefined;
 
   return iterResult;

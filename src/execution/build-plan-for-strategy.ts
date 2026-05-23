@@ -29,7 +29,6 @@ import {
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
-import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd/types";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
@@ -57,12 +56,6 @@ export function isThreeSessionStrategy(strategy: TestStrategy): boolean {
  */
 export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
   return isThreeSessionStrategy(strategy);
-}
-
-function hasReviewCheck(config: NaxConfig, check: "semantic" | "adversarial"): boolean {
-  if (config.review?.enabled !== true) return false;
-  const checks = config.review?.checks;
-  return Array.isArray(checks) && checks.includes(check);
 }
 
 /**
@@ -136,14 +129,6 @@ export function buildPlanForStrategy(
     builder.addTypecheckCheck(inputs.typecheckCheck);
   }
 
-  // Review phases (strategy-agnostic — controlled by config.review.checks)
-  if (hasReviewCheck(config, "semantic") && inputs.semanticReview) {
-    builder.addSemanticReview(inputs.semanticReview);
-  }
-  if (hasReviewCheck(config, "adversarial") && inputs.adversarialReview) {
-    builder.addAdversarialReview(inputs.adversarialReview);
-  }
-
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.
   if (shouldRunRectification(config) && inputs.rectification) {
@@ -159,9 +144,8 @@ export function buildPlanForStrategy(
       strategies.push(makeFullSuiteRectifyStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
-      const pipelineCtx = { ...ctx, config } as unknown as PipelineContext;
-      strategies.push(makeAutofixImplementerStrategy(pipelineCtx) as FixStrategy<Finding, unknown, unknown, unknown>);
-      strategies.push(makeAutofixTestWriterStrategy(pipelineCtx) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeAutofixImplementerStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeAutofixTestWriterStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
 
     const rectOpts: RectificationPhaseOptions = {

@@ -17,7 +17,6 @@ import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import { isComplete } from "@/prd";
 import type { PRD } from "@/prd";
-import { reviewOrchestrator } from "@/review";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { ISessionManager } from "@/session";
 import { errorMessage } from "@/utils/errors";
@@ -279,9 +278,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   // Commit status.json and any other nax runtime files left dirty at run end
   logger?.debug("execution", "Completion phase — auto-committing dirty files");
   await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
-
-  // Clear run-scoped review iteration history (issue #736 Patch B) before closing the runtime.
-  reviewOrchestrator.reset();
 
   // Close the NaxRuntime — flushes auditors, drains cost aggregator, aborts signal
   await options.runtime?.close();

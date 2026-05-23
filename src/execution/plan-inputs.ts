@@ -9,12 +9,10 @@
 import type { NaxConfig } from "../config/schema";
 import { NaxError } from "../errors";
 import type {
-  AdversarialReviewInput,
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
   LintCheckInput,
-  SemanticReviewInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
@@ -22,7 +20,6 @@ import type {
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import { TddPromptBuilder } from "../prompts";
-import type { SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { isThreeSessionStrategy } from "./build-plan-for-strategy";
@@ -48,8 +45,6 @@ export interface PlanInputs {
   readonly verifyScoped?: VerifyScopedInput;
   readonly lintCheck?: LintCheckInput;
   readonly typecheckCheck?: TypecheckCheckInput;
-  readonly semanticReview?: SemanticReviewInput;
-  readonly adversarialReview?: AdversarialReviewInput;
   readonly rectification?: RectificationPhaseOptions;
 }
 
@@ -240,42 +235,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       ? { workdir: ctx.workdir, storyId: story.id }
       : undefined;
 
-  const semanticStory: SemanticStory = {
-    id: story.id,
-    title: story.title,
-    description: story.description ?? "",
-    acceptanceCriteria: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria : [],
-  };
-
-  const semanticConfig = ctx.config.review?.semantic;
-  const semanticReviewInput: SemanticReviewInput | undefined =
-    ctx.config.review?.enabled === true &&
-    ctx.config.review.checks?.includes("semantic") &&
-    semanticConfig !== undefined
-      ? {
-          workdir: ctx.workdir,
-          story: semanticStory,
-          semanticConfig,
-          mode: semanticConfig.diffMode ?? "ref",
-          storyGitRef: ctx.storyGitRef,
-          blockingThreshold: ctx.config.review.blockingThreshold,
-        }
-      : undefined;
-
-  const adversarialConfig = ctx.config.review?.adversarial;
-  const adversarialReviewInput: AdversarialReviewInput | undefined =
-    ctx.config.review?.enabled === true &&
-    ctx.config.review.checks?.includes("adversarial") &&
-    adversarialConfig !== undefined
-      ? {
-          story: semanticStory,
-          adversarialConfig,
-          mode: adversarialConfig.diffMode ?? "ref",
-          storyGitRef: ctx.storyGitRef,
-          blockingThreshold: ctx.config.review.blockingThreshold,
-        }
-      : undefined;
-
   const rectificationInput: RectificationPhaseOptions | undefined =
     ctx.config.execution?.rectification?.enabled === true
       ? {
@@ -296,8 +255,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     verifyScoped: verifyScopedInput,
     lintCheck: lintCheckInput,
     typecheckCheck: typecheckCheckInput,
-    semanticReview: semanticReviewInput,
-    adversarialReview: adversarialReviewInput,
     rectification: rectificationInput,
   };
 }

@@ -16,7 +16,6 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
 import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PostRunStatusWriter } from "../prd";
-import { reviewOrchestrator } from "../review/orchestrator";
 import { errorMessage } from "../utils/errors";
 import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
@@ -180,7 +179,6 @@ export async function executeParallel(
         }
       } catch (error) {
         markStoryFailed(currentPrd, story.id, undefined, undefined, statusWriter);
-        reviewOrchestrator.clearStory(story.id);
         logger?.error("parallel", "Failed to create worktree", {
           storyId: story.id,
           error: errorMessage(error),
@@ -237,7 +235,6 @@ export async function executeParallel(
         if (mergeResult.success) {
           // Update PRD: mark story as passed
           markStoryPassed(currentPrd, mergeResult.storyId);
-          reviewOrchestrator.clearStory(mergeResult.storyId);
           storiesCompleted++;
           const mergedStory = batchResult.pipelinePassed.find((s) => s.id === mergeResult.storyId);
           if (mergedStory) batchResult.merged.push(mergedStory);
@@ -249,7 +246,6 @@ export async function executeParallel(
         } else {
           // Merge conflict — mark story as failed
           markStoryFailed(currentPrd, mergeResult.storyId, undefined, undefined, statusWriter);
-          reviewOrchestrator.clearStory(mergeResult.storyId);
           batchResult.mergeConflicts.push({
             storyId: mergeResult.storyId,
             conflictFiles: mergeResult.conflictFiles || [],
@@ -273,7 +269,6 @@ export async function executeParallel(
     // Mark failed stories in PRD and clean up their worktrees
     for (const { story, error } of batchResult.failed) {
       markStoryFailed(currentPrd, story.id, undefined, undefined, statusWriter);
-      reviewOrchestrator.clearStory(story.id);
 
       logger?.error("parallel", "Cleaning up failed story worktree", {
         storyId: story.id,

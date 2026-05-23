@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+import { ModelTierSchema, TierConfigSchema } from "./schemas-model";
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
@@ -118,15 +118,6 @@ export const ExecutionConfigSchema = z.object({
     setupCommand: null,
   }),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
-  inlineReview: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      "When true, semantic/adversarial review and rectification run inside the story " +
-        "orchestrator's ExecutionPlan instead of the standalone review/rectify stages. " +
-        "Default false preserves legacy behavior.",
-    ),
 });
 
 export const QualityConfigSchema = z.object({

@@ -3,19 +3,16 @@ import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from 
 import { runFixCycle } from "../findings";
 import { getSafeLogger } from "../logger";
 import {
-  adversarialReviewOp,
   fullSuiteGateOp,
   greenfieldGateOp,
   implementerOp,
   lintCheckOp,
-  semanticReviewOp,
   testWriterOp,
   typecheckCheckOp,
   verifierOp,
   verifyScopedOp,
 } from "../operations";
 import type {
-  AdversarialReviewInput,
   CallContext,
   DeterministicOperation,
   FullSuiteGateInput,
@@ -24,7 +21,6 @@ import type {
   LintCheckInput,
   Operation,
   RunOperation,
-  SemanticReviewInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
@@ -72,9 +68,7 @@ type PhaseKind =
   | "verifier"
   | "verify-scoped"
   | "lint-check"
-  | "typecheck-check"
-  | "semantic-review"
-  | "adversarial-review";
+  | "typecheck-check";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
 type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any>; input: unknown };
 
@@ -92,8 +86,6 @@ interface InternalBuildState {
   verifyScoped?: InternalPhase;
   lintCheck?: InternalPhase;
   typecheckCheck?: InternalPhase;
-  semanticReview?: InternalPhase;
-  adversarialReview?: InternalPhase;
   rectification?: RectificationPhaseOptions;
 }
 
@@ -106,8 +98,6 @@ const CANONICAL_ORDER: readonly PhaseKind[] = [
   "verify-scoped",
   "lint-check",
   "typecheck-check",
-  "semantic-review",
-  "adversarial-review",
 ];
 
 function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
@@ -129,8 +119,6 @@ const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState> = {
   "verify-scoped": "verifyScoped",
   "lint-check": "lintCheck",
   "typecheck-check": "typecheckCheck",
-  "semantic-review": "semanticReview",
-  "adversarial-review": "adversarialReview",
 };
 
 function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): void {
@@ -156,8 +144,6 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
     if (kind === "verify-scoped" && state.verifyScoped) return [state.verifyScoped];
     if (kind === "lint-check" && state.lintCheck) return [state.lintCheck];
     if (kind === "typecheck-check" && state.typecheckCheck) return [state.typecheckCheck];
-    if (kind === "semantic-review" && state.semanticReview) return [state.semanticReview];
-    if (kind === "adversarial-review" && state.adversarialReview) return [state.adversarialReview];
     return [];
   });
 }
@@ -604,20 +590,6 @@ export class StoryOrchestratorBuilder {
   addTypecheckCheck(input: TypecheckCheckInput): this;
   addTypecheckCheck(value: TypecheckCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "typecheck-check", isSlot(value) ? value : { op: typecheckCheckOp, input: value });
-    return this;
-  }
-
-  addSemanticReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
-  addSemanticReview(input: SemanticReviewInput): this;
-  addSemanticReview(value: SemanticReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
-    setPhase(this.state, "semantic-review", isSlot(value) ? value : { op: semanticReviewOp, input: value });
-    return this;
-  }
-
-  addAdversarialReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
-  addAdversarialReview(input: AdversarialReviewInput): this;
-  addAdversarialReview(value: AdversarialReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
-    setPhase(this.state, "adversarial-review", isSlot(value) ? value : { op: adversarialReviewOp, input: value });
     return this;
   }
 
