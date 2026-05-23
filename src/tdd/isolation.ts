@@ -43,6 +43,28 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
   return output.trim().split("\n").filter(Boolean);
 }
 
+/**
+ * Count added (non-blank) lines per file via `git diff --numstat`.
+ * Used by the lite-mode stub heuristic — files with small additions are stub-sized.
+ */
+export async function getAddedLinesPerFile(workdir: string, fromRef = "HEAD"): Promise<Map<string, number>> {
+  const proc = _isolationDeps.spawn(["git", "diff", "--numstat", fromRef], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = await Bun.readableStreamToText(proc.stdout);
+  await proc.exited;
+
+  const result = new Map<string, number>();
+  for (const line of output.trim().split("\n").filter(Boolean)) {
+    const [addedStr, _deletedStr, path] = line.split("\t");
+    const added = Number.parseInt(addedStr ?? "", 10);
+    if (path && Number.isFinite(added)) result.set(path, added);
+  }
+  return result;
+}
+
 /** Check if a file path matches any of the allowed patterns (glob-like) */
 function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
   return allowedPaths.some((pattern) => {
@@ -54,6 +76,13 @@ function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
 }
 
 /**
+ * Default ceiling for stub-sized src/ additions in lite mode.
+ * The lite prompt asks for "≤3 lines each" stubs; we allow headroom for imports,
+ * class scaffolding, and small dataclasses without crossing into real logic.
+ */
+export const LITE_STUB_ADDED_LINES_CEILING = 20;
+
+/**
  * Verify test writer isolation:
  * Only test files should be created/modified.
  * No source files should be touched.
@@ -62,26 +91,42 @@ function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
  * @param beforeRef        - Git ref to diff against
  * @param allowedPaths     - Glob patterns for files that can be modified (soft violations)
  * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
+ * @param mode             - "strict" (no src/ writes) or "lite" (stub-sized src/ writes allowed as soft violations).
+ *                           Lite mode mirrors the test-writer prompt contract (isolation.ts:67) which permits
+ *                           minimal stubs in src/ so imports compile. Files with added-line count ≤
+ *                           LITE_STUB_ADDED_LINES_CEILING are treated as stubs (soft); larger files stay hard.
  */
 export async function verifyTestWriterIsolation(
   workdir: string,
   beforeRef: string,
   allowedPaths: string[] = ["src/index.ts", "src/**/index.ts"],
   testFilePatterns: readonly string[] = DEFAULT_TEST_FILE_PATTERNS,
+  mode: "strict" | "lite" = "strict",
 ): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
   const sourceFiles = changed.filter((f) => isSourceFile(f) && !isTestFileByPatterns(f, testFilePatterns));
 
-  // Separate hard violations from soft violations (allowed paths)
+  // Lite mode resolves stub-sized src/ writes (≤ ceiling added lines) into soft violations.
+  // Strict mode skips numstat entirely.
+  const addedLines = mode === "lite" && sourceFiles.length > 0 ? await getAddedLinesPerFile(workdir, beforeRef) : null;
+
+  // Separate hard violations from soft violations (allowed paths + lite stub allowance)
   const softViolations: string[] = [];
   const violations: string[] = [];
 
   for (const file of sourceFiles) {
     if (matchesAllowedPath(file, allowedPaths)) {
       softViolations.push(file);
-    } else {
-      violations.push(file);
+      continue;
     }
+    if (addedLines) {
+      const added = addedLines.get(file) ?? Number.POSITIVE_INFINITY;
+      if (added <= LITE_STUB_ADDED_LINES_CEILING) {
+        softViolations.push(file);
+        continue;
+      }
+    }
+    violations.push(file);
   }
 
   return {

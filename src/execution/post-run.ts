@@ -109,6 +109,23 @@ export function deriveTddFailureCategory(phaseOutputs: Record<string, unknown>):
     return "tests-failing";
   }
 
+  // Verifier passed → it is the SSOT for the TDD verdict. Even if the gate flagged
+  // failures, the verifier has judged this story OK (e.g. unrelated regressions).
+  // Skip the gate-derived category in that case.
+  const verifierPassed = verifierOutput?.success === true;
+
+  // Full-suite gate failure without an overriding verifier verdict → tests-failing.
+  // Reached only when verifier either failed-without-category-but-handled-above, did
+  // not run, or has no output. Routed by `routeTddFailure` as `escalate` (same
+  // handling as a verifier-derived tests-failing). Distinct from
+  // `full-suite-gate-exhausted`, which fires only after rectification retries spent.
+  if (!verifierPassed) {
+    const gateOutput = phaseOutputs[fullSuiteGateOp.name] as { success?: boolean; passed?: boolean } | undefined;
+    if (gateOutput && (gateOutput.success === false || gateOutput.passed === false)) {
+      return "tests-failing";
+    }
+  }
+
   // Implementer failure → session-failure
   const implOutput = phaseOutputs[implementerOp.name] as { success?: boolean } | undefined;
   if (implOutput?.success === false) {

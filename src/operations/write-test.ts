@@ -20,6 +20,13 @@ export interface TestWriterInput {
    * Absent in legacy / ad-hoc callers — isolation is then skipped.
    */
   readonly beforeRef?: string;
+  /**
+   * When true, isolation runs in lite mode: stub-sized src/ writes are treated as
+   * soft violations to match the lite test-writer prompt contract (it tells the
+   * agent it may create minimal stubs in src/). Strict mode (default) rejects any
+   * src/ write outside `tdd.testWriterAllowedPaths`.
+   */
+  readonly lite?: boolean;
 }
 
 export interface TestWriterOutput {
@@ -88,6 +95,7 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
       input.beforeRef,
       allowedPaths,
       testFilePatterns,
+      input.lite ? "lite" : "strict",
     );
     return { ...parsed, isolation };
   },

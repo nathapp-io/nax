@@ -427,16 +427,22 @@ export class ExecutionPlan {
     const startedAt = Date.now();
     const logger = getSafeLogger();
 
-    // Exempt gate + verifier from short-circuit only when rectification is configured
-    // (it will consume their failures). Without rectification, failures still halt the plan.
+    // Verifier is the SSOT for the TDD verdict — it must run after the gate even when
+    // the gate failed, so it can judge whether failures are this story's fault or
+    // pre-existing/unrelated regressions. The gate is therefore always exempt from
+    // short-circuit when verifier is present in the plan (regardless of rectification).
+    // Rectification, when configured, additionally consumes their findings.
     // Use the registered slot op names — a custom slot may register a different op whose
     // name differs from the default op constant (fullSuiteGateOp.name / verifierOp.name).
-    const shortCircuitExempt = this.state.rectification
-      ? new Set<string>([
+    const verifierPresent = this.state.verifier !== undefined;
+    const rectificationExempt = this.state.rectification
+      ? [
           ...(this.state.fullSuiteGate ? [this.state.fullSuiteGate.slot.op.name] : []),
           ...(this.state.verifier ? [this.state.verifier.slot.op.name] : []),
-        ])
-      : new Set<string>();
+        ]
+      : [];
+    const verifierExempt = verifierPresent && this.state.fullSuiteGate ? [this.state.fullSuiteGate.slot.op.name] : [];
+    const shortCircuitExempt = new Set<string>([...rectificationExempt, ...verifierExempt]);
 
     for (const phase of collectOrderedPhases(this.state)) {
       try {

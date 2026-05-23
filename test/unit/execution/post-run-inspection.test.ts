@@ -11,7 +11,13 @@ import {
   extractPauseReason,
   _postRunDeps,
 } from "../../../src/execution/post-run";
-import { implementerOp, testWriterOp, verifierOp, greenfieldGateOp } from "../../../src/operations";
+import {
+  fullSuiteGateOp,
+  greenfieldGateOp,
+  implementerOp,
+  testWriterOp,
+  verifierOp,
+} from "../../../src/operations";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // extractPauseReason
@@ -97,6 +103,25 @@ describe("deriveTddFailureCategory", () => {
       [verifierOp.name]: { success: false, failureCategory: "tests-failing" },
     });
     expect(result).toBe("session-failure");
+  });
+
+  test("returns tests-failing when full-suite gate failed and verifier did not run", () => {
+    // Verifier output absent — gate is the only failing phase. Routed as `escalate`
+    // by routeTddFailure (same branch as a verifier-derived tests-failing).
+    const result = deriveTddFailureCategory({
+      [fullSuiteGateOp.name]: { success: false, passed: false, findings: [] },
+    });
+    expect(result).toBe("tests-failing");
+  });
+
+  test("verifier verdict takes precedence over a failing gate", () => {
+    // When verifier ran AND succeeded, the gate failure is the verifier's judgment to
+    // interpret (e.g. pre-existing/unrelated regressions). Verifier wins → no category.
+    const result = deriveTddFailureCategory({
+      [fullSuiteGateOp.name]: { success: false, passed: false, findings: [] },
+      [verifierOp.name]: { success: true },
+    });
+    expect(result).toBeUndefined();
   });
 });
 

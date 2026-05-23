@@ -187,6 +187,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           promptMarkdown: testWriterPrompt,
           featureContextMarkdown: ctx.featureContextMarkdown,
           constitution: ctx.constitution?.content,
+          lite: isLite,
         }
       : undefined;
 
