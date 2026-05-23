@@ -39,9 +39,15 @@ const mechanicalFormatFixOp: DeterministicOperation<
     ctx: CallContext,
     deps: MechanicalFormatFixDeps = _mechanicalFormatFixDeps,
   ): Promise<MechanicalFormatFixOutput> {
-    const broad = (ctx as unknown as { config?: QualityConfig }).config?.quality?.commands?.formatFix;
-    if (!broad) return { applied: true, exitCode: 0 };
-    const command = input.scopeFiles?.length ? `${broad} ${input.scopeFiles.join(" ")}` : broad;
+    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
+    const broad = ctxConfig?.quality?.commands?.formatFix;
+    const scoped = ctxConfig?.quality?.commands?.formatFixScoped;
+    if (!broad && !scoped) return { applied: true, exitCode: 0 };
+    const command = broad
+      ? input.scopeFiles?.length
+        ? `${broad} ${input.scopeFiles.join(" ")}`
+        : broad
+      : (scoped as string);
     const result = await deps.runQualityCommand({
       commandName: "formatFix",
       command,
