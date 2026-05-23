@@ -51,8 +51,10 @@
     "protocol": "acp",
     "default": "claude",
     "fallback": {
-      "enabled": false,
-      "map": {},
+      "enabled": true,
+      "map": {
+        "claude": ["codex"]
+      },
       "maxHopsPerStory": 2,
       "onQualityFailure": false,
       "rebuildContext": true
