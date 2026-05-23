@@ -339,9 +339,7 @@ export async function applyPostRunInspection(
     | undefined;
   const verifySource = verifierPhaseOut ?? verifyScopedPhaseOut;
   (ctx as unknown as Record<string, unknown>)["verifyPassed"] =
-    verifySource !== undefined
-      ? verifySource.passed === true || verifySource.success === true
-      : undefined;
+    verifySource !== undefined ? verifySource.passed === true || verifySource.success === true : undefined;
 
   const semReviewOut = planResult.phaseOutputs["semantic-review"] as
     | { passed?: boolean; findings?: unknown[] }

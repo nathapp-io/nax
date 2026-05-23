@@ -18,6 +18,7 @@
 
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
+import type { FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
 import {
   makeAutofixImplementerStrategy,
@@ -27,7 +28,6 @@ import {
 } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
-import type { FixStrategy } from "../findings/cycle-types";
 import type { CallContext } from "../operations/types";
 import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd/types";
@@ -159,8 +159,22 @@ export function buildPlanForStrategy(
       strategies.push(makeFullSuiteRectifyStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
-      strategies.push(makeAutofixImplementerStrategy(ctx as unknown as PipelineContext) as FixStrategy<Finding, unknown, unknown, unknown>);
-      strategies.push(makeAutofixTestWriterStrategy(ctx as unknown as PipelineContext) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(
+        makeAutofixImplementerStrategy(ctx as unknown as PipelineContext) as FixStrategy<
+          Finding,
+          unknown,
+          unknown,
+          unknown
+        >,
+      );
+      strategies.push(
+        makeAutofixTestWriterStrategy(ctx as unknown as PipelineContext) as FixStrategy<
+          Finding,
+          unknown,
+          unknown,
+          unknown
+        >,
+      );
     }
 
     const rectOpts: RectificationPhaseOptions = {
