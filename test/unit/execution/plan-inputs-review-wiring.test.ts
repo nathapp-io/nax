@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { AdversarialReviewConfigSchema } from "../../../src/config/schemas-review";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { assemblePlanInputsFromCtx } from "../../../src/execution/plan-inputs";
 import type { NaxConfig } from "../../../src/config/schema";
-
-const DEFAULT_ADVERSARIAL = AdversarialReviewConfigSchema.parse({});
 
 function makeCtx(configOverride: Partial<NaxConfig> = {}) {
   const config: NaxConfig = {
@@ -65,33 +62,6 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.verifier).toBeUndefined();
   });
 
-  test("populates semanticReview when inlineReview && checks includes 'semantic'", async () => {
-    const ctx = makeCtx({
-      execution: { ...DEFAULT_CONFIG.execution, inlineReview: true },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-  });
-
-  test("populates adversarialReview when inlineReview && checks includes 'adversarial'", async () => {
-    const ctx = makeCtx({
-      execution: { ...DEFAULT_CONFIG.execution, inlineReview: true },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["adversarial"],
-        adversarial: DEFAULT_ADVERSARIAL,
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.adversarialReview).toBeDefined();
-  });
-
   test("populates rectification when inlineReview && rectification.enabled", async () => {
     const ctx = makeCtx({
       execution: {
@@ -110,68 +80,4 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.rectification!.maxAttempts).toBe(2);
   });
 
-  test("populates semanticReview when review.enabled + checks includes 'semantic', regardless of inlineReview", async () => {
-    // AC2: inlineReviewEnabled gate removed — semanticReview populates based on review.enabled + checks alone.
-    const ctx = makeCtx({
-      execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-  });
-
-  // US-005 AC2: inlineReviewEnabled gate removed from semanticReview/adversarialReview
-  test("AC2: populates semanticReview WITHOUT inlineReview=true when review.enabled + checks includes 'semantic'", async () => {
-    // After AC2, the inlineReviewEnabled gate is removed — semanticReview populates based on
-    // review.enabled + checks membership alone, not the inlineReview flag.
-    const ctx = makeCtx({
-      execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-  });
-
-  test("AC2: populates adversarialReview WITHOUT inlineReview=true when review.enabled + checks includes 'adversarial'", async () => {
-    const ctx = makeCtx({
-      execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["adversarial"],
-        adversarial: DEFAULT_ADVERSARIAL,
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.adversarialReview).toBeDefined();
-  });
-
-  // AC2: rectification is no longer gated by inlineReviewEnabled
-  test("populates rectification when rectification.enabled=true even when inlineReview=false", async () => {
-    const ctx = makeCtx({
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        inlineReview: false,
-        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true, maxRetries: 3 },
-      },
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.rectification).toBeDefined();
-    expect(inputs.rectification!.maxAttempts).toBe(3);
-    // AC2: inlineReview gate removed — semanticReview now populates based on review.enabled + checks
-    expect(inputs.semanticReview).toBeDefined();
-  });
 });

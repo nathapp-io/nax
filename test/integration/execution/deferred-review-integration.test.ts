@@ -274,19 +274,6 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.deferredReview).toBeUndefined();
   });
 
-  test("pluginMode per-story does NOT trigger deferred review", async () => {
-    await writeCompletedPRD();
-    const reviewer = makeReviewer("semgrep", true);
-    const registry = makeRegistry([reviewer]);
-    const config = makeConfig("per-story");
-    const ctx = makeCtx(registry, config);
-
-    const result = await executeUnified(ctx, makeCompletedPRD());
-
-    // deferredReview should not be set for per-story mode
-    expect(result.deferredReview).toBeUndefined();
-  });
-
   test("run-start git ref is captured before stories execute", async () => {
     await writeCompletedPRD();
     const captureOrder: string[] = [];

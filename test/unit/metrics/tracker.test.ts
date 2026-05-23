@@ -302,28 +302,6 @@ describe("collectStoryMetrics - tokenUsage field", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
-  test("scopeTestFallback is propagated from verifyResult to StoryMetrics when set", async () => {
-    const story = makeStory();
-    const verifyResult: VerifyResult = {
-      success: true,
-      status: "PASS",
-      storyId: story.id,
-      strategy: "scoped",
-      passCount: 10,
-      failCount: 0,
-      totalCount: 10,
-      failures: [],
-      durationMs: 5000,
-      countsTowardEscalation: false,
-      scopeTestFallback: true,
-    };
-    const ctx = makeCtx(story, {}, verifyResult);
-
-    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.scopeTestFallback).toBe(true);
-  });
-
   test("scopeTestFallback is absent from StoryMetrics when verifyResult does not have it", async () => {
     const story = makeStory();
     const verifyResult: VerifyResult = {

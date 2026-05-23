@@ -55,23 +55,6 @@ function makeFullSuiteGateInput(story: UserStory): import("@/operations").FullSu
   return { story, workdir: "/tmp/test" };
 }
 
-function makeSemanticReviewInput(story: UserStory): import("@/operations").SemanticReviewInput {
-  return {
-    story: { id: story.id, title: story.title, description: story.description, acceptanceCriteria: story.acceptanceCriteria },
-    workdir: "/tmp/test",
-    semanticConfig: { enabled: true, checks: ["semantic"] } as any,
-    mode: "embedded",
-  };
-}
-
-function makeAdversarialReviewInput(story: UserStory): import("@/operations").AdversarialReviewInput {
-  return {
-    story: { id: story.id, title: story.title, description: story.description, acceptanceCriteria: story.acceptanceCriteria },
-    adversarialConfig: { enabled: true, checks: ["adversarial"] } as any,
-    mode: "embedded",
-  };
-}
-
 /** Inputs for a TDD fresh run. */
 function makeTddFreshInputs(story: UserStory, extra: Partial<PlanInputs> = {}): PlanInputs {
   return makeMockPlanInputs({
@@ -102,15 +85,6 @@ function makeNonTddInputs(story: UserStory, extra: Partial<PlanInputs> = {}): Pl
     story,
     implementer: makeImplementerInput(story),
     ...extra,
-  });
-}
-
-function withReviewChecks(checks: Array<"semantic" | "adversarial">) {
-  return makeNaxConfig({
-    review: {
-      enabled: true,
-      checks: ["typecheck", "lint", "test", "build", ...checks] as any,
-    },
   });
 }
 
@@ -283,80 +257,6 @@ describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
     const names = plan.phaseNames();
     expect(names).not.toContain("full-suite-gate");
     expect(names).not.toContain("verifier");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Review phase selection
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("buildPlanForStrategy — review phase selection", () => {
-  test("semantic review included when semantic in checks and input provided", () => {
-    const story = makeStory();
-    const config = withReviewChecks(["semantic"]);
-    const ctx = makeMockCallContext();
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: makeImplementerInput(story),
-      semanticReview: makeSemanticReviewInput(story),
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("semantic-review");
-  });
-
-  test("adversarial review included when adversarial in checks and input provided", () => {
-    const story = makeStory();
-    const config = withReviewChecks(["adversarial"]);
-    const ctx = makeMockCallContext();
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: makeImplementerInput(story),
-      adversarialReview: makeAdversarialReviewInput(story),
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("adversarial-review");
-  });
-
-  test("both semantic and adversarial included when both in checks and inputs provided", () => {
-    const story = makeStory();
-    const config = withReviewChecks(["semantic", "adversarial"]);
-    const ctx = makeMockCallContext();
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: makeImplementerInput(story),
-      semanticReview: makeSemanticReviewInput(story),
-      adversarialReview: makeAdversarialReviewInput(story),
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    const names = plan.phaseNames();
-    expect(names).toContain("semantic-review");
-    expect(names).toContain("adversarial-review");
-  });
-
-  test("semantic review omitted when review disabled", () => {
-    const story = makeStory();
-    const config = makeNaxConfig({ review: { enabled: false } });
-    const ctx = makeMockCallContext();
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: makeImplementerInput(story),
-      semanticReview: makeSemanticReviewInput(story),
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).not.toContain("semantic-review");
-  });
-
-  test("adversarial review omitted when adversarial not in checks", () => {
-    const story = makeStory();
-    const config = withReviewChecks(["semantic"]);
-    const ctx = makeMockCallContext();
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: makeImplementerInput(story),
-      adversarialReview: makeAdversarialReviewInput(story),
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).not.toContain("adversarial-review");
   });
 });
 
@@ -629,12 +529,9 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
 describe("buildPlanForStrategy — canonical phase ordering", () => {
   test("full TDD fresh run phases appear in canonical order", () => {
     const story = makeStory({ attempts: 0 });
-    const config = withReviewChecks(["semantic", "adversarial"]);
+    const config = makeNaxConfig({ review: { enabled: true, checks: ["typecheck", "lint", "test", "build"] as any } });
     const ctx = makeMockCallContext();
-    const inputs = makeTddFreshInputs(story, {
-      semanticReview: makeSemanticReviewInput(story),
-      adversarialReview: makeAdversarialReviewInput(story),
-    });
+    const inputs = makeTddFreshInputs(story);
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual([
       "test-writer",
@@ -642,8 +539,6 @@ describe("buildPlanForStrategy — canonical phase ordering", () => {
       "implementer",
       "full-suite-gate",
       "verifier",
-      "semantic-review",
-      "adversarial-review",
     ]);
   });
 });

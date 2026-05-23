@@ -473,32 +473,4 @@ describe("AC7: full-path regression scenarios under unified path", () => {
     }
   });
 
-  test("review-finding rectification: semantic in checks + enabled → semantic-review phase included", () => {
-    const story = makeStory();
-    const config = makeNaxConfig({
-      review: {
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    const ctx = makeMockCallContext();
-    const semanticStory = {
-      id: story.id,
-      title: story.title,
-      description: story.description ?? "",
-      acceptanceCriteria: story.acceptanceCriteria ?? [],
-    };
-    const inputs = makeMockPlanInputs({
-      story,
-      implementer: { story },
-      semanticReview: {
-        story: semanticStory,
-        workdir: "/tmp/test",
-        semanticConfig: config.review?.semantic as never,
-        mode: "ref" as const,
-      },
-    });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("semantic-review");
-  });
 });

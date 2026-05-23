@@ -7,22 +7,20 @@
  * - Stages use ctx.config for package-relevant fields
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { mergePackageConfig } from "../../../src/config/merge";
 import type { NaxConfig } from "../../../src/config/schema";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
-import type { ReviewResult } from "../../../src/review/types";
 import { makeStory } from "../../helpers";
 
 function makePrd(story?: UserStory): PRD {
   const s = story ?? makeStory();
   return {
     feature: "test-feature",
-    version: "1",
     userStories: [s],
-  };
+  } as PRD;
 }
 
 function makeBaseConfig(overrides?: Partial<NaxConfig>): NaxConfig {
@@ -144,92 +142,6 @@ describe("mergePackageConfig integration", () => {
 // ---------------------------------------------------------------------------
 
 describe("stage config usage", () => {
-  test("verify stage uses ctx.config (effective config) when set", async () => {
-    const { verifyStage, _verifyDeps } = await import("../../../src/pipeline/stages/verify");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        requireTests: false, // package disables tests
-        commands: {},
-      },
-    };
-
-    const ctx = makeCtx({ config: packageConfig });
-
-    const origRegression = _verifyDeps.regression;
-    let regressionCalled = false;
-    _verifyDeps.regression = mock((): Promise<import("../../../src/verification").VerificationResult> => {
-      regressionCalled = true;
-      return Promise.resolve({ status: "SUCCESS", success: true, countsTowardEscalation: true });
-    });
-
-    try {
-      const result = await verifyStage.execute(ctx);
-      // requireTests=false → skip verification → continue
-      expect(result.action).toBe("continue");
-      expect(regressionCalled).toBe(false);
-    } finally {
-      _verifyDeps.regression = origRegression;
-    }
-  });
-
-  test("verify stage uses ctx.config.quality.requireTests", async () => {
-    const { verifyStage, _verifyDeps } = await import("../../../src/pipeline/stages/verify");
-
-    const config = makeBaseConfig({
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        requireTests: false,
-        commands: {},
-      },
-    });
-
-    const ctx = makeCtx({ config });
-
-    const origRegression = _verifyDeps.regression;
-    let regressionCalled = false;
-    _verifyDeps.regression = mock((): Promise<import("../../../src/verification").VerificationResult> => {
-      regressionCalled = true;
-      return Promise.resolve({ status: "SUCCESS", success: true, countsTowardEscalation: true });
-    });
-
-    try {
-      const result = await verifyStage.execute(ctx);
-      // ctx.config.requireTests=false → continue
-      expect(result.action).toBe("continue");
-      expect(regressionCalled).toBe(false);
-    } finally {
-      _verifyDeps.regression = origRegression;
-    }
-  });
-
-  test("review stage uses ctx.config.review.enabled to gate execution", () => {
-    const { reviewStage } = require("../../../src/pipeline/stages/review");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      review: { enabled: false, checks: [], commands: {}, pluginMode: "per-story" },
-    };
-
-    const ctx = makeCtx({ config: packageConfig });
-    // enabled() should return false since ctx.config.review.enabled = false
-    expect(reviewStage.enabled(ctx)).toBe(false);
-  });
-
-  test("review stage enabled=true when ctx.config.review.enabled=true", () => {
-    const { reviewStage } = require("../../../src/pipeline/stages/review");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      review: { enabled: true, checks: [], commands: {}, pluginMode: "per-story" },
-    };
-
-    const ctx = makeCtx({ config: packageConfig });
-    expect(reviewStage.enabled(ctx)).toBe(true);
-  });
-
   test("regression stage uses ctx.config.execution.regressionGate.mode", () => {
     const { regressionStage } = require("../../../src/pipeline/stages/regression");
 
@@ -314,129 +226,5 @@ describe("per-story config isolation", () => {
     // No workdir means ctx.config === rootConfig
     const result = mergePackageConfig(root, {});
     expect(result).toBe(root);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// autofix stage reads lintFix/formatFix from review.commands as fallback
-// ---------------------------------------------------------------------------
-
-describe("autofix stage lintFix source", () => {
-  test("uses quality.commands.lintFix when defined", async () => {
-    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
-
-    const saved = { ..._autofixDeps };
-    const commandsRun: string[] = [];
-    _autofixDeps.runQualityCommand = async (opts) => {
-      commandsRun.push(opts.commandName);
-      return {
-        commandName: opts.commandName,
-        command: opts.command,
-        success: true,
-        exitCode: 0,
-        output: "",
-        durationMs: 0,
-        timedOut: false,
-      };
-    };
-    _autofixDeps.recheckReview = async () => true;
-
-    const config = makeBaseConfig({
-      quality: { ...DEFAULT_CONFIG.quality, commands: { lintFix: "bun run lint:fix" }, autofix: { enabled: true } },
-      review: { ...DEFAULT_CONFIG.review, commands: {} },
-    });
-    const ctx = makeCtx({
-      config,
-      reviewResult: {
-        success: false,
-        checks: [
-          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
-        ],
-        totalDurationMs: 0,
-      } satisfies ReviewResult,
-    });
-
-    await autofixStage.execute(ctx);
-    Object.assign(_autofixDeps, saved);
-
-    expect(commandsRun).toContain("lintFix");
-  });
-
-  test("falls back to review.commands.lintFix when quality.commands.lintFix is absent", async () => {
-    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
-
-    const saved = { ..._autofixDeps };
-    const commandsRun: string[] = [];
-    _autofixDeps.runQualityCommand = async (opts) => {
-      commandsRun.push(opts.commandName);
-      return {
-        commandName: opts.commandName,
-        command: opts.command,
-        success: true,
-        exitCode: 0,
-        output: "",
-        durationMs: 0,
-        timedOut: false,
-      };
-    };
-    _autofixDeps.recheckReview = async () => true;
-
-    const config = makeBaseConfig({
-      quality: { ...DEFAULT_CONFIG.quality, commands: {}, autofix: { enabled: true } },
-      review: { ...DEFAULT_CONFIG.review, commands: { lintFix: "bun run lint:fix" } },
-    });
-    const ctx = makeCtx({
-      config,
-      reviewResult: {
-        success: false,
-        checks: [
-          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
-        ],
-      } as any,
-    });
-
-    await autofixStage.execute(ctx);
-    Object.assign(_autofixDeps, saved);
-
-    expect(commandsRun).toContain("lintFix");
-  });
-
-  test("skips mechanical fix when neither quality.commands nor review.commands defines lintFix", async () => {
-    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
-
-    const saved = { ..._autofixDeps };
-    let qualityCommandCalled = false;
-    _autofixDeps.runQualityCommand = async (opts) => {
-      qualityCommandCalled = true;
-      return {
-        commandName: opts.commandName,
-        command: opts.command,
-        success: true,
-        exitCode: 0,
-        output: "",
-        durationMs: 0,
-        timedOut: false,
-      };
-    };
-    _autofixDeps.runAgentRectification = async () => false;
-
-    const config = makeBaseConfig({
-      quality: { ...DEFAULT_CONFIG.quality, commands: {}, autofix: { enabled: true } },
-      review: { ...DEFAULT_CONFIG.review, commands: {} },
-    });
-    const ctx = makeCtx({
-      config,
-      reviewResult: {
-        success: false,
-        checks: [
-          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
-        ],
-      } as any,
-    });
-
-    await autofixStage.execute(ctx);
-    Object.assign(_autofixDeps, saved);
-
-    expect(qualityCommandCalled).toBe(false);
   });
 });

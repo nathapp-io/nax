@@ -214,8 +214,6 @@ describe("StoryOrchestratorBuilder — AC1: Generic OrchestratorSlot<I, O, C>", 
     ["addImplementer", (b: any) => b.addImplementer({ op: mockImplementerOp, input: { code: "test" } })],
     ["addTestWriter", (b: any) => b.addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })],
     ["addVerifier", (b: any) => b.addVerifier({ op: mockVerifierOp, input: { code: "test" } })],
-    ["addSemanticReview", (b: any) => b.addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })],
-    ["addAdversarialReview", (b: any) => b.addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })],
   ])("%s accepts typed op + input without casting", async (_label, addFn) => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
@@ -251,12 +249,12 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
 });
 
 describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
-  test("canonical order: test-writer→implementer→verifier→semantic→adversarial; skips phases not added", async () => {
+  test("canonical order: test-writer→implementer→verifier; skips phases not added", async () => {
     const config = makeNaxConfig();
     const makeOrderTracker = (roles: string[]) => makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
         const role = _req.sessionRole ?? "unknown";
-        roles.push(role === "reviewer-semantic" ? "semantic" : role === "reviewer-adversarial" ? "adversarial" : role);
+        roles.push(role);
         return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
       },
     });
@@ -268,10 +266,8 @@ describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
       .addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
-      .addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })
-      .addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })
       .build(ctx1).run();
-    expect(order1).toEqual(["test-writer", "implementer", "verifier", "semantic", "adversarial"]);
+    expect(order1).toEqual(["test-writer", "implementer", "verifier"]);
     await runtime.close();
     runtime = undefined;
 

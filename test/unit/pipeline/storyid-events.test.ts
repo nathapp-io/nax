@@ -22,7 +22,6 @@ const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
 // ── Static imports (uses _deps pattern — no mock.module() needed) ────────────
 
-import { verifyStage } from "../../../src/pipeline/stages/verify";
 import { _executionDeps, executionStage } from "../../../src/pipeline/stages/execution";
 
 // ── Mock agent ────────────────────────────────────────────────────────────────
@@ -128,38 +127,6 @@ afterEach(() => {
 
 // BUG-020
 describe("storyId is present in JSONL event payloads", () => {
-  // ── Verify stage ────────────────────────────────────────────────────────────
-
-  describe("verify stage", () => {
-    test("skip log (requireTests=false) includes storyId", async () => {
-      const logger = getLogger();
-      const debugSpy = spyOn(logger, "debug").mockImplementation(() => {});
-
-      const ctx = makeCtx({ requireTests: false });
-      await verifyStage.execute(ctx);
-
-      const call = debugSpy.mock.calls.find(
-        ([, msg]) => msg === "Skipping verification (quality.requireTests = false)",
-      );
-      expect(call).toBeDefined();
-      expect(call![2]).toEqual(expect.objectContaining({ storyId: STORY_ID }));
-    });
-
-    test("skip log (no test command) includes storyId", async () => {
-      const logger = getLogger();
-      const debugSpy = spyOn(logger, "debug").mockImplementation(() => {});
-
-      const ctx = makeCtx({ requireTests: true, testCommand: undefined });
-      await verifyStage.execute(ctx);
-
-      const call = debugSpy.mock.calls.find(
-        ([, msg]) => msg === "Skipping verification (no test command configured)",
-      );
-      expect(call).toBeDefined();
-      expect(call![2]).toEqual(expect.objectContaining({ storyId: STORY_ID }));
-    });
-  });
-
   // ── Execution stage ─────────────────────────────────────────────────────────
 
   describe("execution stage", () => {

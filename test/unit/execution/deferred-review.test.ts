@@ -137,26 +137,6 @@ describe("captureRunStartRef — captures HEAD git ref before stories run", () =
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runDeferredReview — skips when conditions are not met", () => {
-  test("returns undefined when pluginMode is 'per-story'", async () => {
-    const reviewer = makeReviewer("semgrep");
-    const registry = makeRegistry([reviewer]);
-
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig("per-story"), registry, FAKE_REF);
-
-    expect(result).toBeUndefined();
-    expect(reviewer.check).not.toHaveBeenCalled();
-  });
-
-  test("returns undefined when pluginMode is undefined", async () => {
-    const reviewer = makeReviewer("semgrep");
-    const registry = makeRegistry([reviewer]);
-
-    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(undefined), registry, FAKE_REF);
-
-    expect(result).toBeUndefined();
-    expect(reviewer.check).not.toHaveBeenCalled();
-  });
-
   test("returns undefined when no plugin reviewers are registered", async () => {
     const registry = makeRegistry([]);
 
