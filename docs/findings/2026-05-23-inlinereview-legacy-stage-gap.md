@@ -2,7 +2,34 @@
 
 **Date:** 2026-05-23
 **Discovered while:** investigating an rs-stock run where test-writer modified `src/` (isolation violated) and the full-suite-gate halted the plan before the verifier got to judge.
-**Status:** Two TDD fixes landed in commit `c2a5ca3e`. The `inlineReview` default flip was attempted (`8092cad3`) and reverted (`0671518f`) after this gap was identified.
+**Status:** **Resolved by ADR-023 / SPEC-execution-unification.** Two TDD fixes landed in commit `c2a5ca3e`. The `inlineReview` default flip was attempted (`8092cad3`) and reverted (`0671518f`) after this gap was identified. See Resolution section below.
+
+---
+
+## Resolution (2026-05-23)
+
+Deeper analysis surfaced two related issues beyond the original framing:
+
+1. **Builder rectification with `inlineReview=true` is partially dead.** The builder gathers semantic/adversarial findings but `makeFullSuiteRectifyStrategy.appliesTo` only matches `source: "test-runner"`. Review findings are collected and silently dropped — flipping the flag would not have fixed semantic/adversarial issues.
+
+2. **US-006a's gate rectification is unreachable in production.** [src/operations/full-suite-gate.ts:28](../../src/operations/full-suite-gate.ts#L28) claims "Rectification is now handled externally by the general runFixCycle phase", but `inputs.rectification` is also gated on `inlineReview`. With the default `false`, gate failures fall through to the legacy `runRectificationLoop` path — US-006a's promised consolidation never activated in production.
+
+The right resolution is not a flag flip, a partial-skip, or a demote. It is **full execution unification**:
+
+- One sequencer (`StoryOrchestratorBuilder`).
+- One fix framework (`runFixCycle`).
+- One glue layer (`applyPostRunInspection`).
+- Five pipeline stages and the `inlineReview` flag deleted.
+
+See:
+- [ADR-023-execution-unification.md](../adr/ADR-023-execution-unification.md) — the architectural decision and alternatives weighed.
+- [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md) — the five-phase implementation plan (A through E) with acceptance criteria and behavior preservation matrix.
+
+The four recommendations originally listed at the bottom of this finding are subsumed:
+- Recommendations 1, 2, 4 → captured in SPEC-execution-unification Phase A and Phase E.
+- Recommendation 3 (fix SPEC-rectification-unification.md line 484) → addressed via supersession banner on that spec.
+
+This findings doc is preserved as the investigation log that surfaced the work.
 
 ---
 

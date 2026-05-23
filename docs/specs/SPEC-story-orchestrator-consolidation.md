@@ -1,9 +1,19 @@
 # SPEC: Story Orchestrator Consolidation — One Builder Per Story
 
+> ⚠️ **PARTIALLY SUPERSEDED (2026-05-23)** by [SPEC-execution-unification.md](./SPEC-execution-unification.md) and [ADR-023](../adr/ADR-023-execution-unification.md).
+>
+> **Specifically superseded:** the §1 review-as-builder-phase design (`addSemanticReview` / `addAdversarialReview` slots in `PlanInputs`, gated by the `execution.inlineReview` flag). That work was wired but never reached production; the flag's default `false` left the slots dormant, and a naive flip to `true` would have double-fired LLM review with the still-present `pipeline/stages/review.ts`. ADR-023 resolves the split by fully unifying execution into the builder + `runFixCycle` and deleting the conflicting pipeline stages.
+>
+> **Still authoritative:** the §2–§5 design for one builder per story, `buildPlanForStrategy`, `PlanInputs` envelope shape (minus the three superseded slots), `applyPostRunInspection`, and the §4 delete sites (which all landed). The non-review portions of US-005 ship as-is.
+>
+> Engineers reading this for historical context: see ADR-023 §Decision and SPEC-execution-unification.md Phase E for the post-supersession PlanInputs and builder shape.
+
+---
+
 **Parent spec:** [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (Phase 1 + Phase 2 / US-001–US-004). Parent forward-references this spec from US-004 AC#9 (post-impl amendment, commit `3b35b5e9`).
 **Story ID:** US-005
 **Branch:** `refactor/story-orchestrator-consolidation`
-**Status:** Draft (revision 4 — see §Revision History)
+**Status:** Partially Superseded — review portion by SPEC-execution-unification (see banner above). Non-review portions landed.
 
 ---
 

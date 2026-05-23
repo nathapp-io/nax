@@ -1,12 +1,24 @@
 # SPEC: Rectification Unification — One `runFixCycle` SSOT
 
+> ⚠️ **PARTIALLY SUPERSEDED (2026-05-23)** by [SPEC-execution-unification.md](./SPEC-execution-unification.md) and [ADR-023](../adr/ADR-023-execution-unification.md).
+>
+> **Specifically superseded:** US-006a's wiring of gate-internal rectification into the builder's general rectification phase, and US-006b's terminal cleanup of `runRectificationLoop`. The US-006a code landed (commit `35486416`) but is **unreachable in production** because `inputs.rectification` is gated on the `execution.inlineReview` flag (default `false`). US-006b never ran. ADR-023 resolves both by activating gate rectification in Phase A and retiring `runRectificationLoop` in Phase B of the unified migration.
+>
+> **Line 484 errata (resolved by ADR-023):** the parenthetical "(from semantic)" describing lint findings is incorrect against the implementation — lint findings come from `quality.commands.lint` via `pipeline/stages/review.ts`, not from `semanticReviewOp`. The unified model in ADR-023 collapses the distinction: all check phases produce `Finding[]` consumed by one `runFixCycle`.
+>
+> **Still authoritative:** the §Design principle of "one `runFixCycle` SSOT", the Finding adapter design, and the `RectifierPromptBuilder.failingTestContext` API. ADR-023 builds on these.
+>
+> Engineers reading this for historical context: see SPEC-execution-unification.md Phases A and B for the post-supersession activation + cleanup plan.
+
+---
+
 **Parent specs:**
 - [SPEC-story-orchestrator.md](./SPEC-story-orchestrator.md) (US-001..US-004 — builder + ops + ExecutionGates + SessionKeeper)
 - [SPEC-story-orchestrator-consolidation.md](./SPEC-story-orchestrator-consolidation.md) (US-005 — one builder per story; promotes full-suite gate + greenfield gate to phases)
 
 **Story IDs:** US-006a (additive) + US-006b (terminal cleanup)
 **Branch:** `refactor/rectification-unification`
-**Status:** Draft — **planned (do not start until US-005 lands; US-006b blocks on US-006a)**
+**Status:** Partially Superseded — wiring and cleanup portions by SPEC-execution-unification (see banner above). Design principles still authoritative.
 
 ---
 

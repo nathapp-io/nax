@@ -1,8 +1,17 @@
 # SPEC: StoryOrchestrator — Unified Execution Path Consolidation
 
+> ℹ️ **PARTIALLY AMENDED (2026-05-23)** by [SPEC-execution-unification.md](./SPEC-execution-unification.md) and [ADR-023](../adr/ADR-023-execution-unification.md).
+>
+> **Specifically amended:** §2B `CANONICAL_ORDER` is extended with check phases (`lint-check`, `typecheck-check`, `format-check`, optionally `plugin-reviews`, `verify-scoped`) between `verifier` and `semantic-review`. The original order — `test-writer → greenfield-gate → implementer → full-suite-gate → verifier → semantic-review → adversarial-review` — is preserved as the LLM-phase sequence; the new check phases interleave before semantic-review per ADR-023 §1.
+>
+> **Still authoritative:** US-001..US-004 (which all landed), the `StoryOrchestratorBuilder` API, `OrchestratorSlot` shape, `phaseOutputs` contract, `SessionKeeper` semantics, and the broader phase-and-output design. ADR-023 builds on this foundation; it does not redesign the builder.
+
+---
+
 **Issues:** #1058 (session keep-open fix), orchestration refactor  
 **Branch:** `refactor/story-orchestrator`  
 **Phases:** Phase 1 (shared helpers + op upgrades), Phase 2 (StoryOrchestratorBuilder)
+**Status:** Phase 1 + Phase 2 landed. §2B CANONICAL_ORDER amended by SPEC-execution-unification (see banner above).
 
 ---
 
