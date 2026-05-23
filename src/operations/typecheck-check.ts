@@ -2,7 +2,9 @@ import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
-import type { TypecheckParseResult } from "../review/typecheck-parsing/types";
+import { runQualityCommand } from "../quality/runner";
+import { parseTypecheckOutput } from "../review/typecheck-parsing";
+import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface TypecheckCheckInput {
@@ -20,18 +22,14 @@ export interface TypecheckCheckDeps {
   runQualityCommand: (opts: QualityCommandOptions) => Promise<QualityCommandResult>;
   parseTypecheckOutput: (
     output: string,
-    format?: string,
+    format?: TypecheckOutputFormat,
     opts?: { workdir: string },
   ) => TypecheckParseResult | null;
 }
 
 export const _typecheckCheckDeps: TypecheckCheckDeps = {
-  runQualityCommand: async () => {
-    throw new Error("not implemented");
-  },
-  parseTypecheckOutput: () => {
-    throw new Error("not implemented");
-  },
+  runQualityCommand,
+  parseTypecheckOutput,
 };
 
 export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, TypecheckCheckOutput, QualityConfig> = {
@@ -40,10 +38,31 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
   stage: "review",
   config: qualityConfigSelector,
   async execute(
-    _input: TypecheckCheckInput,
-    _ctx: CallContext,
-    _deps: TypecheckCheckDeps = _typecheckCheckDeps,
+    input: TypecheckCheckInput,
+    ctx: CallContext,
+    deps: TypecheckCheckDeps = _typecheckCheckDeps,
   ): Promise<TypecheckCheckOutput> {
-    return { success: false, findings: [], durationMs: 0 };
+    // ctx.config is injected by tests; in production resolved via callOp's config slice
+    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
+    const command = ctxConfig?.quality?.commands?.typecheck;
+
+    if (ctxConfig !== undefined && !command) {
+      return { success: true, findings: [], durationMs: 0 };
+    }
+
+    const start = Date.now();
+    const result = await deps.runQualityCommand({
+      commandName: "typecheck",
+      command: command ?? "",
+      workdir: input.workdir,
+      storyId: input.storyId,
+    });
+
+    if (result.exitCode === 0) {
+      return { success: true, findings: [], durationMs: Date.now() - start };
+    }
+
+    const parsed = deps.parseTypecheckOutput(result.output, "auto", { workdir: input.workdir });
+    return { success: false, findings: parsed?.findings ?? [], durationMs: Date.now() - start };
   },
 };
