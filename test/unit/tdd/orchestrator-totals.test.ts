@@ -31,25 +31,21 @@ let savedIsolation: typeof _isolationDeps.spawn;
 let savedRollback: typeof _rollbackDeps.spawn;
 let savedGit: typeof _gitDeps.spawn;
 let savedRunTests: typeof _fullSuiteGateDeps.runTests;
-let savedRunRectification: typeof _fullSuiteGateDeps.runRectificationLoop;
 beforeAll(() => {
   savedIsolation = _isolationDeps.spawn;
   savedRollback = _rollbackDeps.spawn;
   savedGit = _gitDeps.spawn;
   savedRunTests = _fullSuiteGateDeps.runTests;
-  savedRunRectification = _fullSuiteGateDeps.runRectificationLoop;
   _isolationDeps.spawn = mock(emptySpawn) as unknown as typeof _isolationDeps.spawn;
   _rollbackDeps.spawn = mock(emptySpawn) as unknown as typeof _rollbackDeps.spawn;
   _gitDeps.spawn = mock(emptySpawn) as unknown as typeof _gitDeps.spawn;
   _fullSuiteGateDeps.runTests = mock(async () => ({ passed: true, failed: 0, output: "all pass" }));
-  _fullSuiteGateDeps.runRectificationLoop = mock(async () => ({ exhausted: false, attempts: 0, fixedAll: true }));
 });
 afterAll(() => {
   _isolationDeps.spawn = savedIsolation;
   _rollbackDeps.spawn = savedRollback;
   _gitDeps.spawn = savedGit;
   _fullSuiteGateDeps.runTests = savedRunTests;
-  _fullSuiteGateDeps.runRectificationLoop = savedRunRectification;
 });
 
 function makeStory(): UserStory {

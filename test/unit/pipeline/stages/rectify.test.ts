@@ -3,8 +3,25 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rectifyStage, _rectifyDeps } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
 import { DEFAULT_CONFIG } from "@/config";
-import { _rectificationDeps } from "@/verification";
-import { makeMockRuntime, makeMockAgentManager, makeSessionManager } from "@test/helpers";
+import type { FixCycleResult, Finding } from "@/findings";
+import { makeMockRuntime } from "@test/helpers";
+
+function makeFixCycleResult(succeeded: boolean, costUsd = 0): FixCycleResult<Finding> {
+  if (succeeded) {
+    return {
+      iterations: [{ iterationNum: 1, findingsBefore: [], fixesApplied: [], findingsAfter: [], outcome: "resolved", startedAt: "", finishedAt: "" }],
+      finalFindings: [],
+      exitReason: "resolved",
+      costUsd,
+    };
+  }
+  return {
+    iterations: [{ iterationNum: 1, findingsBefore: [], fixesApplied: [], findingsAfter: [{ source: "test-runner", severity: "error", category: "failed-test", rule: "t", message: "fail", fixTarget: "source" }], outcome: "unchanged", startedAt: "", finishedAt: "" }],
+    finalFindings: [{ source: "test-runner", severity: "error", category: "failed-test", rule: "t", message: "fail", fixTarget: "source" }],
+    exitReason: "max-attempts-per-strategy",
+    costUsd,
+  };
+}
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
@@ -19,7 +36,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         commands: { ...DEFAULT_CONFIG.quality.commands, test: "bun test" },
       },
     },
-    prd: { stories: [] } as any,
+    prd: { feature: "test-feature", stories: [] } as any,
     story: { id: "US-001", title: "t", status: "in-progress", acceptanceCriteria: [] } as any,
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
@@ -27,6 +44,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     workdir: "/tmp",
     projectDir: "/tmp",
     hooks: {},
+    runtime: makeMockRuntime(),
     ...overrides,
   };
 }
@@ -46,6 +64,15 @@ function makeVerifyResult(success: boolean) {
     countsTowardEscalation: !success,
   };
 }
+
+// Save/restore pattern — no mock.module() to avoid Bun 1.x global leaks
+let savedDeps: typeof _rectifyDeps;
+beforeEach(() => {
+  savedDeps = { ..._rectifyDeps };
+});
+afterEach(() => {
+  Object.assign(_rectifyDeps, savedDeps);
+});
 
 describe("rectifyStage", () => {
   test("disabled when verifyResult is undefined", () => {
@@ -77,13 +104,10 @@ describe("rectifyStage", () => {
   });
 
   test("returns retry when rectification succeeds", async () => {
-    const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0, durationMs: 0 });
+    _rectifyDeps.runFixCycle = mock(async () => makeFixCycleResult(true));
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
-
-    Object.assign(_rectifyDeps, saved);
 
     expect(result.action).toBe("retry");
     if (result.action === "retry") expect(result.fromStage).toBe("verify");
@@ -92,22 +116,17 @@ describe("rectifyStage", () => {
   });
 
   test("returns escalate when rectification exhausted", async () => {
-    const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: false, cost: 0, durationMs: 0 });
+    _rectifyDeps.runFixCycle = mock(async () => makeFixCycleResult(false));
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
-
-    Object.assign(_rectifyDeps, saved);
 
     expect(result.action).toBe("escalate");
   });
 
   test("escalates immediately when failCount is 0 (environmental failure — nothing for agent to fix)", async () => {
-    const saved = { ..._rectifyDeps };
-    // Ensure runRectificationLoop is never called for this path
     let loopCalled = false;
-    _rectifyDeps.runRectificationLoop = async () => { loopCalled = true; return { succeeded: false, cost: 0, durationMs: 0 }; };
+    _rectifyDeps.runFixCycle = mock(async () => { loopCalled = true; return makeFixCycleResult(false); });
 
     const envVerifyResult = {
       ...makeVerifyResult(false),
@@ -117,8 +136,6 @@ describe("rectifyStage", () => {
     const ctx = makeCtx({ verifyResult: envVerifyResult });
     const result = await rectifyStage.execute(ctx);
 
-    Object.assign(_rectifyDeps, saved);
-
     expect(result.action).toBe("escalate");
     expect(loopCalled).toBe(false);
     if (result.action === "escalate") {
@@ -127,13 +144,10 @@ describe("rectifyStage", () => {
   });
 
   test("returns retry with resetRetryCount:true when rectification succeeds", async () => {
-    const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0, durationMs: 0 });
+    _rectifyDeps.runFixCycle = mock(async () => makeFixCycleResult(true));
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
-
-    Object.assign(_rectifyDeps, saved);
 
     expect(result.action).toBe("retry");
     if (result.action === "retry") {
@@ -147,73 +161,38 @@ describe("rectifyStage", () => {
 // Runtime threading — AC1 and AC2
 // ─────────────────────────────────────────────────────────────────────────────
 
-let savedRectDeps: typeof _rectificationDeps;
-beforeEach(() => {
-  savedRectDeps = { ..._rectificationDeps };
-});
-afterEach(() => {
-  Object.assign(_rectificationDeps, savedRectDeps);
-});
-
 describe("rectifyStage — runtime threading", () => {
-  test("AC1: default _rectifyDeps wrapper uses runtime path (openSession called) when ctx.runtime is provided", async () => {
-    let openSessionCalled = false;
-    const mockSessionManager = makeSessionManager({
-      openSession: mock(async () => {
-        openSessionCalled = true;
-        return { id: "mock-session-handle", agentName: "claude" };
-      }),
-    });
-    const mockAgentManager = makeMockAgentManager();
-    const mockRuntime = makeMockRuntime({
-      agentManager: mockAgentManager,
-      sessionManager: mockSessionManager,
+  test("AC1: runFixCycle receives ctx.runtime (runtime threading)", async () => {
+    let capturedRuntime: unknown;
+    _rectifyDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      capturedRuntime = cycleCtx.runtime;
+      return makeFixCycleResult(true);
     });
 
-    // Short-circuit: verification returns success so loop exits after one agent run
-    _rectificationDeps.runVerification = mock(async () => ({
-      success: true,
-      status: "SUCCESS" as const,
-      countsTowardEscalation: false,
-      passCount: 5,
-      failCount: 0,
-    }));
-
+    const specificRuntime = makeMockRuntime();
     const ctx = makeCtx({
-      runtime: mockRuntime,
-      agentManager: mockAgentManager,
-      sessionManager: mockSessionManager,
-      sessionId: "sess-test-001",
-      verifyResult: makeVerifyResult(false),
-      prd: { feature: "test-feature", userStories: [] } as any,
-    } as Partial<PipelineContext>);
-
-    // Use the DEFAULT _rectifyDeps.runRectificationLoop (not mocked by this test)
-    await _rectifyDeps.runRectificationLoop(ctx, {
-      testCommand: "bun test",
-      testOutput: "2 fail | (fail) test > should work\n1 pass | 2 fail",
-    });
-
-    // AC1: After implementation, runtime path taken → openSession was called
-    expect(openSessionCalled).toBe(true);
-  });
-
-  test("AC2: stage passes sessionId from ctx to _rectifyDeps (regression guard)", async () => {
-    let capturedSessionId: string | undefined;
-    const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async (capturedCtx: PipelineContext) => {
-      capturedSessionId = capturedCtx.sessionId;
-      return { succeeded: false, cost: 0, durationMs: 0 };
-    };
-
-    const ctx = makeCtx({
-      sessionId: "sess-ac2-expected",
+      runtime: specificRuntime,
       verifyResult: makeVerifyResult(false),
     });
 
     await rectifyStage.execute(ctx);
-    Object.assign(_rectifyDeps, saved);
 
-    expect(capturedSessionId).toBe("sess-ac2-expected");
+    expect(capturedRuntime).toBe(specificRuntime);
+  });
+
+  test("AC2: cycleCtx.storyId matches ctx.story.id (context threading)", async () => {
+    let capturedStoryId: string | undefined;
+    _rectifyDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      capturedStoryId = cycleCtx.storyId;
+      return makeFixCycleResult(false);
+    });
+
+    const ctx = makeCtx({
+      verifyResult: makeVerifyResult(false),
+    });
+
+    await rectifyStage.execute(ctx);
+
+    expect(capturedStoryId).toBe("US-001");
   });
 });

@@ -474,28 +474,3 @@ describe("SessionKeeper.close()", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-10 & AC-11: Structural verification that rectification files use SessionKeeper
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("SessionKeeper integration with rectification files", () => {
-  describe("AC-10: rectification-loop.ts uses SessionKeeper", () => {
-    test("src/verification/rectification-loop.ts imports and uses SessionKeeper", async () => {
-      const source = await Bun.file(
-        new URL("../../../src/verification/rectification-loop.ts", import.meta.url),
-      ).text();
-      expect(source).toContain("SessionKeeper");
-      expect(source).toContain("session-keeper");
-    });
-
-    test("src/verification/rectification-loop.ts does not contain old inline while(true) getLiveHandle/openSession/runAsSession pattern", async () => {
-      const source = await Bun.file(
-        new URL("../../../src/verification/rectification-loop.ts", import.meta.url),
-      ).text();
-      // The old pattern combined getLiveHandle + openSession + runAsSession inside a while loop.
-      // With SessionKeeper, none of those raw calls should appear outside of keeper construction.
-      expect(source).not.toMatch(/getLiveHandle.*openSession.*runAsSession/s);
-      expect(source).not.toMatch(/openSession.*runAsSession.*getLiveHandle/s);
-    });
-  });
-});

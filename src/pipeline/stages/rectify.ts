@@ -3,7 +3,7 @@
  * Rectify Stage (ADR-005, Phase 2)
  *
  * Runs after a failed verify stage. Attempts to fix test failures by
- * running a rectification loop (agent + re-verify cycle).
+ * running a fix cycle (agent + re-verify cycle).
  *
  * Enabled only when ctx.verifyResult?.success === false.
  *
@@ -13,8 +13,10 @@
  */
 
 import { getLogger } from "../../logger";
+import { getExpectedFiles } from "../../prd";
 import { resolveQualityTestCommands } from "../../quality/command-resolver";
 import { appendScratchEntry } from "../../session/scratch-writer";
+import { parseTestOutput } from "../../test-runners";
 import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -79,17 +81,60 @@ export const rectifyStage: PipelineStage = {
     });
 
     // Resolve test commands via SSOT — handles priority, {{package}}, and orchestrator promotion.
-    const { testCommand: effectiveTestCommand, testScopedTemplate } = await _rectifyDeps.resolveTestCommands(
+    const { testCommand: effectiveTestCommand } = await _rectifyDeps.resolveTestCommands(
       ctx.config,
       ctx.workdir,
       ctx.story.workdir,
     );
 
-    const { succeeded, cost } = await _rectifyDeps.runRectificationLoop(ctx, {
-      testCommand: effectiveTestCommand ?? "bun test",
-      testOutput,
-      testScopedTemplate,
-    });
+    const testCommand = effectiveTestCommand ?? "bun test";
+
+    // Build initial findings from failing test output
+    const initialFindings = testSummaryToFindings(parseTestOutput(testOutput));
+
+    // Build the FixCycleContext
+    const packageView = ctx.packageView ?? ctx.runtime.packages.repo();
+    const cycleCtx: FixCycleContext = {
+      runtime: ctx.runtime,
+      packageView,
+      packageDir: ctx.workdir,
+      storyId: ctx.story.id,
+      featureName: ctx.prd.feature,
+      agentName: ctx.agentManager?.getDefault() ?? "claude",
+      story: ctx.story,
+    };
+
+    const verifyOpts = {
+      workdir: ctx.workdir,
+      expectedFiles: getExpectedFiles(ctx.story),
+      command: testCommand,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      forceExit: ctx.config.quality.forceExit,
+      detectOpenHandles: ctx.config.quality.detectOpenHandles,
+      detectOpenHandlesRetries: ctx.config.quality.detectOpenHandlesRetries,
+      timeoutRetryCount: 0 as const,
+      gracePeriodMs: ctx.config.quality.gracePeriodMs,
+      drainTimeoutMs: ctx.config.quality.drainTimeoutMs,
+      shell: ctx.config.quality.shell,
+      stripEnvVars: ctx.config.quality.stripEnvVars,
+    };
+
+    const cycle: FixCycle<Finding> = {
+      findings: initialFindings,
+      iterations: [],
+      strategies: [makeFullSuiteRectifyStrategy(ctx.story)],
+      config: { maxAttemptsTotal: maxRetries, validatorRetries: 1 },
+      validate: async (_cycleCtx, _opts) => {
+        const verification = await _rectifyDeps.runVerification(verifyOpts);
+        if (verification.success) return [];
+        if (verification.output) return testSummaryToFindings(parseTestOutput(verification.output));
+        return initialFindings;
+      },
+    };
+
+    const cycleResult = await _rectifyDeps.runFixCycle(cycle, cycleCtx, "rectify");
+    const succeeded = cycleResult.exitReason === "resolved";
+    const cost = cycleResult.costUsd;
 
     pipelineEventBus.emit({
       type: "rectify:completed",
@@ -137,27 +182,19 @@ export const rectifyStage: PipelineStage = {
 /**
  * Injectable deps for testing.
  */
-import { runRectificationLoop } from "../../verification/rectification-loop";
+import { runFixCycle } from "../../findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "../../findings";
+import type { Finding } from "../../findings";
+import { testSummaryToFindings } from "../../findings";
+import { makeFullSuiteRectifyStrategy } from "../../operations";
+import { fullSuite } from "../../verification";
 export const _rectifyDeps = {
-  runRectificationLoop: (
-    ctx: PipelineContext,
-    opts: { testCommand: string; testOutput: string; promptPrefix?: string; testScopedTemplate?: string },
-  ) =>
-    runRectificationLoop({
-      config: ctx.config,
-      workdir: ctx.workdir,
-      story: ctx.story,
-      testCommand: opts.testCommand,
-      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
-      testOutput: opts.testOutput,
-      promptPrefix: opts.promptPrefix,
-      featureName: ctx.prd.feature,
-      agentManager: ctx.agentManager,
-      projectDir: ctx.projectDir,
-      testScopedTemplate: opts.testScopedTemplate,
-      runtime: ctx.runtime,
-      sessionId: ctx.sessionId,
-    }),
+  runFixCycle: (
+    cycle: FixCycle<Finding>,
+    ctx: FixCycleContext,
+    name: string,
+  ): Promise<FixCycleResult<Finding>> => runFixCycle(cycle, ctx, name),
+  runVerification: fullSuite,
   resolveTestCommands: resolveQualityTestCommands,
   appendScratch: appendScratchEntry,
 };

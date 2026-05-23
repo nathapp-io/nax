@@ -3,7 +3,7 @@
   "feature": "execution-unification",
   "branchName": "feat/execution-unification",
   "createdAt": "2026-05-23T00:00:00.000Z",
-  "updatedAt": "2026-05-23T08:36:22.817Z",
+  "updatedAt": "2026-05-23T08:50:51.423Z",
   "userStories": [
     {
       "id": "US-001",
@@ -22,8 +22,8 @@
         "rectification"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -76,7 +76,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/rectify.ts",
@@ -90,7 +92,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b837de75a9642dd78e5d82da675bdb867f0d8c46"
     },
     {
       "id": "US-003",

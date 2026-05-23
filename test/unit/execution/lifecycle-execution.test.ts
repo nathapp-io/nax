@@ -205,13 +205,18 @@ describe("runDeferredRegression", () => {
 
 const origRegressionDeps = {
   runVerification: _regressionDeps.runVerification,
-  runRectificationLoop: _regressionDeps.runRectificationLoop,
+  runFixCycle: _regressionDeps.runFixCycle,
   parseTestOutput: _regressionDeps.parseTestOutput,
 };
 
 describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
   beforeEach(() => {
-    _regressionDeps.runRectificationLoop = mock(async () => false);
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    }));
   });
 
   afterEach(() => {
@@ -336,7 +341,12 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
       failures: [{ testName: "some test", error: "boom" }],
     })) as unknown as typeof _regressionDeps.parseTestOutput;
 
-    _regressionDeps.runRectificationLoop = mock(async () => false);
+    _regressionDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    }));
 
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),

@@ -9,13 +9,16 @@
  */
 
 import type { NaxConfig } from "@/config";
+import type { FixCycle, FixCycleContext, FixCycleResult, Finding } from "@/findings";
+import { runFixCycle, testSummaryToFindings } from "@/findings";
 import { getSafeLogger } from "@/logger";
+import { makeFullSuiteRectifyStrategy } from "@/operations";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import { hasCommitsForStory } from "@/utils/git";
-import { fullSuite, runRectificationLoop } from "@/verification";
+import { fullSuite } from "@/verification";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -23,7 +26,11 @@ import { fullSuite, runRectificationLoop } from "@/verification";
  */
 export const _regressionDeps = {
   runVerification: fullSuite,
-  runRectificationLoop,
+  runFixCycle: (
+    cycle: FixCycle<Finding>,
+    ctx: FixCycleContext,
+    name: string,
+  ): Promise<FixCycleResult<Finding>> => runFixCycle(cycle, ctx, name),
   parseTestOutput,
 };
 
@@ -314,75 +321,92 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   const storyOutcomeAccum: Record<string, boolean> = {};
 
   for (const story of affectedStoriesList) {
-    for (let attempt = 0; attempt < maxRectificationAttempts; attempt++) {
-      rectificationAttempts++;
+    logger?.info("regression", `Rectifying story ${story.id}`, {
+      storyId: story.id,
+      maxRectificationAttempts,
+    });
 
-      logger?.info("regression", `Rectifying story ${story.id} (attempt ${attempt + 1}/${maxRectificationAttempts})`);
+    const storyStartMs = Date.now();
+    const initialFindings = testSummaryToFindings(_regressionDeps.parseTestOutput(currentTestOutput));
+    const packageView = runtime.packages.repo();
+    const cycleCtx: FixCycleContext = {
+      runtime,
+      packageView,
+      packageDir: workdir,
+      storyId: story.id,
+      featureName: prd.feature,
+      agentName: runtime.agentManager.getDefault() ?? "claude",
+      story,
+    };
+    const cycle: FixCycle<Finding> = {
+      findings: initialFindings,
+      iterations: [],
+      strategies: [makeFullSuiteRectifyStrategy(story)],
+      config: { maxAttemptsTotal: maxRectificationAttempts, validatorRetries: 1 },
+      validate: async (_cycleCtx, _opts) => {
+        const verification = await _regressionDeps.runVerification(verifyOpts);
+        if (verification.success) return [];
+        if (verification.output)
+          return testSummaryToFindings(_regressionDeps.parseTestOutput(verification.output));
+        return initialFindings;
+      },
+    };
 
-      const rectResult = await _regressionDeps.runRectificationLoop({
-        config,
-        workdir,
-        story,
-        testCommand,
-        timeoutSeconds,
-        testOutput: currentTestOutput,
-        promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
-        agentManager: runtime.agentManager,
-        featureName: prd.feature,
-        runtime,
+    const cycleResult = await _regressionDeps.runFixCycle(cycle, cycleCtx, "regression");
+    const succeeded = cycleResult.exitReason === "resolved";
+    const cost = cycleResult.costUsd ?? 0;
+    const durationMs = Date.now() - storyStartMs;
+    rectificationAttempts += cycleResult.iterations.length > 0 ? cycleResult.iterations.length : 1;
+
+    // Accumulate telemetry regardless of whether the cycle succeeded (issue #679).
+    // Story outcome is latched true once any cycle succeeds; default false otherwise.
+    storyCostAccum[story.id] = (storyCostAccum[story.id] ?? 0) + cost;
+    storyDurationAccum[story.id] = (storyDurationAccum[story.id] ?? 0) + durationMs;
+    if (!storyOutcomeAccum[story.id]) {
+      storyOutcomeAccum[story.id] = succeeded;
+    }
+
+    if (succeeded) {
+      storiesRectified++;
+      logger?.info("regression", `Story ${story.id} rectified successfully`);
+
+      // Early-exit check: re-run full suite before touching remaining stories
+      logger?.info("regression", "Re-running full suite after story rectification", {
+        storyId: story.id,
+        storiesRectified,
+        storiesRemaining: affectedStoriesList.length - storiesRectified,
       });
 
-      // Accumulate telemetry regardless of whether the attempt succeeded (issue #679).
-      // Story outcome is latched true once any attempt succeeds; default false otherwise.
-      storyCostAccum[story.id] = (storyCostAccum[story.id] ?? 0) + rectResult.cost;
-      storyDurationAccum[story.id] = (storyDurationAccum[story.id] ?? 0) + rectResult.durationMs;
-      if (!storyOutcomeAccum[story.id]) {
-        storyOutcomeAccum[story.id] = rectResult.succeeded;
-      }
+      const midResult = await _regressionDeps.runVerification(verifyOpts);
+      const midSuccess = midResult.success || (midResult.status === "TIMEOUT" && acceptOnTimeout);
 
-      if (rectResult.succeeded) {
-        storiesRectified++;
-        logger?.info("regression", `Story ${story.id} rectified successfully`);
-
-        // Early-exit check: re-run full suite before touching remaining stories
-        logger?.info("regression", "Re-running full suite after story rectification", {
+      if (midSuccess) {
+        logger?.info("regression", "Full suite passed after story rectification — early exit", {
           storyId: story.id,
           storiesRectified,
-          storiesRemaining: affectedStoriesList.length - storiesRectified,
-        });
-
-        const midResult = await _regressionDeps.runVerification(verifyOpts);
-        const midSuccess = midResult.success || (midResult.status === "TIMEOUT" && acceptOnTimeout);
-
-        if (midSuccess) {
-          logger?.info("regression", "Full suite passed after story rectification — early exit", {
-            storyId: story.id,
-            storiesRectified,
-            storiesSkipped: affectedStoriesList.length - storiesRectified,
-            passCount: midResult.passCount ?? 0,
-          });
-          return {
-            success: true,
-            failedTests: testFilesInFailures.size,
-            failedTestFiles: Array.from(testFilesInFailures),
-            passedTests: midResult.passCount ?? 0,
-            rectificationAttempts,
-            affectedStories: Array.from(affectedStories),
-            storyCosts: storyCostAccum,
-            storyDurations: storyDurationAccum,
-            storyOutcomes: storyOutcomeAccum,
-          };
-        }
-
-        // Still failing — update test output context for the next story's agent
-        logger?.warn("regression", "Full suite still failing after story rectification — continuing", {
-          storyId: story.id,
-          failCount: midResult.failCount ?? 0,
+          storiesSkipped: affectedStoriesList.length - storiesRectified,
           passCount: midResult.passCount ?? 0,
         });
-        if (midResult.output) currentTestOutput = midResult.output;
-        break; // Move to next story
+        return {
+          success: true,
+          failedTests: testFilesInFailures.size,
+          failedTestFiles: Array.from(testFilesInFailures),
+          passedTests: midResult.passCount ?? 0,
+          rectificationAttempts,
+          affectedStories: Array.from(affectedStories),
+          storyCosts: storyCostAccum,
+          storyDurations: storyDurationAccum,
+          storyOutcomes: storyOutcomeAccum,
+        };
       }
+
+      // Still failing — update test output context for the next story's agent
+      logger?.warn("regression", "Full suite still failing after story rectification — continuing", {
+        storyId: story.id,
+        failCount: midResult.failCount ?? 0,
+        passCount: midResult.passCount ?? 0,
+      });
+      if (midResult.output) currentTestOutput = midResult.output;
     }
   }
 
