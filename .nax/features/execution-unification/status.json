@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-23T08-30-59-068Z",
+    "feature": "execution-unification",
+    "startedAt": "2026-05-23T08:30:59.068Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 51126
+  },
+  "progress": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 59.55389387800001,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 8,
+  "updatedAt": "2026-05-23T13:51:52.407Z",
+  "durationMs": 19253339,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-05-23T13:17:46.442Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-23T13:51:51.610Z"
+    }
+  }
+}
