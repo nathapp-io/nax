@@ -1,8 +1,8 @@
 import type { AutofixConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
-import type { ReviewCheckResult } from "../review/types";
 import type { PipelineContext } from "../pipeline/types";
+import type { ReviewCheckResult } from "../review/types";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofix-implementer";
 import { implementerRectifyOp } from "./autofix-implementer";
 
@@ -16,9 +16,7 @@ export function makeAutofixImplementerStrategy(
     appliesTo: (f) => f.fixTarget === "source" && IMPLEMENTER_SOURCES.has(f.source),
     fixOp: implementerRectifyOp,
     buildInput: (_findings, _prior, _cycleCtx): AutofixImplementerInput => ({
-      failedChecks: ((ctx as any).reviewResult?.checks ?? []).filter(
-        (c: ReviewCheckResult) => !c.success,
-      ),
+      failedChecks: ((ctx as any).reviewResult?.checks ?? []).filter((c: ReviewCheckResult) => !c.success),
       story: (ctx as any).story,
     }),
     extractApplied: (output) => ({

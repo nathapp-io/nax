@@ -88,7 +88,11 @@ export {
   makeMechanicalLintFixStrategy,
   _mechanicalLintFixDeps,
 } from "./mechanical-lintfix-strategy";
-export type { MechanicalLintFixInput, MechanicalLintFixOutput, MechanicalLintFixDeps } from "./mechanical-lintfix-strategy";
+export type {
+  MechanicalLintFixInput,
+  MechanicalLintFixOutput,
+  MechanicalLintFixDeps,
+} from "./mechanical-lintfix-strategy";
 export {
   makeMechanicalFormatFixStrategy,
   _mechanicalFormatFixDeps,
