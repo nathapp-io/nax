@@ -470,7 +470,29 @@ export class ExecutionPlan {
     // Aggregate success across every op that produced output, including fix-ops
     // dispatched during rectification (spec §2C / AC: "success === false when
     // any op returns { success: false }").
-    const success = Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output));
+    //
+    // Verifier-as-SSOT carve-out: when a verifier ran AND passed, the full-suite
+    // gate's failure represents pre-existing/unrelated regressions (verifier's
+    // judgment). Exempt the gate from aggregation so the story doesn't roll back
+    // over failures it didn't cause. The gate output stays in `phaseOutputs` for
+    // diagnostics; rectification (when configured) still consumes its findings.
+    const verifierName = this.state.verifier?.slot.op.name;
+    const gateName = this.state.fullSuiteGate?.slot.op.name;
+    const verifierPassedSsot =
+      verifierName !== undefined &&
+      phaseOutputs[verifierName] !== undefined &&
+      phasePassed(verifierName, phaseOutputs[verifierName]);
+    if (verifierPassedSsot && gateName !== undefined && !phasePassed(gateName, phaseOutputs[gateName])) {
+      logger?.warn(
+        "story-orchestrator",
+        "Full-suite gate failed but verifier judged story OK — treating gate failures as unrelated regressions",
+        { storyId: this.ctx.storyId },
+      );
+    }
+    const success = Object.entries(phaseOutputs).every(([name, output]) => {
+      if (verifierPassedSsot && name === gateName) return true;
+      return phasePassed(name, output);
+    });
     const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
 
     return {

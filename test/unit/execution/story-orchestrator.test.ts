@@ -858,6 +858,66 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
       _storyOrchestratorDeps.callOp = origCallOp;
     }
   });
+
+  test("verifier-passed SSOT: gate-only failure does NOT fail the plan (no rollback)", async () => {
+    // When the verifier ran and judged the story OK, the full-suite gate's failure
+    // represents pre-existing/unrelated regressions. The aggregated planResult.success
+    // must follow the verifier's verdict; otherwise post-run rolls back over failures
+    // this story did not cause.
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .build(ctx);
+      const result = await plan.run();
+      expect(result.success).toBe(true);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+
+  test("verifier-failed: gate failure still fails the plan (no SSOT override)", async () => {
+    // Verifier-as-SSOT only applies when verifier passed. If verifier also failed,
+    // aggregation must reflect both failures.
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
+    const verOp = makeDeterministicOp("verifier", { success: false });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .build(ctx);
+      const result = await plan.run();
+      expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
 });
 
 describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skips gate", () => {

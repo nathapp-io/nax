@@ -130,8 +130,10 @@ describe("buildPlanForStrategy — failure scenarios", () => {
     expect(result.success).toBe(true);
   });
 
-  test("full-suite gate failure (tests fail, findings returned) → success=false", async () => {
-    // Mock full-suite gate to always fail tests with structured failures
+  test("full-suite gate failure with verifier confirming failure → success=false", async () => {
+    // SSOT semantic: verifier is authoritative. When BOTH the gate and verifier
+    // flag failures, aggregation must reflect both. (The gate-fail-verifier-pass
+    // unrelated-regression carve-out lives in story-orchestrator.test.ts.)
     _fullSuiteGateDeps.runTests = mock(async (_input, _ctx) => ({
       passed: false,
       failed: 1,
@@ -161,8 +163,12 @@ describe("buildPlanForStrategy — failure scenarios", () => {
     };
 
     const agent = createMockAgent([
-      { success: true, estimatedCostUsd: 0.01 },
-      { success: true, estimatedCostUsd: 0.02 },
+      { success: true, estimatedCostUsd: 0.01 }, // test-writer
+      { success: true, estimatedCostUsd: 0.02 }, // implementer
+      // Verifier explicitly reports failure — confirms the gate's verdict. Plain
+      // `{ success: false }` would make the mock throw (treated as session error);
+      // overriding `output` yields a parseable failure envelope instead.
+      { output: JSON.stringify({ success: false, filesChanged: [] }), estimatedCostUsd: 0.01 },
     ]);
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config });

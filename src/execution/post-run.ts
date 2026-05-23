@@ -276,6 +276,27 @@ export async function applyPostRunInspection(
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
   const failureCategory = isTdd && !planResult.success ? deriveTddFailureCategory(planResult.phaseOutputs) : undefined;
 
+  // Diagnostic: if a TDD plan failed but no category was derived, the routing path
+  // falls back to the generic "requires review" pause. Surface the per-phase
+  // success/passed signals so we can attribute the failure post-mortem instead of
+  // staring at a silent log line.
+  if (isTdd && !planResult.success && !failureCategory) {
+    const phaseSignals: Record<string, { success?: boolean; passed?: boolean }> = {};
+    for (const [name, output] of Object.entries(planResult.phaseOutputs)) {
+      if (output && typeof output === "object") {
+        const r = output as Record<string, unknown>;
+        phaseSignals[name] = {
+          success: typeof r.success === "boolean" ? r.success : undefined,
+          passed: typeof r.passed === "boolean" ? r.passed : undefined,
+        };
+      }
+    }
+    logger.warn("execution", "TDD plan failed but no failure category derived — defaulting to pause", {
+      storyId: ctx.story.id,
+      phaseSignals,
+    });
+  }
+
   // Aggregate isolation from TDD phase outputs (SPEC §3 line 211).
   const tddIsolations: Record<string, import("./types").IsolationCheck> = {};
   for (const opName of ["test-writer", "implementer", "verifier"] as const) {
