@@ -26,17 +26,12 @@ export const rectifyStage: PipelineStage = {
     // Only run when verify failed
     if (!ctx.verifyResult) return false;
     if (ctx.verifyResult.success) return false;
-    // Skip when inline review is on — the orchestrator's per-story plan has already
-    // run rectification inside ExecutionPlan. Running again here would re-iterate
-    // the same findings and consume extra LLM calls.
-    if (ctx.config.execution?.inlineReview === true) return false;
     // Only run when rectification is enabled in config
     return ctx.config.execution.rectification?.enabled ?? false;
   },
 
   skipReason(ctx: PipelineContext): string {
     if (!ctx.verifyResult || ctx.verifyResult.success) return "not needed (verify passed)";
-    if (ctx.config.execution?.inlineReview === true) return "handled by in-story orchestrator (inlineReview=true)";
     return "disabled (rectification not enabled in config)";
   },
 

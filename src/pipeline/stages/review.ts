@@ -19,10 +19,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const reviewStage: PipelineStage = {
   name: "review",
-  // Skip when inline review is on — the orchestrator's per-story plan has already
-  // run semantic/adversarial review inside ExecutionPlan. Running again here would
-  // double-fire LLM calls and produce conflicting findings.
-  enabled: (ctx) => ctx.config.review.enabled && ctx.config.execution?.inlineReview !== true,
+  enabled: (ctx) => ctx.config.review.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();

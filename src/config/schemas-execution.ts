@@ -121,12 +121,11 @@ export const ExecutionConfigSchema = z.object({
   inlineReview: z
     .boolean()
     .optional()
-    .default(true)
+    .default(false)
     .describe(
       "When true, semantic/adversarial review and rectification run inside the story " +
         "orchestrator's ExecutionPlan instead of the standalone review/rectify stages. " +
-        "Default true — the legacy standalone stages are kept for one release as an " +
-        "explicit `inlineReview: false` opt-out before removal.",
+        "Default false preserves legacy behavior.",
     ),
 });
 
