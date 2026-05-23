@@ -189,11 +189,8 @@ import { testSummaryToFindings } from "../../findings";
 import { makeFullSuiteRectifyStrategy } from "../../operations";
 import { fullSuite } from "../../verification";
 export const _rectifyDeps = {
-  runFixCycle: (
-    cycle: FixCycle<Finding>,
-    ctx: FixCycleContext,
-    name: string,
-  ): Promise<FixCycleResult<Finding>> => runFixCycle(cycle, ctx, name),
+  runFixCycle: (cycle: FixCycle<Finding>, ctx: FixCycleContext, name: string): Promise<FixCycleResult<Finding>> =>
+    runFixCycle(cycle, ctx, name),
   runVerification: fullSuite,
   resolveTestCommands: resolveQualityTestCommands,
   appendScratch: appendScratchEntry,

@@ -9,7 +9,7 @@
  */
 
 import type { NaxConfig } from "@/config";
-import type { FixCycle, FixCycleContext, FixCycleResult, Finding } from "@/findings";
+import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findings";
 import { runFixCycle, testSummaryToFindings } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
@@ -26,11 +26,8 @@ import { fullSuite } from "@/verification";
  */
 export const _regressionDeps = {
   runVerification: fullSuite,
-  runFixCycle: (
-    cycle: FixCycle<Finding>,
-    ctx: FixCycleContext,
-    name: string,
-  ): Promise<FixCycleResult<Finding>> => runFixCycle(cycle, ctx, name),
+  runFixCycle: (cycle: FixCycle<Finding>, ctx: FixCycleContext, name: string): Promise<FixCycleResult<Finding>> =>
+    runFixCycle(cycle, ctx, name),
   parseTestOutput,
 };
 
@@ -346,8 +343,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       validate: async (_cycleCtx, _opts) => {
         const verification = await _regressionDeps.runVerification(verifyOpts);
         if (verification.success) return [];
-        if (verification.output)
-          return testSummaryToFindings(_regressionDeps.parseTestOutput(verification.output));
+        if (verification.output) return testSummaryToFindings(_regressionDeps.parseTestOutput(verification.output));
         return initialFindings;
       },
     };
