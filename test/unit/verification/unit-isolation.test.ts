@@ -5,8 +5,13 @@
  * Covers: isTestFile, isSourceFile, matchesAllowedPath (via verify functions)
  */
 
-import { describe, expect, it } from "bun:test";
-import { isSourceFile } from "../../../src/tdd/isolation";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  _isolationDeps,
+  LITE_STUB_ADDED_LINES_CEILING,
+  isSourceFile,
+  verifyTestWriterIsolation,
+} from "../../../src/tdd/isolation";
 import { isTestFile } from "../../../src/test-runners";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,5 +137,105 @@ describe("combined isTestFile + isSourceFile", () => {
     const file = "package.json";
     expect(isTestFile(file)).toBe(false);
     expect(isSourceFile(file)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// verifyTestWriterIsolation — strict vs. lite
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verifyTestWriterIsolation: strict vs. lite mode", () => {
+  let origSpawn: typeof _isolationDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _isolationDeps.spawn;
+  });
+  afterEach(() => {
+    _isolationDeps.spawn = origSpawn;
+  });
+
+  // mockSpawn maps the arg list to a string payload so getChangedFiles and
+  // getAddedLinesPerFile (numstat) can be answered with different shapes.
+  function mockSpawn(handler: (args: string[]) => string): void {
+    _isolationDeps.spawn = mock((args: string[]) => {
+      const payload = handler(args);
+      return {
+        stdout: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(payload));
+            controller.close();
+          },
+        }),
+        exited: Promise.resolve(0),
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    }) as unknown as typeof _isolationDeps.spawn;
+  }
+
+  it("strict: src/ writes outside allowedPaths are HARD violations", async () => {
+    mockSpawn((args) => {
+      if (args.includes("--name-only")) return "packages/foo/src/foo.py\n";
+      return "10\t0\tpackages/foo/src/foo.py\n";
+    });
+    const result = await verifyTestWriterIsolation(
+      "/tmp",
+      "HEAD",
+      ["packages/*/tests/**"],
+      ["**/test_*.py"],
+      "strict",
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations).toContain("packages/foo/src/foo.py");
+    expect(result.softViolations ?? []).not.toContain("packages/foo/src/foo.py");
+  });
+
+  it("lite: stub-sized src/ writes (≤ ceiling) become SOFT violations", async () => {
+    const added = LITE_STUB_ADDED_LINES_CEILING; // exactly at the ceiling — allowed
+    mockSpawn((args) => {
+      if (args.includes("--name-only")) return "packages/foo/src/__init__.py\n";
+      return `${added}\t0\tpackages/foo/src/__init__.py\n`;
+    });
+    const result = await verifyTestWriterIsolation(
+      "/tmp",
+      "HEAD",
+      ["packages/*/tests/**"],
+      ["**/test_*.py"],
+      "lite",
+    );
+    expect(result.passed).toBe(true);
+    expect(result.violations).toEqual([]);
+    expect(result.softViolations).toContain("packages/foo/src/__init__.py");
+  });
+
+  it("lite: src/ writes exceeding the ceiling stay HARD violations", async () => {
+    const added = LITE_STUB_ADDED_LINES_CEILING + 1;
+    mockSpawn((args) => {
+      if (args.includes("--name-only")) return "packages/foo/src/big.py\n";
+      return `${added}\t0\tpackages/foo/src/big.py\n`;
+    });
+    const result = await verifyTestWriterIsolation(
+      "/tmp",
+      "HEAD",
+      ["packages/*/tests/**"],
+      ["**/test_*.py"],
+      "lite",
+    );
+    expect(result.passed).toBe(false);
+    expect(result.violations).toContain("packages/foo/src/big.py");
+  });
+
+  it("lite: explicit allowedPaths still take priority over the line-count heuristic", async () => {
+    mockSpawn((args) => {
+      if (args.includes("--name-only")) return "src/index.ts\n";
+      return "999\t0\tsrc/index.ts\n";
+    });
+    const result = await verifyTestWriterIsolation(
+      "/tmp",
+      "HEAD",
+      ["src/index.ts"],
+      ["**/*.test.ts"],
+      "lite",
+    );
+    expect(result.passed).toBe(true);
+    expect(result.softViolations).toContain("src/index.ts");
   });
 });

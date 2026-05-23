@@ -827,7 +827,10 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     }
   });
 
-  test("when rectification NOT configured: gate failure halts verifier (short-circuit)", async () => {
+  test("when rectification NOT configured: gate failure still lets verifier run (verifier is SSOT)", async () => {
+    // Issue: verifier must judge after a gate failure, regardless of rectification —
+    // pre-existing/unrelated failures should be the verifier's call, not a hard halt.
+    // Rectification only adds an extra consume-findings loop on top of this.
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
@@ -850,7 +853,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       await plan.run();
-      expect(verifierRan).toBe(false);
+      expect(verifierRan).toBe(true);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
