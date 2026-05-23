@@ -110,7 +110,7 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.rectification!.maxAttempts).toBe(2);
   });
 
-  test("leaves review/rectification undefined when inlineReview is false (default)", async () => {
+  test("leaves review/rectification undefined when inlineReview is explicitly false (legacy opt-out)", async () => {
     const ctx = makeCtx({
       execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
       review: {
