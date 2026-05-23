@@ -239,8 +239,8 @@ export interface EscalationHandlerContext {
   feature: string;
   totalCost: number;
   workdir: string;
-  /** Verify result from the pipeline verify stage — used to detect RUNTIME_CRASH (BUG-070) */
-  verifyResult?: { status: string; success: boolean };
+  /** Runtime crash detection result — used to detect RUNTIME_CRASH (BUG-070) and retry same tier */
+  runtimeCrashResult?: { status: string; success: boolean };
   /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
@@ -262,10 +262,10 @@ export interface EscalationHandlerResult {
  * runtime-level failures, not code quality issues, so escalating the model tier
  * would not help. Instead the same tier should be retried.
  *
- * @param verifyResult - Verify result from the pipeline verify stage
+ * @param runtimeCrashResult - Runtime result checked for RUNTIME_CRASH status (BUG-070)
  */
-export function shouldRetrySameTier(verifyResult: { status: string; success: boolean } | undefined): boolean {
-  return verifyResult?.status === "RUNTIME_CRASH";
+export function shouldRetrySameTier(runtimeCrashResult: { status: string; success: boolean } | undefined): boolean {
+  return runtimeCrashResult?.status === "RUNTIME_CRASH";
 }
 
 /**
@@ -284,7 +284,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const logger = getSafeLogger();
 
   // @design: BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
-  if (shouldRetrySameTier(ctx.verifyResult)) {
+  if (shouldRetrySameTier(ctx.runtimeCrashResult)) {
     logger?.warn("escalation", "Runtime crash detected — retrying same tier (transient, not a code issue)", {
       storyId: ctx.story.id,
     });

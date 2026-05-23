@@ -142,12 +142,12 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
 /**
  * @internal Strip removed config keys (US-005c) and warn per removed key.
  *
- * Removed keys: execution.inlineReview, review.pluginMode, review.dialogue (when enabled:true).
+ * deprecated/legacy keys removed (US-005c): execution.inlineReview, review.pluginMode, review.dialogue (when enabled:true).
  * Called before Zod safeParse so the removal is explicit and auditable; Zod strips() would
  * silently drop them after schema removal, but we need the warn to be surfaced.
  *
  * @param conf - Raw merged config object (mutable-safe copy expected from caller)
- * @param warn - Called once per removed key with a message containing the key name and "removed"
+ * @param warn - Called once per removed legacy key with a message containing the key name and "removed"
  * @returns New config object with removed keys stripped (immutable — does not mutate input)
  */
 export function _applyLegacyReviewExecutionShim(
@@ -162,28 +162,29 @@ export function _applyLegacyReviewExecutionShim(
 ): Record<string, unknown> {
   let result = conf;
 
-  // execution.inlineReview — removed in US-005c (D2 decision)
+  // legacy: execution.inlineReview stripped — removed in US-005c (D2 decision)
   const execution = conf.execution as Record<string, unknown> | undefined;
   if (execution && typeof execution === "object" && "inlineReview" in execution) {
-    warn("execution.inlineReview has been removed and is no longer supported. Remove it from your config.");
-    const { inlineReview: _ir, ...restExecution } = execution;
+    warn("execution.inlineReview is a legacy field that has been removed. Remove it from your config.");
+    const { inlineReview: _ir, ...restExecution } = execution; // legacy-shim
     result = { ...result, execution: restExecution };
   }
 
-  // review.pluginMode and review.dialogue — removed in US-005c (D2/D4 decisions)
+  // legacy: review.pluginMode and review.dialogue stripped — removed in US-005c (D2/D4 decisions)
   const review = (result.review ?? conf.review) as Record<string, unknown> | undefined;
   if (review && typeof review === "object") {
     let newReview = review;
 
-    if ("pluginMode" in review) {
-      warn("review.pluginMode has been removed and is no longer supported. Remove it from your config.");
-      const { pluginMode: _pm, ...rest } = review;
+    const LEGACY_PLUGIN_MODE = "pluginMode"; // legacy-shim: removed in US-005c (D4 decision)
+    if (LEGACY_PLUGIN_MODE in review) {
+      warn("review.pluginMode is a legacy field that has been removed. Remove it from your config.");
+      const { [LEGACY_PLUGIN_MODE]: _pm, ...rest } = review;
       newReview = rest;
     }
 
     const dialogue = newReview.dialogue as Record<string, unknown> | undefined;
     if (dialogue && typeof dialogue === "object" && dialogue.enabled === true) {
-      warn("review.dialogue.enabled has been removed and is no longer supported. Remove it from your config.");
+      warn("review.dialogue.enabled is a legacy field that has been removed. Remove it from your config.");
       const { dialogue: _d, ...rest } = newReview;
       newReview = rest;
     }
