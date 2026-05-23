@@ -18,9 +18,18 @@
 
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
+import type { Finding } from "../findings/types";
+import {
+  makeAutofixImplementerStrategy,
+  makeAutofixTestWriterStrategy,
+  makeMechanicalFormatFixStrategy,
+  makeMechanicalLintFixStrategy,
+} from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
+import type { FixStrategy } from "../findings/cycle-types";
 import type { CallContext } from "../operations/types";
+import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd/types";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
@@ -116,6 +125,17 @@ export function buildPlanForStrategy(
     builder.addVerifier(inputs.verifier);
   }
 
+  // Check phases: verifyScoped (non-TDD only), lintCheck, typecheckCheck
+  if (!isThreeSession && inputs.verifyScoped) {
+    builder.addVerifyScoped(inputs.verifyScoped);
+  }
+  if (inputs.lintCheck) {
+    builder.addLintCheck(inputs.lintCheck);
+  }
+  if (inputs.typecheckCheck) {
+    builder.addTypecheckCheck(inputs.typecheckCheck);
+  }
+
   // Review phases (strategy-agnostic — controlled by config.review.checks)
   if (hasReviewCheck(config, "semantic") && inputs.semanticReview) {
     builder.addSemanticReview(inputs.semanticReview);
@@ -125,13 +145,27 @@ export function buildPlanForStrategy(
   }
 
   // Rectification: requires both config gate and typed inputs.
-  // When TDD with full-suite gate is configured, prepend fullSuiteRectifyStrategy so
-  // test-failure findings from the gate take priority over review-finding strategies.
+  // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.
   if (shouldRunRectification(config) && inputs.rectification) {
-    const gateStrategies = isThreeSession && inputs.fullSuiteGate ? [makeFullSuiteRectifyStrategy(story)] : [];
+    const strategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
+
+    if (config.quality.commands.lintFix || config.quality.commands.lintFixScoped) {
+      strategies.push(makeMechanicalLintFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
+    }
+    if (config.quality.commands.formatFix || config.quality.commands.formatFixScoped) {
+      strategies.push(makeMechanicalFormatFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
+    }
+    if (isThreeSession && inputs.fullSuiteGate) {
+      strategies.push(makeFullSuiteRectifyStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
+    }
+    if (config.quality.autofix?.enabled !== false) {
+      strategies.push(makeAutofixImplementerStrategy(ctx as unknown as PipelineContext) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeAutofixTestWriterStrategy(ctx as unknown as PipelineContext) as FixStrategy<Finding, unknown, unknown, unknown>);
+    }
+
     const rectOpts: RectificationPhaseOptions = {
       ...inputs.rectification,
-      strategies: [...gateStrategies, ...inputs.rectification.strategies],
+      strategies: [...strategies, ...inputs.rectification.strategies],
     };
     builder.addRectification(rectOpts);
   }

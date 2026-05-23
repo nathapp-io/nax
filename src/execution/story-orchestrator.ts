@@ -60,6 +60,8 @@ export interface StoryOrchestratorResult {
   readonly totalCostUsd: number;
   readonly durationMs: number;
   readonly phaseOutputs: Record<string, unknown>;
+  readonly rectificationExhausted?: boolean;
+  readonly unfixedFindings?: readonly Finding[];
 }
 
 type PhaseKind =
@@ -339,19 +341,24 @@ function withIncreasingFailuresBail(
  *  - Each fix-op + verifier dispatch is wrapped in `runPhase` so per-phase cost and
  *    phaseOutputs stay coherent with the rest of the plan.
  */
+interface RectificationResult {
+  rectificationExhausted?: boolean;
+  unfixedFindings?: readonly Finding[];
+}
+
 async function runRectification(
   ctx: CallContext,
   state: InternalBuildState,
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
-): Promise<void> {
+): Promise<RectificationResult> {
   const rectification = state.rectification;
   const verifierPhase = state.verifier;
   if (!rectification || !verifierPhase) {
-    return;
+    return {};
   }
   if (ctx.runtime.signal?.aborted) {
-    return;
+    return {};
   }
 
   const initialFindings = gatherRectificationFindings(
@@ -360,11 +367,11 @@ async function runRectification(
     state.fullSuiteGate?.slot.op.name ?? null,
   );
   if (initialFindings.length === 0) {
-    return;
+    return {};
   }
   if (!ctx.storyId) {
     // runFixCycle requires storyId for parallel-log correlation.
-    return;
+    return {};
   }
 
   // Separate map for fix-op outputs so intermediate implementer results don't contaminate
@@ -411,6 +418,9 @@ async function runRectification(
     "story-orchestrator-rectification",
     { callOp: wrappedCallOp },
   );
+
+  phaseOutputs["rectification"] = { iterationCount: cycleResult.iterations.length };
+
   // "validator-error" means runPhase threw during re-validation (e.g. session failure).
   // runFixCycle demotes it to a clean exit rather than throwing, so we surface it here
   // to prevent the failure from being completely silent.
@@ -419,6 +429,13 @@ async function runRectification(
       storyId: ctx.storyId,
     });
   }
+
+  const exhaustedReasons = new Set<string>(["max-attempts-total", "max-attempts-per-strategy", "bail-when"]);
+  if (exhaustedReasons.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
+    return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
+  }
+
+  return {};
 }
 
 export class ExecutionPlan {
@@ -491,7 +508,7 @@ export class ExecutionPlan {
       }
     }
 
-    await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+    const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
 
     // Aggregate success across every op that produced output, including fix-ops
     // dispatched during rectification (spec §2C / AC: "success === false when
@@ -526,6 +543,7 @@ export class ExecutionPlan {
       totalCostUsd,
       durationMs: Date.now() - startedAt,
       phaseOutputs,
+      ...rectResult,
     };
   }
 }

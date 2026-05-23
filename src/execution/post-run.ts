@@ -14,7 +14,14 @@
 import type { AgentResult } from "../agents/types";
 import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
-import { fullSuiteGateOp, greenfieldGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
+import {
+  fullSuiteGateOp,
+  greenfieldGateOp,
+  implementerOp,
+  testWriterOp,
+  verifierOp,
+  verifyScopedOp,
+} from "../operations";
 import { routeTddFailure } from "../pipeline/stages/execution-helpers";
 import type { PipelineContext, StageResult } from "../pipeline/types";
 import { parseSelfVerificationMarker } from "../quality";
@@ -323,6 +330,29 @@ export async function applyPostRunInspection(
     await cleanupVerdict(ctx.workdir).catch(() => undefined);
   }
 
+  // D3: derive ctx fields from phase outputs for downstream routing and diagnostics.
+  const verifierPhaseOut = planResult.phaseOutputs[verifierOp.name] as
+    | { success?: boolean; passed?: boolean }
+    | undefined;
+  const verifyScopedPhaseOut = planResult.phaseOutputs[verifyScopedOp.name] as
+    | { success?: boolean; passed?: boolean }
+    | undefined;
+  const verifySource = verifierPhaseOut ?? verifyScopedPhaseOut;
+  (ctx as unknown as Record<string, unknown>)["verifyPassed"] =
+    verifySource !== undefined
+      ? verifySource.passed === true || verifySource.success === true
+      : undefined;
+
+  const semReviewOut = planResult.phaseOutputs["semantic-review"] as
+    | { passed?: boolean; findings?: unknown[] }
+    | undefined;
+  (ctx as unknown as Record<string, unknown>)["semanticReviewResult"] = semReviewOut
+    ? { passed: semReviewOut.passed, findings: semReviewOut.findings ?? [] }
+    : undefined;
+
+  const rectOut = planResult.phaseOutputs["rectification"] as { iterationCount?: number } | undefined;
+  (ctx as unknown as Record<string, unknown>)["rectificationIterationCount"] = rectOut?.iterationCount ?? 0;
+
   return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };
 }
 
@@ -342,6 +372,19 @@ export async function decideStageAction(
   const shouldRollback = opts.tddMode?.rollbackEnabled === true;
   const { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput } =
     inspection;
+
+  // Mechanical-only failure: if rectification exhausted but all unfixed findings are from
+  // mechanical sources (lint/typecheck), LLM review passed — proceed rather than escalating.
+  if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
+    const sources = new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source));
+    const allMechanical = [...sources].every((s) => s === "lint" || s === "typecheck");
+    if (allMechanical) {
+      logger.warn("execution", "Mechanical-only failure unfixable — proceeding (LLM review passed)", {
+        storyId: ctx.story.id,
+      });
+      return { action: "continue" };
+    }
+  }
 
   // Self-verification failure → escalate
   if (selfVerificationFailed) {

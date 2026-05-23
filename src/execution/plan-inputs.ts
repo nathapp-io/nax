@@ -13,9 +13,12 @@ import type {
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
+  LintCheckInput,
   SemanticReviewInput,
   TestWriterInput,
+  TypecheckCheckInput,
   VerifierInput,
+  VerifyScopedInput,
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import { TddPromptBuilder } from "../prompts";
@@ -42,6 +45,9 @@ export interface PlanInputs {
   readonly implementer?: ImplementerInput;
   readonly fullSuiteGate?: FullSuiteGateInput;
   readonly verifier?: VerifierInput;
+  readonly verifyScoped?: VerifyScopedInput;
+  readonly lintCheck?: LintCheckInput;
+  readonly typecheckCheck?: TypecheckCheckInput;
   readonly semanticReview?: SemanticReviewInput;
   readonly adversarialReview?: AdversarialReviewInput;
   readonly rectification?: RectificationPhaseOptions;
@@ -213,9 +219,26 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const verifierInput = _isTdd ? { story, promptMarkdown: verifierPrompt } : undefined;
 
-  // Build review + rectification inputs only when inlineReview is enabled.
-  // Default (false) preserves legacy behavior where review/rectify run as standalone stages.
-  const inlineReviewEnabled = ctx.config.execution?.inlineReview === true;
+  // verifyScoped: present for non-TDD strategies (TDD uses fullSuiteGate + verifier instead)
+  const verifyScopedInput: VerifyScopedInput | undefined = !_isTdd
+    ? { workdir: ctx.workdir, storyId: story.id }
+    : undefined;
+
+  // lintCheck: gated by review.checks includes "lint" and a lintCheck command is configured
+  const lintCheckInput: LintCheckInput | undefined =
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("lint") &&
+    ctx.config.quality.commands.lintCheck
+      ? { workdir: ctx.workdir, storyId: story.id }
+      : undefined;
+
+  // typecheckCheck: gated by review.checks includes "typecheck" and a typecheckCheck command is configured
+  const typecheckCheckInput: TypecheckCheckInput | undefined =
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("typecheck") &&
+    ctx.config.quality.commands.typecheckCheck
+      ? { workdir: ctx.workdir, storyId: story.id }
+      : undefined;
 
   const semanticStory: SemanticStory = {
     id: story.id,
@@ -226,7 +249,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const semanticConfig = ctx.config.review?.semantic;
   const semanticReviewInput: SemanticReviewInput | undefined =
-    inlineReviewEnabled &&
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("semantic") &&
     semanticConfig !== undefined
@@ -242,7 +264,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const adversarialConfig = ctx.config.review?.adversarial;
   const adversarialReviewInput: AdversarialReviewInput | undefined =
-    inlineReviewEnabled &&
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("adversarial") &&
     adversarialConfig !== undefined
@@ -272,6 +293,9 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     implementer: implementerInput,
     fullSuiteGate: fullSuiteGateInput,
     verifier: verifierInput,
+    verifyScoped: verifyScopedInput,
+    lintCheck: lintCheckInput,
+    typecheckCheck: typecheckCheckInput,
     semanticReview: semanticReviewInput,
     adversarialReview: adversarialReviewInput,
     rectification: rectificationInput,
