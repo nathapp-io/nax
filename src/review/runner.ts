@@ -18,6 +18,7 @@ import { resolveLanguageCommand } from "./language-commands";
 import { runScopedLintCheck } from "./scoped-lint";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
+import { parseTypecheckOutput } from "./typecheck-parsing";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 // Re-export for test compatibility
@@ -198,6 +199,18 @@ async function runCheck(
     output: result.output,
     durationMs: result.durationMs,
   };
+}
+
+function normalizeMechanicalFindings(
+  checkName: ReviewCheckName,
+  result: ReviewCheckResult,
+  workdir: string,
+): ReviewCheckResult {
+  if (result.success) return result;
+  if (checkName !== "typecheck") return result;
+  const parsed = parseTypecheckOutput(result.output, "auto", { workdir });
+  if (!parsed?.findings || parsed.findings.length === 0) return result;
+  return { ...result, findings: parsed.findings };
 }
 
 /**
@@ -444,7 +457,7 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
             env,
             naxIgnoreIndex,
           })
-        : await runCheck(checkName, command, workdir, storyId, env);
+        : normalizeMechanicalFindings(checkName, await runCheck(checkName, command, workdir, storyId, env), workdir);
     checks.push(result);
 
     // Track first failure

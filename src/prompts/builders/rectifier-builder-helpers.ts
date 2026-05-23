@@ -6,8 +6,13 @@
  */
 
 import type { UserStory } from "@/prd";
+import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
 import { buildIsolationSection } from "../sections";
+
+interface CheckErrorFormatOptions {
+  blockingThreshold?: "error" | "warning" | "info";
+}
 
 /**
  * Reviewer contradiction escape hatch (REVIEW-003).
@@ -125,12 +130,59 @@ function noTestIsolationBlock(story: UserStory): string {
   return `\n\n${buildIsolationSection("no-test")}`;
 }
 
-export function formatCheckErrors(checks: ReviewCheckResult[]): string {
-  return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");
+export function formatCheckErrors(checks: ReviewCheckResult[], opts?: CheckErrorFormatOptions): string {
+  return checks.map((c) => formatCheckError(c, opts)).join("\n\n");
 }
 
-export function semanticRectification(checks: ReviewCheckResult[], story: UserStory, scopeConstraint: string): string {
-  const errors = formatCheckErrors(checks);
+const MAX_STRUCTURED_FINDINGS = 10;
+const RAW_WITH_FINDINGS_LIMIT = 1_000;
+const RAW_FALLBACK_LIMIT = 4_000;
+
+function capText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n... (truncated — ${value.length} chars total)`;
+}
+
+function formatFindingLine(finding: NonNullable<ReviewCheckResult["findings"]>[number]): string {
+  const location = typeof finding.line === "number" ? `${finding.file}:${finding.line}` : finding.file;
+  return `- [${finding.severity}] ${location} ${finding.rule ? `${finding.rule} ` : ""}— ${finding.message}`;
+}
+
+function formatCheckError(check: ReviewCheckResult, opts?: CheckErrorFormatOptions): string {
+  const lines: string[] = [`## ${check.check} errors (exit code ${check.exitCode})`];
+  const threshold = opts?.blockingThreshold ?? "error";
+  const blocking = (check.findings ?? []).filter((f) => isBlockingSeverity(f.severity, threshold));
+
+  if (blocking.length > 0) {
+    lines.push("Structured findings:");
+    for (const finding of blocking.slice(0, MAX_STRUCTURED_FINDINGS)) {
+      lines.push(formatFindingLine(finding));
+    }
+    const remaining = blocking.length - MAX_STRUCTURED_FINDINGS;
+    if (remaining > 0) {
+      lines.push(`...and ${remaining} more blocking findings`);
+    }
+    lines.push("");
+    lines.push("Raw output excerpt:");
+    lines.push("```");
+    lines.push(capText(check.output, RAW_WITH_FINDINGS_LIMIT));
+    lines.push("```");
+    return lines.join("\n");
+  }
+
+  lines.push("```");
+  lines.push(capText(check.output, RAW_FALLBACK_LIMIT));
+  lines.push("```");
+  return lines.join("\n");
+}
+
+export function semanticRectification(
+  checks: ReviewCheckResult[],
+  story: UserStory,
+  scopeConstraint: string,
+  opts?: CheckErrorFormatOptions,
+): string {
+  const errors = formatCheckErrors(checks, opts);
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
   return `You are fixing acceptance criteria compliance issues found during semantic review.
@@ -157,8 +209,9 @@ export function adversarialRectification(
   checks: ReviewCheckResult[],
   story: UserStory,
   scopeConstraint: string,
+  opts?: CheckErrorFormatOptions,
 ): string {
-  const errors = formatCheckErrors(checks);
+  const errors = formatCheckErrors(checks, opts);
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
   return `You are fixing issues found during an adversarial code review.
@@ -185,9 +238,10 @@ export function combinedLlmRectification(
   adversarialChecks: ReviewCheckResult[],
   story: UserStory,
   scopeConstraint: string,
+  opts?: CheckErrorFormatOptions,
 ): string {
-  const semanticErrors = formatCheckErrors(semanticChecks);
-  const adversarialErrors = formatCheckErrors(adversarialChecks);
+  const semanticErrors = formatCheckErrors(semanticChecks, opts);
+  const adversarialErrors = formatCheckErrors(adversarialChecks, opts);
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
   return `You are fixing issues found during LLM code review.
@@ -216,8 +270,9 @@ export function mechanicalRectification(
   checks: ReviewCheckResult[],
   story: UserStory,
   scopeConstraint: string,
+  opts?: CheckErrorFormatOptions,
 ): string {
-  const errors = formatCheckErrors(checks);
+  const errors = formatCheckErrors(checks, opts);
 
   return `You are fixing lint/typecheck errors from a code review.
 
