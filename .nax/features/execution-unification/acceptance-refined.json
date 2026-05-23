@@ -1,0 +1,394 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "grep -n \"inlineReviewEnabled\" src/execution/plan-inputs.ts shows no occurrences inside the `rectificationInput` block (occurrences inside `semanticReviewInput` / `adversarialReviewInput` blocks remain, removed by US-005a)",
+    "refined": "Run grep on src/execution/plan-inputs.ts for 'inlineReviewEnabled'; verify no matches appear within the line range of the rectificationInput block assignment, while matches may exist in semanticReviewInput and adversarialReviewInput blocks",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "assemblePlanInputsFromCtx returns `rectification: { maxAttempts, strategies: [], abortOnIncreasingFailures }` (non-undefined) whenever `config.execution.rectification.enabled === true`, regardless of the value of `config.execution.inlineReview`",
+    "refined": "Call assemblePlanInputsFromCtx with config.execution.rectification.enabled=true and config.execution.inlineReview=false; assert returned object.rectification is not undefined, has maxAttempts (number), strategies (empty array), and abortOnIncreasingFailures (boolean) properties",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a TDD strategy config with `rectification.enabled: true` and `inlineReview: false`, when the full-suite gate phase produces `failed-test` findings, then `runFixCycle` inside the builder dispatches `makeFullSuiteRectifyStrategy` and `implementerOp` is invoked at least once",
+    "refined": "Execute a TDD run with config (rectification.enabled: true, inlineReview: false); mock full-suite gate phase to yield failed-test findings; verify in execution logs or spy mocks that makeFullSuiteRectifyStrategy was called and implementerOp invocation count >= 1",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "`grep -nE \"semanticPhase|adversarialPhase\" src/execution/story-orchestrator.ts` shows the `gatherRectificationFindings` function signature no longer accepts those parameters",
+    "refined": "Run grep -nE 'semanticPhase|adversarialPhase' on src/execution/story-orchestrator.ts; extract the gatherRectificationFindings function definition; verify the parameter list does not include semanticPhase or adversarialPhase",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "`gatherRectificationFindings(phaseOutputs, verifierPhase, fullSuiteGatePhase)` returns only findings with `source === \"test-runner\"`; the function no longer reads a `semanticPhase` or `adversarialPhase` argument",
+    "refined": "Call gatherRectificationFindings with (phaseOutputs, verifierPhase, fullSuiteGatePhase); assert all returned findings have source === 'test-runner'; verify TypeScript compilation fails if semanticPhase or adversarialPhase arguments are passed",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "`grep -rn \"runRectificationLoop\" src/ --include=\"*.ts\" | grep -v \"test|deprecat\" | wc -l` returns `0`",
+    "refined": "Grep for 'runRectificationLoop' in src/ (excluding test and deprecat files) returns zero matches, indicating all production references have been removed",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "File `src/verification/rectification-loop.ts` does not exist after this story",
+    "refined": "The file src/verification/rectification-loop.ts does not exist in the filesystem",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "File `src/verification/shared-rectification-loop.ts` does not exist after this story",
+    "refined": "The file src/verification/shared-rectification-loop.ts does not exist in the filesystem",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "`grep -nE \"runRectificationLoop|_rectificationDeps\" src/verification/index.ts | wc -l` returns `0`",
+    "refined": "Grep for 'runRectificationLoop' or '_rectificationDeps' in src/verification/index.ts returns zero matches, indicating both exports have been removed",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `verifyStage` reports `success: false` with `failCount > 0`, `rectifyStage` invokes `runFixCycle` with a strategy array containing `makeFullSuiteRectifyStrategy(story)` and the `implementerOp` is called within the cycle",
+    "refined": "In rectifyStage, when verifyStage result has success=false and failCount > 0, the stage must call runFixCycle with strategies array containing result of makeFullSuiteRectifyStrategy(story), and the implementerOp must be invoked during cycle execution as verified by spy or call count assertion",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When `run-regression.ts` invokes `runFixCycle` and the cycle exits with `exitReason: \"resolved\"`, the regression stage returns a result where `success === true`",
+    "refined": "When run-regression.ts calls runFixCycle and receives a cycle result with exitReason property equal to 'resolved', the stage must return a result object with success property === true",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `run-regression.ts` invokes `runFixCycle` and the cycle exits with `exitReason: \"max-attempts-per-strategy\"` or `\"max-attempts-total\"` and `finalFindings.length > 0`, the regression stage returns a result where `success === false`",
+    "refined": "When run-regression.ts calls runFixCycle and receives a cycle result with exitReason equal to 'max-attempts-per-strategy' or 'max-attempts-total' AND finalFindings array length is greater than 0, the stage must return a result object with success property === false",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Files `src/operations/lint-check.ts`, `src/operations/typecheck-check.ts`, `src/operations/verify-scoped.ts` each exist. (No `format-check.ts` — format is fix-only, see §Design CANONICAL_ORDER note.)",
+    "refined": "File `src/operations/lint-check.ts` exists with exported `lintCheckOp` constant; File `src/operations/typecheck-check.ts` exists with exported `typecheckCheckOp` constant; File `src/operations/verify-scoped.ts` exists with exported `verifyScopedOp` constant; File `src/operations/format-check.ts` does not exist; All three new ops are exported from `src/operations/index.ts`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Each new op file contains `kind: \"deterministic\"` exactly once",
+    "refined": "Grep for `kind: \"deterministic\"` in each of `src/operations/lint-check.ts`, `src/operations/typecheck-check.ts`, and `src/operations/verify-scoped.ts` returns exactly one match per file.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "`lintCheckOp.execute({...})` returns `{ success: true, findings: [] }` when its configured lint command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"lint\"` when the command exits non-zero",
+    "refined": "`lintCheckOp.execute(input, ctx, deps)` when lint command exits code 0 returns object with `success === true` and `findings === []`; when lint command exits non-zero code, returns object with `success === false` and `findings` is array of length ≥1 where `findings.every(f => f.source === 'lint')` is true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "`typecheckCheckOp.execute({...})` returns `{ success: true, findings: [] }` when its configured typecheck command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"typecheck\"` when the command exits non-zero",
+    "refined": "`typecheckCheckOp.execute(input, ctx, deps)` when typecheck command exits code 0 returns object with `success === true` and `findings === []`; when typecheck command exits non-zero code, returns object with `success === false` and `findings` is array of length ≥1 where `findings.every(f => f.source === 'typecheck')` is true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "`verifyScopedOp.execute({...})` returns `{ success: true, findings: [] }` when the test command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"test-runner\"` when the command exits non-zero",
+    "refined": "`verifyScopedOp.execute(input, ctx, deps)` when test command exits code 0 returns object with `success === true` and `findings === []`; when test command exits non-zero code, returns object with `success === false` and `findings` is array of length ≥1 where `findings.every(f => f.source === 'test-runner')` is true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `quality.commands.lint` is `undefined`, `lintCheckOp.execute({...})` returns `{ success: true, findings: [], durationMs: 0 }` without invoking `runQualityCommand`; same no-command early-return applies to `typecheckCheckOp` and `verifyScopedOp`",
+    "refined": "When `ctx.config.quality.commands.lint` is undefined or null, `lintCheckOp.execute()` returns `{ success: true, findings: [], durationMs: 0 }` and `runQualityCommand` is not called; when `ctx.config.quality.commands.typecheck` is undefined or null, `typecheckCheckOp.execute()` returns same; when test command config is undefined or null, `verifyScopedOp.execute()` returns same.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "`grep -nE '\"lint-check\"|\"typecheck-check\"|\"verify-scoped\"' src/execution/story-orchestrator.ts` shows each phase name appears in the `CANONICAL_ORDER` array",
+    "refined": "The `CANONICAL_ORDER` array in `src/execution/story-orchestrator.ts` contains strings `\"lint-check\"`, `\"typecheck-check\"`, and `\"verify-scoped\"` each appearing exactly once within the array declaration.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/story-orchestrator.ts | wc -l` returns ≥6 (two overloads per method)",
+    "refined": "Class `StoryOrchestratorBuilder` in `src/execution/story-orchestrator.ts` has method `addLintCheck` with 2+ overloaded signatures, method `addTypecheckCheck` with 2+ overloaded signatures, and method `addVerifyScoped` with 2+ overloaded signatures (matching `addX(input | slot)` pattern from lines 558-572).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/build-plan-for-strategy.ts | wc -l` returns `0` (additive story only — wiring is US-005a; this AC prevents premature wiring).",
+    "refined": "File `src/execution/build-plan-for-strategy.ts` contains zero occurrences of the strings `addLintCheck`, `addTypecheckCheck`, or `addVerifyScoped`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given a per-package override at `.nax/mono/<pkg>/config.json` with a different `quality.commands.lint`, `lintCheckOp.execute` runs the override command rather than the root config command",
+    "refined": "When per-package config at `.nax/mono/<packageDir>/config.json` defines `quality.commands.lint` different from root config, `lintCheckOp.execute()` invokes `runQualityCommand` with the per-package override value; same applies to `typecheckCheckOp` with `quality.commands.typecheck` and `verifyScopedOp` with its test command config key.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Files `src/operations/autofix-implementer-strategy.ts`, `autofix-test-writer-strategy.ts`, `mechanical-lintfix-strategy.ts`, `mechanical-formatfix-strategy.ts` each exist.",
+    "refined": "All four files exist at their specified paths in src/operations/ and each contains at least one export (non-empty)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "`grep -nE \"export function make(Autofix|Mechanical)\" src/operations/ -r | wc -l` returns ≥4",
+    "refined": "Running `grep -nE \"export function make(Autofix|Mechanical)\" src/operations/ -r | wc -l` yields a count of at least 4",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "`makeAutofixImplementerStrategy(ctx).appliesTo(finding)` returns `true` when `finding.fixTarget === \"source\"` and `finding.source` is one of `\"lint\"`, `\"typecheck\"`, or `\"semantic-review\"`; returns `false` when `finding.fixTarget === \"test\"` or `finding.source === \"test-runner\"`",
+    "refined": "The appliesTo predicate returned by makeAutofixImplementerStrategy(ctx) returns true when (finding.fixTarget === \"source\" AND finding.source in [\"lint\", \"typecheck\", \"semantic-review\"]) and returns false when (finding.fixTarget === \"test\" OR finding.source === \"test-runner\")",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "`makeAutofixTestWriterStrategy(ctx).appliesTo(finding)` returns `true` when `finding.fixTarget === \"test\"` or `finding.source === \"adversarial-review\"`; returns `false` when `finding.fixTarget === \"source\"` and `finding.source !== \"adversarial-review\"`",
+    "refined": "The appliesTo predicate returned by makeAutofixTestWriterStrategy(ctx) returns true when (finding.fixTarget === \"test\" OR finding.source === \"adversarial-review\") and returns false when (finding.fixTarget === \"source\" AND finding.source !== \"adversarial-review\")",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "`makeMechanicalLintFixStrategy().fixOp.execute({...})` invokes `runQualityCommand` with `commandName: \"lintFix\"` and the resolved `quality.commands.lintFix` value when `lintFix` is configured",
+    "refined": "When quality.commands.lintFix is non-null, calling makeMechanicalLintFixStrategy().fixOp.execute() results in a call to runQualityCommand with commandName: \"lintFix\" and command set to the resolved quality.commands.lintFix value",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When `quality.commands.lintFix` and `lintFixScoped` are both `undefined`, `makeMechanicalLintFixStrategy().fixOp.execute({...})` returns `{ applied: true, exitCode: 0 }` without invoking `runQualityCommand`; same no-command early-return applies to `makeMechanicalFormatFixStrategy()` when `formatFix` and `formatFixScoped` are both `undefined`",
+    "refined": "When both quality.commands.lintFix and lintFixScoped are undefined, makeMechanicalLintFixStrategy().fixOp.execute() returns {applied: true, exitCode: 0} without calling runQualityCommand; identically, when both formatFix and formatFixScoped are undefined, makeMechanicalFormatFixStrategy().fixOp.execute() returns {applied: true, exitCode: 0} without calling runQualityCommand",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "`makeMechanicalLintFixStrategy().appliesTo(finding)` returns `true` for findings with `source === \"lint\"` and `false` for findings with `source === \"test-runner\"`",
+    "refined": "The appliesTo predicate returned by makeMechanicalLintFixStrategy() returns true when finding.source === \"lint\" and returns false when finding.source === \"test-runner\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "A behavior-preservation test fixture passes for each of these scenarios: (a) only mechanical lintFix configured + autofix disabled → only `makeMechanicalLintFixStrategy` in array, no agent strategy; (b) only autofix enabled → only agent strategies in array; (c) both mechanical and autofix enabled → mechanical strategies precede agent strategies in array order",
+    "refined": "Test suite includes three fixtures: (a) With quality.commands.lintFix configured and autofix.enabled === false, buildPlanForStrategy returns an array containing exactly makeMechanicalLintFixStrategy with no agent strategies; (b) With autofix.enabled === true and no mechanical commands configured, returns only agent strategies; (c) With both mechanical commands and autofix enabled, mechanical strategies appear in array indices before agent strategy indices",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "`grep -n \"buildAutofixStrategies\" src/pipeline/stages/autofix-cycle.ts | wc -l` returns ≥1 (additive story — `autofix-cycle.ts` still uses `buildAutofixStrategies`; migration is US-005a).",
+    "refined": "Running `grep -n \"buildAutofixStrategies\" src/pipeline/stages/autofix-cycle.ts | wc -l` returns a count of at least 1, confirming that buildAutofixStrategies function is still referenced in autofix-cycle.ts (not removed)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "`grep -nE \"lintCheckInput|typecheckCheckInput|verifyScopedInput\" src/execution/plan-inputs.ts | wc -l` returns ≥3",
+    "refined": "File src/execution/plan-inputs.ts contains at least 3 matches for the type/field names: lintCheckInput, typecheckCheckInput, or verifyScopedInput (e.g., type definitions, optional slots in PlanInputs interface)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-33",
+    "original": "`grep -n \"inlineReviewEnabled\" src/execution/plan-inputs.ts | wc -l` returns `0` — the flag's last gating-site is removed",
+    "refined": "File src/execution/plan-inputs.ts contains zero occurrences of the string \"inlineReviewEnabled\" (all conditional gating on this flag has been removed from slot-population sites)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-34",
+    "original": "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/build-plan-for-strategy.ts | wc -l` returns ≥3",
+    "refined": "File src/execution/build-plan-for-strategy.ts contains at least 3 matches for builder method calls: addLintCheck, addTypecheckCheck, or addVerifyScoped (wired into the phase assembly chain)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-35",
+    "original": "`grep -nE \"makeAutofixImplementerStrategy|makeAutofixTestWriterStrategy|makeMechanicalLintFixStrategy|makeMechanicalFormatFixStrategy\" src/execution/build-plan-for-strategy.ts | wc -l` returns ≥4",
+    "refined": "File src/execution/build-plan-for-strategy.ts contains at least 4 matches for strategy factory function calls: makeAutofixImplementerStrategy, makeAutofixTestWriterStrategy, makeMechanicalLintFixStrategy, or makeMechanicalFormatFixStrategy (assembled into the strategies array with conditional gates)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-36",
+    "original": "`grep -nE \"rectificationExhausted\" src/execution/story-orchestrator.ts src/execution/post-run.ts | wc -l` returns ≥2 (`StoryOrchestratorResult` declares the field; `applyPostRunInspection` reads it)",
+    "refined": "Combined grep search across both src/execution/story-orchestrator.ts and src/execution/post-run.ts for \"rectificationExhausted\" returns at least 2 matches (field declaration in StoryOrchestratorResult type; field read in applyPostRunInspection logic)",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-37",
+    "original": "`ExecutionPlan.run()` returns a `StoryOrchestratorResult` with `rectificationExhausted: true` and `unfixedFindings` populated when its internal `runRectification` call produces a `FixCycleResult` whose `exitReason` is one of `\"max-attempts-total\"`, `\"max-attempts-per-strategy\"`, or `\"bail-when\"` and `finalFindings.length > 0`",
+    "refined": "Unit/integration test: when ExecutionPlan.run() calls runRectification and receives a FixCycleResult with exitReason in {\"max-attempts-total\", \"max-attempts-per-strategy\", \"bail-when\"} and finalFindings.length > 0, the returned StoryOrchestratorResult must have rectificationExhausted === true and unfixedFindings populated with the finalFindings array",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-38",
+    "original": "When `applyPostRunInspection` observes `planResult.rectificationExhausted: true` with all remaining `unfixedFindings` having `source` in `{\"lint\", \"typecheck\"}`, it returns `{ action: \"continue\" }` with a warn log (not `{ action: \"escalate\" }`)",
+    "refined": "Unit/integration test: when applyPostRunInspection receives a planResult with rectificationExhausted: true and all unfixedFindings have source property in {\"lint\", \"typecheck\"}, the function returns an object with action === \"continue\" and a warn-level log is emitted",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When `applyPostRunInspection` observes `planResult.rectificationExhausted: true` with at least one `unfixedFinding` having `source` outside `{\"lint\", \"typecheck\"}` (e.g. `\"test-runner\"`), it returns `{ action: \"escalate\" }` (not `{ action: \"continue\" }`)",
+    "refined": "Unit/integration test: when applyPostRunInspection receives a planResult with rectificationExhausted: true and at least one unfixedFinding has source property outside {\"lint\", \"typecheck\"}, the function returns an object with action === \"escalate\"",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-40",
+    "original": "`applyPostRunInspection` populates `ctx.verifyPassed` (boolean derived from `verifier` or `verify-scoped` phase output), `ctx.semanticReviewResult` (`{ passed, findings }` from `semantic-review` phase output or `undefined` when absent), and `ctx.rectificationIterationCount` (number from rectification iteration count, `0` when absent)",
+    "refined": "Unit/integration test: applyPostRunInspection must assign three new properties to ctx: (1) ctx.verifyPassed (boolean) derived from planResult.phaseOutputs[\"verifier\"] (TDD) or planResult.phaseOutputs[\"verify-scoped\"] (non-TDD); (2) ctx.semanticReviewResult ({ passed: boolean, findings: any[] } or undefined) derived from planResult.phaseOutputs[\"semantic-review\"]; (3) ctx.rectificationIterationCount (number) derived from rectification phase output or defaulting to 0",
+    "testable": true,
+    "storyId": "US-005a"
+  },
+  {
+    "acId": "AC-41",
+    "original": "A config with `review.enabled: true` and `review.checks: [\"lint\"]` (no `\"typecheck\"`, `\"semantic\"`, `\"adversarial\"`) produces a plan whose `phaseOutputs` contains `\"lint-check\"` but does not contain `\"typecheck-check\"`, `\"semantic-review\"`, or `\"adversarial-review\"`",
+    "refined": "When building a plan with review.enabled=true and review.checks=[\"lint\"], the returned phaseOutputs object must have a key \"lint-check\" with a truthy value, and must not have keys \"typecheck-check\", \"semantic-review\", or \"adversarial-review\"",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-42",
+    "original": "A config with `review.enabled: false` produces a plan whose `phaseOutputs` contains none of `\"lint-check\"`, `\"typecheck-check\"`, `\"semantic-review\"`, `\"adversarial-review\"`",
+    "refined": "When building a plan with review.enabled=false, the returned phaseOutputs object must not contain any of the keys \"lint-check\", \"typecheck-check\", \"semantic-review\", or \"adversarial-review\"",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-43",
+    "original": "A config with `review.checks` including `\"lint\"` but `config.quality.commands.lint` undefined produces a plan where `phaseOutputs[\"lint-check\"]` is absent; same applies for typecheck",
+    "refined": "When review.checks=[\"lint\"] but quality.commands.lint is undefined, the returned phaseOutputs must not have a \"lint-check\" key; when review.checks=[\"typecheck\"] but quality.commands.typecheck is undefined, phaseOutputs must not have a \"typecheck-check\" key",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-44",
+    "original": "A config with `quality.autofix.enabled: false` produces a rectification phase whose strategies contain no `makeAutofixImplementerStrategy` / `makeAutofixTestWriterStrategy` entries — `implementerRectifyOp` and `testWriterRectifyOp` are never dispatched during the cycle",
+    "refined": "When quality.autofix.enabled=false, the rectification phase strategies list must not contain any strategy with type or name containing \"autofixImplementer\" or \"autofixTestWriter\"; during a full run cycle, implementerRectifyOp and testWriterRectifyOp must not be dispatched",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-45",
+    "original": "A config with `quality.commands.lintFix` and `lintFixScoped` both undefined produces a rectification phase whose strategies contain no `makeMechanicalLintFixStrategy` entry; same applies for `formatFix` / `formatFixScoped`",
+    "refined": "When quality.commands.lintFix and quality.commands.lintFixScoped are both undefined, the rectification phase strategies list must not contain any strategy with type or name containing \"mechanicalLintFix\"; when quality.commands.formatFix and quality.commands.formatFixScoped are both undefined, the strategies list must not contain any strategy with type or name containing \"mechanicalFormatFix\"",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-46",
+    "original": "When `quality.commands.lintFix` and `lintFixScoped` are both `undefined`, `makeMechanicalLintFixStrategy().fixOp.execute({...})` returns `{ applied: true, exitCode: 0 }` without invoking `runQualityCommand`; same for `makeMechanicalFormatFixStrategy()` with `formatFix` undefined",
+    "refined": "When quality.commands.lintFix and lintFixScoped are both undefined and makeMechanicalLintFixStrategy().fixOp.execute() is called, it must return {applied: true, exitCode: 0} and runQualityCommand must not be invoked; same behavior applies to makeMechanicalFormatFixStrategy() when formatFix and formatFixScoped are undefined",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Existing integration test scenarios in `test/integration/pipeline/` covering TDD success path, TDD failure-then-fix path, non-TDD path, review-finding rectification, mechanical-only failure suppression, and partial-progress retry all pass against the unified path",
+    "refined": "All existing integration test files in test/integration/pipeline/ must pass when executed against the unified execution path; specifically, test scenarios covering TDD success, TDD failure-then-fix, non-TDD execution, review-finding rectification, mechanical-only failure suppression, and partial-progress retry must all exit with code 0",
+    "testable": true,
+    "storyId": "US-005b"
+  },
+  {
+    "acId": "AC-48",
+    "original": "grep -rnE \"execution\\.inlineReview|review\\.dialogue|reviewDialogue|\\.inlineReview|review\\.pluginMode|pluginMode\" src/ --include=\"*.ts\" | grep -v \"deprecat\\|legacy\" | wc -l returns 0 (covers inlineReview, review.dialogue, and review.pluginMode config field removal per D2/D4).",
+    "refined": "Running grep to search for references to execution.inlineReview, review.dialogue, reviewDialogue, .inlineReview, review.pluginMode, or pluginMode in src/ TypeScript files (excluding deprecation/legacy comments) returns 0 matches, confirming all removed config field references are deleted.",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-49",
+    "original": "Files do not exist after this story: src/pipeline/stages/verify.ts, rectify.ts, review.ts, autofix.ts, autofix-cycle.ts, autofix-guards.ts, autofix-scope-split.ts, autofix-test-writer.ts, autofix-agent.ts, autofix-prompts.ts. File src/review/orchestrator.ts does not exist.",
+    "refined": "The following 11 files must not exist after completion: src/pipeline/stages/verify.ts, src/pipeline/stages/rectify.ts, src/pipeline/stages/review.ts, src/pipeline/stages/autofix.ts, src/pipeline/stages/autofix-cycle.ts, src/pipeline/stages/autofix-guards.ts, src/pipeline/stages/autofix-scope-split.ts, src/pipeline/stages/autofix-test-writer.ts, src/pipeline/stages/autofix-agent.ts, src/pipeline/stages/autofix-prompts.ts, src/review/orchestrator.ts",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-50",
+    "original": "defaultPipeline array in src/pipeline/stages/index.ts contains exactly the elements queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage — verified by grep -cE \"Stage,?$\" src/pipeline/stages/index.ts (inside the defaultPipeline definition) returning exactly 9, and grep -nE \"verifyStage|rectifyStage|reviewStage|autofixStage\" src/pipeline/stages/index.ts | wc -l returning 0.",
+    "refined": "The defaultPipeline array in src/pipeline/stages/index.ts exports exactly 9 stages in order: queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage. No references to verifyStage, rectifyStage, reviewStage, or autofixStage exist in the file.",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-51",
+    "original": "grep -nE \"addSemanticReview|addAdversarialReview\" src/execution/story-orchestrator.ts | wc -l returns 0",
+    "refined": "No references to addSemanticReview or addAdversarialReview methods exist in src/execution/story-orchestrator.ts",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-52",
+    "original": "grep -nE \"semanticReview\\??:|adversarialReview\\??:\" src/execution/plan-inputs.ts | wc -l returns 0 — the PlanInputs slot fields are removed.",
+    "refined": "The semanticReview and adversarialReview field declarations are removed from src/execution/plan-inputs.ts; no object property references to these fields exist",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-53",
+    "original": "grep -rnE \"ctx\\.reviewerSession|ctx\\.reviewResult|ctx\\.verifyResult|ctx\\.autofixAttempt\" src/ --include=\"*.ts\" | grep -vE \"src/debate/|test\" | wc -l returns 0 — per D3 + D4, no non-debate consumer of these legacy ctx fields after cleanup.",
+    "refined": "No references to ctx.reviewerSession, ctx.reviewResult, ctx.verifyResult, or ctx.autofixAttempt exist in src/ TypeScript files outside of src/debate/ and test files",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-54",
+    "original": "When a legacy config containing execution.inlineReview: true, review.dialogue.enabled: true, or review.pluginMode is loaded, src/config/loader.ts logs a warning at level warn per removed key (message contains the key name and \"removed\"), and the loaded config does not contain those keys",
+    "refined": "When src/config/loader.ts loads a config containing execution.inlineReview, review.dialogue.enabled, or review.pluginMode fields: (1) it logs one warn-level message per removed key that includes the field name and the word 'removed', (2) it strips these keys from the config object, and (3) the returned config object does not contain these fields",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-55",
+    "original": "grep -rnE \"pluginMode\" src/config/schemas-review.ts src/review/types.ts src/config/schemas.ts src/config/merge.ts --include=\"*.ts\" | wc -l returns 0.",
+    "refined": "No references to pluginMode exist in src/config/schemas-review.ts, src/review/types.ts, src/config/schemas.ts, or src/config/merge.ts",
+    "testable": true,
+    "storyId": "US-005c"
+  },
+  {
+    "acId": "AC-56",
+    "original": "Specs at docs/specs/SPEC-story-orchestrator-consolidation.md, docs/specs/SPEC-rectification-unification.md each contain the literal string PARTIALLY SUPERSEDED in their first 30 lines.",
+    "refined": "Both docs/specs/SPEC-story-orchestrator-consolidation.md and docs/specs/SPEC-rectification-unification.md contain the literal string 'PARTIALLY SUPERSEDED' within their first 30 lines",
+    "testable": true,
+    "storyId": "US-005c"
+  }
+]

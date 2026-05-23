@@ -216,7 +216,6 @@ export const NaxConfigSchema = z
       gateLLMChecksOnMechanicalPass: true,
       checks: ["typecheck", "lint"],
       commands: {},
-      pluginMode: "per-story",
       audit: { enabled: false },
       blockingThreshold: "error",
       semantic: {
@@ -239,11 +238,6 @@ export const NaxConfigSchema = z
           ":!.nax/",
           ":!.nax-pids",
         ],
-      },
-      dialogue: {
-        enabled: false,
-        maxClarificationsPerAttempt: 2,
-        maxDialogueMessages: 20,
       },
     }),
     plan: PlanConfigSchema.default({

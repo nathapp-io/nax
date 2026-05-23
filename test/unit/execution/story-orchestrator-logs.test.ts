@@ -67,50 +67,6 @@ describe("StoryOrchestrator runPhase — beforeRef threading", () => {
     }
   });
 
-  test("does not decorate non-TDD phase inputs with beforeRef", async () => {
-    const { StoryOrchestratorBuilder } = await import("@/execution");
-    const { implementerOp, semanticReviewOp } = await import("@/operations");
-
-    const capturedInputs: { opName: string; input: unknown }[] = [];
-    _storyOrchestratorDeps.callOp = (async (_ctx: unknown, op: any, input: unknown) => {
-      capturedInputs.push({ opName: op.name, input });
-      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0, output: "" };
-    }) as typeof _storyOrchestratorDeps.callOp;
-
-    _storyOrchestratorDeps.captureGitRef = async (_dir: string) => "abc1234";
-
-    const runtime = makeTestRuntime();
-    try {
-      const builder = new StoryOrchestratorBuilder();
-      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
-      builder.addSemanticReview({
-        op: semanticReviewOp,
-        input: { story: { id: "US-001" } as any },
-      });
-
-      const plan = builder.build(
-        {
-          runtime,
-          packageView: runtime.packages.repo(),
-          packageDir: "/tmp/x",
-          agentName: "claude",
-          storyId: "US-001",
-        },
-        { isThreeSession: true },
-      );
-      await plan.run();
-
-      // implementer IS a TDD phase — should have beforeRef
-      const implCapture = capturedInputs.find((c) => c.opName === "implementer");
-      expect((implCapture?.input as { beforeRef?: string }).beforeRef).toBe("abc1234");
-
-      // semantic-review is NOT a TDD phase — should not have beforeRef
-      const reviewCapture = capturedInputs.find((c) => c.opName === "semantic-review");
-      expect((reviewCapture?.input as { beforeRef?: string }).beforeRef).toBeUndefined();
-    } finally {
-      await runtime.close();
-    }
-  });
 });
 
 describe("StoryOrchestrator runPhase — log emission", () => {

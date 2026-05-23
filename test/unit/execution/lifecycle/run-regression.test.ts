@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { _regressionDeps, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions } from "@/execution";
+import type { FixCycleResult, Finding } from "@/findings";
 import type { PRD } from "@/prd";
 import type { VerificationResult } from "@/verification";
 import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
@@ -43,6 +44,40 @@ function makePassResult(passCount = 150): VerificationResult {
     output: `${passCount} pass | 0 fail`,
     passCount,
     failCount: 0,
+  };
+}
+
+function makeFixCycleResult(succeeded: boolean, costUsd = 0, iterationCount = 1): FixCycleResult<Finding> {
+  if (succeeded) {
+    return {
+      iterations: Array.from({ length: iterationCount }, (_, i) => ({
+        iterationNum: i + 1,
+        findingsBefore: [],
+        fixesApplied: [],
+        findingsAfter: [],
+        outcome: "resolved" as const,
+        startedAt: "",
+        finishedAt: "",
+      })),
+      finalFindings: [],
+      exitReason: "resolved",
+      costUsd,
+    };
+  }
+  const finding: Finding = { source: "test-runner", severity: "error", category: "failed-test", rule: "t", message: "fail", fixTarget: "source" };
+  return {
+    iterations: Array.from({ length: iterationCount }, (_, i) => ({
+      iterationNum: i + 1,
+      findingsBefore: [finding],
+      fixesApplied: [],
+      findingsAfter: [finding],
+      outcome: "unchanged" as const,
+      startedAt: "",
+      finishedAt: "",
+    })),
+    finalFindings: [finding],
+    exitReason: "max-attempts-total",
+    costUsd,
   };
 }
 
@@ -104,7 +139,7 @@ describe("runDeferredRegression — initial suite passes", () => {
       verifyCallCount.n++;
       return makePassResult();
     });
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0, durationMs: 0 }));
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false));
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
@@ -140,9 +175,9 @@ describe("runDeferredRegression — early exit after first story", () => {
       failures: [], // unmapped → all stories affected
     }));
     const rectifiedStories: string[] = [];
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      rectifiedStories.push(opts.story.id);
-      return { succeeded: true, cost: 0.5, durationMs: 200 }; // fixed on first attempt
+    _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      rectifiedStories.push(cycleCtx.storyId);
+      return makeFixCycleResult(true, 0.5); // fixed on first attempt
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002", "US-003"]));
@@ -181,9 +216,9 @@ describe("runDeferredRegression — early exit after first story", () => {
     }));
 
     const rectifiedStories: string[] = [];
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      rectifiedStories.push(opts.story.id);
-      return { succeeded: true, cost: 0.4, durationMs: 120 };
+    _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      rectifiedStories.push(cycleCtx.storyId);
+      return makeFixCycleResult(true, 0.4);
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -218,9 +253,9 @@ describe("runDeferredRegression — early exit after second story", () => {
       failures: [],
     }));
     const rectifiedStories: string[] = [];
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      rectifiedStories.push(opts.story.id);
-      return { succeeded: true, cost: 0.3, durationMs: 150 }; // each story claims it fixed things
+    _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      rectifiedStories.push(cycleCtx.storyId);
+      return makeFixCycleResult(true, 0.3); // each story claims it fixed things
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002", "US-003"]));
@@ -252,7 +287,7 @@ describe("runDeferredRegression — no story fixes anything", () => {
       failed: 92,
       failures: [],
     }));
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: false, cost: 0, durationMs: 0 })); // never fixed
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false)); // never fixed
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
@@ -268,7 +303,7 @@ describe("runDeferredRegression — no story fixes anything", () => {
 
 describe("runDeferredRegression — test output context forwarding", () => {
   test("passes updated test output from mid-loop to next story's rectification", async () => {
-    const capturedOutputs: string[] = [];
+    const capturedParseArgs: string[] = [];
     let verifyCallIndex = 0;
 
     _regressionDeps.runVerification = mock(async () => {
@@ -281,22 +316,19 @@ describe("runDeferredRegression — test output context forwarding", () => {
       return makePassResult(); // mid-loop after US-002 → early exit
     });
 
-    _regressionDeps.parseTestOutput = mock(() => ({
-      passed: 0,
-      failed: 92,
-      failures: [],
-    }));
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      capturedOutputs.push(opts.testOutput);
-      return { succeeded: true, cost: 0.1, durationMs: 75 };
-    });
+    _regressionDeps.parseTestOutput = mock((output) => {
+      capturedParseArgs.push(output);
+      return { passed: 0, failed: 92, failures: [] };
+    }) as unknown as typeof _regressionDeps.parseTestOutput;
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.1));
 
     await runDeferredRegression(makeOptions(["US-001", "US-002"]));
 
-    // US-001 receives the initial output
-    expect(capturedOutputs[0]).toBe("INITIAL_FAIL_OUTPUT");
-    // US-002 receives the updated output from mid-loop re-run
-    expect(capturedOutputs[1]).toBe("UPDATED_FAIL_OUTPUT");
+    // capturedParseArgs[0] = initial testSummary from fullSuiteResult.output
+    // capturedParseArgs[1] = US-001 initialFindings (uses initial currentTestOutput)
+    // capturedParseArgs[2] = US-002 initialFindings (uses updated currentTestOutput after mid-loop)
+    expect(capturedParseArgs[1]).toBe("INITIAL_FAIL_OUTPUT");
+    expect(capturedParseArgs[2]).toBe("UPDATED_FAIL_OUTPUT");
   });
 });
 
@@ -337,7 +369,7 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
       return makePassResult(); // mid-loop after first story: pass
     });
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 5, failures: [] }));
-    _regressionDeps.runRectificationLoop = mock(async () => ({ succeeded: true, cost: 1.2559, durationMs: 500 }));
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 1.2559));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
@@ -345,23 +377,19 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
     expect(result.storyCosts?.["US-001"]).toBeCloseTo(1.2559);
   });
 
-  test("accumulates cost for multiple attempts on the same story when no early exit fires", async () => {
-    // US-001 fails to fix in attempt 1, retries (maxRectificationAttempts = 2)
+  test("accumulates cost for the cycle even when not succeeded", async () => {
+    // US-001 cycle fails (maxRectificationAttempts = 2, handled inside runFixCycle)
     // Then the final re-run passes
-    let rectifyCallIndex = 0;
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
-    _regressionDeps.runRectificationLoop = mock(async () => {
-      rectifyCallIndex++;
-      // Never claim succeeded so there's no mid-loop verify call and we fall through
-      return { succeeded: false, cost: 0.75, durationMs: 120 };
-    });
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false, 1.5, 2));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
-    // 2 attempts × $0.75 each — cost accumulated even when failed
+    // 2 iteration cycle × $0.75 each = $1.5 total cost
     expect(result.storyCosts?.["US-001"]).toBeCloseTo(1.5);
-    expect(rectifyCallIndex).toBe(2); // maxRectificationAttempts = 2
+    // 2 iterations counted as rectificationAttempts
+    expect(result.rectificationAttempts).toBe(2);
   });
 
   test("tracks cost for each affected story independently", async () => {
@@ -374,9 +402,9 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
     });
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
     let storyIdx = 0;
-    _regressionDeps.runRectificationLoop = mock(async () => {
+    _regressionDeps.runFixCycle = mock(async () => {
       storyIdx++;
-      return { succeeded: true, cost: storyIdx === 1 ? 0.4 : 0.6, durationMs: storyIdx === 1 ? 90 : 110 };
+      return makeFixCycleResult(true, storyIdx === 1 ? 0.4 : 0.6);
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -392,19 +420,15 @@ describe("runDeferredRegression — storyCosts tracking (issue #679)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
-  test("accumulates wall-clock duration per story across rectification attempts", async () => {
+  test("storyDurations is a non-negative number per story", async () => {
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
-    _regressionDeps.runRectificationLoop = mock(async () => ({
-      succeeded: false,
-      cost: 0.2,
-      durationMs: 175,
-    }));
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(false, 0.2, 2));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
-    // 2 attempts × 175 ms
-    expect(result.storyDurations?.["US-001"]).toBe(350);
+    expect(typeof result.storyDurations?.["US-001"]).toBe("number");
+    expect(result.storyDurations?.["US-001"]).toBeGreaterThanOrEqual(0);
   });
 
   test("storyOutcomes reflects per-story rectification success rather than the overall result", async () => {
@@ -417,12 +441,10 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
     });
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
     let storyIdx = 0;
-    _regressionDeps.runRectificationLoop = mock(async () => {
+    _regressionDeps.runFixCycle = mock(async () => {
       storyIdx++;
       // First story "succeeds" locally but the overall suite still fails; second story fails.
-      return storyIdx === 1
-        ? { succeeded: true, cost: 0.4, durationMs: 80 }
-        : { succeeded: false, cost: 0.5, durationMs: 120 };
+      return storyIdx === 1 ? makeFixCycleResult(true, 0.4) : makeFixCycleResult(false, 0.5);
     });
 
     const result = await runDeferredRegression(makeOptions(["US-001", "US-002"]));
@@ -432,17 +454,10 @@ describe("runDeferredRegression — storyDurations + storyOutcomes", () => {
     expect(result.storyOutcomes?.["US-002"]).toBe(false);
   });
 
-  test("storyOutcomes latches true once any attempt succeeds", async () => {
+  test("storyOutcomes latches true once any cycle succeeds", async () => {
     _regressionDeps.runVerification = mock(async () => makeVerifyResult());
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
-    let attempt = 0;
-    _regressionDeps.runRectificationLoop = mock(async () => {
-      attempt++;
-      // First attempt succeeds; early-exit triggers before second attempt.
-      return attempt === 1
-        ? { succeeded: true, cost: 0.3, durationMs: 100 }
-        : { succeeded: false, cost: 0.3, durationMs: 100 };
-    });
+    _regressionDeps.runFixCycle = mock(async () => makeFixCycleResult(true, 0.3));
 
     const result = await runDeferredRegression(makeOptions(["US-001"]));
 
@@ -472,11 +487,11 @@ void _ac4TypeCheck;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC5: runDeferredRegression reads agentManager from runtime.agentManager
-// AC6: runDeferredRegression passes runtime to runRectificationLoop
+// AC6: runDeferredRegression passes runtime to runFixCycle
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
-  test("AC5: passes runtime.agentManager to runRectificationLoop (not a separate agentManager)", async () => {
+  test("AC5: passes runtime.agentManager to cycleCtx (not a separate agentManager)", async () => {
     let verifyCallIndex = 0;
     _regressionDeps.runVerification = mock(async () => {
       const i = verifyCallIndex++;
@@ -486,9 +501,9 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
 
     let capturedAgentManager: unknown;
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      capturedAgentManager = opts.agentManager;
-      return { succeeded: true, cost: 0.1, durationMs: 50 };
+    _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      capturedAgentManager = cycleCtx.runtime.agentManager;
+      return makeFixCycleResult(true, 0.1);
     });
 
     const { makeMockAgentManager: makeAM } = await import("../../../helpers");
@@ -497,11 +512,11 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
 
     await runDeferredRegression(makeOptions(["US-001"], mockRuntime));
 
-    // AC5: agentManager in opts comes from runtime.agentManager, not a separate field
+    // AC5: agentManager in cycleCtx comes from runtime.agentManager, not a separate field
     expect(capturedAgentManager).toBe(specificAgentManager);
   });
 
-  test("AC6: passes runtime to runRectificationLoop opts", async () => {
+  test("AC6: passes runtime to cycleCtx.runtime", async () => {
     let verifyCallIndex = 0;
     _regressionDeps.runVerification = mock(async () => {
       const i = verifyCallIndex++;
@@ -511,15 +526,15 @@ describe("runDeferredRegression — runtime threading (AC5/AC6)", () => {
     _regressionDeps.parseTestOutput = mock(() => ({ passed: 0, failed: 3, failures: [] }));
 
     let capturedRuntime: unknown;
-    _regressionDeps.runRectificationLoop = mock(async (opts) => {
-      capturedRuntime = opts.runtime;
-      return { succeeded: true, cost: 0.1, durationMs: 50 };
+    _regressionDeps.runFixCycle = mock(async (_cycle, cycleCtx) => {
+      capturedRuntime = cycleCtx.runtime;
+      return makeFixCycleResult(true, 0.1);
     });
 
     const mockRuntime = makeMockRuntime();
     await runDeferredRegression(makeOptions(["US-001"], mockRuntime));
 
-    // AC6: runtime is passed through to runRectificationLoop
+    // AC6: runtime is passed through to cycleCtx
     expect(capturedRuntime).toBe(mockRuntime);
   });
 });

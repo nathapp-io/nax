@@ -13,9 +13,10 @@
 
 import { describe, test, expect } from "bun:test";
 import { NaxError } from "@/errors";
-import { assemblePlanInputs, type PlanInputs } from "@/execution";
+import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeStory, makeNaxConfig } from "@test/helpers";
+import { DEFAULT_CONFIG } from "@/config";
 
 const FAKE_PATTERNS: ResolvedTestPatterns = {
   globs: [],
@@ -263,6 +264,182 @@ describe("assemblePlanInputs - edge cases", () => {
 
     const result = assemblePlanInputs(story, config);
     expect(result.config.agent?.default).toBe("claude");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC1: PlanInputs new slots (verifyScoped, lintCheck, typecheckCheck)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeNonTddCtx(configOverride: Record<string, unknown> = {}): any {
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...configOverride,
+    execution: {
+      ...DEFAULT_CONFIG.execution,
+      ...((configOverride.execution as object) ?? {}),
+    },
+    review: {
+      ...DEFAULT_CONFIG.review,
+      ...((configOverride.review as object) ?? {}),
+    },
+    quality: {
+      ...DEFAULT_CONFIG.quality,
+      ...((configOverride.quality as object) ?? {}),
+      commands: {
+        ...(DEFAULT_CONFIG.quality?.commands ?? {}),
+        ...(((configOverride.quality as Record<string, unknown>)?.commands as object) ?? {}),
+      },
+    },
+  };
+  return {
+    story: makeStory({ id: "US-001", title: "Test" }),
+    config,
+    workdir: "/tmp/repo",
+    routing: { testStrategy: "no-test", agent: "claude" },
+    prompt: "do the thing",
+    featureContextMarkdown: "feat",
+    constitution: { content: "" },
+    prd: { feature: "f" },
+    projectDir: "/tmp/proj",
+  };
+}
+
+describe("PlanInputs — AC1: new optional slots (US-005)", () => {
+  test("AC1: PlanInputs type accepts verifyScoped slot input", () => {
+    const story = makeStory({ id: "US-001" });
+    const config = makeNaxConfig();
+    const inputs: PlanInputs = {
+      story,
+      config,
+      verifyScoped: { workdir: "/tmp", storyId: "US-001" },
+    };
+    expect(inputs.verifyScoped).toBeDefined();
+    expect(inputs.verifyScoped?.workdir).toBe("/tmp");
+  });
+
+  test("AC1: PlanInputs type accepts lintCheck slot input", () => {
+    const story = makeStory({ id: "US-001" });
+    const config = makeNaxConfig();
+    const inputs: PlanInputs = {
+      story,
+      config,
+      lintCheck: { workdir: "/tmp", storyId: "US-001" },
+    };
+    expect(inputs.lintCheck).toBeDefined();
+    expect(inputs.lintCheck?.workdir).toBe("/tmp");
+  });
+
+  test("AC1: PlanInputs type accepts typecheckCheck slot input", () => {
+    const story = makeStory({ id: "US-001" });
+    const config = makeNaxConfig();
+    const inputs: PlanInputs = {
+      story,
+      config,
+      typecheckCheck: { workdir: "/tmp", storyId: "US-001" },
+    };
+    expect(inputs.typecheckCheck).toBeDefined();
+    expect(inputs.typecheckCheck?.workdir).toBe("/tmp");
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates verifyScoped for non-TDD strategy", async () => {
+    const ctx = makeNonTddCtx();
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    // Non-TDD strategies should receive verifyScoped slot when configured
+    expect(inputs.verifyScoped).toBeDefined();
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lint command configured", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["lint"],
+      },
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        commands: {
+          ...(DEFAULT_CONFIG.quality?.commands ?? {}),
+          lint: "bun run lint",
+        },
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.lintCheck).toBeDefined();
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates typecheckCheck when 'typecheck' in review.checks and typecheck command configured", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["typecheck"],
+      },
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        commands: {
+          ...(DEFAULT_CONFIG.quality?.commands ?? {}),
+          typecheck: "bun run typecheck",
+        },
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.typecheckCheck).toBeDefined();
+  });
+
+  test("AC1: lintCheck remains undefined when 'lint' not in review.checks", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        commands: {
+          ...(DEFAULT_CONFIG.quality?.commands ?? {}),
+          lint: "bun run lint",
+        },
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.lintCheck).toBeUndefined();
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates semanticReview when check enabled and config present", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.semanticReview?.storyGitRef).toBe("abc123");
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates adversarialReview when check enabled and config present", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["adversarial"],
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+        },
+      },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.adversarialReview).toBeDefined();
+    expect(inputs.adversarialReview?.storyGitRef).toBe("abc123");
   });
 });
 

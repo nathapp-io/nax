@@ -13,14 +13,12 @@
  */
 
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
-import type { SemanticVerdict } from "../../acceptance/types";
 import { annotateManifestEffectiveness } from "../../context/engine/effectiveness";
 import { appendProgress } from "../../execution/progress";
 import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
 import { countStories, markStoryPassed, savePRD } from "../../prd";
-import { reviewOrchestrator } from "../../review/orchestrator";
 import { errorMessage } from "../../utils/errors";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -69,7 +67,6 @@ export const completionStage: PipelineStage = {
     // Mark all stories in batch as passed
     for (const completedStory of ctx.stories) {
       markStoryPassed(ctx.prd, completedStory.id);
-      reviewOrchestrator.clearStory(completedStory.id);
 
       const costPerStory = sessionCost / ctx.stories.length;
       logger.info("completion", "Story passed", {
@@ -117,19 +114,8 @@ export const completionStage: PipelineStage = {
         }
       }
 
-      // Persist semantic verdict for this story (AC-4 through AC-7)
-      // Must be inside the loop so every story in a batch gets its own verdict file.
-      const semanticCheck = ctx.reviewResult?.checks?.find((c) => c.check === "semantic");
-      if (ctx.featureDir && semanticCheck) {
-        const verdict: SemanticVerdict = {
-          storyId: completedStory.id,
-          passed: semanticCheck.success,
-          timestamp: new Date().toISOString(),
-          acCount: completedStory.acceptanceCriteria?.length ?? 0,
-          findings: semanticCheck.success ? [] : (semanticCheck.findings ?? []),
-        };
-        await _completionDeps.persistSemanticVerdict(ctx.featureDir, completedStory.id, verdict);
-      }
+      // Semantic verdict persistence (AC-4 through AC-7): reviewResult removed in US-005c.
+      // Verdict is now written by the execution stage directly when available.
     }
 
     // Save PRD
@@ -144,15 +130,6 @@ export const completionStage: PipelineStage = {
       passed: updatedCounts.passed,
       failed: updatedCounts.failed,
     });
-
-    // AC7: Destroy the reviewer session if it exists (regardless of pass/fail)
-    if (ctx.reviewerSession) {
-      try {
-        await ctx.reviewerSession.destroy();
-      } catch {
-        // Ignore destroy errors — cleanup is best-effort
-      }
-    }
 
     return { action: "continue" };
   },

@@ -16,10 +16,8 @@ import type { StoryMetrics } from "@/metrics/types";
 import type { TestEditDeclaration } from "@/operations";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
-import type { ReviewResult } from "@/review/types";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { FailureCategory } from "@/tdd/types";
-import type { VerifyResult } from "@/verification/orchestrator-types";
 
 /**
  * Routing result from complexity classification
@@ -164,10 +162,6 @@ export interface PipelineContext extends DispatchContext {
   agentResult?: AgentResult;
   /** Parsed self-verification marker from the latest execution session. */
   selfVerification?: import("../quality").SelfVerificationResult;
-  /** Verify result (set by verifyStage) */
-  verifyResult?: VerifyResult;
-  /** Review result (set by reviewStage) */
-  reviewResult?: ReviewResult;
   /** Acceptance test failures (set by acceptanceStage) */
   acceptanceFailures?: {
     failedACs: string[];
@@ -186,8 +180,6 @@ export interface PipelineContext extends DispatchContext {
   storyStartTime?: string;
   /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
   rectifyAttempt?: number;
-  /** Tracks how many times the autofix stage has run this pipeline (for event attempt numbers). */
-  autofixAttempt?: number;
   /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
   /**
@@ -235,8 +227,6 @@ export interface PipelineContext extends DispatchContext {
   storyRuntimeCrashes?: number;
   /** Structured review findings — passed to escalation for retry context */
   reviewFindings?: import("../findings").Finding[];
-  /** Active reviewer-implementer dialogue session (set by reviewStage when dialogue.enabled) */
-  reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Accumulated cost across all prior escalation attempts (BUG-067) */
   accumulatedAttemptCost?: number;
   /**
@@ -265,13 +255,6 @@ export interface PipelineContext extends DispatchContext {
    * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
    */
   mechanicalFailedOnly?: boolean;
-  /**
-   * When true, reviewStage skips LLM-driven dialogue paths (reviewerSession.review() and
-   * reReview()). Set by recheckReview in lite mode so the recheck runs only mechanical
-   * checks. Combined with retrySkipChecks including "adversarial" and "semantic", this
-   * ensures no LLM reviewer calls are made during an exhausted-cycle lite recheck.
-   */
-  skipLLMReviewers?: boolean;
 }
 
 /**

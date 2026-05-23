@@ -17,7 +17,7 @@ import type { NaxConfig } from "./schema";
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), verificationTimeoutSeconds
- * - review: enabled, checks, commands (deep), pluginMode, semantic (deep)
+ * - review: enabled, checks, commands (deep), semantic (deep)
  * - acceptance: enabled, generateTests, testPath
  * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
  * - context: testCoverage (deep)

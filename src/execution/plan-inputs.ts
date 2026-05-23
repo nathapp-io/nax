@@ -7,19 +7,22 @@
  */
 
 import type { NaxConfig } from "../config/schema";
+import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
 import type {
   AdversarialReviewInput,
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
+  LintCheckInput,
   SemanticReviewInput,
   TestWriterInput,
+  TypecheckCheckInput,
   VerifierInput,
+  VerifyScopedInput,
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import { TddPromptBuilder } from "../prompts";
-import type { SemanticStory } from "../review/types";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { isThreeSessionStrategy } from "./build-plan-for-strategy";
@@ -42,6 +45,9 @@ export interface PlanInputs {
   readonly implementer?: ImplementerInput;
   readonly fullSuiteGate?: FullSuiteGateInput;
   readonly verifier?: VerifierInput;
+  readonly verifyScoped?: VerifyScopedInput;
+  readonly lintCheck?: LintCheckInput;
+  readonly typecheckCheck?: TypecheckCheckInput;
   readonly semanticReview?: SemanticReviewInput;
   readonly adversarialReview?: AdversarialReviewInput;
   readonly rectification?: RectificationPhaseOptions;
@@ -142,6 +148,24 @@ async function buildThreeSessionPrompt(
   });
 }
 
+function buildFeatureCtxBlock(
+  ctx: import("../pipeline/types").PipelineContext,
+  role: "reviewer-semantic" | "reviewer-adversarial",
+): string | undefined {
+  const bundleMarkdown = ctx.contextBundle?.pushMarkdown.trim();
+  if (bundleMarkdown) {
+    return `${bundleMarkdown}\n\n---\n\n`;
+  }
+
+  const featureMarkdown = ctx.featureContextMarkdown?.trim();
+  if (!featureMarkdown) {
+    return undefined;
+  }
+
+  const filtered = filterContextByRole(featureMarkdown, role).trim();
+  return filtered ? `${filtered}\n\n---\n\n` : undefined;
+}
+
 /**
  * Assemble typed PlanInputs from the current pipeline context.
  * Populates all slots eligible for the given strategy + run phase.
@@ -213,50 +237,56 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   const verifierInput = _isTdd ? { story, promptMarkdown: verifierPrompt } : undefined;
 
-  // Build review + rectification inputs only when inlineReview is enabled.
-  // Default (false) preserves legacy behavior where review/rectify run as standalone stages.
-  const inlineReviewEnabled = ctx.config.execution?.inlineReview === true;
+  // verifyScoped: present for non-TDD strategies (TDD uses fullSuiteGate + verifier instead)
+  const verifyScopedInput: VerifyScopedInput | undefined = !_isTdd
+    ? { workdir: ctx.workdir, storyId: story.id }
+    : undefined;
 
-  const semanticStory: SemanticStory = {
-    id: story.id,
-    title: story.title,
-    description: story.description ?? "",
-    acceptanceCriteria: Array.isArray(story.acceptanceCriteria) ? story.acceptanceCriteria : [],
-  };
-
-  const semanticConfig = ctx.config.review?.semantic;
-  const semanticReviewInput: SemanticReviewInput | undefined =
-    inlineReviewEnabled &&
+  // lintCheck: gated by review.checks includes "lint" and a lint command is configured
+  const lintCheckInput: LintCheckInput | undefined =
     ctx.config.review?.enabled === true &&
-    ctx.config.review.checks?.includes("semantic") &&
-    semanticConfig !== undefined
+    ctx.config.review.checks?.includes("lint") &&
+    ctx.config.quality.commands.lint
+      ? { workdir: ctx.workdir, storyId: story.id }
+      : undefined;
+
+  // typecheckCheck: gated by review.checks includes "typecheck" and a typecheck command is configured
+  const typecheckCheckInput: TypecheckCheckInput | undefined =
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("typecheck") &&
+    ctx.config.quality.commands.typecheck
+      ? { workdir: ctx.workdir, storyId: story.id }
+      : undefined;
+
+  const semanticReviewInput: SemanticReviewInput | undefined =
+    ctx.config.review?.enabled === true && ctx.config.review.checks?.includes("semantic") && ctx.config.review.semantic
       ? {
           workdir: ctx.workdir,
-          story: semanticStory,
-          semanticConfig,
-          mode: semanticConfig.diffMode ?? "ref",
+          story,
+          semanticConfig: ctx.config.review.semantic,
+          mode: ctx.config.review.semantic.diffMode,
           storyGitRef: ctx.storyGitRef,
+          featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-semantic"),
           blockingThreshold: ctx.config.review.blockingThreshold,
         }
       : undefined;
 
-  const adversarialConfig = ctx.config.review?.adversarial;
   const adversarialReviewInput: AdversarialReviewInput | undefined =
-    inlineReviewEnabled &&
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("adversarial") &&
-    adversarialConfig !== undefined
+    ctx.config.review.adversarial
       ? {
-          story: semanticStory,
-          adversarialConfig,
-          mode: adversarialConfig.diffMode ?? "ref",
+          story,
+          adversarialConfig: ctx.config.review.adversarial,
+          mode: ctx.config.review.adversarial.diffMode,
           storyGitRef: ctx.storyGitRef,
+          featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-adversarial"),
           blockingThreshold: ctx.config.review.blockingThreshold,
         }
       : undefined;
 
   const rectificationInput: RectificationPhaseOptions | undefined =
-    inlineReviewEnabled && ctx.config.execution?.rectification?.enabled === true
+    ctx.config.execution?.rectification?.enabled === true
       ? {
           maxAttempts: ctx.config.execution.rectification.maxRetries ?? 2,
           strategies: [], // base — buildPlanForStrategy prepends makeFullSuiteRectifyStrategy(story) for TDD+gate plans
@@ -272,6 +302,9 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     implementer: implementerInput,
     fullSuiteGate: fullSuiteGateInput,
     verifier: verifierInput,
+    verifyScoped: verifyScopedInput,
+    lintCheck: lintCheckInput,
+    typecheckCheck: typecheckCheckInput,
     semanticReview: semanticReviewInput,
     adversarialReview: adversarialReviewInput,
     rectification: rectificationInput,

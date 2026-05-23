@@ -103,7 +103,6 @@ export const ReviewConfigSchema = z.object({
     formatFix: z.string().optional(),
     formatFixScoped: z.string().optional(),
   }),
-  pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
   audit: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   /**
    * Minimum severity that counts as a blocking finding.
@@ -118,9 +117,4 @@ export const ReviewConfigSchema = z.object({
   blockingThreshold: z.enum(["error", "warning", "info"]).default("error"),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
-  dialogue: ReviewDialogueConfigSchema.default({
-    enabled: false,
-    maxClarificationsPerAttempt: 2,
-    maxDialogueMessages: 20,
-  }),
 });

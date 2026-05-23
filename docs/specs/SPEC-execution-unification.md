@@ -14,7 +14,7 @@
 
 ## Summary
 
-Per-story execution in nax runs through three overlapping sequencing abstractions today: pipeline stages (`src/pipeline/stages/`), builder phases (`StoryOrchestratorBuilder.CANONICAL_ORDER`), and fix strategies (`FixStrategy[]` inside `runFixCycle`). Each was sound when introduced; the composite is messy — the `execution.inlineReview` flag exists because two of them duplicate review work, and SPEC-rectification-unification US-006a's gate rectification is unreachable in production because of the same flag. This spec collapses the three abstractions to two: builder phases for ordering, FixStrategies for finding-driven fixes, with `applyPostRunInspection` as the single thin glue layer between the builder and the pipeline. Five pipeline stages (`verify`, `rectify`, `review`, `autofix`, `regression`) and the legacy `runRectificationLoop` framework are deleted. Net change: ~2,400 LOC removed across six user stories (Phases A–E from ADR-023, with the cutover split into additive + terminal-cleanup per the spec-writing guide's hard split rule).
+Per-story execution in nax runs through three overlapping sequencing abstractions today: pipeline stages (`src/pipeline/stages/`), builder phases (`StoryOrchestratorBuilder.CANONICAL_ORDER`), and fix strategies (`FixStrategy[]` inside `runFixCycle`). Each was sound when introduced; the composite is messy — the `execution.inlineReview` flag exists because two of them duplicate review work, and SPEC-rectification-unification US-006a's gate rectification is unreachable in production because of the same flag. This spec collapses the three abstractions to two: builder phases for ordering, FixStrategies for finding-driven fixes, with `applyPostRunInspection` as the single thin glue layer between the builder and the pipeline. Four pipeline stages (`verify`, `rectify`, `review`, `autofix`) and the legacy `runRectificationLoop` framework are deleted. `regressionStage` is retained (D1). Net change: ~2,400 LOC removed across seven user stories (Phases A–E from ADR-023, with the cutover split into additive + terminal-cleanup per the spec-writing guide's hard split rule).
 
 ## Motivation
 
@@ -46,7 +46,7 @@ Today:    queueCheck → routing → constitution → context → prompt → opt
           execution → verify → rectify → review → autofix → regression → completion
 
 Target:   queueCheck → routing → constitution → context → prompt → optimizer →
-          execution → completion
+          execution → regression → completion
 ```
 
 ### Integration
@@ -327,7 +327,7 @@ Seven stories, dependency chain follows ADR-023 phase boundaries. The Phase E cu
 
 **Depends on:** none (lowest-risk story; ships first)
 
-Drop the `inlineReviewEnabled` gate on `rectificationInput` only. Keep gate on `semanticReviewInput` / `adversarialReviewInput` until US-005b. After this story, US-006a's gate rectification activates in production.
+Drop the `inlineReviewEnabled` gate on `rectificationInput` only. Keep gate on `semanticReviewInput` / `adversarialReviewInput` until US-005a. After this story, US-006a's gate rectification activates in production.
 
 #### Context Files
 
@@ -357,7 +357,7 @@ Terminal-cleanup story for the legacy rectification framework. Converts both cal
 
 **Depends on:** none (additive, can run in parallel with US-001/US-002)
 
-Create new `DeterministicOperation`s for lint, typecheck, format, verify-scoped checks. Add builder methods (`addLintCheck` etc.). Extend `CANONICAL_ORDER`. **Do not yet call from `buildPlanForStrategy`** — wiring is US-005a.
+Create new `DeterministicOperation`s for lint, typecheck, verify-scoped checks. Add builder methods (`addLintCheck` etc.). Extend `CANONICAL_ORDER`. **Do not yet call from `buildPlanForStrategy`** — wiring is US-005a.
 
 Per resolved decision D2, this story does **not** include a `pluginReviewerOp`. The deferred plugin-reviewer path at [src/execution/deferred-review.ts](../../src/execution/deferred-review.ts) is untouched by the migration.
 
@@ -427,7 +427,7 @@ Pure verification — provides the gating safety net for the US-005c terminal cl
 
 **Depends on:** US-005b (verification must pass before deletion)
 
-Delete pipeline stages, autofix subsystem, `src/review/orchestrator.ts`, the `execution.inlineReview` schema field, and the builder methods `addSemanticReview` / `addAdversarialReview` plus their PlanInputs slots. Remove deleted stages from `defaultPipeline`. Add config loader deprecation warning. Update specs.
+Delete pipeline stages, autofix subsystem, `src/review/orchestrator.ts`, the `execution.inlineReview`, `review.dialogue`, and `review.pluginMode` schema fields, and the builder methods `addSemanticReview` / `addAdversarialReview` plus their PlanInputs slots. Remove deleted stages from `defaultPipeline`. Add config loader deprecation warning. Update specs.
 
 Pure deletion story — no new functionality. Composed almost entirely of `[verbatim]` negative assertions per the guide's terminal-cleanup rule.
 
@@ -537,13 +537,14 @@ Pure deletion story. Composed of `[verbatim]` negative assertions per the spec-w
 
 Per Open Question #1: `regressionStage` is retained. The ACs below reflect that — `regressionStage` is NOT in the grep-zero list and `regression.ts` is NOT in the file-deletion list.
 
-- AC-005c.1 [verbatim] [grep] `grep -rnE "execution\\.inlineReview|review\\.dialogue|reviewDialogue|\\.inlineReview" src/ --include="*.ts" | grep -v "deprecat\\|legacy" | wc -l` returns `0` (covers both `inlineReview` and `review.dialogue` config field removal per D4).
+- AC-005c.1 [verbatim] [grep] `grep -rnE "execution\\.inlineReview|review\\.dialogue|reviewDialogue|\\.inlineReview|review\\.pluginMode|pluginMode" src/ --include="*.ts" | grep -v "deprecat\\|legacy" | wc -l` returns `0` (covers `inlineReview`, `review.dialogue`, and `review.pluginMode` config field removal per D2/D4).
 - AC-005c.2 [verbatim] [file] Files do not exist after this story: `src/pipeline/stages/verify.ts`, `rectify.ts`, `review.ts`, `autofix.ts`, `autofix-cycle.ts`, `autofix-guards.ts`, `autofix-scope-split.ts`, `autofix-test-writer.ts`, `autofix-agent.ts`, `autofix-prompts.ts`. File `src/review/orchestrator.ts` does not exist.
 - AC-005c.3 [verbatim] [grep] `defaultPipeline` array in `src/pipeline/stages/index.ts` contains exactly the elements `queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage` — verified by `grep -cE "Stage,?$" src/pipeline/stages/index.ts` (inside the `defaultPipeline` definition) returning exactly `9`, and `grep -nE "verifyStage|rectifyStage|reviewStage|autofixStage" src/pipeline/stages/index.ts | wc -l` returning `0`.
 - AC-005c.4 [verbatim] [grep] `grep -nE "addSemanticReview|addAdversarialReview" src/execution/story-orchestrator.ts | wc -l` returns `0` — the builder methods are removed.
 - AC-005c.5 [verbatim] [grep] `grep -nE "semanticReview\\??:|adversarialReview\\??:" src/execution/plan-inputs.ts | wc -l` returns `0` — the PlanInputs slot fields are removed.
 - AC-005c.6 [verbatim] [grep] `grep -rnE "ctx\\.reviewerSession|ctx\\.reviewResult|ctx\\.verifyResult|ctx\\.autofixAttempt" src/ --include="*.ts" | grep -vE "src/debate/|test" | wc -l` returns `0` — per D3 + D4, no non-debate consumer of these legacy ctx fields after cleanup.
-- AC-005c.7 [integration] When a legacy config containing `execution.inlineReview: true` or `review.dialogue.enabled: true` is loaded, `src/config/loader.ts` logs a warning at level `warn` per key (message contains the key name and `"removed"`), and the loaded config does not contain either key.
+- AC-005c.7 [integration] When a legacy config containing `execution.inlineReview: true`, `review.dialogue.enabled: true`, or `review.pluginMode` is loaded, `src/config/loader.ts` logs a warning at level `warn` per removed key (message contains the key name and `"removed"`), and the loaded config does not contain those keys.
+- AC-005c.9 [verbatim] [grep] `grep -rnE "pluginMode" src/config/schemas-review.ts src/review/types.ts src/config/schemas.ts src/config/merge.ts --include="*.ts" | wc -l` returns `0`.
 - AC-005c.8 [verbatim] [grep] Specs at `docs/specs/SPEC-story-orchestrator-consolidation.md`, `docs/specs/SPEC-rectification-unification.md` each contain the literal string `PARTIALLY SUPERSEDED` in their first 30 lines.
 
 ## Resolved Decisions

@@ -39,12 +39,6 @@ describe("regressionStage", () => {
     expect(regressionStage.enabled(makeCtx("per-story"))).toBe(true);
   });
 
-  test("disabled when verifyResult is a failure", () => {
-    const ctx = makeCtx("per-story");
-    ctx.verifyResult = makeFailResult("US-001", "scoped", "TEST_FAILURE");
-    expect(regressionStage.enabled(ctx)).toBe(false);
-  });
-
   test("returns continue when regression passes", async () => {
     const saved = { ..._regressionStageDeps };
     _regressionStageDeps.verifyRegression = async () => makePassResult("US-001", "regression");

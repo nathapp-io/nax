@@ -214,8 +214,6 @@ describe("StoryOrchestratorBuilder — AC1: Generic OrchestratorSlot<I, O, C>", 
     ["addImplementer", (b: any) => b.addImplementer({ op: mockImplementerOp, input: { code: "test" } })],
     ["addTestWriter", (b: any) => b.addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })],
     ["addVerifier", (b: any) => b.addVerifier({ op: mockVerifierOp, input: { code: "test" } })],
-    ["addSemanticReview", (b: any) => b.addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })],
-    ["addAdversarialReview", (b: any) => b.addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })],
   ])("%s accepts typed op + input without casting", async (_label, addFn) => {
     const config = makeNaxConfig();
     runtime = makeTestRuntime({ config });
@@ -251,12 +249,12 @@ describe("StoryOrchestratorBuilder — AC2: build() throws ORCHESTRATOR_NO_IMPLE
 });
 
 describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
-  test("canonical order: test-writer→implementer→verifier→semantic→adversarial; skips phases not added", async () => {
+  test("canonical order: test-writer→implementer→verifier; skips phases not added", async () => {
     const config = makeNaxConfig();
     const makeOrderTracker = (roles: string[]) => makeMockAgentManager({
       runAsSessionFn: async (_req, onSuccess) => {
         const role = _req.sessionRole ?? "unknown";
-        roles.push(role === "reviewer-semantic" ? "semantic" : role === "reviewer-adversarial" ? "adversarial" : role);
+        roles.push(role);
         return onSuccess({ turnId: randomUUID(), output: JSON.stringify({ success: true }), tokenUsage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUsd: 0.001 });
       },
     });
@@ -268,10 +266,8 @@ describe("StoryOrchestratorBuilder — AC3: Canonical execution order", () => {
       .addTestWriter({ op: mockTestWriterOp, input: { story: "test" } })
       .addImplementer({ op: mockImplementerOp, input: { code: "test" } })
       .addVerifier({ op: mockVerifierOp, input: { code: "test" } })
-      .addSemanticReview({ op: mockSemanticReviewOp, input: { code: "test" } })
-      .addAdversarialReview({ op: mockAdversarialReviewOp, input: { code: "test" } })
       .build(ctx1).run();
-    expect(order1).toEqual(["test-writer", "implementer", "verifier", "semantic", "adversarial"]);
+    expect(order1).toEqual(["test-writer", "implementer", "verifier"]);
     await runtime.close();
     runtime = undefined;
 
@@ -983,6 +979,156 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
       expect(result.success).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+});
+
+// ============================================================================
+// AC3: TDD + inlineReview=false + rectification.enabled=true → full-suite-rectify dispatched
+// AC5: gatherRectificationFindings carries all failing post-run findings into rectification
+// ============================================================================
+
+describe("AC3 + AC5: gate-internal rectification — finding aggregation and full-suite-rectify dispatch", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("AC5: runFixCycle receives mixed-source findings from full-suite gate output", async () => {
+    // Gate produces a mixed-source output: one test-runner finding + one lint finding.
+    // The unified rectification entrypoint should preserve both so mechanical fixes can run.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedCycleFindings: unknown[] | null = null;
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "test fail", rule: "t", file: "f.ts" },
+        { source: "lint", category: "style", severity: "warning", message: "lint issue", rule: "l", file: "f.ts" },
+      ],
+    });
+    const verOp = makeDeterministicOp("verifier", { success: false, findings: [] });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycleFindings = cycle.findings;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      expect(capturedCycleFindings).not.toBeNull();
+      expect(capturedCycleFindings!.length).toBe(2);
+      expect(capturedCycleFindings!.map((f: any) => f.source)).toEqual(["test-runner", "lint"]);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC5: verifier findings with non-test-runner source also reach rectification", async () => {
+    // Verifier produces a review-category finding — the unified architecture should carry it into rectification.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedCycleFindings: unknown[] | null = null;
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
+    const verOp = makeDeterministicOp("verifier", {
+      success: false,
+      findings: [{ source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycleFindings = cycle.findings;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      expect(capturedCycleFindings).not.toBeNull();
+      expect(capturedCycleFindings).toEqual([
+        { source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
+      ]);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC3: TDD + inlineReview=false + gate failed-test findings → full-suite-rectify strategy name present", async () => {
+    // This is the critical end-to-end test: rectification was previously unreachable when
+    // inlineReview=false. With the guard removed, gate findings now reach runFixCycle and
+    // the full-suite-rectify strategy (prepended by buildPlanForStrategy) is dispatched.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedStrategyNames: string[] = [];
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "f.ts" }],
+    });
+    const verOp = makeDeterministicOp("verifier", { success: false, findings: [] });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedStrategyNames = (cycle.strategies ?? []).map((s: any) => s.name);
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const { makeFullSuiteRectifyStrategy } = require("@/operations/full-suite-rectify");
+      const { makeStory: ms } = require("@test/helpers");
+      const story = ms({ id: "US-t", title: "test" });
+      const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story);
+
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [fullSuiteStrategy],  // simulating what buildPlanForStrategy prepends
+          abortOnIncreasingFailures: false,
+        })
+        .build(ctx);
+      await plan.run();
+
+      expect(capturedStrategyNames).toContain("full-suite-rectify");
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
     }
   });
 });

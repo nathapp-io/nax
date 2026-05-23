@@ -9,15 +9,22 @@ import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
 import {
   deriveTddFailureCategory,
   extractPauseReason,
+  applyPostRunInspection,
+  decideStageAction,
   _postRunDeps,
 } from "../../../src/execution/post-run";
+import type { InspectionOptions } from "../../../src/execution/post-run";
+import type { StoryOrchestratorResult } from "../../../src/execution/story-orchestrator";
+import type { Finding } from "../../../src/findings/types";
 import {
   fullSuiteGateOp,
   greenfieldGateOp,
   implementerOp,
   testWriterOp,
   verifierOp,
+  verifyScopedOp,
 } from "../../../src/operations";
+import { makeTestContext } from "../../helpers/pipeline-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // extractPauseReason
@@ -122,6 +129,234 @@ describe("deriveTddFailureCategory", () => {
       [verifierOp.name]: { success: true },
     });
     expect(result).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC7/AC8: mechanicalFailedOnly rule in applyPostRunInspection
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makePlanResult(overrides: Record<string, unknown> = {}): StoryOrchestratorResult {
+  return {
+    success: false,
+    phaseCosts: {},
+    totalCostUsd: 0,
+    durationMs: 100,
+    phaseOutputs: {
+      [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+    },
+    ...overrides,
+  } as StoryOrchestratorResult;
+}
+
+function makeInspectionOpts(overrides: Partial<InspectionOptions> = {}): InspectionOptions {
+  return {
+    capturedResponse: "",
+    capturedCostUsd: 0,
+    tddMode: null,
+    initialRef: null,
+    ...overrides,
+  };
+}
+
+const LINT_FINDING: Finding = { source: "lint", severity: "error", message: "unused var", category: "lint" };
+const TYPECHECK_FINDING: Finding = { source: "typecheck", severity: "error", message: "type error", category: "type" };
+const TEST_RUNNER_FINDING: Finding = { source: "test-runner", severity: "error", message: "test failed", category: "test" };
+
+describe("AC7: mechanicalFailedOnly — all lint/typecheck unfixed → continue action", () => {
+  let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
+  let origDetect: typeof _postRunDeps.detectMergeConflict;
+  let origFailClose: typeof _postRunDeps.failAndClose;
+
+  beforeEach(() => {
+    origAutoCommit = _postRunDeps.autoCommitIfDirty;
+    origDetect = _postRunDeps.detectMergeConflict;
+    origFailClose = _postRunDeps.failAndClose;
+    _postRunDeps.autoCommitIfDirty = mock(async () => undefined) as typeof _postRunDeps.autoCommitIfDirty;
+    _postRunDeps.detectMergeConflict = mock(() => false) as typeof _postRunDeps.detectMergeConflict;
+    _postRunDeps.failAndClose = mock(async () => undefined) as typeof _postRunDeps.failAndClose;
+  });
+
+  afterEach(() => {
+    _postRunDeps.autoCommitIfDirty = origAutoCommit;
+    _postRunDeps.detectMergeConflict = origDetect;
+    _postRunDeps.failAndClose = origFailClose;
+  });
+
+  test("AC7: rectificationExhausted + all-lint unfixed → decideStageAction returns continue", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [LINT_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+    expect(result.action).toBe("continue");
+  });
+
+  test("AC7: rectificationExhausted + all-typecheck unfixed → decideStageAction returns continue", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [TYPECHECK_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+    expect(result.action).toBe("continue");
+  });
+
+  test("AC7: rectificationExhausted + mixed lint+typecheck unfixed → decideStageAction returns continue", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [LINT_FINDING, TYPECHECK_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+    expect(result.action).toBe("continue");
+  });
+});
+
+describe("AC8: mechanicalFailedOnly — non-mechanical source present → escalate action", () => {
+  let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
+  let origDetect: typeof _postRunDeps.detectMergeConflict;
+  let origFailClose: typeof _postRunDeps.failAndClose;
+
+  beforeEach(() => {
+    origAutoCommit = _postRunDeps.autoCommitIfDirty;
+    origDetect = _postRunDeps.detectMergeConflict;
+    origFailClose = _postRunDeps.failAndClose;
+    _postRunDeps.autoCommitIfDirty = mock(async () => undefined) as typeof _postRunDeps.autoCommitIfDirty;
+    _postRunDeps.detectMergeConflict = mock(() => false) as typeof _postRunDeps.detectMergeConflict;
+    _postRunDeps.failAndClose = mock(async () => undefined) as typeof _postRunDeps.failAndClose;
+  });
+
+  afterEach(() => {
+    _postRunDeps.autoCommitIfDirty = origAutoCommit;
+    _postRunDeps.detectMergeConflict = origDetect;
+    _postRunDeps.failAndClose = origFailClose;
+  });
+
+  test("AC8: rectificationExhausted + test-runner finding → decideStageAction returns escalate", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [TEST_RUNNER_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+    expect(result.action).toBe("escalate");
+  });
+
+  test("AC8: rectificationExhausted + mixed lint+test-runner → escalate (not continue)", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [LINT_FINDING, TEST_RUNNER_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+    expect(result.action).toBe("escalate");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-005 AC9: ctx field derivations in applyPostRunInspection
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC9: applyPostRunInspection ctx field derivations", () => {
+  test("AC9: sets ctx.verifyPassed=true when 'verifier' phase output has passed=true", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        [verifierOp.name]: { success: true, passed: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).verifyPassed).toBe(true);
+  });
+
+  test("AC9: sets ctx.verifyPassed=false when 'verifier' phase output has passed=false", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        [verifierOp.name]: { success: false, passed: false, findings: [TEST_RUNNER_FINDING] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).verifyPassed).toBe(false);
+  });
+
+  test("AC9: derives ctx.verifyPassed from 'verify-scoped' when no 'verifier' phase present", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        [verifyScopedOp.name]: { success: true, passed: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).verifyPassed).toBe(true);
+  });
+
+  test("AC9: sets ctx.semanticReviewResult from 'semantic-review' phase output when present", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        "semantic-review": { passed: true, findings: [] },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).semanticReviewResult).toBeDefined();
+    expect((ctx as any).semanticReviewResult.passed).toBe(true);
+  });
+
+  test("AC9: ctx.semanticReviewResult is undefined when 'semantic-review' not in phaseOutputs", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).semanticReviewResult).toBeUndefined();
+  });
+
+  test("AC9: sets ctx.rectificationIterationCount=0 when no rectification phase ran", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).rectificationIterationCount).toBe(0);
+  });
+
+  test("AC9: sets ctx.rectificationIterationCount from rectification phase iteration count", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      phaseOutputs: {
+        [implementerOp.name]: { success: true },
+        rectification: { iterationCount: 3 },
+      },
+    });
+    await applyPostRunInspection(ctx, planResult, makeInspectionOpts());
+    expect((ctx as any).rectificationIterationCount).toBe(3);
   });
 });
 

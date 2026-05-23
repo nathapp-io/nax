@@ -60,15 +60,11 @@ async function getChangedFilesForDeferred(workdir: string, baseRef: string): Pro
 /** Run all plugin reviewers once with the full diff since runStartRef. */
 export async function runDeferredReview(
   workdir: string,
-  reviewConfig: ReviewConfig,
+  _reviewConfig: ReviewConfig,
   plugins: PluginRegistry,
   runStartRef: string,
   naxIgnoreIndex?: NaxIgnoreIndex,
 ): Promise<DeferredReviewResult | undefined> {
-  if (!reviewConfig || reviewConfig.pluginMode !== "deferred") {
-    return undefined;
-  }
-
   const reviewers = plugins.getReviewers();
   if (reviewers.length === 0) {
     return undefined;

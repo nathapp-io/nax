@@ -13,9 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { ReviewDialogueConfigSchema } from "../../../src/config/schemas";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { ReviewDialogueConfigSchema, NaxConfigSchema } from "../../../src/config/schemas";
 import type { NaxConfig } from "../../../src/config";
 import type { IAgentManager } from "../../../src/agents/manager-types";
 import type { RunAsSessionOpts } from "../../../src/agents/manager-types";
@@ -142,40 +140,6 @@ describe("ReviewDialogueConfigSchema — field definitions and defaults", () => 
   });
 });
 
-// ---------------------------------------------------------------------------
-// AC2 — ReviewConfigSchema includes dialogue; DEFAULT_CONFIG resolved correctly
-// ---------------------------------------------------------------------------
-
-describe("ReviewConfigSchema — dialogue field integration", () => {
-  test.each([
-    ["dialogue exists", "dialogue", (v: unknown) => expect(v).toBeDefined()],
-    ["dialogue.enabled is false", "dialogue.enabled", (v: unknown) => expect(v).toBe(false)],
-    ["dialogue.maxClarificationsPerAttempt is 2", "dialogue.maxClarificationsPerAttempt", (v: unknown) => expect(v).toBe(2)],
-    ["dialogue.maxDialogueMessages is 20", "dialogue.maxDialogueMessages", (v: unknown) => expect(v).toBe(20)],
-  ])("DEFAULT_CONFIG.review.%s", (_label, path, assertFn) => {
-    const review = (DEFAULT_CONFIG as unknown as { review: Record<string, unknown> }).review;
-    const value = path.split(".").reduce((obj: unknown, k) => (obj as Record<string, unknown>)?.[k], review);
-    assertFn(value);
-  });
-
-  test("NaxConfigSchema.safeParse accepts dialogue override", () => {
-    const base = DEFAULT_CONFIG as unknown as Record<string, unknown>;
-    const input = {
-      ...base,
-      review: {
-        ...(base.review as Record<string, unknown>),
-        dialogue: { enabled: true, maxClarificationsPerAttempt: 3, maxDialogueMessages: 30 },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(input);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    const dialogue = (result.data as unknown as { review: { dialogue: Record<string, unknown> } }).review.dialogue;
-    expect(dialogue.enabled).toBe(true);
-    expect(dialogue.maxClarificationsPerAttempt).toBe(3);
-    expect(dialogue.maxDialogueMessages).toBe(30);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // AC3 — ReviewConfig interface includes dialogue? (compile-time check)

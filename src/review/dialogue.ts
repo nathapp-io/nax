@@ -62,7 +62,7 @@ export interface ReviewerSession {
    * Send a follow-up re-review for an updated diff.
    * References previous findings by AC identifier in the prompt.
    * Destroys and recreates the session with a compacted summary when
-   * history.length would exceed config.review.dialogue.maxDialogueMessages.
+   * history.length would exceed the configured maxDialogueMessages limit.
    */
   reReview(updatedDiff: string): Promise<ReviewDialogueResult>;
   /**

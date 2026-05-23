@@ -480,12 +480,6 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
 describe("collectStoryMetrics — firstPassSuccess is false when autofix or rectify ran (issue #679)", () => {
   test.each([
     {
-      name: "firstPassSuccess is false when autofixAttempt > 0 (autofix cycle ran)",
-      autofixAttempt: 3,
-      rectifyAttempt: 0,
-      expectedFirstPassSuccess: false,
-    },
-    {
       name: "firstPassSuccess is false when rectifyAttempt > 0 (rectify stage ran)",
       autofixAttempt: 0,
       rectifyAttempt: 1,
@@ -502,12 +496,6 @@ describe("collectStoryMetrics — firstPassSuccess is false when autofix or rect
       autofixAttempt: 0,
       rectifyAttempt: 0,
       expectedFirstPassSuccess: true,
-    },
-    {
-      name: "firstPassSuccess is false when autofixAttempt is 1 (single autofix run)",
-      autofixAttempt: 1,
-      rectifyAttempt: 0,
-      expectedFirstPassSuccess: false,
     },
   ])(
     "$name",

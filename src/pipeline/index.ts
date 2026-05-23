@@ -17,4 +17,4 @@ export type { PipelineRunResult } from "./runner";
 
 export { PipelineEventEmitter } from "./events";
 export type { PipelineEvents, RunSummary } from "./events";
-export { executionStage, _executionDeps, rectifyStage, _rectifyDeps } from "./stages";
+export { executionStage, _executionDeps } from "./stages";

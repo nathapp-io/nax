@@ -140,6 +140,62 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * @internal Strip removed config keys (US-005c) and warn per removed key.
+ *
+ * deprecated/legacy keys removed (US-005c): execution.inlineReview, review.pluginMode, review.dialogue (when enabled:true).
+ * Called before Zod safeParse so the removal is explicit and auditable; Zod strips() would
+ * silently drop them after schema removal, but we need the warn to be surfaced.
+ *
+ * @param conf - Raw merged config object (mutable-safe copy expected from caller)
+ * @param warn - Called once per removed legacy key with a message containing the key name and "removed"
+ * @returns New config object with removed keys stripped (immutable — does not mutate input)
+ */
+export function _applyLegacyReviewExecutionShim(
+  conf: Record<string, unknown>,
+  warn: (msg: string) => void = (msg) => {
+    try {
+      getLogger().warn("config", msg);
+    } catch {
+      /* logger may not be init yet */
+    }
+  },
+): Record<string, unknown> {
+  let result = conf;
+
+  // legacy: execution.inlineReview stripped — removed in US-005c (D2 decision)
+  const execution = conf.execution as Record<string, unknown> | undefined;
+  if (execution && typeof execution === "object" && "inlineReview" in execution) {
+    warn("execution.inlineReview is a legacy field that has been removed. Remove it from your config.");
+    const { inlineReview: _ir, ...restExecution } = execution; // legacy-shim
+    result = { ...result, execution: restExecution };
+  }
+
+  // legacy: review.pluginMode and review.dialogue stripped — removed in US-005c (D2/D4 decisions)
+  const review = (result.review ?? conf.review) as Record<string, unknown> | undefined;
+  if (review && typeof review === "object") {
+    let newReview = review;
+
+    const LEGACY_PLUGIN_MODE = "pluginMode"; // legacy-shim: removed in US-005c (D4 decision)
+    if (LEGACY_PLUGIN_MODE in review) {
+      warn("review.pluginMode is a legacy field that has been removed. Remove it from your config.");
+      const { [LEGACY_PLUGIN_MODE]: _pm, ...rest } = review;
+      newReview = rest;
+    }
+
+    const dialogue = newReview.dialogue as Record<string, unknown> | undefined;
+    if (dialogue && typeof dialogue === "object" && dialogue.enabled === true) {
+      warn("review.dialogue.enabled is a legacy field that has been removed. Remove it from your config.");
+      const { dialogue: _d, ...rest } = newReview;
+      newReview = rest;
+    }
+
+    result = { ...result, review: newReview };
+  }
+
+  return result;
+}
+
+/**
  * @internal Warn when deprecated routing.llm.retries / retryDelayMs are present.
  *
  * These keys are deprecated in favour of op-level `retry` presets (issue #856).
@@ -225,10 +281,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   }
   if (globalConfRaw) {
     const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-    const globalConf = applyRoutingRetryDeprecationWarning(
-      applyBatchModeCompat(
-        applyRemovedStrategyCompat(
-          migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+    const globalConf = _applyLegacyReviewExecutionShim(
+      applyRoutingRetryDeprecationWarning(
+        applyBatchModeCompat(
+          applyRemovedStrategyCompat(
+            migrateLegacyReviewModelKey(migrateLegacyTestPattern(globalConfStripped, logger), logger),
+          ),
         ),
       ),
     );
@@ -240,10 +298,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       const { profile: _pProfile, ...projConfStripped } = projConf;
-      const resolvedProjConf = applyRoutingRetryDeprecationWarning(
-        applyBatchModeCompat(
-          applyRemovedStrategyCompat(
-            migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+      const resolvedProjConf = _applyLegacyReviewExecutionShim(
+        applyRoutingRetryDeprecationWarning(
+          applyBatchModeCompat(
+            applyRemovedStrategyCompat(
+              migrateLegacyReviewModelKey(migrateLegacyTestPattern(projConfStripped, logger), logger),
+            ),
           ),
         ),
       );

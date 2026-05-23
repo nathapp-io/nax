@@ -1,0 +1,7 @@
+[2026-05-23T08:50:48.502Z] US-001 — PASSED — Activate gate-internal rectification — Cost: $2.0806
+[2026-05-23T09:31:44.875Z] US-002 — PASSED — Retire runRectificationLoop — Cost: $5.7509
+[2026-05-23T10:02:04.363Z] US-003 — PASSED — Add check operations — Cost: $4.1639
+[2026-05-23T10:35:29.504Z] US-004 — PASSED — Add fix strategies — Cost: $3.8740
+[2026-05-23T11:39:59.422Z] US-005a — PASSED — Wire unified phases into buildPlanForStrategy — Cost: $7.8236
+[2026-05-23T12:10:30.035Z] US-005b — PASSED — Gating-preservation verification — Cost: $2.5347
+[2026-05-23T13:08:11.537Z] US-005c — PASSED — Terminal cleanup — delete legacy stages — Cost: $6.7847

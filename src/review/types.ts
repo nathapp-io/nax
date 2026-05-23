@@ -219,8 +219,6 @@ export interface ReviewConfig {
     /** Scoped auto-format command template with {{files}} placeholder */
     formatFixScoped?: string;
   };
-  /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
-  pluginMode?: "per-story" | "deferred";
   /** Review audit configuration — saves parsed reviewer JSON to .nax/review-audit/ */
   audit?: { enabled: boolean };
   /**

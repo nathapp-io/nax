@@ -26,8 +26,7 @@ export const regressionStage: PipelineStage = {
   enabled(ctx: PipelineContext): boolean {
     const mode = ctx.config.execution.regressionGate?.mode ?? "deferred";
     if (mode !== "per-story") return false;
-    // Only run when verify passed (or was skipped/not set)
-    if (ctx.verifyResult && !ctx.verifyResult.success) return false;
+    // Legacy verify stage removed in US-005c — regression gate always eligible when mode matches
     const gateEnabled = ctx.config.execution.regressionGate?.enabled ?? true;
     return gateEnabled;
   },

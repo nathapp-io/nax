@@ -18,7 +18,6 @@ import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PostRunStatusWriter } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
-import { reviewOrchestrator } from "../review/orchestrator";
 import type { routeTask } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { spawn } from "../utils/bun-deps";
@@ -252,7 +251,6 @@ export async function handlePipelineFailure(
         pipelineResult.stoppedAtStage,
         ctx.statusWriter,
       );
-      reviewOrchestrator.clearStory(ctx.story.id);
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
