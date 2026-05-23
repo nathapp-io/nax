@@ -82,6 +82,22 @@ export type {
   FullSuiteGateDeps,
 } from "./full-suite-gate";
 export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
+export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
+export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
+export {
+  makeMechanicalLintFixStrategy,
+  _mechanicalLintFixDeps,
+} from "./mechanical-lintfix-strategy";
+export type { MechanicalLintFixInput, MechanicalLintFixOutput, MechanicalLintFixDeps } from "./mechanical-lintfix-strategy";
+export {
+  makeMechanicalFormatFixStrategy,
+  _mechanicalFormatFixDeps,
+} from "./mechanical-formatfix-strategy";
+export type {
+  MechanicalFormatFixInput,
+  MechanicalFormatFixOutput,
+  MechanicalFormatFixDeps,
+} from "./mechanical-formatfix-strategy";
 export { lintCheckOp, _lintCheckDeps } from "./lint-check";
 export type { LintCheckInput, LintCheckOutput, LintCheckDeps } from "./lint-check";
 export { typecheckCheckOp, _typecheckCheckDeps } from "./typecheck-check";
