@@ -95,6 +95,30 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
     expect(capturedCommandName).toBe("formatFix");
     expect(capturedCommand).toBe("bun run format:fix");
   });
+
+  test("uses scoped template with substituted files when formatFixScoped is configured", async () => {
+    const strategy = makeMechanicalFormatFixStrategy();
+    const ctxWithScopedFormatFix = {
+      ...mockCtx,
+      config: { quality: { commands: { formatFixScoped: "biome format --write {{files}}" } } },
+    };
+
+    let capturedCommand: string | undefined;
+    const deps = makeDeps({
+      runQualityCommand: async (opts: QualityCommandOptions) => {
+        capturedCommand = opts.command;
+        return passedResult;
+      },
+    });
+
+    await (strategy.fixOp as any).execute(
+      { workdir: "/tmp", storyId: "US-004", scopeFiles: ["src/a.ts"] },
+      ctxWithScopedFormatFix,
+      deps,
+    );
+
+    expect(capturedCommand).toBe("biome format --write 'src/a.ts'");
+  });
 });
 
 describe("makeMechanicalFormatFixStrategy — AC6: no-command early return", () => {

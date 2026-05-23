@@ -25,6 +25,24 @@ export const _mechanicalFormatFixDeps: MechanicalFormatFixDeps = {
   runQualityCommand,
 };
 
+function shellQuotePath(path: string): string {
+  return `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
+function buildCommand(
+  broad: string | undefined,
+  scoped: string | undefined,
+  scopeFiles?: readonly string[],
+): string | null {
+  if (scoped && scopeFiles && scopeFiles.length > 0) {
+    return scoped.replaceAll("{{files}}", scopeFiles.map(shellQuotePath).join(" "));
+  }
+  if (broad) {
+    return broad;
+  }
+  return null;
+}
+
 const mechanicalFormatFixOp: DeterministicOperation<
   MechanicalFormatFixInput,
   MechanicalFormatFixOutput,
@@ -42,12 +60,8 @@ const mechanicalFormatFixOp: DeterministicOperation<
     const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
     const broad = ctxConfig?.quality?.commands?.formatFix;
     const scoped = ctxConfig?.quality?.commands?.formatFixScoped;
-    if (!broad && !scoped) return { applied: true, exitCode: 0 };
-    const command = broad
-      ? input.scopeFiles?.length
-        ? `${broad} ${input.scopeFiles.join(" ")}`
-        : broad
-      : (scoped as string);
+    const command = buildCommand(broad, scoped, input.scopeFiles);
+    if (!command) return { applied: true, exitCode: 0 };
     const result = await deps.runQualityCommand({
       commandName: "formatFix",
       command,
@@ -68,10 +82,10 @@ export function makeMechanicalFormatFixStrategy(): FixStrategy<
     name: "mechanical-formatfix",
     appliesTo: (f) => f.source === "lint",
     fixOp: mechanicalFormatFixOp,
-    buildInput: (_findings, _prior, cycleCtx) => ({
+    buildInput: (findings, _prior, cycleCtx) => ({
       workdir: cycleCtx.packageDir,
       storyId: cycleCtx.storyId,
-      scopeFiles: undefined,
+      scopeFiles: [...new Set(findings.map((finding) => finding.file).filter((file): file is string => Boolean(file)))],
     }),
     extractApplied: () => ({ targetFiles: [], summary: "format --fix" }),
     maxAttempts: 1,

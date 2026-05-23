@@ -7,12 +7,15 @@
  */
 
 import type { NaxConfig } from "../config/schema";
+import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
 import type {
+  AdversarialReviewInput,
   FullSuiteGateInput,
   GreenfieldGateInput,
   ImplementerInput,
   LintCheckInput,
+  SemanticReviewInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
@@ -45,6 +48,8 @@ export interface PlanInputs {
   readonly verifyScoped?: VerifyScopedInput;
   readonly lintCheck?: LintCheckInput;
   readonly typecheckCheck?: TypecheckCheckInput;
+  readonly semanticReview?: SemanticReviewInput;
+  readonly adversarialReview?: AdversarialReviewInput;
   readonly rectification?: RectificationPhaseOptions;
 }
 
@@ -143,6 +148,24 @@ async function buildThreeSessionPrompt(
   });
 }
 
+function buildFeatureCtxBlock(
+  ctx: import("../pipeline/types").PipelineContext,
+  role: "reviewer-semantic" | "reviewer-adversarial",
+): string | undefined {
+  const bundleMarkdown = ctx.contextBundle?.pushMarkdown.trim();
+  if (bundleMarkdown) {
+    return `${bundleMarkdown}\n\n---\n\n`;
+  }
+
+  const featureMarkdown = ctx.featureContextMarkdown?.trim();
+  if (!featureMarkdown) {
+    return undefined;
+  }
+
+  const filtered = filterContextByRole(featureMarkdown, role).trim();
+  return filtered ? `${filtered}\n\n---\n\n` : undefined;
+}
+
 /**
  * Assemble typed PlanInputs from the current pipeline context.
  * Populates all slots eligible for the given strategy + run phase.
@@ -235,6 +258,33 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       ? { workdir: ctx.workdir, storyId: story.id }
       : undefined;
 
+  const semanticReviewInput: SemanticReviewInput | undefined =
+    ctx.config.review?.enabled === true && ctx.config.review.checks?.includes("semantic") && ctx.config.review.semantic
+      ? {
+          workdir: ctx.workdir,
+          story,
+          semanticConfig: ctx.config.review.semantic,
+          mode: ctx.config.review.semantic.diffMode,
+          storyGitRef: ctx.storyGitRef,
+          featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-semantic"),
+          blockingThreshold: ctx.config.review.blockingThreshold,
+        }
+      : undefined;
+
+  const adversarialReviewInput: AdversarialReviewInput | undefined =
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("adversarial") &&
+    ctx.config.review.adversarial
+      ? {
+          story,
+          adversarialConfig: ctx.config.review.adversarial,
+          mode: ctx.config.review.adversarial.diffMode,
+          storyGitRef: ctx.storyGitRef,
+          featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-adversarial"),
+          blockingThreshold: ctx.config.review.blockingThreshold,
+        }
+      : undefined;
+
   const rectificationInput: RectificationPhaseOptions | undefined =
     ctx.config.execution?.rectification?.enabled === true
       ? {
@@ -255,6 +305,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     verifyScoped: verifyScopedInput,
     lintCheck: lintCheckInput,
     typecheckCheck: typecheckCheckInput,
+    semanticReview: semanticReviewInput,
+    adversarialReview: adversarialReviewInput,
     rectification: rectificationInput,
   };
 }

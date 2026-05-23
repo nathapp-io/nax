@@ -985,16 +985,16 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
 // ============================================================================
 // AC3: TDD + inlineReview=false + rectification.enabled=true → full-suite-rectify dispatched
-// AC5: gatherRectificationFindings filters to source='test-runner' only
+// AC5: gatherRectificationFindings carries all failing post-run findings into rectification
 // ============================================================================
 
-describe("AC3 + AC5: gate-internal rectification — source filtering and full-suite-rectify dispatch", () => {
+describe("AC3 + AC5: gate-internal rectification — finding aggregation and full-suite-rectify dispatch", () => {
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
 
-  test("AC5: runFixCycle receives only source='test-runner' findings (non-test-runner findings excluded)", async () => {
+  test("AC5: runFixCycle receives mixed-source findings from full-suite gate output", async () => {
     // Gate produces a mixed-source output: one test-runner finding + one lint finding.
-    // After gatherRectificationFindings filters by source, runFixCycle should only see the test-runner one.
+    // The unified rectification entrypoint should preserve both so mechanical fixes can run.
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -1030,17 +1030,16 @@ describe("AC3 + AC5: gate-internal rectification — source filtering and full-s
       await plan.run();
 
       expect(capturedCycleFindings).not.toBeNull();
-      // Only the test-runner finding should reach runFixCycle
-      expect(capturedCycleFindings!.length).toBe(1);
-      expect((capturedCycleFindings![0] as any).source).toBe("test-runner");
+      expect(capturedCycleFindings!.length).toBe(2);
+      expect(capturedCycleFindings!.map((f: any) => f.source)).toEqual(["test-runner", "lint"]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
     }
   });
 
-  test("AC5: verifier findings with non-test-runner source are also excluded", async () => {
-    // Verifier produces a review-category finding — should not reach runFixCycle
+  test("AC5: verifier findings with non-test-runner source also reach rectification", async () => {
+    // Verifier produces a review-category finding — the unified architecture should carry it into rectification.
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -1072,11 +1071,10 @@ describe("AC3 + AC5: gate-internal rectification — source filtering and full-s
         .build(ctx);
       await plan.run();
 
-      // No test-runner findings → runFixCycle not called (empty findings short-circuit)
-      // OR runFixCycle called but with empty findings
-      if (capturedCycleFindings !== null) {
-        expect(capturedCycleFindings!.every((f: any) => f.source === "test-runner")).toBe(true);
-      }
+      expect(capturedCycleFindings).not.toBeNull();
+      expect(capturedCycleFindings).toEqual([
+        { source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
+      ]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;

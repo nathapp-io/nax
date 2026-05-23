@@ -128,6 +128,12 @@ export function buildPlanForStrategy(
   if (inputs.typecheckCheck) {
     builder.addTypecheckCheck(inputs.typecheckCheck);
   }
+  if (inputs.semanticReview) {
+    builder.addSemanticReview(inputs.semanticReview);
+  }
+  if (inputs.adversarialReview) {
+    builder.addAdversarialReview(inputs.adversarialReview);
+  }
 
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.

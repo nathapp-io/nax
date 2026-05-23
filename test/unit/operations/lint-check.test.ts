@@ -6,7 +6,7 @@ import type { Finding } from "@/findings";
 const mockCtx = { runtime: {}, storyId: "US-003" } as any;
 
 const passedResult = {
-  commandName: "lint",
+  commandName: "lintCheck",
   command: "bun run lint",
   success: true,
   exitCode: 0,
@@ -16,7 +16,7 @@ const passedResult = {
 };
 
 const failedResult = {
-  commandName: "lint",
+  commandName: "lintCheck",
   command: "bun run lint",
   success: false,
   exitCode: 1,
@@ -115,7 +115,7 @@ describe("lintCheckOp — AC6: no-command early return", () => {
 
     const ctxWithNoLintCommand = {
       ...mockCtx,
-      config: { quality: { commands: { lint: undefined } } },
+      config: { quality: { commands: { lintCheck: undefined } } },
     };
 
     const out = await lintCheckOp.execute(
@@ -142,7 +142,7 @@ describe("lintCheckOp — AC10: per-package config override", () => {
 
     const ctxWithOverride = {
       ...mockCtx,
-      config: { quality: { commands: { lint: "custom-lint-command" } } },
+      config: { quality: { commands: { lintCheck: "custom-lint-command" } } },
     };
 
     await lintCheckOp.execute(

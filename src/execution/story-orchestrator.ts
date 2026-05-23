@@ -3,10 +3,12 @@ import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from 
 import { runFixCycle } from "../findings";
 import { getSafeLogger } from "../logger";
 import {
+  adversarialReviewOp,
   fullSuiteGateOp,
   greenfieldGateOp,
   implementerOp,
   lintCheckOp,
+  semanticReviewOp,
   testWriterOp,
   typecheckCheckOp,
   verifierOp,
@@ -21,11 +23,13 @@ import type {
   LintCheckInput,
   Operation,
   RunOperation,
+  SemanticReviewInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
   VerifyScopedInput,
 } from "../operations";
+import type { AdversarialReviewInput } from "../operations";
 import { callOp } from "../operations/call";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
@@ -68,7 +72,9 @@ type PhaseKind =
   | "verifier"
   | "verify-scoped"
   | "lint-check"
-  | "typecheck-check";
+  | "typecheck-check"
+  | "semantic-review"
+  | "adversarial-review";
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
 type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any>; input: unknown };
 
@@ -86,6 +92,8 @@ interface InternalBuildState {
   verifyScoped?: InternalPhase;
   lintCheck?: InternalPhase;
   typecheckCheck?: InternalPhase;
+  semanticReview?: InternalPhase;
+  adversarialReview?: InternalPhase;
   rectification?: RectificationPhaseOptions;
 }
 
@@ -98,6 +106,8 @@ const CANONICAL_ORDER: readonly PhaseKind[] = [
   "verify-scoped",
   "lint-check",
   "typecheck-check",
+  "semantic-review",
+  "adversarial-review",
 ];
 
 function isSlot<I, O, C>(value: unknown): value is OrchestratorSlot<I, O, C> {
@@ -119,6 +129,8 @@ const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState> = {
   "verify-scoped": "verifyScoped",
   "lint-check": "lintCheck",
   "typecheck-check": "typecheckCheck",
+  "semantic-review": "semanticReview",
+  "adversarial-review": "adversarialReview",
 };
 
 function setPhase(state: InternalBuildState, kind: PhaseKind, slot: AnySlot): void {
@@ -144,6 +156,8 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
     if (kind === "verify-scoped" && state.verifyScoped) return [state.verifyScoped];
     if (kind === "lint-check" && state.lintCheck) return [state.lintCheck];
     if (kind === "typecheck-check" && state.typecheckCheck) return [state.typecheckCheck];
+    if (kind === "semantic-review" && state.semanticReview) return [state.semanticReview];
+    if (kind === "adversarial-review" && state.adversarialReview) return [state.adversarialReview];
     return [];
   });
 }
@@ -198,17 +212,25 @@ function extractPhaseFindings(output: unknown): Finding[] {
 
 function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
-  verifierPhase: string | null,
-  fullSuiteGatePhase?: string | null,
+  phases: readonly InternalPhase[],
 ): Finding[] {
   const findings: Finding[] = [];
-  if (fullSuiteGatePhase) {
-    findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase]));
+  for (const phase of phases) {
+    findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
   }
-  if (verifierPhase) {
-    findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase]));
-  }
-  return findings.filter((f) => f.source === "test-runner");
+  return findings;
+}
+
+function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
+  return [
+    state.fullSuiteGate,
+    state.verifier,
+    state.verifyScoped,
+    state.lintCheck,
+    state.typecheckCheck,
+    state.semanticReview,
+    state.adversarialReview,
+  ].filter((phase): phase is InternalPhase => phase !== undefined);
 }
 
 async function runPhase(
@@ -339,19 +361,15 @@ async function runRectification(
   phaseOutputs: Record<string, unknown>,
 ): Promise<RectificationResult> {
   const rectification = state.rectification;
-  const verifierPhase = state.verifier;
-  if (!rectification || !verifierPhase) {
+  const validationPhases = collectRectificationPhases(state);
+  if (!rectification || validationPhases.length === 0) {
     return {};
   }
   if (ctx.runtime.signal?.aborted) {
     return {};
   }
 
-  const initialFindings = gatherRectificationFindings(
-    phaseOutputs,
-    verifierPhase.slot.op.name,
-    state.fullSuiteGate?.slot.op.name ?? null,
-  );
+  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases);
   if (initialFindings.length === 0) {
     return {};
   }
@@ -371,7 +389,6 @@ async function runRectification(
     return (await runPhase(cycleCtx, slot, phaseCosts, fixOpPhaseOutputs)) as O;
   };
 
-  const fullSuiteGatePhase = state.fullSuiteGate;
   const cycle: FixCycle<Finding> = {
     findings: [...initialFindings],
     iterations: [],
@@ -383,17 +400,14 @@ async function runRectification(
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return [];
       const lite = opts?.mode === "lite";
-      // Re-run validators in canonical order: gate before verifier (matches phase order).
-      // Lite mode skips the full-suite gate to keep terminal exhausted re-validation cheap.
-      if (fullSuiteGatePhase && !lite) {
-        await runPhase(ctx, fullSuiteGatePhase.slot, phaseCosts, phaseOutputs);
-      }
-      await runPhase(ctx, verifierPhase.slot, phaseCosts, phaseOutputs);
       const findings: Finding[] = [];
-      if (fullSuiteGatePhase && !lite) {
-        findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase.slot.op.name]));
+      for (const phase of validationPhases) {
+        if (lite && phase.kind === "full-suite-gate") {
+          continue;
+        }
+        await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
+        findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
       }
-      findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
       return findings;
     },
   };
@@ -590,6 +604,20 @@ export class StoryOrchestratorBuilder {
   addTypecheckCheck(input: TypecheckCheckInput): this;
   addTypecheckCheck(value: TypecheckCheckInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "typecheck-check", isSlot(value) ? value : { op: typecheckCheckOp, input: value });
+    return this;
+  }
+
+  addSemanticReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addSemanticReview(input: SemanticReviewInput): this;
+  addSemanticReview(value: SemanticReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "semantic-review", isSlot(value) ? value : { op: semanticReviewOp, input: value });
+    return this;
+  }
+
+  addAdversarialReview<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addAdversarialReview(input: AdversarialReviewInput): this;
+  addAdversarialReview(value: AdversarialReviewInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "adversarial-review", isSlot(value) ? value : { op: adversarialReviewOp, input: value });
     return this;
   }
 

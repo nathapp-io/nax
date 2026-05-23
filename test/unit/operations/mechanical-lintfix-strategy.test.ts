@@ -119,6 +119,55 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
     expect(output.applied).toBe(true);
     expect(output.exitCode).toBe(0);
   });
+
+  test("AC5: scoped template uses {{files}} substitution when scopeFiles are present", async () => {
+    const strategy = makeMechanicalLintFixStrategy();
+    const ctxWithScopedLintFix = {
+      ...mockCtx,
+      config: { quality: { commands: { lintFixScoped: "biome check --write {{files}}" } } },
+    };
+
+    let capturedCommand: string | undefined;
+    const deps = makeDeps({
+      runQualityCommand: async (opts: QualityCommandOptions) => {
+        capturedCommand = opts.command;
+        return passedResult;
+      },
+    });
+
+    await (strategy.fixOp as any).execute(
+      { workdir: "/tmp", storyId: "US-004", scopeFiles: ["src/a.ts", "src/b.ts"] },
+      ctxWithScopedLintFix,
+      deps,
+    );
+
+    expect(capturedCommand).toBe("biome check --write 'src/a.ts' 'src/b.ts'");
+  });
+
+  test("AC5: scoped-only config without scopeFiles returns early instead of executing raw template", async () => {
+    const strategy = makeMechanicalLintFixStrategy();
+    const ctxWithScopedLintFix = {
+      ...mockCtx,
+      config: { quality: { commands: { lintFixScoped: "biome check --write {{files}}" } } },
+    };
+
+    let runQualityCalled = false;
+    const deps = makeDeps({
+      runQualityCommand: async () => {
+        runQualityCalled = true;
+        return passedResult;
+      },
+    });
+
+    const output = await (strategy.fixOp as any).execute(
+      { workdir: "/tmp", storyId: "US-004" },
+      ctxWithScopedLintFix,
+      deps,
+    );
+
+    expect(output).toEqual({ applied: true, exitCode: 0 });
+    expect(runQualityCalled).toBe(false);
+  });
 });
 
 describe("makeMechanicalLintFixStrategy — AC6: no-command early return", () => {

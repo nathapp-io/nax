@@ -25,6 +25,24 @@ export const _mechanicalLintFixDeps: MechanicalLintFixDeps = {
   runQualityCommand,
 };
 
+function shellQuotePath(path: string): string {
+  return `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
+function buildCommand(
+  broad: string | undefined,
+  scoped: string | undefined,
+  scopeFiles?: readonly string[],
+): string | null {
+  if (scoped && scopeFiles && scopeFiles.length > 0) {
+    return scoped.replaceAll("{{files}}", scopeFiles.map(shellQuotePath).join(" "));
+  }
+  if (broad) {
+    return broad;
+  }
+  return null;
+}
+
 const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, MechanicalLintFixOutput, QualityConfig> = {
   kind: "deterministic",
   name: "mechanical-lintfix",
@@ -38,12 +56,8 @@ const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, Mechan
     const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
     const broad = ctxConfig?.quality?.commands?.lintFix;
     const scoped = ctxConfig?.quality?.commands?.lintFixScoped;
-    if (!broad && !scoped) return { applied: true, exitCode: 0 };
-    const command = broad
-      ? input.scopeFiles?.length
-        ? `${broad} ${input.scopeFiles.join(" ")}`
-        : broad
-      : (scoped as string);
+    const command = buildCommand(broad, scoped, input.scopeFiles);
+    if (!command) return { applied: true, exitCode: 0 };
     const result = await deps.runQualityCommand({
       commandName: "lintFix",
       command,
@@ -64,10 +78,10 @@ export function makeMechanicalLintFixStrategy(): FixStrategy<
     name: "mechanical-lintfix",
     appliesTo: (f) => f.source === "lint",
     fixOp: mechanicalLintFixOp,
-    buildInput: (_findings, _prior, cycleCtx) => ({
+    buildInput: (findings, _prior, cycleCtx) => ({
       workdir: cycleCtx.packageDir,
       storyId: cycleCtx.storyId,
-      scopeFiles: undefined,
+      scopeFiles: [...new Set(findings.map((finding) => finding.file).filter((file): file is string => Boolean(file)))],
     }),
     extractApplied: () => ({ targetFiles: [], summary: "lint --fix" }),
     maxAttempts: 1,

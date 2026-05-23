@@ -369,6 +369,48 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
     expect(plan.phaseNames()).toContain("typecheck-check");
   });
 
+  test("AC3: semanticReview input → plan includes 'semantic-review' phase", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig();
+    const inputs = makeNonTddInputs(story, {
+      semanticReview: {
+        workdir: "/tmp/test",
+        story,
+        semanticConfig: config.review.semantic!,
+        mode: config.review.semantic!.diffMode,
+      },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("semantic-review");
+  });
+
+  test("AC3: adversarialReview input → plan includes 'adversarial-review' phase", () => {
+    const story = makeStory();
+    const ctx = makeMockCallContext();
+    const config = makeNaxConfig({
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+        },
+      },
+    });
+    const inputs = makeNonTddInputs(story, {
+      adversarialReview: {
+        story,
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("adversarial-review");
+  });
+
   test("AC3: TDD strategy does NOT receive verifyScoped phase (verifyScoped is non-TDD only)", () => {
     const story = makeStory({ attempts: 1 });
     const ctx = makeMockCallContext();
@@ -380,22 +422,46 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
     expect(plan.phaseNames()).not.toContain("verify-scoped");
   });
 
-  test("AC3: canonical order places check phases after implementer: verify-scoped, lint-check, typecheck-check", () => {
+  test("AC3: canonical order places post-implementer phases in sequence", () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
-    const config = makeNaxConfig();
+    const config = makeNaxConfig({
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+        },
+      },
+    });
     const inputs = makeNonTddInputs(story, {
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
       lintCheck: { workdir: "/tmp/test", storyId: story.id },
       typecheckCheck: { workdir: "/tmp/test", storyId: story.id },
+      semanticReview: {
+        workdir: "/tmp/test",
+        story,
+        semanticConfig: config.review.semantic!,
+        mode: config.review.semantic!.diffMode,
+      },
+      adversarialReview: {
+        story,
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
     });
     const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    const names = plan.phaseNames();
-    const implIdx = names.indexOf("implementer");
-    expect(implIdx).toBeGreaterThanOrEqual(0);
-    expect(names.indexOf("verify-scoped")).toBeGreaterThan(implIdx);
-    expect(names.indexOf("lint-check")).toBeGreaterThan(implIdx);
-    expect(names.indexOf("typecheck-check")).toBeGreaterThan(implIdx);
+    expect(plan.phaseNames()).toEqual([
+      "implementer",
+      "verify-scoped",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+    ]);
   });
 });
 
@@ -470,6 +536,32 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("mechanical-formatfix");
+  });
+
+  test("AC4: non-TDD verify-scoped failure still enters rectification", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verify-scoped") {
+        return {
+          success: false,
+          findings: [{ source: "test-runner", severity: "error", message: "scoped test failed" }],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: { commands: { lintFix: "bun run lint:fix" } },
+      execution: { rectification: { enabled: true, maxRetries: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeNonTddInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    await plan.run();
+    expect(capturedStrategyNames.length).toBeGreaterThan(0);
   });
 
   test("AC4: autofix enabled → autofix-implementer strategy assembled in rectification", async () => {

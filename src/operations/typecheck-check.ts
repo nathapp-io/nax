@@ -44,7 +44,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
   ): Promise<TypecheckCheckOutput> {
     // ctx.config is injected by tests; in production resolved via callOp's config slice
     const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const command = ctxConfig?.quality?.commands?.typecheck;
+    const command = ctxConfig?.quality?.commands?.typecheckCheck;
 
     if (ctxConfig !== undefined && !command) {
       return { success: true, findings: [], durationMs: 0 };
@@ -52,7 +52,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
 
     const start = Date.now();
     const result = await deps.runQualityCommand({
-      commandName: "typecheck",
+      commandName: "typecheckCheck",
       command: command ?? "",
       workdir: input.workdir,
       storyId: input.storyId,

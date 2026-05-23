@@ -405,6 +405,42 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.lintCheck).toBeUndefined();
   });
+
+  test("AC1: assemblePlanInputsFromCtx populates semanticReview when check enabled and config present", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.semanticReview?.storyGitRef).toBe("abc123");
+  });
+
+  test("AC1: assemblePlanInputsFromCtx populates adversarialReview when check enabled and config present", async () => {
+    const ctx = makeNonTddCtx({
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["adversarial"],
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+        },
+      },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.adversarialReview).toBeDefined();
+    expect(inputs.adversarialReview?.storyGitRef).toBe("abc123");
+  });
 });
 
 // Additional validation tests
