@@ -191,6 +191,17 @@ function toReviewCheck(result: QualityCommandResult): ReviewCheckResult {
   };
 }
 
+function attachLintFindings(
+  result: ReviewCheckResult,
+  lintOutputFormat: LintOutputFormat | undefined,
+  workdir: string,
+): ReviewCheckResult {
+  if (result.success) return result;
+  const parsed = parseLintOutput(result.output, lintOutputFormat ?? "auto", { workdir });
+  if (!parsed?.findings || parsed.findings.length === 0) return result;
+  return { ...result, findings: parsed.findings };
+}
+
 function withLintScope(
   result: ReviewCheckResult,
   scope: ScopeResult,
@@ -218,7 +229,11 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         reason: scope.degradedReason,
       });
       const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand);
-      return withLintScope(toReviewCheck(fullResult), scope, "degraded");
+      return withLintScope(
+        attachLintFindings(toReviewCheck(fullResult), args.lintOutputFormat, args.workdir),
+        scope,
+        "degraded",
+      );
     }
     logger?.info("review", "lint_scope_empty", { storyId: args.storyId });
     return {
@@ -245,13 +260,13 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
   if (scopedTemplate) {
     const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuotePath).join(" "));
     const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
-    return withLintScope(toReviewCheck(scopedResult), scope);
+    return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
   if (!scope.degradedReason && isSupportedDerivedScopedCommand(fullLintCommand)) {
     const scopedCommand = appendFilesToCommand(fullLintCommand, scope.files);
     const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
-    return withLintScope(toReviewCheck(scopedResult), scope);
+    return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
   // Degraded mode: run full lint then post-filter diagnostics to in-scope files.
@@ -304,6 +319,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       packageGroups: scope.packageGroups,
       outOfScopeDiagnosticCount: parsed.diagnostics.length - inScopeDiagnostics.length,
     },
+    findings: parsed.findings?.filter((f) => typeof f.file === "string" && scopedSet.has(normalizePath(f.file))),
   };
 }
 

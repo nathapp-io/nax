@@ -113,6 +113,46 @@ describe("runReview — scoped lint integration", () => {
   });
 });
 
+describe("runReview — typecheck findings normalization", () => {
+  const originalGetUncommittedFiles = _deps.getUncommittedFiles;
+  const originalSpawn = _runnerDeps.spawn;
+
+  afterEach(() => {
+    mock.restore();
+    _deps.getUncommittedFiles = originalGetUncommittedFiles;
+    _runnerDeps.spawn = originalSpawn;
+  });
+
+  test("attaches structured findings when typecheck output is parseable", async () => {
+    _deps.getUncommittedFiles = mock(async () => []);
+    const toStream = (text: string): ReadableStream => {
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(text));
+          controller.close();
+        },
+      });
+    };
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      return {
+        exited: Promise.resolve(1),
+        stdout: toStream("src/index.ts(10,3): error TS2304: Cannot find name 'foo'\nFound 1 error in 1 file."),
+        stderr: toStream(""),
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const result = await runReview({
+      config: { enabled: true, checks: ["typecheck"], commands: { typecheck: "bun run typecheck" } },
+      workdir: "/tmp/fake-workdir",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.checks[0]?.findings?.length).toBe(1);
+    expect(result.checks[0]?.findings?.[0]?.file).toContain("src/index.ts");
+  });
+});
+
 describe("nax runtime file exclusions", () => {
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
 

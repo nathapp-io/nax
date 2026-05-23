@@ -592,7 +592,11 @@ ${testCommands}
    *
    * Migrated from buildReviewRectificationPrompt() in src/pipeline/stages/autofix-prompts.ts.
    */
-  static reviewRectification(failedChecks: ReviewCheckResult[], story: UserStory): string {
+  static reviewRectification(
+    failedChecks: ReviewCheckResult[],
+    story: UserStory,
+    opts?: { blockingThreshold?: "error" | "warning" | "info" },
+  ): string {
     const scopeConstraint = story.workdir
       ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
       : "";
@@ -605,29 +609,29 @@ ${testCommands}
 
     if (llmChecks.length > 0 && mechanicalChecks.length === 0) {
       if (adversarialChecks.length === 0) {
-        return semanticRectification(semanticChecks, story, scopeConstraint);
+        return semanticRectification(semanticChecks, story, scopeConstraint, opts);
       }
       if (semanticChecks.length === 0) {
-        return adversarialRectification(adversarialChecks, story, scopeConstraint);
+        return adversarialRectification(adversarialChecks, story, scopeConstraint, opts);
       }
       // Both semantic and adversarial failed — combined LLM reviewer prompt.
-      return combinedLlmRectification(semanticChecks, adversarialChecks, story, scopeConstraint);
+      return combinedLlmRectification(semanticChecks, adversarialChecks, story, scopeConstraint, opts);
     }
 
     if (mechanicalChecks.length > 0 && llmChecks.length === 0) {
-      return mechanicalRectification(mechanicalChecks, story, scopeConstraint);
+      return mechanicalRectification(mechanicalChecks, story, scopeConstraint, opts);
     }
 
     // Mixed: mechanical + one or more LLM reviewer checks.
-    const mechanicalSection = formatCheckErrors(mechanicalChecks);
+    const mechanicalSection = formatCheckErrors(mechanicalChecks, opts);
     const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
     const llmSection =
       semanticChecks.length > 0 && adversarialChecks.length > 0
-        ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks)}\n\n## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks)}`
+        ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks, opts)}\n\n## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks, opts)}`
         : semanticChecks.length > 0
-          ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks)}`
-          : `## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks)}`;
+          ? `## Semantic Review Findings\n\n${formatCheckErrors(semanticChecks, opts)}`
+          : `## Adversarial Review Findings\n\n${formatCheckErrors(adversarialChecks, opts)}`;
 
     return `You are fixing issues from a code review.
 
