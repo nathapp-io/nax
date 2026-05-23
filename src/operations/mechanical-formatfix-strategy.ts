@@ -39,7 +39,7 @@ const mechanicalFormatFixOp: DeterministicOperation<
     ctx: CallContext,
     deps: MechanicalFormatFixDeps = _mechanicalFormatFixDeps,
   ): Promise<MechanicalFormatFixOutput> {
-    const broad = (ctx as any).config?.quality?.commands?.formatFix as string | undefined;
+    const broad = (ctx as unknown as { config?: QualityConfig }).config?.quality?.commands?.formatFix;
     if (!broad) return { applied: true, exitCode: 0 };
     const command = input.scopeFiles?.length ? `${broad} ${input.scopeFiles.join(" ")}` : broad;
     const result = await deps.runQualityCommand({
