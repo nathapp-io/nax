@@ -349,7 +349,7 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     expect(inputs.verifyScoped).toBeDefined();
   });
 
-  test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lintCheck command configured", async () => {
+  test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lint command configured", async () => {
     const ctx = makeNonTddCtx({
       review: {
         ...DEFAULT_CONFIG.review,
@@ -360,7 +360,7 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
         ...DEFAULT_CONFIG.quality,
         commands: {
           ...(DEFAULT_CONFIG.quality?.commands ?? {}),
-          lintCheck: "bun run lint:check",
+          lint: "bun run lint",
         },
       },
     });
@@ -368,7 +368,7 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     expect(inputs.lintCheck).toBeDefined();
   });
 
-  test("AC1: assemblePlanInputsFromCtx populates typecheckCheck when 'typecheck' in review.checks and typecheckCheck command configured", async () => {
+  test("AC1: assemblePlanInputsFromCtx populates typecheckCheck when 'typecheck' in review.checks and typecheck command configured", async () => {
     const ctx = makeNonTddCtx({
       review: {
         ...DEFAULT_CONFIG.review,
@@ -379,7 +379,7 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
         ...DEFAULT_CONFIG.quality,
         commands: {
           ...(DEFAULT_CONFIG.quality?.commands ?? {}),
-          typecheckCheck: "bun run typecheck",
+          typecheck: "bun run typecheck",
         },
       },
     });
@@ -398,7 +398,7 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
         ...DEFAULT_CONFIG.quality,
         commands: {
           ...(DEFAULT_CONFIG.quality?.commands ?? {}),
-          lintCheck: "bun run lint:check",
+          lint: "bun run lint",
         },
       },
     });

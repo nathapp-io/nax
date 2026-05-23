@@ -194,10 +194,6 @@ export interface QualityConfig {
     formatFixScoped?: string;
     /** Build command (e.g., "bun run build") */
     build?: string;
-    /** Read-only lint check command (e.g., "bun run lint:check") — used in check phases */
-    lintCheck?: string;
-    /** Read-only typecheck command (e.g., "bun run typecheck") — used in check phases */
-    typecheckCheck?: string;
   };
   /** Lint output parsing preferences for scope-aware rectification splitting. */
   lintOutput?: {

@@ -40,7 +40,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
   ): Promise<LintCheckOutput> {
     // ctx.config is injected by tests; in production resolved via callOp's config slice
     const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const command = ctxConfig?.quality?.commands?.lintCheck;
+    const command = ctxConfig?.quality?.commands?.lint;
 
     if (ctxConfig !== undefined && !command) {
       return { success: true, findings: [], durationMs: 0 };
@@ -48,7 +48,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
 
     const start = Date.now();
     const result = await deps.runQualityCommand({
-      commandName: "lintCheck",
+      commandName: "lint",
       command: command ?? "",
       workdir: input.workdir,
       storyId: input.storyId,

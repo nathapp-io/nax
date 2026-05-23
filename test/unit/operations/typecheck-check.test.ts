@@ -6,7 +6,7 @@ import type { Finding } from "@/findings";
 const mockCtx = { runtime: {}, storyId: "US-003" } as any;
 
 const passedResult = {
-  commandName: "typecheckCheck",
+  commandName: "typecheck",
   command: "bun run typecheck",
   success: true,
   exitCode: 0,
@@ -16,7 +16,7 @@ const passedResult = {
 };
 
 const failedResult = {
-  commandName: "typecheckCheck",
+  commandName: "typecheck",
   command: "bun run typecheck",
   success: false,
   exitCode: 1,
@@ -115,7 +115,7 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
 
     const ctxWithNoCommand = {
       ...mockCtx,
-      config: { quality: { commands: { typecheckCheck: undefined } } },
+      config: { quality: { commands: { typecheck: undefined } } },
     };
 
     const out = await typecheckCheckOp.execute(

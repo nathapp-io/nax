@@ -242,19 +242,19 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     ? { workdir: ctx.workdir, storyId: story.id }
     : undefined;
 
-  // lintCheck: gated by review.checks includes "lint" and a lintCheck command is configured
+  // lintCheck: gated by review.checks includes "lint" and a lint command is configured
   const lintCheckInput: LintCheckInput | undefined =
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("lint") &&
-    ctx.config.quality.commands.lintCheck
+    ctx.config.quality.commands.lint
       ? { workdir: ctx.workdir, storyId: story.id }
       : undefined;
 
-  // typecheckCheck: gated by review.checks includes "typecheck" and a typecheckCheck command is configured
+  // typecheckCheck: gated by review.checks includes "typecheck" and a typecheck command is configured
   const typecheckCheckInput: TypecheckCheckInput | undefined =
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("typecheck") &&
-    ctx.config.quality.commands.typecheckCheck
+    ctx.config.quality.commands.typecheck
       ? { workdir: ctx.workdir, storyId: story.id }
       : undefined;
 

@@ -105,7 +105,7 @@ describe("AC1: review.checks=['lint'] gates lint-check in, typecheck/semantic/ad
   test("assemblePlanInputsFromCtx produces lintCheck input but not typecheckCheck or review inputs", async () => {
     const config = makeNaxConfig({
       review: { enabled: true, checks: ["lint"] },
-      quality: { commands: { lintCheck: "bun run lint:check" } },
+      quality: { commands: { lint: "bun run lint" } },
     });
     const inputs = await assemblePlanInputsFromCtx(makeNonTddCtx(config));
     expect(inputs.lintCheck).toBeDefined();
@@ -118,7 +118,7 @@ describe("AC1: review.checks=['lint'] gates lint-check in, typecheck/semantic/ad
     const story = makeStory();
     const config = makeNaxConfig({
       review: { enabled: true, checks: ["lint"] },
-      quality: { commands: { lintCheck: "bun run lint:check" } },
+      quality: { commands: { lint: "bun run lint" } },
     });
     const inputs = await assemblePlanInputsFromCtx(makeNonTddCtx(config));
     const ctx = makeMockCallContext();
@@ -165,8 +165,8 @@ describe("AC2: review.enabled=false → no review/check phases in plan", () => {
 // AC3: command missing → check phase absent even when check is in review.checks
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC3: quality.commands.lintCheck/typecheckCheck undefined → check inputs absent", () => {
-  test("lint in review.checks but quality.commands.lintCheck undefined → no lintCheck input", async () => {
+describe("AC3: quality.commands.lint/typecheck undefined → check inputs absent", () => {
+  test("lint in review.checks but quality.commands.lint undefined → no lintCheck input", async () => {
     const config = makeNaxConfig({
       review: { enabled: true, checks: ["lint", "typecheck"] },
       quality: { commands: {} },
@@ -175,19 +175,19 @@ describe("AC3: quality.commands.lintCheck/typecheckCheck undefined → check inp
     expect(inputs.lintCheck).toBeUndefined();
   });
 
-  test("typecheck in review.checks but quality.commands.typecheckCheck undefined → no typecheckCheck input", async () => {
+  test("typecheck in review.checks but quality.commands.typecheck undefined → no typecheckCheck input", async () => {
     const config = makeNaxConfig({
       review: { enabled: true, checks: ["typecheck"] },
-      quality: { commands: { lintCheck: "bun run lint:check" } },
+      quality: { commands: { lint: "bun run lint" } },
     });
     const inputs = await assemblePlanInputsFromCtx(makeNonTddCtx(config));
     expect(inputs.typecheckCheck).toBeUndefined();
   });
 
-  test("lintCheck command defined but typecheck not in checks → no typecheckCheck even if command present", async () => {
+  test("lint command defined but typecheck not in checks → no typecheckCheck even if typecheck command is present", async () => {
     const config = makeNaxConfig({
       review: { enabled: true, checks: ["lint"] },
-      quality: { commands: { lintCheck: "bun run lint:check", typecheckCheck: "bun run typecheck" } },
+      quality: { commands: { lint: "bun run lint", typecheck: "bun run typecheck" } },
     });
     const inputs = await assemblePlanInputsFromCtx(makeNonTddCtx(config));
     expect(inputs.lintCheck).toBeDefined();
