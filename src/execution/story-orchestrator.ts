@@ -189,23 +189,17 @@ function extractPhaseFindings(output: unknown): Finding[] {
 
 function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
-  verifierPhase: InternalPhase,
-  fullSuiteGatePhase: InternalPhase | undefined,
-  semanticPhase: InternalPhase | undefined,
-  adversarialPhase: InternalPhase | undefined,
+  verifierPhase: string | null,
+  fullSuiteGatePhase?: string | null,
 ): Finding[] {
   const findings: Finding[] = [];
   if (fullSuiteGatePhase) {
-    findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase.slot.op.name]));
+    findings.push(...extractPhaseFindings(phaseOutputs[fullSuiteGatePhase]));
   }
-  findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase.slot.op.name]));
-  if (semanticPhase) {
-    findings.push(...extractPhaseFindings(phaseOutputs[semanticPhase.slot.op.name]));
+  if (verifierPhase) {
+    findings.push(...extractPhaseFindings(phaseOutputs[verifierPhase]));
   }
-  if (adversarialPhase) {
-    findings.push(...extractPhaseFindings(phaseOutputs[adversarialPhase.slot.op.name]));
-  }
-  return findings;
+  return findings.filter((f) => f.source === "test-runner");
 }
 
 async function runPhase(
@@ -341,10 +335,8 @@ async function runRectification(
 
   const initialFindings = gatherRectificationFindings(
     phaseOutputs,
-    verifierPhase,
-    state.fullSuiteGate,
-    state.semanticReview,
-    state.adversarialReview,
+    verifierPhase.slot.op.name,
+    state.fullSuiteGate?.slot.op.name ?? null,
   );
   if (initialFindings.length === 0) {
     return;

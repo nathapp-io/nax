@@ -110,7 +110,8 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.rectification!.maxAttempts).toBe(2);
   });
 
-  test("leaves review/rectification undefined when inlineReview is false (default)", async () => {
+  test("leaves semanticReview and adversarialReview undefined when inlineReview is false (default)", async () => {
+    // Rectification is no longer gated by inlineReview — only semanticReview / adversarialReview remain gated.
     const ctx = makeCtx({
       execution: { ...DEFAULT_CONFIG.execution, inlineReview: false },
       review: {
@@ -122,6 +123,27 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.semanticReview).toBeUndefined();
     expect(inputs.adversarialReview).toBeUndefined();
-    expect(inputs.rectification).toBeUndefined();
+  });
+
+  // AC2: rectification is no longer gated by inlineReviewEnabled
+  test("populates rectification when rectification.enabled=true even when inlineReview=false", async () => {
+    const ctx = makeCtx({
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        inlineReview: false,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true, maxRetries: 3 },
+      },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic"],
+      },
+    });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.rectification).toBeDefined();
+    expect(inputs.rectification!.maxAttempts).toBe(3);
+    // semantic/adversarial remain gated by inlineReview
+    expect(inputs.semanticReview).toBeUndefined();
+    expect(inputs.adversarialReview).toBeUndefined();
   });
 });

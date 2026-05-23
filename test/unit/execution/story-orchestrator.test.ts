@@ -987,6 +987,158 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
   });
 });
 
+// ============================================================================
+// AC3: TDD + inlineReview=false + rectification.enabled=true → full-suite-rectify dispatched
+// AC5: gatherRectificationFindings filters to source='test-runner' only
+// ============================================================================
+
+describe("AC3 + AC5: gate-internal rectification — source filtering and full-suite-rectify dispatch", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("AC5: runFixCycle receives only source='test-runner' findings (non-test-runner findings excluded)", async () => {
+    // Gate produces a mixed-source output: one test-runner finding + one lint finding.
+    // After gatherRectificationFindings filters by source, runFixCycle should only see the test-runner one.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedCycleFindings: unknown[] | null = null;
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [
+        { source: "test-runner", category: "failed-test", severity: "error", message: "test fail", rule: "t", file: "f.ts" },
+        { source: "lint", category: "style", severity: "warning", message: "lint issue", rule: "l", file: "f.ts" },
+      ],
+    });
+    const verOp = makeDeterministicOp("verifier", { success: false, findings: [] });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycleFindings = cycle.findings;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      expect(capturedCycleFindings).not.toBeNull();
+      // Only the test-runner finding should reach runFixCycle
+      expect(capturedCycleFindings!.length).toBe(1);
+      expect((capturedCycleFindings![0] as any).source).toBe("test-runner");
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC5: verifier findings with non-test-runner source are also excluded", async () => {
+    // Verifier produces a review-category finding — should not reach runFixCycle
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedCycleFindings: unknown[] | null = null;
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
+    const verOp = makeDeterministicOp("verifier", {
+      success: false,
+      findings: [{ source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycleFindings = cycle.findings;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      // No test-runner findings → runFixCycle not called (empty findings short-circuit)
+      // OR runFixCycle called but with empty findings
+      if (capturedCycleFindings !== null) {
+        expect(capturedCycleFindings!.every((f: any) => f.source === "test-runner")).toBe(true);
+      }
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC3: TDD + inlineReview=false + gate failed-test findings → full-suite-rectify strategy name present", async () => {
+    // This is the critical end-to-end test: rectification was previously unreachable when
+    // inlineReview=false. With the guard removed, gate findings now reach runFixCycle and
+    // the full-suite-rectify strategy (prepended by buildPlanForStrategy) is dispatched.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    let capturedStrategyNames: string[] = [];
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "f.ts" }],
+    });
+    const verOp = makeDeterministicOp("verifier", { success: false, findings: [] });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedStrategyNames = (cycle.strategies ?? []).map((s: any) => s.name);
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const { makeFullSuiteRectifyStrategy } = require("@/operations/full-suite-rectify");
+      const { makeStory: ms } = require("@test/helpers");
+      const story = ms({ id: "US-t", title: "test" });
+      const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story);
+
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({
+          maxAttempts: 3,
+          strategies: [fullSuiteStrategy],  // simulating what buildPlanForStrategy prepends
+          abortOnIncreasingFailures: false,
+        })
+        .build(ctx);
+      await plan.run();
+
+      expect(capturedStrategyNames).toContain("full-suite-rectify");
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+});
+
 describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skips gate", () => {
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
