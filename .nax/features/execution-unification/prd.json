@@ -1,0 +1,309 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "execution-unification",
+  "branchName": "feat/execution-unification",
+  "createdAt": "2026-05-23T00:00:00.000Z",
+  "updatedAt": "2026-05-23T08:05:22.696Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Activate gate-internal rectification",
+      "description": "**Goal** — Remove the `inlineReviewEnabled` gate from the rectification slot in `assemblePlanInputsFromCtx`, activating US-006a's gate rectification in production.\n\n**Motivation** — US-006a's gate rectification code shipped in commit `35486416` but is unreachable in production because `plan-inputs.ts:258-265` gates `inputs.rectification` on `inlineReviewEnabled`, which defaults to `false`.\n\n**Approach** — Drop the `inlineReviewEnabled` guard on the `rectificationInput` block only. Keep the guard on `semanticReviewInput` / `adversarialReviewInput` blocks — those are removed in US-005a. Simultaneously simplify `gatherRectificationFindings` to remove its `semanticPhase` and `adversarialPhase` parameters, since review findings will not feed rectification until US-005a wires the builder's review phases.\n\n**Scope**\nIn:\n- `src/execution/plan-inputs.ts` — remove `inlineReviewEnabled` condition from `rectificationInput` block (lines 258-265)\n- `src/execution/story-orchestrator.ts` — simplify `gatherRectificationFindings` signature: remove `semanticPhase?` and `adversarialPhase?` params, remove the body logic that reads them; function now gathers only from `verifierPhase` and `fullSuiteGatePhase`\n\nOut:\n- `semanticReviewInput` / `adversarialReviewInput` gating — unchanged until US-005a\n- No new files created\n- No changes to `build-plan-for-strategy.ts`\n\n**Interface** — Post-change `gatherRectificationFindings` signature:\n```typescript\n// src/execution/story-orchestrator.ts\nfunction gatherRectificationFindings(\n  phaseOutputs: Record<string, unknown>,\n  verifierPhase: string | null,\n  fullSuiteGatePhase?: string | null,\n): Finding[]\n// Removed params: semanticPhase?, adversarialPhase?\n// Returns only findings with source \"test-runner\"\n```\n\n**Files touched:**\n- `src/execution/plan-inputs.ts` (modify — remove rectification gate)\n- `src/execution/story-orchestrator.ts` (modify — simplify gatherRectificationFindings)",
+      "acceptanceCriteria": [
+        "`grep -n \"inlineReviewEnabled\" src/execution/plan-inputs.ts` shows no occurrences inside the `rectificationInput` block (occurrences inside `semanticReviewInput` / `adversarialReviewInput` blocks remain, removed by US-005a)",
+        "`assemblePlanInputsFromCtx` returns `rectification: { maxAttempts, strategies: [], abortOnIncreasingFailures }` (non-undefined) whenever `config.execution.rectification.enabled === true`, regardless of the value of `config.execution.inlineReview`",
+        "Given a TDD strategy config with `rectification.enabled: true` and `inlineReview: false`, when the full-suite gate phase produces `failed-test` findings, then `runFixCycle` inside the builder dispatches `makeFullSuiteRectifyStrategy` and `implementerOp` is invoked at least once",
+        "`grep -nE \"semanticPhase|adversarialPhase\" src/execution/story-orchestrator.ts` shows the `gatherRectificationFindings` function signature no longer accepts those parameters",
+        "`gatherRectificationFindings(phaseOutputs, verifierPhase, fullSuiteGatePhase)` returns only findings with `source === \"test-runner\"`; the function no longer reads a `semanticPhase` or `adversarialPhase` argument"
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "rectification"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/plan-inputs.ts",
+        "src/execution/story-orchestrator.ts",
+        "src/operations/full-suite-rectify.ts"
+      ],
+      "suggestedCriteria": [
+        "When `config.execution.rectification` is not configured (key absent), `assemblePlanInputsFromCtx` returns `rectification: undefined`",
+        "The `gatherRectificationFindings` callers inside `story-orchestrator.ts` (runRectification) compile without TypeScript errors after the parameter removal"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Retire runRectificationLoop",
+      "description": "**Goal** — Delete the legacy `runRectificationLoop` framework and convert its two call sites to use `runFixCycle` directly.\n\n**Motivation** — Three implementations of \"fix failing tests\" exist today (builder's `addRectification`, `pipeline/stages/rectify.ts`, `src/execution/lifecycle/run-regression.ts`); this story eliminates the legacy framework powering the latter two.\n\n**Approach** — Convert `src/pipeline/stages/rectify.ts` (call site #1) and `src/execution/lifecycle/run-regression.ts:322` (call site #2) from `runRectificationLoop` to `runFixCycle`. Each converted call site constructs a `FixCycle<Finding>` with strategies and a `validate` callback equivalent to the legacy loop's verify/retry logic. After converting both call sites, delete `src/verification/rectification-loop.ts` and `src/verification/shared-rectification-loop.ts`. Remove their exports from `src/verification/index.ts`.\n\nThe `testSummaryToFindings` adapter in `src/findings/adapters/test-failure.ts` is the bridge for converting test runner output to `Finding[]` for the `FixCycle`.\n\n**Scope**\nIn:\n- `src/pipeline/stages/rectify.ts` — convert `runRectificationLoop` call to `runFixCycle` with equivalent strategies\n- `src/execution/lifecycle/run-regression.ts` — convert call at line 322\n- `src/verification/rectification-loop.ts` — DELETE\n- `src/verification/shared-rectification-loop.ts` — DELETE\n- `src/verification/index.ts` — remove deleted exports\n\nOut:\n- No changes to `story-orchestrator.ts` or `build-plan-for-strategy.ts`\n- No new operation files\n- `regressionStage` itself is NOT deleted (retained per resolved decision D1)\n\n**Interface** — The `FixCycle<Finding>` shape each converted call site must construct:\n```typescript\n// Pattern from src/findings/cycle.ts\nconst cycle: FixCycle<Finding> = {\n  findings: initialFindings,    // from testSummaryToFindings()\n  iterations: [],\n  strategies: [makeFullSuiteRectifyStrategy(story)],\n  config: { maxAttemptsTotal: opts.maxAttempts, validatorRetries: 1 },\n  validate: async (cycleCtx, { mode }) => {\n    // Re-run test suite; return updated Finding[]\n    // Equivalent to legacy loop's re-verify logic\n  },\n};\nreturn runFixCycle(cycle, ctx, \"rectify\" /* or \"regression\" */, deps);\n```",
+      "acceptanceCriteria": [
+        "`grep -rn \"runRectificationLoop\" src/ --include=\"*.ts\" | grep -v \"test\\|deprecat\" | wc -l` returns `0`",
+        "File `src/verification/rectification-loop.ts` does not exist after this story",
+        "File `src/verification/shared-rectification-loop.ts` does not exist after this story",
+        "`grep -nE \"runRectificationLoop|_rectificationDeps\" src/verification/index.ts | wc -l` returns `0`",
+        "When `verifyStage` reports `success: false` with `failCount > 0`, `rectifyStage` invokes `runFixCycle` with a strategy array containing `makeFullSuiteRectifyStrategy(story)` and the `implementerOp` is called within the cycle",
+        "When `run-regression.ts` invokes `runFixCycle` and the cycle exits with `exitReason: \"resolved\"`, the regression stage returns a result where `success === true`",
+        "When `run-regression.ts` invokes `runFixCycle` and the cycle exits with `exitReason: \"max-attempts-per-strategy\"` or `\"max-attempts-total\"` and `finalFindings.length > 0`, the regression stage returns a result where `success === false`"
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "rectification",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/rectify.ts",
+        "src/execution/lifecycle/run-regression.ts",
+        "src/verification/rectification-loop.ts",
+        "src/verification/shared-rectification-loop.ts"
+      ],
+      "suggestedCriteria": [
+        "When `rectifyStage`'s `runFixCycle` exits with `exitReason: \"resolved\"`, `rectifyStage` returns `{ action: \"continue\" }`",
+        "When the converted `rectifyStage` call exits with findings still present (max-attempts exhausted), the stage surfaces escalation consistent with the legacy loop's behavior"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Add check operations",
+      "description": "**Goal** — Create three new `DeterministicOperation` check ops (`lintCheckOp`, `typecheckCheckOp`, `verifyScopedOp`) and add corresponding builder methods to `StoryOrchestratorBuilder`.\n\n**Motivation** — The unified builder path needs deterministic (no-LLM) check phases for lint, typecheck, and scoped-verify that produce `Finding[]` as input for the rectification cycle.\n\n**Approach** — Each new op mirrors `fullSuiteGateOp` (`src/operations/full-suite-gate.ts`): `kind: \"deterministic\"`, resolves its command via `config.quality.commands.*`, runs via `runQualityCommand` (`src/quality/runner.ts`), parses output to `Finding[]` using the existing parser SSOT.\n\n`lintCheckOp` uses `parseLintOutput` from `src/review/lint-parsing/` (existing SSOT — single call with `workdir` in opts handles tool detection and `Finding[]` production internally; no separate `lintDiagnosticToFinding` import needed).\n\n`typecheckCheckOp` uses the typecheck parser (verify exact API at `src/review/` when implementing — same single-call pattern).\n\n`verifyScopedOp` uses `resolveTestFilePatterns(config, workdir, packageDir)` (ADR-009 SSOT) and the test runner output parser.\n\n**No `formatCheckOp`** — format is fix-only, not a check phase. No `pluginReviewerOp` — per resolved decision D2, per-story plugin reviewer integration is dropped.\n\nEach new check op also gets a corresponding builder method on `StoryOrchestratorBuilder` and an entry in `CANONICAL_ORDER`. Builder methods follow the existing overloaded `addX(input | slot)` pattern at lines 558-572 of `story-orchestrator.ts`.\n\n**New entries in CANONICAL_ORDER** (after existing phases, before `semantic-review`):\n`... → verifier → verify-scoped → lint-check → typecheck-check → semantic-review → ...`\n\n**Do not yet call from `buildPlanForStrategy`** — wiring is US-005a. AC-003.7 (wc -l = 0) enforces this.\n\n**Per-package config resolution** — Each op resolves `config.quality.commands.*` via the config layering (`.nax/mono/<packageDir>/config.json` overrides root). This is automatic via the `qualityConfigSelector` slice.\n\n**Interface — `lintCheckOp` (worked skeleton from spec):**\n```typescript\n// src/operations/lint-check.ts\nimport { qualityConfigSelector } from \"../config\";\nimport type { QualityConfig } from \"../config/selectors\";\nimport type { Finding } from \"../findings/types\";\nimport { runQualityCommand } from \"../quality\";\nimport { parseLintOutput } from \"../review/lint-parsing\";\nimport type { DeterministicOperation } from \"./types\";\n\nexport interface LintCheckInput {\n  readonly workdir: string;\n  readonly storyId: string;\n}\n\nexport interface LintCheckOutput {\n  readonly success: boolean;\n  readonly findings: Finding[];\n  readonly durationMs: number;\n}\n\nexport const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput, QualityConfig> = {\n  kind: \"deterministic\",\n  name: \"lint-check\",\n  stage: \"review\",\n  config: qualityConfigSelector,\n  async execute(input, ctx, _deps) {\n    const start = Date.now();\n    const command = ctx.config.quality.commands.lint;\n    if (!command) return { success: true, findings: [], durationMs: 0 };\n    const result = await runQualityCommand({\n      commandName: \"lint\", command, workdir: input.workdir, storyId: input.storyId,\n    });\n    if (result.exitCode === 0) {\n      return { success: true, findings: [], durationMs: Date.now() - start };\n    }\n    const parsed = parseLintOutput(\n      result.output,\n      ctx.config.quality.lintOutput?.format ?? \"auto\",\n      { workdir: input.workdir },\n    );\n    return { success: false, findings: parsed?.findings ?? [], durationMs: Date.now() - start };\n  },\n};\n```\n\n`typecheckCheckOp` and `verifyScopedOp` follow the same shape with differing `name`, command source, and parser.\n\n**Scope**\nIn:\n- `src/operations/lint-check.ts` — CREATE\n- `src/operations/typecheck-check.ts` — CREATE\n- `src/operations/verify-scoped.ts` — CREATE\n- `src/operations/index.ts` — export new ops\n- `src/execution/story-orchestrator.ts` — extend `CANONICAL_ORDER`, add `addLintCheck`, `addTypecheckCheck`, `addVerifyScoped` methods\n\nOut:\n- `src/execution/build-plan-for-strategy.ts` — NOT touched (wiring is US-005a)\n- No `formatCheckOp` or `pluginReviewerOp`",
+      "acceptanceCriteria": [
+        "Files `src/operations/lint-check.ts`, `src/operations/typecheck-check.ts`, `src/operations/verify-scoped.ts` each exist. (No `format-check.ts` — format is fix-only, see §Design CANONICAL_ORDER note.)",
+        "Each new op file contains `kind: \"deterministic\"` exactly once",
+        "`lintCheckOp.execute({...})` returns `{ success: true, findings: [] }` when its configured lint command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"lint\"` when the command exits non-zero",
+        "`typecheckCheckOp.execute({...})` returns `{ success: true, findings: [] }` when its configured typecheck command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"typecheck\"` when the command exits non-zero",
+        "`verifyScopedOp.execute({...})` returns `{ success: true, findings: [] }` when the test command exits `0`, and `{ success: false, findings: <non-empty> }` with every finding's `source` equal to `\"test-runner\"` when the command exits non-zero",
+        "When `quality.commands.lint` is `undefined`, `lintCheckOp.execute({...})` returns `{ success: true, findings: [], durationMs: 0 }` without invoking `runQualityCommand`; same no-command early-return applies to `typecheckCheckOp` and `verifyScopedOp`",
+        "`grep -nE '\"lint-check\"|\"typecheck-check\"|\"verify-scoped\"' src/execution/story-orchestrator.ts` shows each phase name appears in the `CANONICAL_ORDER` array",
+        "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/story-orchestrator.ts | wc -l` returns ≥6 (two overloads per method)",
+        "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/build-plan-for-strategy.ts | wc -l` returns `0` (additive story only — wiring is US-005a; this AC prevents premature wiring).",
+        "Given a per-package override at `.nax/mono/<pkg>/config.json` with a different `quality.commands.lint`, `lintCheckOp.execute` runs the override command rather than the root config command"
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "review",
+        "operations"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/operations/full-suite-gate.ts",
+        "src/operations/index.ts",
+        "src/execution/story-orchestrator.ts"
+      ],
+      "suggestedCriteria": [
+        "When the lint command exits non-zero but produces no parseable findings, `lintCheckOp.execute` returns `{ success: false, findings: [] }` without throwing",
+        "`verifyScopedOp` uses `resolveTestFilePatterns(config, workdir, packageDir)` rather than any hardcoded test file pattern",
+        "Each new op is exported from `src/operations/index.ts` barrel"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Add fix strategies",
+      "description": "**Goal** — Extract autofix strategies from `autofix-cycle.ts` into named factory functions in `src/operations/` and add novel mechanical fix strategies that wrap `DeterministicOperation` shell-command fix-ops.\n\n**Motivation** — Three implementations of \"fix failing tests\" exist; consolidating strategy factories into `src/operations/` allows `buildPlanForStrategy` to assemble a single ordered strategy array combining mechanical and agent strategies.\n\n**Approach** — Two categories of strategies:\n\n**Agent strategies** — Create named factories following the existing `makeFullSuiteRectifyStrategy` pattern (`src/operations/full-suite-rectify.ts`). The spec ACs define the new predicates (authoritative over old autofix-cycle.ts predicates):\n- `makeAutofixImplementerStrategy(ctx)` — wraps `implementerRectifyOp`; `appliesTo: (f) => f.fixTarget === \"source\" && [\"lint\", \"typecheck\", \"semantic-review\"].includes(f.source)`\n- `makeAutofixTestWriterStrategy(ctx)` — wraps `testWriterRectifyOp`; `appliesTo: (f) => f.fixTarget === \"test\" || f.source === \"adversarial-review\"`\n\n**Mechanical strategies** — novel: `FixStrategy.fixOp` is a `DeterministicOperation` (not a `RunOperation`). These are the first such strategies in the codebase. `maxAttempts: 1`, `coRun: \"exclusive\"`:\n- `makeMechanicalLintFixStrategy()` — runs `quality.commands.lintFix` (or `lintFixScoped`)\n- `makeMechanicalFormatFixStrategy()` — runs `quality.commands.formatFix` (or `formatFixScoped`)\n\n**Priority encoding** — strategy array order in `buildPlanForStrategy` (wired in US-005a): mechanical before agent:\n```typescript\n[\n  makeMechanicalLintFixStrategy(),     // if lintFix configured\n  makeMechanicalFormatFixStrategy(),   // if formatFix configured\n  makeFullSuiteRectifyStrategy(story), // if isThreeSession && fullSuiteGate inputs\n  makeAutofixImplementerStrategy(ctx), // if autofix.enabled !== false\n  makeAutofixTestWriterStrategy(ctx),  // if autofix.enabled !== false\n]\n```\n\n**Mechanical-then-recheck-bail semantics** — preserved implicitly: `runFixCycle` re-validates after each strategy completes. If mechanical fix resolves all findings, agent strategies find empty `appliesTo` and cycle exits with `no-findings-applicable`. No special-case code needed.\n\n**Mechanical strategy spec (worked skeleton from spec):**\n```typescript\n// src/operations/mechanical-lintfix-strategy.ts\nimport { qualityConfigSelector } from \"../config\";\nimport type { QualityConfig } from \"../config/selectors\";\nimport type { FixStrategy } from \"../findings\";\nimport type { Finding } from \"../findings/types\";\nimport { runQualityCommand } from \"../quality\";\nimport type { DeterministicOperation } from \"./types\";\n\ninterface MechanicalLintFixInput {\n  readonly workdir: string;\n  readonly storyId: string;\n  readonly scopeFiles?: string[];\n}\ninterface MechanicalLintFixOutput { readonly applied: true; readonly exitCode: number; }\n\nconst mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, MechanicalLintFixOutput, QualityConfig> = {\n  kind: \"deterministic\",\n  name: \"mechanical-lintfix\",\n  stage: \"rectification\",\n  config: qualityConfigSelector,\n  async execute(input, ctx) {\n    const broad = ctx.config.quality.commands.lintFix;\n    if (!broad) return { applied: true, exitCode: 0 };\n    const command = input.scopeFiles?.length\n      ? `${broad} ${input.scopeFiles.join(\" \")}`\n      : broad;\n    const result = await runQualityCommand({\n      commandName: \"lintFix\", command, workdir: input.workdir, storyId: input.storyId,\n    });\n    return { applied: true, exitCode: result.exitCode };\n  },\n};\n\nexport function makeMechanicalLintFixStrategy(): FixStrategy<Finding, MechanicalLintFixInput, MechanicalLintFixOutput, QualityConfig> {\n  return {\n    name: \"mechanical-lintfix\",\n    appliesTo: (f) => f.source === \"lint\",\n    fixOp: mechanicalLintFixOp,\n    buildInput: (_findings, _prior, cycleCtx) => ({\n      workdir: cycleCtx.workdir, storyId: cycleCtx.storyId, scopeFiles: undefined,\n    }),\n    extractApplied: () => ({ targetFiles: [], summary: \"lint --fix\" }),\n    maxAttempts: 1,\n    coRun: \"exclusive\",\n  };\n}\n```\n\n**Behavior preservation matrix** — implemented as test fixtures (AC-004.7): each row is a distinct config scenario asserting which strategies appear in the array and whether agent invocations occur.\n\n**Do not yet wire into `buildPlanForStrategy`** — wiring is US-005a. AC-004.8 enforces this.\n\n**Scope**\nIn:\n- `src/operations/autofix-implementer-strategy.ts` — CREATE\n- `src/operations/autofix-test-writer-strategy.ts` — CREATE\n- `src/operations/mechanical-lintfix-strategy.ts` — CREATE\n- `src/operations/mechanical-formatfix-strategy.ts` — CREATE\n- `src/operations/index.ts` — export new factories\n\nOut:\n- `src/pipeline/stages/autofix-cycle.ts` — `buildAutofixStrategies` remains (still used by the legacy autofix stage during this transition; AC-004.8 enforces it is not removed)\n- `src/execution/build-plan-for-strategy.ts` — NOT touched (wiring is US-005a)",
+      "acceptanceCriteria": [
+        "Files `src/operations/autofix-implementer-strategy.ts`, `autofix-test-writer-strategy.ts`, `mechanical-lintfix-strategy.ts`, `mechanical-formatfix-strategy.ts` each exist.",
+        "`grep -nE \"export function make(Autofix|Mechanical)\" src/operations/ -r | wc -l` returns ≥4",
+        "`makeAutofixImplementerStrategy(ctx).appliesTo(finding)` returns `true` when `finding.fixTarget === \"source\"` and `finding.source` is one of `\"lint\"`, `\"typecheck\"`, or `\"semantic-review\"`; returns `false` when `finding.fixTarget === \"test\"` or `finding.source === \"test-runner\"`",
+        "`makeAutofixTestWriterStrategy(ctx).appliesTo(finding)` returns `true` when `finding.fixTarget === \"test\"` or `finding.source === \"adversarial-review\"`; returns `false` when `finding.fixTarget === \"source\"` and `finding.source !== \"adversarial-review\"`",
+        "`makeMechanicalLintFixStrategy().fixOp.execute({...})` invokes `runQualityCommand` with `commandName: \"lintFix\"` and the resolved `quality.commands.lintFix` value when `lintFix` is configured",
+        "When `quality.commands.lintFix` and `lintFixScoped` are both `undefined`, `makeMechanicalLintFixStrategy().fixOp.execute({...})` returns `{ applied: true, exitCode: 0 }` without invoking `runQualityCommand`; same no-command early-return applies to `makeMechanicalFormatFixStrategy()` when `formatFix` and `formatFixScoped` are both `undefined`",
+        "`makeMechanicalLintFixStrategy().appliesTo(finding)` returns `true` for findings with `source === \"lint\"` and `false` for findings with `source === \"test-runner\"`",
+        "A behavior-preservation test fixture passes for each of these scenarios: (a) only mechanical lintFix configured + autofix disabled → only `makeMechanicalLintFixStrategy` in array, no agent strategy; (b) only autofix enabled → only agent strategies in array; (c) both mechanical and autofix enabled → mechanical strategies precede agent strategies in array order",
+        "`grep -n \"buildAutofixStrategies\" src/pipeline/stages/autofix-cycle.ts | wc -l` returns ≥1 (additive story — `autofix-cycle.ts` still uses `buildAutofixStrategies`; migration is US-005a)."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "rectification",
+        "strategies"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/autofix-cycle.ts",
+        "src/pipeline/stages/autofix.ts",
+        "src/operations/full-suite-rectify.ts",
+        "src/findings/cycle.ts"
+      ],
+      "suggestedCriteria": [
+        "`makeMechanicalLintFixStrategy().maxAttempts` equals `1`",
+        "`makeMechanicalLintFixStrategy().coRun` equals `\"exclusive\"`",
+        "New factories are exported from `src/operations/index.ts` barrel"
+      ]
+    },
+    {
+      "id": "US-005a",
+      "title": "Wire unified phases into buildPlanForStrategy",
+      "description": "**Goal** — Wire all new check phases and fix strategies into `buildPlanForStrategy`, extend `StoryOrchestratorResult` with `rectificationExhausted`/`unfixedFindings`, and extend `applyPostRunInspection` with the `mechanicalFailedOnly` rule and D3 ctx field derivations.\n\n**Motivation** — US-003 and US-004 added the building blocks; this story activates them in the execution path so the unified builder handles lint, typecheck, scoped-verify, and rectification end-to-end.\n\n**Approach**\n\n**1. PlanInputs slot population** — Add new optional slots to `PlanInputs` and populate them in `assemblePlanInputsFromCtx` subject to config gating:\n\n```typescript\n// src/execution/plan-inputs.ts (post-migration shape — new optional fields)\nexport interface PlanInputs {\n  // ... existing fields unchanged ...\n  readonly verifyScoped?: VerifyScopedInput;      // new: non-TDD only\n  readonly lintCheck?: LintCheckInput;             // new: gated by review.checks ∋ \"lint\" && lint command configured\n  readonly typecheckCheck?: TypecheckCheckInput;   // new: gated by review.checks ∋ \"typecheck\" && typecheck command configured\n  // semanticReview / adversarialReview gating: inlineReviewEnabled condition removed here (last gating-site)\n}\n```\n\nThe `inlineReviewEnabled` condition is removed from ALL remaining slot-population sites in `assemblePlanInputsFromCtx` — including `semanticReviewInput` and `adversarialReviewInput`. After this story, `inlineReview` flag has zero remaining gates (AC-005a.2).\n\n**2. buildPlanForStrategy wiring** — Add new check phases and strategy assembly:\n\n```typescript\n// src/execution/build-plan-for-strategy.ts (post-migration excerpt)\n// Non-TDD: add verify-scoped\nif (!isThreeSession && inputs.verifyScoped) builder.addVerifyScoped(inputs.verifyScoped);\n\n// Check phases (gated by slot presence)\nif (inputs.lintCheck) builder.addLintCheck(inputs.lintCheck);\nif (inputs.typecheckCheck) builder.addTypecheckCheck(inputs.typecheckCheck);\n\n// Strategy assembly (priority encoded by array position; each entry conditional)\nconst strategies: FixStrategy<Finding, any, any, any>[] = [];\nif (config.quality.commands.lintFix || config.quality.commands.lintFixScoped) {\n  strategies.push(makeMechanicalLintFixStrategy());\n}\nif (config.quality.commands.formatFix || config.quality.commands.formatFixScoped) {\n  strategies.push(makeMechanicalFormatFixStrategy());\n}\nif (isThreeSession && inputs.fullSuiteGate) {\n  strategies.push(makeFullSuiteRectifyStrategy(story));\n}\nif (config.quality.autofix?.enabled !== false) {\n  strategies.push(makeAutofixImplementerStrategy(ctx));\n  strategies.push(makeAutofixTestWriterStrategy(ctx));\n}\n```\n\n**3. StoryOrchestratorResult extension:**\n\n```typescript\n// src/execution/story-orchestrator.ts (post-migration shape)\nexport interface StoryOrchestratorResult {\n  readonly success: boolean;\n  readonly phaseCosts: Record<string, number>;\n  readonly totalCostUsd: number;\n  readonly durationMs: number;\n  readonly phaseOutputs: Record<string, unknown>;\n  /** Set by runRectification when inner FixCycle exits via max-attempts or bail-when with remaining findings. */\n  readonly rectificationExhausted?: boolean;\n  /** Findings remaining when cycle exited. Set together with rectificationExhausted. */\n  readonly unfixedFindings?: readonly Finding[];\n}\n```\n\n`runRectification` writes both fields when `cycleResult.exitReason !== \"no-findings-applicable\"` and `cycleResult.finalFindings.length > 0`.\n\n**4. applyPostRunInspection extensions:**\n\nA) `mechanicalFailedOnly` rule ported from `autofix.ts:182-199`:\n```typescript\n// src/execution/post-run.ts (excerpt)\nif (planResult.rectificationExhausted &&\n    planResult.unfixedFindings &&\n    planResult.unfixedFindings.length > 0) {\n  const sources = new Set(planResult.unfixedFindings.map(f => f.source));\n  const allMechanical = [...sources].every(s => s === \"lint\" || s === \"typecheck\");\n  if (allMechanical) {\n    logger.warn(\"execution\", \"Mechanical-only failure unfixable — proceeding (LLM review passed)\",\n      { storyId: ctx.story.id });\n    return { /* continue, no escalation */ };\n  }\n}\n```\n\nB) D3 ctx field derivations — three new ctx fields from `planResult.phaseOutputs`:\n- `ctx.verifyPassed: boolean` — derived from `phaseOutputs[\"verifier\"]` (TDD) or `phaseOutputs[\"verify-scoped\"]` (non-TDD)\n- `ctx.semanticReviewResult: { passed, findings } | undefined` — from `phaseOutputs[\"semantic-review\"]`, undefined when absent\n- `ctx.rectificationIterationCount: number` — from rectification phase's iteration count, `0` when absent\n\nLegacy fields `ctx.reviewResult` / `ctx.verifyResult` / `ctx.autofixAttempt` remain populated by their existing stages this story; deletion is US-005c.\n\n**Do not yet delete legacy stages or the `inlineReview` schema field** — that is US-005c.\n\n**Scope**\nIn:\n- `src/execution/plan-inputs.ts` — new slots, remove last `inlineReviewEnabled` gates\n- `src/execution/build-plan-for-strategy.ts` — wire check phases and strategies\n- `src/execution/story-orchestrator.ts` — extend `StoryOrchestratorResult`, update `runRectification`\n- `src/execution/post-run.ts` — `mechanicalFailedOnly` rule + D3 ctx field derivations\n\nOut:\n- Legacy pipeline stages NOT deleted (US-005c)\n- `inlineReview` schema field NOT deleted from `schemas-execution.ts` (US-005c)",
+      "acceptanceCriteria": [
+        "`grep -nE \"lintCheckInput|typecheckCheckInput|verifyScopedInput\" src/execution/plan-inputs.ts | wc -l` returns ≥3",
+        "`grep -n \"inlineReviewEnabled\" src/execution/plan-inputs.ts | wc -l` returns `0` — the flag's last gating-site is removed",
+        "`grep -nE \"addLintCheck|addTypecheckCheck|addVerifyScoped\" src/execution/build-plan-for-strategy.ts | wc -l` returns ≥3",
+        "`grep -nE \"makeAutofixImplementerStrategy|makeAutofixTestWriterStrategy|makeMechanicalLintFixStrategy|makeMechanicalFormatFixStrategy\" src/execution/build-plan-for-strategy.ts | wc -l` returns ≥4",
+        "`grep -nE \"rectificationExhausted\" src/execution/story-orchestrator.ts src/execution/post-run.ts | wc -l` returns ≥2 (`StoryOrchestratorResult` declares the field; `applyPostRunInspection` reads it)",
+        "`ExecutionPlan.run()` returns a `StoryOrchestratorResult` with `rectificationExhausted: true` and `unfixedFindings` populated when its internal `runRectification` call produces a `FixCycleResult` whose `exitReason` is one of `\"max-attempts-total\"`, `\"max-attempts-per-strategy\"`, or `\"bail-when\"` and `finalFindings.length > 0`",
+        "When `applyPostRunInspection` observes `planResult.rectificationExhausted: true` with all remaining `unfixedFindings` having `source` in `{\"lint\", \"typecheck\"}`, it returns `{ action: \"continue\" }` with a warn log (not `{ action: \"escalate\" }`)",
+        "When `applyPostRunInspection` observes `planResult.rectificationExhausted: true` with at least one `unfixedFinding` having `source` outside `{\"lint\", \"typecheck\"}` (e.g. `\"test-runner\"`), it returns `{ action: \"escalate\" }` (not `{ action: \"continue\" }`)",
+        "`applyPostRunInspection` populates `ctx.verifyPassed` (boolean derived from `verifier` or `verify-scoped` phase output), `ctx.semanticReviewResult` (`{ passed, findings }` from `semantic-review` phase output or `undefined` when absent), and `ctx.rectificationIterationCount` (number from rectification iteration count, `0` when absent)"
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "wiring"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/plan-inputs.ts",
+        "src/execution/build-plan-for-strategy.ts",
+        "src/execution/story-orchestrator.ts",
+        "src/execution/post-run.ts",
+        "src/pipeline/stages/autofix.ts"
+      ],
+      "suggestedCriteria": [
+        "When `rectificationExhausted` is false (cycle resolved or not entered), the `mechanicalFailedOnly` branch in `applyPostRunInspection` is not entered",
+        "A config with `review.checks: [\"lint\"]` and `quality.commands.lint` configured produces a plan whose builder includes `lintCheckOp` in the phase sequence",
+        "A config with `review.checks: [\"lint\"]` but `quality.commands.lint` undefined produces a plan without a `lint-check` phase output (slot is unpopulated)"
+      ]
+    },
+    {
+      "id": "US-005b",
+      "title": "Gating-preservation verification",
+      "description": "**Goal** — Write integration test fixtures that verify every config-driven gate behaves identically under the unified builder path (US-005a) as under the legacy pipeline stages, providing the safety net for US-005c's destructive cleanup.\n\n**Motivation** — US-005c cannot safely delete legacy stages until dual-path behavioral equivalence is verified; US-005b provides that gate.\n\n**Approach** — This story adds integration tests only — no new production code. Tests run against the current codebase where both unified path (US-005a) and legacy stages coexist, asserting equivalence across all config-driven gate scenarios.\n\n**Test fixture design** — Each AC corresponds to one or more integration test scenarios in `test/integration/pipeline/`. Tests construct `PlanInputs` directly or run end-to-end via the pipeline with specific config, then assert on `phaseOutputs` keys and `runFixCycle` dispatch behavior.\n\n**Per-check gating scenarios:**\n- `review.enabled: true`, `review.checks: [\"lint\"]` only → `phaseOutputs` contains `\"lint-check\"` but not `\"typecheck-check\"`, `\"semantic-review\"`, `\"adversarial-review\"`\n- `review.enabled: false` → none of the review/check phase outputs are present\n- `review.checks` includes `\"lint\"` but `quality.commands.lint` is undefined → `phaseOutputs[\"lint-check\"]` absent (command-missing skip)\n\n**Per-strategy gating scenarios:**\n- `quality.autofix.enabled: false` → rectification phase strategies contain no autofix strategies; `implementerRectifyOp` / `testWriterRectifyOp` never dispatched\n- `quality.commands.lintFix` and `lintFixScoped` both undefined → no `makeMechanicalLintFixStrategy` in strategies; same for formatFix\n\n**Belt-and-braces AC-005b.6** — When `lintFix` / `formatFix` commands are both undefined, the mechanical strategy's `fixOp.execute` returns early without invoking `runQualityCommand`. This defends against the strategy being constructed with a no-op command but still entering the cycle.\n\n**Full-path regression** — Existing E2E test scenarios in `test/integration/pipeline/` covering: TDD success path, TDD failure-then-fix path, non-TDD path, review-finding rectification, mechanical-only failure suppression, partial-progress retry — all must pass against the unified path.\n\n**Scope**\nIn:\n- `test/integration/pipeline/` — new gating-preservation test fixtures\n\nOut:\n- No production code changes\n- No new operation or strategy files",
+      "acceptanceCriteria": [
+        "A config with `review.enabled: true` and `review.checks: [\"lint\"]` (no `\"typecheck\"`, `\"semantic\"`, `\"adversarial\"`) produces a plan whose `phaseOutputs` contains `\"lint-check\"` but does not contain `\"typecheck-check\"`, `\"semantic-review\"`, or `\"adversarial-review\"`",
+        "A config with `review.enabled: false` produces a plan whose `phaseOutputs` contains none of `\"lint-check\"`, `\"typecheck-check\"`, `\"semantic-review\"`, `\"adversarial-review\"`",
+        "A config with `review.checks` including `\"lint\"` but `config.quality.commands.lint` undefined produces a plan where `phaseOutputs[\"lint-check\"]` is absent; same applies for typecheck",
+        "A config with `quality.autofix.enabled: false` produces a rectification phase whose strategies contain no `makeAutofixImplementerStrategy` / `makeAutofixTestWriterStrategy` entries — `implementerRectifyOp` and `testWriterRectifyOp` are never dispatched during the cycle",
+        "A config with `quality.commands.lintFix` and `lintFixScoped` both undefined produces a rectification phase whose strategies contain no `makeMechanicalLintFixStrategy` entry; same applies for `formatFix` / `formatFixScoped`",
+        "When `quality.commands.lintFix` and `lintFixScoped` are both `undefined`, `makeMechanicalLintFixStrategy().fixOp.execute({...})` returns `{ applied: true, exitCode: 0 }` without invoking `runQualityCommand`; same for `makeMechanicalFormatFixStrategy()` with `formatFix` undefined",
+        "Existing integration test scenarios in `test/integration/pipeline/` covering TDD success path, TDD failure-then-fix path, non-TDD path, review-finding rectification, mechanical-only failure suppression, and partial-progress retry all pass against the unified path"
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "verification"
+      ],
+      "dependencies": [
+        "US-005a"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/build-plan-for-strategy.ts",
+        "src/config/schemas-review.ts",
+        "src/config/schemas-execution.ts"
+      ],
+      "suggestedCriteria": [
+        "A config with `review.checks: [\"lint\", \"typecheck\"]` produces a plan whose `phaseOutputs` contains both `\"lint-check\"` and `\"typecheck-check\"`",
+        "A non-TDD strategy config produces a plan whose `phaseOutputs` contains `\"verify-scoped\"` but not `\"verifier\"` or `\"full-suite-gate\"`",
+        "A TDD strategy config produces a plan whose `phaseOutputs` contains `\"verifier\"` and `\"full-suite-gate\"` but not `\"verify-scoped\"`"
+      ]
+    },
+    {
+      "id": "US-005c",
+      "title": "Terminal cleanup — delete legacy stages",
+      "description": "**Goal** — Delete the five legacy pipeline stages (`verify`, `rectify`, `review`, `autofix`, `autofix-*` subsystem, `src/review/orchestrator.ts`), remove the `execution.inlineReview`, `review.dialogue`, and `review.pluginMode` schema fields, and remove `addSemanticReview`/`addAdversarialReview` builder methods.\n\n**Motivation** — After US-005b confirms dual-path equivalence, the legacy stages and flags that kept the old path alive are safe to remove, collapsing the defaultPipeline from 13 to 9 stages.\n\n**Approach** — Pure deletion story. Composed almost entirely of negative assertions per the spec-writing guide's terminal-cleanup rule.\n\n**defaultPipeline after cleanup (9 stages):**\n`queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage`\n\n`regressionStage` is **retained** (per resolved decision D1 — post-run regression check is independently valuable, out of scope for this migration).\n\n**Files deleted:**\n`src/pipeline/stages/verify.ts`, `rectify.ts`, `review.ts`, `autofix.ts`, `autofix-cycle.ts`, `autofix-guards.ts`, `autofix-scope-split.ts`, `autofix-test-writer.ts`, `autofix-agent.ts`, `autofix-prompts.ts`\n`src/review/orchestrator.ts`\n\n**Schema fields deleted:**\n- `execution.inlineReview` from `src/config/schemas-execution.ts`\n- `review.dialogue` from `src/config/schemas-review.ts` (D4 decision)\n- `review.pluginMode` from `src/config/schemas-review.ts` (D2 decision)\n\n**Builder methods deleted from `StoryOrchestratorBuilder`:**\n- `addSemanticReview` and `addAdversarialReview`\n\n**PlanInputs slots deleted:**\n- `semanticReview` and `adversarialReview` fields\n\n**Config loader deprecation shim** — `src/config/loader.ts` logs a `warn`-level message per removed key when legacy config contains `execution.inlineReview: true`, `review.dialogue.enabled: true`, or `review.pluginMode`, strips the keys, and continues without error.\n\n**D3 cleanup** — Legacy ctx fields `ctx.reviewResult` / `ctx.verifyResult` / `ctx.autofixAttempt` deleted from pipeline context type. All consumers (listed in analysis D3 table) must already be migrated to the new ctx fields added in US-005a.\n\n**D4 cleanup** — `ReviewerSession` class is retained (debate consumers use it). `ctx.reviewerSession` field and its `.destroy()` call in `completion.ts` are removed.\n\n**Docs update** — `docs/specs/SPEC-story-orchestrator-consolidation.md` and `docs/specs/SPEC-rectification-unification.md` each receive `PARTIALLY SUPERSEDED` in their first 30 lines.\n\n**Scope**\nIn:\n- `src/pipeline/stages/index.ts` — trim `defaultPipeline` to 9 stages\n- `src/pipeline/stages/verify.ts`, `rectify.ts`, `review.ts`, `autofix.ts`, `autofix-*.ts` — DELETE\n- `src/review/orchestrator.ts` — DELETE\n- `src/execution/story-orchestrator.ts` — remove `addSemanticReview`, `addAdversarialReview`\n- `src/execution/plan-inputs.ts` — remove `semanticReview`, `adversarialReview` slot fields\n- `src/config/schemas-execution.ts` — remove `inlineReview` field\n- `src/config/schemas-review.ts` — remove `dialogue` and `pluginMode` fields\n- `src/config/loader.ts` — add deprecation warning shim\n- Pipeline context type — remove `reviewResult`, `verifyResult`, `autofixAttempt`, `reviewerSession` fields\n- `docs/specs/SPEC-story-orchestrator-consolidation.md`, `docs/specs/SPEC-rectification-unification.md` — add `PARTIALLY SUPERSEDED` marker\n\nOut:\n- `regressionStage` — RETAINED\n- `ReviewerSession` class — RETAINED (debate internal use)\n- `src/execution/deferred-review.ts` — RETAINED",
+      "acceptanceCriteria": [
+        "`grep -rnE \"execution\\.inlineReview|review\\.dialogue|reviewDialogue|\\.inlineReview|review\\.pluginMode|pluginMode\" src/ --include=\"*.ts\" | grep -v \"deprecat\\|legacy\" | wc -l` returns `0` (covers `inlineReview`, `review.dialogue`, and `review.pluginMode` config field removal per D2/D4).",
+        "Files do not exist after this story: `src/pipeline/stages/verify.ts`, `rectify.ts`, `review.ts`, `autofix.ts`, `autofix-cycle.ts`, `autofix-guards.ts`, `autofix-scope-split.ts`, `autofix-test-writer.ts`, `autofix-agent.ts`, `autofix-prompts.ts`. File `src/review/orchestrator.ts` does not exist.",
+        "`defaultPipeline` array in `src/pipeline/stages/index.ts` contains exactly the elements `queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage` — verified by `grep -cE \"Stage,?$\" src/pipeline/stages/index.ts` (inside the `defaultPipeline` definition) returning exactly `9`, and `grep -nE \"verifyStage|rectifyStage|reviewStage|autofixStage\" src/pipeline/stages/index.ts | wc -l` returning `0`.",
+        "`grep -nE \"addSemanticReview|addAdversarialReview\" src/execution/story-orchestrator.ts | wc -l` returns `0`",
+        "`grep -nE \"semanticReview\\??:|adversarialReview\\??:\" src/execution/plan-inputs.ts | wc -l` returns `0` — the PlanInputs slot fields are removed.",
+        "`grep -rnE \"ctx\\.reviewerSession|ctx\\.reviewResult|ctx\\.verifyResult|ctx\\.autofixAttempt\" src/ --include=\"*.ts\" | grep -vE \"src/debate/|test\" | wc -l` returns `0` — per D3 + D4, no non-debate consumer of these legacy ctx fields after cleanup.",
+        "When a legacy config containing `execution.inlineReview: true`, `review.dialogue.enabled: true`, or `review.pluginMode` is loaded, `src/config/loader.ts` logs a warning at level `warn` per removed key (message contains the key name and `\"removed\"`), and the loaded config does not contain those keys",
+        "`grep -rnE \"pluginMode\" src/config/schemas-review.ts src/review/types.ts src/config/schemas.ts src/config/merge.ts --include=\"*.ts\" | wc -l` returns `0`.",
+        "Specs at `docs/specs/SPEC-story-orchestrator-consolidation.md`, `docs/specs/SPEC-rectification-unification.md` each contain the literal string `PARTIALLY SUPERSEDED` in their first 30 lines."
+      ],
+      "tags": [
+        "feature",
+        "execution",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-005b"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/index.ts",
+        "src/execution/story-orchestrator.ts",
+        "src/execution/plan-inputs.ts",
+        "src/config/schemas-execution.ts",
+        "src/config/loader.ts"
+      ],
+      "suggestedCriteria": [
+        "After deletion, `src/execution/deferred-review.ts` still compiles without errors (deferred reviewer path is independent of the deleted review.ts stage)",
+        "After deletion, the full test suite passes without importing any deleted module"
+      ]
+    }
+  ],
+  "analysis": "## Architecture Context\n\nPer-story execution runs through three overlapping sequencing abstractions today: pipeline stages (`src/pipeline/stages/`), builder phases (`StoryOrchestratorBuilder.CANONICAL_ORDER`), and fix strategies (`FixStrategy[]` inside `runFixCycle`). This migration collapses them to two: builder phases for ordering, FixStrategies for finding-driven fixes.\n\n## Key Gating Mechanism\n\n`inlineReviewEnabled = ctx.config.execution?.inlineReview === true` at `plan-inputs.ts:218` gates ALL review and rectification slot population in `assemblePlanInputsFromCtx`. With the default `false`, the builder's review and rectification phases are dormant, and review/rectification run as separate pipeline stages (`reviewStage`, `autofixStage`, `rectifyStage`). This is the root cause of the three problems the spec resolves.\n\n## Current defaultPipeline (13 stages)\n\n`queueCheckStage → routingStage → constitutionStage → contextStage → promptStage → optimizerStage → executionStage → verifyStage → rectifyStage → reviewStage → autofixStage → regressionStage → completionStage`\n\nTarget (9 stages): `queueCheckStage → routingStage → constitutionStage → contextStage → promptStage → optimizerStage → executionStage → regressionStage → completionStage`\n\n## Key Files\n\n- **`src/execution/plan-inputs.ts`**: `assemblePlanInputsFromCtx` has `inlineReviewEnabled` gate at line 218. Rectification slot populated only when `inlineReviewEnabled && rectification.enabled`. US-001 removes gate from rectification block only; US-005a removes gate from semantic/adversarial blocks.\n- **`src/execution/story-orchestrator.ts`**: `CANONICAL_ORDER` at lines 86-94 (7 phases: test-writer, greenfield-gate, implementer, full-suite-gate, verifier, semantic-review, adversarial-review). `gatherRectificationFindings` at lines 190-209 currently takes `semanticPhase`/`adversarialPhase` params. `StoryOrchestratorResult` at lines 51-57 lacks `rectificationExhausted`/`unfixedFindings`. Builder has `addSemanticReview`/`addAdversarialReview` methods (deleted in US-005c).\n- **`src/execution/build-plan-for-strategy.ts`**: Currently adds review phases via `hasReviewCheck(config, ...)` but these only fire when `inlineReviewEnabled` (since slot population is blocked upstream). US-005a wires the new check phases and strategies here.\n- **`src/execution/post-run.ts`**: `applyPostRunInspection` reads `planResult.phaseOutputs` and populates ctx fields. Needs `mechanicalFailedOnly` rule extension and new `rectificationExhausted` branch in US-005a; needs three new ctx field derivations (verifyPassed, semanticReviewResult, rectificationIterationCount) for D3 migration.\n- **`src/pipeline/stages/index.ts`**: defaultPipeline exports 13 stages including verify, rectify, review, autofix (4 deleted in US-005c), keeping regression.\n- **`src/verification/rectification-loop.ts`** + **`src/verification/shared-rectification-loop.ts`**: Legacy framework deleted in US-002.\n- **`src/findings/cycle.ts`**: `runFixCycle` and `FixStrategy<F,I,O,C>` interface — the SSOT for fix dispatch.\n- **`src/quality/runner.ts`**: `runQualityCommand` used by all new check ops and mechanical fix strategies.\n- **`src/findings/adapters/test-failure.ts`**: `testSummaryToFindings` adapter — converts test runner output to `Finding[]`; used in US-002 when converting rectify.ts and run-regression.ts call sites.\n\n## DeterministicOperation Pattern (reference: `src/operations/full-suite-gate.ts`)\n\n`kind: \"deterministic\"`, `stage`, `config` (config selector), `execute(input, ctx, deps)`. No LLM session, no `build`/`parse`/`retry`. Shell command execution + output parsing to `Finding[]`. Returns structured output with `success: boolean, findings: Finding[]`.\n\n## FixStrategy Pattern (reference: `src/operations/full-suite-rectify.ts`, `src/pipeline/stages/autofix-cycle.ts:100-178`)\n\n`name`, `appliesTo(finding) => boolean`, `fixOp: Operation<I,O,C>`, `buildInput(findings, prior, cycleCtx) => I`, `extractApplied(output, input) => FixApplied`, `maxAttempts`, `coRun: \"exclusive\" | \"co-run-sequential\"`.\n\nNovel in US-004: mechanical strategies use a `DeterministicOperation` as `fixOp` (not a `RunOperation`). This is the first such usage in the codebase.\n\n## Behavior Preservation — Key Rules\n\n- **mechanicalFailedOnly rule** (`autofix.ts:186-199`): When only lint/typecheck findings remain unfixed after agent rectification (LLM review passed), return `{ action: \"continue\" }` instead of escalating. Ported to `applyPostRunInspection` in US-005a.\n- **Mechanical-then-recheck-bail semantics**: Mechanical strategies run first; `runFixCycle` re-validates after each iteration. If mechanical fix resolves all findings, agent strategies find empty `appliesTo` and cycle exits with `no-findings-applicable`. Preserved implicitly by framework design.\n- **Verifier-as-SSOT** (already in production): If verifier passes, gate failure is pre-existing regression; gate exempted from success aggregation. Preserved in unified path.\n\n## autofix-implementer appliesTo predicate (spec-authoritative)\n\nThe spec AC-004.3 defines the NEW factory's predicate as: `fixTarget === \"source\" AND source ∈ {\"lint\", \"typecheck\", \"semantic-review\"}`. This is different from the OLD `autofix-cycle.ts` code (`(f.fixTarget ?? \"source\") === \"source\" && f.category !== \"prd_quote_mismatch\"`). The spec AC is authoritative — the new factory adds a `source` restriction and drops the null-coalescing and category guard. Implementers must follow the spec AC, not the old code.\n\n## Pipeline Context Field Migration (D3)\n\nLive consumers of stage-populated ctx fields outside stages being deleted:\n- `completion.ts:122` reads `ctx.reviewResult.checks` → new source: `planResult.phaseOutputs[\"semantic-review\"]`\n- `regression.ts:30` reads `ctx.verifyResult.success` → new source: unified `ctx.verifyPassed` boolean derived in `applyPostRunInspection`\n- `metrics/tracker.ts:107-110` reads `ctx.autofixAttempt` → new source: `planResult.phaseOutputs[\"rectification\"]` iteration count\n- `metrics/tracker.ts:175-176` reads `ctx.verifyResult.scopeTestFallback` → `planResult.phaseOutputs[\"verify-scoped\"].scopeTestFallback`\n- `tier-escalation.ts:267,287` reads `ctx.verifyResult` → refactored to take unified `verifyPassed` + `verifyStatus`\n\nUS-005a adds `ctx.verifyPassed`, `ctx.semanticReviewResult`, `ctx.rectificationIterationCount`; US-005c deletes the legacy fields.\n\n## Migration Risks\n\n1. **US-001**: Activates gate rectification in production for the first time (US-006a code shipped in commit 35486416 but never activated). Could expose bugs in `runRectification`. Coverage by integration test AC-001.3.\n2. **US-002**: Converts two call sites from `runRectificationLoop` to `runFixCycle` — semantic differences in session-keeping, tier escalation, and debate diagnosis must be covered by integration tests (AC-002.5, AC-002.6a, AC-002.6b).\n3. **US-005c**: Deletes stages serving real production traffic today. US-005b provides the safety net; US-005c is blocked on US-005b ACs being green.\n4. **`addSemanticReview`/`addAdversarialReview` deletion**: Any external plugin calling these builder methods will break. No internal consumers audited per spec.\n\n## Story Dependencies\n\nUS-001 (no deps) → US-002 (depends US-001)\nUS-003 (no deps, parallel with US-001/US-002) → US-004 (depends US-003)\nUS-005a (depends US-001, US-002, US-003, US-004) → US-005b (depends US-005a) → US-005c (depends US-005b)"
+}
