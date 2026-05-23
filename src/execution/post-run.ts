@@ -281,14 +281,17 @@ export async function applyPostRunInspection(
   // success/passed signals so we can attribute the failure post-mortem instead of
   // staring at a silent log line.
   if (isTdd && !planResult.success && !failureCategory) {
-    const phaseSignals: Record<string, { success?: boolean; passed?: boolean }> = {};
+    const phaseSignals: Record<string, Record<string, boolean>> = {};
     for (const [name, output] of Object.entries(planResult.phaseOutputs)) {
       if (output && typeof output === "object") {
         const r = output as Record<string, unknown>;
-        phaseSignals[name] = {
-          success: typeof r.success === "boolean" ? r.success : undefined,
-          passed: typeof r.passed === "boolean" ? r.passed : undefined,
-        };
+        const signal: Record<string, boolean> = {};
+        if (typeof r.success === "boolean") signal.success = r.success;
+        if (typeof r.passed === "boolean") signal.passed = r.passed;
+        // Omit keys when neither boolean is present so the log distinguishes
+        // "phase emitted no clear signal" (entry value `{}`) from a real
+        // success/fail boolean.
+        phaseSignals[name] = signal;
       }
     }
     logger.warn("execution", "TDD plan failed but no failure category derived — defaulting to pause", {

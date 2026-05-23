@@ -81,12 +81,17 @@ export type IsolationGuardResult = { violated: true; files: string[] } | { viola
 /**
  * Runs verifyTestWriterIsolation unless enforceTestWriterIsolation is false.
  * Returns violated with the list of offending files, or skipped when disabled.
+ *
+ * `mode` mirrors the test-writer prompt contract: `"lite"` lets stub-sized src/
+ * writes ride as soft violations to match the three-session-tdd-lite prompt;
+ * `"strict"` (default) is the three-session-tdd contract.
  */
 export async function runIsolationGuard(
   workdir: string,
   beforeRef: string,
   config: NaxConfig,
   packageDir?: string,
+  mode: "strict" | "lite" = "strict",
 ): Promise<IsolationGuardResult> {
   if (config.quality.autofix?.enforceTestWriterIsolation === false) {
     return { violated: false, skipped: true };
@@ -98,6 +103,7 @@ export async function runIsolationGuard(
     beforeRef,
     config.tdd?.testWriterAllowedPaths,
     resolved.globs,
+    mode,
   );
 
   if (!result.passed) {
