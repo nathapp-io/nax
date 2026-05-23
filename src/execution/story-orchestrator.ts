@@ -419,7 +419,7 @@ async function runRectification(
     { callOp: wrappedCallOp },
   );
 
-  phaseOutputs["rectification"] = { iterationCount: cycleResult.iterations.length };
+  phaseOutputs.rectification = { iterationCount: cycleResult.iterations.length };
 
   // "validator-error" means runPhase threw during re-validation (e.g. session failure).
   // runFixCycle demotes it to a clean exit rather than throwing, so we surface it here

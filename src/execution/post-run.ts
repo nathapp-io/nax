@@ -338,18 +338,18 @@ export async function applyPostRunInspection(
     | { success?: boolean; passed?: boolean }
     | undefined;
   const verifySource = verifierPhaseOut ?? verifyScopedPhaseOut;
-  (ctx as unknown as Record<string, unknown>)["verifyPassed"] =
+  (ctx as unknown as Record<string, unknown>).verifyPassed =
     verifySource !== undefined ? verifySource.passed === true || verifySource.success === true : undefined;
 
   const semReviewOut = planResult.phaseOutputs["semantic-review"] as
     | { passed?: boolean; findings?: unknown[] }
     | undefined;
-  (ctx as unknown as Record<string, unknown>)["semanticReviewResult"] = semReviewOut
+  (ctx as unknown as Record<string, unknown>).semanticReviewResult = semReviewOut
     ? { passed: semReviewOut.passed, findings: semReviewOut.findings ?? [] }
     : undefined;
 
-  const rectOut = planResult.phaseOutputs["rectification"] as { iterationCount?: number } | undefined;
-  (ctx as unknown as Record<string, unknown>)["rectificationIterationCount"] = rectOut?.iterationCount ?? 0;
+  const rectOut = planResult.phaseOutputs.rectification as { iterationCount?: number } | undefined;
+  (ctx as unknown as Record<string, unknown>).rectificationIterationCount = rectOut?.iterationCount ?? 0;
 
   return { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput };
 }
