@@ -3,7 +3,7 @@
   "feature": "execution-unification",
   "branchName": "feat/execution-unification",
   "createdAt": "2026-05-23T00:00:00.000Z",
-  "updatedAt": "2026-05-23T10:02:07.238Z",
+  "updatedAt": "2026-05-23T10:35:32.381Z",
   "userStories": [
     {
       "id": "US-001",
@@ -168,8 +168,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -228,7 +228,9 @@
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "expert",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/plan-inputs.ts",
@@ -244,7 +246,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d66c060174a8b4965544f46bb59142c6f271a7a0"
     },
     {
       "id": "US-005b",
