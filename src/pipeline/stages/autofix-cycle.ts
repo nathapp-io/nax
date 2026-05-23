@@ -505,6 +505,7 @@ export async function runAgentRectificationV2(
         beforeRef,
         ctx.config,
         ctx.story.workdir || undefined,
+        ctx.routing?.testStrategy === "three-session-tdd-lite" ? "lite" : "strict",
       );
       if (isolationResult.violated) {
         await _autofixCycleGuardDeps.revertDiff(ctx.workdir, isolationResult.files);

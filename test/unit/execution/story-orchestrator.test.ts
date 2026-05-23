@@ -890,6 +890,73 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     }
   });
 
+  test("happy path: gate-pass + verifier-pass → success=true (SSOT carve-out does not invert)", async () => {
+    // Sanity: the SSOT carve-out must not accidentally invert success when both
+    // gate and verifier passed — that is the normal happy path.
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .build(ctx);
+      const result = await plan.run();
+      expect(result.success).toBe(true);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+
+  test("SSOT requires EXPLICIT verifier pass — output without success/passed keys does NOT trigger carve-out", async () => {
+    // Defensive: a verifier op that produces a malformed envelope (no success or
+    // passed key) must not silently pass the story. SSOT means "verifier
+    // explicitly judged this OK", not "verifier produced something parseable".
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
+    // Malformed verifier output — neither `success` nor `passed` set.
+    const malformedVerifierOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "verifier",
+      stage: "verify",
+      config: testSel,
+      execute: async () => ({ filesChanged: [], estimatedCostUsd: 0 }),
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: malformedVerifierOp, input: { code: "" } })
+        .build(ctx);
+      const result = await plan.run();
+      // Gate explicitly failed AND verifier didn't explicitly pass → plan fails.
+      expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+
   test("verifier-failed: gate failure still fails the plan (no SSOT override)", async () => {
     // Verifier-as-SSOT only applies when verifier passed. If verifier also failed,
     // aggregation must reflect both failures.

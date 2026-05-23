@@ -139,6 +139,19 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
   });
 }
 
+/**
+ * Stricter variant of `phasePassed` for SSOT carve-out logic. Where `phasePassed`
+ * defensively treats missing/undefined/non-object outputs as "passed" (to avoid
+ * fail-closing on ops that don't conform to the envelope), this requires an
+ * affirmative `success === true` or `passed === true`. SSOT semantics ("verifier
+ * judged this OK") must not trigger off a malformed envelope.
+ */
+function phaseExplicitlyPassed(output: unknown): boolean {
+  if (output === null || output === undefined || typeof output !== "object") return false;
+  const r = output as Record<string, unknown>;
+  return r.success === true || r.passed === true;
+}
+
 function phasePassed(opName: string, output: unknown): boolean {
   if (output === null || output === undefined) {
     getSafeLogger()?.warn("story-orchestrator", "Phase produced no output — treating as pass", {
@@ -478,15 +491,14 @@ export class ExecutionPlan {
     // diagnostics; rectification (when configured) still consumes its findings.
     const verifierName = this.state.verifier?.slot.op.name;
     const gateName = this.state.fullSuiteGate?.slot.op.name;
-    const verifierPassedSsot =
-      verifierName !== undefined &&
-      phaseOutputs[verifierName] !== undefined &&
-      phasePassed(verifierName, phaseOutputs[verifierName]);
+    // SSOT requires an explicit pass — see `phaseExplicitlyPassed` for why we
+    // don't use the defensive `phasePassed` here.
+    const verifierPassedSsot = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
     if (verifierPassedSsot && gateName !== undefined && !phasePassed(gateName, phaseOutputs[gateName])) {
       logger?.warn(
         "story-orchestrator",
         "Full-suite gate failed but verifier judged story OK — treating gate failures as unrelated regressions",
-        { storyId: this.ctx.storyId },
+        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir },
       );
     }
     const success = Object.entries(phaseOutputs).every(([name, output]) => {

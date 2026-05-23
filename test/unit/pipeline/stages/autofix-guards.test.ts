@@ -238,6 +238,30 @@ describe("runIsolationGuard — spec-correct behavior (AC4, AC5)", () => {
 		// Call succeeds with optional packageDir
 		expect(result.violated).toBe(false);
 	});
+
+	test("threads mode='lite' through to verifyTestWriterIsolation (BUG-1 from code review)", async () => {
+		// Without this thread-through, autofix's test-writer rectification path
+		// would re-introduce the strict-isolation violation for lite-mode stories.
+		let receivedMode: string | undefined;
+		_guardDeps.verifyTestWriterIsolation = mock(async (_w, _r, _allow, _pat, mode) => {
+			receivedMode = mode;
+			return { passed: true, violations: [], description: "" };
+		}) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		await runIsolationGuard("/workdir", "abc123", config, "packages/lib", "lite");
+		expect(receivedMode).toBe("lite");
+	});
+
+	test("defaults mode to 'strict' when caller omits the argument", async () => {
+		let receivedMode: string | undefined;
+		_guardDeps.verifyTestWriterIsolation = mock(async (_w, _r, _allow, _pat, mode) => {
+			receivedMode = mode;
+			return { passed: true, violations: [], description: "" };
+		}) as typeof _guardDeps.verifyTestWriterIsolation;
+		const config = makeNaxConfig();
+		await runIsolationGuard("/workdir", "abc123", config);
+		expect(receivedMode).toBe("strict");
+	});
 });
 
 // ─── revertDiff — spec-correct git command ────────────────────────────────────
