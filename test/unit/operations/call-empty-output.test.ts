@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AdapterFailure } from "@/context/engine";
+import type { AdapterFailure } from "../../../src/context/engine";
 
 describe("AdapterFailure.reason field (AC9)", () => {
   test("AdapterFailure accepts optional reason field", () => {
