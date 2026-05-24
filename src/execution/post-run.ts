@@ -72,10 +72,7 @@ export const _postRunDeps = {
   autoCommitIfDirty,
 };
 
-function shouldRollbackTddFailure(
-  tddMode: TddMode | null,
-  failureCategory: FailureCategory | undefined,
-): boolean {
+function shouldRollbackTddFailure(tddMode: TddMode | null, failureCategory: FailureCategory | undefined): boolean {
   return tddMode?.rollbackEnabled === true && failureCategory === "isolation-violation";
 }
 
