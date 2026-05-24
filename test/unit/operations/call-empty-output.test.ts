@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AdapterFailure } from "../../../src/context/engine";
 
-describe("AdapterFailure.reason field (AC9)", () => {
+// This file covers synthesis logic in sendWithFileOutput (src/operations/call.ts).
+// The AC9 tests below are a forward-declaration placeholder — Task 2 adds
+// behavioral tests once the synthesis is implemented.
+describe("AdapterFailure – optional reason field", () => {
   test("AdapterFailure accepts optional reason field", () => {
     const f: AdapterFailure = {
       category: "availability",
