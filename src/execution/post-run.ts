@@ -375,6 +375,10 @@ export async function decideStageAction(
   const { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput } =
     inspection;
 
+  if (isTdd && !planResult.success) {
+    ctx.tddFailureCategory = failureCategory;
+  }
+
   // Mechanical-only failure: if rectification exhausted but all unfixed findings are from
   // mechanical sources (lint/typecheck), LLM review passed — proceed rather than escalating.
   if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
@@ -385,6 +389,17 @@ export async function decideStageAction(
         storyId: ctx.story.id,
       });
       return { action: "continue" };
+    }
+
+    if (!(isTdd && shouldRollback)) {
+      const findingSources = [...sources].filter((source): source is string => typeof source === "string");
+      logger.error("execution", "Rectification exhausted with unfixed findings", {
+        storyId: ctx.story.id,
+        findingsCount: planResult.unfixedFindings.length,
+        findingSources,
+      });
+      await cleanupSessionOnFailure(ctx);
+      return { action: "escalate", reason: "Rectification exhausted with unfixed findings" };
     }
   }
 
@@ -426,8 +441,6 @@ export async function decideStageAction(
 
   // TDD failure → isolation rollback (only) + route
   if (isTdd && !planResult.success) {
-    ctx.tddFailureCategory = failureCategory;
-
     if (shouldRollback && opts.initialRef) {
       try {
         await _postRunDeps.rollbackToRef(ctx.workdir, opts.initialRef);
