@@ -72,6 +72,13 @@ export const _postRunDeps = {
   autoCommitIfDirty,
 };
 
+function shouldRollbackTddFailure(
+  tddMode: TddMode | null,
+  failureCategory: FailureCategory | undefined,
+): boolean {
+  return tddMode?.rollbackEnabled === true && failureCategory === "isolation-violation";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,7 +374,7 @@ export async function decideStageAction(
   const logger = getLogger();
   const isTdd = opts.tddMode !== null;
   const isLiteMode = opts.tddMode?.isLite ?? false;
-  const shouldRollback = opts.tddMode?.rollbackEnabled === true;
+  const shouldRollback = shouldRollbackTddFailure(opts.tddMode, inspection.failureCategory);
   const { agentResult, selfVerificationFailed, pauseReason, failureCategory, needsHumanReview, combinedOutput } =
     inspection;
 
@@ -420,7 +427,7 @@ export async function decideStageAction(
     return { action: "pause", reason: pauseReason };
   }
 
-  // TDD failure → rollback + route
+  // TDD failure → isolation rollback (only) + route
   if (isTdd && !planResult.success) {
     ctx.tddFailureCategory = failureCategory;
 

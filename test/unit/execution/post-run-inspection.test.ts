@@ -360,6 +360,91 @@ describe("AC9: applyPostRunInspection ctx field derivations", () => {
   });
 });
 
+describe("TDD rollback gating", () => {
+  let origRollback: typeof _postRunDeps.rollbackToRef;
+  let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
+  let origDetect: typeof _postRunDeps.detectMergeConflict;
+  let origFailClose: typeof _postRunDeps.failAndClose;
+
+  beforeEach(() => {
+    origRollback = _postRunDeps.rollbackToRef;
+    origAutoCommit = _postRunDeps.autoCommitIfDirty;
+    origDetect = _postRunDeps.detectMergeConflict;
+    origFailClose = _postRunDeps.failAndClose;
+    _postRunDeps.autoCommitIfDirty = mock(async () => undefined) as typeof _postRunDeps.autoCommitIfDirty;
+    _postRunDeps.detectMergeConflict = mock(() => false) as typeof _postRunDeps.detectMergeConflict;
+    _postRunDeps.failAndClose = mock(async () => undefined) as typeof _postRunDeps.failAndClose;
+  });
+
+  afterEach(() => {
+    _postRunDeps.rollbackToRef = origRollback;
+    _postRunDeps.autoCommitIfDirty = origAutoCommit;
+    _postRunDeps.detectMergeConflict = origDetect;
+    _postRunDeps.failAndClose = origFailClose;
+  });
+
+  test("semantic review failure in TDD mode pauses without git rollback", async () => {
+    const ctx = makeTestContext();
+    const rollbackCalls: Array<{ workdir: string; ref: string }> = [];
+    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string) => {
+      rollbackCalls.push({ workdir, ref });
+    }) as typeof _postRunDeps.rollbackToRef;
+
+    const planResult = makePlanResult({
+      success: false,
+      phaseOutputs: {
+        [testWriterOp.name]: { success: true },
+        [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+        [fullSuiteGateOp.name]: { success: true, passed: true, findings: [] },
+        [verifierOp.name]: { success: true },
+        "semantic-review": {
+          passed: false,
+          findings: [{ source: "semantic-review", severity: "error", message: "semantic fail", category: "semantic" }],
+        },
+      },
+    });
+    const opts = makeInspectionOpts({
+      tddMode: { isLite: false, rollbackEnabled: true },
+      initialRef: "abc123",
+    });
+
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    expect(inspection.failureCategory).toBeUndefined();
+    expect(result.action).toBe("pause");
+    expect(rollbackCalls).toHaveLength(0);
+  });
+
+  test("isolation violation in TDD mode still rolls back before escalating", async () => {
+    const ctx = makeTestContext();
+    const rollbackCalls: Array<{ workdir: string; ref: string }> = [];
+    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string) => {
+      rollbackCalls.push({ workdir, ref });
+    }) as typeof _postRunDeps.rollbackToRef;
+
+    const planResult = makePlanResult({
+      success: false,
+      phaseOutputs: {
+        [testWriterOp.name]: { success: true },
+        [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+        [verifierOp.name]: { success: false, failureCategory: "isolation-violation" },
+      },
+    });
+    const opts = makeInspectionOpts({
+      tddMode: { isLite: false, rollbackEnabled: true },
+      initialRef: "def456",
+    });
+
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    expect(inspection.failureCategory).toBe("isolation-violation");
+    expect(result.action).toBe("escalate");
+    expect(rollbackCalls).toEqual([{ workdir: ctx.workdir, ref: "def456" }]);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // _postRunDeps rollback injection
 // ─────────────────────────────────────────────────────────────────────────────
