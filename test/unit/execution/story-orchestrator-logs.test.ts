@@ -295,7 +295,7 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
 
     const runtime = makeTestRuntime();
-    const received: Array<import("@/runtime/dispatch-events").ReviewDecisionEvent> = [];
+    const received: Array<import("@/runtime").ReviewDecisionEvent> = [];
     const off = runtime.dispatchEvents.onReviewDecision((event) => received.push(event));
 
     try {

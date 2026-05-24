@@ -253,12 +253,7 @@ function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisio
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
 
-  const reviewer =
-    opName === "semantic-review"
-      ? "semantic"
-      : opName === "adversarial-review"
-        ? "adversarial"
-        : null;
+  const reviewer = opName === "semantic-review" ? "semantic" : opName === "adversarial-review" ? "adversarial" : null;
   if (!reviewer) return null;
 
   if (record.failOpen === true) {
