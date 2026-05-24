@@ -4,6 +4,7 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
+import { parseRequoteResponse } from "../review/requote-response";
 import { checkFindingEvidence, downgradeUnsubstantiatedFinding } from "../review/semantic-evidence";
 import { type LLMFinding, isBlockingSeverity, validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
@@ -54,9 +55,12 @@ const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOut
   if (!parsed) return turn;
   const requoted = await requoteBlockingFindings(parsed.findings, ctx);
   if (!requoted.changed) return turn;
+  const passed = !requoted.findings.some((finding) =>
+    isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+  );
   return {
     ...turn,
-    output: JSON.stringify({ passed: parsed.passed, findings: requoted.findings }),
+    output: JSON.stringify({ passed, findings: requoted.findings }),
     estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
   };
 };
@@ -181,15 +185,4 @@ async function requoteBlockingFindings(
     changed = true;
   }
   return { findings: next, changed, extraCostUsd };
-}
-
-function parseRequoteResponse(output: string): { file: string; line?: number; observed: string } | null {
-  const parsed = tryParseLLMJson<Record<string, unknown>>(output);
-  if (!parsed || typeof parsed.file !== "string" || typeof parsed.observed !== "string") return null;
-  if (parsed.line != null && typeof parsed.line !== "number") return null;
-  return {
-    file: parsed.file,
-    line: typeof parsed.line === "number" ? parsed.line : undefined,
-    observed: parsed.observed,
-  };
 }

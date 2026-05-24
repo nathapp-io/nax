@@ -556,3 +556,185 @@ describe("semanticReviewOp.hopBody — same-session requote", () => {
     });
   });
 });
+
+describe("semanticReviewOp.hopBody — requote recovery regressions", () => {
+  test("accepts salvageable single-finding full-review requote JSON", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {\n  return 42;\n}\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Missing proof",
+            suggestion: "Quote the file",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "does not match",
+            },
+          },
+        ],
+      });
+      const requote = JSON.stringify({
+        passed: true,
+        findings: [
+          {
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "export function foo() {\n  return 42;\n}",
+            },
+          },
+        ],
+      });
+
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : requote,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const { semanticReviewOp } = await import("@/operations");
+      const result = await semanticReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        sendWithParseRetry: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(callCount).toBe(2);
+      expect(parsed.findings[0].verifiedBy.observed).toContain("return 42");
+    });
+  });
+
+  test("sets passed true when requote fails and the only blocking finding is downgraded", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Missing proof",
+            suggestion: "Quote the file",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "does not match",
+            },
+          },
+        ],
+      });
+
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : "not json",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const { semanticReviewOp } = await import("@/operations");
+      const result = await semanticReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        sendWithParseRetry: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(callCount).toBe(2);
+      expect(parsed.findings[0].severity).toBe("unverifiable");
+      expect(parsed.passed).toBe(true);
+    });
+  });
+
+  test("keeps passed false when another blocking finding remains after requote downgrade", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+
+      const initial = JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Missing proof",
+            suggestion: "Quote the file",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "does not match",
+            },
+          },
+          {
+            severity: "error",
+            file: "src/foo.ts",
+            line: 1,
+            issue: "Real blocking issue",
+            suggestion: "Fix bug",
+            verifiedBy: {
+              file: "src/foo.ts",
+              line: 1,
+              observed: "export function foo() {}",
+            },
+          },
+        ],
+      });
+
+      let callCount = 0;
+      const mockSend = mock(async () => {
+        callCount += 1;
+        return {
+          output: callCount === 1 ? initial : "not json",
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          internalRoundTrips: 0,
+        };
+      });
+
+      const { semanticReviewOp } = await import("@/operations");
+      const result = await semanticReviewOp.hopBody!("initial prompt", {
+        send: mockSend,
+        sendWithParseRetry: mockSend,
+        input: {
+          workdir,
+          story: STORY,
+          semanticConfig: { ...DEFAULT_SEMANTIC_CONFIG, diffMode: "ref" },
+          mode: "ref",
+        },
+      } as any);
+
+      const parsed = JSON.parse(result.output);
+      expect(callCount).toBe(2);
+      expect(parsed.findings[0].severity).toBe("unverifiable");
+      expect(parsed.findings[1].severity).toBe("error");
+      expect(parsed.passed).toBe(false);
+    });
+  });
+});
