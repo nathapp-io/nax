@@ -172,7 +172,10 @@ describe("completeWithFallback retry success (AC6)", () => {
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.output).toBe("success output");
     expect(outcome.result.adapterFailure).toBeUndefined();
-    expect(outcome.fallbacks).toHaveLength(0);
+    // Stale-retry hop is recorded in fallbacks (mirrors runWithFallback behavior)
+    expect(outcome.fallbacks).toHaveLength(1);
+    expect(outcome.fallbacks[0].priorAgent).toBe("claude");
+    expect(outcome.fallbacks[0].newAgent).toBe("claude"); // same-agent retry
     expect(getCallCount()).toBe(2);
   });
 

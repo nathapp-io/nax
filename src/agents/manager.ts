@@ -273,7 +273,7 @@ export class AgentManager implements IAgentManager {
         // Session idle timeouts warrant fast retries (no backoff) — the session was
         // cancelled due to inactivity, not server load, so the next attempt may succeed.
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 1;
+        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
         if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
           const retryHop: AgentFallbackRecord = {
@@ -524,6 +524,18 @@ export class AgentManager implements IAgentManager {
         const isFailStale = result.adapterFailure.outcome === "fail-stale";
         if (isFailStale && result.adapterFailure.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
+          const retryHop: AgentFallbackRecord = {
+            storyId: options.storyId,
+            priorAgent: currentAgent,
+            newAgent: currentAgent,
+            hop: staleRetryAttempts,
+            outcome: result.adapterFailure.outcome,
+            category: result.adapterFailure.category,
+            timestamp: new Date().toISOString(),
+            costUsd: result.estimatedCostUsd,
+          };
+          fallbacks.push(retryHop);
+          this._emitter.emit("onSwapAttempt", retryHop);
           logger?.info("agent-manager", "completeWithFallback: fail-stale same-agent retry", {
             storyId: options.storyId,
             attempt: staleRetryAttempts,
