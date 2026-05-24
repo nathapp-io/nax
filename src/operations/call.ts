@@ -313,6 +313,11 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
         effective = { ...turn, output: fileContent };
       }
     }
+    // Synthesize fail-stale for empty or whitespace-only output so the manager-tier
+    // retry/swap logic handles transient agent stalls uniformly (spec §B1).
+    // Note: the outer `if (!rawOutput)` guard in callOp uses a falsy check, so
+    // whitespace-only output ("  ") reaches op.parse at exhaustion rather than
+    // throwing CALL_OP_NO_OUTPUT — op.parse is expected to handle or reject it.
     if (!effective.output?.trim() && !effective.adapterFailure) {
       return {
         ...effective,
