@@ -75,6 +75,22 @@ type PhaseKind =
   | "typecheck-check"
   | "semantic-review"
   | "adversarial-review";
+
+type ReviewDecisionPayload =
+  | {
+      reviewer: "semantic" | "adversarial";
+      parsed: true;
+      passed: boolean;
+      result: { passed: boolean; findings: unknown[] };
+    }
+  | {
+      reviewer: "semantic" | "adversarial";
+      parsed: false;
+      passed?: boolean;
+      failOpen?: boolean;
+      looksLikeFail?: boolean;
+      result: null;
+    };
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous slot list is intentionally erased internally
 type AnySlot = { op: RunOperation<any, any, any> | DeterministicOperation<any, any, any>; input: unknown };
 
@@ -233,6 +249,90 @@ function collectRectificationPhases(state: InternalBuildState): InternalPhase[] 
   ].filter((phase): phase is InternalPhase => phase !== undefined);
 }
 
+function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
+  if (output === null || output === undefined || typeof output !== "object") return null;
+  const record = output as Record<string, unknown>;
+
+  const reviewer = opName === "semantic-review" ? "semantic" : opName === "adversarial-review" ? "adversarial" : null;
+  if (!reviewer) return null;
+
+  if (record.failOpen === true) {
+    return { reviewer, parsed: false, passed: true, failOpen: true, result: null };
+  }
+  if (record.looksLikeFail === true) {
+    return { reviewer, parsed: false, passed: false, looksLikeFail: true, result: null };
+  }
+
+  if (typeof record.passed !== "boolean" || !Array.isArray(record.findings)) {
+    return null;
+  }
+
+  return {
+    reviewer,
+    parsed: true,
+    passed: record.passed,
+    result: { passed: record.passed, findings: record.findings },
+  };
+}
+
+function emitReviewDecision(ctx: CallContext, opName: string, output: unknown): void {
+  const payload = toReviewDecisionPayload(opName, output);
+  if (!payload) return;
+
+  ctx.runtime.dispatchEvents.emitReviewDecision({
+    kind: "review-decision",
+    runId: ctx.runtime.runId,
+    reviewer: payload.reviewer,
+    workdir: ctx.packageDir,
+    projectDir: ctx.runtime.projectDir,
+    outputDir: ctx.runtime.outputDir,
+    storyId: ctx.storyId,
+    featureName: ctx.featureName,
+    timestamp: Date.now(),
+    parsed: payload.parsed,
+    looksLikeFail: payload.parsed ? undefined : payload.looksLikeFail,
+    failOpen: payload.parsed ? false : payload.failOpen,
+    passed: payload.passed,
+    result: payload.result,
+  });
+}
+
+function logUnifiedReviewPhaseStart(storyId: string | undefined, opName: string): void {
+  const logger = getSafeLogger();
+  if (opName === "semantic-review") {
+    logger?.info("review", "Running semantic check", { storyId });
+  } else if (opName === "adversarial-review") {
+    logger?.info("review", "Running adversarial check", { storyId });
+  }
+}
+
+function logUnifiedReviewPhaseResult(storyId: string | undefined, opName: string, output: unknown): void {
+  const logger = getSafeLogger();
+  const payload = toReviewDecisionPayload(opName, output);
+  if (!payload) return;
+
+  if (!payload.parsed) {
+    if (payload.failOpen) {
+      logger?.warn("review", `${payload.reviewer} review fail-open`, { storyId });
+    } else if (payload.looksLikeFail) {
+      logger?.warn("review", `${payload.reviewer} review returned truncated failure`, { storyId });
+    }
+    return;
+  }
+
+  const findingsCount = payload.result.findings.length;
+  const title = payload.reviewer === "semantic" ? "Semantic review" : "Adversarial review";
+
+  if (payload.passed) {
+    logger?.info("review", `${title} passed`, { storyId });
+  } else {
+    logger?.warn("review", `${title} failed: ${findingsCount} findings`, {
+      storyId,
+      findingsCount,
+    });
+  }
+}
+
 async function runPhase(
   ctx: CallContext,
   slot: AnySlot,
@@ -259,12 +359,15 @@ async function runPhase(
   } else if (isThreeSession && opName === "full-suite-gate") {
     logger?.info("tdd", "-> Running full test suite gate (before Verifier)", { storyId: ctx.storyId });
   }
+  logUnifiedReviewPhaseStart(ctx.storyId, opName);
 
   const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
   try {
     const output = await _storyOrchestratorDeps.callOp({ ...ctx, scopeId: scope.scopeId }, slot.op, dispatchInput);
     phaseOutputs[opName] = output;
+    emitReviewDecision(ctx, opName, output);
+    logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {

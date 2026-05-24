@@ -42,6 +42,7 @@ export type {
   CompleteDispatchEvent,
   DispatchErrorEvent,
   OperationCompletedEvent,
+  ReviewDecisionEvent,
 } from "./dispatch-events";
 export { DispatchEventBus } from "./dispatch-events";
 export type {
