@@ -596,6 +596,7 @@ export class SessionManager implements ISessionManager {
             outcome: "fail-stale",
             retriable: true,
             message: "idle watchdog cancelled session — no stream activity",
+            reason: "idle-watchdog",
           });
         }
       }

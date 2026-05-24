@@ -170,6 +170,7 @@ describe("sendPrompt()", () => {
     expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
     expect((caught as SessionFailureError).adapterFailure.category).toBe("availability");
     expect((caught as SessionFailureError).adapterFailure.retriable).toBe(true);
+    expect((caught as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("does not rewrap SessionTurnError(cancelled=true) when watchdog did not trigger the cancel", async () => {
@@ -277,6 +278,7 @@ describe("sendPrompt()", () => {
     // Must still be classified as fail-stale despite agent.call_ended firing first.
     expect(caught).toBeInstanceOf(SessionFailureError);
     expect((caught as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
+    expect((caught as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("watchdog fail-stale classification is isolated per session handle during parallel prompts", async () => {
@@ -321,6 +323,7 @@ describe("sendPrompt()", () => {
 
     expect(resultA).toBeInstanceOf(SessionFailureError);
     expect((resultA as SessionFailureError).adapterFailure.outcome).toBe("fail-stale");
+    expect((resultA as SessionFailureError).adapterFailure.reason).toBe("idle-watchdog");
   });
 
   test("forwards maxTurns to adapter.sendTurn", async () => {
