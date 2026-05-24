@@ -9,8 +9,9 @@ const baseOptions = {
   resolvedPermissions: { skipPermissions: false, mode: "approve-reads" as const },
 };
 
-function makeConfig(maxRetryAttempts = 3, enableFallback = true) {
-  return makeNaxConfig({
+/** Build a NaxConfig slice for watchdog + fallback tuning used by these tests. */
+const naxConfigWith = (maxRetryAttempts = 3, enableFallback = true) =>
+  makeNaxConfig({
     agent: {
       idleWatchdog: {
         enabled: true,
@@ -26,7 +27,6 @@ function makeConfig(maxRetryAttempts = 3, enableFallback = true) {
       },
     },
   });
-}
 
 function makeStaticRegistry(agentName: string, outputSequence: string[]) {
   let callCount = 0;
@@ -88,7 +88,7 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
   test("AC4a: empty output with no adapterFailure synthesizes fail-stale with reason empty-output", async () => {
     const { registry } = makeStaticRegistry("claude", [""]);
     // maxStaleRetries=0, no fallback — so synthesized failure is returned immediately
-    const config = makeConfig(0, false);
+    const config = naxConfigWith(0, false);
     const m = new AgentManager(config, registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     const failure = outcome.result.adapterFailure;
@@ -100,7 +100,7 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
 
   test("AC4b: non-empty output returns success with no synthesis", async () => {
     const { registry } = makeStaticRegistry("claude", ["hello world"]);
-    const m = new AgentManager(makeConfig(), registry);
+    const m = new AgentManager(naxConfigWith(), registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.output).toBe("hello world");
     expect(outcome.result.adapterFailure).toBeUndefined();
@@ -108,7 +108,7 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
 
   test("AC4c: whitespace-only output triggers synthesis", async () => {
     const { registry } = makeStaticRegistry("claude", ["   "]);
-    const config = makeConfig(0, false);
+    const config = naxConfigWith(0, false);
     const m = new AgentManager(config, registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.adapterFailure?.outcome).toBe("fail-stale");
@@ -137,7 +137,7 @@ describe("completeWithFallback empty-output synthesis (AC4)", () => {
       },
     } as unknown as AgentRegistry;
 
-    const config = makeConfig(0, false);
+    const config = naxConfigWith(0, false);
     const m = new AgentManager(config, registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     // Should NOT be overwritten with fail-stale
@@ -149,7 +149,7 @@ describe("completeWithFallback staleRetryAttempts counter (AC5)", () => {
   test("AC5a: retries same agent up to maxRetryAttempts=3 before exhausting (adapter called 4 times total)", async () => {
     // 4 calls all return empty: initial + 3 retries = 4 total; no fallback so we stop there
     const { registry, getCallCount } = makeStaticRegistry("claude", ["", "", "", ""]);
-    const config = makeConfig(3, false);
+    const config = naxConfigWith(3, false);
     const m = new AgentManager(config, registry);
     await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(getCallCount()).toBe(4);
@@ -157,7 +157,7 @@ describe("completeWithFallback staleRetryAttempts counter (AC5)", () => {
 
   test("AC5b: maxRetryAttempts=1 results in 2 calls total (1 initial + 1 retry)", async () => {
     const { registry, getCallCount } = makeStaticRegistry("claude", ["", ""]);
-    const config = makeConfig(1, false);
+    const config = naxConfigWith(1, false);
     const m = new AgentManager(config, registry);
     await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(getCallCount()).toBe(2);
@@ -168,7 +168,7 @@ describe("completeWithFallback retry success (AC6)", () => {
   test("AC6a: retry succeeds on second attempt — only 2 calls, no fallback", async () => {
     // First call returns empty, second returns non-empty
     const { registry, getCallCount } = makeStaticRegistry("claude", ["", "success output"]);
-    const m = new AgentManager(makeConfig(3, false), registry);
+    const m = new AgentManager(naxConfigWith(3, false), registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.output).toBe("success output");
     expect(outcome.result.adapterFailure).toBeUndefined();
@@ -184,7 +184,7 @@ describe("completeWithFallback retry success (AC6)", () => {
       claude: { outputs: ["", "", "", ""] },  // 4 empties: initial + 3 retries
       codex: { outputs: ["from codex"] },
     });
-    const m = new AgentManager(makeConfig(3), registry);
+    const m = new AgentManager(naxConfigWith(3), registry);
     const outcome = await m.completeWithFallback("prompt", baseOptions, "claude");
     expect(outcome.result.output).toBe("from codex");
     expect(outcome.fallbacks.length).toBeGreaterThan(0);
