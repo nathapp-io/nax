@@ -68,8 +68,8 @@ export interface BuildHopCallbackContext {
 
 function turnResultToAgentResult(r: TurnResult): AgentResult {
   return {
-    success: true,
-    exitCode: 0,
+    success: !r.adapterFailure,
+    exitCode: r.adapterFailure ? 1 : 0,
     output: r.output,
     rateLimited: false,
     durationMs: 0,
@@ -78,6 +78,7 @@ function turnResultToAgentResult(r: TurnResult): AgentResult {
     tokenUsage: r.tokenUsage,
     protocolIds: r.protocolIds,
     internalRoundTrips: r.internalRoundTrips,
+    ...(r.adapterFailure ? { adapterFailure: r.adapterFailure } : {}),
   };
 }
 

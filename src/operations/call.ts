@@ -306,14 +306,26 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     bodyCtx: { send: (p: string) => Promise<TurnResult> },
   ): Promise<TurnResult> => {
     const turn = await bodyCtx.send(promptText);
-    if (!fileOutputPath) return turn;
-
-    const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
-    if (fileContent === null) {
-      return turn;
+    let effective = turn;
+    if (fileOutputPath) {
+      const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
+      if (fileContent !== null) {
+        effective = { ...turn, output: fileContent };
+      }
     }
-
-    return { ...turn, output: fileContent };
+    if (!effective.output?.trim() && !effective.adapterFailure) {
+      return {
+        ...effective,
+        adapterFailure: {
+          outcome: "fail-stale",
+          category: "availability",
+          retriable: true,
+          message: `[${op.name}] agent returned no output`,
+          reason: "empty-output",
+        },
+      };
+    }
+    return effective;
   };
 
   // sendWithParseRetry: runs the retry loop inside one session turn.
