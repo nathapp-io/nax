@@ -34,8 +34,10 @@ export interface AdapterFailure {
    *
    * `fail-aborted` — the run was cancelled via AgentRunOptions.abortSignal
    * (shutdown in progress). Not retriable; fallback chains should not fire.
-   * `fail-stale` — the idle watchdog cancelled the prompt due to no stream activity
-   * within the configured idle timeout. Retriable up to maxRetryAttempts.
+   * `fail-stale` — either (a) the idle watchdog cancelled due to no stream activity
+   * within the configured idle timeout, or (b) the agent finished cleanly with empty
+   * output. The `reason` field distinguishes: "idle-watchdog" vs "empty-output".
+   * Retriable up to maxRetryAttempts.
    */
   outcome:
     | "fail-quota"
@@ -54,6 +56,12 @@ export interface AdapterFailure {
   retriable: boolean;
   /** Seconds to wait before retrying (for rate-limit failures) */
   retryAfterSeconds?: number;
+  /**
+   * Observability tag — distinguishes outcome subtypes. No semantic effect on retry/swap.
+   * Examples: "idle-watchdog" (fail-stale from idle watchdog cancellation),
+   * "empty-output" (fail-stale synthesized when agent returned no output).
+   */
+  reason?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
