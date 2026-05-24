@@ -3,7 +3,7 @@ import type { AdapterFailure } from "../../../src/context/engine";
 import { _callOpDeps, callOp } from "../../../src/operations";
 import type { RunOperation } from "../../../src/operations";
 import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 // This file covers synthesis logic in sendWithFileOutput (src/operations/call.ts).
@@ -94,7 +94,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     let thrown: Error & { code?: string } | null = null;
@@ -130,7 +130,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     let thrown: Error & { code?: string } | null = null;
@@ -165,7 +165,7 @@ describe("sendWithFileOutput — AC1: empty output synthesises fail-stale Adapte
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     let thrown: Error & { code?: string; context?: { storyId?: string } } | null = null;
@@ -215,7 +215,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     const result = await callOp(
@@ -243,7 +243,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     let thrown: { code?: string } | null = null;
@@ -274,7 +274,7 @@ describe("sendWithFileOutput — AC2: file overlay with content suppresses synth
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
       }),
     });
-    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
     const result = await callOp(
