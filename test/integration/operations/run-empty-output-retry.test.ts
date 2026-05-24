@@ -15,12 +15,11 @@
  *   - runWithFallbackFn calls req.executeHop multiple times to simulate retry loop
  *   - runAsSessionFn controls what the underlying send returns (stateful via counter)
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { callOp } from "../../../src/operations";
 import type { RunOperation } from "../../../src/operations";
 import { DEFAULT_CONFIG, pickSelector } from "../../../src/config";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager } from "../../helpers";
-import type { NaxRuntime } from "../../../src/runtime";
+import { makeMockAgentManager, makeMockCallContext, makeMockRuntime, makeSessionManager } from "../../helpers";
 import type { TurnResult } from "../../../src/agents/types";
 
 const sel = pickSelector("run-empty-output-retry-test", "routing");
@@ -48,16 +47,6 @@ function makeTurnResult(output: string): TurnResult {
     tokenUsage: { inputTokens: 0, outputTokens: 0 },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Runtime cleanup (mandatory per project rules)
-// ---------------------------------------------------------------------------
-
-const createdRuntimes: NaxRuntime[] = [];
-afterEach(async () => {
-  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
-  createdRuntimes.length = 0;
-});
 
 // ---------------------------------------------------------------------------
 // AC3 — happy path: empty output on first attempt, success on retry
@@ -99,10 +88,9 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
     });
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
-    createdRuntimes.push(runtime);
 
     const result = await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeMockCallContext({ runtime }),
       makeRunOp("retry-happy-path"),
       "hello",
     );
@@ -141,10 +129,9 @@ describe("AC3: run-kind empty-output → runWithFallback retry (same agent)", ()
     });
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
-    createdRuntimes.push(runtime);
 
     const result = await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      makeMockCallContext({ runtime }),
       makeRunOp("retry-two-failures"),
       "hello",
     );
@@ -188,15 +175,10 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
     });
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
-    createdRuntimes.push(runtime);
 
     let thrown: Error & { code?: string } | null = null;
     try {
-      await callOp(
-        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-        makeRunOp("exhaust-retries"),
-        "hello",
-      );
+      await callOp(makeMockCallContext({ runtime }), makeRunOp("exhaust-retries"), "hello");
     } catch (err) {
       thrown = err as Error & { code?: string };
     }
@@ -223,15 +205,10 @@ describe("AC3: run-kind empty-output — all retries exhausted → CALL_OP_NO_OU
     });
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
-    createdRuntimes.push(runtime);
 
     let thrown: Error & { code?: string } | null = null;
     try {
-      await callOp(
-        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-        makeRunOp("zero-retries"),
-        "hello",
-      );
+      await callOp(makeMockCallContext({ runtime }), makeRunOp("zero-retries"), "hello");
     } catch (err) {
       thrown = err as Error & { code?: string };
     }
@@ -261,14 +238,9 @@ describe("AC3: sendWithFileOutput synthesises fail-stale on empty run-kind outpu
     });
 
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
-    createdRuntimes.push(runtime);
 
     try {
-      await callOp(
-        { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-        makeRunOp("synthesis-check"),
-        "hello",
-      );
+      await callOp(makeMockCallContext({ runtime }), makeRunOp("synthesis-check"), "hello");
     } catch {
       // expected CALL_OP_NO_OUTPUT — we only care about the synthesised failure shape
     }
