@@ -177,7 +177,6 @@ function collectOrderedPhases(state: InternalBuildState): InternalPhase[] {
     return [];
   });
 }
-
 /**
  * Stricter variant of `phasePassed` for SSOT carve-out logic. Where `phasePassed`
  * defensively treats missing/undefined/non-object outputs as "passed" (to avoid
@@ -533,7 +532,12 @@ async function runRectification(
     });
   }
 
-  const exhaustedReasons = new Set<string>(["max-attempts-total", "max-attempts-per-strategy", "bail-when"]);
+  const exhaustedReasons = new Set<string>([
+    "max-attempts-total",
+    "max-attempts-per-strategy",
+    "bail-when",
+    "no-strategy",
+  ]);
   if (exhaustedReasons.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
   }

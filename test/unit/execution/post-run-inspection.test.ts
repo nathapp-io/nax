@@ -162,6 +162,13 @@ function makeInspectionOpts(overrides: Partial<InspectionOptions> = {}): Inspect
 const LINT_FINDING: Finding = { source: "lint", severity: "error", message: "unused var", category: "lint" };
 const TYPECHECK_FINDING: Finding = { source: "typecheck", severity: "error", message: "type error", category: "type" };
 const TEST_RUNNER_FINDING: Finding = { source: "test-runner", severity: "error", message: "test failed", category: "test" };
+const SEMANTIC_REVIEW_FINDING: Finding = {
+  source: "semantic-review",
+  severity: "error",
+  message: "semantic review failed",
+  category: "ac-coverage",
+  fixTarget: "source",
+};
 
 describe("AC7: mechanicalFailedOnly — all lint/typecheck unfixed → continue action", () => {
   let origAutoCommit: typeof _postRunDeps.autoCommitIfDirty;
@@ -267,6 +274,117 @@ describe("AC8: mechanicalFailedOnly — non-mechanical source present → escala
     const inspection = await applyPostRunInspection(ctx, planResult, opts);
     const result = await decideStageAction(ctx, planResult, inspection, opts);
     expect(result.action).toBe("escalate");
+  });
+
+  test("rectificationExhausted + semantic-review finding returns explicit exhaustion reason", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [SEMANTIC_REVIEW_FINDING],
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    if (result.action !== "escalate") {
+      throw new Error(`Expected escalate action, got ${result.action}`);
+    }
+    expect(result.reason).toBe("Rectification exhausted with unfixed findings");
+  });
+
+  test("rectificationExhausted + semantic-review finding in TDD mode bypasses pause routing", async () => {
+    const ctx = makeTestContext();
+    const rollbackCalls: Array<{ workdir: string; ref: string }> = [];
+    const origRollback = _postRunDeps.rollbackToRef;
+    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string) => {
+      rollbackCalls.push({ workdir, ref });
+    }) as typeof _postRunDeps.rollbackToRef;
+
+    try {
+      const planResult = makePlanResult({
+        success: false,
+        rectificationExhausted: true,
+        unfixedFindings: [SEMANTIC_REVIEW_FINDING],
+        phaseOutputs: {
+          [testWriterOp.name]: { success: true },
+          [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+          [fullSuiteGateOp.name]: { success: true, passed: true, findings: [] },
+          [verifierOp.name]: { success: true },
+          "semantic-review": { passed: false, findings: [SEMANTIC_REVIEW_FINDING] },
+        },
+      });
+      const opts = makeInspectionOpts({
+        tddMode: { isLite: false, rollbackEnabled: true },
+        initialRef: "abc123",
+      });
+      const inspection = await applyPostRunInspection(ctx, planResult, opts);
+      const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+      if (result.action !== "escalate") {
+        throw new Error(`Expected escalate action, got ${result.action}`);
+      }
+      expect(result.reason).toBe("Rectification exhausted with unfixed findings");
+      expect(rollbackCalls).toHaveLength(0);
+    } finally {
+      _postRunDeps.rollbackToRef = origRollback;
+    }
+  });
+
+  test("rectificationExhausted does not bypass TDD isolation rollback", async () => {
+    const ctx = makeTestContext();
+    const rollbackCalls: Array<{ workdir: string; ref: string }> = [];
+    const origRollback = _postRunDeps.rollbackToRef;
+    _postRunDeps.rollbackToRef = mock(async (workdir: string, ref: string) => {
+      rollbackCalls.push({ workdir, ref });
+    }) as typeof _postRunDeps.rollbackToRef;
+
+    try {
+      const planResult = makePlanResult({
+        success: false,
+        rectificationExhausted: true,
+        unfixedFindings: [TEST_RUNNER_FINDING],
+        phaseOutputs: {
+          [testWriterOp.name]: { success: true },
+          [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+          [verifierOp.name]: { success: false, failureCategory: "isolation-violation" },
+        },
+      });
+      const opts = makeInspectionOpts({
+        tddMode: { isLite: false, rollbackEnabled: true },
+        initialRef: "def456",
+      });
+      const inspection = await applyPostRunInspection(ctx, planResult, opts);
+      const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+      expect(result.action).toBe("escalate");
+      expect(rollbackCalls).toEqual([{ workdir: ctx.workdir, ref: "def456" }]);
+    } finally {
+      _postRunDeps.rollbackToRef = origRollback;
+    }
+  });
+
+  test("rectificationExhausted preserves TDD failure category for downstream escalation", async () => {
+    const ctx = makeTestContext();
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [TEST_RUNNER_FINDING],
+      phaseOutputs: {
+        [testWriterOp.name]: { success: true },
+        [implementerOp.name]: { success: true, estimatedCostUsd: 0, durationMs: 50 },
+        [verifierOp.name]: { success: false, failureCategory: "verifier-rejected" },
+      },
+    });
+    const opts = makeInspectionOpts({
+      tddMode: { isLite: false, rollbackEnabled: true },
+      initialRef: "ghi789",
+    });
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    expect(result.action).toBe("escalate");
+    expect(ctx.tddFailureCategory).toBe("verifier-rejected");
   });
 });
 

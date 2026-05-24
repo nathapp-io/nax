@@ -171,6 +171,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
     ["max-attempts-total" as FixCycleExitReason],
     ["max-attempts-per-strategy" as FixCycleExitReason],
     ["bail-when" as FixCycleExitReason],
+    ["no-strategy" as FixCycleExitReason],
   ])("AC6: exitReason '%s' with remaining findings → rectificationExhausted=true", async (exitReason) => {
     _storyOrchestratorDeps.runFixCycle = mock(async () => ({
       iterations: [],
