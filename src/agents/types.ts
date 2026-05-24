@@ -442,6 +442,13 @@ export interface TurnResult {
   internalRoundTrips: number;
   /** Protocol-specific IDs for prompt-audit correlation. */
   protocolIds?: ProtocolIds;
+  /**
+   * Set when the hop body synthesises a failure (e.g. empty output) rather than
+   * receiving a real adapter error. Propagated through buildHopCallback into
+   * AgentResult.adapterFailure so the manager's swap/retry policy sees the correct
+   * outcome (e.g. `fail-stale` on empty output).
+   */
+  adapterFailure?: AdapterFailure;
 }
 
 /**

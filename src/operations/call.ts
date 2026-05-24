@@ -306,14 +306,31 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
     bodyCtx: { send: (p: string) => Promise<TurnResult> },
   ): Promise<TurnResult> => {
     const turn = await bodyCtx.send(promptText);
-    if (!fileOutputPath) return turn;
-
-    const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
-    if (fileContent === null) {
-      return turn;
+    let effective = turn;
+    if (fileOutputPath) {
+      const fileContent = await _callOpDeps.readFileOutput(fileOutputPath);
+      if (fileContent !== null) {
+        effective = { ...turn, output: fileContent };
+      }
     }
-
-    return { ...turn, output: fileContent };
+    // Synthesize fail-stale for empty or whitespace-only output so the manager-tier
+    // retry/swap logic handles transient agent stalls uniformly (spec §B1).
+    // Note: the outer `if (!rawOutput)` guard in callOp uses a falsy check, so
+    // whitespace-only output ("  ") reaches op.parse at exhaustion rather than
+    // throwing CALL_OP_NO_OUTPUT — op.parse is expected to handle or reject it.
+    if (!effective.output?.trim() && !effective.adapterFailure) {
+      return {
+        ...effective,
+        adapterFailure: {
+          outcome: "fail-stale",
+          category: "availability",
+          retriable: true,
+          message: `[${op.name}] agent returned no output`,
+          reason: "empty-output",
+        },
+      };
+    }
+    return effective;
   };
 
   // sendWithParseRetry: runs the retry loop inside one session turn.

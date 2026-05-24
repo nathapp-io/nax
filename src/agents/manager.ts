@@ -273,7 +273,7 @@ export class AgentManager implements IAgentManager {
         // Session idle timeouts warrant fast retries (no backoff) — the session was
         // cancelled due to inactivity, not server load, so the next attempt may succeed.
         const isFailStale = result.adapterFailure?.outcome === "fail-stale";
-        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 1;
+        const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
         if (isFailStale && result.adapterFailure?.retriable && staleRetryAttempts < maxStaleRetries) {
           staleRetryAttempts++;
           const retryHop: AgentFallbackRecord = {
@@ -292,6 +292,7 @@ export class AgentManager implements IAgentManager {
             storyId: request.runOptions.storyId,
             attempt: staleRetryAttempts,
             agent: currentAgent,
+            reason: result.adapterFailure?.reason,
           });
           currentHopKind = { kind: "stale-retry", attempt: staleRetryAttempts };
           continue;
@@ -454,6 +455,8 @@ export class AgentManager implements IAgentManager {
     const primaryAgent = primaryAgentOverride ?? this.getDefault();
     let currentAgent = primaryAgent;
     let hopsSoFar = 0;
+    let staleRetryAttempts = 0;
+    const maxStaleRetries = this._config.agent?.idleWatchdog?.maxRetryAttempts ?? 3;
 
     const _opStartMs = Date.now();
     const _agentChain: string[] = [primaryAgent];
@@ -497,9 +500,49 @@ export class AgentManager implements IAgentManager {
 
         _totalCostUsd += result.estimatedCostUsd;
 
+        // Synthesize fail-stale when agent returns empty output with no pre-existing failure.
+        // Mirrors sendWithFileOutput synthesis in call.ts for run-kind ops (spec §B2).
+        if (!result.adapterFailure && !result.output?.trim()) {
+          result = {
+            ...result,
+            adapterFailure: {
+              outcome: "fail-stale",
+              category: "availability",
+              retriable: true,
+              message: "[completeWithFallback] agent returned no output",
+              reason: "empty-output",
+            },
+          };
+        }
+
         if (!result.adapterFailure) {
           _finalStatus = "ok";
           return { result, fallbacks };
+        }
+
+        // fail-stale same-agent retry (mirrors runWithFallback pattern at manager.ts:275-298).
+        const isFailStale = result.adapterFailure.outcome === "fail-stale";
+        if (isFailStale && result.adapterFailure.retriable && staleRetryAttempts < maxStaleRetries) {
+          staleRetryAttempts++;
+          const retryHop: AgentFallbackRecord = {
+            storyId: options.storyId,
+            priorAgent: currentAgent,
+            newAgent: currentAgent,
+            hop: staleRetryAttempts,
+            outcome: result.adapterFailure.outcome,
+            category: result.adapterFailure.category,
+            timestamp: new Date().toISOString(),
+            costUsd: result.estimatedCostUsd,
+          };
+          fallbacks.push(retryHop);
+          this._emitter.emit("onSwapAttempt", retryHop);
+          logger?.info("agent-manager", "completeWithFallback: fail-stale same-agent retry", {
+            storyId: options.storyId,
+            attempt: staleRetryAttempts,
+            agent: currentAgent,
+            reason: result.adapterFailure.reason,
+          });
+          continue;
         }
 
         // completeWithFallback has no ContextBundle object, but swap is still allowed on
