@@ -13,5 +13,6 @@ export * from "./diff-utils";
 export * from "./finding-projection";
 export * from "./types";
 export * from "./runner";
+export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape } from "./semantic-helpers";
