@@ -275,4 +275,126 @@ describe("StoryOrchestrator runPhase — log emission", () => {
     expect(logs.some((l) => l.stage === "tdd" && l.msg === "Session complete: implementer")).toBe(false);
     expect(logs.some((l) => l.stage === "tdd" && l.msg === "Isolation maintained")).toBe(false);
   });
+
+  test("emits review-decision events for unified semantic review phases", async () => {
+    const { StoryOrchestratorBuilder } = await import("@/execution");
+    const { implementerOp, semanticReviewOp } = await import("@/operations");
+
+    _storyOrchestratorDeps.callOp = (async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "semantic-review") {
+        return { passed: false, findings: [{ issue: "missing acceptance criterion" }] };
+      }
+      return {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const runtime = makeTestRuntime();
+    const received: Array<import("@/runtime/dispatch-events").ReviewDecisionEvent> = [];
+    const off = runtime.dispatchEvents.onReviewDecision((event) => received.push(event));
+
+    try {
+      const builder = new StoryOrchestratorBuilder();
+      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addSemanticReview({
+        op: semanticReviewOp,
+        input: {
+          workdir: "/tmp/x",
+          story: { id: "US-001" } as any,
+          semanticConfig: { model: "balanced", timeoutMs: 1_000 },
+          mode: "ref",
+        },
+      });
+      const plan = builder.build({
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp/x",
+        agentName: "claude",
+        storyId: "US-001",
+        featureName: "feat-a",
+      });
+
+      await plan.run();
+    } finally {
+      off();
+      await runtime.close();
+    }
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      kind: "review-decision",
+      reviewer: "semantic",
+      storyId: "US-001",
+      featureName: "feat-a",
+      parsed: true,
+      passed: false,
+      result: { passed: false, findings: [{ issue: "missing acceptance criterion" }] },
+    });
+  });
+
+  test("logs semantic review start and failure in unified execution path", async () => {
+    const { StoryOrchestratorBuilder } = await import("@/execution");
+    const { implementerOp, semanticReviewOp } = await import("@/operations");
+
+    _storyOrchestratorDeps.callOp = (async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "semantic-review") {
+        return { passed: false, findings: [{ issue: "missing acceptance criterion" }] };
+      }
+      return {
+        success: true,
+        filesChanged: ["src/foo.ts"],
+        estimatedCostUsd: 0,
+        durationMs: 0,
+        output: "",
+      };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.captureGitRef = async () => "abc1234";
+
+    const logs: Array<{ stage: string; msg: string; data?: any }> = [];
+    const logger = getSafeLogger();
+    const origInfo = logger!.info;
+    const origWarn = logger!.warn;
+    logger!.info = ((stage: string, msg: string, data?: unknown) => {
+      logs.push({ stage, msg, data });
+    }) as any;
+    logger!.warn = ((stage: string, msg: string, data?: unknown) => {
+      logs.push({ stage, msg, data });
+    }) as any;
+
+    const runtime = makeTestRuntime();
+    try {
+      const builder = new StoryOrchestratorBuilder();
+      builder.addImplementer({ op: implementerOp, input: { story: { id: "US-001" } as any } });
+      builder.addSemanticReview({
+        op: semanticReviewOp,
+        input: {
+          workdir: "/tmp/x",
+          story: { id: "US-001" } as any,
+          semanticConfig: { model: "balanced", timeoutMs: 1_000 },
+          mode: "ref",
+        },
+      });
+      const plan = builder.build({
+        runtime,
+        packageView: runtime.packages.repo(),
+        packageDir: "/tmp/x",
+        agentName: "claude",
+        storyId: "US-001",
+      });
+
+      await plan.run();
+    } finally {
+      logger!.info = origInfo;
+      logger!.warn = origWarn;
+      await runtime.close();
+    }
+
+    expect(logs.some((l) => l.stage === "review" && l.msg === "Running semantic check")).toBe(true);
+    expect(logs.some((l) => l.stage === "review" && l.msg === "Semantic review failed: 1 findings")).toBe(true);
+  });
 });
