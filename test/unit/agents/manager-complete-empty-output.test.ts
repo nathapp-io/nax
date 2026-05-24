@@ -14,8 +14,7 @@ function makeConfig(maxRetryAttempts = 3, enableFallback = true) {
     agent: {
       idleWatchdog: {
         enabled: true,
-        idleTimeoutMs: 30000,
-        pingIntervalMs: 10000,
+        idleTimeoutSeconds: 900,
         maxRetryAttempts,
       },
       fallback: {
