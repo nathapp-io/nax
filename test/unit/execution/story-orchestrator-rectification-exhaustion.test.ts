@@ -333,16 +333,9 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     const plan = makePlanWithGateAndVerifier(ctx);
     await plan.run();
 
-    // runFixCycle may not have been called if initialFindings was empty (which is what we want)
-    // Either capturedCycle is null (no findings gathered) or it doesn't contain TEST_RUNNER_FINDING
-    if (capturedCycle !== null) {
-      const findings = (capturedCycle as FixCycle<Finding>).findings;
-      const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
-      expect(hasTestRunnerFinding).toBe(false);
-    } else {
-      // runFixCycle wasn't called because gatherRectificationFindings returned [] — correct behavior
-      expect(capturedCycle).toBeNull();
-    }
+    // verifier passed → gate findings are excluded from initial findings → no findings to fix →
+    // runFixCycle is never called. This is the correct carve-out behavior.
+    expect(capturedCycle).toBeNull();
   });
 
   test("AC1.2: verifier explicitly failed → gate findings ARE included in initial findings", async () => {

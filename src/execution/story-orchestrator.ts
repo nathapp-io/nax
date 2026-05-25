@@ -255,6 +255,13 @@ function gatherRectificationFindings(
   return findings;
 }
 
+/**
+ * Collect all phases that participate in the rectification validation sweep.
+ * NOTE: the verifier is intentionally included here so its output stays current
+ * in phaseOutputs (consumed by shouldSkipPhaseForRectification). However,
+ * phasesToRevalidate() is the SSOT that ensures the verifier is NEVER re-dispatched
+ * during rectification validate iterations — it strips kind="verifier" unconditionally.
+ */
 function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
   return [
     state.fullSuiteGate,
@@ -268,6 +275,9 @@ function collectRectificationPhases(state: InternalBuildState): InternalPhase[] 
 }
 
 const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
+  // Mechanical fixes are AST-preserving (import-sort, formatting, unused-var removal).
+  // They cannot introduce semantic regressions, so only lint-check needs re-running.
+  // If a mechanical fix strategy ever edits logic (not just style), widen this set.
   "mechanical-lintfix": ["lint-check"],
   "mechanical-formatfix": ["lint-check"],
   "autofix-implementer": [
@@ -580,8 +590,16 @@ async function runRectification(
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return [];
-      const lite = opts.mode === "lite";
+      // opts is required by the FixCycle.validate contract but guard defensively for
+      // plugin-supplied cycles that may call validate without opts (legacy shape).
+      const lite = (opts?.mode ?? "full") === "lite";
       const phases = phasesToRevalidate(opts.strategiesRun, validationPhases);
+      getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
+        storyId: ctx.storyId,
+        mode: opts?.mode ?? "full",
+        strategiesRun: opts.strategiesRun,
+        phasesSelected: phases.map((p) => p.kind),
+      });
       const findings: Finding[] = [];
       for (const phase of phases) {
         if (lite && phase.kind === "full-suite-gate") {

@@ -1,6 +1,13 @@
 import type { Finding } from "../findings/types";
 import type { ReviewCheckName, ReviewCheckResult } from "../review/types";
 
+/**
+ * @note The `_` prefix in this filename is spec-mandated (spec §2.2).
+ * Despite the prefix, `findingsToFailedChecks` is part of the public operations API
+ * and is exported from the `src/operations` barrel. The prefix does NOT indicate
+ * a test-only or internal module.
+ */
+
 const SOURCE_TO_CHECK: Record<string, ReviewCheckName> = {
   "semantic-review": "semantic",
   "adversarial-review": "adversarial",
