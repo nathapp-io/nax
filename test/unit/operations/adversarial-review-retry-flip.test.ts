@@ -47,6 +47,7 @@ const SAMPLE_CONFIG = {
 };
 
 const SAMPLE_INPUT: AdversarialReviewInput = {
+  workdir: "/tmp/test",
   story: SAMPLE_STORY,
   adversarialConfig: SAMPLE_CONFIG,
   mode: "ref",

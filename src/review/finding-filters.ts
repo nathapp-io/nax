@@ -5,22 +5,30 @@
  * No back-edge to operations/ is permitted from this module.
  */
 
+import type { AdversarialLLMFinding } from "./adversarial-helpers";
+import { isBlockingSeverity } from "./adversarial-helpers";
 import {
   ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
 } from "./semantic-evidence";
-import type { AdversarialLLMFinding } from "./adversarial-helpers";
-import { isBlockingSeverity } from "./adversarial-helpers";
 
-// Semantic filter primitives — re-exported so ops import only from this barrel.
-export { sanitizeRefModeFindings } from "./semantic-helpers";
+// Semantic filter primitives and shape helpers — re-exported so ops import only from this barrel.
+// This keeps the dependency direction: operations/ → review/finding-filters.ts → review/*
+export {
+  sanitizeRefModeFindings,
+  isBlockingSeverity,
+  toReviewFindings,
+  validateLLMShape,
+} from "./semantic-helpers";
+export type { LLMFinding, LLMResponse } from "./semantic-helpers";
 export {
   substantiateSemanticEvidence,
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
 } from "./semantic-evidence";
 export { filterByAcGroundingMinimal, filterByAcQuote } from "./ac-quote-validator";
+export type { AcQuoteRejectionCode } from "./ac-quote-validator";
 
 /**
  * Per-finding adversarial evidence substantiation.

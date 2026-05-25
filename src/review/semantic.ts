@@ -26,12 +26,7 @@ import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, trun
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
-import {
-  type LLMFinding,
-  formatFindings,
-  isBlockingSeverity,
-  toReviewFindings,
-} from "./semantic-helpers";
+import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
@@ -409,8 +404,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       durationMs: Date.now() - startTime,
     };
   }
-  // verify() has already run the full filter pipeline:
-  //   sanitizeRefModeFindings → substantiateSemanticEvidence → filterByAcGroundingMinimal → blocking split
+  // verify() has already run the full filter pipeline (sanitize → substantiate → AC-ground → split).
   // opResult.passed is authoritative (blocking.length === 0).
   // opResult.findings = accepted findings (blocking + advisory); opResult.normalizedFindings = blocking only.
   const threshold = blockingThreshold ?? "error";

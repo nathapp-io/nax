@@ -369,8 +369,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
-  // verify() has already run the full filter pipeline:
-  //   substantiateAdversarialFindings → filterByAcQuote → blocking split
+  // verify() has already run the full filter pipeline (substantiate → AC-ground → split).
   // opResult.passed is authoritative (blocking.length === 0).
   // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
   const threshold = blockingThreshold ?? "error";

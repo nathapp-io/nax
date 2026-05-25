@@ -11,13 +11,14 @@ import {
   validateAdversarialShape,
 } from "../review/adversarial-helpers";
 import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
-import { filterByAcQuote, substantiateAdversarialFindings } from "../review/finding-filters";
-import type { AcQuoteRejectionCode } from "../review/ac-quote-validator";
-import { parseRequoteResponse } from "../review/requote-response";
 import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
-} from "../review/semantic-evidence";
+  filterByAcQuote,
+  substantiateAdversarialFindings,
+} from "../review/finding-filters";
+import type { AcQuoteRejectionCode } from "../review/finding-filters";
+import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
