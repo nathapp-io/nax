@@ -246,6 +246,7 @@ export const NaxConfigSchema = z
         timeoutMs: 600_000,
         parallel: false,
         maxConcurrentSessions: 2,
+        acRegroundOnDrop: true,
         substantiation: {
           requote: true,
           maxRequotes: 5,

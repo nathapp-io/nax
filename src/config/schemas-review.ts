@@ -86,6 +86,14 @@ export const AdversarialReviewConfigSchema = z.object({
   parallel: z.boolean().default(false),
   /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
   maxConcurrentSessions: z.number().int().min(1).max(4).default(2),
+  /**
+   * When true (default), after the first adversarial pass, if all blocking findings
+   * were dropped by AC-grounding (filterByAcQuote) while no blocking findings remain,
+   * issue one reprompt asking the reviewer to re-ground their findings against the
+   * AC text. Preserves substantive reviewer judgment when failure is caused by AC-
+   * grounding formatting errors rather than model reasoning failure.
+   */
+  acRegroundOnDrop: z.boolean().default(true),
   /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
   substantiation: z
     .object({

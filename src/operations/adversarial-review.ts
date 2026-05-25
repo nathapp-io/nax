@@ -176,6 +176,42 @@ const adversarialParseRetry = (input: AdversarialReviewInput) =>
     logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
 
+function evaluateRepromptTrigger(
+  shape: ValidatedAdversarialShape,
+  input: AdversarialReviewInput,
+):
+  | { shouldReprompt: false }
+  | { shouldReprompt: true; acDropped: AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[] } {
+  if (input.adversarialConfig.acRegroundOnDrop === false) return { shouldReprompt: false };
+  if (shape.passed) return { shouldReprompt: false };
+  const { accepted, dropped } = filterByAcQuote(shape.findings, input.story.acceptanceCriteria);
+  const threshold = input.blockingThreshold ?? "error";
+  const blockingAccepted = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+  if (blockingAccepted.length > 0) return { shouldReprompt: false };
+  if (dropped.length === 0) return { shouldReprompt: false };
+  return { shouldReprompt: true, acDropped: dropped };
+}
+
+function mergeAdversarialResponses(
+  first: ValidatedAdversarialShape,
+  second: ValidatedAdversarialShape,
+): ValidatedAdversarialShape {
+  const threshold = "error";
+  const secondBlocking = second.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  if (secondBlocking.length > 0) {
+    return {
+      passed: false,
+      findings: second.findings,
+    };
+  }
+  const firstAdvisory = first.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const secondAdvisory = second.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  return {
+    passed: true,
+    findings: [...firstAdvisory, ...secondAdvisory],
+  };
+}
+
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
   kind: "run",
   name: "adversarial-review",
@@ -190,15 +226,66 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const turn = await ctx.sendWithParseRetry(initialPrompt);
     const parsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
     if (!parsed) return turn;
+
     const requoted = await requoteBlockingAdversarialFindings(parsed.findings, ctx);
-    if (!requoted.changed) return turn;
-    const passed = !requoted.findings.some((finding) =>
-      isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+    if (requoted.changed) {
+      const passed = !requoted.findings.some((finding) =>
+        isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+      );
+      return {
+        ...turn,
+        output: JSON.stringify({ passed, findings: requoted.findings }),
+        estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+      };
+    }
+
+    if (ctx.input.mode !== "ref") return turn;
+
+    const firstFindings = requoted.findings;
+    const { accepted: firstAccepted } = filterByAcQuote(firstFindings, ctx.input.story.acceptanceCriteria);
+    const firstShape: ValidatedAdversarialShape = {
+      passed: parsed.passed,
+      findings: firstFindings,
+    };
+    const trigger = evaluateRepromptTrigger(firstShape, ctx.input);
+    if (!trigger.shouldReprompt) return turn;
+
+    const repromptPrompt = AdversarialReviewPromptBuilder.regroundDroppedFindings({
+      drops: trigger.acDropped,
+      acceptanceCriteria: ctx.input.story.acceptanceCriteria,
+    });
+    const secondTurn = await ctx.send(repromptPrompt);
+    const secondParsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
+    if (!secondParsed) return turn;
+
+    const { accepted: secondAccepted } = filterByAcQuote(secondParsed.findings, ctx.input.story.acceptanceCriteria);
+    const secondBlocking = secondAccepted.filter((f) =>
+      isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
     );
+
+    if (secondBlocking.length > 0) {
+      return {
+        ...turn,
+        output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
+        estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+      };
+    }
+
+    if (secondAccepted.length === 0) {
+      return turn;
+    }
+
+    const firstAdvisory = firstAccepted.filter(
+      (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
+    );
+    const secondAdvisory = secondAccepted.filter(
+      (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
+    );
+
     return {
       ...turn,
-      output: JSON.stringify({ passed, findings: requoted.findings }),
-      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+      output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
+      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
     };
   },
   build(input, _ctx) {
