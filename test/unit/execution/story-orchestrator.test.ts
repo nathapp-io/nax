@@ -30,7 +30,7 @@ import {
 } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
-import type { ReviewCheckResult } from "@/findings";
+import type { ReviewCheckResult, Finding } from "@/findings";
 import { NaxError } from "@/errors";
 import { _storyOrchestratorDeps } from "@/execution";
 
@@ -998,7 +998,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: unknown[] | null = null;
+    let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
       findings: [
@@ -1043,11 +1043,11 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: unknown[] | null = null;
+    let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
     const verOp = makeDeterministicOp("verifier", {
       success: false,
-      findings: [{ source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
+      findings: [{ source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
     });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1072,8 +1072,9 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
       await plan.run();
 
       expect(capturedCycleFindings).not.toBeNull();
-      expect(capturedCycleFindings).toEqual([
-        { source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
+      // Non-null assertion: TypeScript CFA doesn't track closure assignments, so we assert explicitly.
+      expect(capturedCycleFindings!).toEqual([
+        { source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
       ]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;

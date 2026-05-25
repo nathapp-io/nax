@@ -59,6 +59,7 @@ const LINT_FINDING: Finding = {
   source: "lint",
   tool: "biome",
   severity: "error",
+  category: "style",
   message: "Unused variable",
   file: "src/foo.ts",
   line: 5,
@@ -67,6 +68,7 @@ const LINT_FINDING: Finding = {
 const TEST_RUNNER_FINDING: Finding = {
   source: "test-runner",
   severity: "error",
+  category: "failed-test",
   message: "Test failed",
   file: "test/foo.test.ts",
   line: 10,
