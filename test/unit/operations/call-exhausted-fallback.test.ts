@@ -207,6 +207,50 @@ describe("callOp empty-output — AC6b: string fallback → CALL_OP_INVALID_FALL
 });
 
 // ---------------------------------------------------------------------------
+// AC6c/d: boolean and number fallbacks → CALL_OP_INVALID_FALLBACK
+// ---------------------------------------------------------------------------
+
+describe("callOp empty-output — AC6c: boolean fallback → CALL_OP_INVALID_FALLBACK", () => {
+  test("throws CALL_OP_INVALID_FALLBACK when exhaustedFallback returns true", async () => {
+    const agentManager = makeEmptyOutputAgentManager(0);
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const op = makeOpWithFallback("bool-fallback-op", true);
+
+    let thrown: { code?: string } | null = null;
+    try {
+      await callOp(makeCallCtx(runtime), op, "hello");
+    } catch (err) {
+      thrown = err as { code?: string };
+    }
+
+    expect(thrown).not.toBeNull();
+    expect(thrown?.code).toBe("CALL_OP_INVALID_FALLBACK");
+  });
+});
+
+describe("callOp empty-output — AC6d: number fallback → CALL_OP_INVALID_FALLBACK", () => {
+  test("throws CALL_OP_INVALID_FALLBACK when exhaustedFallback returns a number", async () => {
+    const agentManager = makeEmptyOutputAgentManager(0);
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const op = makeOpWithFallback("number-fallback-op", 42);
+
+    let thrown: { code?: string } | null = null;
+    try {
+      await callOp(makeCallCtx(runtime), op, "hello");
+    } catch (err) {
+      thrown = err as { code?: string };
+    }
+
+    expect(thrown).not.toBeNull();
+    expect(thrown?.code).toBe("CALL_OP_INVALID_FALLBACK");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC1 cost-merging: cumulative cost merged onto fallback
 // ---------------------------------------------------------------------------
 

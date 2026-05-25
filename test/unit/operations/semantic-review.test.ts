@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Iteration } from "../../../src/findings";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
-import { callOp } from "../../../src/operations";
+import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
+import { callOp } from "../../../src/operations";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -10,7 +11,6 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { semanticReviewOp } from "../../../src/operations/semantic-review";
 
 const SAMPLE_STORY = {
   id: "STORY-001",

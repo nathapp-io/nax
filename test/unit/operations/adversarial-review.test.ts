@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
+import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
 import { callOp } from "../../../src/operations";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -9,7 +10,6 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 
 const SAMPLE_STORY = {
   id: "STORY-002",
