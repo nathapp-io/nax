@@ -2,6 +2,7 @@ import type { AutofixConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
+import { findingsToFailedChecks } from "./_finding-to-check";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofix-implementer";
 import { implementerRectifyOp } from "./autofix-implementer";
 
@@ -14,8 +15,8 @@ export function makeAutofixImplementerStrategy(
     name: "autofix-implementer",
     appliesTo: (f) => f.fixTarget === "source" && IMPLEMENTER_SOURCES.has(f.source),
     fixOp: implementerRectifyOp,
-    buildInput: (_findings, _prior, _cycleCtx): AutofixImplementerInput => ({
-      failedChecks: [],
+    buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
+      failedChecks: findingsToFailedChecks(findings),
       story,
     }),
     extractApplied: (output) => ({

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
+import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixImplementerStrategy } from "@/operations";
+import { makeStory } from "@test/helpers";
 
 const mockCtx = {} as any;
 
@@ -67,5 +69,22 @@ describe("makeAutofixImplementerStrategy", () => {
       const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
+  });
+
+  test("AC2.3: buildInput converts semantic finding to ReviewCheckResult", () => {
+    const story = makeStory();
+    const strategy = makeAutofixImplementerStrategy(story);
+    const semanticFinding: Finding = {
+      source: "semantic-review",
+      severity: "error",
+      category: "",
+      message: "Fails AC-001",
+      file: "src/foo.ts",
+      line: 5,
+    };
+    const input = strategy.buildInput([semanticFinding], [], {} as FixCycleContext);
+    expect(input.failedChecks).toHaveLength(1);
+    expect(input.failedChecks[0]?.check).toBe("semantic");
+    expect(input.failedChecks[0]?.findings).toEqual([semanticFinding]);
   });
 });

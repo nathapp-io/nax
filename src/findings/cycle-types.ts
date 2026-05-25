@@ -175,8 +175,13 @@ export interface FixCycle<F extends Finding> {
    * Single validator for the cycle. Runs once per iteration, after all co-run
    * strategies complete. On throw, retried config.validatorRetries times before
    * exiting with "validator-error".
+   *
+   * `strategiesRun` is an optional list of strategy names that just ran in this
+   * iteration. Implementations may use it to scope re-validation to only the
+   * phases relevant to those strategies (e.g. skipping the full test suite when
+   * only a lint-fix strategy ran).
    */
-  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<F[]>;
+  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] }) => Promise<F[]>;
   config: FixCycleConfig;
   /**
    * Optional verdict string used to bias strategy selection when findings is

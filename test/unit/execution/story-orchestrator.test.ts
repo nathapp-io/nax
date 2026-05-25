@@ -30,7 +30,7 @@ import {
 } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
-import type { ReviewCheckResult } from "@/findings";
+import type { ReviewCheckResult, Finding } from "@/findings";
 import { NaxError } from "@/errors";
 import { _storyOrchestratorDeps } from "@/execution";
 
@@ -998,7 +998,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: unknown[] | null = null;
+    let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", {
       success: false,
       findings: [
@@ -1043,11 +1043,11 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
-    let capturedCycleFindings: unknown[] | null = null;
+    let capturedCycleFindings: Finding[] | null = null;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: true });
     const verOp = makeDeterministicOp("verifier", {
       success: false,
-      findings: [{ source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
+      findings: [{ source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" }],
     });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1072,8 +1072,9 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
       await plan.run();
 
       expect(capturedCycleFindings).not.toBeNull();
-      expect(capturedCycleFindings).toEqual([
-        { source: "review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
+      // Non-null assertion: TypeScript CFA doesn't track closure assignments, so we assert explicitly.
+      expect(capturedCycleFindings!).toEqual([
+        { source: "semantic-review", category: "semantic", severity: "error", message: "review fail", rule: "r", file: "f.ts" },
       ]);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
@@ -1133,11 +1134,11 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
   });
 });
 
-describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skips gate", () => {
+describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode skips gate", () => {
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
 
-  test("AC-4: validate re-runs BOTH gate and verifier (mode=full)", async () => {
+  test("AC-4: validate re-runs gate (mode=full) but never re-runs verifier (one-shot TDD isolation)", async () => {
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -1175,8 +1176,12 @@ describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skip
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
         await capturedCycle.validate(ctx, { mode: "full" });
+        // Gate still runs during validate (keeps phaseOutputs current for applyPostRunInspection).
         expect(gateRunCount.n).toBeGreaterThan(beforeGate);
-        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier);
+        // Verifier is NEVER re-run inside rectification (Patch 3 / Defect C): its TDD-isolation
+        // job is one-shot, anchored to the story-start git ref. The routing layer partitions
+        // source vs. test edits, so re-dispatching the verifier asks a question already answered.
+        expect(verifierRunCount.n).toBe(beforeVerifier);
       }
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
@@ -1222,8 +1227,8 @@ describe("AC-4 + AC-5: validate callback re-runs gate + verifier, lite-mode skip
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
         await capturedCycle.validate(ctx, { mode: "lite" });
-        expect(gateRunCount.n).toBe(beforeGate);         // gate NOT re-run
-        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier); // verifier IS re-run
+        expect(gateRunCount.n).toBe(beforeGate);     // lite mode: gate skipped
+        expect(verifierRunCount.n).toBe(beforeVerifier); // Patch 3: verifier never re-run
       }
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;

@@ -225,17 +225,43 @@ function extractPhaseFindings(output: unknown): Finding[] {
   return success ? [] : findings;
 }
 
+/**
+ * Verifier-as-SSOT: when the verifier explicitly passed, full-suite-gate
+ * failures represent unrelated regressions that this story did not cause.
+ * Excluded from rectification (mirrors the carve-out in ExecutionPlan.run
+ * success aggregation and post-run.ts:deriveFailureCategory).
+ */
+function shouldSkipPhaseForRectification(
+  phase: InternalPhase,
+  state: InternalBuildState,
+  phaseOutputs: Record<string, unknown>,
+): boolean {
+  if (phase.kind !== "full-suite-gate") return false;
+  const verifierName = state.verifier?.slot.op.name;
+  if (!verifierName) return false;
+  return phaseExplicitlyPassed(phaseOutputs[verifierName]);
+}
+
 function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
   phases: readonly InternalPhase[],
+  state: InternalBuildState,
 ): Finding[] {
   const findings: Finding[] = [];
   for (const phase of phases) {
+    if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
     findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
   }
   return findings;
 }
 
+/**
+ * Collect all phases that participate in the rectification validation sweep.
+ * NOTE: the verifier is intentionally included here so its output stays current
+ * in phaseOutputs (consumed by shouldSkipPhaseForRectification). However,
+ * phasesToRevalidate() is the SSOT that ensures the verifier is NEVER re-dispatched
+ * during rectification validate iterations — it strips kind="verifier" unconditionally.
+ */
 function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
   return [
     state.fullSuiteGate,
@@ -246,6 +272,55 @@ function collectRectificationPhases(state: InternalBuildState): InternalPhase[] 
     state.semanticReview,
     state.adversarialReview,
   ].filter((phase): phase is InternalPhase => phase !== undefined);
+}
+
+const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
+  // Mechanical fixes are AST-preserving (import-sort, formatting, unused-var removal).
+  // They cannot introduce semantic regressions, so only lint-check needs re-running.
+  // If a mechanical fix strategy ever edits logic (not just style), widen this set.
+  "mechanical-lintfix": ["lint-check"],
+  "mechanical-formatfix": ["lint-check"],
+  "autofix-implementer": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verify-scoped",
+    "semantic-review",
+    "adversarial-review",
+  ],
+  "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "adversarial-review"],
+  "full-suite-rectify": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "semantic-review"],
+};
+
+/**
+ * Determine which phases to re-run after a fix iteration.
+ * Verifier is always excluded — its TDD-isolation job is one-shot,
+ * anchored to the story-start git ref. Re-dispatching it inside
+ * rectification asks a question the routing layer has already answered.
+ *
+ * Falls back to all non-verifier phases when:
+ * - strategiesRun is undefined/empty (conservative default)
+ * - any strategy name is unknown to the mapping (plugin-supplied strategy)
+ */
+function phasesToRevalidate(
+  strategiesRun: readonly string[] | undefined,
+  allPhases: readonly InternalPhase[],
+): readonly InternalPhase[] {
+  // Always exclude verifier — isolation is one-shot.
+  const sourceFiltered = allPhases.filter((p) => p.kind !== "verifier");
+
+  if (!strategiesRun || strategiesRun.length === 0) return sourceFiltered;
+
+  const unknown = strategiesRun.some((name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined);
+  if (unknown) return sourceFiltered;
+
+  const needed = new Set<PhaseKind>();
+  for (const name of strategiesRun) {
+    for (const kind of STRATEGY_TO_REVALIDATION_PHASES[name] ?? []) {
+      needed.add(kind);
+    }
+  }
+  return sourceFiltered.filter((p) => needed.has(p.kind));
 }
 
 function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
@@ -471,7 +546,7 @@ async function runRectification(
     return {};
   }
 
-  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases);
+  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases, state);
   if (initialFindings.length === 0) {
     return {};
   }
@@ -501,13 +576,23 @@ async function runRectification(
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return [];
-      const lite = opts?.mode === "lite";
+      // opts is required by the FixCycle.validate contract but guard defensively for
+      // plugin-supplied cycles that may call validate without opts (legacy shape).
+      const lite = (opts?.mode ?? "full") === "lite";
+      const phases = phasesToRevalidate(opts?.strategiesRun, validationPhases);
+      getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
+        storyId: ctx.storyId,
+        mode: opts?.mode ?? "full",
+        strategiesRun: opts?.strategiesRun,
+        phasesSelected: phases.map((p) => p.kind),
+      });
       const findings: Finding[] = [];
-      for (const phase of validationPhases) {
+      for (const phase of phases) {
         if (lite && phase.kind === "full-suite-gate") {
           continue;
         }
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
+        if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
         findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
       }
       return findings;

@@ -254,21 +254,21 @@ callOp: callOpMock as unknown as CallOpFn});
 
 describe("runFixCycle — skip validate on final allowed attempt", () => {
   test("calls validate with { mode: 'lite' } when single or all co-run strategies exhaust caps after a fix", async () => {
-    const validateCalls1: Array<{ mode: "full" | "lite" }> = [];
+    const validateCalls1: Array<{ mode: "full" | "lite"; strategiesRun?: readonly string[] }> = [];
     const s1 = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
     const r1 = await runFixCycle(makeCycle([lintA], [s1], async (_ctx, opts) => { validateCalls1.push(opts); return [lintA]; }), makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
 callOp: makeCallOpMock() as unknown as CallOpFn});
     expect(validateCalls1).toHaveLength(1);
-    expect(validateCalls1[0]).toEqual({ mode: "lite" });
+    expect(validateCalls1[0]).toMatchObject({ mode: "lite", strategiesRun: ["lint-fix"] });
     expect(r1.exitReason).toBe("max-attempts-per-strategy");
 
-    const validateCalls2: Array<{ mode: "full" | "lite" }> = [];
+    const validateCalls2: Array<{ mode: "full" | "lite"; strategiesRun?: readonly string[] }> = [];
     const sA = makeStrategy({ name: "fix-a", maxAttempts: 1, coRun: "co-run-sequential" });
     const sB = makeStrategy({ name: "fix-b", maxAttempts: 1, coRun: "co-run-sequential" });
     const r2 = await runFixCycle(makeCycle([lintA], [sA, sB], async (_ctx, opts) => { validateCalls2.push(opts); return [lintA]; }), makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
 callOp: makeCallOpMock() as unknown as CallOpFn});
     expect(validateCalls2).toHaveLength(1);
-    expect(validateCalls2[0]).toEqual({ mode: "lite" });
+    expect(validateCalls2[0]).toMatchObject({ mode: "lite", strategiesRun: ["fix-a", "fix-b"] });
     expect(r2.exitReason).toBe("max-attempts-per-strategy");
   });
 });
@@ -435,7 +435,7 @@ callOp: callOpMock as unknown as CallOpFn});
 
 describe("runFixCycle — validate mode opts", () => {
   test("passes { mode: 'full' } to validate in non-terminal path", async () => {
-    const validateCalls: Array<{ mode: "full" | "lite" }> = [];
+    const validateCalls: Array<{ mode: "full" | "lite"; strategiesRun?: readonly string[] }> = [];
     const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 2 });
     const cycle = makeCycle([lintA], [strategy], async (_ctx, opts) => {
       validateCalls.push(opts);
@@ -448,7 +448,7 @@ callOp: callOpMock as unknown as CallOpFn});
 
     expect(result.exitReason).toBe("resolved");
     expect(validateCalls).toHaveLength(1);
-    expect(validateCalls[0]).toEqual({ mode: "full" });
+    expect(validateCalls[0]).toMatchObject({ mode: "full", strategiesRun: ["lint-fix"] });
   });
 
 });
