@@ -178,7 +178,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
       finalFindings: [LINT_FINDING],
       exitReason,
       costUsd: 0,
-    }));
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     const ctx = makeCtx();
     const plan = makePlanWithRectification(ctx);
     const result = await plan.run();
@@ -192,7 +192,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
       finalFindings: findings,
       exitReason: "max-attempts-total" as FixCycleExitReason,
       costUsd: 0,
-    }));
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     const ctx = makeCtx();
     const plan = makePlanWithRectification(ctx);
     const result = await plan.run();
@@ -208,7 +208,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
       finalFindings: findings,
       exitReason: "bail-when" as FixCycleExitReason,
       costUsd: 0,
-    }));
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
     const ctx = makeCtx();
     const plan = makePlanWithRectification(ctx);
     const result = await plan.run();
@@ -257,7 +257,7 @@ const mockFullSuiteGateOp: RunOperation<
   kind: "run",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel,
+  config: testSel as any,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "gate", overridable: false },
@@ -269,6 +269,7 @@ const mockFullSuiteGateOp: RunOperation<
 const SEMANTIC_FINDING: Finding = {
   source: "semantic-review",
   severity: "error",
+  category: "",
   message: "Does not implement AC-001",
   file: "src/foo.ts",
   line: 5,
@@ -277,6 +278,7 @@ const SEMANTIC_FINDING: Finding = {
 const VERIFIER_FINDING: Finding = {
   source: "test-runner",
   severity: "error",
+  category: "",
   message: "Verifier test failed",
   file: "test/verifier.test.ts",
   line: 1,

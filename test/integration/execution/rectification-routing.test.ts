@@ -29,7 +29,7 @@ const mockImplementerOp: RunOperation<{ story: string }, { success: boolean }, t
   kind: "run",
   name: "implementer",
   stage: "run",
-  config: testSel,
+  config: testSel as any,
   session: { role: "implementer", lifetime: "warm" },
   build: () => ({
     role: { id: "r", content: "impl", overridable: false },
@@ -46,7 +46,7 @@ const mockVerifierOp: RunOperation<
   kind: "run",
   name: "verifier",
   stage: "verify",
-  config: testSel,
+  config: testSel as any,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "verify", overridable: false },
@@ -63,7 +63,7 @@ const mockFullSuiteGateOp: RunOperation<
   kind: "run",
   name: "full-suite-gate",
   stage: "verify",
-  config: testSel,
+  config: testSel as any,
   session: { role: "verifier", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "gate", overridable: false },
@@ -80,7 +80,7 @@ const mockSemanticReviewOp: RunOperation<
   kind: "run",
   name: "semantic-review",
   stage: "review",
-  config: testSel,
+  config: testSel as any,
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   build: () => ({
     role: { id: "r", content: "review", overridable: false },
@@ -109,6 +109,7 @@ function makeSemanticFindings(count: number): Finding[] {
   return Array.from({ length: count }, (_, i) => ({
     source: "semantic-review" as const,
     severity: "error" as const,
+    category: "",
     message: `Does not implement AC-00${i + 1}`,
     file: "src/foo.ts",
     line: i + 1,

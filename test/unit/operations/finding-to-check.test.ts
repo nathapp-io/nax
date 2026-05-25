@@ -8,6 +8,7 @@ import type { Finding } from "@/findings/types";
 const SEMANTIC_FINDING: Finding = {
   source: "semantic-review",
   severity: "error",
+  category: "",
   message: "Does not implement AC-001",
   file: "src/foo.ts",
   line: 10,
@@ -16,6 +17,7 @@ const SEMANTIC_FINDING: Finding = {
 const ADVERSARIAL_FINDING: Finding = {
   source: "adversarial-review",
   severity: "error",
+  category: "",
   message: "Test coverage gap",
   file: "test/foo.test.ts",
   line: 5,
@@ -24,6 +26,7 @@ const ADVERSARIAL_FINDING: Finding = {
 const LINT_FINDING: Finding = {
   source: "lint",
   severity: "error",
+  category: "",
   message: "Unused variable",
   file: "src/bar.ts",
   line: 3,
@@ -32,6 +35,7 @@ const LINT_FINDING: Finding = {
 const TYPECHECK_FINDING: Finding = {
   source: "typecheck",
   severity: "error",
+  category: "",
   message: "Type mismatch",
   file: "src/baz.ts",
   line: 7,
@@ -40,6 +44,7 @@ const TYPECHECK_FINDING: Finding = {
 const TEST_RUNNER_FINDING: Finding = {
   source: "test-runner",
   severity: "error",
+  category: "",
   message: "Test failed",
   file: "test/baz.test.ts",
   line: 1,

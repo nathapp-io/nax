@@ -77,6 +77,7 @@ describe("makeAutofixImplementerStrategy", () => {
     const semanticFinding: Finding = {
       source: "semantic-review",
       severity: "error",
+      category: "",
       message: "Fails AC-001",
       file: "src/foo.ts",
       line: 5,
