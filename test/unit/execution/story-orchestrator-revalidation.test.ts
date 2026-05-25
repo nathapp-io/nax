@@ -75,6 +75,7 @@ const LINT_FINDING: Finding = {
   message: "Unused variable",
   file: "src/foo.ts",
   line: 5,
+  category: "",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -290,7 +290,7 @@ describe("AC3.8: verifier op dispatched exactly once — never re-run during val
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Invoke validate with autofix-implementer strategiesRun
-    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
@@ -361,7 +361,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     }) as typeof _storyOrchestratorDeps.callOp;
 
     // Simulate: after an autofix-implementer iteration, call validate
-    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+    await (capturedCycle as unknown as FixCycle<Finding>).validate(capturedCtx as unknown as FixCycleContext, {
       mode: "full",
       strategiesRun: ["autofix-implementer"],
     });
