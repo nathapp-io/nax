@@ -405,8 +405,9 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     };
   }
   // verify() has already run the full filter pipeline (sanitize → substantiate → AC-ground → split).
-  // opResult.passed is authoritative (blocking.length === 0).
   // opResult.findings = accepted findings (blocking + advisory); opResult.normalizedFindings = blocking only.
+  // opResult.passed preserves the model verdict after filtering so wrappers can
+  // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
   const allFindings = opResult.findings as LLMFinding[];
   const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
@@ -425,7 +426,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
 
   const durationMs = Date.now() - startTime;
 
-  if (!opResult.passed) {
+  if (blockingFindings.length > 0) {
     logger?.warn("review", `Semantic review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
@@ -473,7 +474,41 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     };
   }
 
-  // passed — either all findings were advisory or there were no findings at all
+  if (!opResult.passed && allFindings.length === 0) {
+    logger?.warn("review", "Semantic review fail-closed: blocking findings dropped (acIndex invalid)", {
+      storyId: story.id,
+      durationMs,
+    });
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold: threshold,
+      result: { passed: false, findings: [] },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
+          : undefined,
+    });
+    return {
+      check: "semantic",
+      success: false,
+      command: "",
+      exitCode: 1,
+      output:
+        'Semantic review failed: blocking finding(s) were dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution.',
+      durationMs,
+      advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
+      cost: llmCost,
+    };
+  }
+
+  // passed — either the model passed with no blocking findings, or there were no findings at all
   logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
   recordSemanticAudit({
     runtime,

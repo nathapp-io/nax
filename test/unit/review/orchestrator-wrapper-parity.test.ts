@@ -132,7 +132,7 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
     });
   });
 
-  test("advisory-only run: passed becomes true and normalizedFindings is empty", async () => {
+  test("advisory-only run: passed:false is preserved and normalizedFindings is empty", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: SemanticReviewInput = {
@@ -168,8 +168,8 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
 
-      // verify() overrides LLM's passed:false — no blocking findings → passed.
-      expect(result!.passed).toBe(true);
+      // verify() preserves the LLM's passed:false even when only advisory findings remain.
+      expect(result!.passed).toBe(false);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });
@@ -213,8 +213,8 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
       // Dropped by AC-grounding filter — should not reach normalizedFindings.
       expect(result!.findings).toHaveLength(0);
       expect(result!.normalizedFindings).toHaveLength(0);
-      // verify() is authoritative — no blocking findings → passed.
-      expect(result!.passed).toBe(true);
+      // verify() preserves the failure signal so the wrapper can fail-closed.
+      expect(result!.passed).toBe(false);
     });
   });
 });
@@ -285,7 +285,7 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
     });
   });
 
-  test("advisory-only run: verify() overrides passed:false — wrapper sees success:true", async () => {
+  test("advisory-only run: verify() preserves passed:false for wrapper fail-closed handling", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeAdversarialVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -323,13 +323,13 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
       const result = await adversarialReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
 
-      // verify() is authoritative — no blocking findings → passed overrides LLM.
-      expect(result!.passed).toBe(true);
+      // verify() preserves the LLM's failure signal even when only advisory findings remain.
+      expect(result!.passed).toBe(false);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });
 
-  test("AC-dropped blocking finding → wrapper sees empty normalizedFindings and passed:true", async () => {
+  test("AC-dropped blocking finding → wrapper sees empty normalizedFindings and passed:false", async () => {
     return withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(
@@ -376,8 +376,8 @@ describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adver
       const result = await adversarialReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
 
-      // AC-dropped → verify() returns passed:true (no blocking findings survived).
-      expect(result!.passed).toBe(true);
+      // AC-dropped → verify() preserves passed:false so the wrapper can fail-closed.
+      expect(result!.passed).toBe(false);
       expect(result!.findings).toHaveLength(0);
       expect(result!.normalizedFindings).toHaveLength(0);
       // The drop is tracked in acDropped for counterfactual telemetry.

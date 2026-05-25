@@ -287,12 +287,12 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
-  // verify() is authoritative: passed = blocking.length === 0.
-  // When all blocking findings are AC-dropped (acIndex missing), result is a clean pass.
-  test("passes when all blocking findings are dropped due to missing acIndex (verify authoritative)", async () => {
+  // Spec behavior: keep fail-closed semantics when the model said passed:false
+  // but every blocking finding was dropped by AC grounding.
+  test("fails closed when all blocking findings are dropped due to missing acIndex", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    // No acIndex → filterByAcGroundingMinimal drops; verify() says passed:true
-    // because no blocking findings survived the filter pipeline.
+    // No acIndex → filterByAcGroundingMinimal drops; verify() preserves
+    // passed:false so the wrapper can fail-closed.
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -309,8 +309,8 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
 
     const result = await callRunSemanticReview(llmResponse);
 
-    // verify() overrides the raw LLM passed:false — no blocking findings survived → clean pass.
-    expect(result.success).toBe(true);
-    expect(result.exitCode).toBe(0);
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("acIndex was missing or out of range");
   });
 });

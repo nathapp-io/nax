@@ -165,10 +165,11 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const { accepted } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
 
     // 4. Split blocking vs advisory; normalizedFindings ⊂ blocking.
-    //    verify() is authoritative: if no blocking findings survive the pipeline,
-    //    the result is passed regardless of the LLM's prior verdict.
+    //    Preserve the model's failure signal: filtered findings may remove
+    //    blockers, but wrappers still fail-closed when the original verdict
+    //    was passed:false and nothing blocking survives.
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
-    const passed = blocking.length === 0;
+    const passed = parsed.passed && blocking.length === 0;
 
     return {
       ...parsed,

@@ -181,7 +181,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
     });
   });
 
-  test("blocking/advisory split is correct — passed becomes true when all blocking are gone", async () => {
+  test("blocking/advisory split preserves passed:false when only advisory findings remain", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
@@ -206,7 +206,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       });
       const result = await adversarialReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true);
+      expect(result!.passed).toBe(false);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });

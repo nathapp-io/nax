@@ -159,7 +159,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
     });
   });
 
-  test("blocking/advisory split is correct — passed becomes true when all blocking are gone", async () => {
+  test("blocking/advisory split preserves passed:false when only advisory findings remain", async () => {
     return withTempDir(async (workdir) => {
       const ctx = makeVerifyCtx();
       const input: SemanticReviewInput = {
@@ -184,7 +184,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
       });
       const result = await semanticReviewOp.verify!(parsed, input, ctx);
       expect(result).not.toBeNull();
-      expect(result!.passed).toBe(true);
+      expect(result!.passed).toBe(false);
       expect(result!.normalizedFindings).toHaveLength(0);
     });
   });

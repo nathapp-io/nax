@@ -260,9 +260,10 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
 
     // 3. Split blocking vs advisory; normalizedFindings ⊂ blocking.
-    //    verify() is authoritative: if no blocking findings survive, result is passed.
+    //    Preserve the model's failure signal so wrappers can still fail-closed
+    //    when passed:false survives filtering without any remaining blockers.
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
-    const passed = blocking.length === 0;
+    const passed = parsed.passed && blocking.length === 0;
 
     return {
       ...parsed,

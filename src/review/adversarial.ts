@@ -370,8 +370,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     };
   }
   // verify() has already run the full filter pipeline (substantiate → AC-ground → split).
-  // opResult.passed is authoritative (blocking.length === 0).
   // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
+  // opResult.passed preserves the model verdict after filtering so wrappers can
+  // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
   const allFindings = opResult.findings as AdversarialLLMFinding[];
   const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
@@ -452,7 +453,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
 
   const durationMs = Date.now() - startTime;
 
-  if (!opResult.passed) {
+  if (blockingFindings.length > 0) {
     logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
@@ -503,7 +504,49 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     };
   }
 
-  // passed — either all findings were advisory or there were no findings at all
+  if (!opResult.passed && acDropped.length > 0) {
+    logger?.warn("review", "Adversarial review fail-closed: blocking findings dropped as ungrounded", {
+      storyId: story.id,
+      durationMs,
+      droppedCount: acDropped.length,
+      dropCodes: acDropped.map((d) => d.code),
+    });
+    const dropSummary = acDropped
+      .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
+      .join("\n");
+    recordAdversarialAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold: threshold,
+      result: { passed: false, findings: [] },
+      advisoryFindings:
+        advisoryFindings.length > 0
+          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
+          : undefined,
+      diffAvailable,
+      adversarialDropAnalysis,
+      adversarialAcceptAnalysis: [],
+    });
+    return {
+      check: "adversarial",
+      success: false,
+      command: "",
+      exitCode: 1,
+      output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Drops:\n\n${dropSummary}`,
+      durationMs,
+      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
+      cost: llmCost,
+    };
+  }
+
+  // passed — either the model passed with no blocking findings, or only advisory
+  // findings remained after filtering and there were no AC-grounding drops.
   logger?.info("review", "Adversarial review passed", { storyId: story.id, durationMs });
   recordAdversarialAudit({
     runtime,

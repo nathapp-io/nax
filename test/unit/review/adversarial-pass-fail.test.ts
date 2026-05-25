@@ -300,11 +300,8 @@ describe("runAdversarialReview — non-blocking only findings", () => {
 });
 
 // ---------------------------------------------------------------------------
-// verify() is authoritative: AC-dropped findings → clean pass
-//
-// When all blocking findings are dropped by the AC-grounding filter, verify()
-// returns passed:true (blocking.length === 0 is the only truth).
-// The raw LLM passed:false is overridden — the filter pipeline is the SSOT.
+// Spec behavior: keep fail-closed semantics when the model said passed:false
+// and every blocking finding was dropped by AC grounding.
 // ---------------------------------------------------------------------------
 
 const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
@@ -328,7 +325,7 @@ const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
   ],
 });
 
-describe("runAdversarialReview — drops + verify() authoritative pass", () => {
+describe("runAdversarialReview — drops + fail-closed", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -336,17 +333,16 @@ describe("runAdversarialReview — drops + verify() authoritative pass", () => {
 
   afterEach(restoreAllDeps);
 
-  test("passes when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
+  test("fails closed when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    // verify() is authoritative: passed = blocking.length === 0.
-    // The raw LLM passed:false is irrelevant once the filter pipeline drops all findings.
-    expect(result.success).toBe(true);
-    expect(result.exitCode).toBe(0);
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
   });
 
-  test("output indicates a clean pass (no blocking findings survived)", async () => {
+  test("output names the drop as the failure reason", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    expect(result.output).toContain("passed");
+    expect(result.output).toContain("dropped as ungrounded");
+    expect(result.output).toContain("ExtendedPrismaClient");
   });
 });
 
