@@ -144,7 +144,33 @@ describe("adversarialReviewOp.parse()", () => {
     const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(false);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].issue).toBe("error swallowed");
+    expect((result.findings[0] as { issue: string }).issue).toBe("error swallowed");
+  });
+  test("normalizedFindings tags each finding with source:'adversarial-review' for cycle routing", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({
+      passed: false,
+      findings: [
+        { severity: "error", category: "logic-bug", file: "src/a.ts", line: 1, issue: "x", suggestion: "y" },
+        { severity: "error", category: "test-gap", file: "test/a.test.ts", line: 9, issue: "z", suggestion: "w" },
+      ],
+    });
+    const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.normalizedFindings).toHaveLength(2);
+    expect(result.normalizedFindings.every((f) => f.source === "adversarial-review")).toBe(true);
+    // test-gap findings target tests so the test-writer strategy picks them up.
+    expect(result.normalizedFindings[0]?.fixTarget).toBeUndefined();
+    expect(result.normalizedFindings[1]?.fixTarget).toBe("test");
+    expect(result.normalizedFindings[0]?.message).toBe("x");
+  });
+  test("normalizedFindings is [] on looksLikeFail / no-findings paths", () => {
+    const ctx = makeBuildCtx();
+    expect(
+      adversarialReviewOp.parse('{"passed":false}', SAMPLE_INPUT, ctx).normalizedFindings,
+    ).toEqual([]);
+    expect(
+      adversarialReviewOp.parse(JSON.stringify({ passed: true, findings: [] }), SAMPLE_INPUT, ctx).normalizedFindings,
+    ).toEqual([]);
   });
   test("throws ParseValidationError on unparseable output (triggers retry)", () => {
     const ctx = makeBuildCtx();

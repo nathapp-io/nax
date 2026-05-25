@@ -140,7 +140,7 @@ describe("semanticReviewOp.parse()", () => {
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(false);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].severity).toBe("error");
+    expect((result.findings[0] as { severity: string }).severity).toBe("error");
   });
   test("returns fail-open for unparseable output (retry handled in hopBody, not callOp parse)", () => {
     const ctx = makeBuildCtx();
@@ -160,6 +160,30 @@ describe("semanticReviewOp.parse()", () => {
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();
+  });
+  test("normalizedFindings tags each finding with source:'semantic-review' for cycle routing", () => {
+    const ctx = makeBuildCtx();
+    const json = JSON.stringify({
+      passed: false,
+      findings: [
+        { severity: "error", file: "src/a.ts", line: 1, issue: "x", suggestion: "y", acIndex: 1 },
+        { severity: "error", file: "src/b.ts", line: 2, issue: "z", suggestion: "w", acIndex: 2 },
+      ],
+    });
+    const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
+    expect(result.normalizedFindings).toHaveLength(2);
+    expect(result.normalizedFindings.every((f) => f.source === "semantic-review")).toBe(true);
+    expect(result.normalizedFindings.every((f) => f.fixTarget === "source")).toBe(true);
+    // LLM-shape `issue` projected onto Finding `message`
+    expect(result.normalizedFindings[0]?.message).toBe("x");
+  });
+  test("normalizedFindings is [] on fail-open / looksLikeFail / no-findings paths", () => {
+    const ctx = makeBuildCtx();
+    expect(semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx).normalizedFindings).toEqual([]);
+    expect(semanticReviewOp.parse('{"passed":false}', SAMPLE_INPUT, ctx).normalizedFindings).toEqual([]);
+    expect(
+      semanticReviewOp.parse(JSON.stringify({ passed: true, findings: [] }), SAMPLE_INPUT, ctx).normalizedFindings,
+    ).toEqual([]);
   });
 });
 

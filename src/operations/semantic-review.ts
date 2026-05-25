@@ -1,12 +1,12 @@
 import { makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
-import type { Iteration } from "../findings";
+import type { Finding, Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
 import { parseRequoteResponse } from "../review/requote-response";
 import { checkFindingEvidence, downgradeUnsubstantiatedFinding } from "../review/semantic-evidence";
-import { type LLMFinding, isBlockingSeverity, validateLLMShape } from "../review/semantic-helpers";
+import { type LLMFinding, isBlockingSeverity, toReviewFindings, validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
@@ -31,7 +31,14 @@ export interface SemanticReviewInput {
 
 export interface SemanticReviewOutput {
   passed: boolean;
+  /** Raw LLM-shape findings (LLMFinding[]). Consumed by `src/review/semantic.ts`. */
   findings: unknown[];
+  /**
+   * Source-tagged Finding[] (`source: "semantic-review"`), used by the rectification
+   * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Populated whenever
+   * `findings` came from a successful LLM parse; empty for fail-open / looksLikeFail.
+   */
+  normalizedFindings: Finding[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false` —
@@ -41,7 +48,7 @@ export interface SemanticReviewOutput {
   looksLikeFail?: boolean;
 }
 
-const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], failOpen: true };
+const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], normalizedFindings: [], failOpen: true };
 const SEMANTIC_REQUOTE_RECOVERED_EVENT = "review.semantic.finding.requote_recovered";
 const SEMANTIC_REQUOTE_FAILED_EVENT = "review.semantic.finding.requote_failed";
 const DEFAULT_MAX_REQUOTES = 5;
@@ -106,8 +113,16 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
-    if (parsed) return { passed: parsed.passed, findings: parsed.findings };
-    if (/"passed"\s*:\s*false/.test(output)) return { passed: false, findings: [], looksLikeFail: true };
+    if (parsed) {
+      return {
+        passed: parsed.passed,
+        findings: parsed.findings,
+        normalizedFindings: toReviewFindings(parsed.findings),
+      };
+    }
+    if (/"passed"\s*:\s*false/.test(output)) {
+      return { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true };
+    }
     return FAIL_OPEN;
   },
 };
