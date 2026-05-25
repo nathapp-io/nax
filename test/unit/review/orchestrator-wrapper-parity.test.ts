@@ -7,14 +7,16 @@
  * single filter SSOT. These tests guard against a regression where the wrapper
  * re-implements filtering or ignores the op's output.
  *
- * US-001 (semantic) is covered here.
- * US-002 (adversarial) tests are added in Task 13.
+ * US-001 (semantic) is covered in the first describe block.
+ * US-002 (adversarial) is covered in the second describe block (Task 13).
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { semanticReviewOp } from "../../../src/operations/semantic-review";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
+import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
+import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
 import { makeTestRuntime, withTempDir } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -42,6 +44,28 @@ function makeVerifyCtx() {
     fileExists: async (_path: string) => false,
   };
 }
+
+function makeAdversarialVerifyCtx() {
+  const runtime = makeTestRuntime();
+  createdRuntimes.push(runtime);
+  const view = runtime.packages.repo();
+  return {
+    packageView: view,
+    config: view.select(adversarialReviewOp.config),
+    readFile: async (_path: string) => null as string | null,
+    fileExists: async (_path: string) => false,
+  };
+}
+
+const ADVERSARIAL_STORY = {
+  id: "STORY-PARITY-A01",
+  title: "Adversarial parity test story",
+  description: "verify() parity with adversarial wrapper",
+  acceptanceCriteria: [
+    "AC1: auth login must not allow SQL injection attacks",
+    "AC2: error cases are handled gracefully",
+  ],
+};
 
 describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () => {
   test("blocking findings from verify() appear in normalizedFindings — wrapper reads them as-is", async () => {
@@ -191,6 +215,173 @@ describe("Semantic op verify() parity with wrapper consumer (AC10, AC11)", () =>
       expect(result!.normalizedFindings).toHaveLength(0);
       // verify() is authoritative — no blocking findings → passed.
       expect(result!.passed).toBe(true);
+    });
+  });
+});
+
+describe("Adversarial op verify() parity with wrapper consumer (AC10, AC11 adversarial)", () => {
+  test("blocking finding with valid acQuote survives — wrapper reads from normalizedFindings", async () => {
+    return withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(
+        join(workdir, "src", "auth.ts"),
+        "function login(u, p) { return db.rawQuery(u + p); }\n",
+      );
+
+      const ctx = makeAdversarialVerifyCtx();
+      const input: AdversarialReviewInput = {
+        workdir,
+        story: ADVERSARIAL_STORY,
+        adversarialConfig: {
+          model: "balanced" as const,
+          diffMode: "ref" as const,
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          substantiation: { requote: true, maxRequotes: 5 },
+        },
+        mode: "ref",
+        blockingThreshold: "error",
+      };
+
+      const parsed = {
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "security",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "SQL injection via rawQuery",
+            suggestion: "Use parameterized queries",
+            acIndex: 1,
+            acQuote: "auth login must not allow SQL injection",
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
+          },
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Missing error logging",
+            suggestion: "Add logger",
+          },
+        ],
+        normalizedFindings: [],
+        acDropped: [],
+      };
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+
+      // Blocking error finding survives → in normalizedFindings with source tag.
+      expect(result!.normalizedFindings).toHaveLength(1);
+      expect(result!.normalizedFindings[0]?.source).toBe("adversarial-review");
+      expect(result!.normalizedFindings[0]?.message).toContain("SQL injection");
+
+      // Advisory warning NOT in normalizedFindings.
+      expect(result!.normalizedFindings.some((f) => f.message?.includes("Missing error logging"))).toBe(false);
+    });
+  });
+
+  test("advisory-only run: verify() overrides passed:false — wrapper sees success:true", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeAdversarialVerifyCtx();
+      const input: AdversarialReviewInput = {
+        workdir,
+        story: ADVERSARIAL_STORY,
+        adversarialConfig: {
+          model: "balanced" as const,
+          diffMode: "ref" as const,
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          substantiation: { requote: true, maxRequotes: 5 },
+        },
+        mode: "ref",
+        blockingThreshold: "error",
+      };
+
+      const parsed = {
+        passed: false, // LLM said failed but only advisory findings
+        findings: [
+          {
+            severity: "warning",
+            category: "quality",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Advisory note",
+            suggestion: "consider X",
+          },
+        ],
+        normalizedFindings: [],
+        acDropped: [],
+      };
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+
+      // verify() is authoritative — no blocking findings → passed overrides LLM.
+      expect(result!.passed).toBe(true);
+      expect(result!.normalizedFindings).toHaveLength(0);
+    });
+  });
+
+  test("AC-dropped blocking finding → wrapper sees empty normalizedFindings and passed:true", async () => {
+    return withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(
+        join(workdir, "src", "auth.ts"),
+        "function login(u, p) { return db.rawQuery(u + p); }\n",
+      );
+
+      const ctx = makeAdversarialVerifyCtx();
+      const input: AdversarialReviewInput = {
+        workdir,
+        story: ADVERSARIAL_STORY,
+        adversarialConfig: {
+          model: "balanced" as const,
+          diffMode: "ref" as const,
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          substantiation: { requote: true, maxRequotes: 5 },
+        },
+        mode: "ref",
+        blockingThreshold: "error",
+      };
+
+      const parsed = {
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            category: "convention",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Custom interface convention violation",
+            suggestion: "remove it",
+            acIndex: 1,
+            // No acQuote → filterByAcQuote drops this finding
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
+          },
+        ],
+        normalizedFindings: [],
+        acDropped: [],
+      };
+
+      const result = await adversarialReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+
+      // AC-dropped → verify() returns passed:true (no blocking findings survived).
+      expect(result!.passed).toBe(true);
+      expect(result!.findings).toHaveLength(0);
+      expect(result!.normalizedFindings).toHaveLength(0);
+      // The drop is tracked in acDropped for counterfactual telemetry.
+      expect((result as import("../../../src/operations/adversarial-review").AdversarialReviewOutput).acDropped).toHaveLength(1);
     });
   });
 });
