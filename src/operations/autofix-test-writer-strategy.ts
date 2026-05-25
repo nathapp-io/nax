@@ -5,6 +5,7 @@ import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 import { testWriterRectifyOp } from "./autofix-test-writer";
+import { findingsToFailedChecks } from "./_finding-to-check";
 
 export function makeAutofixTestWriterStrategy(
   story: UserStory,
@@ -14,8 +15,8 @@ export function makeAutofixTestWriterStrategy(
     name: "autofix-test-writer",
     appliesTo: (f) => f.fixTarget === "test" || f.source === "adversarial-review",
     fixOp: testWriterRectifyOp,
-    buildInput: (_findings, _prior, _cycleCtx): AutofixTestWriterInput => ({
-      failedChecks: [],
+    buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => ({
+      failedChecks: findingsToFailedChecks(findings),
       story,
       blockingThreshold: config.review?.blockingThreshold,
     }),

@@ -84,6 +84,7 @@ export type {
 export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
 export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
+export { findingsToFailedChecks } from "./_finding-to-check";
 export {
   makeMechanicalLintFixStrategy,
   _mechanicalLintFixDeps,
