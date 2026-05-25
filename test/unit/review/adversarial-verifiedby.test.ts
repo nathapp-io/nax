@@ -424,7 +424,7 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
     });
   });
 
-  test("emits review.adversarial.finding.downgraded log event on downgrade", async () => {
+  test("emits a downgrade log event on fabricated observation", async () => {
     await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src/auth.ts"), "export function login() {}\n");
@@ -465,9 +465,18 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
         runtime,
       });
 
-      const downgradeEvent = logger.calls.find(
-        (c) => (c.data as Record<string, unknown> | undefined)?.event === "review.adversarial.finding.downgraded",
-      );
+      // With hopBody enabled: when evidence is unmatched, same-session requote fires.
+      // The mock always returns the original review JSON (not a valid requote response),
+      // so parseRequoteResponse fails → downgradeUnsubstantiatedFinding emits requote_failed.
+      // Without hopBody: verify() substantiation emits the direct downgraded event.
+      // Either event confirms the fabricated observation was caught and finding downgraded.
+      const downgradeEvent = logger.calls.find((c) => {
+        const event = (c.data as Record<string, unknown> | undefined)?.event;
+        return (
+          event === "review.adversarial.finding.downgraded" ||
+          event === "review.adversarial.finding.requote_failed"
+        );
+      });
       expect(downgradeEvent).toBeDefined();
     });
   });

@@ -2,6 +2,7 @@ import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
+import { getSafeLogger } from "../logger";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
 import {
@@ -11,9 +12,15 @@ import {
 } from "../review/adversarial-helpers";
 import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
 import { filterByAcQuote, substantiateAdversarialFindings } from "../review/finding-filters";
+import type { AcQuoteRejectionCode } from "../review/ac-quote-validator";
+import { parseRequoteResponse } from "../review/requote-response";
+import {
+  checkFindingEvidence,
+  downgradeUnsubstantiatedFinding,
+} from "../review/semantic-evidence";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
-import type { RunOperation } from "./types";
+import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 
@@ -53,7 +60,7 @@ export interface AdversarialReviewOutput {
    * Used by the wrapper for counterfactual telemetry (adversarial.ts). Empty array
    * when verify() short-circuits (failOpen / looksLikeFail / no findings).
    */
-  acDropped: { finding: AdversarialLLMFinding; code: string }[];
+  acDropped: { finding: AdversarialLLMFinding; code: AcQuoteRejectionCode }[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
@@ -69,6 +76,87 @@ const FAIL_OPEN: AdversarialReviewOutput = {
   acDropped: [],
   failOpen: true,
 };
+
+const ADVERSARIAL_REQUOTE_RECOVERED_EVENT = "review.adversarial.finding.requote_recovered";
+const ADVERSARIAL_REQUOTE_FAILED_EVENT = "review.adversarial.finding.requote_failed";
+const DEFAULT_MAX_REQUOTES = 5;
+
+/**
+ * Same-session requote recovery for adversarial findings with unmatched evidence.
+ * Mirrors requoteBlockingFindings in semantic-review.ts for the adversarial shape.
+ * Only active in ref mode when substantiation.requote is true.
+ */
+async function requoteBlockingAdversarialFindings(
+  findings: AdversarialLLMFinding[],
+  ctx: HopBodyContext<AdversarialReviewInput>,
+): Promise<{ findings: AdversarialLLMFinding[]; changed: boolean; extraCostUsd: number }> {
+  const threshold = ctx.input.blockingThreshold ?? "error";
+  const maxRequotes = ctx.input.adversarialConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
+  const requoteEnabled = ctx.input.adversarialConfig.substantiation?.requote ?? true;
+  if (ctx.input.mode !== "ref" || !requoteEnabled || maxRequotes <= 0) {
+    return { findings, changed: false, extraCostUsd: 0 };
+  }
+  const next = [...findings];
+  let changed = false;
+  let extraCostUsd = 0;
+  let used = 0;
+  for (const [index, finding] of next.entries()) {
+    if (!isBlockingSeverity(finding.severity, threshold)) continue;
+    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir });
+    if (initialEvidence.status !== "unmatched") continue;
+    if (used >= maxRequotes) break;
+    used += 1;
+
+    const retry = await ctx.send(AdversarialReviewPromptBuilder.requoteVerbatim({ finding }));
+    extraCostUsd += retry.estimatedCostUsd ?? 0;
+    const requote = parseRequoteResponse(retry.output);
+    if (!requote) {
+      next[index] = downgradeUnsubstantiatedFinding({
+        finding,
+        storyId: ctx.input.story.id,
+        event: ADVERSARIAL_REQUOTE_FAILED_EVENT,
+        ...initialEvidence,
+      });
+      changed = true;
+      continue;
+    }
+
+    const updatedFinding: AdversarialLLMFinding = {
+      ...finding,
+      verifiedBy: {
+        file: requote.file,
+        line: requote.line,
+        observed: requote.observed,
+      },
+    };
+    const requotedEvidence = await checkFindingEvidence({
+      finding: updatedFinding,
+      workdir: ctx.input.workdir,
+    });
+    if (requotedEvidence.status === "matched") {
+      getSafeLogger()?.info("review", "Recovered adversarial finding via same-session requote", {
+        storyId: ctx.input.story.id,
+        event: ADVERSARIAL_REQUOTE_RECOVERED_EVENT,
+        file: requotedEvidence.file,
+        line: requotedEvidence.line,
+      });
+      next[index] = updatedFinding;
+      changed = true;
+      continue;
+    }
+
+    next[index] = downgradeUnsubstantiatedFinding({
+      finding: updatedFinding,
+      storyId: ctx.input.story.id,
+      event: ADVERSARIAL_REQUOTE_FAILED_EVENT,
+      file: requotedEvidence.file,
+      line: requotedEvidence.line,
+      observed: requotedEvidence.observed,
+    });
+    changed = true;
+  }
+  return { findings: next, changed, extraCostUsd };
+}
 
 const adversarialParseRetry = (input: AdversarialReviewInput) =>
   makeParseRetryStrategy({
@@ -96,6 +184,21 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   retry: (input) => adversarialParseRetry(input),
+  async hopBody(initialPrompt, ctx) {
+    const turn = await ctx.sendWithParseRetry(initialPrompt);
+    const parsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
+    if (!parsed) return turn;
+    const requoted = await requoteBlockingAdversarialFindings(parsed.findings, ctx);
+    if (!requoted.changed) return turn;
+    const passed = !requoted.findings.some((finding) =>
+      isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+    );
+    return {
+      ...turn,
+      output: JSON.stringify({ passed, findings: requoted.findings }),
+      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+    };
+  },
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
       input.story,
