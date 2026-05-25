@@ -45,6 +45,12 @@ export interface AdversarialReviewInput {
   priorAdversarialIterations?: Iteration[];
   /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
   blockingThreshold?: "error" | "warning" | "info";
+  /** Internal: set by hopBody when a reprompt occurs. Read by parse() to populate repromptEvent. */
+  _repromptInfo?: {
+    dropCount: number;
+    outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+    costUsd: number;
+  };
 }
 
 export interface AdversarialReviewOutput {
@@ -69,6 +75,15 @@ export interface AdversarialReviewOutput {
    * Callers should treat this as a hard failure rather than fail-open.
    */
   looksLikeFail?: boolean;
+  /**
+   * Set when hopBody executed a reprompt (second turn). Used by adversarial.ts
+   * to emit review-reprompt-on-drop telemetry event.
+   */
+  repromptEvent?: {
+    dropCount: number;
+    outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+    costUsd: number;
+  };
 }
 
 const FAIL_OPEN: AdversarialReviewOutput = {
@@ -256,7 +271,17 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     });
     const secondTurn = await ctx.send(repromptPrompt);
     const secondParsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
-    if (!secondParsed) return turn;
+
+    const repromptCostUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+
+    if (!secondParsed) {
+      ctx.input._repromptInfo = {
+        dropCount: trigger.acDropped.length,
+        outcome: "parse-failed",
+        costUsd: repromptCostUsd,
+      };
+      return turn;
+    }
 
     const { accepted: secondAccepted } = filterByAcQuote(secondParsed.findings, ctx.input.story.acceptanceCriteria);
     const secondBlocking = secondAccepted.filter((f) =>
@@ -264,14 +289,24 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     );
 
     if (secondBlocking.length > 0) {
+      ctx.input._repromptInfo = {
+        dropCount: trigger.acDropped.length,
+        outcome: "still-dropped",
+        costUsd: repromptCostUsd,
+      };
       return {
         ...turn,
         output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
-        estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+        estimatedCostUsd: repromptCostUsd,
       };
     }
 
     if (secondAccepted.length === 0) {
+      ctx.input._repromptInfo = {
+        dropCount: trigger.acDropped.length,
+        outcome: "recovered-advisory-only",
+        costUsd: repromptCostUsd,
+      };
       return turn;
     }
 
@@ -282,10 +317,16 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
     );
 
+    ctx.input._repromptInfo = {
+      dropCount: trigger.acDropped.length,
+      outcome: secondParsed.passed ? "recovered-advisory-only" : "recovered-blocking",
+      costUsd: repromptCostUsd,
+    };
+
     return {
       ...turn,
       output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
-      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+      estimatedCostUsd: repromptCostUsd,
     };
   },
   build(input, _ctx) {
@@ -311,7 +352,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     if (parsed) {
@@ -322,10 +363,18 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
         findings: parsed.findings,
         normalizedFindings: [],
         acDropped: [],
+        repromptEvent: input._repromptInfo,
       };
     }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
-      return { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true };
+      return {
+        passed: false,
+        findings: [],
+        normalizedFindings: [],
+        acDropped: [],
+        looksLikeFail: true,
+        repromptEvent: input._repromptInfo,
+      };
     }
     throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
   },

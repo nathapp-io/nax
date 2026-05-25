@@ -369,6 +369,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
+
+  // Emit review-reprompt-on-drop telemetry if hopBody executed a reprompt.
+  if (opResult.repromptEvent) {
+    runtime.dispatchEvents.emitReviewReprompt({
+      kind: "review-reprompt-on-drop",
+      storyId: story.id,
+      reviewer: "adversarial",
+      dropCount: opResult.repromptEvent.dropCount,
+      repromptOutcome: opResult.repromptEvent.outcome,
+      costUsd: opResult.repromptEvent.costUsd,
+    });
+  }
+
   // verify() has already run the full filter pipeline (substantiate → AC-ground → split).
   // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
   // opResult.passed preserves the model verdict after filtering so wrappers can
