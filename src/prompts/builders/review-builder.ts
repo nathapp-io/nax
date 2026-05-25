@@ -214,6 +214,56 @@ Rules:
 - If after reading the file you cannot find anything that proves the claim, set observed to "".
 - Do not return a full review. Do not include markdown fences or explanation.`;
   }
+
+  /**
+   * Human-readable translations of AcGroundingMinimalRejection values.
+   * Used in regroundDroppedFindings to explain why findings were dropped.
+   */
+  static DROP_CODE_MESSAGES_MINIMAL: Record<string, string> = {
+    missing_ac_index: "no `acIndex` field was provided — every blocking finding must cite an AC by 1-based index",
+    ac_index_out_of_range: "`acIndex` is 0 or larger than the AC list — ACs are 1-indexed; the lowest valid value is 1",
+  };
+
+  /**
+   * Build a same-session reground prompt for semantic findings that were
+   * dropped by AC-grounding (filterByAcGroundingMinimal). Asks the reviewer
+   * to re-issue those findings with correct acIndex grounding.
+   */
+  static regroundDroppedFindings(opts: {
+    drops: Array<{ finding: LLMFinding; code: string }>;
+    acceptanceCriteria: string[];
+  }): string {
+    const { drops, acceptanceCriteria } = opts;
+    if (drops.length === 0) return "";
+
+    const firstDrop = drops[0];
+    const codeMessage =
+      ReviewPromptBuilder.DROP_CODE_MESSAGES_MINIMAL[firstDrop.code] ?? `rejection code: ${firstDrop.code}`;
+
+    const acList = acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
+
+    return `Your previous review produced ${drops.length} finding${drops.length > 1 ? "s" : ""} that ${
+      drops.length > 1 ? "were" : "was"
+    } dropped because:
+
+${codeMessage}
+
+The dropped finding${drops.length > 1 ? "s" : ""} ${drops.length > 1 ? "are" : "is"}:
+${drops.map((d, i) => `${i + 1}. [${d.finding.severity}] ${d.finding.issue}`).join("\n")}
+
+Please re-review the code and re-issue any valid findings. For each finding you re-issue:
+- You MUST include a valid \`acIndex\` (1-based index into the AC list below)
+- You MUST include a \`verifiedBy\` field with verified evidence
+
+## Acceptance Criteria
+${acList}
+
+## Rules
+- If a finding's locus (file / symbol) is not named in any AC bullet, downgrade it to \`"info"\` or \`"warning"\`
+- Only re-issue findings that are genuinely substantiated by the code and constrained by an AC
+- Return ONLY a JSON object with the same shape as before:
+{"passed":true|false,"findings":[...]}`;
+  }
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────

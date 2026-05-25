@@ -33,34 +33,16 @@ export interface SemanticReviewInput {
   stat?: string;
   priorSemanticIterations?: Iteration[];
   excludePatterns?: string[];
-  /** Pre-built, role-filtered context prefix to prepend to the review prompt. */
   featureCtxBlock?: string;
-  /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
   blockingThreshold?: "error" | "warning" | "info";
 }
 
 export interface SemanticReviewOutput {
   passed: boolean;
-  /** Raw LLM-shape findings (LLMFinding[]). Consumed by `src/review/semantic.ts`. */
   findings: unknown[];
-  /**
-   * Source-tagged Finding[] (`source: "semantic-review"`), used by the rectification
-   * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Populated whenever
-   * `findings` came from a successful LLM parse; empty for fail-open / looksLikeFail.
-   */
   normalizedFindings: Finding[];
-  /**
-   * Findings dropped by the AC-grounding filter (filterByAcGroundingMinimal) in verify().
-   * Used by the wrapper for counterfactual telemetry (semantic.ts). Empty array
-   * when verify() short-circuits (failOpen / looksLikeFail / no findings).
-   */
   acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
   failOpen?: boolean;
-  /**
-   * True when the raw output could not be parsed but contained `"passed": false` —
-   * the agent clearly intended a failure but the response was truncated/malformed.
-   * Callers should treat this as a hard failure rather than fail-open.
-   */
   looksLikeFail?: boolean;
 }
 
@@ -75,6 +57,22 @@ const SEMANTIC_REQUOTE_RECOVERED_EVENT = "review.semantic.finding.requote_recove
 const SEMANTIC_REQUOTE_FAILED_EVENT = "review.semantic.finding.requote_failed";
 const DEFAULT_MAX_REQUOTES = 5;
 
+function evaluateRepromptTrigger(
+  shape: ValidatedSemanticShape,
+  input: SemanticReviewInput,
+):
+  | { shouldReprompt: false }
+  | { shouldReprompt: true; acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[] } {
+  if (input.semanticConfig.acRegroundOnDrop === false) return { shouldReprompt: false };
+  if (shape.passed) return { shouldReprompt: false };
+  const { accepted, dropped } = filterByAcGroundingMinimal(shape.findings, input.story.acceptanceCriteria);
+  const threshold = input.blockingThreshold ?? "error";
+  const blockingAccepted = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+  if (blockingAccepted.length > 0) return { shouldReprompt: false };
+  if (dropped.length === 0) return { shouldReprompt: false };
+  return { shouldReprompt: true, acDropped: dropped };
+}
+
 const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig>["hopBody"] = async (
   initialPrompt,
   ctx,
@@ -82,15 +80,64 @@ const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOut
   const turn = await ctx.sendWithParseRetry(initialPrompt);
   const parsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
   if (!parsed) return turn;
+
   const requoted = await requoteBlockingFindings(parsed.findings, ctx);
-  if (!requoted.changed) return turn;
-  const passed = !requoted.findings.some((finding) =>
-    isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+  if (requoted.changed) {
+    const passed = !requoted.findings.some((finding) =>
+      isBlockingSeverity(finding.severity, ctx.input.blockingThreshold ?? "error"),
+    );
+    return {
+      ...turn,
+      output: JSON.stringify({ passed, findings: requoted.findings }),
+      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+    };
+  }
+
+  if (ctx.input.mode !== "ref") return turn;
+
+  const firstFindings = requoted.findings;
+  const { accepted: firstAccepted } = filterByAcGroundingMinimal(firstFindings, ctx.input.story.acceptanceCriteria);
+  const firstShape: ValidatedSemanticShape = {
+    passed: parsed.passed,
+    findings: firstFindings,
+  };
+  const trigger = evaluateRepromptTrigger(firstShape, ctx.input);
+  if (!trigger.shouldReprompt) return turn;
+
+  const repromptPrompt = ReviewPromptBuilder.regroundDroppedFindings({
+    drops: trigger.acDropped,
+    acceptanceCriteria: ctx.input.story.acceptanceCriteria,
+  });
+  const secondTurn = await ctx.send(repromptPrompt);
+  const secondParsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
+  if (!secondParsed) return turn;
+
+  const threshold = ctx.input.blockingThreshold ?? "error";
+  const { accepted: secondAccepted } = filterByAcGroundingMinimal(
+    secondParsed.findings,
+    ctx.input.story.acceptanceCriteria,
   );
+  const secondBlocking = secondAccepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+
+  if (secondBlocking.length > 0) {
+    return {
+      ...turn,
+      output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
+      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+    };
+  }
+
+  if (secondAccepted.length === 0) {
+    return turn;
+  }
+
+  const firstAdvisory = firstAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const secondAdvisory = secondAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
+
   return {
     ...turn,
-    output: JSON.stringify({ passed, findings: requoted.findings }),
-    estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + requoted.extraCostUsd,
+    output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
+    estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
   };
 };
 
@@ -100,9 +147,6 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   stage: "review",
   session: { role: "reviewer-semantic", lifetime: "fresh" },
   config: reviewConfigSelector,
-  // Issue #725 — per-call tier from user-configured SemanticReviewConfig.model.
-  // Without this resolver callOp would fall through to its "balanced" default and
-  // silently ignore the user's review.semantic.model setting.
   model: (input) => input.semanticConfig.model,
   timeoutMs: (input) => input.semanticConfig.timeoutMs,
   retry: (input) =>
@@ -140,9 +184,6 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
     if (parsed) {
-      // Advisory split and filter pipeline moved to verify() — parse returns raw shape.
-      // normalizedFindings is populated by verify() after evidence substantiation
-      // and AC-grounding; return empty here so verify() can set it authoritatively.
       return {
         passed: parsed.passed,
         findings: parsed.findings,
@@ -162,11 +203,8 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     const threshold = input.blockingThreshold ?? "error";
     const findings = parsed.findings as LLMFinding[];
 
-    // 1. Downgrade ref-mode blocking findings with unverified evidence to "unverifiable".
-    //    Downgraded findings fall below threshold and are excluded from normalizedFindings.
     const sanitized = sanitizeRefModeFindings(findings, input.mode, threshold);
 
-    // 2. Substantiate evidence against HEAD source files.
     const substantiated = await substantiateSemanticEvidence(
       sanitized,
       input.mode,
@@ -175,13 +213,8 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       threshold,
     );
 
-    // 3. Drop error findings without valid acIndex.
     const { accepted, dropped } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
 
-    // 4. Split blocking vs advisory; normalizedFindings ⊂ blocking.
-    //    Preserve the model's failure signal: filtered findings may remove
-    //    blockers, but wrappers still fail-closed when the original verdict
-    //    was passed:false and nothing blocking survives.
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
     const passed = parsed.passed && blocking.length === 0;
 

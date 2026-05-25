@@ -3,7 +3,7 @@
   "feature": "review-reprompt-on-all-dropped",
   "branchName": "feat/review-reprompt-on-all-dropped",
   "createdAt": "2026-05-25T12:22:57Z",
-  "updatedAt": "2026-05-25T13:29:55.616Z",
+  "updatedAt": "2026-05-25T15:08:05.260Z",
   "userStories": [
     {
       "id": "US-001",
@@ -69,8 +69,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -140,7 +140,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/semantic-review.ts",
@@ -151,7 +153,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cb705fffe40b6a8bb19b815f791a9aa6e3149a47"
     },
     {
       "id": "US-004",
