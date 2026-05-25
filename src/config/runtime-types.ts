@@ -57,11 +57,13 @@ export interface RectificationConfig {
   abortOnIncreasingFailures: boolean;
   /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
   escalateOnExhaustion: boolean;
-  /** Attempt number at which "rethink your approach" language is injected.
-   * Scaled to maxAttemptsTotal=12 — fires ~2/3 through the budget. (default: 8) */
+  /** Per-strategy attempt number at which "rethink your approach" language is
+   * injected. Counter resets when a new strategy runs — under
+   * maxAttemptsPerStrategy=3, default of 2 fires on the penultimate attempt. (default: 2) */
   rethinkAtAttempt: number;
-  /** Attempt number at which "final chance before escalation" urgency is added.
-   * Scaled to maxAttemptsTotal=12 — fires on the near-final attempt. (default: 11) */
+  /** Per-strategy attempt number at which "final chance before escalation"
+   * urgency is added. Counter resets per strategy — under maxAttemptsPerStrategy=3,
+   * default of 3 fires on the final attempt. (default: 3) */
   urgencyAtAttempt: number;
 }
 
