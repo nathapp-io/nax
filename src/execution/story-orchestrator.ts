@@ -288,20 +288,8 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
     "semantic-review",
     "adversarial-review",
   ],
-  "autofix-test-writer": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "verify-scoped",
-    "adversarial-review",
-  ],
-  "full-suite-rectify": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "verify-scoped",
-    "semantic-review",
-  ],
+  "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "adversarial-review"],
+  "full-suite-rectify": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "semantic-review"],
 };
 
 /**
@@ -323,9 +311,7 @@ function phasesToRevalidate(
 
   if (!strategiesRun || strategiesRun.length === 0) return sourceFiltered;
 
-  const unknown = strategiesRun.some(
-    (name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined,
-  );
+  const unknown = strategiesRun.some((name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined);
   if (unknown) return sourceFiltered;
 
   const needed = new Set<PhaseKind>();

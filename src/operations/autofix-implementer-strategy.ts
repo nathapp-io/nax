@@ -2,9 +2,9 @@ import type { AutofixConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
+import { findingsToFailedChecks } from "./_finding-to-check";
 import type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofix-implementer";
 import { implementerRectifyOp } from "./autofix-implementer";
-import { findingsToFailedChecks } from "./_finding-to-check";
 
 const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review"]);
 

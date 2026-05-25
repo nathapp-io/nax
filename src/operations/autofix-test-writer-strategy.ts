@@ -3,9 +3,9 @@ import type { AutofixConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
+import { findingsToFailedChecks } from "./_finding-to-check";
 import type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-test-writer";
 import { testWriterRectifyOp } from "./autofix-test-writer";
-import { findingsToFailedChecks } from "./_finding-to-check";
 
 export function makeAutofixTestWriterStrategy(
   story: UserStory,

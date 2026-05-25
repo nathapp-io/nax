@@ -181,10 +181,7 @@ export interface FixCycle<F extends Finding> {
    * phases relevant to those strategies (e.g. skipping the full test suite when
    * only a lint-fix strategy ran).
    */
-  validate: (
-    ctx: FixCycleContext,
-    opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] },
-  ) => Promise<F[]>;
+  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] }) => Promise<F[]>;
   config: FixCycleConfig;
   /**
    * Optional verdict string used to bias strategy selection when findings is
