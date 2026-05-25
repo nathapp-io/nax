@@ -24,7 +24,12 @@ const STORY = {
   id: "STORY-AV01",
   title: "Adversarial verify pipeline",
   description: "Tests for adversarialReviewOp.verify()",
-  acceptanceCriteria: ["AC1: security checks must pass", "AC2: no unhandled exceptions"],
+  // ACs include locus keywords so filterByAcQuote can validate acQuote-locus grounding.
+  // "auth" is extracted from file "src/auth.ts"; must appear in both AC text and acQuote.
+  acceptanceCriteria: [
+    "AC1: auth login security must not allow SQL injection attacks",
+    "AC2: handler must not throw unhandled exceptions",
+  ],
 };
 
 const BASE_INPUT: AdversarialReviewInput = {
@@ -60,6 +65,7 @@ function makeOutput(overrides: Partial<AdversarialReviewOutput> = {}): Adversari
     passed: true,
     findings: [],
     normalizedFindings: [],
+    acDropped: [],
     ...overrides,
   };
 }
@@ -94,17 +100,15 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
 
   test("advisory findings below blockingThreshold excluded from normalizedFindings", async () => {
     return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src", "auth.ts"),
-        "function login(u, p) { return db.rawQuery(`SELECT * FROM users WHERE id=${u}`); }\n",
-      );
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
 
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
         ...BASE_INPUT,
         workdir,
-        mode: "embedded", // embedded mode: substantiation still runs but observed matching is skipped for embedded
+        mode: "ref",
       };
       const parsed = makeOutput({
         passed: false,
@@ -117,7 +121,9 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             issue: "SQL injection",
             suggestion: "Use parameterized queries",
             acIndex: 1,
-            acQuote: "security checks must pass",
+            acQuote: "auth login security must not allow SQL injection",
+            // verifiedBy.observed must match file content for substantiation to pass
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
           },
           {
             severity: "warning",
@@ -126,8 +132,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             line: 1,
             issue: "Logging missing",
             suggestion: "Add logging",
-            acIndex: 1,
-            acQuote: "security checks must pass",
+            // non-blocking — substantiation and filterByAcQuote both skip non-blocking
           },
         ],
         normalizedFindings: [],
@@ -142,11 +147,15 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
 
   test("blocking finding without valid acQuote is dropped from accepted (AC-grounding filter)", async () => {
     return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
         ...BASE_INPUT,
         workdir,
-        mode: "embedded",
+        mode: "ref",
       };
       const parsed = makeOutput({
         passed: false,
@@ -159,7 +168,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             issue: "No AC attribution",
             suggestion: "Fix it",
             acIndex: 1,
-            // No acQuote — filterByAcQuote drops this
+            // verifiedBy passes substantiation, but no acQuote → filterByAcQuote drops this
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
           },
         ],
         normalizedFindings: [],
@@ -177,7 +187,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
       const input: AdversarialReviewInput = {
         ...BASE_INPUT,
         workdir,
-        mode: "embedded",
+        mode: "ref",
       };
       const parsed = makeOutput({
         passed: false,
@@ -189,8 +199,7 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             line: 1,
             issue: "Advisory only",
             suggestion: "Consider X",
-            acIndex: 1,
-            acQuote: "security checks must pass",
+            // non-blocking — filterByAcQuote and substantiation both skip non-blocking
           },
         ],
         normalizedFindings: [],
@@ -204,17 +213,15 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
 
   test("blocking error finding with valid acQuote survives filter pipeline", async () => {
     return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
       mkdirSync(join(workdir, "src"), { recursive: true });
-      writeFileSync(
-        join(workdir, "src", "auth.ts"),
-        "function login(u, p) { return db.rawQuery(`SELECT * FROM users WHERE id=${u}`); }\n",
-      );
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
 
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
         ...BASE_INPUT,
         workdir,
-        mode: "embedded",
+        mode: "ref",
       };
       const parsed = makeOutput({
         passed: false,
@@ -227,7 +234,10 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             issue: "SQL injection risk",
             suggestion: "Use parameterized query",
             acIndex: 1,
-            acQuote: "security checks must pass",
+            // "auth" from file basename appears in AC text → locus-constrained ✓
+            acQuote: "auth login security must not allow SQL injection",
+            // verifiedBy.observed is a substring of the actual file content
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
           },
         ],
         normalizedFindings: [],
@@ -242,11 +252,15 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
 
   test("dropped findings are tracked in acDropped on output", async () => {
     return withTempDir(async (workdir) => {
+      const FILE_CONTENT = "function login(u, p) { return db.rawQuery(u + p); }\n";
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "auth.ts"), FILE_CONTENT);
+
       const ctx = makeVerifyCtx();
       const input: AdversarialReviewInput = {
         ...BASE_INPUT,
         workdir,
-        mode: "embedded",
+        mode: "ref",
       };
       const parsed = makeOutput({
         passed: false,
@@ -259,7 +273,8 @@ describe("adversarialReviewOp.verify() — filter pipeline (AC2 adversarial)", (
             issue: "No acQuote — will be dropped",
             suggestion: "fix",
             acIndex: 1,
-            // no acQuote
+            // verifiedBy passes substantiation; no acQuote → filterByAcQuote drops to acDropped
+            verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery" },
           },
         ],
         normalizedFindings: [],

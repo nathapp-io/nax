@@ -276,6 +276,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     ctx.config.review.checks?.includes("adversarial") &&
     ctx.config.review.adversarial
       ? {
+          workdir: ctx.workdir,
           story,
           adversarialConfig: ctx.config.review.adversarial,
           mode: ctx.config.review.adversarial.diffMode,

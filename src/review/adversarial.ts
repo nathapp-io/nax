@@ -131,7 +131,6 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     agentManager,
     config: naxConfig,
     featureName,
-    priorFailures,
     blockingThreshold,
     featureContextMarkdown,
     contextBundle,
@@ -285,13 +284,13 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   let opResult: import("../operations/adversarial-review").AdversarialReviewOutput;
   try {
     opResult = await _adversarialDeps.callOp(callCtx, adversarialReviewOp, {
+      workdir,
       story,
       adversarialConfig,
       mode: diffMode,
       diff,
       storyGitRef: effectiveRef,
       stat,
-      priorFailures,
       testInventory,
       excludePatterns: adversarialConfig.excludePatterns,
       testGlobs: resolvedTestPatterns.globs,

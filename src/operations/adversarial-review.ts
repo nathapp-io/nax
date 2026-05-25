@@ -9,6 +9,8 @@ import {
   toAdversarialReviewFindings,
   validateAdversarialShape,
 } from "../review/adversarial-helpers";
+import type { AdversarialLLMFinding } from "../review/adversarial-helpers";
+import { filterByAcQuote, substantiateAdversarialFindings } from "../review/finding-filters";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -16,6 +18,8 @@ import type { RunOperation } from "./types";
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
 
 export interface AdversarialReviewInput {
+  /** Absolute path to the package workdir — required by verify() for evidence substantiation. */
+  workdir: string;
   story: SemanticStory;
   adversarialConfig: AdversarialReviewConfig;
   mode: "embedded" | "ref";
@@ -40,10 +44,16 @@ export interface AdversarialReviewOutput {
   findings: unknown[];
   /**
    * Source-tagged Finding[] (`source: "adversarial-review"`), used by the rectification
-   * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Empty for fail-open
-   * / looksLikeFail outcomes.
+   * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Populated after
+   * `verify()` runs the filter pipeline; empty for fail-open / looksLikeFail outcomes.
    */
   normalizedFindings: Finding[];
+  /**
+   * Findings dropped by the AC-grounding filter (filterByAcQuote) in verify().
+   * Used by the wrapper for counterfactual telemetry (adversarial.ts). Empty array
+   * when verify() short-circuits (failOpen / looksLikeFail / no findings).
+   */
+  acDropped: { finding: AdversarialLLMFinding; code: string }[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
@@ -52,7 +62,13 @@ export interface AdversarialReviewOutput {
   looksLikeFail?: boolean;
 }
 
-const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], normalizedFindings: [], failOpen: true };
+const FAIL_OPEN: AdversarialReviewOutput = {
+  passed: true,
+  findings: [],
+  normalizedFindings: [],
+  acDropped: [],
+  failOpen: true,
+};
 
 const adversarialParseRetry = (input: AdversarialReviewInput) =>
   makeParseRetryStrategy({
@@ -65,7 +81,7 @@ const adversarialParseRetry = (input: AdversarialReviewInput) =>
     },
     exhaustedFallback: (lastOutput) =>
       /"passed"\s*:\s*false/.test(lastOutput)
-        ? { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true }
+        ? { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true }
         : FAIL_OPEN,
     logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
@@ -103,24 +119,53 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, input, _ctx) {
+  parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     if (parsed) {
-      // Match the wrapper's advisory split (src/review/adversarial.ts) so the
-      // orchestrator-direct path doesn't push below-threshold findings into the
-      // rectification cycle.
-      const threshold = input.blockingThreshold ?? "error";
-      const blocking = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+      // Advisory split moved to verify() — parse returns raw shape with normalizedFindings:[].
+      // verify() runs the full filter pipeline: substantiate → AC-ground → blocking split.
       return {
         passed: parsed.passed,
         findings: parsed.findings,
-        normalizedFindings: toAdversarialReviewFindings(blocking),
+        normalizedFindings: [],
+        acDropped: [],
       };
     }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
-      return { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true };
+      return { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true };
     }
     throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
+  },
+  async verify(parsed, input, _verifyCtx) {
+    if (parsed.failOpen || parsed.looksLikeFail) return parsed;
+    if (parsed.findings.length === 0) return parsed;
+
+    const threshold = input.blockingThreshold ?? "error";
+    const findings = parsed.findings as AdversarialLLMFinding[];
+
+    // 1. Substantiate evidence against HEAD source files (mirrors semantic side).
+    const substantiated = await substantiateAdversarialFindings({
+      findings,
+      workdir: input.workdir,
+      storyId: input.story.id,
+      blockingThreshold: threshold,
+    });
+
+    // 2. Drop error findings not grounded in AC text (filterByAcQuote).
+    const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
+
+    // 3. Split blocking vs advisory; normalizedFindings ⊂ blocking.
+    //    verify() is authoritative: if no blocking findings survive, result is passed.
+    const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+    const passed = blocking.length === 0;
+
+    return {
+      ...parsed,
+      passed,
+      findings: accepted,
+      normalizedFindings: toAdversarialReviewFindings(blocking),
+      acDropped: dropped,
+    };
   },
 };
