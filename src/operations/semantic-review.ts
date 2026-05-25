@@ -92,6 +92,10 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         invalid: () => ReviewPromptBuilder.jsonRetry(),
         truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
       },
+      exhaustedFallback: (lastOutput) =>
+        /"passed"\s*:\s*false/.test(lastOutput)
+          ? { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true }
+          : FAIL_OPEN,
       logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
     }),
   hopBody: semanticReviewHopBody,

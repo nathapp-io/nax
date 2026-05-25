@@ -45,7 +45,10 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
             { storyId: ctx.storyId },
           );
         }
-        return { retry: false };
+        // Empty output: if exhaustedFallback is declared, surface it so callOp can
+        // return a safe degraded value rather than throwing CALL_OP_NO_OUTPUT.
+        const fallback = opts.exhaustedFallback ? opts.exhaustedFallback("") : undefined;
+        return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
       }
 
       let parsed: unknown;

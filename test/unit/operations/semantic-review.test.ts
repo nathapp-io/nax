@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Iteration } from "../../../src/findings";
-import { makeTestRuntime } from "../../helpers";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
+import { callOp } from "../../../src/operations";
 import type { SemanticReviewInput } from "../../../src/operations/semantic-review";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -216,5 +217,45 @@ describe("semanticReviewOp.hopBody", () => {
 
   test("retry field exists (parse-retry SSOT)", () => {
     expect(semanticReviewOp).toHaveProperty("retry");
+  });
+});
+
+describe("semanticReviewOp — AC4: empty-output exhaustion returns FAIL_OPEN", () => {
+  test("returns FAIL_OPEN when agent returns empty output after retries", async () => {
+    // semanticReviewOp now has exhaustedFallback; empty-output exhaustion should
+    // produce the same FAIL_OPEN that parse failure already produces.
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
+      semanticReviewOp,
+      SAMPLE_INPUT,
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect(result.normalizedFindings).toEqual([]);
+  });
+
+  test("parse-failure path still returns FAIL_OPEN — no regression", () => {
+    // Direct parse call with unparseable output should still return FAIL_OPEN (existing behavior).
+    const ctx = makeBuildCtx();
+    const result = semanticReviewOp.parse("not json at all", SAMPLE_INPUT, ctx);
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect(result.normalizedFindings).toEqual([]);
   });
 });
