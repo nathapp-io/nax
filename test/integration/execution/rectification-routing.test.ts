@@ -191,7 +191,7 @@ describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with seman
       .addRectification({
         maxAttempts: 3,
         strategies: [
-          makeAutofixImplementerStrategy(story),
+          makeAutofixImplementerStrategy(story, makeNaxConfig()),
           makeFullSuiteRectifyStrategy(story, makeNaxConfig()),
         ],
         abortOnIncreasingFailures: false,
@@ -269,7 +269,7 @@ describe("AC3.8: verifier op dispatched exactly once — never re-run during val
       .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac38" } })
       .addRectification({
         maxAttempts: 3,
-        strategies: [makeAutofixImplementerStrategy(story)],
+        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig())],
         abortOnIncreasingFailures: false,
       })
       .build(ctx, { isThreeSession: true });
@@ -343,7 +343,7 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
       .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac39" } })
       .addRectification({
         maxAttempts: 3,
-        strategies: [makeAutofixImplementerStrategy(story)],
+        strategies: [makeAutofixImplementerStrategy(story, makeNaxConfig())],
         abortOnIncreasingFailures: false,
       })
       .build(ctx, { isThreeSession: true });
