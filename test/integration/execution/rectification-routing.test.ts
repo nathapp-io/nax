@@ -224,3 +224,155 @@ describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with seman
     expect(matchingStrategies[0]?.name).toBe("autofix-implementer");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3.8: verifier is dispatched exactly once (initial run) — never during validate
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC3.8: verifier op dispatched exactly once — never re-run during validate", () => {
+  test("AC3.8: semantic findings only — verifier called during initial run, never during capturedCycle.validate", async () => {
+    const semanticFindings = makeSemanticFindings(3);
+
+    // Track all callOp invocations (phase name → call count)
+    const initialCallCounts: Record<string, number> = {};
+
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      initialCallCounts[op.name] = (initialCallCounts[op.name] ?? 0) + 1;
+      if (op.name === "implementer") return { success: true };
+      if (op.name === "full-suite-gate") return { success: true, findings: [] };
+      if (op.name === "verifier") return { success: true, findings: [] };
+      if (op.name === "semantic-review") return { success: false, passed: false, findings: semanticFindings };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCtx: FixCycleContext | null = null;
+
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
+      capturedCycle = cycle;
+      capturedCtx = cycleCtx;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const story = makeStory({ id: "US-routing-ac38" });
+
+    const ctx = makeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: mockImplementerOp, input: { story: "US-routing-ac38" } })
+      .addFullSuiteGate({ op: mockFullSuiteGateOp, input: { story: "US-routing-ac38" } })
+      .addVerifier({ op: mockVerifierOp, input: { story: "US-routing-ac38" } })
+      .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac38" } })
+      .addRectification({
+        maxAttempts: 3,
+        strategies: [makeAutofixImplementerStrategy(story)],
+        abortOnIncreasingFailures: false,
+      })
+      .build(ctx, { isThreeSession: true });
+
+    await plan.run();
+
+    // Verifier ran exactly once during the initial plan execution
+    expect(initialCallCounts["verifier"]).toBe(1);
+
+    expect(capturedCycle).not.toBeNull();
+    expect(capturedCtx).not.toBeNull();
+
+    // Now set up tracking for the validate call
+    const validateCallCounts: Record<string, number> = {};
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      validateCallCounts[op.name] = (validateCallCounts[op.name] ?? 0) + 1;
+      return { success: true, passed: true, findings: [] };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    // Invoke validate with autofix-implementer strategiesRun
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+      strategiesRun: ["autofix-implementer"],
+    });
+
+    // Verifier must NOT have been called during validate
+    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+
+    // Semantic review should have been re-run (it's in autofix-implementer's phase set)
+    expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3.9: after autofix-implementer, full-suite-gate + semantic-review re-dispatched; verifier not
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semantic-review re-dispatched; verifier excluded", () => {
+  test("AC3.9: validate with strategiesRun=['autofix-implementer'] → full-suite-gate + semantic-review called, verifier not called", async () => {
+    const semanticFindings = makeSemanticFindings(2);
+
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "implementer") return { success: true };
+      if (op.name === "full-suite-gate") return { success: true, findings: [] };
+      if (op.name === "verifier") return { success: true, findings: [] };
+      if (op.name === "semantic-review") return { success: false, passed: false, findings: semanticFindings };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCtx: FixCycleContext | null = null;
+
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
+      capturedCycle = cycle;
+      capturedCtx = cycleCtx;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const story = makeStory({ id: "US-routing-ac39" });
+
+    const ctx = makeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: mockImplementerOp, input: { story: "US-routing-ac39" } })
+      .addFullSuiteGate({ op: mockFullSuiteGateOp, input: { story: "US-routing-ac39" } })
+      .addVerifier({ op: mockVerifierOp, input: { story: "US-routing-ac39" } })
+      .addSemanticReview({ op: mockSemanticReviewOp, input: { story: "US-routing-ac39" } })
+      .addRectification({
+        maxAttempts: 3,
+        strategies: [makeAutofixImplementerStrategy(story)],
+        abortOnIncreasingFailures: false,
+      })
+      .build(ctx, { isThreeSession: true });
+
+    await plan.run();
+
+    expect(capturedCycle).not.toBeNull();
+    expect(capturedCtx).not.toBeNull();
+
+    // Set up tracking callOp for the validate call
+    const validateCallCounts: Record<string, number> = {};
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      validateCallCounts[op.name] = (validateCallCounts[op.name] ?? 0) + 1;
+      return { success: true, passed: true, findings: [] };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    // Simulate: after an autofix-implementer iteration, call validate
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+      strategiesRun: ["autofix-implementer"],
+    });
+
+    // full-suite-gate MUST be re-dispatched (it's in autofix-implementer's phase set)
+    expect(validateCallCounts["full-suite-gate"] ?? 0).toBeGreaterThan(0);
+
+    // semantic-review MUST be re-dispatched (it's in autofix-implementer's phase set)
+    expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
+
+    // verifier must NOT be re-dispatched
+    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+  });
+});
