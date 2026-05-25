@@ -192,7 +192,7 @@ describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with seman
         maxAttempts: 3,
         strategies: [
           makeAutofixImplementerStrategy(story),
-          makeFullSuiteRectifyStrategy(story),
+          makeFullSuiteRectifyStrategy(story, makeNaxConfig()),
         ],
         abortOnIncreasingFailures: false,
       })

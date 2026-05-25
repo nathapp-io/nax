@@ -246,7 +246,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
         commands: { lintFix: "bun run lint:fix" },
         autofix: { enabled: false },
       },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
@@ -262,7 +262,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
         commands: { lintFix: "bun run lint:fix" },
         autofix: { enabled: false },
       },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
@@ -278,7 +278,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
         commands: { formatFix: "bun run format:fix" },
         autofix: { enabled: true },
       },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
@@ -294,7 +294,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
         commands: { lintFix: "bun run lint:fix" },
         autofix: { enabled: true },
       },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
     const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
@@ -417,7 +417,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
   test("TDD failure-then-fix path: rectification phase included when enabled and inputs present", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeMockCallContext();
     const inputs = makeMockPlanInputs({
@@ -449,7 +449,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
           commands: { lintFix: "bun run lint:fix" },
           autofix: { enabled: false },
         },
-        execution: { rectification: { enabled: true, maxRetries: 2 } },
+        execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
       });
       const ctx = makeMockCallContext({ runtime });
       const inputs = makeMockPlanInputs({

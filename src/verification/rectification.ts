@@ -12,13 +12,13 @@ import type { RectificationState } from "./types";
  * Determine if rectification should retry based on state and config.
  */
 export function shouldRetryRectification(state: RectificationState, config: RectificationConfig): boolean {
-  // Stop if max retries reached
-  if (state.attempt >= config.maxRetries) {
+  // Stop if max attempts reached
+  if (state.attempt >= config.maxAttemptsTotal) {
     return false;
   }
 
   // #89: Handle unparseable failures (non-zero exit but 0 parsed failures).
-  // Treat as infrastructure failure and retry until maxRetries reached.
+  // Treat as infrastructure failure and retry until maxAttemptsTotal reached.
   if (state.lastExitCode !== undefined && state.lastExitCode !== 0 && state.currentFailures === 0) {
     return true;
   }

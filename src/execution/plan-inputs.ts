@@ -289,9 +289,9 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const rectificationInput: RectificationPhaseOptions | undefined =
     ctx.config.execution?.rectification?.enabled === true
       ? {
-          maxAttempts: ctx.config.execution.rectification.maxRetries ?? 2,
+          maxAttempts: ctx.config.execution.rectification.maxAttemptsTotal,
           strategies: [], // base — buildPlanForStrategy prepends makeFullSuiteRectifyStrategy(story) for TDD+gate plans
-          abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures ?? true,
+          abortOnIncreasingFailures: ctx.config.execution.rectification.abortOnIncreasingFailures,
         }
       : undefined;
 

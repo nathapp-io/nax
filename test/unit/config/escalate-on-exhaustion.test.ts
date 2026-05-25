@@ -15,11 +15,14 @@ describe("escalateOnExhaustion config field", () => {
   test("RectificationConfig type has escalateOnExhaustion field", () => {
     const rectConfig: RectificationConfig = {
       enabled: true,
-      maxRetries: 2,
+      maxAttemptsTotal: 12,
+      maxAttemptsPerStrategy: 3,
       fullSuiteTimeoutSeconds: 120,
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
       escalateOnExhaustion: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
     };
     expect(rectConfig.escalateOnExhaustion).toBe(true);
   });
@@ -71,7 +74,8 @@ describe("escalateOnExhaustion config field", () => {
         ...DEFAULT_CONFIG.execution,
         rectification: {
           enabled: true,
-          maxRetries: 2,
+          maxAttemptsTotal: 12,
+          maxAttemptsPerStrategy: 3,
           fullSuiteTimeoutSeconds: 120,
           maxFailureSummaryChars: 2000,
           abortOnIncreasingFailures: true,

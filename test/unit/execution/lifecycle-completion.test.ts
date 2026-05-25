@@ -61,7 +61,6 @@ function makeConfig(
         timeoutSeconds: 30,
         acceptOnTimeout: true,
         ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
-        maxRectificationAttempts: 2,
       },
     },
     quality: {

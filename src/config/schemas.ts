@@ -108,7 +108,8 @@ export const NaxConfigSchema = z
       maxStoriesPerFeature: 500,
       rectification: {
         enabled: true,
-        maxRetries: 2,
+        maxAttemptsTotal: 12,
+        maxAttemptsPerStrategy: 3,
         fullSuiteTimeoutSeconds: 300,
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
@@ -121,7 +122,6 @@ export const NaxConfigSchema = z
         timeoutSeconds: 300,
         acceptOnTimeout: true,
         mode: "deferred",
-        maxRectificationAttempts: 3,
       },
       contextProviderTokenBudget: 2000,
       permissionProfile: "unrestricted",
@@ -147,9 +147,6 @@ export const NaxConfigSchema = z
       autofix: {
         enabled: true,
         maxAttempts: 3,
-        maxTotalAttempts: 12,
-        rethinkAtAttempt: 2,
-        urgencyAtAttempt: 3,
         enforceTestWriterIsolation: true,
       },
       forceExit: false,

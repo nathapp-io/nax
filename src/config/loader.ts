@@ -110,6 +110,67 @@ function rejectLegacyAgentKeys(conf: Record<string, unknown>): void {
   throw new NaxError(message, "CONFIG_LEGACY_AGENT_KEYS", { stage: "config", legacyKeys });
 }
 
+/**
+ * Reject the four legacy rectification-cap keys that were split across
+ * `quality.autofix` and `execution.rectification` before the cycle unification.
+ * Silent .strip() would mask the change and leave the cycle running with the
+ * new defaults despite the user's explicit (now-orphaned) overrides.
+ *
+ * Migration map:
+ *   quality.autofix.maxTotalAttempts           → execution.rectification.maxAttemptsTotal
+ *   quality.autofix.rethinkAtAttempt           → execution.rectification.rethinkAtAttempt
+ *   quality.autofix.urgencyAtAttempt           → execution.rectification.urgencyAtAttempt
+ *   execution.rectification.maxRetries         → execution.rectification.maxAttemptsTotal
+ *   execution.regressionGate.maxRectificationAttempts → execution.rectification.maxAttemptsTotal
+ */
+function rejectLegacyRectificationKeys(conf: Record<string, unknown>): void {
+  const legacyKeys: string[] = [];
+  const migrationHints: string[] = [];
+
+  const quality = conf.quality as Record<string, unknown> | undefined;
+  const autofix = quality?.autofix as Record<string, unknown> | undefined;
+  if (autofix && typeof autofix === "object") {
+    if ("maxTotalAttempts" in autofix) {
+      legacyKeys.push("quality.autofix.maxTotalAttempts");
+      migrationHints.push("- Move `quality.autofix.maxTotalAttempts` → `execution.rectification.maxAttemptsTotal`");
+    }
+    if ("rethinkAtAttempt" in autofix) {
+      legacyKeys.push("quality.autofix.rethinkAtAttempt");
+      migrationHints.push("- Move `quality.autofix.rethinkAtAttempt` → `execution.rectification.rethinkAtAttempt`");
+    }
+    if ("urgencyAtAttempt" in autofix) {
+      legacyKeys.push("quality.autofix.urgencyAtAttempt");
+      migrationHints.push("- Move `quality.autofix.urgencyAtAttempt` → `execution.rectification.urgencyAtAttempt`");
+    }
+  }
+
+  const execution = conf.execution as Record<string, unknown> | undefined;
+  const rectification = execution?.rectification as Record<string, unknown> | undefined;
+  if (rectification && typeof rectification === "object" && "maxRetries" in rectification) {
+    legacyKeys.push("execution.rectification.maxRetries");
+    migrationHints.push(
+      "- Rename `execution.rectification.maxRetries` → `execution.rectification.maxAttemptsTotal` (default changed from 2 to 12)",
+    );
+  }
+  const regressionGate = execution?.regressionGate as Record<string, unknown> | undefined;
+  if (regressionGate && typeof regressionGate === "object" && "maxRectificationAttempts" in regressionGate) {
+    legacyKeys.push("execution.regressionGate.maxRectificationAttempts");
+    migrationHints.push(
+      "- Remove `execution.regressionGate.maxRectificationAttempts` — the regression cycle now shares `execution.rectification.maxAttemptsTotal`",
+    );
+  }
+
+  if (legacyKeys.length === 0) return;
+
+  const message = [
+    `Invalid configuration — legacy rectification-cap keys detected: ${legacyKeys.join(", ")}.`,
+    "These were consolidated under `execution.rectification.*` so one config controls the unified",
+    "fix cycle (semantic + adversarial + mechanical + regression). Migrate as follows:",
+    ...migrationHints,
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_LEGACY_RECTIFICATION_KEYS", { stage: "config", legacyKeys });
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -340,6 +401,10 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // ADR-012 Phase 6 — reject pre-migration agent keys with a migration pointer.
   // Must run BEFORE Zod safeParse, otherwise .strip() silently drops the keys.
   rejectLegacyAgentKeys(rawConfig);
+  // Rectification-config consolidation — reject the four legacy attempt-cap keys
+  // that were split across quality.autofix and execution.rectification before
+  // unification. Same Zod-strip rationale.
+  rejectLegacyRectificationKeys(rawConfig);
 
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
@@ -441,6 +506,7 @@ export async function loadConfigForWorkdir(
     rawMerged.profile = packageProfile;
     // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
     rejectLegacyAgentKeys(rawMerged);
+    rejectLegacyRectificationKeys(rawMerged);
     const result = NaxConfigSchema.safeParse(rawMerged);
     if (result.success) {
       merged = result.data as NaxConfig;

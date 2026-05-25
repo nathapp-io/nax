@@ -1,3 +1,4 @@
+import type { NaxConfig } from "../config/schema";
 import type { TddConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
@@ -11,10 +12,11 @@ import { implementerOp } from "./implement";
  * never reads from `ctx.story` (which is optional on CallContext and would crash
  * at runtime for ad-hoc / non-pipeline invocations).
  *
- * Call site: buildPlanForStrategy — the story is always available there.
+ * Call site: buildPlanForStrategy + run-regression.ts — the story is always available.
  */
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
+  config: NaxConfig,
 ): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> {
   return {
     name: "full-suite-rectify",
@@ -25,7 +27,7 @@ export function makeFullSuiteRectifyStrategy(
       contextMarkdown: RectifierPromptBuilder.failingTestContext(findings),
     }),
     extractApplied: () => ({ targetFiles: [], summary: "Fixed failing tests" }),
-    maxAttempts: 3,
+    maxAttempts: config.execution.rectification.maxAttemptsPerStrategy,
     coRun: "exclusive",
   };
 }

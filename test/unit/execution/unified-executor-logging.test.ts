@@ -48,7 +48,7 @@ function makeCtx(overrides: { parallelCount?: number } = {}) {
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
-        rectification: { maxRetries: 2 },
+        rectification: { maxAttemptsTotal: 2 },
       },
       autoMode: { defaultAgent: "claude-code" },
       interaction: {},

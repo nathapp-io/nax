@@ -13,7 +13,8 @@ import type { UserStory } from "../../../src/prd";
 describe("shouldRetryRectification", () => {
   const baseConfig: RectificationConfig = {
     enabled: true,
-    maxRetries: 2,
+    maxAttemptsTotal: 2,
+    maxAttemptsPerStrategy: 3,
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,
@@ -40,7 +41,7 @@ describe("shouldRetryRectification", () => {
       { state: { attempt: 0, initialFailures: 5, currentFailures: 0 }, config: baseConfig, label: "currentFailures = 0" },
       { state: { attempt: 1, initialFailures: 3, currentFailures: 5 }, config: baseConfig, label: "failures increased with abort=true" },
       { state: { attempt: 2, initialFailures: 5, currentFailures: 1 }, config: baseConfig, label: "at maxRetries even if failures exist" },
-      { state: { attempt: 0, initialFailures: 5, currentFailures: 5 }, config: { ...baseConfig, maxRetries: 0 }, label: "maxRetries=0" },
+      { state: { attempt: 0, initialFailures: 5, currentFailures: 5 }, config: { ...baseConfig, maxAttemptsTotal: 0 }, label: "maxAttemptsTotal=0" },
     ];
     for (const { state, config, label } of falseScenarios) {
       expect(shouldRetryRectification(state, config), label).toBe(false);
@@ -84,7 +85,8 @@ describe("createEscalatedRectificationPrompt", () => {
 
   const baseConfig: RectificationConfig = {
     enabled: true,
-    maxRetries: 2,
+    maxAttemptsTotal: 2,
+    maxAttemptsPerStrategy: 3,
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,

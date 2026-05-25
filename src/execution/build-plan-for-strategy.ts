@@ -147,10 +147,10 @@ export function buildPlanForStrategy(
       strategies.push(makeMechanicalFormatFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (isThreeSession && inputs.fullSuiteGate) {
-      strategies.push(makeFullSuiteRectifyStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
-      strategies.push(makeAutofixImplementerStrategy(story) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(makeAutofixImplementerStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
       strategies.push(makeAutofixTestWriterStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
 

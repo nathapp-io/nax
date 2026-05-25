@@ -20,7 +20,7 @@ export function makeAutofixTestWriterStrategy(
       story,
       blockingThreshold: config.review?.blockingThreshold,
     }),
-    maxAttempts: 2,
+    maxAttempts: config.execution.rectification.maxAttemptsPerStrategy,
     coRun: "co-run-sequential",
   };
 }

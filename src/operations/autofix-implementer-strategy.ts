@@ -1,3 +1,4 @@
+import type { NaxConfig } from "../config/schema";
 import type { AutofixConfig } from "../config/selectors";
 import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
@@ -10,6 +11,7 @@ const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review"]);
 
 export function makeAutofixImplementerStrategy(
   story: UserStory,
+  config: NaxConfig,
 ): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
   return {
     name: "autofix-implementer",
@@ -23,7 +25,7 @@ export function makeAutofixImplementerStrategy(
       summary: output.unresolvedReason ?? "",
       unresolved: output.unresolvedReason,
     }),
-    maxAttempts: 3,
+    maxAttempts: config.execution.rectification.maxAttemptsPerStrategy,
     coRun: "co-run-sequential",
   };
 }

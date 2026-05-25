@@ -39,31 +39,27 @@ export interface AutoModeConfig {
   };
 }
 
-/** Rectification config (v0.11) */
+/** Rectification config — unified cap for story-orchestrator + regression cycles. */
 export interface RectificationConfig {
-  /** Enable rectification loop (retry failed tests with failure context). Default: true. */
+  /** Enable rectification loop. Default: true. */
   enabled: boolean;
-  /** Max retry attempts per story (default: 2) */
-  maxRetries: number;
+  /** Total iteration cap for the unified fix cycle. Per-strategy caps are the
+   * granular bound; this is the loose ceiling. (default: 12) */
+  maxAttemptsTotal: number;
+  /** Default per-strategy cap for LLM-driven strategies (autofix-implementer,
+   * autofix-test-writer, full-suite-rectify). Mechanical strategies stay at 1. (default: 3) */
+  maxAttemptsPerStrategy: number;
   /** Timeout for full test suite run in seconds (default: 120) */
   fullSuiteTimeoutSeconds: number;
   /** Max characters in failure summary sent to agent (default: 2000) */
   maxFailureSummaryChars: number;
   /** Abort rectification if failure count increases (default: true) */
   abortOnIncreasingFailures: boolean;
-  /** Escalate to higher model tier after exhausting maxRetries (default: true) */
+  /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
   escalateOnExhaustion: boolean;
-  /**
-   * Attempt number at which "rethink your approach" language is injected into the prompt.
-   * Nudges the agent to try a fundamentally different strategy instead of repeating the same fix.
-   * Clamped to maxRetries at runtime — so if this exceeds maxRetries it fires on the final attempt. (default: 2)
-   */
+  /** Attempt number at which "rethink your approach" language is injected. (default: 2) */
   rethinkAtAttempt: number;
-  /**
-   * Attempt number at which "final chance before escalation" urgency is added to the prompt.
-   * Should be >= rethinkAtAttempt. Clamped to maxRetries at runtime — so the default of 3 fires
-   * on the final attempt when maxRetries=2. (default: 3)
-   */
+  /** Attempt number at which "final chance before escalation" urgency is added. (default: 3) */
   urgencyAtAttempt: number;
 }
 
@@ -77,8 +73,6 @@ export interface RegressionGateConfig {
   acceptOnTimeout?: boolean;
   /** Mode of regression gate: 'deferred' (run once after all stories), 'per-story' (run after each story), 'disabled' (default: 'deferred') */
   mode?: "deferred" | "per-story" | "disabled";
-  /** Max rectification attempts for deferred regression gate (default: 2) */
-  maxRectificationAttempts?: number;
 }
 
 /** Smart test runner configuration (STR-007) */
@@ -205,19 +199,15 @@ export interface QualityConfig {
     /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
     format?: "auto" | "tsc" | "text" | "none";
   };
-  /** Auto-fix configuration (Phase 2) */
+  /** Auto-fix strategy participation. Cycle caps live under execution.rectification.* */
   autofix?: {
-    /** Whether to auto-fix lint/format errors before escalating (default: true) */
+    /** Whether autofix-implementer + autofix-test-writer participate in the
+     * rectification cycle. (default: true) */
     enabled?: boolean;
-    /** Max auto-fix attempts per review-autofix cycle (default: 2) */
+    /** Prompt-text display only: "X attempts available before escalation".
+     * Real cap is execution.rectification.maxAttemptsPerStrategy. (default: 3) */
     maxAttempts?: number;
-    /** Max total auto-fix attempts across all review-autofix cycles per story (default: 10) */
-    maxTotalAttempts?: number;
-    /** Inject a rethink prompt on and after this autofix attempt number (default: 2) */
-    rethinkAtAttempt?: number;
-    /** Inject final-attempt urgency language on and after this autofix attempt number (default: 3) */
-    urgencyAtAttempt?: number;
-    /** Revert and escalate on testWriter source-file edits in mock-restructure mode (default: true). */
+    /** Revert and escalate on testWriter source-file edits in mock-restructure mode. (default: true) */
     enforceTestWriterIsolation?: boolean;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */

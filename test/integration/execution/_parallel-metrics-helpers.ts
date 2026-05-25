@@ -50,7 +50,7 @@ export function makeCtx(overrides: { parallelCount?: number; costLimit?: number;
         maxIterations,
         costLimit,
         iterationDelayMs: 0,
-        rectification: { maxRetries: 2 },
+        rectification: { maxAttemptsTotal: 2 },
       },
       agent: { default: "claude-code" },
       interaction: {},

@@ -65,7 +65,7 @@ const createMockConfig = (overrides: Partial<ExecutionConfig> = {}): NaxConfig =
   models: {},
   rectification: {
     enabled: true,
-    maxRetries: 2,
+    maxAttemptsTotal: 2,
     fullSuiteTimeoutSeconds: 120,
     maxFailureSummaryChars: 2000,
     abortOnIncreasingFailures: true,

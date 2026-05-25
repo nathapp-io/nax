@@ -278,7 +278,10 @@ export async function handlePipelineFailure(
         attempts: ctx.story.attempts,
       });
 
-      if (ctx.story.attempts !== undefined && ctx.story.attempts >= ctx.config.execution.rectification.maxRetries) {
+      if (
+        ctx.story.attempts !== undefined &&
+        ctx.story.attempts >= ctx.config.execution.rectification.maxAttemptsTotal
+      ) {
         await pipelineEventBus.emitAsync({
           type: "human-review:requested",
           storyId: ctx.story.id,

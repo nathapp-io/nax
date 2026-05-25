@@ -52,7 +52,7 @@ const createMockConfig = (
       maxStoriesPerFeature: 100,
       rectification: {
         enabled: false,
-        maxRetries: 0,
+        maxAttemptsTotal: 0,
         fullSuiteTimeoutSeconds: 120,
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,

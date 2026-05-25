@@ -140,7 +140,9 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   const testCommand = config.quality.commands.test ?? "bun test";
   const timeoutSeconds = config.execution.regressionGate?.timeoutSeconds ?? 120;
-  const maxRectificationAttempts = config.execution.regressionGate?.maxRectificationAttempts ?? 2;
+  // Regression cycle shares the unified cap from execution.rectification (one
+  // budget across semantic/adversarial/mechanical/regression strategies).
+  const maxRectificationAttempts = config.execution.rectification.maxAttemptsTotal;
   const acceptOnTimeout = config.execution.regressionGate?.acceptOnTimeout ?? true;
 
   const verifyOpts = {
@@ -338,7 +340,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     const cycle: FixCycle<Finding> = {
       findings: initialFindings,
       iterations: [],
-      strategies: [makeFullSuiteRectifyStrategy(story)],
+      strategies: [makeFullSuiteRectifyStrategy(story, config)],
       config: { maxAttemptsTotal: maxRectificationAttempts, validatorRetries: 1 },
       validate: async (_cycleCtx, _opts) => {
         const verification = await _regressionDeps.runVerification(verifyOpts);

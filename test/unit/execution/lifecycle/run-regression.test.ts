@@ -97,7 +97,6 @@ function makeConfig(): NaxConfig {
       regressionGate: {
         mode: "deferred",
         timeoutSeconds: 60,
-        maxRectificationAttempts: 2,
         acceptOnTimeout: true,
       },
     },

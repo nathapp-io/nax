@@ -70,7 +70,6 @@ function makeConfig(
         timeoutSeconds: 30,
         acceptOnTimeout: true,
         ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
-        maxRectificationAttempts: 2,
       },
     },
     quality: {
@@ -280,7 +279,6 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
           timeoutSeconds: 30,
           acceptOnTimeout: false,
           mode: "deferred",
-          maxRectificationAttempts: 2,
         },
       },
     };

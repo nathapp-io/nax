@@ -41,8 +41,12 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(DEFAULT_CONFIG.execution.sessionTimeoutSeconds).toBe(3600);
     });
 
-    test("DEFAULT_CONFIG.execution.rectification.maxRetries === 2", () => {
-      expect(DEFAULT_CONFIG.execution.rectification.maxRetries).toBe(2);
+    test("DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal === 12", () => {
+      expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal).toBe(12);
+    });
+
+    test("DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy === 3", () => {
+      expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy).toBe(3);
     });
 
     test("DEFAULT_CONFIG.quality.requireTypecheck === true", () => {
@@ -56,9 +60,9 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       expect(parsed.execution.sessionTimeoutSeconds).toBe(3600);
     });
 
-    test("schema parse returns object with same rectification.maxRetries", () => {
+    test("schema parse returns object with same rectification.maxAttemptsTotal", () => {
       const parsed = NaxConfigSchema.parse({});
-      expect(parsed.execution.rectification.maxRetries).toBe(2);
+      expect(parsed.execution.rectification.maxAttemptsTotal).toBe(12);
     });
 
     test("schema parse returns object with same requireTypecheck", () => {
