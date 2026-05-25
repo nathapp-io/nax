@@ -45,7 +45,17 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
             { storyId: ctx.storyId },
           );
         }
-        return { retry: false };
+        // Empty output: if exhaustedFallback is declared, surface it so callOp can
+        // return a safe degraded value rather than throwing CALL_OP_NO_OUTPUT.
+        //
+        // For run-kind ops this branch is only reached after sendWithFileOutput in
+        // call.ts synthesizes a fail-stale AdapterFailure for empty/whitespace output —
+        // the manager-tier retry/swap runs first (via the `adapterFailure` signal), and
+        // only after exhaustion does the hop body exit with rawOutput="", which then
+        // triggers callOp's `!rawOutput` guard. The fallback captured here is what
+        // callOp reads from retryFallback at that point.
+        const fallback = opts.exhaustedFallback ? opts.exhaustedFallback("") : undefined;
+        return { retry: false, ...(fallback !== undefined ? { fallback } : {}) };
       }
 
       let parsed: unknown;

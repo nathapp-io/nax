@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeTestRuntime } from "../../helpers";
+import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewInput } from "../../../src/operations/adversarial-review";
+import { callOp } from "../../../src/operations";
+import { makeMockAgentManager, makeMockRuntime, makeSessionManager, makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -8,7 +10,6 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 
 const SAMPLE_STORY = {
   id: "STORY-002",
@@ -237,5 +238,35 @@ describe("adversarialReviewOp.retry", () => {
 
   test("hopBody field does NOT exist (removed in US-005c)", () => {
     expect(adversarialReviewOp).not.toHaveProperty("hopBody");
+  });
+});
+
+describe("adversarialReviewOp — AC3: empty-output exhaustion returns FAIL_OPEN", () => {
+  test("returns FAIL_OPEN when agent returns empty output after retries", async () => {
+    // adversarialReviewOp has exhaustedFallback declared; callOp now honors it on empty output.
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async () => ({
+        output: "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 0,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      }),
+    });
+    const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    const result = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
+      adversarialReviewOp,
+      SAMPLE_INPUT,
+    );
+
+    expect(result.passed).toBe(true);
+    expect(result.failOpen).toBe(true);
+    expect(result.normalizedFindings).toEqual([]);
   });
 });
