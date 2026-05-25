@@ -14,13 +14,14 @@ import {
   toReviewFindings,
   validateLLMShape,
 } from "../review/finding-filters";
-import type { LLMFinding } from "../review/finding-filters";
+import type { AcDroppedEntry, AcGroundingMinimalRejection, LLMFinding } from "../review/finding-filters";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { SemanticReviewConfig, SemanticStory };
+export type ValidatedSemanticShape = NonNullable<ReturnType<typeof validateLLMShape>>;
 
 export interface SemanticReviewInput {
   workdir: string;
@@ -48,6 +49,12 @@ export interface SemanticReviewOutput {
    * `findings` came from a successful LLM parse; empty for fail-open / looksLikeFail.
    */
   normalizedFindings: Finding[];
+  /**
+   * Findings dropped by the AC-grounding filter (filterByAcGroundingMinimal) in verify().
+   * Used by the wrapper for counterfactual telemetry (semantic.ts). Empty array
+   * when verify() short-circuits (failOpen / looksLikeFail / no findings).
+   */
+  acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false` —
@@ -57,7 +64,13 @@ export interface SemanticReviewOutput {
   looksLikeFail?: boolean;
 }
 
-const FAIL_OPEN: SemanticReviewOutput = { passed: true, findings: [], normalizedFindings: [], failOpen: true };
+const FAIL_OPEN: SemanticReviewOutput = {
+  passed: true,
+  findings: [],
+  normalizedFindings: [],
+  acDropped: [],
+  failOpen: true,
+};
 const SEMANTIC_REQUOTE_RECOVERED_EVENT = "review.semantic.finding.requote_recovered";
 const SEMANTIC_REQUOTE_FAILED_EVENT = "review.semantic.finding.requote_failed";
 const DEFAULT_MAX_REQUOTES = 5;
@@ -103,7 +116,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       },
       exhaustedFallback: (lastOutput) =>
         /"passed"\s*:\s*false/.test(lastOutput)
-          ? { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true }
+          ? { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true }
           : FAIL_OPEN,
       logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
     }),
@@ -134,10 +147,11 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         passed: parsed.passed,
         findings: parsed.findings,
         normalizedFindings: [],
+        acDropped: [],
       };
     }
     if (/"passed"\s*:\s*false/.test(output)) {
-      return { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true };
+      return { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true };
     }
     return FAIL_OPEN;
   },
@@ -162,7 +176,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
     );
 
     // 3. Drop error findings without valid acIndex.
-    const { accepted } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
+    const { accepted, dropped } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
 
     // 4. Split blocking vs advisory; normalizedFindings ⊂ blocking.
     //    Preserve the model's failure signal: filtered findings may remove
@@ -176,6 +190,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       passed,
       findings: accepted,
       normalizedFindings: toReviewFindings(blocking),
+      acDropped: dropped,
     };
   },
 };

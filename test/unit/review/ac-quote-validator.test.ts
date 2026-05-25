@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  type AcDroppedEntry,
   type AcGroundingMinimalRejection,
   type AcQuotable,
   filterByAcGroundingMinimal,

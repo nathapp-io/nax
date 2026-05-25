@@ -17,13 +17,14 @@ import {
   filterByAcQuote,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
-import type { AcQuoteRejectionCode } from "../review/finding-filters";
+import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
 import { parseRequoteResponse } from "../review/requote-response";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
 
 export type { AdversarialReviewConfig, SemanticStory, TestInventory };
+export type ValidatedAdversarialShape = NonNullable<ReturnType<typeof validateAdversarialShape>>;
 
 export interface AdversarialReviewInput {
   /** Absolute path to the package workdir — required by verify() for evidence substantiation. */
@@ -61,7 +62,7 @@ export interface AdversarialReviewOutput {
    * Used by the wrapper for counterfactual telemetry (adversarial.ts). Empty array
    * when verify() short-circuits (failOpen / looksLikeFail / no findings).
    */
-  acDropped: { finding: AdversarialLLMFinding; code: AcQuoteRejectionCode }[];
+  acDropped: AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
