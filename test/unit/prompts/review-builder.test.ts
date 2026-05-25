@@ -200,7 +200,6 @@ describe("ReviewPromptBuilder.requoteVerbatim()", () => {
           observed: "described the issue instead of quoting it",
         },
       },
-      previousObserved: "described the issue instead of quoting it",
     });
     expect(result).toContain("did not match the referenced file on disk");
     expect(result).toContain('"file":"src/foo.ts"');
@@ -208,5 +207,31 @@ describe("ReviewPromptBuilder.requoteVerbatim()", () => {
     expect(result).toContain("observed\":\"exact 1-3 line quote");
     expect(result).toContain('set observed to ""');
     expect(result).toContain("Do not return a full review");
+  });
+
+  test("forces a file-read tool call and omits the prior observed value", () => {
+    const result = ReviewPromptBuilder.requoteVerbatim({
+      finding: {
+        severity: "error",
+        file: "src/foo.ts",
+        line: 42,
+        issue: "Missing guard",
+        suggestion: "Add guard",
+        verifiedBy: {
+          file: "src/foo.ts",
+          line: 42,
+          observed: "hallucinated quote that was rejected",
+        },
+      },
+    });
+    // The previous observed must not be echoed back — that was the regurgitation
+    // surface that let the model re-emit the same wrong quote (observed in a real
+    // run: opencode semantic requote returning toolCallUpdates=0 and the same
+    // hallucinated string).
+    expect(result).not.toContain("hallucinated quote that was rejected");
+    expect(result).not.toContain("Previous observed");
+    // The prompt must demand an actual file-read tool call.
+    expect(result).toMatch(/file-reading tool|file tool/);
+    expect(result).toMatch(/quote from memory/i);
   });
 });

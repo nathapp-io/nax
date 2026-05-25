@@ -305,6 +305,112 @@ describe("checkFindingEvidence()", () => {
   });
 });
 
+describe("checkFindingEvidence — line-anchored window", () => {
+  // Defense-in-depth for the requote loop. The original full-file substring
+  // check let "recovered" findings reinstate themselves with a quote from
+  // anywhere in the file — line numbers could drift freely. These tests pin
+  // the behaviour: the observed must appear within ±10 lines of the cited line.
+  function makeMultiLineFile(): string {
+    return Array.from({ length: 60 }, (_, i) => `// line ${i + 1}`).join("\n") + "\n";
+  }
+
+  test("matches when observed appears at the cited line", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), makeMultiLineFile());
+
+      const result = await checkFindingEvidence({
+        finding: makeFinding({
+          line: 30,
+          verifiedBy: { command: "cat src/foo.ts", file: "src/foo.ts", line: 30, observed: "// line 30" },
+        }),
+        workdir,
+      });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("matches when observed appears within the ±10 line window", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), makeMultiLineFile());
+
+      // Cited line 30, observed lives at line 38 — inside the ±10 window.
+      const result = await checkFindingEvidence({
+        finding: makeFinding({
+          line: 30,
+          verifiedBy: { command: "cat src/foo.ts", file: "src/foo.ts", line: 30, observed: "// line 38" },
+        }),
+        workdir,
+      });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("does NOT match when observed appears in the file but outside the cited window", async () => {
+    await writeMultiAndCheck("// line 50", 1, "unmatched");
+  });
+
+  test("matches when line is undefined (falls back to full-file scan)", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), makeMultiLineFile());
+
+      // Both finding.line and verifiedBy.line omitted (using `0` to mean
+      // "no usable line" since the type requires a number).
+      const finding = makeFinding({
+        line: 0,
+        verifiedBy: { command: "cat src/foo.ts", file: "src/foo.ts", line: 0, observed: "// line 50" },
+      });
+      const result = await checkFindingEvidence({ finding, workdir });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("clamps cited line past EOF to the file's last line", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), makeMultiLineFile());
+
+      // File has 60 lines; cited line is 200. Window clamps to lines 50-60,
+      // so a quote of "// line 55" (within that clamped window) still matches.
+      const result = await checkFindingEvidence({
+        finding: makeFinding({
+          line: 200,
+          verifiedBy: { command: "cat src/foo.ts", file: "src/foo.ts", line: 200, observed: "// line 55" },
+        }),
+        workdir,
+      });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  async function writeMultiAndCheck(
+    observed: string,
+    line: number,
+    expected: "matched" | "unmatched" | "unreadable" | "missing-observed",
+  ): Promise<void> {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), makeMultiLineFile());
+
+      const result = await checkFindingEvidence({
+        finding: makeFinding({
+          line,
+          verifiedBy: { command: "cat src/foo.ts", file: "src/foo.ts", line, observed },
+        }),
+        workdir,
+      });
+
+      expect(result.status).toBe(expected);
+    });
+  }
+});
+
 describe("checkFindingEvidence — generalized over Finding shape (Issue #987)", () => {
   test("accepts AdversarialLLMFinding shape and substantiates against disk", async () => {
     await withTempDir(async (workdir) => {

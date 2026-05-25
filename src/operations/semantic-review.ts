@@ -133,9 +133,7 @@ async function requoteBlockingFindings(
     if (used >= maxRequotes) break;
     used += 1;
 
-    const retry = await ctx.send(
-      ReviewPromptBuilder.requoteVerbatim({ finding, previousObserved: initialEvidence.observed ?? "" }),
-    );
+    const retry = await ctx.send(ReviewPromptBuilder.requoteVerbatim({ finding }));
     extraCostUsd += retry.estimatedCostUsd ?? 0;
     const requote = parseRequoteResponse(retry.output);
     if (!requote) {

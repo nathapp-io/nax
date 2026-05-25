@@ -194,10 +194,12 @@ Output ONLY a complete, valid JSON object. It must start with { and end with }.
 Schema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
   }
 
-  static requoteVerbatim(opts: { finding: LLMFinding; previousObserved: string }): string {
+  static requoteVerbatim(opts: { finding: LLMFinding }): string {
     const file = opts.finding.verifiedBy?.file ?? opts.finding.file;
     const line = opts.finding.verifiedBy?.line ?? opts.finding.line;
     return `Your previous verifiedBy.observed value did not match the referenced file on disk.
+
+You MUST use your file-reading tool to open ${file} and copy the actual bytes around line ${line}. Do NOT quote from memory or from the prior conversation — the previous quote was wrong precisely because it was not read from disk. If you reply without a file-read tool call, the quote will be rejected.
 
 Return ONLY this JSON object:
 {"file":"${file}","line":${line},"observed":"exact 1-3 line quote"}
@@ -205,12 +207,11 @@ Return ONLY this JSON object:
 Finding issue: ${opts.finding.issue}
 Referenced file: ${file}
 Referenced line: ${line}
-Previous observed: ${opts.previousObserved}
 
 Rules:
-- Copy observed verbatim from the file. Do not paraphrase.
-- observed must be a 1-3 line excerpt that proves the claim.
-- If you cannot quote proof exactly, set observed to "".
+- Read ${file} with your file tool first. Then copy observed verbatim from the read result.
+- observed must be a 1-3 line excerpt that proves the claim, taken from at or near line ${line}.
+- If after reading the file you cannot find anything that proves the claim, set observed to "".
 - Do not return a full review. Do not include markdown fences or explanation.`;
   }
 }
