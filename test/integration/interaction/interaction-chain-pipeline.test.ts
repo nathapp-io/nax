@@ -34,7 +34,7 @@ const baseConfig: Partial<NaxConfig> = {
     iterationDelayMs: 0,
     sessionTimeoutSeconds: 60,
     maxStoriesPerFeature: 50,
-    rectification: { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 30, maxFailureSummaryChars: 500 },
+    rectification: { enabled: true, maxAttemptsTotal: 2, fullSuiteTimeoutSeconds: 30, maxFailureSummaryChars: 500 },
     verificationTimeoutSeconds: 60,
   },
   interaction: {
@@ -224,7 +224,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const { plugin, sentRequests } = buildCapturingPlugin();
     chain.register(plugin, 10);
 
-    // Story has already hit max retries (attempts >= maxRetries = 2)
+    // Story has already hit max retries (attempts >= maxAttemptsTotal = 2)
     const exhaustedStory: UserStory = {
       ...baseStory,
       id: "US-002",
@@ -300,7 +300,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const failingStory: UserStory = {
       ...baseStory,
       id: "US-FAILING",
-      attempts: 3, // exceeds maxRetries=2
+      attempts: 3, // exceeds maxAttemptsTotal=12
       status: "pending",
     };
 
@@ -380,7 +380,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const exhaustedStory: UserStory = {
       ...baseStory,
       id: "US-EXHAUST",
-      attempts: 3, // exceeds maxRetries=2
+      attempts: 3, // exceeds maxAttemptsTotal=12
       status: "pending",
     };
 

@@ -310,7 +310,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
         ...WORKTREE_CONFIG,
         execution: {
           ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxRetries: 1 },
+          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });

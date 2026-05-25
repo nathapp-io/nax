@@ -23,11 +23,19 @@ const AutoModeConfigSchema = z.object({
 
 const RectificationConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  maxRetries: z.number().int().min(0).max(10).default(2),
+  /** Total iteration cap for the unified fix cycle (shared by story-orchestrator
+   * + regression cycles). Per-strategy caps are the granular bound; this is the
+   * loose ceiling. */
+  maxAttemptsTotal: z.number().int().min(1).max(50).default(12),
+  /** Default per-strategy cap for LLM-driven strategies (autofix-implementer,
+   * autofix-test-writer, full-suite-rectify). Mechanical strategies stay at 1. */
+  maxAttemptsPerStrategy: z.number().int().min(1).max(20).default(3),
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
   escalateOnExhaustion: z.boolean().optional().default(true),
+  // Per-strategy attempt counters — reset when a new strategy runs.
+  // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).
   rethinkAtAttempt: z.number().int().min(1).default(2),
   urgencyAtAttempt: z.number().int().min(1).default(3),
 });
@@ -37,7 +45,6 @@ const RegressionGateConfigSchema = z.object({
   timeoutSeconds: z.number().int().min(10).max(600).default(120),
   acceptOnTimeout: z.boolean().default(true),
   mode: z.enum(["deferred", "per-story", "disabled"]).default("deferred"),
-  maxRectificationAttempts: z.number().int().min(1).default(2),
 });
 
 const SmartTestRunnerConfigSchema = z.object({
@@ -151,19 +158,18 @@ export const QualityConfigSchema = z.object({
     .default({ format: "auto" }),
   autofix: z
     .object({
+      /** Whether autofix-implementer + autofix-test-writer strategies participate
+       * in the rectification cycle. Cycle-level caps live under
+       * execution.rectification.{maxAttemptsTotal,maxAttemptsPerStrategy}. */
       enabled: z.boolean().default(true),
+      /** Prompt-text display only: "X attempts available before escalation".
+       * Not enforced — the real cap is execution.rectification.maxAttemptsPerStrategy. */
       maxAttempts: z.number().int().min(1).default(3),
-      maxTotalAttempts: z.number().int().min(1).default(12),
-      rethinkAtAttempt: z.number().int().min(1).default(2),
-      urgencyAtAttempt: z.number().int().min(1).default(3),
       enforceTestWriterIsolation: z.boolean().default(true),
     })
     .default({
       enabled: true,
       maxAttempts: 3,
-      maxTotalAttempts: 12,
-      rethinkAtAttempt: 2,
-      urgencyAtAttempt: 3,
       enforceTestWriterIsolation: true,
     }),
   forceExit: z.boolean().default(false),

@@ -790,7 +790,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
   afterEach(async () => { await rt?.close(); });
 
   test("when rectification configured: gate failure does NOT halt verifier (both run)", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     let verifierRan = false;
@@ -995,7 +995,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
   test("AC5: runFixCycle receives mixed-source findings from full-suite gate output", async () => {
     // Gate produces a mixed-source output: one test-runner finding + one lint finding.
     // The unified rectification entrypoint should preserve both so mechanical fixes can run.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     let capturedCycleFindings: Finding[] | null = null;
@@ -1040,7 +1040,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
 
   test("AC5: verifier findings with non-test-runner source also reach rectification", async () => {
     // Verifier produces a review-category finding — the unified architecture should carry it into rectification.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     let capturedCycleFindings: Finding[] | null = null;
@@ -1086,7 +1086,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
     // This is the critical end-to-end test: rectification was previously unreachable when
     // inlineReview=false. With the guard removed, gate findings now reach runFixCycle and
     // the full-suite-rectify strategy (prepended by buildPlanForStrategy) is dispatched.
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     let capturedStrategyNames: string[] = [];
@@ -1111,7 +1111,7 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
       const { makeFullSuiteRectifyStrategy } = require("@/operations/full-suite-rectify");
       const { makeStory: ms } = require("@test/helpers");
       const story = ms({ id: "US-t", title: "test" });
-      const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story);
+      const fullSuiteStrategy = makeFullSuiteRectifyStrategy(story, makeNaxConfig());
 
       const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
       const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
@@ -1139,7 +1139,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode 
   afterEach(async () => { await rt?.close(); });
 
   test("AC-4: validate re-runs gate (mode=full) but never re-runs verifier (one-shot TDD isolation)", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     const gateRunCount = { n: 0 };
@@ -1190,7 +1190,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode 
   });
 
   test("AC-5: validate skips gate when mode=lite", async () => {
-    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxRetries: 3, abortOnIncreasingFailures: false } } });
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
     const gateRunCount = { n: 0 };

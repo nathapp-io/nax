@@ -62,7 +62,7 @@ export function selectNextStories(
   }
 
   // Single-story fallback
-  const story = getNextStory(prd, lastStoryId, config.execution.rectification?.maxRetries ?? 2);
+  const story = getNextStory(prd, lastStoryId, config.execution.rectification?.maxAttemptsTotal ?? 12);
   if (!story) return null;
 
   return {

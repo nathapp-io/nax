@@ -157,7 +157,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
         rectification: {
           ...DEFAULT_CONFIG.execution.rectification,
           enabled: true,
-          maxRetries: 2,
+          maxAttemptsTotal: 2,
         },
       },
     };

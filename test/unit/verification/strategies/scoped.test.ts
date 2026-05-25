@@ -49,7 +49,7 @@ function makeCtxWithThreshold(overrides: Partial<VerifyContext> = {}): VerifyCon
         maxStoriesPerFeature: 10,
         rectification: {
           enabled: false,
-          maxRetries: 0,
+          maxAttemptsTotal: 0,
           fullSuiteTimeoutSeconds: 120,
           maxFailureSummaryChars: 1000,
           abortOnIncreasingFailures: false,
@@ -322,7 +322,7 @@ describe("ScopedStrategy — scopeTestThreshold fallback (US-001)", () => {
           maxStoriesPerFeature: 10,
           rectification: {
             enabled: false,
-            maxRetries: 0,
+            maxAttemptsTotal: 0,
             fullSuiteTimeoutSeconds: 120,
             maxFailureSummaryChars: 1000,
             abortOnIncreasingFailures: false,

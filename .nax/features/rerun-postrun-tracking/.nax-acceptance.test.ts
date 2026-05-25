@@ -1029,7 +1029,7 @@ describe("AC-34: regression running status set before runDeferredRegression", ()
       ...makeConfig(),
       execution: {
         ...makeConfig().execution,
-        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true, maxRectificationAttempts: 0 },
+        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
       quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" } },
     } as unknown as NaxConfig;
@@ -1093,7 +1093,7 @@ describe("AC-35: regression passed with ISO 8601 lastRunAt on success", () => {
       ...makeConfig(),
       execution: {
         ...makeConfig().execution,
-        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true, maxRectificationAttempts: 0 },
+        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
       quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" } },
     } as unknown as NaxConfig;
@@ -1160,7 +1160,7 @@ describe("AC-36: regression failed with failedTests and affectedStories on failu
       ...makeConfig(),
       execution: {
         ...makeConfig().execution,
-        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true, maxRectificationAttempts: 0 },
+        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
       quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" } },
     } as unknown as NaxConfig;
@@ -1249,7 +1249,7 @@ describe("AC-37: smart-skip → regression passed+skipped, runDeferredRegression
       ...makeConfig(),
       execution: {
         ...makeConfig().execution,
-        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true, maxRectificationAttempts: 0 },
+        regressionGate: { mode: "deferred", enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
       quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test" } },
     } as unknown as NaxConfig;

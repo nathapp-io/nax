@@ -71,7 +71,6 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
         mode: "deferred",
         timeoutSeconds: 30,
         acceptOnTimeout: true,
-        maxRectificationAttempts: 2,
       },
     },
     quality: {

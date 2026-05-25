@@ -91,7 +91,7 @@ function makeNonTddInputs(story: UserStory, extra: Partial<PlanInputs> = {}): Pl
 function withRectification(enabled: boolean) {
   return makeNaxConfig({
     execution: {
-      rectification: enabled ? { enabled: true, maxRetries: 2 } : { enabled: false },
+      rectification: enabled ? { enabled: true, maxAttemptsTotal: 12 } : { enabled: false },
     },
   });
 }
@@ -512,7 +512,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { commands: { lintFix: "bun run lint:fix" } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeTddRetryInputs(story, {
@@ -527,7 +527,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { commands: { formatFix: "bun run format:fix" } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeTddRetryInputs(story, {
@@ -552,7 +552,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory();
     const config = makeNaxConfig({
       quality: { commands: { lintFix: "bun run lint:fix" } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeNonTddInputs(story, {
@@ -568,7 +568,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { autofix: { enabled: true } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeTddRetryInputs(story, {
@@ -583,7 +583,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { autofix: { enabled: true } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeTddRetryInputs(story, {
@@ -598,7 +598,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       quality: { commands: {}, autofix: { enabled: false } },
-      execution: { rectification: { enabled: true, maxRetries: 2 } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const ctx = makeCtxWithRuntime(config);
     const inputs = makeTddRetryInputs(story, {

@@ -65,7 +65,6 @@ function makeConfig(
         timeoutSeconds: 30,
         acceptOnTimeout: true,
         mode: regressionMode,
-        maxRectificationAttempts: 2,
       },
     },
     quality: {
@@ -208,7 +207,6 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
           timeoutSeconds: 30,
           acceptOnTimeout: true,
           mode: "deferred",
-          maxRectificationAttempts: 2,
         },
       },
       quality: {

@@ -36,7 +36,7 @@ const baseConfig = {
     maxStoriesPerFeature: 10,
     rectification: {
       enabled: true,
-      maxRetries: 2,
+      maxAttemptsTotal: 2,
       fullSuiteTimeoutSeconds: 60,
       maxFailureSummaryChars: 500,
       abortOnIncreasingFailures: true,

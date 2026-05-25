@@ -1,14 +1,10 @@
 // RE-ARCH: keep
 /**
- * RegressionGateConfigSchema — mode and maxRectificationAttempts fields
+ * RegressionGateConfigSchema — `mode` enum field.
  *
- * Tests that the Zod schema accepts the new 'mode' enum and
- * 'maxRectificationAttempts' integer fields added in US-003.
- *
- * These tests FAIL until RegressionGateConfigSchema is updated in
- * src/config/schemas.ts to add:
- *   mode: z.enum(["deferred", "per-story", "disabled"]).default("deferred")
- *   maxRectificationAttempts: z.number().int().min(1).default(2)
+ * `maxRectificationAttempts` was removed when the regression cycle was
+ * consolidated under `execution.rectification.maxAttemptsTotal` — see
+ * rejectLegacyRectificationKeys in src/config/loader.ts for the migration guard.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -95,66 +91,6 @@ describe("RegressionGateConfigSchema - mode field", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// maxRectificationAttempts field
-// ---------------------------------------------------------------------------
-
-describe("RegressionGateConfigSchema - maxRectificationAttempts field", () => {
-  test("accepts maxRectificationAttempts: 2", () => {
-    const raw = buildConfigWith({
-      ...BASE_REGRESSION_GATE,
-      mode: "deferred",
-      maxRectificationAttempts: 2,
-    });
-    const result = NaxConfigSchema.safeParse(raw);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).maxRectificationAttempts).toBe(2);
-    }
-  });
-
-  test("accepts maxRectificationAttempts: 1", () => {
-    const raw = buildConfigWith({
-      ...BASE_REGRESSION_GATE,
-      mode: "deferred",
-      maxRectificationAttempts: 1,
-    });
-    const result = NaxConfigSchema.safeParse(raw);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).maxRectificationAttempts).toBe(1);
-    }
-  });
-
-  test("defaults maxRectificationAttempts to 2 when omitted", () => {
-    const raw = buildConfigWith({ ...BASE_REGRESSION_GATE, mode: "deferred" });
-    const result = NaxConfigSchema.safeParse(raw);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result.data.execution.regressionGate as any).maxRectificationAttempts).toBe(2);
-    }
-  });
-
-  test("rejects non-integer maxRectificationAttempts", () => {
-    const raw = buildConfigWith({
-      ...BASE_REGRESSION_GATE,
-      mode: "deferred",
-      maxRectificationAttempts: 1.5,
-    });
-    const result = NaxConfigSchema.safeParse(raw);
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects string maxRectificationAttempts", () => {
-    const raw = buildConfigWith({
-      ...BASE_REGRESSION_GATE,
-      mode: "deferred",
-      maxRectificationAttempts: "two",
-    });
-    const result = NaxConfigSchema.safeParse(raw);
-    expect(result.success).toBe(false);
-  });
-});
+// maxRectificationAttempts field removed — regression cycle now shares
+// execution.rectification.maxAttemptsTotal. See rejectLegacyRectificationKeys
+// in src/config/loader.ts for the migration guard.

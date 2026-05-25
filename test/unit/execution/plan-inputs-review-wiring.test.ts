@@ -67,7 +67,7 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
       execution: {
         ...DEFAULT_CONFIG.execution,
         inlineReview: true,
-        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true, maxRetries: 2 },
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true, maxAttemptsTotal: 2 },
       },
       review: {
         ...DEFAULT_CONFIG.review,

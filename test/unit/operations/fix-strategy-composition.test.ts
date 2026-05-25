@@ -15,6 +15,7 @@ import {
   makeMechanicalFormatFixStrategy,
   makeMechanicalLintFixStrategy,
 } from "@/operations";
+import { makeNaxConfig } from "@test/helpers";
 
 const mockCtx = {} as any;
 
@@ -31,8 +32,8 @@ function assembleStrategies(opts: {
   if (opts.lintFix) strategies.push(makeMechanicalLintFixStrategy());
   if (opts.formatFix) strategies.push(makeMechanicalFormatFixStrategy());
   if (opts.autofixEnabled) {
-    strategies.push(makeAutofixImplementerStrategy(mockCtx));
-    strategies.push(makeAutofixTestWriterStrategy(mockCtx));
+    strategies.push(makeAutofixImplementerStrategy(mockCtx, makeNaxConfig()));
+    strategies.push(makeAutofixTestWriterStrategy(mockCtx, makeNaxConfig()));
   }
   return strategies;
 }

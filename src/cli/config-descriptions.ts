@@ -69,18 +69,22 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",
   "execution.typecheckCommand": "Typecheck command override (null=disabled, undefined=auto-detect)",
-  "execution.rectification": "Rectification loop settings (retry failed tests)",
+  "execution.rectification":
+    "Unified fix-cycle settings — shared by story-orchestrator (semantic + adversarial + mechanical) and post-run regression cycles",
   "execution.rectification.enabled": "Enable rectification loop",
-  "execution.rectification.maxRetries": "Max retry attempts per story",
+  "execution.rectification.maxAttemptsTotal":
+    "Total iteration cap for the unified fix cycle (default: 12). Per-strategy caps are the granular bound.",
+  "execution.rectification.maxAttemptsPerStrategy":
+    "Default per-strategy cap for LLM-driven strategies — autofix-implementer / autofix-test-writer / full-suite-rectify (default: 3). Mechanical strategies stay at 1.",
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
   "execution.rectification.maxFailureSummaryChars": "Max characters in failure summary",
   "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
   "execution.rectification.escalateOnExhaustion":
-    "Enable model tier escalation when retries are exhausted with remaining failures",
+    "Enable model tier escalation when attempts are exhausted with remaining failures",
   "execution.rectification.rethinkAtAttempt":
-    "Attempt number at which 'rethink your approach' language is injected into the prompt (default: 2, set >= maxRetries to disable)",
+    "Attempt number at which 'rethink your approach' language is injected into the prompt (default: 2)",
   "execution.rectification.urgencyAtAttempt":
-    "Attempt number at which 'final chance before escalation' urgency is added to the prompt (default: 3, set >= maxRetries to disable)",
+    "Attempt number at which 'final chance before escalation' urgency is added (default: 3)",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",

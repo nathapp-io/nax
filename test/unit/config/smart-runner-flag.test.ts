@@ -66,7 +66,7 @@ describe("execution.smartTestRunner config flag", () => {
         maxStoriesPerFeature: 10,
         rectification: {
           enabled: true,
-          maxRetries: 1,
+          maxAttemptsTotal: 1,
           fullSuiteTimeoutSeconds: 30,
           maxFailureSummaryChars: 500,
           abortOnIncreasingFailures: true,
@@ -209,7 +209,7 @@ function buildMinimalConfig() {
       maxStoriesPerFeature: 10,
       rectification: {
         enabled: true,
-        maxRetries: 1,
+        maxAttemptsTotal: 1,
         fullSuiteTimeoutSeconds: 30,
         maxFailureSummaryChars: 500,
         abortOnIncreasingFailures: true,

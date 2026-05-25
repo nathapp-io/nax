@@ -52,7 +52,7 @@ function makeConfig(triggers: Record<string, unknown>) {
       dangerouslySkipPermissions: false,
       costLimit: 10,
       maxIterations: 10,
-      rectification: { maxRetries: 3 },
+      rectification: { maxAttemptsTotal: 3 },
     },
     interaction: {
       plugin: "cli",

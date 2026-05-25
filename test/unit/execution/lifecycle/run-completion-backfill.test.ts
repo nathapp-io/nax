@@ -46,7 +46,6 @@ const REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
       timeoutSeconds: 30,
       acceptOnTimeout: true,
       mode: "deferred",
-      maxRectificationAttempts: 2,
     },
   },
   quality: {
