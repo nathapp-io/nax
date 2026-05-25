@@ -177,6 +177,24 @@ describe("semanticReviewOp.parse()", () => {
     // LLM-shape `issue` projected onto Finding `message`
     expect(result.normalizedFindings[0]?.message).toBe("x");
   });
+  test("normalizedFindings drops findings below blockingThreshold (mirrors wrapper advisory split)", () => {
+    const ctx = makeBuildCtx();
+    const inputWithThreshold: SemanticReviewInput = { ...SAMPLE_INPUT, blockingThreshold: "error" };
+    const json = JSON.stringify({
+      passed: false,
+      findings: [
+        { severity: "error", file: "src/a.ts", line: 1, issue: "real", suggestion: "fix" },
+        { severity: "warning", file: "src/b.ts", line: 2, issue: "advisory", suggestion: "consider" },
+        { severity: "info", file: "src/c.ts", line: 3, issue: "fyi", suggestion: "noop" },
+      ],
+    });
+    const result = semanticReviewOp.parse(json, inputWithThreshold, ctx);
+    // Raw `findings` retains all three for the wrapper's downstream processing.
+    expect(result.findings).toHaveLength(3);
+    // normalizedFindings (consumed by rectification) only carries the blocking one.
+    expect(result.normalizedFindings).toHaveLength(1);
+    expect(result.normalizedFindings[0]?.message).toBe("real");
+  });
   test("normalizedFindings is [] on fail-open / looksLikeFail / no-findings paths", () => {
     const ctx = makeBuildCtx();
     expect(semanticReviewOp.parse("not json", SAMPLE_INPUT, ctx).normalizedFindings).toEqual([]);

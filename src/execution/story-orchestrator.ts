@@ -219,16 +219,29 @@ function phasePassed(opName: string, output: unknown): boolean {
  * `normalizedFindings` when present and fall back to `findings` for ops whose envelope
  * already speaks the `Finding` wire format (verifierOp etc.).
  */
+function isFinding(value: unknown): value is Finding {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { source?: unknown }).source === "string" &&
+    (value as { source: string }).source.length > 0
+  );
+}
+
 function extractPhaseFindings(output: unknown): Finding[] {
   if (output === null || output === undefined || typeof output !== "object") {
     return [];
   }
   const record = output as Record<string, unknown>;
-  const findings: Finding[] = Array.isArray(record.normalizedFindings)
-    ? (record.normalizedFindings as Finding[])
+  const rawArray = Array.isArray(record.normalizedFindings)
+    ? record.normalizedFindings
     : Array.isArray(record.findings)
-      ? (record.findings as Finding[])
+      ? record.findings
       : [];
+  // Runtime guard: strip anything that isn't a source-tagged Finding. Strategies'
+  // `appliesTo` predicates gate on `f.source` — entries without it cannot be
+  // routed and previously caused the cycle to exit with "no matching strategy".
+  const findings = rawArray.filter(isFinding);
   const success =
     "success" in record ? record.success === true : "passed" in record ? record.passed === true : findings.length === 0;
   return success ? [] : findings;

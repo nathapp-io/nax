@@ -163,6 +163,21 @@ describe("adversarialReviewOp.parse()", () => {
     expect(result.normalizedFindings[1]?.fixTarget).toBe("test");
     expect(result.normalizedFindings[0]?.message).toBe("x");
   });
+  test("normalizedFindings drops findings below blockingThreshold (mirrors wrapper advisory split)", () => {
+    const ctx = makeBuildCtx();
+    const inputWithThreshold: AdversarialReviewInput = { ...SAMPLE_INPUT, blockingThreshold: "error" };
+    const json = JSON.stringify({
+      passed: false,
+      findings: [
+        { severity: "error", category: "logic-bug", file: "src/a.ts", line: 1, issue: "real", suggestion: "fix" },
+        { severity: "warning", category: "style", file: "src/b.ts", line: 2, issue: "advisory", suggestion: "consider" },
+      ],
+    });
+    const result = adversarialReviewOp.parse(json, inputWithThreshold, ctx);
+    expect(result.findings).toHaveLength(2);
+    expect(result.normalizedFindings).toHaveLength(1);
+    expect(result.normalizedFindings[0]?.message).toBe("real");
+  });
   test("normalizedFindings is [] on looksLikeFail / no-findings paths", () => {
     const ctx = makeBuildCtx();
     expect(

@@ -4,7 +4,11 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
-import { toAdversarialReviewFindings, validateAdversarialShape } from "../review/adversarial-helpers";
+import {
+  isBlockingSeverity,
+  toAdversarialReviewFindings,
+  validateAdversarialShape,
+} from "../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -99,14 +103,19 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     if (parsed) {
+      // Match the wrapper's advisory split (src/review/adversarial.ts) so the
+      // orchestrator-direct path doesn't push below-threshold findings into the
+      // rectification cycle.
+      const threshold = input.blockingThreshold ?? "error";
+      const blocking = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
       return {
         passed: parsed.passed,
         findings: parsed.findings,
-        normalizedFindings: toAdversarialReviewFindings(parsed.findings),
+        normalizedFindings: toAdversarialReviewFindings(blocking),
       };
     }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {

@@ -110,14 +110,20 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
     if (parsed) {
+      // Match the wrapper's advisory split (src/review/semantic.ts:443) so the
+      // orchestrator-direct path doesn't push below-threshold findings into the
+      // rectification cycle. The wrapper still owns AC-grounding + evidence
+      // substantiation — orchestrator-path parity is tracked as a follow-up.
+      const threshold = input.blockingThreshold ?? "error";
+      const blocking = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
       return {
         passed: parsed.passed,
         findings: parsed.findings,
-        normalizedFindings: toReviewFindings(parsed.findings),
+        normalizedFindings: toReviewFindings(blocking),
       };
     }
     if (/"passed"\s*:\s*false/.test(output)) {
