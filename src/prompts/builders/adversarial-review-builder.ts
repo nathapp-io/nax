@@ -8,6 +8,7 @@
  */
 
 import type { Iteration } from "../../findings";
+import type { AdversarialLLMFinding } from "../../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../../review/types";
 import { buildPriorIterationsBlock } from "./prior-iterations-builder";
 
@@ -345,5 +346,33 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
       "\n\n",
       diffBlock,
     ].join("");
+  }
+
+  /**
+   * Build a same-session requote prompt for an adversarial finding whose
+   * verifiedBy.observed did not match the file on disk.
+   *
+   * Mirrors ReviewPromptBuilder.requoteVerbatim for the adversarial finding shape.
+   * Called from adversarialReviewOp.hopBody when requote is enabled.
+   */
+  static requoteVerbatim(opts: { finding: AdversarialLLMFinding }): string {
+    const file = opts.finding.verifiedBy?.file ?? opts.finding.file;
+    const line = opts.finding.verifiedBy?.line ?? opts.finding.line;
+    return `Your previous verifiedBy.observed value did not match the referenced file on disk.
+
+You MUST use your file-reading tool to open ${file} and copy the actual bytes around line ${line}. Do NOT quote from memory or from the prior conversation — the previous quote was wrong precisely because it was not read from disk. If you reply without a file-read tool call, the quote will be rejected.
+
+Return ONLY this JSON object:
+{"file":"${file}","line":${line},"observed":"exact 1-3 line quote"}
+
+Finding issue: ${opts.finding.issue}
+Referenced file: ${file}
+Referenced line: ${line}
+
+Rules:
+- Read ${file} with your file tool first. Then copy observed verbatim from the read result.
+- observed must be a 1-3 line excerpt that proves the claim, taken from at or near line ${line}.
+- If after reading the file you cannot find anything that proves the claim, set observed to "".
+- Do not return a full review. Do not include markdown fences or explanation.`;
   }
 }
