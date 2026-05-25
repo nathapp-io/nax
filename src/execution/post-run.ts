@@ -503,10 +503,27 @@ export async function decideStageAction(
   }
 
   if (!planResult.success) {
+    const failedPhases: Record<string, { passed?: boolean; success?: boolean; findingsCount?: number }> = {};
+    for (const [name, output] of Object.entries(planResult.phaseOutputs)) {
+      if (!output || typeof output !== "object") continue;
+      const r = output as Record<string, unknown>;
+      const passed = typeof r.passed === "boolean" ? r.passed : undefined;
+      const success = typeof r.success === "boolean" ? r.success : undefined;
+      const explicitFail = passed === false || success === false;
+      if (!explicitFail) continue;
+      const findings = Array.isArray(r.findings) ? r.findings.length : undefined;
+      failedPhases[name] = { passed, success, findingsCount: findings };
+    }
+    const stderrTail = ((agentResult as { stderr?: string }).stderr ?? "").slice(-500);
+    const outputTail = (agentResult.output ?? "").slice(-500);
     logger.error("execution", "Agent session failed", {
       storyId: ctx.story.id,
       exitCode: agentResult.exitCode,
       rateLimited: agentResult.rateLimited,
+      failureCategory: failureCategory ?? "unknown",
+      failedPhases: Object.keys(failedPhases).length > 0 ? failedPhases : undefined,
+      stderrTail: stderrTail || undefined,
+      outputTail: outputTail || undefined,
     });
     if (agentResult.rateLimited) {
       logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });

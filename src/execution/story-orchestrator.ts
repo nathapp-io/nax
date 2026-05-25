@@ -76,12 +76,22 @@ type PhaseKind =
   | "semantic-review"
   | "adversarial-review";
 
+type DroppedFindingSummary = {
+  code?: string;
+  severity?: string;
+  file?: string;
+  line?: number;
+  issue?: string;
+  acIndex?: number;
+};
+
 type ReviewDecisionPayload =
   | {
       reviewer: "semantic" | "adversarial";
       parsed: true;
       passed: boolean;
       result: { passed: boolean; findings: unknown[] };
+      acDropped?: DroppedFindingSummary[];
     }
   | {
       reviewer: "semantic" | "adversarial";
@@ -363,11 +373,27 @@ function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisio
     return null;
   }
 
+  const acDropped = Array.isArray(record.acDropped)
+    ? (record.acDropped as unknown[]).map((d): DroppedFindingSummary => {
+        const entry = (d ?? {}) as Record<string, unknown>;
+        const finding = (entry.finding ?? {}) as Record<string, unknown>;
+        return {
+          code: typeof entry.code === "string" ? entry.code : undefined,
+          severity: typeof finding.severity === "string" ? finding.severity : undefined,
+          file: typeof finding.file === "string" ? finding.file : undefined,
+          line: typeof finding.line === "number" ? finding.line : undefined,
+          issue: typeof finding.issue === "string" ? finding.issue : undefined,
+          acIndex: typeof finding.acIndex === "number" ? finding.acIndex : undefined,
+        };
+      })
+    : undefined;
+
   return {
     reviewer,
     parsed: true,
     passed: record.passed,
     result: { passed: record.passed, findings: record.findings },
+    acDropped,
   };
 }
 
@@ -421,12 +447,51 @@ function logUnifiedReviewPhaseResult(storyId: string | undefined, opName: string
 
   if (payload.passed) {
     logger?.info("review", `${title} passed`, { storyId });
-  } else {
-    logger?.warn("review", `${title} failed: ${findingsCount} findings`, {
-      storyId,
-      findingsCount,
-    });
+    return;
   }
+
+  // passed:false with empty findings = model emitted failure without grounding
+  // any concern in an AC. Surface this explicitly — otherwise the warn line
+  // ("0 findings") reads as a silent success.
+  if (findingsCount === 0) {
+    const dropped = payload.acDropped ?? [];
+    const droppedSummary = dropped.slice(0, 5);
+    logger?.warn(
+      "review",
+      `${title} failed: 0 findings — ${
+        dropped.length > 0
+          ? `${dropped.length} blocking finding(s) dropped as ungrounded by AC-grounding filter`
+          : "model emitted passed:false but produced no findings (likely empty output)"
+      }`,
+      {
+        storyId,
+        findingsCount,
+        reason: dropped.length > 0 ? "ac-grounding-drop" : "passed-false-no-findings",
+        droppedCount: dropped.length || undefined,
+        droppedFindings: droppedSummary.length > 0 ? droppedSummary : undefined,
+        droppedTruncated: dropped.length > droppedSummary.length || undefined,
+      },
+    );
+    return;
+  }
+
+  const findingsSummary = payload.result.findings.slice(0, 5).map((f) => {
+    const r = (f ?? {}) as Record<string, unknown>;
+    return {
+      severity: typeof r.severity === "string" ? r.severity : undefined,
+      file: typeof r.file === "string" ? r.file : undefined,
+      line: typeof r.line === "number" ? r.line : undefined,
+      rule: typeof r.rule === "string" ? r.rule : undefined,
+      issue: typeof r.issue === "string" ? r.issue : typeof r.message === "string" ? r.message : undefined,
+      acIndex: typeof r.acIndex === "number" ? r.acIndex : undefined,
+    };
+  });
+  logger?.warn("review", `${title} failed: ${findingsCount} findings`, {
+    storyId,
+    findingsCount,
+    findings: findingsSummary,
+    truncated: findingsCount > findingsSummary.length,
+  });
 }
 
 async function runPhase(
