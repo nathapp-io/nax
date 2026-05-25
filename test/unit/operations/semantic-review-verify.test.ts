@@ -109,7 +109,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
             line: 1,
             issue: "Missing input validation",
             suggestion: "Validate input",
-            acIndex: 0,
+            acIndex: 1, // 1-based; story has 1 AC so this is valid
           },
           {
             severity: "warning",
@@ -117,7 +117,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
             line: 1,
             issue: "Consider logging",
             suggestion: "Add a log",
-            acIndex: 0,
+            acIndex: 1, // non-blocking findings pass through regardless
           },
         ],
         normalizedFindings: [],
@@ -177,7 +177,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
             line: 1,
             issue: "Advisory only",
             suggestion: "Consider X",
-            acIndex: 0,
+            acIndex: 1, // non-blocking; passes through regardless of acIndex validity
           },
         ],
         normalizedFindings: [],
@@ -209,7 +209,7 @@ describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
             line: 1,
             issue: "SQL injection risk",
             suggestion: "Use parameterized query",
-            acIndex: 0,
+            acIndex: 1, // 1-based; story has 1 AC so this is valid
           },
         ],
         normalizedFindings: [],
