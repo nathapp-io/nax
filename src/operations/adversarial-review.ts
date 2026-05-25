@@ -1,10 +1,14 @@
 import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
-import type { Iteration } from "../findings";
+import type { Finding, Iteration } from "../findings";
 import { AdversarialReviewPromptBuilder, ReviewPromptBuilder } from "../prompts";
 import type { TestInventory } from "../prompts";
-import { validateAdversarialShape } from "../review/adversarial-helpers";
+import {
+  isBlockingSeverity,
+  toAdversarialReviewFindings,
+  validateAdversarialShape,
+} from "../review/adversarial-helpers";
 import type { AdversarialReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { RunOperation } from "./types";
@@ -32,7 +36,14 @@ export interface AdversarialReviewInput {
 
 export interface AdversarialReviewOutput {
   passed: boolean;
+  /** Raw AdversarialLLMFinding[]. Consumed by `src/review/adversarial.ts`. */
   findings: unknown[];
+  /**
+   * Source-tagged Finding[] (`source: "adversarial-review"`), used by the rectification
+   * cycle's `extractPhaseFindings` → strategy `appliesTo` routing. Empty for fail-open
+   * / looksLikeFail outcomes.
+   */
+  normalizedFindings: Finding[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
@@ -41,7 +52,7 @@ export interface AdversarialReviewOutput {
   looksLikeFail?: boolean;
 }
 
-const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], failOpen: true };
+const FAIL_OPEN: AdversarialReviewOutput = { passed: true, findings: [], normalizedFindings: [], failOpen: true };
 
 const adversarialParseRetry = (input: AdversarialReviewInput) =>
   makeParseRetryStrategy({
@@ -53,7 +64,9 @@ const adversarialParseRetry = (input: AdversarialReviewInput) =>
       truncated: () => ReviewPromptBuilder.jsonRetryCondensed({ blockingThreshold: input.blockingThreshold }),
     },
     exhaustedFallback: (lastOutput) =>
-      /"passed"\s*:\s*false/.test(lastOutput) ? { passed: false, findings: [], looksLikeFail: true } : FAIL_OPEN,
+      /"passed"\s*:\s*false/.test(lastOutput)
+        ? { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true }
+        : FAIL_OPEN,
     logContext: { blockingThreshold: input.blockingThreshold ?? "error" },
   });
 
@@ -90,12 +103,23 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
+  parse(output, input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
-    if (parsed) return { passed: parsed.passed, findings: parsed.findings };
+    if (parsed) {
+      // Match the wrapper's advisory split (src/review/adversarial.ts) so the
+      // orchestrator-direct path doesn't push below-threshold findings into the
+      // rectification cycle.
+      const threshold = input.blockingThreshold ?? "error";
+      const blocking = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+      return {
+        passed: parsed.passed,
+        findings: parsed.findings,
+        normalizedFindings: toAdversarialReviewFindings(blocking),
+      };
+    }
     if (/"passed"\s*:\s*false/.test(output) && !/"findings"\s*:\s*\[\s*\{/.test(output)) {
-      return { passed: false, findings: [], looksLikeFail: true };
+      return { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true };
     }
     throw new ParseValidationError("[adversarial-review] parse failed: invalid JSON shape");
   },

@@ -210,16 +210,38 @@ function phasePassed(opName: string, output: unknown): boolean {
 }
 
 /**
- * Extract structured Findings from a phase output. Each op produces `findings: Finding[]`
- * in its parsed envelope (verifierOp / semanticReviewOp / adversarialReviewOp all conform);
- * we only need to read the array when the phase did not pass.
+ * Extract structured Findings from a phase output. Ops that produce LLM-shape findings
+ * (semanticReviewOp / adversarialReviewOp) expose a `normalizedFindings: Finding[]`
+ * field with `source` already tagged — strategies' `appliesTo` gates on `source`, so
+ * the un-tagged raw `findings` must NEVER reach the rectification cycle (issue: when
+ * the cast lied, `source` was undefined and every strategy was filtered out, producing
+ * "no matching strategy" exits despite real blocking findings). We prefer
+ * `normalizedFindings` when present and fall back to `findings` for ops whose envelope
+ * already speaks the `Finding` wire format (verifierOp etc.).
  */
+function isFinding(value: unknown): value is Finding {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { source?: unknown }).source === "string" &&
+    (value as { source: string }).source.length > 0
+  );
+}
+
 function extractPhaseFindings(output: unknown): Finding[] {
   if (output === null || output === undefined || typeof output !== "object") {
     return [];
   }
   const record = output as Record<string, unknown>;
-  const findings = Array.isArray(record.findings) ? (record.findings as Finding[]) : [];
+  const rawArray = Array.isArray(record.normalizedFindings)
+    ? record.normalizedFindings
+    : Array.isArray(record.findings)
+      ? record.findings
+      : [];
+  // Runtime guard: strip anything that isn't a source-tagged Finding. Strategies'
+  // `appliesTo` predicates gate on `f.source` — entries without it cannot be
+  // routed and previously caused the cycle to exit with "no matching strategy".
+  const findings = rawArray.filter(isFinding);
   const success =
     "success" in record ? record.success === true : "passed" in record ? record.passed === true : findings.length === 0;
   return success ? [] : findings;
