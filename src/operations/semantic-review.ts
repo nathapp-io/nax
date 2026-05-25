@@ -35,6 +35,11 @@ export interface SemanticReviewInput {
   excludePatterns?: string[];
   featureCtxBlock?: string;
   blockingThreshold?: "error" | "warning" | "info";
+  _repromptInfo?: {
+    dropCount: number;
+    outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+    costUsd: number;
+  };
 }
 
 export interface SemanticReviewOutput {
@@ -44,6 +49,11 @@ export interface SemanticReviewOutput {
   acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
   failOpen?: boolean;
   looksLikeFail?: boolean;
+  repromptEvent?: {
+    dropCount: number;
+    outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+    costUsd: number;
+  };
 }
 
 const FAIL_OPEN: SemanticReviewOutput = {
@@ -63,7 +73,6 @@ function evaluateRepromptTrigger(
 ):
   | { shouldReprompt: false }
   | { shouldReprompt: true; acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[] } {
-  if (input.semanticConfig.acRegroundOnDrop === false) return { shouldReprompt: false };
   if (shape.passed) return { shouldReprompt: false };
   const { accepted, dropped } = filterByAcGroundingMinimal(shape.findings, input.story.acceptanceCriteria);
   const threshold = input.blockingThreshold ?? "error";
@@ -110,7 +119,16 @@ const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOut
   });
   const secondTurn = await ctx.send(repromptPrompt);
   const secondParsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
-  if (!secondParsed) return turn;
+  const repromptCostUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+
+  if (!secondParsed) {
+    ctx.input._repromptInfo = {
+      dropCount: trigger.acDropped.length,
+      outcome: "parse-failed",
+      costUsd: repromptCostUsd,
+    };
+    return turn;
+  }
 
   const threshold = ctx.input.blockingThreshold ?? "error";
   const { accepted: secondAccepted } = filterByAcGroundingMinimal(
@@ -120,24 +138,40 @@ const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOut
   const secondBlocking = secondAccepted.filter((f) => isBlockingSeverity(f.severity, threshold));
 
   if (secondBlocking.length > 0) {
+    ctx.input._repromptInfo = {
+      dropCount: trigger.acDropped.length,
+      outcome: "still-dropped",
+      costUsd: repromptCostUsd,
+    };
     return {
       ...turn,
       output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
-      estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+      estimatedCostUsd: repromptCostUsd,
     };
   }
 
   if (secondAccepted.length === 0) {
+    ctx.input._repromptInfo = {
+      dropCount: trigger.acDropped.length,
+      outcome: "recovered-advisory-only",
+      costUsd: repromptCostUsd,
+    };
     return turn;
   }
 
   const firstAdvisory = firstAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
   const secondAdvisory = secondAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
+  ctx.input._repromptInfo = {
+    dropCount: trigger.acDropped.length,
+    outcome: secondParsed.passed ? "recovered-advisory-only" : "recovered-blocking",
+    costUsd: repromptCostUsd,
+  };
+
   return {
     ...turn,
     output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
-    estimatedCostUsd: (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0),
+    estimatedCostUsd: repromptCostUsd,
   };
 };
 
@@ -189,10 +223,18 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         findings: parsed.findings,
         normalizedFindings: [],
         acDropped: [],
+        repromptEvent: _input._repromptInfo,
       };
     }
     if (/"passed"\s*:\s*false/.test(output)) {
-      return { passed: false, findings: [], normalizedFindings: [], acDropped: [], looksLikeFail: true };
+      return {
+        passed: false,
+        findings: [],
+        normalizedFindings: [],
+        acDropped: [],
+        looksLikeFail: true,
+        repromptEvent: _input._repromptInfo,
+      };
     }
     return FAIL_OPEN;
   },

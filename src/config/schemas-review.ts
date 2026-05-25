@@ -42,15 +42,6 @@ const SemanticReviewConfigSchema = z.object({
    * Any user-set value (including []) is returned as-is. (ADR-009 §4.4)
    */
   excludePatterns: z.array(z.string()).optional(),
-  /**
-   * When true (default), after the first semantic pass, if all blocking findings
-   * were dropped by AC-grounding (filterByAcGroundingMinimal) while no blocking
-   * findings remain, issue one reprompt asking the reviewer to re-ground their
-   * findings against the AC text. Preserves substantive reviewer judgment when
-   * failure is caused by AC-grounding formatting errors rather than model reasoning
-   * failure.
-   */
-  acRegroundOnDrop: z.boolean().default(true),
 });
 
 export const ReviewDialogueConfigSchema = z.object({

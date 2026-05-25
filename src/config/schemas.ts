@@ -238,7 +238,6 @@ export const NaxConfigSchema = z
           ":!.nax/",
           ":!.nax-pids",
         ],
-        acRegroundOnDrop: true,
       },
       adversarial: {
         model: "balanced",

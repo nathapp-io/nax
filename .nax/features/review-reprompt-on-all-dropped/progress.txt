@@ -1,2 +1,4 @@
 [2026-05-25T12:57:53.240Z] US-001 — PASSED — Unify AC-drop Typing And Surface Semantic Drops — Cost: $0.4211
 [2026-05-25T15:08:02.217Z] US-002 — PASSED — Adversarial Reground Re-prompt In hopBody — Cost: $0.5813
+[2026-05-25T16:03:41.641Z] US-003 — PASSED — Semantic Reground Re-prompt In hopBody — Cost: $1.3582
+[2026-05-25T16:38:02.573Z] US-004 — FAILED — Review Re-prompt Telemetry Event And Integration Assertion — Execution failed

@@ -256,6 +256,10 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
 
     if (ctx.input.mode !== "ref") return turn;
 
+    const requoteEnabled = ctx.input.adversarialConfig.substantiation?.requote ?? true;
+    const maxRequotes = ctx.input.adversarialConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
+    if (!requoteEnabled || maxRequotes <= 0) return turn;
+
     const firstFindings = requoted.findings;
     const { accepted: firstAccepted } = filterByAcQuote(firstFindings, ctx.input.story.acceptanceCriteria);
     const firstShape: ValidatedAdversarialShape = {
