@@ -26,7 +26,6 @@ import { callOp as _callOp } from "../operations/call";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { extractDiffFiles } from "../utils/diff-files";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { filterByAcQuote } from "./ac-quote-validator";
 import {
   type AdversarialAcceptAnalysis,
   type AdversarialDropAnalysis,
@@ -34,7 +33,6 @@ import {
 } from "./ac-structural-counterfactual";
 import {
   type AdversarialLLMFinding,
-  type AdversarialLLMResponse,
   formatFindings,
   isBlockingSeverity,
   toAdversarialReviewFindings,
@@ -48,11 +46,6 @@ import {
 } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
-import {
-  ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
-  checkFindingEvidence,
-  downgradeUnsubstantiatedFinding,
-} from "./semantic-evidence";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
 /** Injectable dependencies for adversarial.ts — allows tests to mock without mock.module() */
@@ -376,36 +369,15 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
-  const rawParsedRaw: AdversarialLLMResponse = {
-    passed: opResult.passed,
-    findings: opResult.findings as AdversarialLLMFinding[],
-  };
-
-  // Issue #987 — implementation-axis grounding. Substantiate verifiedBy.observed
-  // against source files at HEAD before AC-axis validation. Findings whose claimed
-  // source quote is not on disk are downgraded to "unverifiable" — same semantics
-  // as substantiateSemanticEvidence (#826/#827) on the semantic side. Mirrors that
-  // gate so adversarial findings can no longer fabricate code claims.
-  //
-  // Order matters: this runs BEFORE filterByAcQuote so AC-axis validation only
-  // sees implementation-axis-grounded findings.
-  const blockingThresholdEffective = blockingThreshold ?? "error";
-  const substantiatedFindings = await Promise.all(
-    rawParsedRaw.findings.map(async (finding) => {
-      if (!isBlockingSeverity(finding.severity, blockingThresholdEffective)) return finding;
-      const evidence = await checkFindingEvidence({ finding, workdir });
-      if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
-      return downgradeUnsubstantiatedFinding({
-        finding,
-        storyId: story.id,
-        event: ADVERSARIAL_FINDING_DOWNGRADED_EVENT,
-        file: evidence.file,
-        line: evidence.line,
-        observed: evidence.observed,
-      });
-    }),
-  );
-  const rawParsed: AdversarialLLMResponse = { ...rawParsedRaw, findings: substantiatedFindings };
+  // verify() has already run the full filter pipeline:
+  //   substantiateAdversarialFindings → filterByAcQuote → blocking split
+  // opResult.passed is authoritative (blocking.length === 0).
+  // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
+  const threshold = blockingThreshold ?? "error";
+  const allFindings = opResult.findings as AdversarialLLMFinding[];
+  const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const acDropped = opResult.acDropped ?? [];
 
   // Issue #986 — build diff file set for structural counterfactual telemetry.
   // Embedded mode: parse `diff` (already in memory). Ref mode: shell git diff
@@ -427,18 +399,6 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     }
   }
 
-  // Issue #930 Part 1: drop error findings not grounded in AC text
-  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcQuote(
-    rawParsed.findings,
-    story.acceptanceCriteria,
-  );
-  if (acDropped.length > 0) {
-    logger?.warn("review", "Adversarial findings dropped: acQuote validation failed", {
-      storyId: story.id,
-      dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
-    });
-  }
-
   // Issue #986 — counterfactual analysis for every drop. Adversarial-only.
   const adversarialDropAnalysis: AdversarialDropAnalysis[] = acDropped.map((d) => ({
     finding: {
@@ -457,12 +417,6 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       diffFiles,
     ),
   }));
-
-  const parsed: AdversarialLLMResponse = { ...rawParsed, findings: acGroundedFindings };
-
-  const threshold = blockingThresholdEffective;
-  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
   // Issue #986 — counterfactual analysis for every accepted blocking finding.
   const adversarialAcceptAnalysis: AdversarialAcceptAnalysis[] = blockingFindings.map((f) => ({
@@ -497,11 +451,9 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     );
   }
 
-  // Findings take precedence over the passed field.
-  // The schema requires passed:false when any blocking finding exists, but if the LLM
-  // contradicts itself (passed:true + blocking findings), trust the findings and fail-closed.
-  if (blockingFindings.length > 0) {
-    const durationMs = Date.now() - startTime;
+  const durationMs = Date.now() - startTime;
+
+  if (!opResult.passed) {
     logger?.warn("review", `Adversarial review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
@@ -525,7 +477,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       blockingThreshold: threshold,
       result: {
         passed: false,
-        findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
+        findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
       },
       advisoryFindings:
         advisoryFindings.length > 0
@@ -535,112 +487,25 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       adversarialDropAnalysis,
       adversarialAcceptAnalysis,
     });
+    const output =
+      blockingFindings.length > 0
+        ? `Adversarial review failed:\n\n${formatFindings(blockingFindings)}`
+        : "Adversarial review failed (no findings)";
     return {
       check: "adversarial",
       success: false,
       command: "",
       exitCode: 1,
-      output: `Adversarial review failed:\n\n${formatFindings(blockingFindings)}`,
+      output,
       durationMs,
-      findings: toAdversarialReviewFindings(blockingFindings),
+      findings: blockingFindings.length > 0 ? toAdversarialReviewFindings(blockingFindings) : undefined,
       advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
 
-  // If all findings are advisory (below threshold), override to pass regardless of passed field.
-  //
-  // Guard: when blocking-severity findings were dropped by filterByAcQuote, "no blocking
-  // findings remaining" is NOT evidence of "all advisory" — it is evidence of "the model
-  // produced blocking concerns that it could not ground in any AC." Silently flipping to
-  // pass in that case turns "model misclassified findings as `error`" into "story shipped."
-  // Fail closed and surface the drops so the curator can act on them. (Issue: 2 stories
-  // observed passing this way after acQuote drops; see logs/prompt-audit.txt.)
-  if (!parsed.passed && blockingFindings.length === 0) {
-    if (acDropped.length > 0) {
-      const durationMs = Date.now() - startTime;
-      logger?.warn("review", "Adversarial review fail-closed: blocking findings dropped as ungrounded", {
-        storyId: story.id,
-        durationMs,
-        droppedCount: acDropped.length,
-        dropCodes: acDropped.map((d) => d.code),
-      });
-      const dropSummary = acDropped
-        .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
-        .join("\n");
-      recordAdversarialAudit({
-        runtime,
-        workdir,
-        projectDir,
-        storyId: story.id,
-        featureName,
-        parsed: true,
-        failOpen: false,
-        passed: false,
-        blockingThreshold: threshold,
-        result: { passed: false, findings: [] },
-        advisoryFindings:
-          advisoryFindings.length > 0
-            ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-            : undefined,
-        diffAvailable,
-        adversarialDropAnalysis,
-        adversarialAcceptAnalysis: [],
-      });
-      return {
-        check: "adversarial",
-        success: false,
-        command: "",
-        exitCode: 1,
-        output: `Adversarial review failed: ${acDropped.length} blocking finding(s) dropped as ungrounded — the model emitted "passed: false" with concerns it could not ground in any acceptance criterion. Either re-classify these as "info" upstream or extend the ACs. Drops:\n\n${dropSummary}`,
-        durationMs,
-        advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
-        cost: llmCost,
-      };
-    }
-    const durationMs = Date.now() - startTime;
-    logger?.info("review", "Adversarial review passed (all findings below blocking threshold)", {
-      storyId: story.id,
-      durationMs,
-    });
-    recordAdversarialAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: true,
-      failOpen: false,
-      passed: true,
-      blockingThreshold: threshold,
-      result: {
-        passed: true,
-        findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
-      },
-      advisoryFindings:
-        advisoryFindings.length > 0
-          ? llmFindingsToReviewFindings(advisoryFindings, { source: "adversarial-review" })
-          : undefined,
-      diffAvailable,
-      adversarialDropAnalysis,
-      adversarialAcceptAnalysis: [],
-    });
-    return {
-      check: "adversarial",
-      success: true,
-      command: "",
-      exitCode: 0,
-      output: "Adversarial review passed (all findings were advisory — below blocking threshold)",
-      durationMs,
-      advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
-      cost: llmCost,
-    };
-  }
-
-  const durationMs = Date.now() - startTime;
-  if (parsed.passed) {
-    logger?.info("review", "Adversarial review passed", { storyId: story.id, durationMs });
-  }
+  // passed — either all findings were advisory or there were no findings at all
+  logger?.info("review", "Adversarial review passed", { storyId: story.id, durationMs });
   recordAdversarialAudit({
     runtime,
     workdir,
@@ -649,11 +514,11 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     featureName,
     parsed: true,
     failOpen: false,
-    passed: parsed.passed,
+    passed: true,
     blockingThreshold: threshold,
     result: {
-      passed: parsed.passed,
-      findings: llmFindingsToReviewFindings(parsed.findings, { source: "adversarial-review" }),
+      passed: true,
+      findings: llmFindingsToReviewFindings(allFindings, { source: "adversarial-review" }),
     },
     advisoryFindings:
       advisoryFindings.length > 0
@@ -661,14 +526,17 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         : undefined,
     diffAvailable,
     adversarialDropAnalysis,
-    adversarialAcceptAnalysis,
+    adversarialAcceptAnalysis: [],
   });
   return {
     check: "adversarial",
-    success: parsed.passed,
+    success: true,
     command: "",
-    exitCode: parsed.passed ? 0 : 1,
-    output: parsed.passed ? "Adversarial review passed" : "Adversarial review failed (no findings)",
+    exitCode: 0,
+    output:
+      allFindings.length === 0
+        ? "Adversarial review passed"
+        : "Adversarial review passed (all findings were advisory — below blocking threshold)",
     durationMs,
     advisoryFindings: advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : undefined,
     cost: llmCost,

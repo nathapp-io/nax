@@ -150,9 +150,22 @@ describe("truncation-detected condensed retry", () => {
   });
 
   test("succeeds when condensed retry returns valid JSON after cap-length truncation", async () => {
+    // Finding must carry a valid acQuote grounded in the AC text so verify() passes it through.
+    // AC: "runSemanticReview() accepts workdir, storyGitRef, story, semanticConfig"
+    // File: "src/semantic-review.ts" — locus keyword "semantic" appears in both file and AC.
     const condensedResponse = JSON.stringify({
       passed: false,
-      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "missing impl", suggestion: "add it" }],
+      findings: [
+        {
+          severity: "error",
+          file: "src/semantic-review.ts",
+          line: 1,
+          issue: "missing impl",
+          suggestion: "add it",
+          acQuote: "runSemanticReview() accepts workdir",
+          acIndex: 1,
+        },
+      ],
     });
     const { runtime } = makeCallOpRuntime([
       { output: AT_CAP_UNPARSEABLE },
@@ -161,6 +174,7 @@ describe("truncation-detected condensed retry", () => {
 
     const result = await runSemanticOp(runtime);
 
+    // verify() is authoritative; finding has a valid acQuote → survives filter → passed:false.
     expect((result as { passed: boolean }).passed).toBe(false);
   });
 });

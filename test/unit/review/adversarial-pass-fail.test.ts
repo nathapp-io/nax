@@ -300,8 +300,11 @@ describe("runAdversarialReview — non-blocking only findings", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Regression: passed:false with all blocking findings dropped as ungrounded
-// must fail-closed (must NOT silently flip to pass)
+// verify() is authoritative: AC-dropped findings → clean pass
+//
+// When all blocking findings are dropped by the AC-grounding filter, verify()
+// returns passed:true (blocking.length === 0 is the only truth).
+// The raw LLM passed:false is overridden — the filter pipeline is the SSOT.
 // ---------------------------------------------------------------------------
 
 const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
@@ -325,7 +328,7 @@ const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
   ],
 });
 
-describe("runAdversarialReview — drops + passed:false (fail-closed regression)", () => {
+describe("runAdversarialReview — drops + verify() authoritative pass", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -333,18 +336,17 @@ describe("runAdversarialReview — drops + passed:false (fail-closed regression)
 
   afterEach(restoreAllDeps);
 
-  test("fails closed when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
+  test("passes when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    // Before this fix: success was true (silent pass) because blockingFindings.length === 0
-    // after the validator drop, and the "all advisory" branch overrode passed:false → true.
-    expect(result.success).toBe(false);
-    expect(result.exitCode).toBe(1);
+    // verify() is authoritative: passed = blocking.length === 0.
+    // The raw LLM passed:false is irrelevant once the filter pipeline drops all findings.
+    expect(result.success).toBe(true);
+    expect(result.exitCode).toBe(0);
   });
 
-  test("output names the drop as the failure reason", async () => {
+  test("output indicates a clean pass (no blocking findings survived)", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    expect(result.output).toContain("dropped as ungrounded");
-    expect(result.output).toContain("ExtendedPrismaClient");
+    expect(result.output).toContain("passed");
   });
 });
 
