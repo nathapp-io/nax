@@ -468,6 +468,19 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const totalCost = outcome.result.estimatedCostUsd ?? 0;
 
   if (!rawOutput) {
+    if (maxRetriesExceeded) {
+      getSafeLogger()?.error("callop", "Op retry budget exhausted (empty output)", {
+        storyId: ctx.storyId,
+        opName: op.name,
+        site: "run" as const,
+        totalAttempts: MAX_COMPLETE_RETRY_ATTEMPTS + 1,
+      });
+      throw new NaxError(
+        `callOp[${op.name}]: CALL_OP_MAX_RETRIES — exceeded MAX_COMPLETE_RETRY_ATTEMPTS (${MAX_COMPLETE_RETRY_ATTEMPTS})`,
+        "CALL_OP_MAX_RETRIES",
+        { stage: op.stage, storyId: ctx.storyId },
+      );
+    }
     if (retryFallback !== undefined) {
       if (typeof retryFallback !== "object" || retryFallback === null) {
         throw new NaxError(

@@ -90,7 +90,7 @@ function makeOpWithFallback<O>(
 /** Creates a RunOp with no retry strategy (retryFallback stays undefined). */
 function makeOpNoRetry(
   name: string,
-  recoverFn?: (input: string) => Promise<unknown> | null,
+  recoverFn?: (input: string) => Promise<Record<string, unknown> | null>,
 ): RunOperation<string, Record<string, unknown>, Pick<typeof DEFAULT_CONFIG, "routing">> {
   return {
     kind: "run",
@@ -122,7 +122,7 @@ describe("callOp empty-output + exhaustedFallback — AC1: fallback returned wit
     const runtime = makeMockRuntime({ agentManager, sessionManager: makeSessionManager() });
     createdRuntimes.push(runtime);
 
-    const op = makeOpWithFallback<{ passed: boolean; findings: unknown[]; failOpen: boolean }>(
+    const op = makeOpWithFallback<{ passed: boolean; findings: unknown[]; failOpen: boolean; estimatedCostUsd?: number }>(
       "fallback-cost-op",
       { passed: true, findings: [], failOpen: true },
     );
