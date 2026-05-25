@@ -3,7 +3,7 @@
   "feature": "review-reprompt-on-all-dropped",
   "branchName": "feat/review-reprompt-on-all-dropped",
   "createdAt": "2026-05-25T12:22:57Z",
-  "updatedAt": "2026-05-25T12:27:42.225Z",
+  "updatedAt": "2026-05-25T12:50:30.024Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,7 +30,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/review/ac-quote-validator.ts",
@@ -38,7 +40,11 @@
         "src/operations/semantic-review.ts",
         "test/unit/operations/adversarial-review-verify.test.ts",
         "test/unit/operations/semantic-review-verify.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4da043ef10c968720d726c9167716ded861422d5"
     },
     {
       "id": "US-002",
@@ -78,7 +84,10 @@
         "src/config/schemas-review.ts",
         "test/unit/operations/adversarial-review-requote.test.ts",
         "test/unit/prompts/adversarial-review-builder.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -118,7 +127,10 @@
         "src/config/schemas-review.ts",
         "test/unit/operations/semantic-review.test.ts",
         "test/unit/operations/semantic-review-verify.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -157,7 +169,10 @@
         "test/unit/runtime/dispatch-events.test.ts",
         "test/unit/operations/adversarial-review-requote.test.ts",
         "test/integration/review/reprompt-on-drop.test.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Codebase fit check: both review ops already have a same-session seam in `hopBody` that can issue additional turns (`src/operations/adversarial-review.ts:188-199`, `src/operations/semantic-review.ts:65-80`), while `verify()` is post-parse and cannot send (`src/operations/types.ts:116-173`). Adversarial currently surfaces AC-grounding drops (`acDropped`) and writes them in verify (`src/operations/adversarial-review.ts:64,260-273`); semantic currently discards minimal-grounding drops via `{ accepted }` destructure (`src/operations/semantic-review.ts:165`) and does not expose `acDropped` on output (`src/operations/semantic-review.ts:35-51`). Wrappers already fail-close when `passed:false` survives without surviving blocking findings (`src/review/adversarial.ts:507-541`, `src/review/semantic.ts:477-496`). Validator module is the right shared typing point because both filters return `{ accepted, dropped }` with different code enums (`src/review/ac-quote-validator.ts:153-187,227`). Prompt builders already host retry/requote static helpers and should receive the new reground prompt methods in-place (`src/prompts/builders/adversarial-review-builder.ts:284+`, `src/prompts/builders/review-builder.ts:98+`). Review config schemas currently lack `acRegroundOnDrop` and should add defaults in both semantic/adversarial sub-schemas (`src/config/schemas-review.ts:9-99`). Runtime dispatch typing currently has review-decision event contract in `dispatch-events.ts` (`src/runtime/dispatch-events.ts:83-109`); adding a new review reprompt event variant must be done there and propagated through emitter/listener plumbing used by wrappers. Existing tests cover op hop behavior, verify filters, prompt builders, and dispatch events (`test/unit/operations/adversarial-review-requote.test.ts`, `test/unit/operations/adversarial-review-verify.test.ts`, `test/unit/operations/semantic-review.test.ts`, `test/unit/operations/semantic-review-verify.test.ts`, `test/unit/prompts/adversarial-review-builder.test.ts`, `test/unit/prompts/review-builder.test.ts`, `test/unit/runtime/dispatch-events.test.ts`). Key risks: preserving byte-identical fallback behavior when trigger is off or reprompt fails; avoiding enum-domain conflation by using two-parameter `AcDroppedEntry<F,C>`; and ensuring telemetry emission is observable with complete payload fields. Migration/backward compatibility: config field is additive with default true; semantic output type expansion is additive but snapshot tests/consumers must update; fail-open/looksLikeFail/truncation paths must remain unchanged."
