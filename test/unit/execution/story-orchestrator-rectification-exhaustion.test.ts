@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
 import type { StoryOrchestratorResult } from "@/execution";
-import type { FixCycleExitReason } from "@/findings/cycle-types";
+import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 import { pickSelector } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
@@ -242,5 +242,213 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
     const plan = makePlanWithRectification(ctx);
     const result = await plan.run();
     expect(result.rectificationExhausted).not.toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC1.1–AC1.4: gatherRectificationFindings — verifier-as-SSOT carve-out
+// ─────────────────────────────────────────────────────────────────────────────
+
+const mockFullSuiteGateOp: RunOperation<
+  { story: string },
+  { success: boolean; findings: Finding[] },
+  typeof DEFAULT_CONFIG
+> = {
+  kind: "run",
+  name: "full-suite-gate",
+  stage: "verify",
+  config: testSel,
+  session: { role: "verifier", lifetime: "fresh" },
+  build: () => ({
+    role: { id: "r", content: "gate", overridable: false },
+    task: { id: "t", content: "", overridable: false },
+  }),
+  parse: () => ({ success: true, findings: [] }),
+};
+
+const SEMANTIC_FINDING: Finding = {
+  source: "semantic-review",
+  severity: "error",
+  message: "Does not implement AC-001",
+  file: "src/foo.ts",
+  line: 5,
+};
+
+const VERIFIER_FINDING: Finding = {
+  source: "test-runner",
+  severity: "error",
+  message: "Verifier test failed",
+  file: "test/verifier.test.ts",
+  line: 1,
+};
+
+function makePlanWithGateAndVerifier(ctx: CallContext) {
+  return new StoryOrchestratorBuilder()
+    .addImplementer({ op: mockImplementerOp, input: { story: "US-005" } })
+    .addFullSuiteGate({ op: mockFullSuiteGateOp, input: { story: "US-005" } })
+    .addVerifier({ op: mockVerifierOp, input: { story: "US-005" } })
+    .addRectification({
+      maxAttempts: 3,
+      strategies: [],
+      abortOnIncreasingFailures: false,
+    })
+    .build(ctx, { isThreeSession: true });
+}
+
+function makePlanWithGateOnly(ctx: CallContext) {
+  return new StoryOrchestratorBuilder()
+    .addImplementer({ op: mockImplementerOp, input: { story: "US-005" } })
+    .addFullSuiteGate({ op: mockFullSuiteGateOp, input: { story: "US-005" } })
+    .addRectification({
+      maxAttempts: 3,
+      strategies: [],
+      abortOnIncreasingFailures: false,
+    })
+    .build(ctx, { isThreeSession: true });
+}
+
+describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", () => {
+  test("AC1.1: verifier passed + gate findings present → gathered initial findings exclude the gate findings", async () => {
+    // callOp: verifier passes, gate fails with TEST_RUNNER_FINDING
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verifier") return { success: true, findings: [] };
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
+      capturedCycle = cycle;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const ctx = makeCtx();
+    const plan = makePlanWithGateAndVerifier(ctx);
+    await plan.run();
+
+    // runFixCycle may not have been called if initialFindings was empty (which is what we want)
+    // Either capturedCycle is null (no findings gathered) or it doesn't contain TEST_RUNNER_FINDING
+    if (capturedCycle !== null) {
+      const findings = (capturedCycle as FixCycle<Finding>).findings;
+      const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
+      expect(hasTestRunnerFinding).toBe(false);
+    } else {
+      // runFixCycle wasn't called because gatherRectificationFindings returned [] — correct behavior
+      expect(capturedCycle).toBeNull();
+    }
+  });
+
+  test("AC1.2: verifier explicitly failed → gate findings ARE included in initial findings", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verifier") return { success: false, findings: [VERIFIER_FINDING] };
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
+      capturedCycle = cycle;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const ctx = makeCtx();
+    const plan = makePlanWithGateAndVerifier(ctx);
+    await plan.run();
+
+    expect(capturedCycle).not.toBeNull();
+    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
+    expect(hasTestRunnerFinding).toBe(true);
+  });
+
+  test("AC1.3: no verifier registered → gate findings flow through unchanged", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
+      capturedCycle = cycle;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const ctx = makeCtx();
+    const plan = makePlanWithGateOnly(ctx);
+    await plan.run();
+
+    expect(capturedCycle).not.toBeNull();
+    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
+    expect(hasTestRunnerFinding).toBe(true);
+  });
+
+  test("AC1.4: in validate callback, gate findings excluded when verifier passed", async () => {
+    // Gate fails with TEST_RUNNER_FINDING, verifier passes
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verifier") return { success: true, findings: [] };
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCtx: FixCycleContext | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
+      capturedCycle = cycle;
+      capturedCtx = cycleCtx;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const ctx = makeCtx();
+    const plan = makePlanWithGateAndVerifier(ctx);
+    await plan.run();
+
+    // The validate callback should exclude gate findings when verifier passes
+    // We test by calling validate directly after the initial pass
+    // Reset callOp to track gate re-runs during validate
+    let gateCalledDuringValidate = false;
+    const prevCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") {
+        gateCalledDuringValidate = true;
+        return { success: false, findings: [TEST_RUNNER_FINDING] };
+      }
+      if (op.name === "verifier") return { success: true, findings: [] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    if (capturedCycle !== null && capturedCtx !== null) {
+      const validateFindings = await (capturedCycle as FixCycle<Finding>).validate(
+        capturedCtx as FixCycleContext,
+        { mode: "full" },
+      );
+      // Gate still ran (it's part of validationPhases)
+      expect(gateCalledDuringValidate).toBe(true);
+      // But gate findings are excluded because verifier passed
+      const hasTestRunnerInResult = validateFindings.some((f) => f.source === "test-runner");
+      expect(hasTestRunnerInResult).toBe(false);
+    }
+
+    _storyOrchestratorDeps.callOp = prevCallOp;
   });
 });

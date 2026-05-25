@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
+import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixTestWriterStrategy } from "@/operations";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const mockCtx = {} as any;
 
@@ -67,5 +69,22 @@ describe("makeAutofixTestWriterStrategy", () => {
       const finding = makeFinding({ fixTarget: "source", source: "semantic-review" });
       expect(strategy.appliesTo(finding)).toBe(false);
     });
+  });
+
+  test("AC2.4: buildInput converts adversarial finding to ReviewCheckResult", () => {
+    const story = makeStory();
+    const config = makeNaxConfig();
+    const strategy = makeAutofixTestWriterStrategy(story, config);
+    const adversarialFinding: Finding = {
+      source: "adversarial-review",
+      severity: "error",
+      message: "Coverage gap",
+      file: "test/foo.test.ts",
+      line: 3,
+    };
+    const input = strategy.buildInput([adversarialFinding], [], {} as FixCycleContext);
+    expect(input.failedChecks).toHaveLength(1);
+    expect(input.failedChecks[0]?.check).toBe("adversarial");
+    expect(input.failedChecks[0]?.findings).toEqual([adversarialFinding]);
   });
 });
