@@ -225,12 +225,31 @@ function extractPhaseFindings(output: unknown): Finding[] {
   return success ? [] : findings;
 }
 
+/**
+ * Verifier-as-SSOT: when the verifier explicitly passed, full-suite-gate
+ * failures represent unrelated regressions that this story did not cause.
+ * Excluded from rectification (mirrors the carve-out in ExecutionPlan.run
+ * success aggregation and post-run.ts:deriveFailureCategory).
+ */
+function shouldSkipPhaseForRectification(
+  phase: InternalPhase,
+  state: InternalBuildState,
+  phaseOutputs: Record<string, unknown>,
+): boolean {
+  if (phase.kind !== "full-suite-gate") return false;
+  const verifierName = state.verifier?.slot.op.name;
+  if (!verifierName) return false;
+  return phaseExplicitlyPassed(phaseOutputs[verifierName]);
+}
+
 function gatherRectificationFindings(
   phaseOutputs: Record<string, unknown>,
   phases: readonly InternalPhase[],
+  state: InternalBuildState,
 ): Finding[] {
   const findings: Finding[] = [];
   for (const phase of phases) {
+    if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
     findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
   }
   return findings;
@@ -471,7 +490,7 @@ async function runRectification(
     return {};
   }
 
-  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases);
+  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases, state);
   if (initialFindings.length === 0) {
     return {};
   }
@@ -508,6 +527,7 @@ async function runRectification(
           continue;
         }
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
+        if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
         findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
       }
       return findings;
