@@ -579,11 +579,11 @@ async function runRectification(
       // opts is required by the FixCycle.validate contract but guard defensively for
       // plugin-supplied cycles that may call validate without opts (legacy shape).
       const lite = (opts?.mode ?? "full") === "lite";
-      const phases = phasesToRevalidate(opts.strategiesRun, validationPhases);
+      const phases = phasesToRevalidate(opts?.strategiesRun, validationPhases);
       getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
         storyId: ctx.storyId,
         mode: opts?.mode ?? "full",
-        strategiesRun: opts.strategiesRun,
+        strategiesRun: opts?.strategiesRun,
         phasesSelected: phases.map((p) => p.kind),
       });
       const findings: Finding[] = [];
