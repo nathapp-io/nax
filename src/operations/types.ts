@@ -78,13 +78,17 @@ interface OperationBase<I, O, C> {
    */
   readonly timeoutMs?: (input: I, ctx: BuildContext<C>) => number | undefined;
   /**
-   * Optional. Validate parsed output against on-disk artifacts. Returning
-   * non-null wins; returning null means "parsed output insufficient — fall
+   * Optional. Validate or post-process parsed output, optionally consulting on-disk artifacts.
+   * Returning non-null wins; returning null means "parsed output insufficient — fall
    * through to recover (if defined) or return the original parsed value".
    *
-   * Use when the agent's contract is "stdout has the answer, but disk has
-   * the canonical artifact" (e.g. ACP test-writer: stdout is conversational,
-   * disk has the test file). See ADR-020 §D4.
+   * Sanctioned uses:
+   *   1. "stdout has the answer, but disk has the canonical artifact" (e.g. ACP test-writer:
+   *      stdout is conversational, disk has the test file). See ADR-020 §D4.
+   *   2. Post-parse filter pipeline that may consult disk (e.g. review ops: evidence
+   *      substantiation against HEAD source files, AC-grounding validation). Review ops
+   *      never return null from verify — they always return a filtered O value and rely
+   *      on the caller reading that value directly, not falling through to recover.
    */
   readonly verify?: (parsed: O, input: I, ctx: VerifyContext<C>) => Promise<O | null>;
   /**

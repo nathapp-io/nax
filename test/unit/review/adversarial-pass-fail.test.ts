@@ -300,8 +300,8 @@ describe("runAdversarialReview — non-blocking only findings", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Regression: passed:false with all blocking findings dropped as ungrounded
-// must fail-closed (must NOT silently flip to pass)
+// Spec behavior: keep fail-closed semantics when the model said passed:false
+// and every blocking finding was dropped by AC grounding.
 // ---------------------------------------------------------------------------
 
 const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
@@ -325,7 +325,7 @@ const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
   ],
 });
 
-describe("runAdversarialReview — drops + passed:false (fail-closed regression)", () => {
+describe("runAdversarialReview — drops + fail-closed", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -335,8 +335,6 @@ describe("runAdversarialReview — drops + passed:false (fail-closed regression)
 
   test("fails closed when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    // Before this fix: success was true (silent pass) because blockingFindings.length === 0
-    // after the validator drop, and the "all advisory" branch overrode passed:false → true.
     expect(result.success).toBe(false);
     expect(result.exitCode).toBe(1);
   });

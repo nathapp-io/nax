@@ -4,9 +4,18 @@ import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { ReviewPromptBuilder } from "../prompts";
+import {
+  checkFindingEvidence,
+  downgradeUnsubstantiatedFinding,
+  filterByAcGroundingMinimal,
+  isBlockingSeverity,
+  sanitizeRefModeFindings,
+  substantiateSemanticEvidence,
+  toReviewFindings,
+  validateLLMShape,
+} from "../review/finding-filters";
+import type { LLMFinding } from "../review/finding-filters";
 import { parseRequoteResponse } from "../review/requote-response";
-import { checkFindingEvidence, downgradeUnsubstantiatedFinding } from "../review/semantic-evidence";
-import { type LLMFinding, isBlockingSeverity, toReviewFindings, validateLLMShape } from "../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../review/types";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { HopBodyContext, RunOperation } from "./types";
@@ -114,26 +123,60 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       task: { id: "task", content, overridable: false },
     };
   },
-  parse(output, input, _ctx) {
+  parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
     if (parsed) {
-      // Match the wrapper's advisory split (src/review/semantic.ts:443) so the
-      // orchestrator-direct path doesn't push below-threshold findings into the
-      // rectification cycle. The wrapper still owns AC-grounding + evidence
-      // substantiation — orchestrator-path parity is tracked as a follow-up.
-      const threshold = input.blockingThreshold ?? "error";
-      const blocking = parsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
+      // Advisory split and filter pipeline moved to verify() — parse returns raw shape.
+      // normalizedFindings is populated by verify() after evidence substantiation
+      // and AC-grounding; return empty here so verify() can set it authoritatively.
       return {
         passed: parsed.passed,
         findings: parsed.findings,
-        normalizedFindings: toReviewFindings(blocking),
+        normalizedFindings: [],
       };
     }
     if (/"passed"\s*:\s*false/.test(output)) {
       return { passed: false, findings: [], normalizedFindings: [], looksLikeFail: true };
     }
     return FAIL_OPEN;
+  },
+  async verify(parsed, input, _verifyCtx) {
+    if (parsed.failOpen || parsed.looksLikeFail) return parsed;
+    if (parsed.findings.length === 0) return parsed;
+
+    const threshold = input.blockingThreshold ?? "error";
+    const findings = parsed.findings as LLMFinding[];
+
+    // 1. Downgrade ref-mode blocking findings with unverified evidence to "unverifiable".
+    //    Downgraded findings fall below threshold and are excluded from normalizedFindings.
+    const sanitized = sanitizeRefModeFindings(findings, input.mode, threshold);
+
+    // 2. Substantiate evidence against HEAD source files.
+    const substantiated = await substantiateSemanticEvidence(
+      sanitized,
+      input.mode,
+      input.workdir,
+      input.story.id,
+      threshold,
+    );
+
+    // 3. Drop error findings without valid acIndex.
+    const { accepted } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
+
+    // 4. Split blocking vs advisory; normalizedFindings ⊂ blocking.
+    //    Preserve the model's failure signal: filtered findings may remove
+    //    blockers, but wrappers still fail-closed when the original verdict
+    //    was passed:false and nothing blocking survives.
+    const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+    const passed = parsed.passed && blocking.length === 0;
+
+    return {
+      ...parsed,
+      passed,
+      findings: accepted,
+      normalizedFindings: toReviewFindings(blocking),
+    };
   },
 };
 

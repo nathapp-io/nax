@@ -162,39 +162,24 @@ describe("semanticReviewOp.parse()", () => {
     expect(result.passed).toBe(true);
     expect(result.failOpen).toBeUndefined();
   });
-  test("normalizedFindings tags each finding with source:'semantic-review' for cycle routing", () => {
+  test("parse() returns normalizedFindings:[] — advisory split moved to verify()", () => {
+    // parse() is no longer responsible for the advisory split or source-tagging.
+    // Those responsibilities moved to verify(), which runs the full filter pipeline
+    // (sanitize → substantiate → AC-ground → blocking split). Tests for that
+    // pipeline live in test/unit/operations/semantic-review-verify.test.ts.
     const ctx = makeBuildCtx();
     const json = JSON.stringify({
       passed: false,
       findings: [
         { severity: "error", file: "src/a.ts", line: 1, issue: "x", suggestion: "y", acIndex: 1 },
-        { severity: "error", file: "src/b.ts", line: 2, issue: "z", suggestion: "w", acIndex: 2 },
+        { severity: "warning", file: "src/b.ts", line: 2, issue: "advisory", suggestion: "consider" },
       ],
     });
     const result = semanticReviewOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.normalizedFindings).toHaveLength(2);
-    expect(result.normalizedFindings.every((f) => f.source === "semantic-review")).toBe(true);
-    expect(result.normalizedFindings.every((f) => f.fixTarget === "source")).toBe(true);
-    // LLM-shape `issue` projected onto Finding `message`
-    expect(result.normalizedFindings[0]?.message).toBe("x");
-  });
-  test("normalizedFindings drops findings below blockingThreshold (mirrors wrapper advisory split)", () => {
-    const ctx = makeBuildCtx();
-    const inputWithThreshold: SemanticReviewInput = { ...SAMPLE_INPUT, blockingThreshold: "error" };
-    const json = JSON.stringify({
-      passed: false,
-      findings: [
-        { severity: "error", file: "src/a.ts", line: 1, issue: "real", suggestion: "fix" },
-        { severity: "warning", file: "src/b.ts", line: 2, issue: "advisory", suggestion: "consider" },
-        { severity: "info", file: "src/c.ts", line: 3, issue: "fyi", suggestion: "noop" },
-      ],
-    });
-    const result = semanticReviewOp.parse(json, inputWithThreshold, ctx);
-    // Raw `findings` retains all three for the wrapper's downstream processing.
-    expect(result.findings).toHaveLength(3);
-    // normalizedFindings (consumed by rectification) only carries the blocking one.
-    expect(result.normalizedFindings).toHaveLength(1);
-    expect(result.normalizedFindings[0]?.message).toBe("real");
+    // Raw findings preserved for verify() to process.
+    expect(result.findings).toHaveLength(2);
+    // normalizedFindings is always [] from parse(); populated only after verify() runs.
+    expect(result.normalizedFindings).toEqual([]);
   });
   test("normalizedFindings is [] on fail-open / looksLikeFail / no-findings paths", () => {
     const ctx = makeBuildCtx();

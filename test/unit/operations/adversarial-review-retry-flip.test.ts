@@ -47,6 +47,7 @@ const SAMPLE_CONFIG = {
 };
 
 const SAMPLE_INPUT: AdversarialReviewInput = {
+  workdir: "/tmp/test",
   story: SAMPLE_STORY,
   adversarialConfig: SAMPLE_CONFIG,
   mode: "ref",
@@ -63,11 +64,12 @@ function makeBuildCtx() {
   return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
 }
 
-// ─── AC1: hopBody field is deleted ───────────────────────────────────────────
+// ─── AC1: adversarialReviewOp has both hopBody and retry ─────────────────────
 
-describe("AC1: adversarialReviewOp structure — hopBody removed", () => {
-  test("adversarialReviewOp does NOT have a hopBody field", () => {
-    expect(adversarialReviewOp).not.toHaveProperty("hopBody");
+describe("AC1: adversarialReviewOp structure", () => {
+  test("adversarialReviewOp has a hopBody field (same-session requote recovery)", () => {
+    expect(adversarialReviewOp).toHaveProperty("hopBody");
+    expect(typeof adversarialReviewOp.hopBody).toBe("function");
   });
 
   test("adversarialReviewOp DOES have a retry field", () => {

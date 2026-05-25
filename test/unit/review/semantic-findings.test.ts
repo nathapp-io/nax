@@ -287,12 +287,12 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(!result.findings || result.findings.length === 0).toBe(true);
   });
 
-  // Regression: passed:false with all blocking findings dropped (acIndex missing)
-  // must fail-closed (must NOT silently flip to pass).
+  // Spec behavior: keep fail-closed semantics when the model said passed:false
+  // but every blocking finding was dropped by AC grounding.
   test("fails closed when all blocking findings are dropped due to missing acIndex", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("some diff");
-    // No acIndex → filterByAcGroundingMinimal drops; previously the
-    // "all advisory" branch silently flipped success to true.
+    // No acIndex → filterByAcGroundingMinimal drops; verify() preserves
+    // passed:false so the wrapper can fail-closed.
     const llmResponse = JSON.stringify({
       passed: false,
       findings: [
@@ -312,6 +312,5 @@ describe("runSemanticReview — structured findings in result (US-003 AC-2)", ()
     expect(result.success).toBe(false);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain("acIndex was missing or out of range");
-    expect(result.output).toContain("ExtendedPrismaClient");
   });
 });

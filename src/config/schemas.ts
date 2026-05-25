@@ -239,6 +239,18 @@ export const NaxConfigSchema = z
           ":!.nax-pids",
         ],
       },
+      adversarial: {
+        model: "balanced",
+        diffMode: "ref",
+        rules: [],
+        timeoutMs: 600_000,
+        parallel: false,
+        maxConcurrentSessions: 2,
+        substantiation: {
+          requote: true,
+          maxRequotes: 5,
+        },
+      },
     }),
     plan: PlanConfigSchema.default({
       model: "balanced",

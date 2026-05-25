@@ -10,7 +10,6 @@
 import { relative, sep } from "node:path";
 import type { IAgentManager } from "../agents";
 import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
-import type { NaxConfig } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { DebateRunner } from "../debate";
@@ -23,20 +22,11 @@ import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
-import { substantiateSemanticEvidence } from "./semantic-evidence";
-import {
-  type LLMFinding,
-  type LLMResponse,
-  formatFindings,
-  isBlockingSeverity,
-  sanitizeRefModeFindings,
-  toReviewFindings,
-} from "./semantic-helpers";
+import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
 import type { ReviewCheckResult, SemanticReviewConfig, SemanticStory } from "./types";
 
 // Re-export so existing callers (`import type { SemanticStory } from "./semantic"`) keep working.
@@ -414,34 +404,14 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       durationMs: Date.now() - startTime,
     };
   }
-  const parsed: LLMResponse = { passed: opResult.passed, findings: opResult.findings as LLMFinding[] };
-
-  const sanitizedFindings = await substantiateSemanticEvidence(
-    sanitizeRefModeFindings(parsed.findings, diffMode, blockingThreshold ?? "error"),
-    diffMode,
-    workdir,
-    story.id,
-    blockingThreshold ?? "error",
-  );
-
-  // Issue #985: drop error findings not grounded in AC index (acQuote is advisory only)
-  const { accepted: acGroundedFindings, dropped: acDropped } = filterByAcGroundingMinimal(
-    sanitizedFindings,
-    story.acceptanceCriteria,
-  );
-  if (acDropped.length > 0) {
-    logger?.warn("review", "Semantic findings dropped: acIndex missing or out of range", {
-      storyId: story.id,
-      dropped: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue, code: d.code })),
-    });
-  }
-
-  const sanitizedParsed: LLMResponse = { ...parsed, findings: acGroundedFindings };
-
-  // Split findings by blocking threshold
+  // verify() has already run the full filter pipeline (sanitize → substantiate → AC-ground → split).
+  // opResult.findings = accepted findings (blocking + advisory); opResult.normalizedFindings = blocking only.
+  // opResult.passed preserves the model verdict after filtering so wrappers can
+  // still fail-closed when passed:false survives without remaining blockers.
   const threshold = blockingThreshold ?? "error";
-  const blockingFindings = sanitizedParsed.findings.filter((f) => isBlockingSeverity(f.severity, threshold));
-  const advisoryFindings = sanitizedParsed.findings.filter((f) => !isBlockingSeverity(f.severity, threshold));
+  const allFindings = opResult.findings as LLMFinding[];
+  const blockingFindings = allFindings.filter((f) => isBlockingSeverity(f.severity, threshold));
+  const advisoryFindings = allFindings.filter((f) => !isBlockingSeverity(f.severity, threshold));
 
   if (advisoryFindings.length > 0) {
     logger?.debug(
@@ -454,9 +424,9 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     );
   }
 
-  // Format findings and populate structured ReviewFinding[]
-  if (!sanitizedParsed.passed && blockingFindings.length > 0) {
-    const durationMs = Date.now() - startTime;
+  const durationMs = Date.now() - startTime;
+
+  if (blockingFindings.length > 0) {
     logger?.warn("review", `Semantic review failed: ${blockingFindings.length} blocking findings`, {
       storyId: story.id,
       durationMs,
@@ -484,7 +454,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       blockingThreshold: threshold,
       result: {
         passed: false,
-        findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
+        findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review" }),
       },
       advisoryFindings:
         advisoryFindings.length > 0
@@ -504,53 +474,8 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     };
   }
 
-  // If LLM said failed but all findings are advisory (below threshold), override to pass.
-  //
-  // Guard: when blocking-severity findings were dropped because acIndex was missing or
-  // out of range, "no blocking findings remaining" is NOT evidence of "all advisory" — it
-  // is evidence of "the model produced blocking concerns without valid AC attribution."
-  // Fail closed and surface the drops so the curator can act on them.
-  if (!sanitizedParsed.passed && blockingFindings.length === 0) {
-    if (acDropped.length > 0) {
-      const durationMs = Date.now() - startTime;
-      logger?.warn("review", "Semantic review fail-closed: blocking findings dropped (acIndex invalid)", {
-        storyId: story.id,
-        durationMs,
-        droppedCount: acDropped.length,
-        dropCodes: acDropped.map((d) => d.code),
-      });
-      const dropSummary = acDropped
-        .map((d, i) => `${i + 1}. [${d.code}] ${d.finding.file ?? "<unknown>"}: ${d.finding.issue}`)
-        .join("\n");
-      recordSemanticAudit({
-        runtime,
-        workdir,
-        projectDir,
-        storyId: story.id,
-        featureName,
-        parsed: true,
-        failOpen: false,
-        passed: false,
-        blockingThreshold: threshold,
-        result: { passed: false, findings: [] },
-        advisoryFindings:
-          advisoryFindings.length > 0
-            ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
-            : undefined,
-      });
-      return {
-        check: "semantic",
-        success: false,
-        command: "",
-        exitCode: 1,
-        output: `Semantic review failed: ${acDropped.length} blocking finding(s) dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution. Either re-classify these as "info" or ensure each error finding includes a valid acIndex. Drops:\n\n${dropSummary}`,
-        durationMs,
-        advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
-        cost: llmCost,
-      };
-    }
-    const durationMs = Date.now() - startTime;
-    logger?.info("review", "Semantic review passed (all findings below blocking threshold)", {
+  if (!opResult.passed && allFindings.length === 0) {
+    logger?.warn("review", "Semantic review fail-closed: blocking findings dropped (acIndex invalid)", {
       storyId: story.id,
       durationMs,
     });
@@ -562,12 +487,9 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       featureName,
       parsed: true,
       failOpen: false,
-      passed: true,
+      passed: false,
       blockingThreshold: threshold,
-      result: {
-        passed: true,
-        findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
-      },
+      result: { passed: false, findings: [] },
       advisoryFindings:
         advisoryFindings.length > 0
           ? llmFindingsToReviewFindings(advisoryFindings, { source: "semantic-review" })
@@ -575,20 +497,19 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     });
     return {
       check: "semantic",
-      success: true,
+      success: false,
       command: "",
-      exitCode: 0,
-      output: "Semantic review passed (all findings were advisory — below blocking threshold)",
+      exitCode: 1,
+      output:
+        'Semantic review failed: blocking finding(s) were dropped — acIndex was missing or out of range. The model emitted "passed: false" without valid AC attribution.',
       durationMs,
       advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
       cost: llmCost,
     };
   }
 
-  const durationMs = Date.now() - startTime;
-  if (sanitizedParsed.passed) {
-    logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
-  }
+  // passed — either the model passed with no blocking findings, or there were no findings at all
+  logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
   recordSemanticAudit({
     runtime,
     workdir,
@@ -597,11 +518,11 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     featureName,
     parsed: true,
     failOpen: false,
-    passed: sanitizedParsed.passed,
+    passed: true,
     blockingThreshold: threshold,
     result: {
-      passed: sanitizedParsed.passed,
-      findings: llmFindingsToReviewFindings(sanitizedParsed.findings, { source: "semantic-review" }),
+      passed: true,
+      findings: llmFindingsToReviewFindings(allFindings, { source: "semantic-review" }),
     },
     advisoryFindings:
       advisoryFindings.length > 0
@@ -610,10 +531,13 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   });
   return {
     check: "semantic",
-    success: sanitizedParsed.passed,
+    success: true,
     command: "",
-    exitCode: sanitizedParsed.passed ? 0 : 1,
-    output: sanitizedParsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
+    exitCode: 0,
+    output:
+      allFindings.length === 0
+        ? "Semantic review passed"
+        : "Semantic review passed (all findings were advisory — below blocking threshold)",
     durationMs,
     advisoryFindings: advisoryFindings.length > 0 ? toReviewFindings(advisoryFindings) : undefined,
     cost: llmCost,

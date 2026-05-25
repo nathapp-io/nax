@@ -189,6 +189,13 @@ export interface AdversarialReviewConfig {
   parallel: boolean;
   /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
   maxConcurrentSessions: number;
+  /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
+  substantiation?: {
+    /** When true, ask the same reviewer session for one verbatim requote before downgrade. */
+    requote: boolean;
+    /** Maximum number of requote turns per adversarial review. */
+    maxRequotes: number;
+  };
 }
 
 /** Review configuration */

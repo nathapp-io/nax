@@ -86,6 +86,15 @@ export const AdversarialReviewConfigSchema = z.object({
   parallel: z.boolean().default(false),
   /** Maximum combined reviewer sessions before falling back to sequential. Default 2. */
   maxConcurrentSessions: z.number().int().min(1).max(4).default(2),
+  /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
+  substantiation: z
+    .object({
+      /** When true, ask the same reviewer session for one verbatim requote before downgrade. Default true. */
+      requote: z.boolean().default(true),
+      /** Maximum number of requote turns per adversarial review. Default 5. */
+      maxRequotes: z.number().int().min(0).default(5),
+    })
+    .optional(),
 });
 
 export const ReviewConfigSchema = z.object({

@@ -28,6 +28,7 @@ const SAMPLE_CONFIG = {
 };
 
 const SAMPLE_INPUT: AdversarialReviewInput = {
+  workdir: "/tmp/test",
   story: SAMPLE_STORY,
   adversarialConfig: SAMPLE_CONFIG,
   mode: "ref",
@@ -147,7 +148,7 @@ describe("adversarialReviewOp.parse()", () => {
     expect(result.findings).toHaveLength(1);
     expect((result.findings[0] as { issue: string }).issue).toBe("error swallowed");
   });
-  test("normalizedFindings tags each finding with source:'adversarial-review' for cycle routing", () => {
+  test("parse() returns normalizedFindings:[] — source tagging and advisory split moved to verify()", () => {
     const ctx = makeBuildCtx();
     const json = JSON.stringify({
       passed: false,
@@ -157,14 +158,12 @@ describe("adversarialReviewOp.parse()", () => {
       ],
     });
     const result = adversarialReviewOp.parse(json, SAMPLE_INPUT, ctx);
-    expect(result.normalizedFindings).toHaveLength(2);
-    expect(result.normalizedFindings.every((f) => f.source === "adversarial-review")).toBe(true);
-    // test-gap findings target tests so the test-writer strategy picks them up.
-    expect(result.normalizedFindings[0]?.fixTarget).toBeUndefined();
-    expect(result.normalizedFindings[1]?.fixTarget).toBe("test");
-    expect(result.normalizedFindings[0]?.message).toBe("x");
+    // parse() is a thin structural parser — normalizedFindings is always [] from parse().
+    // Source tagging (adversarial-review) and blocking/advisory split happen in verify().
+    expect(result.normalizedFindings).toEqual([]);
+    expect(result.findings).toHaveLength(2);
   });
-  test("normalizedFindings drops findings below blockingThreshold (mirrors wrapper advisory split)", () => {
+  test("parse() returns normalizedFindings:[] regardless of blockingThreshold", () => {
     const ctx = makeBuildCtx();
     const inputWithThreshold: AdversarialReviewInput = { ...SAMPLE_INPUT, blockingThreshold: "error" };
     const json = JSON.stringify({
@@ -175,9 +174,9 @@ describe("adversarialReviewOp.parse()", () => {
       ],
     });
     const result = adversarialReviewOp.parse(json, inputWithThreshold, ctx);
+    // parse() returns all raw findings; verify() does the threshold split.
     expect(result.findings).toHaveLength(2);
-    expect(result.normalizedFindings).toHaveLength(1);
-    expect(result.normalizedFindings[0]?.message).toBe("real");
+    expect(result.normalizedFindings).toEqual([]);
   });
   test("normalizedFindings is [] on looksLikeFail / no-findings paths", () => {
     const ctx = makeBuildCtx();
@@ -236,8 +235,9 @@ describe("adversarialReviewOp.retry", () => {
     expect(typeof strategy.shouldRetry).toBe("function");
   });
 
-  test("hopBody field does NOT exist (removed in US-005c)", () => {
-    expect(adversarialReviewOp).not.toHaveProperty("hopBody");
+  test("hopBody field exists (same-session requote recovery added)", () => {
+    expect(adversarialReviewOp).toHaveProperty("hopBody");
+    expect(typeof adversarialReviewOp.hopBody).toBe("function");
   });
 });
 
