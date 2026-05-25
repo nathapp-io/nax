@@ -7,6 +7,16 @@ import type { SemanticReviewConfig } from "./types";
 
 const OBSERVED_PREVIEW_CHARS = 160;
 const ISSUE_PREVIEW_CHARS = 200;
+/**
+ * Line-anchor window. When `verifiedBy.line` is set we only accept the quote if
+ * it appears within ±EVIDENCE_LINE_WINDOW of that line. Full-file substring
+ * matching previously let recovered findings reinstate themselves with quotes
+ * lifted from anywhere in the file, regardless of where the finding actually
+ * claimed the bug was. 10 lines tolerates LLM off-by-some on line numbers and
+ * multi-line observed blocks up to ~20 lines (the longest realistic finding
+ * excerpt we've seen).
+ */
+const EVIDENCE_LINE_WINDOW = 10;
 
 export const SEMANTIC_FINDING_DOWNGRADED_EVENT = "review.semantic.finding.downgraded";
 export const ADVERSARIAL_FINDING_DOWNGRADED_EVENT = "review.adversarial.finding.downgraded";
@@ -68,9 +78,32 @@ export async function checkFindingEvidence(opts: {
   if (!observed) return { status: "missing-observed", file, line };
   const contents = await readSafeFile(opts.workdir, file);
   if (contents === null) return { status: "unreadable", file, line, observed };
-  return normalizedIncludes(contents, observed)
+  return matchesEvidence(contents, observed, line)
     ? { status: "matched", file, line, observed }
     : { status: "unmatched", file, line, observed };
+}
+
+/**
+ * Two-pass evidence check:
+ *   1. If `line` is set, look for the quote within a ±EVIDENCE_LINE_WINDOW
+ *      window around that line. This is the strict check that prevents
+ *      "recovered" findings from being substantiated by quoting anywhere in
+ *      the file.
+ *   2. If `line` is absent (e.g. AdversarialLLMFinding without a referenced
+ *      line, or legacy findings), fall back to full-file substring match.
+ */
+function matchesEvidence(contents: string, observed: string, line: number | undefined): boolean {
+  if (!line || line <= 0) {
+    return normalizedIncludes(contents, observed);
+  }
+  const lines = contents.split("\n");
+  // Convert to 0-based index. Clamp to [0, lines.length - 1] to keep the slice
+  // sane even when the LLM cites a line past the file's end.
+  const cited = Math.min(Math.max(0, line - 1), lines.length - 1);
+  const start = Math.max(0, cited - EVIDENCE_LINE_WINDOW);
+  const end = Math.min(lines.length, cited + EVIDENCE_LINE_WINDOW + 1);
+  const windowText = lines.slice(start, end).join("\n");
+  return normalizedIncludes(windowText, observed);
 }
 
 export function downgradeUnsubstantiatedFinding<F extends FindingWithEvidence>(opts: {
