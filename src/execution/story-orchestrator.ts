@@ -267,6 +267,66 @@ function collectRectificationPhases(state: InternalBuildState): InternalPhase[] 
   ].filter((phase): phase is InternalPhase => phase !== undefined);
 }
 
+const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
+  "mechanical-lintfix": ["lint-check"],
+  "mechanical-formatfix": ["lint-check"],
+  "autofix-implementer": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verify-scoped",
+    "semantic-review",
+    "adversarial-review",
+  ],
+  "autofix-test-writer": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verify-scoped",
+    "adversarial-review",
+  ],
+  "full-suite-rectify": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verify-scoped",
+    "semantic-review",
+  ],
+};
+
+/**
+ * Determine which phases to re-run after a fix iteration.
+ * Verifier is always excluded — its TDD-isolation job is one-shot,
+ * anchored to the story-start git ref. Re-dispatching it inside
+ * rectification asks a question the routing layer has already answered.
+ *
+ * Falls back to all non-verifier phases when:
+ * - strategiesRun is undefined/empty (conservative default)
+ * - any strategy name is unknown to the mapping (plugin-supplied strategy)
+ */
+function phasesToRevalidate(
+  strategiesRun: readonly string[] | undefined,
+  allPhases: readonly InternalPhase[],
+): readonly InternalPhase[] {
+  // Always exclude verifier — isolation is one-shot.
+  const sourceFiltered = allPhases.filter((p) => p.kind !== "verifier");
+
+  if (!strategiesRun || strategiesRun.length === 0) return sourceFiltered;
+
+  const unknown = strategiesRun.some(
+    (name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined,
+  );
+  if (unknown) return sourceFiltered;
+
+  const needed = new Set<PhaseKind>();
+  for (const name of strategiesRun) {
+    for (const kind of STRATEGY_TO_REVALIDATION_PHASES[name] ?? []) {
+      needed.add(kind);
+    }
+  }
+  return sourceFiltered.filter((p) => needed.has(p.kind));
+}
+
 function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
@@ -520,9 +580,10 @@ async function runRectification(
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return [];
-      const lite = opts?.mode === "lite";
+      const lite = opts.mode === "lite";
+      const phases = phasesToRevalidate(opts.strategiesRun, validationPhases);
       const findings: Finding[] = [];
-      for (const phase of validationPhases) {
+      for (const phase of phases) {
         if (lite && phase.kind === "full-suite-gate") {
           continue;
         }

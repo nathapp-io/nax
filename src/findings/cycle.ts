@@ -306,7 +306,10 @@ export async function runFixCycle<F extends Finding>(
     if (allExhausted) {
       let liteFindingsAfter: F[];
       try {
-        liteFindingsAfter = await cycle.validate(ctx, { mode: "lite" });
+        liteFindingsAfter = await cycle.validate(ctx, {
+          mode: "lite",
+          strategiesRun: group.map((s) => s.name),
+        });
       } catch (err) {
         const finishedAt = now();
         cycle.iterations.push({
@@ -383,7 +386,7 @@ export async function runFixCycle<F extends Finding>(
     let validatorAttempt = 0;
     for (;;) {
       try {
-        findingsAfter = await cycle.validate(ctx, { mode: "full" });
+        findingsAfter = await cycle.validate(ctx, { mode: "full", strategiesRun: group.map((s) => s.name) });
         break;
       } catch (err) {
         if (validatorAttempt >= cycle.config.validatorRetries) {
