@@ -468,6 +468,33 @@ export async function callOp<I, O, C>(ctx: CallContext, op: Operation<I, O, C>, 
   const totalCost = outcome.result.estimatedCostUsd ?? 0;
 
   if (!rawOutput) {
+    if (retryFallback !== undefined) {
+      if (typeof retryFallback !== "object" || retryFallback === null) {
+        throw new NaxError(
+          `callOp[${op.name}]: exhaustedFallback returned a non-object (${typeof retryFallback}); fallback must be a plain object`,
+          "CALL_OP_INVALID_FALLBACK",
+          { stage: op.stage, storyId: ctx.storyId },
+        );
+      }
+      getSafeLogger()?.warn("callop", "Returning exhaustedFallback on empty output", {
+        storyId: ctx.storyId,
+        opName: op.name,
+        agentName: dispatchAgent,
+      });
+      return { ...retryFallback, estimatedCostUsd: totalCost } as O;
+    }
+    if (op.recover) {
+      const verifyCtx = makeVerifyCtx(buildCtx);
+      const recovered = await op.recover(input, verifyCtx);
+      if (recovered !== null) {
+        getSafeLogger()?.warn("callop", "Recovered from empty output via op.recover", {
+          storyId: ctx.storyId,
+          opName: op.name,
+          agentName: dispatchAgent,
+        });
+        return recovered;
+      }
+    }
     throw new NaxError(`callOp[${op.name}]: agent returned no output`, "CALL_OP_NO_OUTPUT", {
       stage: op.stage,
       storyId: ctx.storyId,
