@@ -34,8 +34,10 @@ const RectificationConfigSchema = z.object({
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
   escalateOnExhaustion: z.boolean().optional().default(true),
-  rethinkAtAttempt: z.number().int().min(1).default(2),
-  urgencyAtAttempt: z.number().int().min(1).default(3),
+  // Defaults scaled to maxAttemptsTotal=12: rethink fires ~2/3 through the budget,
+  // urgency on the near-final attempts.
+  rethinkAtAttempt: z.number().int().min(1).default(8),
+  urgencyAtAttempt: z.number().int().min(1).default(11),
 });
 
 const RegressionGateConfigSchema = z.object({

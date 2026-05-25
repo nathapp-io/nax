@@ -114,8 +114,8 @@ export const NaxConfigSchema = z
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
         escalateOnExhaustion: true,
-        rethinkAtAttempt: 2,
-        urgencyAtAttempt: 3,
+        rethinkAtAttempt: 8,
+        urgencyAtAttempt: 11,
       },
       regressionGate: {
         enabled: true,
