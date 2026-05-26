@@ -13,7 +13,20 @@ import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
-import type { VerifyResult } from "../../../src/verification/orchestrator-types";
+// VerifyResult inlined after orchestrator-types.ts deletion (issue #1116).
+interface VerifyResult {
+  success: boolean;
+  status: string;
+  storyId: string;
+  strategy: string;
+  passCount: number;
+  failCount: number;
+  totalCount: number;
+  failures: unknown[];
+  durationMs: number;
+  countsTowardEscalation: boolean;
+  scopeTestFallback?: boolean;
+}
 import { makeNaxConfig } from "../../helpers";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;

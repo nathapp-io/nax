@@ -204,6 +204,42 @@ describe("buildPlanForStrategy — non-TDD single-session", () => {
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 
+  // issue #1116: regressionGate.mode=per-story wires fullSuiteGateOp into non-TDD plans.
+  test("non-TDD + regressionGate.mode=per-story + fullSuiteGate input → plan includes full-suite-gate", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      execution: { regressionGate: { mode: "per-story" } },
+    });
+    const ctx = makeMockCallContext();
+    const inputs = makeNonTddInputs(story, { fullSuiteGate: makeFullSuiteGateInput(story) });
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).toContain("full-suite-gate");
+  });
+
+  test("non-TDD + regressionGate.mode=deferred + fullSuiteGate input → plan does NOT include full-suite-gate", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      execution: { regressionGate: { mode: "deferred" } },
+    });
+    const ctx = makeMockCallContext();
+    // Even when fullSuiteGate input is present, mode=deferred means it should not run per-story.
+    const inputs = makeNonTddInputs(story, { fullSuiteGate: makeFullSuiteGateInput(story) });
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).not.toContain("full-suite-gate");
+  });
+
+  test("non-TDD + no fullSuiteGate input → plan does NOT include full-suite-gate regardless of mode", async () => {
+    const story = makeStory();
+    const config = makeNaxConfig({
+      execution: { regressionGate: { mode: "per-story" } },
+    });
+    const ctx = makeMockCallContext();
+    // Input presence gate: fullSuiteGate must be present in inputs for the op to be added.
+    const inputs = makeNonTddInputs(story); // no fullSuiteGate
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    expect(plan.phaseNames()).not.toContain("full-suite-gate");
+  });
+
   test("tdd-simple strategy includes only implementer (single-session, no test-writer/verifier)", async () => {
     // tdd-simple is a SINGLE-SESSION strategy: one agent writes tests AND
     // implements within the same session. It must NOT trigger the three-session

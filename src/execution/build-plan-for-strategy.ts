@@ -121,8 +121,9 @@ export async function buildPlanForStrategy(
     builder.addImplementer(inputs.implementer);
   }
 
-  // TDD: full-suite-gate + verifier
-  if (isThreeSession && inputs.fullSuiteGate) {
+  // Full-suite gate: TDD always, non-TDD only when regressionGate.mode === "per-story" (issue #1116).
+  const regressionMode = config.execution?.regressionGate?.mode ?? "deferred";
+  if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {
     builder.addFullSuiteGate(inputs.fullSuiteGate);
   }
   if (isThreeSession && inputs.verifier) {
@@ -167,7 +168,8 @@ export async function buildPlanForStrategy(
     if (config.quality.commands.formatFix || config.quality.commands.formatFixScoped) {
       strategies.push(makeMechanicalFormatFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
     }
-    if (isThreeSession && inputs.fullSuiteGate) {
+    // Mirror the primary gate condition: TDD always, non-TDD when mode=per-story.
+    if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {
       strategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {

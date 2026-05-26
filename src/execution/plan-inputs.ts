@@ -247,15 +247,20 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     constitution: ctx.constitution?.content,
   };
 
-  const fullSuiteGateInput = _isTdd
-    ? {
-        story,
-        workdir: ctx.workdir,
-        featureName: ctx.prd.feature,
-        projectDir: ctx.projectDir,
-        resolvedTestPatterns,
-      }
-    : undefined;
+  // fullSuiteGate: TDD always; non-TDD only when regressionGate.mode === "per-story" (issue #1116).
+  // The build-plan-for-strategy.ts builder gates on (isThreeSession || regressionMode === "per-story")
+  // so having a defined input here for non-TDD per-story runs is safe — the builder adds it only once.
+  const _regressionMode = ctx.config.execution?.regressionGate?.mode;
+  const fullSuiteGateInput =
+    _isTdd || _regressionMode === "per-story"
+      ? {
+          story,
+          workdir: ctx.workdir,
+          featureName: ctx.prd.feature,
+          projectDir: ctx.projectDir,
+          resolvedTestPatterns,
+        }
+      : undefined;
 
   const verifierInput = _isTdd ? { story, promptMarkdown: verifierPrompt } : undefined;
 

@@ -15,11 +15,10 @@ import { executionStage } from "./execution";
 import { optimizerStage } from "./optimizer";
 import { promptStage } from "./prompt";
 import { queueCheckStage } from "./queue-check";
-import { regressionStage } from "./regression";
 import { routingStage } from "./routing";
 
 /**
- * Default pipeline stages in execution order (US-005c: collapsed from 13 to 9 stages).
+ * Default pipeline stages in execution order (issue #1116: regression stage removed — 8 stages).
  *
  * 1. Check for queue commands (PAUSE/ABORT/SKIP)
  * 2. Route (classify complexity → model tier)
@@ -28,8 +27,7 @@ import { routingStage } from "./routing";
  * 5. Assemble prompt (story + context + constitution)
  * 6. Optimize prompt (reduce token usage)
  * 7. Execute agent session (TDD or test-after, incl. verify/rectify/review/autofix)
- * 8. Regression (full-suite gate — deferred mode)
- * 9. Mark complete (save PRD, fire hooks, log progress)
+ * 8. Mark complete (save PRD, fire hooks, log progress)
  */
 export const defaultPipeline: PipelineStage[] = [
   queueCheckStage,
@@ -39,7 +37,6 @@ export const defaultPipeline: PipelineStage[] = [
   promptStage,
   optimizerStage,
   executionStage,
-  regressionStage,
   completionStage,
 ];
 
@@ -63,6 +60,5 @@ export { contextStage } from "./context";
 export { promptStage } from "./prompt";
 export { optimizerStage } from "./optimizer";
 export { executionStage, _executionDeps } from "./execution";
-export { regressionStage } from "./regression";
 export { completionStage } from "./completion";
 export { acceptanceStage } from "./acceptance";
