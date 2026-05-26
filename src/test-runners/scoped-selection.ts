@@ -13,8 +13,8 @@
 
 import { getLogger } from "@/logger";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners";
-import { _smartRunnerDeps } from "@/verification/smart-runner";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
+import { _smartRunnerDeps } from "../verification/smart-runner";
 
 const DEFAULT_SMART_RUNNER_CONFIG = {
   enabled: true,

@@ -108,9 +108,7 @@ export function validatePlanInputs(story: UserStory, config: NaxConfig): void {
  * build-plan-for-strategy.ts), so verifyScopedOp's deferred skip — "no mapped tests → SKIPPED" —
  * is already the correct no-op behavior for scope-level verification.
  */
-function toVerifyScopedMode(
-  mode: "deferred" | "per-story" | "disabled" | undefined,
-): "deferred" | "per-story" {
+function toVerifyScopedMode(mode: "deferred" | "per-story" | "disabled" | undefined): "deferred" | "per-story" {
   if (mode === "per-story") return "per-story";
   return "deferred"; // "deferred", "disabled", and undefined all produce deferred behavior
 }
