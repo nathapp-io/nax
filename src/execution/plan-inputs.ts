@@ -199,14 +199,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   // Always resolves (not gated on _isTdd) so review helpers get patterns even on non-TDD plans.
   // Using projectDir as root (with packageDirRelative for monorepos) is the SSOT per ADR-009.
   const packageDirRelative = (() => {
-    if (!ctx.projectDir || ctx.workdir === ctx.projectDir) return undefined;
+    if (ctx.workdir === ctx.projectDir) return undefined;
     const rel = relative(ctx.projectDir, ctx.workdir);
     if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
     return rel && rel !== "." ? rel : undefined;
   })();
   const resolvedTestPatterns = await resolveTestFilePatterns(
     config,
-    ctx.projectDir ?? ctx.workdir,
+    ctx.projectDir,
     packageDirRelative,
   );
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
