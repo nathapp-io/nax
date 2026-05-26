@@ -15,6 +15,7 @@
 import { relative, sep } from "node:path";
 import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { NaxConfig } from "../config/schema";
+import type { ReviewConfig } from "../config/selectors";
 import type { AdversarialReviewConfig, SemanticReviewConfig } from "../review/types";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
@@ -33,7 +34,13 @@ export interface PrepareReviewInputArgs {
   projectDir?: string;
   storyId: string;
   storyGitRef: string | undefined;
-  config: NaxConfig;
+  /**
+   * Full NaxConfig (orchestrator path), a ReviewConfig slice (legacy/reconciliation
+   * path), or undefined (reconciliation with no config). Internal `?? DEFAULT_CONFIG`
+   * fallback covers undefined; the helper only reads `.execution?.smartTestRunner`
+   * and review-related slices, which exist on both shapes.
+   */
+  config: NaxConfig | ReviewConfig | undefined;
   naxIgnoreIndex?: NaxIgnoreIndex;
 }
 
