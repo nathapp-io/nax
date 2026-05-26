@@ -100,6 +100,14 @@ export function validatePlanInputs(story: UserStory, config: NaxConfig): void {
   }
 }
 
+/** Maps the full regressionGate.mode union to the two-value subset accepted by VerifyScopedInput. */
+function toVerifyScopedMode(
+  mode: "deferred" | "per-story" | "disabled" | undefined,
+): "deferred" | "per-story" {
+  if (mode === "per-story") return "per-story";
+  return "deferred"; // "deferred", "disabled", and undefined all fall through to deferred
+}
+
 export function assemblePlanInputs(
   story: UserStory,
   config: NaxConfig,
@@ -248,7 +256,15 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   // verifyScoped: present for non-TDD strategies (TDD uses fullSuiteGate + verifier instead)
   const verifyScopedInput: VerifyScopedInput | undefined = !_isTdd
-    ? { workdir: ctx.workdir, storyId: story.id }
+    ? {
+        workdir: ctx.workdir,
+        storyId: story.id,
+        storyGitRef: ctx.storyGitRef,
+        naxIgnoreIndex: ctx.naxIgnoreIndex,
+        // "disabled" mode means the regression gate is fully off; treat as "deferred" for
+        // verifyScopedOp (scope-level behavior unchanged — fullSuiteGateOp handles enabled=false).
+        regressionMode: toVerifyScopedMode(ctx.config.execution?.regressionGate?.mode),
+      }
     : undefined;
 
   // lintCheck: gated by review.checks includes "lint" and a lint command is configured
