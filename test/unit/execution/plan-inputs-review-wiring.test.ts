@@ -175,4 +175,48 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     const inputs = await assemblePlanInputsFromCtx(ctx);
     expect(inputs.semanticReview!.priorSemanticIterations).toEqual([priorIter]);
   });
+
+  test("AC#4 (#1120): resolveTestFilePatterns result is shared between semantic and adversarial helpers via resolvedTestPatterns", async () => {
+    // Both checks enabled — two prepare-inputs calls. plan-inputs.ts resolves patterns
+    // once and forwards resolvedTestPatterns to both helpers, preventing double resolution.
+    // This test injects a sentinel via config.testFilePatterns and verifies it surfaces
+    // consistently in BOTH review inputs — proving the shared resolution was threaded through.
+    _diffUtilsDeps.spawn = makeSpawnSequence([STAT_OUT, STAT_OUT]);
+
+    // Sentinel pattern that won't appear in WELL_KNOWN_TEST_DIRS / WELL_KNOWN_TEST_SUFFIXES,
+    // so its presence in excludePatterns can only come from the config-driven resolution.
+    const SENTINEL_GLOB = "custom-e2e/**/*.e2etest.ts";
+    const SENTINEL_PATHSPEC = ":!*.e2etest.ts";
+    const SENTINEL_DIR_PATHSPEC = ":!custom-e2e/";
+
+    const ctx = makeCtx({
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        smartTestRunner: { enabled: true, fallback: "import-grep", testFilePatterns: [SENTINEL_GLOB] },
+      },
+      review: {
+        ...DEFAULT_CONFIG.review,
+        enabled: true,
+        checks: ["semantic", "adversarial"],
+        // Clear hardcoded excludePatterns so both helpers derive from resolved patterns.
+        semantic: { ...DEFAULT_CONFIG.review.semantic, excludePatterns: undefined },
+        adversarial: { ...DEFAULT_CONFIG.review.adversarial, excludePatterns: undefined },
+      },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+
+    // Both review slots populated (no skip)
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.adversarialReview).toBeDefined();
+
+    // Both outputs carry the sentinel — proves resolvedTestPatterns was threaded
+    // from the single plan-inputs.ts resolution into both prepare-inputs helpers.
+    const semanticExcludes = inputs.semanticReview!.excludePatterns ?? [];
+    const adversarialExcludes = inputs.adversarialReview!.refExcludePatterns ?? [];
+    expect(semanticExcludes).toContain(SENTINEL_PATHSPEC);
+    expect(semanticExcludes).toContain(SENTINEL_DIR_PATHSPEC);
+    expect(adversarialExcludes).toContain(SENTINEL_PATHSPEC);
+    expect(adversarialExcludes).toContain(SENTINEL_DIR_PATHSPEC);
+  });
 });
