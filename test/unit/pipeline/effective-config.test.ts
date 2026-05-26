@@ -142,35 +142,9 @@ describe("mergePackageConfig integration", () => {
 // ---------------------------------------------------------------------------
 
 describe("stage config usage", () => {
-  test("regression stage uses ctx.config.execution.regressionGate.mode", () => {
-    const { regressionStage } = require("../../../src/pipeline/stages/regression");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        regressionGate: { enabled: true, mode: "per-story", timeoutSeconds: 120, acceptOnTimeout: true },
-      },
-    };
-
-    const ctx = makeCtx({ config: packageConfig });
-    expect(regressionStage.enabled(ctx)).toBe(true);
-  });
-
-  test("regression stage disabled when ctx.config.execution.regressionGate.mode=deferred", () => {
-    const { regressionStage } = require("../../../src/pipeline/stages/regression");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true },
-      },
-    };
-
-    const ctx = makeCtx({ config: packageConfig });
-    expect(regressionStage.enabled(ctx)).toBe(false);
-  });
+  // Note: regressionStage tests removed (issue #1116) — stage deleted; regression gate behavior
+  // is now tested in test/unit/operations/full-suite-gate.test.ts and
+  // test/unit/operations/verify-scoped.test.ts.
 
   test("acceptance stage uses ctx.config.acceptance.enabled", () => {
     const { acceptanceStage } = require("../../../src/pipeline/stages/acceptance");
