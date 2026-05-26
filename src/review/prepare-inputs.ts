@@ -15,8 +15,10 @@
 import { relative, sep } from "node:path";
 import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { NaxConfig } from "../config/schema";
+import type { ReviewConfig } from "../config/selectors";
 import type { AdversarialReviewConfig, SemanticReviewConfig } from "../review/types";
 import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
+import type { ResolvedTestPatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import {
   DIFF_CAP_BYTES,
@@ -33,8 +35,20 @@ export interface PrepareReviewInputArgs {
   projectDir?: string;
   storyId: string;
   storyGitRef: string | undefined;
-  config: NaxConfig;
+  /**
+   * Full NaxConfig (orchestrator path), a ReviewConfig slice (legacy/reconciliation
+   * path), or undefined (reconciliation with no config). Internal `?? DEFAULT_CONFIG`
+   * fallback covers undefined; the helper only reads `.execution?.smartTestRunner`
+   * and review-related slices, which exist on both shapes.
+   */
+  config: NaxConfig | ReviewConfig | undefined;
   naxIgnoreIndex?: NaxIgnoreIndex;
+  /**
+   * Optional pre-resolved patterns. When supplied, the helper skips the internal
+   * `resolveTestFilePatterns` call and uses these directly. Lets callers that have
+   * already resolved patterns (plan-inputs, runReview wrappers) avoid double work.
+   */
+  resolvedTestPatterns?: ResolvedTestPatterns;
 }
 
 export interface PreparedSemanticReviewInput {
@@ -110,11 +124,13 @@ export async function prepareSemanticReviewInput(
   const { packageDir, packageDirRelative } = derivePackageDirs(workdir, projectDir);
   const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
-  const resolved = await resolveTestFilePatterns(
-    config ?? reviewConfigSelector.select(DEFAULT_CONFIG),
-    projectDir ?? workdir,
-    packageDirRelative,
-  );
+  const resolved =
+    args.resolvedTestPatterns ??
+    (await resolveTestFilePatterns(
+      config ?? reviewConfigSelector.select(DEFAULT_CONFIG),
+      projectDir ?? workdir,
+      packageDirRelative,
+    ));
   const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
 
   const diffMode = semanticConfig.diffMode ?? "ref";
@@ -165,31 +181,38 @@ export async function prepareAdversarialReviewInput(
   const { packageDir, packageDirRelative } = derivePackageDirs(workdir, projectDir);
   const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
+  const diffMode = adversarialConfig.diffMode ?? "ref";
+
+  // Parity with legacy adversarial.ts:169 — return on !stat (ref mode) BEFORE
+  // resolving test patterns. Avoids a wasted filesystem scan when there are no changes.
+  if (diffMode === "ref" && !stat) {
+    return {
+      effectiveRef,
+      stat: "",
+      diff: undefined,
+      testInventory: undefined,
+      excludePatterns: [],
+      testGlobs: [],
+      refExcludePatterns: [],
+      skipReason: "no changes detected",
+    };
+  }
+
   const effectiveConfig = config ?? reviewConfigSelector.select(DEFAULT_CONFIG);
-  const resolved = await resolveTestFilePatterns(effectiveConfig, projectDir ?? workdir, packageDirRelative);
+  const resolved =
+    args.resolvedTestPatterns ??
+    (await resolveTestFilePatterns(effectiveConfig, projectDir ?? workdir, packageDirRelative));
   const refExcludePatterns = [...resolveReviewExcludePatterns(adversarialConfig.excludePatterns, resolved)];
   const testGlobs = resolved.globs ?? [];
   const excludePatterns: string[] = [...(adversarialConfig.excludePatterns ?? [])];
 
-  const diffMode = adversarialConfig.diffMode ?? "ref";
   const testFilePatterns =
-    (typeof config?.execution?.smartTestRunner === "object"
+    typeof config?.execution?.smartTestRunner === "object"
       ? config.execution.smartTestRunner?.testFilePatterns
-      : undefined) ?? undefined;
+      : undefined;
 
   if (diffMode === "ref") {
-    if (!stat) {
-      return {
-        effectiveRef,
-        stat: "",
-        diff: undefined,
-        testInventory: undefined,
-        excludePatterns,
-        testGlobs,
-        refExcludePatterns,
-        skipReason: "no changes detected",
-      };
-    }
+    // !stat case handled above; surviving branch always has stat
     return {
       effectiveRef,
       stat,

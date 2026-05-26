@@ -7,9 +7,7 @@
  * is handled by lint/typecheck, not semantic review.
  */
 
-import { relative, sep } from "node:path";
 import type { IAgentManager } from "../agents";
-import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { DebateRunner } from "../debate";
@@ -20,10 +18,9 @@ import { getSafeLogger } from "../logger";
 import { callOp as _callOp } from "../operations/call";
 import { semanticReviewOp } from "../operations/semantic-review";
 import { ReviewPromptBuilder } from "../prompts";
-import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { DIFF_CAP_BYTES, collectDiff, collectDiffStat, resolveEffectiveRef, truncateDiff } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
+import { prepareSemanticReviewInput } from "./prepare-inputs";
 import { writeReviewAudit } from "./review-audit";
 import { runSemanticDebate } from "./semantic-debate";
 import { type LLMFinding, formatFindings, isBlockingSeverity, toReviewFindings } from "./semantic-helpers";
@@ -119,10 +116,20 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     });
   }
 
-  // @design: BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
-  const effectiveRef = await resolveEffectiveRef(workdir, storyGitRef, story.id);
+  // @design: BUG-114 + issue #1120: collection logic lives in prepare-inputs.ts (SSOT).
+  // Both this legacy/reconciliation path and the orchestrator path (plan-inputs.ts)
+  // call prepareSemanticReviewInput so they cannot drift.
+  const prepared = await prepareSemanticReviewInput({
+    workdir,
+    projectDir,
+    storyId: story.id,
+    storyGitRef,
+    config: naxConfig,
+    naxIgnoreIndex,
+    semanticConfig,
+  });
 
-  if (!effectiveRef) {
+  if (prepared.skipReason === "no git ref") {
     return {
       check: "semantic",
       success: true,
@@ -141,57 +148,32 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     configProvided: !!naxConfig,
   });
 
-  // Collect stat summary (used by both modes).
-  // In embedded mode: also collect full diff, truncate if needed.
-  // In ref mode: pass stat + ref to reviewer; reviewer self-serves the full diff via tools.
-  const repoRoot = projectDir ?? workdir;
-  const packageDir = workdir !== repoRoot ? workdir : undefined;
-  const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
-
-  // ADR-009: resolve effective exclude patterns from config (falls back to DEFAULT_TEST_FILE_PATTERNS
-  // when semanticConfig.excludePatterns is undefined — no behaviour change for default config).
-  const packageDirRelative =
-    projectDir && workdir !== projectDir
-      ? (() => {
-          const rel = relative(projectDir, workdir);
-          if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
-          return rel && rel !== "." ? rel : undefined;
-        })()
-      : undefined;
-  const resolved = await resolveTestFilePatterns(
-    naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG),
-    projectDir ?? workdir,
-    packageDirRelative,
-  );
-  const excludePatterns = [...resolveReviewExcludePatterns(semanticConfig.excludePatterns, resolved)];
-
-  let diff: string | undefined;
-  if (diffMode === "embedded") {
-    const rawDiff = await collectDiff(workdir, effectiveRef, excludePatterns, { naxIgnoreIndex, packageDir });
-    diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
-    if (!diff) {
-      return {
-        check: "semantic",
-        success: true,
-        command: "",
-        exitCode: 0,
-        output: "skipped: no production code changes",
-        durationMs: Date.now() - startTime,
-      };
-    }
-  } else {
-    // ref mode: if stat is empty there are no changes at all
-    if (!stat) {
-      return {
-        check: "semantic",
-        success: true,
-        command: "",
-        exitCode: 0,
-        output: "skipped: no changes detected",
-        durationMs: Date.now() - startTime,
-      };
-    }
+  if (prepared.skipReason === "no changes detected") {
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "skipped: no changes detected",
+      durationMs: Date.now() - startTime,
+    };
   }
+  if (prepared.skipReason === "no production code changes") {
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "skipped: no production code changes",
+      durationMs: Date.now() - startTime,
+    };
+  }
+
+  // biome-ignore lint/style/noNonNullAssertion: skipReason undefined ⇒ effectiveRef present
+  const effectiveRef = prepared.effectiveRef!;
+  const stat = prepared.stat;
+  const diff = prepared.diff;
+  const excludePatterns = prepared.excludePatterns;
 
   // ADR-019: runtime is the canonical source for agentManager. The parameter
   // is kept for backward compatibility but ignored — callers should pass
@@ -375,32 +357,6 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       command: "",
       exitCode: 0,
       output: "semantic review: could not parse LLM response (fail-open)",
-      durationMs: Date.now() - startTime,
-    };
-  }
-  if (opResult.looksLikeFail) {
-    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
-      storyId: story.id,
-    });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "semantic",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
       durationMs: Date.now() - startTime,
     };
   }
