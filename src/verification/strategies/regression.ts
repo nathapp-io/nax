@@ -48,6 +48,11 @@ export class RegressionStrategy implements IVerificationStrategy {
 
     if (result.success) {
       const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      logger?.info("verify[regression]", "Full-suite regression gate passed", {
+        storyId: ctx.storyId,
+        passCount: parsed.passed,
+        durationMs,
+      });
       return makePassResult(ctx.storyId, "regression", {
         rawOutput: result.output,
         passCount: parsed.passed,
@@ -64,10 +69,20 @@ export class RegressionStrategy implements IVerificationStrategy {
     }
 
     if (result.status === "TIMEOUT") {
+      logger?.warn("verify[regression]", "Full-suite regression gate timed out", {
+        storyId: ctx.storyId,
+        durationMs,
+      });
       return makeFailResult(ctx.storyId, "regression", "TIMEOUT", { rawOutput: result.output, durationMs });
     }
 
     const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+    logger?.warn("verify[regression]", "Full-suite regression gate failed", {
+      storyId: ctx.storyId,
+      passCount: parsed.passed,
+      failCount: parsed.failed,
+      durationMs,
+    });
     return makeFailResult(ctx.storyId, "regression", "TEST_FAILURE", {
       rawOutput: result.output,
       passCount: parsed.passed,
