@@ -204,11 +204,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
     return rel && rel !== "." ? rel : undefined;
   })();
-  const resolvedTestPatterns = await resolveTestFilePatterns(
-    config,
-    ctx.projectDir,
-    packageDirRelative,
-  );
+  const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRelative);
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([
         _isFreshRun ? buildThreeSessionPrompt("test-writer", ctx, isLite) : Promise.resolve(""),
