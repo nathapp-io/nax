@@ -3,7 +3,7 @@
   "feature": "review-reprompt-on-all-dropped",
   "branchName": "feat/review-reprompt-on-all-dropped",
   "createdAt": "2026-05-25T12:22:57Z",
-  "updatedAt": "2026-05-26T03:39:10.509Z",
+  "updatedAt": "2026-05-26T03:40:45.979Z",
   "userStories": [
     {
       "id": "US-001",
@@ -177,9 +177,9 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [
         {
           "fromTier": "balanced",

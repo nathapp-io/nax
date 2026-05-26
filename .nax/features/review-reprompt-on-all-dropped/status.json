@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-26T01-41-40-766Z",
+    "id": "run-2026-05-26T03-25-45-356Z",
     "feature": "review-reprompt-on-all-dropped",
-    "startedAt": "2026-05-26T01:41:40.766Z",
+    "startedAt": "2026-05-26T03:25:45.356Z",
     "status": "failed",
     "dryRun": false,
-    "pid": 18821
+    "pid": 70769
   },
   "progress": {
     "total": 4,
@@ -17,20 +17,20 @@
     "pending": 0
   },
   "cost": {
-    "spent": 3.7268287349999993,
+    "spent": 3.8083533499999995,
     "limit": 50
   },
   "current": null,
   "iterations": 2,
-  "updatedAt": "2026-05-26T03:20:04.727Z",
-  "durationMs": 5903961,
+  "updatedAt": "2026-05-26T03:41:13.487Z",
+  "durationMs": 928131,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
       "status": "passed",
-      "lastRunAt": "2026-05-26T03:20:03.802Z"
+      "lastRunAt": "2026-05-26T03:41:12.727Z"
     }
   }
 }
