@@ -229,6 +229,7 @@ export class RectifierPromptBuilder {
     rethinkAtAttempt: number,
     urgencyAtAttempt: number,
     guardrailLevel?: GuardrailLevel,
+    story?: UserStory,
   ): string {
     const parts: string[] = [];
 
@@ -247,7 +248,7 @@ export class RectifierPromptBuilder {
       );
     }
 
-    parts.push(CONTRADICTION_ESCAPE_HATCH);
+    parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
 
     const guardrails = buildBehavioralGuardrailsSection("implementer", guardrailLevel ?? "lite");
     if (guardrails) {
@@ -438,6 +439,7 @@ Commit your fixes when done.${scopeConstraint}`;
     noOpCount: number,
     maxNoOpReprompts: number,
     opts?: RectifierRenderOpts,
+    story?: UserStory,
   ): string {
     const parts: string[] = [];
 
@@ -476,7 +478,7 @@ Commit your fixes when done.${scopeConstraint}`;
       }
     }
 
-    parts.push(CONTRADICTION_ESCAPE_HATCH);
+    parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
     return parts.join("");
   }
 
@@ -578,11 +580,11 @@ ${testCommands}
 6. Ensure ALL tests pass before completing.
 
 **IMPORTANT:**
-- Do NOT modify test files — see the ${exceptionCountWord(story)} narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
+- Do NOT modify test files — see the ${exceptionCountWord(story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
 - When running tests, run ONLY the failing test files shown above${cmd ? ` — NEVER run \`${cmd}\` without a file filter` : " — never run the full test suite without a file filter"}.
-`;
+${escapeHatchFor(story)}`;
   }
 
   /**
@@ -844,10 +846,11 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 4. Do not declare done until step 3 shows 0 failures.
 
 **IMPORTANT:**
-- Do NOT modify test files — see the ${exceptionCountWord(opts.story)} narrow exceptions in the escape valve section if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
+- Do NOT modify test files — see the ${exceptionCountWord(opts.story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.`);
 
+    parts.push(escapeHatchFor(opts.story));
     return parts.join("");
   }
 

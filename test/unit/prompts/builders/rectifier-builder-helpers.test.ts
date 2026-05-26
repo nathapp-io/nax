@@ -188,10 +188,11 @@ describe("RectifierPromptBuilder.firstAttemptDelta — story-aware escape hatch"
     expect(result).not.toContain("### Exception 4 — Mock-structure handoff");
   });
 
-  test("no story (backward compat): falls back to four-exception hatch", () => {
+  test("no story (backward compat): falls back to three-exception safe-default hatch", () => {
     const result = RectifierPromptBuilder.firstAttemptDelta([makeCheck()], 3);
-    // Backward compat: no story → default "three" in inline text, full hatch appended
+    // Backward compat: no story → "three" in both inline text and the hatch (safe default)
     expect(result).toContain("three narrow exceptions appended below");
-    expect(result).toContain("four narrow escape valves"); // CONTRADICTION_ESCAPE_HATCH always has 4
+    expect(result).toContain("three narrow escape valves");
+    expect(result).not.toContain("### Exception 4 — Mock-structure handoff");
   });
 });

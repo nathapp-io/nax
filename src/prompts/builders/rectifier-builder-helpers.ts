@@ -130,6 +130,9 @@ declaration in your output. Outside these ${countWord} cases the rule is absolut
 ${exceptions.join("\n\n")}`;
 }
 
+/** Strategies that include a test-writer agent and therefore support Exception 4. */
+const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
+
 /**
  * Returns "three" or "four" depending on whether the story uses a three-session TDD
  * flow that includes a test-writer agent. Use to interpolate counts in prompt text
@@ -140,18 +143,23 @@ export function exceptionCountWord(story: UserStory): "three" | "four" {
 }
 
 /**
- * Backward-compatible alias: always includes all four exceptions.
- * Used by methods that lack story context (continuation, noOpReprompt).
- * Prefer escapeHatchFor(story) in story-aware contexts.
+ * Builds the story-specific escape-hatch section, including or excluding Exception 4
+ * based on whether the story runs a three-session TDD flow with a test-writer.
  */
-export const CONTRADICTION_ESCAPE_HATCH = buildEscapeHatch({ includeMockHandoff: true });
-
-const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
-
 export function escapeHatchFor(story: UserStory): string {
   const isTdd = THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "");
   return buildEscapeHatch({ includeMockHandoff: isTdd });
 }
+
+/**
+ * Safe-default escape-hatch constant for callers that lack story context
+ * (e.g. continuation, noOpReprompt without story param).
+ *
+ * Uses three exceptions (no Exception 4) — the safe default that avoids
+ * advertising a mock-structure handoff to non-TDD stories. Pass story to
+ * escapeHatchFor(story) whenever story context is available.
+ */
+export const CONTRADICTION_ESCAPE_HATCH = buildEscapeHatch({ includeMockHandoff: false });
 
 function noTestIsolationBlock(story: UserStory): string {
   if (story.routing?.testStrategy !== "no-test") return "";
