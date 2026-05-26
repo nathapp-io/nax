@@ -529,7 +529,13 @@ export async function decideStageAction(
       logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
     }
     await cleanupSessionOnFailure(ctx);
-    return { action: "escalate" };
+    const failedPhaseNames = Object.keys(failedPhases);
+    const reasonParts: string[] = [];
+    reasonParts.push(`agent session failed (exit ${agentResult.exitCode ?? "?"})`);
+    if (failureCategory) reasonParts.push(`category=${failureCategory}`);
+    if (agentResult.rateLimited) reasonParts.push("rate-limited");
+    if (failedPhaseNames.length > 0) reasonParts.push(`phases=${failedPhaseNames.join(",")}`);
+    return { action: "escalate", reason: reasonParts.join("; ") };
   }
 
   // Non-TDD success → auto-commit

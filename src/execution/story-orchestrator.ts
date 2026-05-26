@@ -202,10 +202,10 @@ function phaseExplicitlyPassed(output: unknown): boolean {
   return r.success === true || r.passed === true;
 }
 
-function phasePassed(opName: string, output: unknown): boolean {
+function phasePassed(opName: string, output: unknown, storyId?: string): boolean {
   if (output === null || output === undefined) {
     getSafeLogger()?.warn("story-orchestrator", "Phase produced no output — treating as pass", {
-      storyId: undefined,
+      storyId,
       phase: opName,
     });
     return true;
@@ -215,7 +215,7 @@ function phasePassed(opName: string, output: unknown): boolean {
   if ("success" in r) return r.success !== false;
   if ("passed" in r) return r.passed !== false;
   getSafeLogger()?.warn("story-orchestrator", "Phase output has neither 'success' nor 'passed' — treating as pass", {
-    storyId: undefined,
+    storyId,
     phase: opName,
   });
   return true;
@@ -430,6 +430,41 @@ function logUnifiedReviewPhaseStart(storyId: string | undefined, opName: string)
   }
 }
 
+/**
+ * Generic phase outcome log for deterministic / verify / mechanical ops
+ * (verify-scoped, full-suite-gate, lint-check, typecheck-check, etc.).
+ *
+ * TDD phases and review phases have their own dedicated loggers — skip those here
+ * so a single phase doesn't produce duplicate outcome lines.
+ */
+function logDeterministicPhaseOutcome(
+  storyId: string | undefined,
+  opName: string,
+  output: unknown,
+  durationMs: number,
+  isTddPhase: boolean,
+): void {
+  if (isTddPhase) return;
+  if (opName === "semantic-review" || opName === "adversarial-review") return;
+  if (output === null || output === undefined || typeof output !== "object") return;
+
+  const logger = getSafeLogger();
+  const r = output as Record<string, unknown>;
+  const success = r.success === true || r.passed === true;
+  const findingsCount = Array.isArray(r.findings) ? r.findings.length : undefined;
+  const status = typeof r.status === "string" ? r.status : undefined;
+
+  const data: Record<string, unknown> = { storyId, phase: opName, durationMs };
+  if (findingsCount !== undefined) data.findingsCount = findingsCount;
+  if (status !== undefined) data.status = status;
+
+  if (success) {
+    logger?.info("story-orchestrator", `Phase passed: ${opName}`, data);
+  } else {
+    logger?.warn("story-orchestrator", `Phase failed: ${opName}`, data);
+  }
+}
+
 function logUnifiedReviewPhaseResult(storyId: string | undefined, opName: string, output: unknown): void {
   const logger = getSafeLogger();
   const payload = toReviewDecisionPayload(opName, output);
@@ -531,6 +566,7 @@ async function runPhase(
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
+    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
@@ -697,11 +733,28 @@ async function runRectification(
 
   phaseOutputs.rectification = { iterationCount: cycleResult.iterations.length };
 
+  // Rectification cycle summary — one line so the JSONL records what happened
+  // (entry findings, iterations run, unfixed findings, exit reason, total cost).
+  const rectLogger = getSafeLogger();
+  const rectSummary = {
+    storyId: ctx.storyId,
+    initialFindingsCount: initialFindings.length,
+    iterationCount: cycleResult.iterations.length,
+    finalFindingsCount: cycleResult.finalFindings.length,
+    exitReason: cycleResult.exitReason,
+    costUsd: cycleResult.costUsd,
+  };
+  if (cycleResult.exitReason === "resolved") {
+    rectLogger?.info("story-orchestrator", "Rectification resolved all findings", rectSummary);
+  } else {
+    rectLogger?.warn("story-orchestrator", `Rectification exited: ${cycleResult.exitReason}`, rectSummary);
+  }
+
   // "validator-error" means runPhase threw during re-validation (e.g. session failure).
   // runFixCycle demotes it to a clean exit rather than throwing, so we surface it here
   // to prevent the failure from being completely silent.
   if (cycleResult.exitReason === "validator-error") {
-    getSafeLogger()?.warn("story-orchestrator", "rectification cycle aborted — validator infrastructure error", {
+    rectLogger?.warn("story-orchestrator", "rectification cycle aborted — validator infrastructure error", {
       storyId: ctx.storyId,
     });
   }
@@ -783,8 +836,12 @@ export class ExecutionPlan {
 
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
       // Exception: phases in shortCircuitExempt continue so rectification can consume their findings.
-      if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name])) {
+      if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name], this.ctx.storyId)) {
         if (!shortCircuitExempt.has(phase.slot.op.name)) {
+          logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
+            storyId: this.ctx.storyId,
+            phase: phase.slot.op.name,
+          });
           break;
         }
       }
@@ -806,7 +863,11 @@ export class ExecutionPlan {
     // SSOT requires an explicit pass — see `phaseExplicitlyPassed` for why we
     // don't use the defensive `phasePassed` here.
     const verifierPassedSsot = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
-    if (verifierPassedSsot && gateName !== undefined && !phasePassed(gateName, phaseOutputs[gateName])) {
+    if (
+      verifierPassedSsot &&
+      gateName !== undefined &&
+      !phasePassed(gateName, phaseOutputs[gateName], this.ctx.storyId)
+    ) {
       logger?.warn(
         "story-orchestrator",
         "Full-suite gate failed but verifier judged story OK — treating gate failures as unrelated regressions",
@@ -815,15 +876,40 @@ export class ExecutionPlan {
     }
     const success = Object.entries(phaseOutputs).every(([name, output]) => {
       if (verifierPassedSsot && name === gateName) return true;
-      return phasePassed(name, output);
+      return phasePassed(name, output, this.ctx.storyId);
     });
     const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
+    const durationMs = Date.now() - startedAt;
+
+    // Final aggregate log — single end-of-run summary so anyone reading the JSONL
+    // can see the orchestrator's verdict without correlating per-phase lines.
+    const failedPhases = Object.entries(phaseOutputs)
+      .filter(([name, output]) => {
+        if (verifierPassedSsot && name === gateName) return false;
+        return !phasePassed(name, output, this.ctx.storyId);
+      })
+      .map(([name]) => name);
+    const summary: Record<string, unknown> = {
+      storyId: this.ctx.storyId,
+      success,
+      totalCostUsd,
+      durationMs,
+      phaseCount: Object.keys(phaseOutputs).length,
+      failedPhases: failedPhases.length > 0 ? failedPhases : undefined,
+    };
+    if (rectResult.rectificationExhausted) summary.rectificationExhausted = true;
+    if (rectResult.unfixedFindings) summary.unfixedFindingsCount = rectResult.unfixedFindings.length;
+    if (success) {
+      logger?.info("story-orchestrator", "Story orchestration complete", summary);
+    } else {
+      logger?.warn("story-orchestrator", "Story orchestration failed", summary);
+    }
 
     return {
       success,
       phaseCosts,
       totalCostUsd,
-      durationMs: Date.now() - startedAt,
+      durationMs,
       phaseOutputs,
       ...rectResult,
     };
