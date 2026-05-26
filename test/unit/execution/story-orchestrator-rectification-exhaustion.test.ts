@@ -174,6 +174,7 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
     ["max-attempts-per-strategy" as FixCycleExitReason],
     ["bail-when" as FixCycleExitReason],
     ["no-strategy" as FixCycleExitReason],
+    ["agent-gave-up" as FixCycleExitReason],
   ])("AC6: exitReason '%s' with remaining findings → rectificationExhausted=true", async (exitReason) => {
     _storyOrchestratorDeps.runFixCycle = mock(async () => ({
       iterations: [],
@@ -217,6 +218,40 @@ describe("ExecutionPlan.run() — AC6: rectificationExhausted on cycle exhaustio
     expect(result.rectificationExhausted).toBe(true);
     expect(result.unfixedFindings).toBeDefined();
     expect(result.unfixedFindings?.length).toBe(2);
+  });
+
+  test("Fix-A: exitReason 'agent-gave-up' with non-empty finalFindings → rectificationExhausted=true, unfixedFindings populated", async () => {
+    // Spec verbatim AC: Given a rectification cycle that exits with exitReason: "agent-gave-up"
+    // and non-empty finalFindings, the story orchestrator returns
+    // { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings }.
+    const findings: Finding[] = [LINT_FINDING, TEST_RUNNER_FINDING];
+    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: findings,
+      exitReason: "agent-gave-up" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
+    const ctx = makeCtx();
+    const plan = makePlanWithRectification(ctx);
+    const result = await plan.run();
+    expect(result.rectificationExhausted).toBe(true);
+    expect(result.unfixedFindings).toBeDefined();
+    expect(result.unfixedFindings?.length).toBe(2);
+    expect(result.unfixedFindings).toEqual(findings);
+  });
+
+  test("Fix-A: exitReason 'agent-gave-up' with EMPTY finalFindings → rectificationExhausted NOT set", async () => {
+    // Edge case: agent gave up but there are no remaining findings — should NOT exhaust
+    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "agent-gave-up" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
+    const ctx = makeCtx();
+    const plan = makePlanWithRectification(ctx);
+    const result = await plan.run();
+    expect(result.rectificationExhausted).not.toBe(true);
   });
 
   test("AC6: exitReason 'resolved' → rectificationExhausted is NOT set to true", async () => {
