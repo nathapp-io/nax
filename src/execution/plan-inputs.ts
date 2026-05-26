@@ -197,8 +197,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   // AC#4 (#1120) + ADR-009: resolve once per plan — shared by TDD gates AND review helpers.
   // Always resolves (not gated on _isTdd) so review helpers get patterns even on non-TDD plans.
-  // Using projectDir as root (with _packageDirRelative for monorepos) is the SSOT per ADR-009.
-  const _packageDirRelative = (() => {
+  // Using projectDir as root (with packageDirRelative for monorepos) is the SSOT per ADR-009.
+  const packageDirRelative = (() => {
     if (!ctx.projectDir || ctx.workdir === ctx.projectDir) return undefined;
     const rel = relative(ctx.projectDir, ctx.workdir);
     if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
@@ -207,7 +207,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   const resolvedTestPatterns = await resolveTestFilePatterns(
     config,
     ctx.projectDir ?? ctx.workdir,
-    _packageDirRelative,
+    packageDirRelative,
   );
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([

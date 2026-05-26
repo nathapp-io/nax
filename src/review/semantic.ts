@@ -386,32 +386,6 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       durationMs: Date.now() - startTime,
     };
   }
-  if (opResult.looksLikeFail) {
-    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
-      storyId: story.id,
-    });
-    recordSemanticAudit({
-      runtime,
-      workdir,
-      projectDir,
-      storyId: story.id,
-      featureName,
-      parsed: false,
-      looksLikeFail: true,
-      failOpen: false,
-      passed: false,
-      blockingThreshold,
-      result: null,
-    });
-    return {
-      check: "semantic",
-      success: false,
-      command: "",
-      exitCode: 1,
-      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
-      durationMs: Date.now() - startTime,
-    };
-  }
   if (opResult.repromptEvent) {
     runtime.dispatchEvents.emitReviewReprompt({
       kind: "review-reprompt-on-drop",
