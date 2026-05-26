@@ -10,6 +10,7 @@ export * from "./adversarial";
 export * from "./semantic-evidence";
 export * from "./categorization";
 export * from "./diff-utils";
+export * from "./prepare-inputs";
 export * from "./finding-projection";
 export * from "./types";
 export * from "./runner";

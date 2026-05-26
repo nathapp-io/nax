@@ -181,6 +181,16 @@ export interface PipelineContext extends DispatchContext {
   rectifyAttempt?: number;
   /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
+  /**
+   * Prior semantic review iterations carried into this pipeline pass — populated by
+   * escalation/rectification orchestrators on re-run so the reviewer LLM can see
+   * what the prior reviewer flagged and classify each finding as
+   * addressed / still-blocking / never-an-issue. Forwarded into the review op input
+   * by plan-inputs.ts.
+   */
+  priorSemanticIterations?: Iteration[];
+  /** Mirror of priorSemanticIterations for adversarial review. */
+  priorAdversarialIterations?: Iteration[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

@@ -23,6 +23,7 @@ import type {
 } from "../operations";
 import type { UserStory } from "../prd/types";
 import { TddPromptBuilder } from "../prompts";
+import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { isThreeSessionStrategy } from "./build-plan-for-strategy";
@@ -258,33 +259,88 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
       ? { workdir: ctx.workdir, storyId: story.id }
       : undefined;
 
-  const semanticReviewInput: SemanticReviewInput | undefined =
-    ctx.config.review?.enabled === true && ctx.config.review.checks?.includes("semantic") && ctx.config.review.semantic
-      ? {
+  // Semantic and adversarial review inputs must carry stat/diff (and for adversarial,
+  // testInventory) so the prompt's "## Changed Files" block is populated. The legacy
+  // runSemanticCheck / runAdversarialReview paths collected these before calling callOp;
+  // the orchestrator path must do the same or the reviewer LLM falsely concludes
+  // "diff is empty" and skips every AC. prepareSemanticReviewInput / prepareAdversarialReviewInput
+  // are the shared SSOT for that collection.
+  const semanticEnabled =
+    ctx.config.review?.enabled === true &&
+    ctx.config.review.checks?.includes("semantic") &&
+    !!ctx.config.review.semantic;
+  const semanticReviewInput: SemanticReviewInput | undefined = semanticEnabled
+    ? await (async (): Promise<SemanticReviewInput | undefined> => {
+        const prepared = await prepareSemanticReviewInput({
+          workdir: ctx.workdir,
+          projectDir: ctx.projectDir,
+          storyId: story.id,
+          storyGitRef: ctx.storyGitRef,
+          config: ctx.config,
+          naxIgnoreIndex: ctx.naxIgnoreIndex,
+          // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
+          semanticConfig: ctx.config.review!.semantic!,
+        });
+        // Skip slot entirely when stat is empty / no ref — orchestrator will see no
+        // semantic-review phase and mark the check as not-applicable.
+        if (prepared.skipReason) return undefined;
+        return {
           workdir: ctx.workdir,
           story,
-          semanticConfig: ctx.config.review.semantic,
-          mode: ctx.config.review.semantic.diffMode,
-          storyGitRef: ctx.storyGitRef,
+          // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
+          semanticConfig: ctx.config.review!.semantic!,
+          // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
+          mode: ctx.config.review!.semantic!.diffMode,
+          storyGitRef: prepared.effectiveRef,
+          stat: prepared.stat,
+          diff: prepared.diff,
+          excludePatterns: prepared.excludePatterns,
           featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-semantic"),
-          blockingThreshold: ctx.config.review.blockingThreshold,
-        }
-      : undefined;
+          priorSemanticIterations: ctx.priorSemanticIterations,
+          // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
+          blockingThreshold: ctx.config.review!.blockingThreshold,
+        };
+      })()
+    : undefined;
 
-  const adversarialReviewInput: AdversarialReviewInput | undefined =
+  const adversarialEnabled =
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("adversarial") &&
-    ctx.config.review.adversarial
-      ? {
+    !!ctx.config.review.adversarial;
+  const adversarialReviewInput: AdversarialReviewInput | undefined = adversarialEnabled
+    ? await (async (): Promise<AdversarialReviewInput | undefined> => {
+        const prepared = await prepareAdversarialReviewInput({
+          workdir: ctx.workdir,
+          projectDir: ctx.projectDir,
+          storyId: story.id,
+          storyGitRef: ctx.storyGitRef,
+          config: ctx.config,
+          naxIgnoreIndex: ctx.naxIgnoreIndex,
+          // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
+          adversarialConfig: ctx.config.review!.adversarial!,
+        });
+        if (prepared.skipReason) return undefined;
+        return {
           workdir: ctx.workdir,
           story,
-          adversarialConfig: ctx.config.review.adversarial,
-          mode: ctx.config.review.adversarial.diffMode,
-          storyGitRef: ctx.storyGitRef,
+          // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
+          adversarialConfig: ctx.config.review!.adversarial!,
+          // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
+          mode: ctx.config.review!.adversarial!.diffMode,
+          storyGitRef: prepared.effectiveRef,
+          stat: prepared.stat,
+          diff: prepared.diff,
+          testInventory: prepared.testInventory,
+          excludePatterns: prepared.excludePatterns,
+          testGlobs: prepared.testGlobs,
+          refExcludePatterns: prepared.refExcludePatterns,
           featureCtxBlock: buildFeatureCtxBlock(ctx, "reviewer-adversarial"),
-          blockingThreshold: ctx.config.review.blockingThreshold,
-        }
-      : undefined;
+          priorAdversarialIterations: ctx.priorAdversarialIterations,
+          // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
+          blockingThreshold: ctx.config.review!.blockingThreshold,
+        };
+      })()
+    : undefined;
 
   const rectificationInput: RectificationPhaseOptions | undefined =
     ctx.config.execution?.rectification?.enabled === true
