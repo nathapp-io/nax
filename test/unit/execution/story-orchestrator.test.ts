@@ -953,6 +953,103 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     }
   });
 
+  test("strict verdict phases fail-closed when output has no success/passed keys", async () => {
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const malformedGateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "full-suite-gate",
+      stage: "verify",
+      config: testSel,
+      execute: async () => ({ status: "execution-failed", findings: [] }),
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
+
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: malformedGateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .build(ctx);
+
+      const result = await plan.run();
+      expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+
+  test.each([
+    ["full-suite-gate", undefined],
+    ["verify-scoped", "not-an-object"],
+    ["lint-check", { status: "execution-failed" }],
+    ["typecheck-check", { findings: [] }],
+    ["verifier", { filesChanged: [], estimatedCostUsd: 0 }],
+  ] as const)("strict phase %s fails-closed on malformed output", async (phaseName, malformedOutput) => {
+    const config = makeNaxConfig();
+    rt = makeTestRuntime({ config });
+
+    const malformedStrictOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: phaseName,
+      stage: "verify",
+      config: testSel,
+      execute: async () => malformedOutput,
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+
+    try {
+      const ctx: CallContext = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-t",
+      } as any;
+
+      const builder = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)().addImplementer({
+        op: mockImplementerOp,
+        input: { code: "" },
+      });
+
+      if (phaseName === "full-suite-gate") {
+        builder.addFullSuiteGate({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+      } else if (phaseName === "verify-scoped") {
+        builder.addVerifyScoped({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+      } else if (phaseName === "lint-check") {
+        builder.addLintCheck({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+      } else if (phaseName === "typecheck-check") {
+        builder.addTypecheckCheck({ op: malformedStrictOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } });
+      } else {
+        builder.addVerifier({ op: malformedStrictOp, input: { code: "" } });
+      }
+
+      const plan = builder.build(ctx);
+      const result = await plan.run();
+      expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+    }
+  });
+
   test("verifier-failed: gate failure still fails the plan (no SSOT override)", async () => {
     // Verifier-as-SSOT only applies when verifier passed. If verifier also failed,
     // aggregation must reflect both failures.
