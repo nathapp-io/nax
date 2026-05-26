@@ -41,6 +41,13 @@ export const _storyOrchestratorDeps = {
 };
 
 const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
+const STRICT_VERDICT_PHASE_NAMES = new Set<string>([
+  fullSuiteGateOp.name,
+  verifyScopedOp.name,
+  lintCheckOp.name,
+  typecheckCheckOp.name,
+  verifierOp.name,
+]);
 
 export interface OrchestratorSlot<I, O, C> {
   readonly op: RunOperation<I, O, C>;
@@ -203,22 +210,42 @@ function phaseExplicitlyPassed(output: unknown): boolean {
 }
 
 function phasePassed(opName: string, output: unknown, storyId?: string): boolean {
+  const strictVerdictPhase = STRICT_VERDICT_PHASE_NAMES.has(opName);
   if (output === null || output === undefined) {
-    getSafeLogger()?.warn("story-orchestrator", "Phase produced no output — treating as pass", {
+    getSafeLogger()?.warn(
+      "story-orchestrator",
+      strictVerdictPhase
+        ? "Strict phase produced no output — treating as fail"
+        : "Phase produced no output — treating as pass",
+      {
+        storyId,
+        phase: opName,
+      },
+    );
+    return !strictVerdictPhase;
+  }
+  if (typeof output !== "object") {
+    if (!strictVerdictPhase) return true;
+    getSafeLogger()?.warn("story-orchestrator", "Strict phase produced non-object output — treating as fail", {
       storyId,
       phase: opName,
     });
-    return true;
+    return false;
   }
-  if (typeof output !== "object") return true;
   const r = output as Record<string, unknown>;
   if ("success" in r) return r.success !== false;
   if ("passed" in r) return r.passed !== false;
-  getSafeLogger()?.warn("story-orchestrator", "Phase output has neither 'success' nor 'passed' — treating as pass", {
-    storyId,
-    phase: opName,
-  });
-  return true;
+  getSafeLogger()?.warn(
+    "story-orchestrator",
+    strictVerdictPhase
+      ? "Strict phase output has neither 'success' nor 'passed' — treating as fail"
+      : "Phase output has neither 'success' nor 'passed' — treating as pass",
+    {
+      storyId,
+      phase: opName,
+    },
+  );
+  return !strictVerdictPhase;
 }
 
 /**
