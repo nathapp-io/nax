@@ -1,13 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { ScopedStrategy } from "@/verification/strategies/scoped";
-import { RegressionStrategy } from "@/verification/strategies/regression";
-import type { VerifyContext } from "@/verification/orchestrator-types";
-import { verifyScopedOp } from "@/operations";
-import { fullSuiteGateOp } from "@/operations";
+import { describe, test, expect } from "bun:test";
 
 /**
  * Parity gate for issue #1116.
@@ -17,12 +8,11 @@ import { fullSuiteGateOp } from "@/operations";
  * port that coverage into test/unit/operations/*.test.ts instead (Phase 2.7,
  * Phase 3.5). The point of this file is to prove envelope equivalence DURING
  * the migration, then disappear.
+ *
+ * TODO(Phase 3 / Task 12): fill placeholder bodies with real strategy↔op assertions.
+ * Imports for ScopedStrategy, RegressionStrategy, verifyScopedOp, fullSuiteGateOp,
+ * and a tmpdir fixture will be added at that point.
  */
-
-let tmpRoot: string;
-beforeEach(async () => {
-  tmpRoot = await mkdtemp(join(tmpdir(), "nax-parity-"));
-});
 
 describe("scoped: strategy ↔ op parity", () => {
   test("PASS case — same passCount, isFullSuite, scopeTestFallback", async () => {

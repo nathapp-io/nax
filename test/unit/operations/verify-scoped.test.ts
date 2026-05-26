@@ -111,7 +111,7 @@ describe("verifyScopedOp — AC5: execute returns success=true when test command
         testSummaryToFindings: () => [mockFinding],
       }),
     );
-    expect(out.findings.every((f) => f.source === "test-runner")).toBe(true);
+    expect(out.findings.every((f: Finding) => f.source === "test-runner")).toBe(true);
   });
 });
 

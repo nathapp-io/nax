@@ -100,12 +100,19 @@ export function validatePlanInputs(story: UserStory, config: NaxConfig): void {
   }
 }
 
-/** Maps the full regressionGate.mode union to the two-value subset accepted by VerifyScopedInput. */
+/**
+ * Maps the full regressionGate.mode union to the two-value subset accepted by VerifyScopedInput.
+ *
+ * "disabled" maps to "deferred" because verifyScopedOp doesn't need a separate disabled path:
+ * when mode is "disabled", fullSuiteGateOp is never added to the plan (handled in
+ * build-plan-for-strategy.ts), so verifyScopedOp's deferred skip — "no mapped tests → SKIPPED" —
+ * is already the correct no-op behavior for scope-level verification.
+ */
 function toVerifyScopedMode(
   mode: "deferred" | "per-story" | "disabled" | undefined,
 ): "deferred" | "per-story" {
   if (mode === "per-story") return "per-story";
-  return "deferred"; // "deferred", "disabled", and undefined all fall through to deferred
+  return "deferred"; // "deferred", "disabled", and undefined all produce deferred behavior
 }
 
 export function assemblePlanInputs(
