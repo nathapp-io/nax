@@ -40,12 +40,21 @@ export function routeTddFailure(
   isLiteMode: boolean,
   ctx: Pick<PipelineContext, "retryAsLite">,
   reviewReason?: string,
+  failureDetail?: string,
 ): StageResult {
+  // Build a meaningful reason for escalation so priorErrors/priorFailures carry
+  // the failure category (and any extra detail) into the next tier's prompt
+  // instead of a generic "Failed with tier X, escalating".
+  const buildReason = (category: FailureCategory): string => {
+    const trimmedDetail = failureDetail?.trim();
+    return trimmedDetail ? `TDD ${category}: ${trimmedDetail}` : `TDD ${category}`;
+  };
+
   if (failureCategory === "isolation-violation") {
     if (!isLiteMode) {
       ctx.retryAsLite = true;
     }
-    return { action: "escalate" };
+    return { action: "escalate", reason: buildReason("isolation-violation") };
   }
 
   if (
@@ -54,12 +63,12 @@ export function routeTddFailure(
     failureCategory === "full-suite-gate-exhausted" ||
     failureCategory === "verifier-rejected"
   ) {
-    return { action: "escalate" };
+    return { action: "escalate", reason: buildReason(failureCategory) };
   }
 
   // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
   if (failureCategory === "greenfield-no-tests") {
-    return { action: "escalate" };
+    return { action: "escalate", reason: buildReason("greenfield-no-tests") };
   }
 
   return {

@@ -26,18 +26,29 @@ import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome"
 function buildEscalationFailure(
   story: UserStory,
   currentTier: string,
-  reviewFindings?: Finding[],
-  cost?: number,
+  reviewFindings: Finding[] | undefined,
+  cost: number | undefined,
+  pipelineReason: string | undefined,
+  failureCategory: FailureCategory | undefined,
 ): StructuredFailure {
   // AC-3: Use stage='review' when there are semantic review findings
   const stage: import("../../prd/types").VerificationStage =
     reviewFindings && reviewFindings.length > 0 ? "review" : "escalation";
 
+  // Compose a meaningful summary from the actual failure context so priorFailures
+  // surfaces real signal (category + pipeline reason) into the next tier's prompt
+  // instead of the previous hardcoded "Failed with tier X, escalating".
+  const trimmedReason = pipelineReason?.trim();
+  const categoryPart = failureCategory ? ` [${failureCategory}]` : "";
+  const summary = trimmedReason
+    ? `Tier ${currentTier}${categoryPart}: ${trimmedReason}`
+    : `Tier ${currentTier}${categoryPart} failed — no pipeline reason recorded`;
+
   return {
     attempt: (story.attempts ?? 0) + 1,
     modelTier: currentTier,
     stage,
-    summary: `Failed with tier ${currentTier}, escalating to next tier`,
+    summary,
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     cost: cost ?? 0,
     timestamp: new Date().toISOString(),
@@ -387,7 +398,14 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
           : undefined;
 
       // Build escalation failure (BUG-067: include cost for accumulatedAttemptCost in metrics)
-      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings, ctx.attemptCost);
+      const escalationFailure = buildEscalationFailure(
+        s,
+        currentStoryTier,
+        escalateReviewFindings,
+        ctx.attemptCost,
+        verifiedPipelineReason,
+        escalateFailureCategory,
+      );
 
       return {
         ...s,

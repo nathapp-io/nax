@@ -22,11 +22,12 @@ interface MockContext {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("routeTddFailure", () => {
-  it("escalates on isolation-violation in strict mode", () => {
+  it("escalates on isolation-violation in strict mode with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("isolation-violation", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD isolation-violation");
     expect(ctx.retryAsLite).toBe(true);
   });
 
@@ -35,47 +36,61 @@ describe("routeTddFailure", () => {
     const result = routeTddFailure("isolation-violation", true, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD isolation-violation");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on session-failure", () => {
+  it("escalates on session-failure with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("session-failure", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD session-failure");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on tests-failing", () => {
+  it("escalates on tests-failing with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("tests-failing", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD tests-failing");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on full-suite-gate-exhausted", () => {
+  it("escalates on full-suite-gate-exhausted with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("full-suite-gate-exhausted", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD full-suite-gate-exhausted");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on verifier-rejected", () => {
+  it("escalates on verifier-rejected with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("verifier-rejected", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD verifier-rejected");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
-  it("escalates on greenfield-no-tests (tier-escalation will switch to test-after)", () => {
+  it("escalates on greenfield-no-tests with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("greenfield-no-tests", false, ctx);
 
     expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD greenfield-no-tests");
     expect(ctx.retryAsLite).toBeUndefined();
+  });
+
+  it("appends failureDetail to escalate reason when provided", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("tests-failing", false, ctx, undefined, "3 tests failing in foo.test.ts");
+
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD tests-failing: 3 tests failing in foo.test.ts");
   });
 
   it("pauses on undefined failureCategory", () => {
@@ -83,7 +98,7 @@ describe("routeTddFailure", () => {
     const result = routeTddFailure(undefined, false, ctx, "Unknown failure");
 
     expect(result.action).toBe("pause");
-    expect(result.reason).toBe("Unknown failure");
+    if (result.action === "pause") expect(result.reason).toBe("Unknown failure");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
@@ -92,7 +107,7 @@ describe("routeTddFailure", () => {
     const result = routeTddFailure("unknown" as FailureCategory, false, ctx);
 
     expect(result.action).toBe("pause");
-    expect(result.reason).toBe("Three-session TDD requires review");
+    if (result.action === "pause") expect(result.reason).toBe("Three-session TDD requires review");
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
@@ -101,7 +116,7 @@ describe("routeTddFailure", () => {
     const result = routeTddFailure(undefined, false, ctx, "Custom reason for pause");
 
     expect(result.action).toBe("pause");
-    expect(result.reason).toBe("Custom reason for pause");
+    if (result.action === "pause") expect(result.reason).toBe("Custom reason for pause");
   });
 
   it("defaults to generic pause message when no reviewReason provided", () => {
@@ -109,7 +124,7 @@ describe("routeTddFailure", () => {
     const result = routeTddFailure(undefined, false, ctx);
 
     expect(result.action).toBe("pause");
-    expect(result.reason).toBe("Three-session TDD requires review");
+    if (result.action === "pause") expect(result.reason).toBe("Three-session TDD requires review");
   });
 
   it("handles all known failure categories correctly", () => {
