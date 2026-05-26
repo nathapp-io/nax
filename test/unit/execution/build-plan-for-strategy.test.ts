@@ -101,21 +101,21 @@ function withRectification(enabled: boolean) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — returns ExecutionPlan", () => {
-  test("returns an ExecutionPlan instance", () => {
+  test("returns an ExecutionPlan instance", async () => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan).toBeInstanceOf(ExecutionPlan);
   });
 
-  test("plan has phaseNames() method", () => {
+  test("plan has phaseNames() method", async () => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(typeof plan.phaseNames).toBe("function");
     expect(Array.isArray(plan.phaseNames())).toBe(true);
   });
@@ -126,47 +126,47 @@ describe("buildPlanForStrategy — returns ExecutionPlan", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — fresh vs retry detection", () => {
-  test("story.attempts=0 (fresh) includes test-writer and greenfield-gate for TDD", () => {
+  test("story.attempts=0 (fresh) includes test-writer and greenfield-gate for TDD", async () => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).toContain("test-writer");
     expect(names).toContain("greenfield-gate");
   });
 
-  test("story.attempts=0 full TDD fresh run includes all core phases", () => {
+  test("story.attempts=0 full TDD fresh run includes all core phases", async () => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual(["test-writer", "greenfield-gate", "implementer", "full-suite-gate", "verifier"]);
   });
 
-  test("story.attempts=1 (retry) omits test-writer and greenfield-gate for TDD", () => {
+  test("story.attempts=1 (retry) omits test-writer and greenfield-gate for TDD", async () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("test-writer");
     expect(names).not.toContain("greenfield-gate");
   });
 
-  test("story.attempts=1 retry includes implementer, full-suite-gate, verifier", () => {
+  test("story.attempts=1 retry includes implementer, full-suite-gate, verifier", async () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual(["implementer", "full-suite-gate", "verifier"]);
   });
 
-  test("story with priorFailures stage=review is treated as retry", () => {
+  test("story with priorFailures stage=review is treated as retry", async () => {
     const story = makeStory({
       attempts: 0,
       priorFailures: [{ attempt: 0, modelTier: "fast", stage: "review", summary: "review failed", timestamp: new Date().toISOString() }],
@@ -174,7 +174,7 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddRetryInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("test-writer");
     expect(names).not.toContain("greenfield-gate");
@@ -186,25 +186,25 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — non-TDD single-session", () => {
-  test("no-test strategy includes only implementer", () => {
+  test("no-test strategy includes only implementer", async () => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 
-  test("test-after strategy includes only implementer", () => {
+  test("test-after strategy includes only implementer", async () => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "test-after", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "test-after", inputs);
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 
-  test("tdd-simple strategy includes only implementer (single-session, no test-writer/verifier)", () => {
+  test("tdd-simple strategy includes only implementer (single-session, no test-writer/verifier)", async () => {
     // tdd-simple is a SINGLE-SESSION strategy: one agent writes tests AND
     // implements within the same session. It must NOT trigger the three-session
     // orchestration (no test-writer, greenfield-gate, full-suite-gate, or verifier).
@@ -213,7 +213,7 @@ describe("buildPlanForStrategy — non-TDD single-session", () => {
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story); // even with all inputs available
-    const plan = buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 });
@@ -230,18 +230,18 @@ describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
     "three-session-tdd-lite",
   ];
 
-  test.each(tddStrategies)("%s fresh includes full-suite-gate and verifier", (strategy) => {
+  test.each(tddStrategies)("%s fresh includes full-suite-gate and verifier", async (strategy) => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, strategy, inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, strategy, inputs);
     const names = plan.phaseNames();
     expect(names).toContain("full-suite-gate");
     expect(names).toContain("verifier");
   });
 
-  test.each(tddStrategies)("%s fresh omits full-suite-gate and verifier when inputs missing", (strategy) => {
+  test.each(tddStrategies)("%s fresh omits full-suite-gate and verifier when inputs missing", async (strategy) => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
@@ -253,7 +253,7 @@ describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
       implementer: makeImplementerInput(story),
       // fullSuiteGate and verifier intentionally omitted
     });
-    const plan = buildPlanForStrategy(ctx, story, config, strategy, inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, strategy, inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("full-suite-gate");
     expect(names).not.toContain("verifier");
@@ -265,7 +265,7 @@ describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — rectification", () => {
-  test("rectification appears last when enabled and inputs.rectification provided", () => {
+  test("rectification appears last when enabled and inputs.rectification provided", async () => {
     const story = makeStory({ attempts: 0 });
     const config = withRectification(true);
     const ctx = makeMockCallContext();
@@ -276,12 +276,12 @@ describe("buildPlanForStrategy — rectification", () => {
         abortOnIncreasingFailures: false,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names[names.length - 1]).toBe("rectification");
   });
 
-  test("rectification omitted when not enabled in config", () => {
+  test("rectification omitted when not enabled in config", async () => {
     const story = makeStory({ attempts: 0 });
     const config = withRectification(false);
     const ctx = makeMockCallContext();
@@ -292,21 +292,21 @@ describe("buildPlanForStrategy — rectification", () => {
         abortOnIncreasingFailures: false,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("rectification");
   });
 
-  test("rectification omitted when inputs.rectification is undefined even if config enabled", () => {
+  test("rectification omitted when inputs.rectification is undefined even if config enabled", async () => {
     const story = makeStory({ attempts: 0 });
     const config = withRectification(true);
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
     // No rectification in inputs
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("rectification");
   });
 
-  test("AC-7: TDD with fullSuiteGate + rectification includes rectification phase", () => {
+  test("AC-7: TDD with fullSuiteGate + rectification includes rectification phase", async () => {
     // When isTdd && inputs.fullSuiteGate, buildPlanForStrategy prepends fullSuiteRectifyStrategy.
     // phaseNames() confirms the rectification phase is wired.
     const story = makeStory({ attempts: 1 }); // retry — no test-writer
@@ -315,18 +315,18 @@ describe("buildPlanForStrategy — rectification", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 3, strategies: [], abortOnIncreasingFailures: true },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toContain("rectification");
   });
 
-  test("AC-7: non-TDD with rectification still includes rectification phase (no gate strategy prepended)", () => {
+  test("AC-7: non-TDD with rectification still includes rectification phase (no gate strategy prepended)", async () => {
     const story = makeStory();
     const config = withRectification(true);
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("rectification");
   });
 });
@@ -336,40 +336,40 @@ describe("buildPlanForStrategy — rectification", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => {
-  test("AC3: non-TDD + verifyScoped input → plan includes 'verify-scoped' phase", () => {
+  test("AC3: non-TDD + verifyScoped input → plan includes 'verify-scoped' phase", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
     const inputs = makeNonTddInputs(story, {
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("verify-scoped");
   });
 
-  test("AC3: lintCheck input → plan includes 'lint-check' phase", () => {
+  test("AC3: lintCheck input → plan includes 'lint-check' phase", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
     const inputs = makeNonTddInputs(story, {
       lintCheck: { workdir: "/tmp/test", storyId: story.id },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("lint-check");
   });
 
-  test("AC3: typecheckCheck input → plan includes 'typecheck-check' phase", () => {
+  test("AC3: typecheckCheck input → plan includes 'typecheck-check' phase", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
     const inputs = makeNonTddInputs(story, {
       typecheckCheck: { workdir: "/tmp/test", storyId: story.id },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("typecheck-check");
   });
 
-  test("AC3: semanticReview input → plan includes 'semantic-review' phase", () => {
+  test("AC3: semanticReview input → plan includes 'semantic-review' phase", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
@@ -381,11 +381,11 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
         mode: config.review.semantic!.diffMode,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("semantic-review");
   });
 
-  test("AC3: adversarialReview input → plan includes 'adversarial-review' phase", () => {
+  test("AC3: adversarialReview input → plan includes 'adversarial-review' phase", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig({
@@ -407,22 +407,22 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
         mode: config.review.adversarial!.diffMode,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toContain("adversarial-review");
   });
 
-  test("AC3: TDD strategy does NOT receive verifyScoped phase (verifyScoped is non-TDD only)", () => {
+  test("AC3: TDD strategy does NOT receive verifyScoped phase (verifyScoped is non-TDD only)", async () => {
     const story = makeStory({ attempts: 1 });
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
     const inputs = makeTddRetryInputs(story, {
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).not.toContain("verify-scoped");
   });
 
-  test("AC3: canonical order places post-implementer phases in sequence", () => {
+  test("AC3: canonical order places post-implementer phases in sequence", async () => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig({
@@ -453,7 +453,7 @@ describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => 
         mode: config.review.adversarial!.diffMode,
       },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     expect(plan.phaseNames()).toEqual([
       "implementer",
       "verify-scoped",
@@ -518,7 +518,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("mechanical-lintfix");
   });
@@ -533,7 +533,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("mechanical-formatfix");
   });
@@ -559,7 +559,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     await plan.run();
     expect(capturedStrategyNames.length).toBeGreaterThan(0);
   });
@@ -574,7 +574,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("autofix-implementer");
   });
@@ -589,7 +589,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("autofix-test-writer");
   });
@@ -604,7 +604,7 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     const inputs = makeTddRetryInputs(story, {
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     // Only the fullSuiteRectifyStrategy should be present (prepended by buildPlanForStrategy for TDD+gate)
     expect(capturedStrategyNames).not.toContain("mechanical-lintfix");
@@ -619,12 +619,12 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — canonical phase ordering", () => {
-  test("full TDD fresh run phases appear in canonical order", () => {
+  test("full TDD fresh run phases appear in canonical order", async () => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig({ review: { enabled: true, checks: ["typecheck", "lint", "test", "build"] as any } });
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual([
       "test-writer",
       "greenfield-gate",

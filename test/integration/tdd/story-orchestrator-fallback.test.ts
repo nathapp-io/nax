@@ -83,7 +83,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
-      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
       const result = await plan.run();
 
       // Greenfield gate stops the plan; no auto-fallback to lite mode
@@ -115,7 +115,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
-      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", inputs);
+      const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", inputs);
       const result = await plan.run();
 
       expect(result.success).toBe(false);
@@ -149,7 +149,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
-      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
       const result = await plan.run();
 
       expect(result.success).toBe(false);
@@ -194,7 +194,7 @@ describe("buildPlanForStrategy — zero-file greenfield scenarios", () => {
         fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
-      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
       const result = await plan.run();
 
       // Pre-existing tests found → greenfield gate passes → plan succeeds

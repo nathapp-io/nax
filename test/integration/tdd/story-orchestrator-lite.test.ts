@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildPlanForStrategy } from "../../../src/execution/build-plan-for-strategy";
 import type { PlanInputs } from "../../../src/execution/plan-inputs";
-import type { ResolvedTestPatterns } from "../../../src/test-runners";
 import { makeMockCallContext } from "../../helpers/call-context";
 import { makeRuntimeWithFakeAgent } from "../../helpers/runtime";
 import type { UserStory } from "../../../src/prd";
@@ -31,15 +30,6 @@ const story: UserStory = {
   escalations: [],
   attempts: 0,
 };
-
-function defaultPatterns(): ResolvedTestPatterns {
-  return {
-    globs: ["test/**/*.test.ts"],
-    regex: [/\.test\.ts$/],
-    pathspec: [":(exclude)test/**/*.test.ts"],
-    testDirs: ["test/unit", "test/integration"],
-  };
-}
 
 function makePlanInputsNoGreenfield(storyArg: UserStory = story): PlanInputs {
   return {
@@ -74,7 +64,7 @@ describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -102,7 +92,7 @@ describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -127,7 +117,7 @@ describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -144,7 +134,7 @@ describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -168,7 +158,7 @@ describe("buildPlanForStrategy — three-session-tdd-lite strategy", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd-lite", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect("test-writer" in result.phaseOutputs).toBe(true);

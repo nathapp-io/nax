@@ -52,6 +52,8 @@ export interface RectificationPhaseOptions {
   // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous over their fixOp input/output
   readonly strategies: FixStrategy<Finding, any, any, any>[];
   readonly abortOnIncreasingFailures: boolean;
+  /** Optional: transform findings after validate() returns, before next iteration's strategy selection. */
+  readonly postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
 }
 
 export interface StoryOrchestratorResult {
@@ -682,7 +684,7 @@ async function runRectification(
         if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
         findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
       }
-      return findings;
+      return rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
     },
   };
 

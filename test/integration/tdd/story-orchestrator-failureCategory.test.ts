@@ -62,7 +62,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -82,7 +82,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -105,7 +105,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -124,7 +124,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
 
     const { runtime } = makeRuntimeWithFakeAgent(agent, { config: DEFAULT_CONFIG });
     const callCtx = makeMockCallContext({ runtime });
-    const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
+    const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", makePlanInputsNoGreenfield());
     const result = await plan.run();
 
     expect(result.success).toBe(true);
@@ -181,7 +181,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
       fullSuiteGate: { story, workdir: "/tmp/test" },
       verifier: { story },
     };
-    const plan = buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
     const result = await plan.run();
 
     expect(result.success).toBe(false);
@@ -225,7 +225,7 @@ describe("buildPlanForStrategy — failure scenarios", () => {
         fullSuiteGate: { story, workdir: tmpDir },
         verifier: { story },
       };
-      const plan = buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
+      const plan = await buildPlanForStrategy(callCtx, story, DEFAULT_CONFIG, "three-session-tdd", inputs);
       const result = await plan.run();
 
       expect(result.success).toBe(false);
