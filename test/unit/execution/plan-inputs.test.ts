@@ -370,6 +370,24 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     expect(inputs.verifyScoped).toBeDefined();
   });
 
+  test("AC1: verifyScoped.regressionMode is 'deferred' when regressionGate.mode is 'deferred'", async () => {
+    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "deferred" } } });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.verifyScoped?.regressionMode).toBe("deferred");
+  });
+
+  test("AC1: verifyScoped.regressionMode is 'per-story' when regressionGate.mode is 'per-story'", async () => {
+    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "per-story" } } });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.verifyScoped?.regressionMode).toBe("per-story");
+  });
+
+  test("AC1: verifyScoped.regressionMode is 'deferred' when regressionGate.mode is 'disabled' (fullSuiteGate handles disabled, not verifyScopedOp)", async () => {
+    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "disabled" } } });
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.verifyScoped?.regressionMode).toBe("deferred");
+  });
+
   test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lint command configured", async () => {
     const ctx = makeNonTddCtx({
       review: {

@@ -308,6 +308,29 @@ interface VerifyResult {
 }
 ```
 
+### Strategy → Op envelope mapping (issue #1116)
+
+`ScopedStrategy.VerifyResult` → `VerifyScopedOutput`:
+
+| Strategy field | Op field | Notes |
+|:---|:---|:---|
+| `status: "PASS" \| "FAIL" \| "SKIPPED"` | `success` + `status: "passed" \| "failed" \| "skipped" \| "timeout"` | Op uses explicit status union |
+| `rawOutput` | (in `findings` + log) | Raw output goes through findings + outcome log, not envelope |
+| `passCount` | `passCount` | Same |
+| `failCount` | (in `findings.length`) | Derived |
+| `durationMs` | `durationMs` | Same |
+| `scopeTestFallback` | `scopeTestFallback?: boolean` | New |
+| `failures: StructuredTestFailure[]` | `findings: Finding[]` | Already converted via `testSummaryToFindings` |
+| `countsTowardEscalation` | (in outcome log only) | Story-orchestrator decides escalation |
+
+`RegressionStrategy.VerifyResult` → `FullSuiteGateOutput`:
+
+| Strategy field | Op field | Notes |
+|:---|:---|:---|
+| `status: "PASS" \| "FAIL" \| "SKIPPED"` | `status: "passed" \| "failed" \| "skipped" \| "passed-on-timeout" \| "execution-failed"` | Op adds explicit timeout-accept status |
+| acceptOnTimeout TIMEOUT → PASS | TIMEOUT → `status: "passed-on-timeout"`, `passed: true` | BUG-026 semantics preserved |
+| `enabled: false` → SKIPPED | `status: "skipped"`, `success: true` | Same |
+
 ---
 
 ## §22 Routing & Classification

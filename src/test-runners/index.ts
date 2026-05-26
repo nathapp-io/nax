@@ -35,3 +35,11 @@ export type { ResolvedTestPatterns } from "./resolver";
 export { analyzeTestExitCode, formatFailureSummary, parseBunTestOutput, parseTestOutput } from "./parser";
 export { parseTestFailures } from "./ac-parser";
 export type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
+export {
+  selectScopedTests,
+  buildScopedCommand,
+  coerceSmartRunner,
+  isMonorepoOrchestratorCommand,
+  _scopedSelectionDeps,
+} from "./scoped-selection";
+export type { SelectScopedTestsInput, SelectScopedTestsResult } from "./scoped-selection";
