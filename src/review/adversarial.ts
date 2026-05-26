@@ -13,9 +13,7 @@
  *   - Findings carry a `category` field (input, error-path, abandonment, etc.).
  */
 
-import { relative, sep } from "node:path";
 import type { IAgentManager } from "../agents";
-import { DEFAULT_CONFIG, reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
@@ -23,7 +21,6 @@ import type { Iteration } from "../findings";
 import { getSafeLogger } from "../logger";
 import { adversarialReviewOp } from "../operations/adversarial-review";
 import { callOp as _callOp } from "../operations/call";
-import { resolveReviewExcludePatterns, resolveTestFilePatterns } from "../test-runners";
 import { extractDiffFiles } from "../utils/diff-files";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import {
@@ -37,14 +34,9 @@ import {
   isBlockingSeverity,
   toAdversarialReviewFindings,
 } from "./adversarial-helpers";
-import {
-  collectDiffFileList as _collectDiffFileList,
-  collectDiffStat as _collectDiffStat,
-  resolveEffectiveRef as _resolveEffectiveRef,
-  collectDiff,
-  computeTestInventory,
-} from "./diff-utils";
+import { collectDiffFileList as _collectDiffFileList } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
+import { prepareAdversarialReviewInput } from "./prepare-inputs";
 import { writeReviewAudit } from "./review-audit";
 import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "./types";
 
@@ -52,8 +44,6 @@ import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "
 export const _adversarialDeps = {
   writeReviewAudit,
   callOp: _callOp,
-  resolveEffectiveRef: _resolveEffectiveRef,
-  collectDiffStat: _collectDiffStat,
   collectDiffFileList: _collectDiffFileList,
 };
 
@@ -138,10 +128,18 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   const startTime = Date.now();
   const logger = getSafeLogger();
 
-  // @design: BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
-  const effectiveRef = await _adversarialDeps.resolveEffectiveRef(workdir, storyGitRef, story.id);
+  // @design: BUG-114 + issue #1120: collection logic lives in prepare-inputs.ts (SSOT).
+  const prepared = await prepareAdversarialReviewInput({
+    workdir,
+    projectDir,
+    storyId: story.id,
+    storyGitRef,
+    config: naxConfig,
+    naxIgnoreIndex,
+    adversarialConfig,
+  });
 
-  if (!effectiveRef) {
+  if (prepared.skipReason === "no git ref") {
     return {
       check: "adversarial",
       success: true,
@@ -159,14 +157,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     diffMode,
   });
 
-  // Collect stat summary (used by both modes as a quick overview).
-  // In ref mode: stat + ref passed to reviewer; reviewer self-serves the full diff via git tools.
-  // In embedded mode: also collect full diff (no excludePatterns — adversarial sees test files).
-  const repoRoot = projectDir ?? workdir;
-  const packageDir = workdir !== repoRoot ? workdir : undefined;
-  const stat = await _adversarialDeps.collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
-
-  if (!stat) {
+  if (prepared.skipReason === "no changes detected") {
     return {
       check: "adversarial",
       success: true,
@@ -176,49 +167,24 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
-
-  let diff: string | undefined;
-  let testInventory: import("./diff-utils").TestInventory | undefined;
-  const effectiveConfig = naxConfig ?? reviewConfigSelector.select(DEFAULT_CONFIG);
-  const packageDirRelative =
-    projectDir && workdir !== projectDir
-      ? (() => {
-          const rel = relative(projectDir, workdir);
-          if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
-          return rel && rel !== "." ? rel : undefined;
-        })()
-      : undefined;
-  const resolvedTestPatterns = await resolveTestFilePatterns(
-    effectiveConfig,
-    projectDir ?? workdir,
-    packageDirRelative,
-  );
-  const effectiveRefExcludePatterns = [
-    ...resolveReviewExcludePatterns(adversarialConfig.excludePatterns, resolvedTestPatterns),
-  ];
-
-  if (diffMode === "embedded") {
-    // Adversarial embedded mode: excludes .nax/ metadata but sees test files (unlike semantic).
-    diff = await collectDiff(workdir, effectiveRef, adversarialConfig.excludePatterns ?? [], {
-      naxIgnoreIndex,
-      packageDir,
-    });
-    if (!diff) {
-      return {
-        check: "adversarial",
-        success: true,
-        command: "",
-        exitCode: 0,
-        output: "skipped: no code changes",
-        durationMs: Date.now() - startTime,
-      };
-    }
-    const testFilePatterns =
-      (typeof naxConfig?.execution?.smartTestRunner === "object"
-        ? naxConfig.execution.smartTestRunner?.testFilePatterns
-        : undefined) ?? undefined;
-    testInventory = await computeTestInventory(workdir, effectiveRef, testFilePatterns, { naxIgnoreIndex, packageDir });
+  if (prepared.skipReason === "no code changes") {
+    return {
+      check: "adversarial",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "skipped: no code changes",
+      durationMs: Date.now() - startTime,
+    };
   }
+
+  // biome-ignore lint/style/noNonNullAssertion: skipReason undefined ⇒ effectiveRef present
+  const effectiveRef = prepared.effectiveRef!;
+  const stat = prepared.stat;
+  const diff = prepared.diff;
+  const testInventory = prepared.testInventory;
+  const effectiveRefExcludePatterns = prepared.refExcludePatterns;
+  const testGlobs = prepared.testGlobs;
 
   // ADR-019: runtime is the canonical source for agentManager. The parameter
   // is kept for backward compatibility but ignored — callers should pass
@@ -289,7 +255,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       stat,
       testInventory,
       excludePatterns: adversarialConfig.excludePatterns,
-      testGlobs: resolvedTestPatterns.globs,
+      testGlobs,
       featureCtxBlock,
       priorAdversarialIterations,
       blockingThreshold,
@@ -405,6 +371,8 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     diffFiles = extractDiffFiles(diff);
     diffAvailable = true;
   } else {
+    const repoRoot = projectDir ?? workdir;
+    const packageDir = workdir !== repoRoot ? workdir : undefined;
     const list = await _adversarialDeps.collectDiffFileList(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
     if (list === undefined) {
       diffFiles = new Set();

@@ -4,12 +4,13 @@
  * Exercises runAdversarialReview end-to-end with mocked LLM sessions,
  * verifying that the reprompt event wires through hopBody → parse → emitReviewReprompt.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { adversarialReviewOp } from "../../../src/operations/adversarial-review";
 import type { AdversarialReviewOutput } from "../../../src/operations/adversarial-review";
 import { _adversarialDeps, runAdversarialReview } from "../../../src/review/adversarial";
+import { _diffUtilsDeps } from "../../../src/review/diff-utils";
 import type { ReviewRepromptEvent } from "../../../src/runtime/dispatch-events";
 import type { NaxRuntime } from "../../../src/runtime";
 import { makeMockRuntime } from "../../helpers/runtime";
@@ -84,27 +85,37 @@ const SECOND_TURN_GROUNDED = JSON.stringify({
 // Second turn (parse-failed path): invalid JSON
 const SECOND_TURN_INVALID = "not valid json at all";
 
-type SavedDeps = Pick<
+type SavedAdversarialDeps = Pick<
   typeof _adversarialDeps,
-  "callOp" | "resolveEffectiveRef" | "collectDiffStat" | "collectDiffFileList" | "writeReviewAudit"
+  "callOp" | "collectDiffFileList" | "writeReviewAudit"
+>;
+type SavedDiffUtilsDeps = Pick<
+  typeof _diffUtilsDeps,
+  "isGitRefValid" | "getMergeBase" | "spawn"
 >;
 
-function saveDeps(): SavedDeps {
+function saveDeps(): { adversarial: SavedAdversarialDeps; diffUtils: SavedDiffUtilsDeps } {
   return {
-    callOp: _adversarialDeps.callOp,
-    resolveEffectiveRef: _adversarialDeps.resolveEffectiveRef,
-    collectDiffStat: _adversarialDeps.collectDiffStat,
-    collectDiffFileList: _adversarialDeps.collectDiffFileList,
-    writeReviewAudit: _adversarialDeps.writeReviewAudit,
+    adversarial: {
+      callOp: _adversarialDeps.callOp,
+      collectDiffFileList: _adversarialDeps.collectDiffFileList,
+      writeReviewAudit: _adversarialDeps.writeReviewAudit,
+    },
+    diffUtils: {
+      isGitRefValid: _diffUtilsDeps.isGitRefValid,
+      getMergeBase: _diffUtilsDeps.getMergeBase,
+      spawn: _diffUtilsDeps.spawn,
+    },
   };
 }
 
-function restoreDeps(saved: SavedDeps): void {
-  _adversarialDeps.callOp = saved.callOp;
-  _adversarialDeps.resolveEffectiveRef = saved.resolveEffectiveRef;
-  _adversarialDeps.collectDiffStat = saved.collectDiffStat;
-  _adversarialDeps.collectDiffFileList = saved.collectDiffFileList;
-  _adversarialDeps.writeReviewAudit = saved.writeReviewAudit;
+function restoreDeps(saved: { adversarial: SavedAdversarialDeps; diffUtils: SavedDiffUtilsDeps }): void {
+  _adversarialDeps.callOp = saved.adversarial.callOp;
+  _adversarialDeps.collectDiffFileList = saved.adversarial.collectDiffFileList;
+  _adversarialDeps.writeReviewAudit = saved.adversarial.writeReviewAudit;
+  _diffUtilsDeps.isGitRefValid = saved.diffUtils.isGitRefValid;
+  _diffUtilsDeps.getMergeBase = saved.diffUtils.getMergeBase;
+  _diffUtilsDeps.spawn = saved.diffUtils.spawn;
 }
 
 /**
@@ -158,8 +169,14 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       afterEach(() => restoreDeps(saved));
 
       let capturedSendCount = 0;
-      _adversarialDeps.resolveEffectiveRef = async () => "abc123" as never;
-      _adversarialDeps.collectDiffStat = async () => "1 file changed" as never;
+      _diffUtilsDeps.isGitRefValid = mock(async () => true);
+      _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        kill: () => {},
+      })) as unknown as typeof _diffUtilsDeps.spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
@@ -196,8 +213,14 @@ describe("AC4 + AC5: reprompt with grounded second turn", () => {
       const saved = saveDeps();
       afterEach(() => restoreDeps(saved));
 
-      _adversarialDeps.resolveEffectiveRef = async () => "abc123" as never;
-      _adversarialDeps.collectDiffStat = async () => "1 file changed" as never;
+      _diffUtilsDeps.isGitRefValid = mock(async () => true);
+      _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        kill: () => {},
+      })) as unknown as typeof _diffUtilsDeps.spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
@@ -236,8 +259,14 @@ describe("AC6: parse-failed outcome when second turn is invalid JSON", () => {
       const saved = saveDeps();
       afterEach(() => restoreDeps(saved));
 
-      _adversarialDeps.resolveEffectiveRef = async () => "abc123" as never;
-      _adversarialDeps.collectDiffStat = async () => "1 file changed" as never;
+      _diffUtilsDeps.isGitRefValid = mock(async () => true);
+      _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+      _diffUtilsDeps.spawn = mock((_opts: unknown) => ({
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("1 file changed")); c.close(); } }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        kill: () => {},
+      })) as unknown as typeof _diffUtilsDeps.spawn;
       _adversarialDeps.collectDiffFileList = async () => ["src/auth.ts"] as never;
       _adversarialDeps.writeReviewAudit = async () => {};
       _adversarialDeps.callOp = makeMockedCallOpWithSendTracking({
