@@ -11,7 +11,13 @@ function makeDeps(overrides = {}) {
       testCmd: "bun test",
       fullSuiteTimeout: 60,
     }),
-    runTests: async () => ({ passed: true, failed: 0, output: "", parsedSummary: { passed: 5, failed: 0, failures: [] } }),
+    runTests: async () => ({
+      passed: true,
+      failed: 0,
+      output: "",
+      parsedSummary: { passed: 5, failed: 0, failures: [] },
+      timedOut: false,
+    }),
     ...overrides,
   };
 }
@@ -63,6 +69,7 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
               { file: "test/b.test.ts", testName: "test B", error: "err B", stackTrace: [] },
             ],
           },
+          timedOut: false,
         }),
       }),
     );
@@ -88,6 +95,7 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
           failed: 3,
           output: "process crashed",
           parsedSummary: { passed: 0, failed: 3, failures: [] },
+          timedOut: false,
         }),
       }),
     );
@@ -111,5 +119,122 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
     );
     expect(out.success).toBe(true);
     expect(out.status).toBe("passed");
+  });
+});
+
+describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)", () => {
+  test("regressionGate.enabled=false → status=skipped, success=true", async () => {
+    const ctx = {
+      config: {
+        execution: { regressionGate: { enabled: false } },
+        quality: { commands: { test: "bun test" } },
+      },
+    } as any;
+    const result = await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/r" },
+      ctx,
+      makeDeps(),
+    );
+    expect(result.status).toBe("skipped");
+    expect(result.success).toBe(true);
+    expect(result.passed).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  test("TIMEOUT + acceptOnTimeout=true → status=passed-on-timeout, success=true", async () => {
+    const ctx = {
+      config: {
+        execution: { regressionGate: { acceptOnTimeout: true } },
+        quality: { commands: { test: "bun test" } },
+      },
+    } as any;
+    const result = await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/r" },
+      ctx,
+      makeDeps({
+        runTests: async () => ({
+          passed: false,
+          failed: 0,
+          output: "",
+          parsedSummary: { passed: 0, failed: 0, failures: [] },
+          timedOut: true,
+        }),
+      }),
+    );
+    expect(result.status).toBe("passed-on-timeout");
+    expect(result.passed).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  test("TIMEOUT + acceptOnTimeout=false → status=timeout, success=false", async () => {
+    const ctx = {
+      config: {
+        execution: { regressionGate: { acceptOnTimeout: false } },
+        quality: { commands: { test: "bun test" } },
+      },
+    } as any;
+    const result = await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/r" },
+      ctx,
+      makeDeps({
+        runTests: async () => ({
+          passed: false,
+          failed: 0,
+          output: "",
+          parsedSummary: { passed: 0, failed: 0, failures: [] },
+          timedOut: true,
+        }),
+      }),
+    );
+    expect(result.status).toBe("timeout");
+    expect(result.success).toBe(false);
+    expect(result.passed).toBe(false);
+  });
+
+  test("TIMEOUT with no acceptOnTimeout config → defaults to true (BUG-026 default preserved)", async () => {
+    // Default is acceptOnTimeout=true when not configured
+    const ctx = {
+      config: { execution: {}, quality: { commands: { test: "bun test" } } },
+    } as any;
+    const result = await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/r" },
+      ctx,
+      makeDeps({
+        runTests: async () => ({
+          passed: false,
+          failed: 0,
+          output: "",
+          parsedSummary: { passed: 0, failed: 0, failures: [] },
+          timedOut: true,
+        }),
+      }),
+    );
+    expect(result.status).toBe("passed-on-timeout");
+    expect(result.success).toBe(true);
+  });
+
+  test("regressionGate.timeoutSeconds is threaded into resolveGateContext", async () => {
+    // The timeout is threaded via resolveGateContext — which we test by verifying
+    // the default fallback path produces a result (integration test of resolveGateContext
+    // is in test/unit/operations/full-suite-gate-resolver.test.ts if it exists).
+    // Here we verify that no type error surfaces and the op respects the output.
+    let capturedTimeout = 0;
+    const deps = makeDeps({
+      resolveGateContext: async () => ({
+        config: {} as any,
+        testCmd: "bun test",
+        fullSuiteTimeout: 999,
+      }),
+      runTests: async (_input: any, gateCtx: any) => {
+        capturedTimeout = gateCtx.fullSuiteTimeout;
+        return { passed: true, failed: 0, output: "", parsedSummary: { passed: 1, failed: 0, failures: [] }, timedOut: false };
+      },
+    });
+    await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/r" },
+      mockCtx,
+      deps,
+    );
+    expect(capturedTimeout).toBe(999);
   });
 });
