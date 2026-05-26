@@ -388,22 +388,24 @@ describe("RectifierPromptBuilder.testWriterRectification — write-failing-test 
 });
 
 // ---------------------------------------------------------------------------
-// CONTRADICTION_ESCAPE_HATCH — Exception 4 (mock-structure handoff)
+// buildEscapeHatch({ includeMockHandoff: true }) — Exception 4 (mock-structure handoff)
 // ---------------------------------------------------------------------------
 
-import { CONTRADICTION_ESCAPE_HATCH } from "@/prompts";
+import { buildEscapeHatch } from "../../../../src/prompts/builders/rectifier-builder-helpers";
 
-describe("CONTRADICTION_ESCAPE_HATCH — Exception 4", () => {
+describe("buildEscapeHatch({ includeMockHandoff: true }) — Exception 4", () => {
+  const tddHatch = buildEscapeHatch({ includeMockHandoff: true });
+
   test("includes Exception 4 title, required fields, and UNRESOLVED handoff rule", () => {
-    expect(CONTRADICTION_ESCAPE_HATCH).toContain("Exception 4 — Mock-structure handoff");
-    expect(CONTRADICTION_ESCAPE_HATCH).toContain("TEST_EDIT_REASON: mock_structure");
-    expect(CONTRADICTION_ESCAPE_HATCH).toContain(
+    expect(tddHatch).toContain("Exception 4 — Mock-structure handoff");
+    expect(tddHatch).toContain("TEST_EDIT_REASON: mock_structure");
+    expect(tddHatch).toContain(
       "Do NOT also emit `UNRESOLVED:` in the same turn — this declaration IS the handoff.",
     );
   });
 
   test.each(["FILES:", "REASON:"])("lists %s as a required field", (field) => {
-    const afterException4 = CONTRADICTION_ESCAPE_HATCH.slice(CONTRADICTION_ESCAPE_HATCH.indexOf("Exception 4"));
+    const afterException4 = tddHatch.slice(tddHatch.indexOf("Exception 4"));
     expect(afterException4).toContain(field);
   });
 });
