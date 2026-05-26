@@ -14,6 +14,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { _diffUtilsDeps } from "@/review";
 import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "@/review";
 import type { AdversarialReviewConfig, SemanticReviewConfig } from "@/review/types";
+import type { ResolvedTestPatterns } from "@/test-runners";
 
 function makeSpawnSequence(outputs: string[]) {
   let i = 0;
@@ -193,5 +194,43 @@ describe("prepareAdversarialReviewInput", () => {
     expect(result.diff).toContain("diff --git");
     expect(result.testInventory).toBeDefined();
     expect(result.testInventory?.addedTestFiles ?? []).toContain("src/foo.test.ts");
+  });
+});
+
+describe("prepare-inputs honors caller-supplied resolvedTestPatterns", () => {
+  const sentinel: ResolvedTestPatterns = {
+    globs: ["custom/**/*.test.ts"],
+    pathspec: [":(exclude)custom/**/*.test.ts"],
+    regex: [/custom\/.*\.test\.ts$/],
+    testDirs: ["custom"],
+    resolution: "fallback" as const,
+  };
+
+  test("semantic: uses caller-supplied resolved patterns instead of re-resolving", async () => {
+    _diffUtilsDeps.spawn = makeSpawnSequence([STAT_OUT]);
+    const result = await prepareSemanticReviewInput({
+      workdir: "/tmp/repo",
+      storyId: "S1",
+      storyGitRef: "abc123",
+      config: DEFAULT_CONFIG,
+      semanticConfig: baseSemanticConfig,
+      resolvedTestPatterns: sentinel,
+    });
+    // excludePatterns derive from the sentinel pathspec, not DEFAULT_CONFIG's TS defaults
+    expect(result.excludePatterns.some((p) => p.includes("custom"))).toBe(true);
+  });
+
+  test("adversarial: uses caller-supplied resolved patterns instead of re-resolving", async () => {
+    _diffUtilsDeps.spawn = makeSpawnSequence([STAT_OUT]);
+    const result = await prepareAdversarialReviewInput({
+      workdir: "/tmp/repo",
+      storyId: "S1",
+      storyGitRef: "abc123",
+      config: DEFAULT_CONFIG,
+      adversarialConfig: baseAdversarialConfig,
+      resolvedTestPatterns: sentinel,
+    });
+    expect(result.testGlobs).toEqual(["custom/**/*.test.ts"]);
+    expect(result.refExcludePatterns.some((p) => p.includes("custom"))).toBe(true);
   });
 });
