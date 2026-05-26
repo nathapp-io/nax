@@ -7,10 +7,13 @@
  *
  * Converted from RunOperation (LLM-based) to DeterministicOperation in US-005 AC#1.
  * Decision tree:
- * 1. Run test suite (always)
- * 2. Tests pass → status: "passed", findings: []
- * 3. Tests fail with structured failures → status: "failed", findings populated
- * 4. Tests fail but parser found 0 structured records → status: "execution-failed", findings: []
+ * 1. regressionGate.enabled=false → status: "skipped" (issue #1116)
+ * 2. Run test suite (via regression() runner for quality-config parity with RegressionStrategy)
+ * 3. Tests pass → status: "passed", findings: []
+ * 4. Timeout + acceptOnTimeout=true → status: "passed-on-timeout" (BUG-026, issue #1116)
+ * 5. Timeout + acceptOnTimeout=false → status: "timeout", success: false
+ * 6. Tests fail with structured failures → status: "failed", findings populated
+ * 7. Tests fail but parser found 0 structured records → status: "execution-failed", findings: []
  */
 
 import type { NaxConfig } from "../config";
@@ -18,6 +21,7 @@ import { rectificationGateConfigSelector } from "../config/selectors";
 import { NaxError } from "../errors";
 import { testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
+import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import type { TestSummary } from "../test-runners";
 import type { CallContext, DeterministicOperation } from "./types";
@@ -26,12 +30,16 @@ import type { CallContext, DeterministicOperation } from "./types";
  * Full-Suite Gate execution status.
  * Statuses disabled/failed-no-rectification/rectification-exhausted removed in US-006.
  * Rectification is now handled externally by the general runFixCycle phase.
+ * issue #1116: added "passed-on-timeout" (BUG-026), "timeout", "skipped" (enabled=false).
  */
 export type FullSuiteGateStatus =
   | "passed"
   | "failed" // tests failed; findings populated
   | "execution-failed" // runner exited non-zero but parser found 0 structured failures
-  | "inconclusive";
+  | "inconclusive"
+  | "passed-on-timeout" // timeout + acceptOnTimeout=true (BUG-026)
+  | "timeout" // timeout + acceptOnTimeout=false
+  | "skipped"; // regressionGate.enabled=false
 
 /**
  * Input for the full-suite gate.
@@ -75,6 +83,8 @@ interface RunTestsResult {
   readonly failed: number;
   readonly output: string;
   readonly parsedSummary: TestSummary;
+  /** True when the runner returned status=TIMEOUT — let execute() decide accept-on-timeout. */
+  readonly timedOut: boolean;
 }
 
 /**
@@ -95,7 +105,13 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
   resolveGateContext: async (input, ctx) => {
     const { resolveQualityTestCommands } = await import("../quality/command-resolver");
     const config = ctx.runtime.configLoader.current();
-    const fullSuiteTimeout = config.execution?.rectification?.fullSuiteTimeoutSeconds ?? 60;
+    // Prefer regressionGate.timeoutSeconds (matches legacy RegressionStrategy / issue #1116)
+    // and fall back to rectification.fullSuiteTimeoutSeconds for backwards compatibility with
+    // callers that still set the older key.
+    const fullSuiteTimeout =
+      config.execution?.regressionGate?.timeoutSeconds ??
+      config.execution?.rectification?.fullSuiteTimeoutSeconds ??
+      300;
     const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
       config,
       input.workdir,
@@ -117,17 +133,29 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
     return { config, testCmd: resolvedTestCmd, fullSuiteTimeout };
   },
   runTests: async (input, gateCtx) => {
-    const { executeWithTimeout } = await import("../verification");
+    const { regression } = await import("../verification/runners");
     const { parseTestOutput } = await import("../test-runners");
-    const result = await executeWithTimeout(gateCtx.testCmd, gateCtx.fullSuiteTimeout, undefined, {
-      cwd: input.workdir,
+    const result = await regression({
+      workdir: input.workdir,
+      command: gateCtx.testCmd,
+      timeoutSeconds: gateCtx.fullSuiteTimeout,
+      // Op decides accept-on-timeout itself; runner stays neutral.
+      acceptOnTimeout: false,
+      forceExit: gateCtx.config?.quality?.forceExit,
+      detectOpenHandles: gateCtx.config?.quality?.detectOpenHandles,
+      detectOpenHandlesRetries: gateCtx.config?.quality?.detectOpenHandlesRetries,
+      gracePeriodMs: gateCtx.config?.quality?.gracePeriodMs,
+      drainTimeoutMs: gateCtx.config?.quality?.drainTimeoutMs,
+      shell: gateCtx.config?.quality?.shell,
+      stripEnvVars: gateCtx.config?.quality?.stripEnvVars,
     });
     const parsedSummary = parseTestOutput(result.output ?? "");
     return {
-      passed: result.success && result.exitCode === 0,
+      passed: result.success && result.status === "SUCCESS",
       failed: parsedSummary.failed ?? 0,
       output: result.output ?? "",
       parsedSummary,
+      timedOut: result.status === "TIMEOUT",
     };
   },
 };
@@ -160,11 +188,59 @@ export const fullSuiteGateOp: DeterministicOperation<
     ctx: CallContext,
     deps: FullSuiteGateDeps = _fullSuiteGateDeps,
   ): Promise<FullSuiteGateOutput> {
+    const logger = getLogger();
+    const ctxConfig = (ctx as unknown as { config?: NaxConfig }).config;
+
+    // issue #1116: regressionGate.enabled=false → short-circuit as skipped.
+    const enabled = ctxConfig?.execution?.regressionGate?.enabled ?? true;
+    if (!enabled) {
+      logger.info("verify[regression]", "Regression gate disabled — skipping full-suite run", {
+        storyId: input.story.id,
+      });
+      return {
+        success: true,
+        passed: true,
+        status: "skipped",
+        estimatedCostUsd: 0,
+        attempts: 0,
+        findings: [],
+      };
+    }
+
     const gateCtx = await deps.resolveGateContext(input, ctx);
     const testResult = await deps.runTests(input, gateCtx);
 
     if (testResult.passed) {
       return { success: true, passed: true, status: "passed", estimatedCostUsd: 0, attempts: 0, findings: [] };
+    }
+
+    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass.
+    if (testResult.timedOut) {
+      const acceptOnTimeout = ctxConfig?.execution?.regressionGate?.acceptOnTimeout ?? true;
+      if (acceptOnTimeout) {
+        logger.warn("verify[regression]", "[BUG-026] Full-suite timed out (accepted as pass)", {
+          storyId: input.story.id,
+        });
+        return {
+          success: true,
+          passed: true,
+          status: "passed-on-timeout",
+          estimatedCostUsd: 0,
+          attempts: 0,
+          findings: [],
+        };
+      }
+      logger.warn("verify[regression]", "Full-suite timed out (failing)", {
+        storyId: input.story.id,
+      });
+      return {
+        success: false,
+        passed: false,
+        status: "timeout",
+        estimatedCostUsd: 0,
+        attempts: 0,
+        findings: [],
+      };
     }
 
     const findings = testSummaryToFindings(testResult.parsedSummary);
