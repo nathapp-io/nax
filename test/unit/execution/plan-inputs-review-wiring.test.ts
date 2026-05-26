@@ -220,3 +220,4 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(adversarialExcludes).toContain(SENTINEL_DIR_PATHSPEC);
   });
 });
+
