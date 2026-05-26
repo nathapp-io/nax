@@ -11,12 +11,33 @@
  * - AC6: Validation behavior is covered by targeted unit tests
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { NaxError } from "@/errors";
 import { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "@/execution";
+import { _diffUtilsDeps } from "@/review";
 import type { ResolvedTestPatterns } from "@/test-runners";
 import { makeStory, makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
+
+// Helper: stub git-diff spawn so review-input prep can resolve stat. The orchestrator
+// path calls collectDiffStat before constructing review inputs; tests that assert
+// the slots populate must provide a non-empty stat or the slot is correctly skipped.
+function makeStatSpawn(stat: string) {
+  return mock(
+    (_opts: unknown) =>
+      ({
+        exited: Promise.resolve(0),
+        stdout: new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode(stat));
+            c.close();
+          },
+        }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        kill: () => {},
+      }) as unknown,
+  ) as unknown as typeof _diffUtilsDeps.spawn;
+}
 
 const FAKE_PATTERNS: ResolvedTestPatterns = {
   globs: [],
@@ -407,39 +428,57 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
   });
 
   test("AC1: assemblePlanInputsFromCtx populates semanticReview when check enabled and config present", async () => {
-    const ctx = makeNonTddCtx({
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["semantic"],
-      },
-    });
-    ctx.storyGitRef = "abc123";
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeDefined();
-    expect(inputs.semanticReview?.storyGitRef).toBe("abc123");
+    const origSpawn = _diffUtilsDeps.spawn;
+    const origIsValid = _diffUtilsDeps.isGitRefValid;
+    _diffUtilsDeps.spawn = makeStatSpawn(" src/foo.ts | 5 +-\n 1 file changed\n");
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    try {
+      const ctx = makeNonTddCtx({
+        review: {
+          ...DEFAULT_CONFIG.review,
+          enabled: true,
+          checks: ["semantic"],
+        },
+      });
+      ctx.storyGitRef = "abc123";
+      const inputs = await assemblePlanInputsFromCtx(ctx);
+      expect(inputs.semanticReview).toBeDefined();
+      expect(inputs.semanticReview?.storyGitRef).toBe("abc123");
+    } finally {
+      _diffUtilsDeps.spawn = origSpawn;
+      _diffUtilsDeps.isGitRefValid = origIsValid;
+    }
   });
 
   test("AC1: assemblePlanInputsFromCtx populates adversarialReview when check enabled and config present", async () => {
-    const ctx = makeNonTddCtx({
-      review: {
-        ...DEFAULT_CONFIG.review,
-        enabled: true,
-        checks: ["adversarial"],
-        adversarial: {
-          model: "balanced",
-          diffMode: "ref",
-          rules: [],
-          timeoutMs: 600_000,
-          parallel: false,
-          maxConcurrentSessions: 2,
+    const origSpawn = _diffUtilsDeps.spawn;
+    const origIsValid = _diffUtilsDeps.isGitRefValid;
+    _diffUtilsDeps.spawn = makeStatSpawn(" src/foo.ts | 5 +-\n 1 file changed\n");
+    _diffUtilsDeps.isGitRefValid = mock(async () => true);
+    try {
+      const ctx = makeNonTddCtx({
+        review: {
+          ...DEFAULT_CONFIG.review,
+          enabled: true,
+          checks: ["adversarial"],
+          adversarial: {
+            model: "balanced",
+            diffMode: "ref",
+            rules: [],
+            timeoutMs: 600_000,
+            parallel: false,
+            maxConcurrentSessions: 2,
+          },
         },
-      },
-    });
-    ctx.storyGitRef = "abc123";
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.adversarialReview).toBeDefined();
-    expect(inputs.adversarialReview?.storyGitRef).toBe("abc123");
+      });
+      ctx.storyGitRef = "abc123";
+      const inputs = await assemblePlanInputsFromCtx(ctx);
+      expect(inputs.adversarialReview).toBeDefined();
+      expect(inputs.adversarialReview?.storyGitRef).toBe("abc123");
+    } finally {
+      _diffUtilsDeps.spawn = origSpawn;
+      _diffUtilsDeps.isGitRefValid = origIsValid;
+    }
   });
 });
 

@@ -1,7 +1,51 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { assemblePlanInputsFromCtx } from "../../../src/execution/plan-inputs";
 import type { NaxConfig } from "../../../src/config/schema";
+import { _diffUtilsDeps } from "../../../src/review";
+
+// ─── Spawn mock for diff-utils used inside prepare-inputs ──────────────────────
+
+function makeSpawnSequence(outputs: string[]) {
+  let i = 0;
+  return mock((_opts: unknown) => {
+    const out = outputs[i] ?? "";
+    i += 1;
+    return {
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode(out));
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({ start: (c) => c.close() }),
+      kill: () => {},
+    };
+  }) as unknown as typeof _diffUtilsDeps.spawn;
+}
+
+const STAT_OUT = " src/foo.ts | 5 +-\n 1 file changed, 5 insertions(+)\n";
+
+let origSpawn: typeof _diffUtilsDeps.spawn;
+let origIsValid: typeof _diffUtilsDeps.isGitRefValid;
+let origMergeBase: typeof _diffUtilsDeps.getMergeBase;
+
+beforeEach(() => {
+  origSpawn = _diffUtilsDeps.spawn;
+  origIsValid = _diffUtilsDeps.isGitRefValid;
+  origMergeBase = _diffUtilsDeps.getMergeBase;
+  _diffUtilsDeps.isGitRefValid = mock(async () => true);
+  _diffUtilsDeps.getMergeBase = mock(async () => undefined);
+  // Default: stat returns something so review slot populates.
+  _diffUtilsDeps.spawn = makeSpawnSequence([STAT_OUT, STAT_OUT]);
+});
+
+afterEach(() => {
+  _diffUtilsDeps.spawn = origSpawn;
+  _diffUtilsDeps.isGitRefValid = origIsValid;
+  _diffUtilsDeps.getMergeBase = origMergeBase;
+});
 
 function makeCtx(configOverride: Partial<NaxConfig> = {}) {
   const config: NaxConfig = {
@@ -80,4 +124,55 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.rectification!.maxAttempts).toBe(2);
   });
 
+  test("semantic review input carries stat and effectiveRef in ref mode", async () => {
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.semanticReview!.stat).toContain("src/foo.ts");
+    expect(inputs.semanticReview!.storyGitRef).toBe("abc123");
+    expect(inputs.semanticReview!.diff).toBeUndefined();
+  });
+
+  test("semantic review slot is omitted when no changes detected", async () => {
+    _diffUtilsDeps.spawn = makeSpawnSequence([""]); // empty stat
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview).toBeUndefined();
+  });
+
+  test("adversarial review input carries stat, testGlobs, refExcludePatterns", async () => {
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["adversarial"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.adversarialReview).toBeDefined();
+    expect(inputs.adversarialReview!.stat).toContain("src/foo.ts");
+    expect(inputs.adversarialReview!.refExcludePatterns?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  test("priorSemanticIterations on ctx threads into semantic input", async () => {
+    const ctx = makeCtx({
+      review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
+    });
+    ctx.storyGitRef = "abc123";
+    const priorIter = {
+      iterationNum: 1,
+      findingsBefore: [],
+      fixesApplied: [],
+      findingsAfter: [],
+      outcome: "unchanged" as const,
+      startedAt: "2026-01-01T00:00:00Z",
+      finishedAt: "2026-01-01T00:00:01Z",
+    };
+    ctx.priorSemanticIterations = [priorIter];
+    const inputs = await assemblePlanInputsFromCtx(ctx);
+    expect(inputs.semanticReview!.priorSemanticIterations).toEqual([priorIter]);
+  });
 });
