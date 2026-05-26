@@ -711,6 +711,7 @@ async function runRectification(
     "max-attempts-per-strategy",
     "bail-when",
     "no-strategy",
+    "agent-gave-up",
   ]);
   if (exhaustedReasons.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
