@@ -206,10 +206,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -262,14 +264,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -319,10 +330,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -375,14 +388,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -472,10 +494,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -528,14 +552,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -573,10 +606,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -629,14 +664,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -684,10 +728,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -740,14 +786,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -841,10 +896,12 @@ If two findings in this list contradict each other and you cannot satisfy both, 
 Emit fixes for defects you can resolve, then output a line in this exact format:
 UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
 
+Before emitting UNRESOLVED, confirm none of Exceptions 1–4 apply.
+
 ## Test-file edit exceptions
 
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
+The "do not modify test files" rule has four narrow escape valves. Each requires a
+declaration in your output. Outside these four cases the rule is absolute.
 
 ### Exception 1 — Lint-only edit
 
@@ -897,14 +954,23 @@ and continue. Sibling-scope failures do not block your story.
 ### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:

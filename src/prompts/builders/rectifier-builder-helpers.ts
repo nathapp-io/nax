@@ -14,25 +14,9 @@ interface CheckErrorFormatOptions {
   blockingThreshold?: "error" | "warning" | "info";
 }
 
-/**
- * Reviewer contradiction escape hatch (REVIEW-003).
- *
- * Appended to all rectification prompts so the implementer can signal
- * when two findings cannot both be satisfied. The autofix stage detects
- * "UNRESOLVED: <explanation>" in the agent output and escalates instead
- * of retrying — avoiding an infinite loop on an unresolvable conflict.
- */
-export const CONTRADICTION_ESCAPE_HATCH = `
-If two findings in this list contradict each other and you cannot satisfy both, do not guess.
-Emit fixes for defects you can resolve, then output a line in this exact format:
-UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+// ─── Individual exception constants ───────────────────────────────────────────
 
-## Test-file edit exceptions
-
-The "do not modify test files" rule has three narrow escape valves. Each requires a
-declaration in your output. Outside these three cases the rule is absolute.
-
-### Exception 1 — Lint-only edit
+const EXCEPTION_1_LINT_ONLY = `### Exception 1 — Lint-only edit
 
 You MAY edit a test file ONLY when ALL of the following hold:
 - The failing check is \`lint\` — not \`test\`, \`typecheck\`, \`semantic\`, or \`adversarial\`.
@@ -48,9 +32,9 @@ TEST_EDIT_REASON: lint_only
 FILE: <test file path>
 FINDING: <lint rule or message verbatim>
 CHANGE: <before line> → <after line>
-\`\`\`
+\`\`\``;
 
-### Exception 2 — PRD-contract mismatch
+const EXCEPTION_2_PRD_CONTRACT = `### Exception 2 — PRD-contract mismatch
 
 You MAY correct a test's argument arity, type, or return-handling ONLY when the test's
 call contradicts a literal interface signature stated in this story's description or
@@ -66,9 +50,9 @@ TEST_AFTER: <corrected call line>
 \`\`\`
 
 Do NOT use this exception to change test logic, assertions, or mock setup — only call
-signatures that directly contradict a quoted PRD interface.
+signatures that directly contradict a quoted PRD interface.`;
 
-### Exception 3 — Unrelated sibling spillover
+const EXCEPTION_3_SIBLING_SCOPE = `### Exception 3 — Unrelated sibling spillover
 
 When a lint or typecheck error is outside this story's intended scope, do NOT edit that
 file. If the smallest package-local fix is required to satisfy this story's acceptance
@@ -78,19 +62,32 @@ TEST_EDIT_REASON: sibling_scope
 SIBLING_FILE: <file path>
 FINDING: <error summary>
 \`\`\`
-and continue. Sibling-scope failures do not block your story.
+and continue. Sibling-scope failures do not block your story.`;
 
-### Exception 4 — Mock-structure handoff
+/**
+ * Exception 4 is only valid for three-session TDD flows that have a test-writer.
+ * Broadened to cover both case (a) wrong mocks and case (b) missing test infrastructure.
+ */
+const EXCEPTION_4_MOCK_HANDOFF = `### Exception 4 — Mock-structure handoff
 
 Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+that does NOT fit Exception 2. Two cases qualify:
+
+  (a) Existing mocks are wrong — mocks reference primitives the new code bypasses,
+      or assertion topology must change to match a new dispatch shape.
+
+  (b) Required test-infrastructure does not yet exist and must be introduced —
+      e.g. in-process fake servers, network-level request interception, hermetic
+      fixture-backed HTTP, or equivalent. Applies whenever the AC describes a
+      hermetic/fixture-backed test surface that the current test setup cannot
+      satisfy without new infrastructure.
 
 Declare with:
 \`\`\`
 TEST_EDIT_REASON: mock_structure
 FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
+REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses,
+         or what infrastructure must be introduced>
 \`\`\`
 
 Rules:
@@ -98,31 +95,62 @@ Rules:
 - Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
 - FILES must list real test files. Each path must exist and be a test file.`;
 
-/** Exception 4 is only valid for three-session TDD flows that have a test-writer. */
-const EXCEPTION_4_MOCK_HANDOFF = `
-### Exception 4 — Mock-structure handoff
+// ─── Escape hatch builder ─────────────────────────────────────────────────────
 
-Use ONLY when the only path to satisfy the ACs requires a structural test rewrite
-that does NOT fit Exception 2. Examples: mocks reference primitives the new code
-bypasses; assertion topology must change to match a new dispatch shape.
+interface EscapeHatchOptions {
+  includeMockHandoff: boolean;
+}
 
-Declare with:
-\`\`\`
-TEST_EDIT_REASON: mock_structure
-FILES: <comma-separated test file paths>
-REASON: <one paragraph: which mock is wrong vs which dispatch the new code uses>
-\`\`\`
+/**
+ * Builds the contradiction escape hatch section for rectification prompts.
+ *
+ * Dynamically includes or excludes Exception 4 (mock-structure handoff) based on
+ * whether the story runs a three-session TDD flow that has a test-writer agent.
+ * The intro count always matches the number of included exceptions.
+ */
+export function buildEscapeHatch(opts: EscapeHatchOptions): string {
+  const exceptions: string[] = [EXCEPTION_1_LINT_ONLY, EXCEPTION_2_PRD_CONTRACT, EXCEPTION_3_SIBLING_SCOPE];
+  if (opts.includeMockHandoff) exceptions.push(EXCEPTION_4_MOCK_HANDOFF);
 
-Rules:
-- Do NOT make any edits yourself; the test-writer will fulfill.
-- Do NOT also emit \`UNRESOLVED:\` in the same turn — this declaration IS the handoff.
-- FILES must list real test files. Each path must exist and be a test file.`;
+  const count = exceptions.length;
+  const countWord = ["zero", "one", "two", "three", "four"][count];
+
+  return `
+If two findings in this list contradict each other and you cannot satisfy both, do not guess.
+Emit fixes for defects you can resolve, then output a line in this exact format:
+UNRESOLVED: <brief explanation of which findings conflicted and why they cannot both be satisfied>
+
+Before emitting UNRESOLVED, confirm none of Exceptions 1–${count} apply.
+
+## Test-file edit exceptions
+
+The "do not modify test files" rule has ${countWord} narrow escape valves. Each requires a
+declaration in your output. Outside these ${countWord} cases the rule is absolute.
+
+${exceptions.join("\n\n")}`;
+}
+
+/**
+ * Returns "three" or "four" depending on whether the story uses a three-session TDD
+ * flow that includes a test-writer agent. Use to interpolate counts in prompt text
+ * that sits outside the escape-hatch block.
+ */
+export function exceptionCountWord(story: UserStory): "three" | "four" {
+  return THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "") ? "four" : "three";
+}
+
+/**
+ * Backward-compatible alias: always includes all four exceptions.
+ * Used by methods that lack story context (continuation, noOpReprompt).
+ * Prefer escapeHatchFor(story) in story-aware contexts.
+ */
+export const CONTRADICTION_ESCAPE_HATCH = buildEscapeHatch({ includeMockHandoff: true });
 
 const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
 
-function escapeHatchFor(story: UserStory): string {
+export function escapeHatchFor(story: UserStory): string {
   const isTdd = THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "");
-  return isTdd ? CONTRADICTION_ESCAPE_HATCH : CONTRADICTION_ESCAPE_HATCH.replace(EXCEPTION_4_MOCK_HANDOFF, "");
+  return buildEscapeHatch({ includeMockHandoff: isTdd });
 }
 
 function noTestIsolationBlock(story: UserStory): string {
@@ -200,7 +228,7 @@ ${errors}
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
 
-Do NOT change test files or test behavior — see the three narrow exceptions appended below.
+Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
@@ -282,7 +310,7 @@ The following quality checks failed after implementation:
 
 ${errors}
 
-Fix all errors listed above that are within this story's scope — see the three narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.
+Fix all errors listed above that are within this story's scope — see the ${exceptionCountWord(story)} narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.
 Do NOT add new features — only fix the quality check errors.
 After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
