@@ -207,9 +207,9 @@ export async function prepareAdversarialReviewInput(
   const excludePatterns: string[] = [...(adversarialConfig.excludePatterns ?? [])];
 
   const testFilePatterns =
-    (typeof config?.execution?.smartTestRunner === "object"
+    typeof config?.execution?.smartTestRunner === "object"
       ? config.execution.smartTestRunner?.testFilePatterns
-      : undefined) ?? undefined;
+      : undefined;
 
   if (diffMode === "ref") {
     // !stat case handled above; surviving branch always has stat
