@@ -73,6 +73,7 @@ function evaluateRepromptTrigger(
 ):
   | { shouldReprompt: false }
   | { shouldReprompt: true; acDropped: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[] } {
+  if (input.semanticConfig.acRegroundOnDrop === false) return { shouldReprompt: false };
   if (shape.passed) return { shouldReprompt: false };
   const { accepted, dropped } = filterByAcGroundingMinimal(shape.findings, input.story.acceptanceCriteria);
   const threshold = input.blockingThreshold ?? "error";

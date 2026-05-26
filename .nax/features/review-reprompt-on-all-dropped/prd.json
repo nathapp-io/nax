@@ -3,7 +3,7 @@
   "feature": "review-reprompt-on-all-dropped",
   "branchName": "feat/review-reprompt-on-all-dropped",
   "createdAt": "2026-05-25T12:22:57Z",
-  "updatedAt": "2026-05-25T16:38:02.572Z",
+  "updatedAt": "2026-05-26T01:55:05.187Z",
   "userStories": [
     {
       "id": "US-001",
@@ -185,7 +185,7 @@
           "fromTier": "balanced",
           "toTier": "powerful",
           "reason": "Stage requested escalation to higher tier",
-          "timestamp": "2026-05-25T16:22:58.571Z"
+          "timestamp": "2026-05-26T01:49:27.505Z"
         }
       ],
       "routing": {
@@ -204,16 +204,16 @@
         "test/integration/review/reprompt-on-drop.test.ts"
       ],
       "priorErrors": [
-        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+        "Attempt 2 failed with model tier: balanced: Stage requested escalation to higher tier"
       ],
       "priorFailures": [
         {
-          "attempt": 1,
+          "attempt": 2,
           "modelTier": "balanced",
           "stage": "escalation",
           "summary": "Failed with tier balanced, escalating to next tier",
-          "cost": 0.6769385400000001,
-          "timestamp": "2026-05-25T16:22:58.571Z"
+          "cost": 0.25258878,
+          "timestamp": "2026-05-26T01:49:27.506Z"
         }
       ],
       "storyPoints": 1,

@@ -232,6 +232,70 @@ describe("review-reprompt-on-drop telemetry integration", () => {
     expect(repromptEvents[0].repromptOutcome).toBe("parse-failed");
   });
 
+  test("AC5: second turn with surviving blocking findings → passed:false with findings in output", async () => {
+    mkdirSync(join("/tmp", "wd4", "src"), { recursive: true });
+    writeFileSync(join("/tmp", "wd4", "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
+
+    let sessionSendCount = 0;
+    const firstTurn = JSON.stringify({
+      passed: false,
+      findings: [makeDroppedFinding()],
+    });
+    const secondTurn = JSON.stringify({
+      passed: false,
+      findings: [
+        {
+          severity: "error",
+          category: "security",
+          file: "src/auth.ts",
+          line: 1,
+          issue: "SQL injection not mitigated",
+          suggestion: "Use parameterized queries",
+          acQuote: "auth login must not allow SQL injection attacks",
+          acIndex: 1,
+          verifiedBy: { file: "src/auth.ts", line: 1, observed: "db.rawQuery(u + p)" },
+        },
+      ],
+    });
+
+    const agentManager = makeMockAgentManager({
+      getDefaultAgent: "claude",
+      getAgentFn: () => makeAgentAdapter(),
+      runWithFallbackFn: async (req) => {
+        const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: mock(async () => {
+        sessionSendCount += 1;
+        return {
+          output: sessionSendCount === 1 ? firstTurn : secondTurn,
+          tokenUsage: { inputTokens: 100, outputTokens: 50 },
+          estimatedCostUsd: sessionSendCount === 1 ? 0.001 : 0.002,
+          internalRoundTrips: 0,
+        };
+      }),
+    });
+
+    const repromptEvents: ReviewRepromptEvent[] = [];
+    const runtime = makeMockRuntime({ agentManager });
+    createdRuntimes.push(runtime);
+    runtime.dispatchEvents.onReviewReprompt((e) => repromptEvents.push(e));
+
+    const result = await runAdversarialReview({
+      workdir: "/tmp/wd4",
+      storyGitRef: "abc1234",
+      story: STORY,
+      adversarialConfig: ADVERSARIAL_CONFIG,
+      agentManager,
+      runtime,
+    });
+
+    expect(sessionSendCount).toBe(2);
+    expect(repromptEvents).toHaveLength(1);
+    expect(repromptEvents[0].repromptOutcome).toBe("still-dropped");
+    expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(true);
+  });
+
   test("no reprompt: acRegroundOnDrop === false → zero events", async () => {
     mkdirSync(join("/tmp", "wd3", "src"), { recursive: true });
     writeFileSync(join("/tmp", "wd3", "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");

@@ -1,43 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-05-25T12-43-19-369Z",
+    "id": "run-2026-05-26T01-41-40-766Z",
     "feature": "review-reprompt-on-all-dropped",
-    "startedAt": "2026-05-25T12:43:19.369Z",
+    "startedAt": "2026-05-26T01:41:40.766Z",
     "status": "failed",
     "dryRun": false,
-    "pid": 10189
+    "pid": 18821
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 9.987053790000001,
+    "spent": 3.7268287349999993,
     "limit": 50
   },
   "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-05-25T18:27:47.300Z",
-  "durationMs": 20667931,
+  "iterations": 2,
+  "updatedAt": "2026-05-26T03:20:04.727Z",
+  "durationMs": 5903961,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
-      "status": "failed",
-      "failedTests": [
-        "test/unit/config/semantic-review.test.ts",
-        "test/unit/operations/adversarial-review-requote.test.ts"
-      ],
-      "affectedStories": [
-        "US-003"
-      ],
-      "lastRunAt": "2026-05-25T18:27:46.371Z"
+      "status": "passed",
+      "lastRunAt": "2026-05-26T03:20:03.802Z"
     }
   }
 }

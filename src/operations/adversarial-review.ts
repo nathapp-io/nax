@@ -233,7 +233,6 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   stage: "review",
   session: { role: "reviewer-adversarial", lifetime: "fresh" },
   config: reviewConfigSelector,
-  // Issue #725 — per-call tier from user-configured AdversarialReviewConfig.model.
   model: (input) => input.adversarialConfig.model,
   timeoutMs: (input) => input.adversarialConfig.timeoutMs,
   retry: (input) => adversarialParseRetry(input),
@@ -241,6 +240,91 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const turn = await ctx.sendWithParseRetry(initialPrompt);
     const parsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
     if (!parsed) return turn;
+
+    const requoteEnabled = ctx.input.adversarialConfig.substantiation?.requote ?? true;
+    const maxRequotes = ctx.input.adversarialConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
+    const regroundEnabled = ctx.input.adversarialConfig.acRegroundOnDrop !== false;
+
+    if (ctx.input.mode !== "ref") return turn;
+
+    const firstFindings = parsed.findings;
+    const { accepted: firstAccepted } = filterByAcQuote(firstFindings, ctx.input.story.acceptanceCriteria);
+    const firstShape: ValidatedAdversarialShape = {
+      passed: parsed.passed,
+      findings: firstFindings,
+    };
+    const trigger = evaluateRepromptTrigger(firstShape, ctx.input);
+    const shouldReground =
+      trigger.shouldReprompt &&
+      regroundEnabled &&
+      (ctx.input.adversarialConfig.acRegroundOnDrop === true || (requoteEnabled && maxRequotes > 0));
+    if (shouldReground) {
+      const repromptPrompt = AdversarialReviewPromptBuilder.regroundDroppedFindings({
+        drops: trigger.acDropped,
+        acceptanceCriteria: ctx.input.story.acceptanceCriteria,
+      });
+      const secondTurn = await ctx.send(repromptPrompt);
+      const secondParsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
+
+      const repromptCostUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+
+      if (!secondParsed) {
+        ctx.input._repromptInfo = {
+          dropCount: trigger.acDropped.length,
+          outcome: "parse-failed",
+          costUsd: repromptCostUsd,
+        };
+        return turn;
+      }
+
+      const { accepted: secondAccepted } = filterByAcQuote(secondParsed.findings, ctx.input.story.acceptanceCriteria);
+      const secondBlocking = secondAccepted.filter((f) =>
+        isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
+      );
+
+      if (secondBlocking.length > 0) {
+        ctx.input._repromptInfo = {
+          dropCount: trigger.acDropped.length,
+          outcome: "still-dropped",
+          costUsd: repromptCostUsd,
+        };
+        return {
+          ...turn,
+          output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
+          estimatedCostUsd: repromptCostUsd,
+        };
+      }
+
+      if (secondAccepted.length === 0) {
+        ctx.input._repromptInfo = {
+          dropCount: trigger.acDropped.length,
+          outcome: "recovered-advisory-only",
+          costUsd: repromptCostUsd,
+        };
+        return turn;
+      }
+
+      const firstAdvisory = firstAccepted.filter(
+        (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
+      );
+      const secondAdvisory = secondAccepted.filter(
+        (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
+      );
+
+      ctx.input._repromptInfo = {
+        dropCount: trigger.acDropped.length,
+        outcome: secondParsed.passed ? "recovered-advisory-only" : "recovered-blocking",
+        costUsd: repromptCostUsd,
+      };
+
+      return {
+        ...turn,
+        output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
+        estimatedCostUsd: repromptCostUsd,
+      };
+    }
+
+    if (!requoteEnabled || maxRequotes <= 0) return turn;
 
     const requoted = await requoteBlockingAdversarialFindings(parsed.findings, ctx);
     if (requoted.changed) {
@@ -254,84 +338,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       };
     }
 
-    if (ctx.input.mode !== "ref") return turn;
-
-    const requoteEnabled = ctx.input.adversarialConfig.substantiation?.requote ?? true;
-    const maxRequotes = ctx.input.adversarialConfig.substantiation?.maxRequotes ?? DEFAULT_MAX_REQUOTES;
-    if (!requoteEnabled || maxRequotes <= 0) return turn;
-
-    const firstFindings = requoted.findings;
-    const { accepted: firstAccepted } = filterByAcQuote(firstFindings, ctx.input.story.acceptanceCriteria);
-    const firstShape: ValidatedAdversarialShape = {
-      passed: parsed.passed,
-      findings: firstFindings,
-    };
-    const trigger = evaluateRepromptTrigger(firstShape, ctx.input);
-    if (!trigger.shouldReprompt) return turn;
-
-    const repromptPrompt = AdversarialReviewPromptBuilder.regroundDroppedFindings({
-      drops: trigger.acDropped,
-      acceptanceCriteria: ctx.input.story.acceptanceCriteria,
-    });
-    const secondTurn = await ctx.send(repromptPrompt);
-    const secondParsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
-
-    const repromptCostUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
-
-    if (!secondParsed) {
-      ctx.input._repromptInfo = {
-        dropCount: trigger.acDropped.length,
-        outcome: "parse-failed",
-        costUsd: repromptCostUsd,
-      };
-      return turn;
-    }
-
-    const { accepted: secondAccepted } = filterByAcQuote(secondParsed.findings, ctx.input.story.acceptanceCriteria);
-    const secondBlocking = secondAccepted.filter((f) =>
-      isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
-    );
-
-    if (secondBlocking.length > 0) {
-      ctx.input._repromptInfo = {
-        dropCount: trigger.acDropped.length,
-        outcome: "still-dropped",
-        costUsd: repromptCostUsd,
-      };
-      return {
-        ...turn,
-        output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
-        estimatedCostUsd: repromptCostUsd,
-      };
-    }
-
-    if (secondAccepted.length === 0) {
-      ctx.input._repromptInfo = {
-        dropCount: trigger.acDropped.length,
-        outcome: "recovered-advisory-only",
-        costUsd: repromptCostUsd,
-      };
-      return turn;
-    }
-
-    const firstAdvisory = firstAccepted.filter(
-      (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
-    );
-    const secondAdvisory = secondAccepted.filter(
-      (f) => !isBlockingSeverity(f.severity, ctx.input.blockingThreshold ?? "error"),
-    );
-
-    ctx.input._repromptInfo = {
-      dropCount: trigger.acDropped.length,
-      outcome: secondParsed.passed ? "recovered-advisory-only" : "recovered-blocking",
-      costUsd: repromptCostUsd,
-    };
-
-    return {
-      ...turn,
-      output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
-      estimatedCostUsd: repromptCostUsd,
-    };
+    return turn;
   },
   build(input, _ctx) {
     const base = new AdversarialReviewPromptBuilder().buildAdversarialReviewPrompt(
@@ -360,8 +367,6 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateAdversarialShape(raw);
     if (parsed) {
-      // Advisory split moved to verify() — parse returns raw shape with normalizedFindings:[].
-      // verify() runs the full filter pipeline: substantiate → AC-ground → blocking split.
       return {
         passed: parsed.passed,
         findings: parsed.findings,
@@ -389,7 +394,6 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const threshold = input.blockingThreshold ?? "error";
     const findings = parsed.findings as AdversarialLLMFinding[];
 
-    // 1. Substantiate evidence against HEAD source files (mirrors semantic side).
     const substantiated = await substantiateAdversarialFindings({
       findings,
       workdir: input.workdir,
@@ -397,12 +401,8 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       blockingThreshold: threshold,
     });
 
-    // 2. Drop error findings not grounded in AC text (filterByAcQuote).
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
 
-    // 3. Split blocking vs advisory; normalizedFindings ⊂ blocking.
-    //    Preserve the model's failure signal so wrappers can still fail-closed
-    //    when passed:false survives filtering without any remaining blockers.
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
     const passed = parsed.passed && blocking.length === 0;
 
