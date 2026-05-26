@@ -460,6 +460,21 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         : normalizeMechanicalFindings(checkName, await runCheck(checkName, command, workdir, storyId, env), workdir);
     checks.push(result);
 
+    // Log outcome of mechanical checks (lint / typecheck / build).
+    // Semantic and adversarial checks log their own outcomes internally.
+    if (result.success) {
+      logger?.info("review", `${checkName} passed`, {
+        storyId,
+        durationMs: result.durationMs,
+      });
+    } else {
+      logger?.warn("review", `${checkName} failed`, {
+        storyId,
+        exitCode: result.exitCode,
+        durationMs: result.durationMs,
+      });
+    }
+
     // Track first failure
     if (!result.success && !firstFailure) {
       firstFailure = `${checkName} failed (exit code ${result.exitCode})`;

@@ -148,6 +148,13 @@ export class ScopedStrategy implements IVerificationStrategy {
 
     if (result.success) {
       const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      logger.info("verify[scoped]", "Scoped tests passed", {
+        storyId: ctx.storyId,
+        passCount: parsed.passed,
+        durationMs,
+        scopeTestFallback: scopeTestFallback ?? false,
+        isFullSuite,
+      });
       return makePassResult(ctx.storyId, "scoped", {
         rawOutput: result.output,
         passCount: parsed.passed,
@@ -157,6 +164,12 @@ export class ScopedStrategy implements IVerificationStrategy {
     }
 
     if (result.status === "TIMEOUT") {
+      logger.warn("verify[scoped]", "Scoped tests timed out", {
+        storyId: ctx.storyId,
+        durationMs,
+        scopeTestFallback: scopeTestFallback ?? false,
+        isFullSuite,
+      });
       return makeFailResult(ctx.storyId, "scoped", "TIMEOUT", {
         rawOutput: result.output,
         durationMs,
@@ -166,6 +179,14 @@ export class ScopedStrategy implements IVerificationStrategy {
     }
 
     const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+    logger.warn("verify[scoped]", "Scoped tests failed", {
+      storyId: ctx.storyId,
+      passCount: parsed.passed,
+      failCount: parsed.failed,
+      durationMs,
+      scopeTestFallback: scopeTestFallback ?? false,
+      isFullSuite,
+    });
     return makeFailResult(ctx.storyId, "scoped", "TEST_FAILURE", {
       rawOutput: result.output,
       passCount: parsed.passed,
