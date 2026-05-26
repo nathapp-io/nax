@@ -6,6 +6,7 @@
  * plan construction.
  */
 
+import { relative, sep } from "node:path";
 import type { NaxConfig } from "../config/schema";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
@@ -194,9 +195,20 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     );
   }
 
-  // Resolve once for the plan — reused by greenfieldGate and threaded into fullSuiteGate
-  // so the gate doesn't re-resolve. Per ADR-009 the resolver is the SSOT.
-  const resolvedTestPatterns = _isTdd ? await resolveTestFilePatterns(config, ctx.workdir) : undefined;
+  // AC#4 (#1120) + ADR-009: resolve once per plan — shared by TDD gates AND review helpers.
+  // Always resolves (not gated on _isTdd) so review helpers get patterns even on non-TDD plans.
+  // Using projectDir as root (with _packageDirRelative for monorepos) is the SSOT per ADR-009.
+  const _packageDirRelative = (() => {
+    if (!ctx.projectDir || ctx.workdir === ctx.projectDir) return undefined;
+    const rel = relative(ctx.projectDir, ctx.workdir);
+    if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
+    return rel && rel !== "." ? rel : undefined;
+  })();
+  const resolvedTestPatterns = await resolveTestFilePatterns(
+    config,
+    ctx.projectDir ?? ctx.workdir,
+    _packageDirRelative,
+  );
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([
         _isFreshRun ? buildThreeSessionPrompt("test-writer", ctx, isLite) : Promise.resolve(""),
@@ -265,6 +277,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   // the orchestrator path must do the same or the reviewer LLM falsely concludes
   // "diff is empty" and skips every AC. prepareSemanticReviewInput / prepareAdversarialReviewInput
   // are the shared SSOT for that collection.
+
   const semanticEnabled =
     ctx.config.review?.enabled === true &&
     ctx.config.review.checks?.includes("semantic") &&
@@ -278,6 +291,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           storyGitRef: ctx.storyGitRef,
           config: ctx.config,
           naxIgnoreIndex: ctx.naxIgnoreIndex,
+          resolvedTestPatterns,
           // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
           semanticConfig: ctx.config.review!.semantic!,
         });
@@ -316,6 +330,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           storyGitRef: ctx.storyGitRef,
           config: ctx.config,
           naxIgnoreIndex: ctx.naxIgnoreIndex,
+          resolvedTestPatterns,
           // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
           adversarialConfig: ctx.config.review!.adversarial!,
         });
