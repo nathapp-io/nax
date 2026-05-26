@@ -28,7 +28,7 @@ export {
   downgradeUnsubstantiatedFinding,
 } from "./semantic-evidence";
 export { filterByAcGroundingMinimal, filterByAcQuote } from "./ac-quote-validator";
-export type { AcQuoteRejectionCode } from "./ac-quote-validator";
+export type { AcQuoteRejectionCode, AcDroppedEntry, AcGroundingMinimalRejection } from "./ac-quote-validator";
 
 /**
  * Per-finding adversarial evidence substantiation.

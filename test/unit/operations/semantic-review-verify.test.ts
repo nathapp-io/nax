@@ -84,6 +84,99 @@ describe("semanticReviewOp.verify() — short-circuits (AC13)", () => {
   });
 });
 
+describe("semanticReviewOp.verify() — acDropped (AC2/AC3)", () => {
+  test("acDropped is empty array when no blocking findings are dropped", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: SemanticReviewInput = {
+        ...BASE_INPUT,
+        workdir,
+        mode: "embedded",
+      };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Valid finding",
+            suggestion: "Fix it",
+            acIndex: 1, // valid, will survive filter
+          },
+        ],
+        normalizedFindings: [],
+      });
+      const result = await semanticReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+      expect(result!.acDropped).toBeDefined();
+      expect(result!.acDropped).toHaveLength(0);
+    });
+  });
+
+  test("blocking finding without acIndex is dropped to acDropped with missing_ac_index", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: SemanticReviewInput = {
+        ...BASE_INPUT,
+        workdir,
+        mode: "embedded",
+      };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "No AC attribution",
+            suggestion: "Fix it",
+            // no acIndex → dropped with missing_ac_index
+          },
+        ],
+        normalizedFindings: [],
+      });
+      const result = await semanticReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+      expect(result!.acDropped).toBeDefined();
+      expect(result!.acDropped).toHaveLength(1);
+      expect(result!.acDropped[0].code).toBe("missing_ac_index");
+      expect(result!.acDropped[0].finding.issue).toBe("No AC attribution");
+    });
+  });
+
+  test("blocking finding with out-of-range acIndex is dropped to acDropped with ac_index_out_of_range", async () => {
+    return withTempDir(async (workdir) => {
+      const ctx = makeVerifyCtx();
+      const input: SemanticReviewInput = {
+        ...BASE_INPUT,
+        workdir,
+        mode: "embedded",
+      };
+      const parsed = makeOutput({
+        passed: false,
+        findings: [
+          {
+            severity: "error",
+            file: "src/auth.ts",
+            line: 1,
+            issue: "Out of range AC",
+            suggestion: "Fix it",
+            acIndex: 99, // out of range for story with 1 AC
+          },
+        ],
+        normalizedFindings: [],
+      });
+      const result = await semanticReviewOp.verify!(parsed, input, ctx);
+      expect(result).not.toBeNull();
+      expect(result!.acDropped).toBeDefined();
+      expect(result!.acDropped).toHaveLength(1);
+      expect(result!.acDropped[0].code).toBe("ac_index_out_of_range");
+      expect(result!.acDropped[0].finding.issue).toBe("Out of range AC");
+    });
+  });
+});
+
 describe("semanticReviewOp.verify() — filter pipeline (AC1 semantic)", () => {
   test("verify() is defined on the op", () => {
     expect(typeof semanticReviewOp.verify).toBe("function");

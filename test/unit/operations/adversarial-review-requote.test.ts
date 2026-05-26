@@ -265,7 +265,11 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         input: {
           workdir,
           story: STORY,
-          adversarialConfig: { ...ADVERSARIAL_CONFIG, substantiation: { requote: false, maxRequotes: 5 } },
+          adversarialConfig: {
+            ...ADVERSARIAL_CONFIG,
+            substantiation: { requote: false, maxRequotes: 5 },
+            acRegroundOnDrop: false,
+          },
           mode: "ref",
         },
       } as any);
@@ -312,7 +316,11 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
         input: {
           workdir,
           story: STORY,
-          adversarialConfig: { ...ADVERSARIAL_CONFIG, substantiation: { requote: true, maxRequotes: 0 } },
+          adversarialConfig: {
+            ...ADVERSARIAL_CONFIG,
+            substantiation: { requote: true, maxRequotes: 0 },
+            acRegroundOnDrop: false,
+          },
           mode: "ref",
         },
       } as any);

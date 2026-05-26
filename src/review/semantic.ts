@@ -404,6 +404,42 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       durationMs: Date.now() - startTime,
     };
   }
+  if (opResult.looksLikeFail) {
+    logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+      storyId: story.id,
+    });
+    recordSemanticAudit({
+      runtime,
+      workdir,
+      projectDir,
+      storyId: story.id,
+      featureName,
+      parsed: false,
+      looksLikeFail: true,
+      failOpen: false,
+      passed: false,
+      blockingThreshold,
+      result: null,
+    });
+    return {
+      check: "semantic",
+      success: false,
+      command: "",
+      exitCode: 1,
+      output: "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+      durationMs: Date.now() - startTime,
+    };
+  }
+  if (opResult.repromptEvent) {
+    runtime.dispatchEvents.emitReviewReprompt({
+      kind: "review-reprompt-on-drop",
+      storyId: story.id,
+      reviewer: "semantic",
+      dropCount: opResult.repromptEvent.dropCount,
+      repromptOutcome: opResult.repromptEvent.outcome,
+      costUsd: opResult.repromptEvent.costUsd,
+    });
+  }
   // verify() has already run the full filter pipeline (sanitize → substantiate → AC-ground → split).
   // opResult.findings = accepted findings (blocking + advisory); opResult.normalizedFindings = blocking only.
   // opResult.passed preserves the model verdict after filtering so wrappers can

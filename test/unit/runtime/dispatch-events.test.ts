@@ -5,6 +5,7 @@ import {
   type DispatchErrorEvent,
   type OperationCompletedEvent,
   type ReviewDecisionEvent,
+  type ReviewRepromptEvent,
   type SessionTurnDispatchEvent,
 } from "../../../src/runtime/dispatch-events";
 
@@ -206,6 +207,18 @@ function makeReviewDecisionEvent(overrides: Partial<ReviewDecisionEvent> = {}): 
   };
 }
 
+function makeReviewRepromptEvent(overrides: Partial<ReviewRepromptEvent> = {}): ReviewRepromptEvent {
+  return {
+    kind: "review-reprompt-on-drop",
+    storyId: "story-1",
+    reviewer: "adversarial",
+    dropCount: 1,
+    repromptOutcome: "recovered-blocking",
+    costUsd: 0.002,
+    ...overrides,
+  };
+}
+
 describe("onReviewDecision / emitReviewDecision", () => {
   test("delivers review-decision event to registered listener", () => {
     const bus = new DispatchEventBus();
@@ -263,5 +276,122 @@ describe("onReviewDecision / emitReviewDecision", () => {
     bus.emitReviewDecision(makeReviewDecisionEvent());
 
     expect(dispatchReceived).toHaveLength(0);
+  });
+});
+
+describe("onReviewReprompt / emitReviewReprompt", () => {
+  test("delivers review-reprompt-on-drop event to registered listener", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt((e) => received.push(e));
+
+    const event = makeReviewRepromptEvent();
+    bus.emitReviewReprompt(event);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toBe(event);
+    expect(received[0].kind).toBe("review-reprompt-on-drop");
+  });
+
+  test("delivers to multiple listeners", () => {
+    const bus = new DispatchEventBus();
+    const a: ReviewRepromptEvent[] = [];
+    const b: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt((e) => a.push(e));
+    bus.onReviewReprompt((e) => b.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent());
+
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+  });
+
+  test("unsubscribe stops delivery", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewRepromptEvent[] = [];
+    const off = bus.onReviewReprompt((e) => received.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent());
+    off();
+    bus.emitReviewReprompt(makeReviewRepromptEvent());
+
+    expect(received).toHaveLength(1);
+  });
+
+  test("listener that throws does not break other listeners", () => {
+    const bus = new DispatchEventBus();
+    const received: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt(() => { throw new Error("boom"); });
+    bus.onReviewReprompt((e) => received.push(e));
+
+    expect(() => bus.emitReviewReprompt(makeReviewRepromptEvent())).not.toThrow();
+    expect(received).toHaveLength(1);
+  });
+
+  test("review-reprompt events do not leak to dispatch listeners", () => {
+    const bus = new DispatchEventBus();
+    const dispatchReceived: DispatchEvent[] = [];
+    bus.onDispatch((e) => dispatchReceived.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent());
+
+    expect(dispatchReceived).toHaveLength(0);
+  });
+
+  test("review-reprompt events do not leak to review-decision listeners", () => {
+    const bus = new DispatchEventBus();
+    const decisionReceived: ReviewDecisionEvent[] = [];
+    bus.onReviewDecision((e) => decisionReceived.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent());
+
+    expect(decisionReceived).toHaveLength(0);
+  });
+});
+
+describe("ReviewRepromptEvent payload", () => {
+  test("AC1: when a review reprompt occurs, exactly one emitted review event has kind review-reprompt-on-drop", () => {
+    const bus = new DispatchEventBus();
+    const repromptEvents: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt((e) => repromptEvents.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent({ storyId: "story-1" }));
+
+    expect(repromptEvents).toHaveLength(1);
+    expect(repromptEvents[0].kind).toBe("review-reprompt-on-drop");
+  });
+
+  test("AC2: when no review reprompt occurs, zero emitted review events have kind review-reprompt-on-drop", () => {
+    const bus = new DispatchEventBus();
+    const repromptEvents: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt((e) => repromptEvents.push(e));
+
+    bus.emitDispatch(makeSessionTurnEvent());
+    bus.emitReviewDecision(makeReviewDecisionEvent());
+
+    expect(repromptEvents).toHaveLength(0);
+  });
+
+  test("AC3: when kind review-reprompt-on-drop is emitted, payload contains defined values with storyId serialized first", () => {
+    const bus = new DispatchEventBus();
+    const repromptEvents: ReviewRepromptEvent[] = [];
+    bus.onReviewReprompt((e) => repromptEvents.push(e));
+
+    bus.emitReviewReprompt(makeReviewRepromptEvent({
+      storyId: "story-abc",
+      reviewer: "adversarial",
+      dropCount: 3,
+      repromptOutcome: "recovered-blocking",
+      costUsd: 0.005,
+    }));
+
+    expect(repromptEvents).toHaveLength(1);
+    const event = repromptEvents[0];
+    expect(event.kind).toBe("review-reprompt-on-drop");
+    expect(event.storyId).toBe("story-abc");
+    expect(event.reviewer).toBe("adversarial");
+    expect(event.dropCount).toBe(3);
+    expect(event.repromptOutcome).toBe("recovered-blocking");
+    expect(event.costUsd).toBe(0.005);
   });
 });

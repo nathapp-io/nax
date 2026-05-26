@@ -72,6 +72,13 @@ export interface SemanticReviewConfig {
    * Optional — undefined means "derive from testFilePatterns + well-known noise dirs". (ADR-009 §4.4)
    */
   excludePatterns?: string[];
+  /**
+   * When true (default), after the first semantic pass, if all blocking findings
+   * were dropped by AC-grounding (filterByAcGroundingMinimal) while no blocking
+   * findings remain, issue one reprompt asking the reviewer to re-ground their
+   * findings against the AC text.
+   */
+  acRegroundOnDrop?: boolean;
 }
 
 /** Review check result */
@@ -196,6 +203,12 @@ export interface AdversarialReviewConfig {
     /** Maximum number of requote turns per adversarial review. */
     maxRequotes: number;
   };
+  /**
+   * When true (default), after the first adversarial pass, if all blocking findings
+   * were dropped by AC-grounding while no blocking findings remain, issue one reprompt
+   * asking the reviewer to re-ground their findings against the AC text.
+   */
+  acRegroundOnDrop?: boolean;
 }
 
 /** Review configuration */

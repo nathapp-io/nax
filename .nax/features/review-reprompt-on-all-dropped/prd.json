@@ -1,0 +1,224 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "review-reprompt-on-all-dropped",
+  "branchName": "feat/review-reprompt-on-all-dropped",
+  "createdAt": "2026-05-25T12:22:57Z",
+  "updatedAt": "2026-05-26T03:40:45.979Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Unify AC-drop Typing And Surface Semantic Drops",
+      "description": "**Goal** — Add shared AC-drop typing and expose semantic dropped findings so both reviewer ops can drive the same reprompt trigger.\n\n**Motivation** — Semantic single-pass has the same all-dropped fail-closed mode as adversarial, but the current semantic op discards drop context and cannot trigger recovery.\n\n**Approach** — Add to `src/review/ac-quote-validator.ts` alongside existing rejection enums:\n\n```typescript\nexport interface AcDroppedEntry<F, C> {\n  finding: F;\n  code: C;\n}\n```\n\nReplace adversarial inline output drop shape with `AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[]`, add `SemanticReviewOutput.acDropped` as `AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[]`, and thread semantic `dropped` from `filterByAcGroundingMinimal` in `semanticReviewOp.verify()`.\n\nExport named shape types required by reprompt helper signatures:\n\n```typescript\nexport type ValidatedAdversarialShape = NonNullable<ReturnType<typeof validateAdversarialShape>>;\nexport type ValidatedSemanticShape = NonNullable<ReturnType<typeof validateLLMShape>>;\n```\n\n**Scope** — In: `src/review/ac-quote-validator.ts`, `src/operations/adversarial-review.ts`, `src/operations/semantic-review.ts` typing and verify threading. Out: reprompt send logic, prompt builder copy, telemetry emission.\n\n**Interface** —\n```typescript\nexport interface AcDroppedEntry<F, C> {\n  finding: F;\n  code: C;\n}\n```",
+      "acceptanceCriteria": [
+        "[verbatim] [file] Given `src/review/ac-quote-validator.ts`, when the story changes are applied, then `AcDroppedEntry<F, C>` is exported and both `filterByAcQuote` and `filterByAcGroundingMinimal` return `dropped` typed with `AcDroppedEntry`.",
+        "[verbatim] [unit] When `semanticReviewOp.verify()` receives parsed findings with at least one blocking finding missing or out-of-range `acIndex`, then returned `SemanticReviewOutput.acDropped` contains that finding with code `missing_ac_index` or `ac_index_out_of_range`.",
+        "[verbatim] [unit] When `semanticReviewOp.verify()` receives parsed findings with no dropped blocking findings, then returned `SemanticReviewOutput.acDropped` is an empty array.",
+        "[verbatim] [file] Given `src/operations/adversarial-review.ts` and `src/operations/semantic-review.ts`, when type exports are inspected, then `ValidatedAdversarialShape` and `ValidatedSemanticShape` are exported as named types.",
+        "[verbatim] [file] When searching under `src/` for literal inline drop array shapes with `{ finding: ...; code: AcQuoteRejectionCode }[]` or `{ finding: ...; code: AcGroundingMinimalRejection }[]`, then zero matches are returned.",
+        "[verbatim] [file] Given `src/operations/adversarial-review.ts` and `src/operations/semantic-review.ts`, when import statements are inspected, then both files import `AcDroppedEntry` from `src/review/ac-quote-validator.ts` — not from a local redeclaration."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "types"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/review/ac-quote-validator.ts",
+        "src/operations/adversarial-review.ts",
+        "src/operations/semantic-review.ts",
+        "test/unit/operations/adversarial-review-verify.test.ts",
+        "test/unit/operations/semantic-review-verify.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4da043ef10c968720d726c9167716ded861422d5"
+    },
+    {
+      "id": "US-002",
+      "title": "Adversarial Reground Re-prompt In hopBody",
+      "description": "**Goal** — Add one in-session adversarial reprompt when all blocking findings are dropped by AC grounding.\n\n**Motivation** — This preserves substantive reviewer judgment when failure is caused by AC-grounding formatting errors instead of model reasoning failure.\n\n**Approach** — Insert reprompt logic in `adversarialReviewOp.hopBody` after first `sendWithParseRetry` parse and before returning the first turn. Use trigger helper:\n\n```typescript\nfunction evaluateRepromptTrigger(\n  shape: ValidatedAdversarialShape,\n  input: AdversarialReviewInput,\n): { shouldReprompt: false } | { shouldReprompt: true; acDropped: AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[] } {\n  if (input.adversarialConfig.acRegroundOnDrop === false) return { shouldReprompt: false };\n  if (shape.passed) return { shouldReprompt: false };\n  const { accepted, dropped } = filterByAcQuote(shape.findings, input.story.acceptanceCriteria);\n  const threshold = input.blockingThreshold ?? \"error\";\n  const blockingAccepted = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));\n  if (blockingAccepted.length > 0) return { shouldReprompt: false };\n  if (dropped.length === 0) return { shouldReprompt: false };\n  return { shouldReprompt: true, acDropped: dropped };\n}\n```\n\nIf triggered, send `AdversarialReviewPromptBuilder.regroundDroppedFindings(...)`, parse the second turn shape, merge with `mergeAdversarialResponses`, and return synthesized `TurnResult.output` JSON so outer parse+verify remains the single authority.\n\nAdd builder-owned drop reason table:\n\n```typescript\nconst DROP_CODE_MESSAGES_QUOTE: Record<AcQuoteRejectionCode, string> = {\n  missing_ac_quote: \"no `acQuote` field was provided — every blocking finding must cite an AC\",\n  ac_index_out_of_range: \"`acIndex` is 0 or larger than the AC list — ACs are 1-indexed; the lowest valid value is 1\",\n  ac_quote_not_substring: \"`acQuote` text does not appear verbatim in any AC bullet — copy the AC text character-for-character\",\n  ac_quote_does_not_constrain_locus: \"the cited AC mentions the file but not the specific symbol your finding flags — pick a different AC, or downgrade to `info` / `warning`\",\n};\n```\n\nAdd `acRegroundOnDrop?: boolean` default `true` in adversarial review schema.\n\n**Scope** — In: `src/operations/adversarial-review.ts`, `src/prompts/builders/adversarial-review-builder.ts`, `src/config/schemas-review.ts`. Out: semantic reprompt logic and integration-level telemetry assertions.\n\n**Interface** —\n```typescript\nAdversarialReviewPromptBuilder.regroundDroppedFindings(opts: {\n  drops: AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[];\n  acceptanceCriteria: string[];\n}): string\n```",
+      "acceptanceCriteria": [
+        "[verbatim] [unit] When first-pass adversarial output is `passed:false` and `filterByAcQuote` yields zero blocking accepted findings with `dropped.length > 0`, and `input.adversarialConfig.acRegroundOnDrop !== false`, then `adversarialReviewOp.hopBody` issues exactly one additional `ctx.send` call.",
+        "[verbatim] [unit] When the additional adversarial reprompt is built, then its prompt text includes the exact `dropped[0].finding.issue` string and the human-readable translation of `dropped[0].code` from `DROP_CODE_MESSAGES_QUOTE`.",
+        "[verbatim] [unit] When the second-turn response parses and contains at least one blocking finding that survives AC filtering, then returned `TurnResult.output` parses to JSON containing that blocking finding and outer verify returns `passed:false` with non-empty `normalizedFindings`.",
+        "[verbatim] [unit] When the second-turn response parses and has no surviving blocking findings while `passed:true`, then returned `TurnResult.output` parses to JSON with `passed:true` and findings equal to advisory union from first and second passes, and the outer `parse()` + `verify()` chain produces an `AdversarialReviewOutput` with `passed: true`.",
+        "[verbatim] [unit] When second-turn JSON parsing fails or second-turn blocking findings are all dropped by AC filtering, then `adversarialReviewOp.hopBody` returns the first-turn `TurnResult` unchanged — preserving today's fail-closed behavior byte-identically.",
+        "[verbatim] [unit] When `input.adversarialConfig.acRegroundOnDrop === false`, then `adversarialReviewOp.hopBody` performs no additional send and returns behavior byte-identical to the baseline single-turn path.",
+        "[verbatim] [unit] When first-pass output does not satisfy trigger conditions (`passed:true`, surviving blocking findings exist, or `dropped.length === 0`), then no reprompt send occurs.",
+        "[verbatim] [unit] When `adversarialReviewOp.hopBody` implements the re-prompt path, then no `hasReprompted` flag or equivalent mutable state is introduced — the at-most-one guarantee derives structurally from `hopBody` being invoked once per session turn with `evaluateRepromptTrigger` running exactly once between the first `sendWithParseRetry` and the optional re-prompt `ctx.send`."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "adversarial",
+        "prompting"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Stage requested escalation to higher tier",
+          "timestamp": "2026-05-25T13:29:53.582Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/operations/adversarial-review.ts",
+        "src/prompts/builders/adversarial-review-builder.ts",
+        "src/config/schemas-review.ts",
+        "test/unit/operations/adversarial-review-requote.test.ts",
+        "test/unit/prompts/adversarial-review-builder.test.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 0.96814524,
+          "timestamp": "2026-05-25T13:29:53.582Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "1e3bb5df322bc335fc1b42c47acd5fda8e5e2051"
+    },
+    {
+      "id": "US-003",
+      "title": "Semantic Reground Re-prompt In hopBody",
+      "description": "**Goal** — Implement semantic single-pass reprompt-on-all-dropped with semantic grounding rules.\n\n**Motivation** — Semantic path has the same dropped-blocker failure mode and should recover in-session before tier escalation.\n\n**Approach** — Mirror adversarial hop pattern using semantic-specific substitutions: `validateLLMShape`, `filterByAcGroundingMinimal`, `ReviewPromptBuilder.regroundDroppedFindings`, `AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>`, and `input.semanticConfig.acRegroundOnDrop`.\n\nAdd semantic builder drop reason table:\n\n```typescript\nconst DROP_CODE_MESSAGES_MINIMAL: Record<AcGroundingMinimalRejection, string> = {\n  missing_ac_index: \"no `acIndex` field was provided — every blocking finding must cite an AC by 1-based index\",\n  ac_index_out_of_range: \"`acIndex` is 0 or larger than the AC list — ACs are 1-indexed; the lowest valid value is 1\",\n};\n```\n\nAdd `acRegroundOnDrop?: boolean` default `true` in semantic review schema.\n\n**Scope** — In: `src/operations/semantic-review.ts`, `src/prompts/builders/review-builder.ts`, `src/config/schemas-review.ts`. Out: semantic debate path reprompt.\n\n**Interface** —\n```typescript\nReviewPromptBuilder.regroundDroppedFindings(opts: {\n  drops: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];\n  acceptanceCriteria: string[];\n}): string\n```",
+      "acceptanceCriteria": [
+        "[verbatim] [unit] When first-pass semantic output is `passed:false` and `filterByAcGroundingMinimal` yields zero blocking accepted findings with `dropped.length > 0`, and `input.semanticConfig.acRegroundOnDrop !== false`, then `semanticReviewOp.hopBody` issues exactly one additional `ctx.send` call.",
+        "[verbatim] [unit] When the semantic reprompt prompt is built, then it includes the exact dropped finding issue text and the human-readable translation of each drop code from `DROP_CODE_MESSAGES_MINIMAL`.",
+        "[verbatim] [unit] When the second-turn semantic response parses and has surviving blocking findings after grounding filter, then returned `TurnResult.output` parses to JSON containing those blocking findings and outer verify returns `passed:false`.",
+        "[verbatim] [unit] When the second-turn semantic response parses and has no surviving blocking findings with `passed:true`, then returned `TurnResult.output` parses to JSON with `passed:true` and advisory findings preserved from both turns, and the outer `parse()` + `verify()` chain produces a `SemanticReviewOutput` with `passed: true`.",
+        "[verbatim] [unit] When second-turn semantic parsing fails or second-turn blockers are all dropped again, then `semanticReviewOp.hopBody` returns first-turn `TurnResult` unchanged — preserving today's fail-closed behavior byte-identically.",
+        "[verbatim] [unit] When `input.semanticConfig.acRegroundOnDrop === false`, then semantic hop behavior issues no additional send and remains byte-identical to the baseline path.",
+        "[verbatim] [unit] When trigger preconditions are not met (`passed:true`, surviving blocking findings exist, or `dropped.length === 0`), then semantic hop emits no reprompt send.",
+        "[verbatim] [unit] When `semanticReviewOp.hopBody` implements the re-prompt path, then no `hasReprompted` flag or equivalent mutable state is introduced — the at-most-one guarantee derives structurally from `hopBody` being invoked once per session turn with `evaluateRepromptTrigger` running exactly once between the first `sendWithParseRetry` and the optional re-prompt `ctx.send`."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "semantic",
+        "prompting"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/operations/semantic-review.ts",
+        "src/prompts/builders/review-builder.ts",
+        "src/config/schemas-review.ts",
+        "test/unit/operations/semantic-review.test.ts",
+        "test/unit/operations/semantic-review-verify.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cb705fffe40b6a8bb19b815f791a9aa6e3149a47"
+    },
+    {
+      "id": "US-004",
+      "title": "Review Re-prompt Telemetry Event And Integration Assertion",
+      "description": "**Goal** — Emit a dedicated review reprompt telemetry event and validate end-to-end adversarial reprompt behavior.\n\n**Motivation** — The feature needs observable evidence of recovery outcomes and incremental cost to justify default-on rollout.\n\n**Approach** — Add a new review event variant in `src/runtime/dispatch-events.ts` with payload `{ storyId, reviewer, dropCount, repromptOutcome, costUsd }` and wire emitter/listener support through the existing dispatch-events bus contract used by review wrappers. Emit exactly once per actual reprompt occurrence and zero when no reprompt fires.\n\nUse integration flow with mocked adversarial reviewer where first turn drops blockers (`acIndex:0`) and second turn returns corrected grounding; assert two sends and one telemetry emission.\n\n**Scope** — In: `src/runtime/dispatch-events.ts`, review wrapper emission wiring, and integration assertions. Out: semantic debate flow and rollout policy decisions.\n\n**Interface** —\n```typescript\nkind: \"review-reprompt-on-drop\"\nstoryId: string\nreviewer: \"adversarial\" | \"semantic\"\ndropCount: number\nrepromptOutcome: \"recovered-blocking\" | \"recovered-advisory-only\" | \"still-dropped\" | \"parse-failed\"\ncostUsd: number\n```",
+      "acceptanceCriteria": [
+        "[verbatim] [unit] When a review reprompt occurs, then exactly one emitted review event has `kind:\"review-reprompt-on-drop\"`.",
+        "[verbatim] [unit] When no review reprompt occurs, then zero emitted review events have `kind:\"review-reprompt-on-drop\"`.",
+        "[verbatim] [unit] When `kind:\"review-reprompt-on-drop\"` is emitted, then payload contains defined values for `storyId`, `reviewer`, `dropCount`, `repromptOutcome`, and `costUsd`, with `storyId` serialized first in the emitted object.",
+        "[verbatim] [integration] Given a mocked adversarial run where first response has only dropped blockers (`acIndex: 0`) and second response is grounded, when integration review executes, then adversarial session send count equals 2 and exactly one event with `kind:\"review-reprompt-on-drop\"` is emitted during this integration run.",
+        "[verbatim] [integration] Given that same integration run, when final review result is returned, then it is either `passed:true` or `passed:false` with at least one blocking finding visible in output findings.",
+        "[verbatim] [integration] Given a reprompt second turn that fails JSON parse, when review completes, then one telemetry event is emitted with `repromptOutcome:\"parse-failed\"`."
+      ],
+      "tags": [
+        "feature",
+        "telemetry",
+        "integration",
+        "review"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "failed",
+      "passes": false,
+      "attempts": 1,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Stage requested escalation to higher tier",
+          "timestamp": "2026-05-26T03:39:08.474Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/runtime/dispatch-events.ts",
+        "src/review/adversarial.ts",
+        "src/review/semantic.ts",
+        "test/unit/runtime/dispatch-events.test.ts",
+        "test/unit/operations/adversarial-review-requote.test.ts",
+        "test/integration/review/reprompt-on-drop.test.ts"
+      ],
+      "priorErrors": [
+        "Attempt 2 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 2,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 3.1928139999999994,
+          "timestamp": "2026-05-26T03:39:08.474Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "17659ab4e9465a6d33980e16c22b55334c931188"
+    }
+  ],
+  "analysis": "Codebase fit check: both review ops already have a same-session seam in `hopBody` that can issue additional turns (`src/operations/adversarial-review.ts:188-199`, `src/operations/semantic-review.ts:65-80`), while `verify()` is post-parse and cannot send (`src/operations/types.ts:116-173`). Adversarial currently surfaces AC-grounding drops (`acDropped`) and writes them in verify (`src/operations/adversarial-review.ts:64,260-273`); semantic currently discards minimal-grounding drops via `{ accepted }` destructure (`src/operations/semantic-review.ts:165`) and does not expose `acDropped` on output (`src/operations/semantic-review.ts:35-51`). Wrappers already fail-close when `passed:false` survives without surviving blocking findings (`src/review/adversarial.ts:507-541`, `src/review/semantic.ts:477-496`). Validator module is the right shared typing point because both filters return `{ accepted, dropped }` with different code enums (`src/review/ac-quote-validator.ts:153-187,227`). Prompt builders already host retry/requote static helpers and should receive the new reground prompt methods in-place (`src/prompts/builders/adversarial-review-builder.ts:284+`, `src/prompts/builders/review-builder.ts:98+`). Review config schemas currently lack `acRegroundOnDrop` and should add defaults in both semantic/adversarial sub-schemas (`src/config/schemas-review.ts:9-99`). Runtime dispatch typing currently has review-decision event contract in `dispatch-events.ts` (`src/runtime/dispatch-events.ts:83-109`); adding a new review reprompt event variant must be done there and propagated through emitter/listener plumbing used by wrappers. Existing tests cover op hop behavior, verify filters, prompt builders, and dispatch events (`test/unit/operations/adversarial-review-requote.test.ts`, `test/unit/operations/adversarial-review-verify.test.ts`, `test/unit/operations/semantic-review.test.ts`, `test/unit/operations/semantic-review-verify.test.ts`, `test/unit/prompts/adversarial-review-builder.test.ts`, `test/unit/prompts/review-builder.test.ts`, `test/unit/runtime/dispatch-events.test.ts`). Key risks: preserving byte-identical fallback behavior when trigger is off or reprompt fails; avoiding enum-domain conflation by using two-parameter `AcDroppedEntry<F,C>`; and ensuring telemetry emission is observable with complete payload fields. Migration/backward compatibility: config field is additive with default true; semantic output type expansion is additive but snapshot tests/consumers must update; fail-open/looksLikeFail/truncation paths must remain unchanged."
+}

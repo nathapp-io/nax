@@ -34,6 +34,11 @@ export type AcQuoteRejectionCode =
   | "ac_quote_not_substring"
   | "ac_quote_does_not_constrain_locus";
 
+export interface AcDroppedEntry<F, C> {
+  finding: F;
+  code: C;
+}
+
 export interface AcQuoteValidationResult {
   valid: boolean;
   code?: AcQuoteRejectionCode;
@@ -150,7 +155,7 @@ export interface AcQuoteFilterResult<T extends AcQuotable> {
   /** Findings that passed validation (or were non-blocking, so skipped). */
   accepted: T[];
   /** Findings dropped due to failed validation. */
-  dropped: { finding: T; code: AcQuoteRejectionCode }[];
+  dropped: AcDroppedEntry<T, AcQuoteRejectionCode>[];
 }
 
 /**
@@ -162,7 +167,7 @@ export function filterByAcQuote<T extends AcQuotable>(
   acceptanceCriteria: string[],
 ): AcQuoteFilterResult<T> {
   const accepted: T[] = [];
-  const dropped: { finding: T; code: AcQuoteRejectionCode }[] = [];
+  const dropped: AcDroppedEntry<T, AcQuoteRejectionCode>[] = [];
 
   for (const finding of findings) {
     const result = validateAcQuote(finding, acceptanceCriteria);
@@ -184,7 +189,7 @@ export interface AcGroundingMinimalFilterResult<T extends AcQuotable> {
   /** Findings that passed validation (or were non-blocking, so skipped). */
   accepted: T[];
   /** Findings dropped due to missing or out-of-range acIndex. */
-  dropped: { finding: T; code: AcGroundingMinimalRejection }[];
+  dropped: AcDroppedEntry<T, AcGroundingMinimalRejection>[];
 }
 
 /**
@@ -224,7 +229,7 @@ export function filterByAcGroundingMinimal<T extends AcQuotable>(
   acceptanceCriteria: string[],
 ): AcGroundingMinimalFilterResult<T> {
   const accepted: T[] = [];
-  const dropped: { finding: T; code: AcGroundingMinimalRejection }[] = [];
+  const dropped: AcDroppedEntry<T, AcGroundingMinimalRejection>[] = [];
 
   for (const finding of findings) {
     const result = validateAcGroundingMinimal(finding, acceptanceCriteria);

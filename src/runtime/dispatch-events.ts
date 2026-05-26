@@ -107,20 +107,32 @@ export interface ReviewDecisionEvent {
   readonly adversarialAcceptAnalysis?: readonly unknown[];
 }
 
+export interface ReviewRepromptEvent {
+  readonly kind: "review-reprompt-on-drop";
+  readonly storyId: string;
+  readonly reviewer: "adversarial" | "semantic";
+  readonly dropCount: number;
+  readonly repromptOutcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+  readonly costUsd: number;
+}
+
 export type DispatchListener = (event: DispatchEvent) => void;
 export type OperationCompletedListener = (event: OperationCompletedEvent) => void;
 export type DispatchErrorListener = (event: DispatchErrorEvent) => void;
 export type ReviewDecisionListener = (event: ReviewDecisionEvent) => void;
+export type ReviewRepromptListener = (event: ReviewRepromptEvent) => void;
 
 export interface IDispatchEventBus {
   onDispatch(listener: DispatchListener): () => void;
   onOperationCompleted(listener: OperationCompletedListener): () => void;
   onDispatchError(listener: DispatchErrorListener): () => void;
   onReviewDecision(listener: ReviewDecisionListener): () => void;
+  onReviewReprompt(listener: ReviewRepromptListener): () => void;
   emitDispatch(event: DispatchEvent): void;
   emitOperationCompleted(event: OperationCompletedEvent): void;
   emitDispatchError(event: DispatchErrorEvent): void;
   emitReviewDecision(event: ReviewDecisionEvent): void;
+  emitReviewReprompt(event: ReviewRepromptEvent): void;
 }
 
 export class DispatchEventBus implements IDispatchEventBus {
@@ -128,6 +140,7 @@ export class DispatchEventBus implements IDispatchEventBus {
   private readonly _completedListeners = new Set<OperationCompletedListener>();
   private readonly _errorListeners = new Set<DispatchErrorListener>();
   private readonly _reviewDecisionListeners = new Set<ReviewDecisionListener>();
+  private readonly _reviewRepromptListeners = new Set<ReviewRepromptListener>();
 
   onDispatch(l: DispatchListener): () => void {
     this._dispatchListeners.add(l);
@@ -147,6 +160,11 @@ export class DispatchEventBus implements IDispatchEventBus {
   onReviewDecision(l: ReviewDecisionListener): () => void {
     this._reviewDecisionListeners.add(l);
     return () => this._reviewDecisionListeners.delete(l);
+  }
+
+  onReviewReprompt(l: ReviewRepromptListener): () => void {
+    this._reviewRepromptListeners.add(l);
+    return () => this._reviewRepromptListeners.delete(l);
   }
 
   emitDispatch(event: DispatchEvent): void {
@@ -185,6 +203,16 @@ export class DispatchEventBus implements IDispatchEventBus {
         l(event);
       } catch (err) {
         getSafeLogger()?.warn("dispatch-bus", "review-decision-listener threw", { error: errorMessage(err) });
+      }
+    }
+  }
+
+  emitReviewReprompt(event: ReviewRepromptEvent): void {
+    for (const l of this._reviewRepromptListeners) {
+      try {
+        l(event);
+      } catch (err) {
+        getSafeLogger()?.warn("dispatch-bus", "review-reprompt-listener threw", { error: errorMessage(err) });
       }
     }
   }

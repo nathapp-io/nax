@@ -38,11 +38,11 @@ import {
   toAdversarialReviewFindings,
 } from "./adversarial-helpers";
 import {
+  collectDiffFileList as _collectDiffFileList,
+  collectDiffStat as _collectDiffStat,
+  resolveEffectiveRef as _resolveEffectiveRef,
   collectDiff,
-  collectDiffFileList,
-  collectDiffStat,
   computeTestInventory,
-  resolveEffectiveRef,
 } from "./diff-utils";
 import { llmFindingsToReviewFindings } from "./finding-projection";
 import { writeReviewAudit } from "./review-audit";
@@ -52,6 +52,9 @@ import type { AdversarialReviewConfig, ReviewCheckResult, SemanticStory } from "
 export const _adversarialDeps = {
   writeReviewAudit,
   callOp: _callOp,
+  resolveEffectiveRef: _resolveEffectiveRef,
+  collectDiffStat: _collectDiffStat,
+  collectDiffFileList: _collectDiffFileList,
 };
 
 function recordAdversarialAudit(opts: {
@@ -136,7 +139,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   const logger = getSafeLogger();
 
   // @design: BUG-114: Resolve effective git ref via shared fallback chain (diff-utils.ts).
-  const effectiveRef = await resolveEffectiveRef(workdir, storyGitRef, story.id);
+  const effectiveRef = await _adversarialDeps.resolveEffectiveRef(workdir, storyGitRef, story.id);
 
   if (!effectiveRef) {
     return {
@@ -161,7 +164,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // In embedded mode: also collect full diff (no excludePatterns — adversarial sees test files).
   const repoRoot = projectDir ?? workdir;
   const packageDir = workdir !== repoRoot ? workdir : undefined;
-  const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
+  const stat = await _adversarialDeps.collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
   if (!stat) {
     return {
@@ -369,6 +372,19 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       durationMs: Date.now() - startTime,
     };
   }
+
+  // Emit review-reprompt-on-drop telemetry if hopBody executed a reprompt.
+  if (opResult.repromptEvent) {
+    runtime.dispatchEvents.emitReviewReprompt({
+      kind: "review-reprompt-on-drop",
+      storyId: story.id,
+      reviewer: "adversarial",
+      dropCount: opResult.repromptEvent.dropCount,
+      repromptOutcome: opResult.repromptEvent.outcome,
+      costUsd: opResult.repromptEvent.costUsd,
+    });
+  }
+
   // verify() has already run the full filter pipeline (substantiate → AC-ground → split).
   // opResult.findings = accepted findings (blocking + advisory); opResult.acDropped = drops for telemetry.
   // opResult.passed preserves the model verdict after filtering so wrappers can
@@ -389,7 +405,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
     diffFiles = extractDiffFiles(diff);
     diffAvailable = true;
   } else {
-    const list = await collectDiffFileList(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
+    const list = await _adversarialDeps.collectDiffFileList(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
     if (list === undefined) {
       diffFiles = new Set();
       diffAvailable = false;

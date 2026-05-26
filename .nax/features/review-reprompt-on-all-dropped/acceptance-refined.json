@@ -1,0 +1,198 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "[verbatim] [file] Given `src/review/ac-quote-validator.ts`, when the story changes are applied, then `AcDroppedEntry<F, C>` is exported and both `filterByAcQuote` and `filterByAcGroundingMinimal` return `dropped` typed with `AcDroppedEntry`.",
+    "refined": "When parsing `src/review/ac-quote-validator.ts` as a TypeScript module, `AcDroppedEntry` appears in the top-level exports (as interface or type alias), and both `filterByAcQuote` and `filterByAcGroundingMinimal` function signatures include a `dropped` property typed as `AcDroppedEntry<...>` (the exact generic parameters match their respective finding and code types).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "[verbatim] [unit] When `semanticReviewOp.verify()` receives parsed findings with at least one blocking finding missing or out-of-range `acIndex`, then returned `SemanticReviewOutput.acDropped` contains that finding with code `missing_ac_index` or `ac_index_out_of_range`.",
+    "refined": "Calling `semanticReviewOp.verify(parsedFindings)` where `parsedFindings` contains at least one blocking finding with `acIndex === null` returns a result whose `acDropped` array has length >= 1 and contains an entry where `entry.code === 'missing_ac_index'`. Calling with `acIndex` set to a value outside the valid range returns a result whose `acDropped` array has length >= 1 and contains an entry where `entry.code === 'ac_index_out_of_range'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "[verbatim] [unit] When `semanticReviewOp.verify()` receives parsed findings with no dropped blocking findings, then returned `SemanticReviewOutput.acDropped` is an empty array.",
+    "refined": "Calling `semanticReviewOp.verify(parsedFindings)` where all blocking findings have valid, in-range `acIndex` values returns a result where `acDropped` is a zero-length array (Array.isArray(result.acDropped) && result.acDropped.length === 0).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "[verbatim] [file] Given `src/operations/adversarial-review.ts` and `src/operations/semantic-review.ts`, when type exports are inspected, then `ValidatedAdversarialShape` and `ValidatedSemanticShape` are exported as named types.",
+    "refined": "When parsing `src/operations/adversarial-review.ts`, 'ValidatedAdversarialShape' appears in its export statement (type-only or mixed). When parsing `src/operations/semantic-review.ts`, 'ValidatedSemanticShape' appears in its export statement (type-only or mixed). Both are exported as named type declarations (type alias or interface), not merely as runtime values.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "[verbatim] [file] When searching under `src/` for literal inline drop array shapes with `{ finding: ...; code: AcQuoteRejectionCode }[]` or `{ finding: ...; code: AcGroundingMinimalRejection }[]`, then zero matches are returned.",
+    "refined": "Running a regex search on all `.ts` files under `src/` for the patterns `AcQuoteRejectionCode }[]` and `AcGroundingMinimalRejection }[]` (where the preceding content matches `{ finding:`) returns zero file matches. Equivalently, searching for `code: AcQuoteRejectionCode` or `code: AcGroundingMinimalRejection` in a context suggesting an inline drop array shape returns zero matches.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "[verbatim] [file] Given `src/operations/adversarial-review.ts` and `src/operations/semantic-review.ts`, when import statements are inspected, then both files import `AcDroppedEntry` from `src/review/ac-quote-validator.ts` — not from a local redeclaration.",
+    "refined": "When reading the source text of `src/operations/adversarial-review.ts`, there exists exactly one import of `AcDroppedEntry` and its `from` clause is `'../review/ac-quote-validator.ts'` (or `./review/ac-quote-validator.ts`). The same pattern holds for `src/operations/semantic-review.ts`. Neither file contains a local declaration of `AcDroppedEntry` (no `interface AcDroppedEntry` or `type AcDroppedEntry` in either file body).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "[verbatim] [unit] When first-pass adversarial output is `passed:false` and `filterByAcQuote` yields zero blocking accepted findings with `dropped.length > 0`, and `input.adversarialConfig.acRegroundOnDrop !== false`, then `adversarialReviewOp.hopBody` issues exactly one additional `ctx.send` call.",
+    "refined": "Invoke `hopBody` with a mock `ctx` where `sendWithParseRetry` returns first-pass shape satisfying trigger conditions (`passed:false`, zero blocking accepted findings, `dropped.length > 0`, `acRegroundOnDrop !== false`). Assert `ctx.send` is called exactly twice: once for the first pass and once for the reprompt. Assert `send` call count equals 2.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "[verbatim] [unit] When the additional adversarial reprompt is built, then its prompt text includes the exact `dropped[0].finding.issue` string and the human-readable translation of `dropped[0].code` from `DROP_CODE_MESSAGES_QUOTE`.",
+    "refined": "Call `AdversarialReviewPromptBuilder.regroundDroppedFindings({ drops: [droppedEntry], acceptanceCriteria: [...] })` with a known `droppedEntry`. Assert returned string includes `droppedEntry.finding.issue` verbatim and `DROP_CODE_MESSAGES_QUOTE[droppedEntry.code]` verbatim. Assert `droppedEntry.finding.issue` is a substring of the prompt string and `DROP_CODE_MESSAGES_QUOTE[droppedEntry.code]` is a substring of the prompt string.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "[verbatim] [unit] When the second-turn response parses and contains at least one blocking finding that survives AC filtering, then returned `TurnResult.output` parses to JSON containing that blocking finding and outer verify returns `passed:false` with non-empty `normalizedFindings`.",
+    "refined": "Mock second-turn `sendWithParseRetry` to return a shape with one blocking accepted finding. Call `hopBody`. Assert `TurnResult.output` is a valid JSON string that parses to an object containing the blocking finding in its `findings` array. Assert `verify(parsedOutput, acceptanceCriteria, threshold)` returns an object where `passed === false` and `normalizedFindings.length > 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "[verbatim] [unit] When the second-turn response parses and has no surviving blocking findings while `passed:true`, then returned `TurnResult.output` parses to JSON with `passed:true` and findings equal to advisory union of first and second passes, and the outer `parse()` + `verify()` chain produces an `AdversarialReviewOutput` with `passed: true`.",
+    "refined": "Mock first pass to return advisory info findings only, mock second turn to return `{ passed: true, findings: advisoryFindigns2 }` with no blocking findings. Call `hopBody`. Assert `TurnResult.output` parses to `{ passed: true, findings: [...advisoryFindings1, ...advisoryFindings2] }`. Assert `verify(mergedOutput, acceptanceCriteria, threshold)` returns `{ passed: true }` where `mergedOutput.findings` contains all advisory findings from both passes.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "[verbatim] [unit] When second-turn JSON parsing fails or second-turn blocking findings are all dropped by AC filtering, then `adversarialReviewOp.hopBody` returns the first-turn `TurnResult` unchanged — preserving today's fail-closed behavior byte-identically.",
+    "refined": "Mock second-turn `sendWithParseRetry` to throw a parse error, OR to return a shape where all blocking findings are dropped by AC filtering. Call `hopBody`. Assert return value is exactly the same `TurnResult` object returned from the first `sendWithParseRetry` call. Assert `JSON.stringify(firstTurnResult) === JSON.stringify(returnedTurnResult)`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "[verbatim] [unit] When `input.adversarialConfig.acRegroundOnDrop === false`, then `adversarialReviewOp.hopBody` performs no additional send and returns behavior byte-identical to the baseline single-turn path.",
+    "refined": "Set `input.adversarialConfig.acRegroundOnDrop = false`. Mock first-pass to trigger baseline conditions (`passed:false`, zero blocking accepted, `dropped.length > 0`). Call `hopBody`. Assert `ctx.send` is called exactly once. Assert return value equals the first-turn `TurnResult` returned from the single `sendWithParseRetry` call.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "[verbatim] [unit] When first-pass output does not satisfy trigger conditions (`passed:true`, surviving blocking findings exist, or `dropped.length === 0`), then no reprompt send occurs.",
+    "refined": "For each non-trigger condition, mock first-pass `sendWithParseRetry` to return a shape where that condition is true while others are false: (a) `passed: true`, (b) blocking accepted findings exist, (c) `dropped.length === 0`. Call `hopBody`. Assert `ctx.send` is called exactly once in each case. Assert no second `ctx.send` call occurs.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "[verbatim] [unit] When `adversarialReviewOp.hopBody` implements the re-prompt path, then no `hasReprompted` flag or equivalent mutable state is introduced — the at-most-one guarantee derives structurally from `hopBody` being invoked once per session turn with `evaluateRepromptTrigger` running exactly once between the first `sendWithParseRetry` and the optional re-prompt `ctx.send`.",
+    "refined": "Perform a static analysis inspection of `hopBody` source code: (1) Assert no variable named `hasReprompted`, `didReprompt`, or similar mutable boolean flag exists in the function scope. (2) Assert `evaluateRepromptTrigger` appears in exactly one call site within `hopBody`. (3) Assert the re-prompt `ctx.send` call is inside a conditional branch guarded by `evaluateRepromptTrigger` result, not a loop or recursive call. (4) Assert no stateful closure variable that could cause repeated reprompts is modified after initial evaluation.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "[verbatim] [unit] When first-pass semantic output is `passed:false` and `filterByAcGroundingMinimal` yields zero blocking accepted findings with `dropped.length > 0`, and `input.semanticConfig.acRegroundOnDrop !== false`, then `semanticReviewOp.hopBody` issues exactly one additional `ctx.send` call.",
+    "refined": "Given a mock `ctx` where `ctx.send` is a tracked spy, when `semanticReviewOp({ input, ctx, firstPassResult: { passed: false, acceptedFindings: [], dropped: [{ issue: 'x' }] } })` is called and `input.semanticConfig.acRegroundOnDrop` is undefined or true, then `ctx.send` is called exactly once with a prompt containing the dropped finding issue text.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "[verbatim] [unit] When the semantic reprompt prompt is built, then it includes the exact dropped finding issue text and the human-readable translation of each drop code from `DROP_CODE_MESSAGES_MINIMAL`.",
+    "refined": "When `ReviewPromptBuilder.regroundDroppedFindings({ drops: [{ rejection: 'missing_ac_index', finding: { issue: 'missing ac index' } }], acceptanceCriteria: [...] })` is called, returned prompt string contains 'missing ac index' and 'no `acIndex` field was provided — every blocking finding must cite an AC by 1-based index'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "[verbatim] [unit] When the second-turn semantic response parses and has surviving blocking findings after grounding filter, then returned `TurnResult.output` parses to JSON containing those blocking findings and outer verify returns `passed:false`.",
+    "refined": "Given second-turn response JSON string containing blocking findings `[{'type': 'blocking', 'issue': 'still present'}]`, when `semanticReviewOp` processes it through `parse()` then `verify()`, returned object has `passed: false` and output contains those blocking findings.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "[verbatim] [unit] When the second-turn semantic response parses and has no surviving blocking findings with `passed:true`, then returned `TurnResult.output` parses to JSON with `passed:true` and advisory findings preserved from both turns, and the outer `parse()` + `verify()` chain produces a `SemanticReviewOutput` with `passed: true`.",
+    "refined": "Given second-turn response JSON string with no blocking findings and advisory findings `[{'type': 'advisory', 'issue': 'turn2'}]`, and first-pass advisory `[{'type': 'advisory', 'issue': 'turn1'}]`, when `semanticReviewOp` processes it, returned `SemanticReviewOutput` has `passed: true` and `advisoryFindings` array contains both turn1 and turn2 issues.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "[verbatim] [unit] When second-turn semantic parsing fails or second-turn blockers are all dropped again, then `semanticReviewOp.hopBody` returns first-turn `TurnResult` unchanged — preserving today's fail-closed behavior byte-identically.",
+    "refined": "Given `firstPassResult` with `passed: false` and blocking findings, when second turn throws a parse error or returns all blockers dropped, then `semanticReviewOp` return value is `firstPassResult` unchanged with `passed: false` preserved.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "[verbatim] [unit] When `input.semanticConfig.acRegroundOnDrop === false`, then semantic hop behavior issues no additional send and remains byte-identical to the baseline path.",
+    "refined": "Given `input.semanticConfig.acRegroundOnDrop = false` and first-pass `passed: false` with `dropped.length > 0`, when `semanticReviewOp` is called, then `ctx.send` is never called after first pass and returned result equals baseline path result.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "[verbatim] [unit] When trigger preconditions are not met (`passed:true`, surviving blocking findings exist, or `dropped.length === 0`), then semantic hop emits no reprompt send.",
+    "refined": "Given precondition combinations: (a) `firstPassResult.passed = true`, (b) `firstPassResult.acceptedFindings` contains surviving blocking findings, (c) `firstPassResult.dropped = []`; in each case when `semanticReviewOp` is called, then `ctx.send` is never invoked for reprompt.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "[verbatim] [unit] When `semanticReviewOp.hopBody` implements the re-prompt path, then no `hasReprompted` flag or equivalent mutable state is introduced — the at-most-one guarantee derives structurally from `hopBody` being invoked once per session turn with `evaluateRepromptTrigger` running exactly once between the first `sendWithParseRetry` and the optional re-prompt `ctx.send`.",
+    "refined": "When source code of `semanticReviewOp` is analyzed, no variable matching `/hasReprompted|repromptCount|didReprompt/i` exists as mutable state, and `evaluateRepromptTrigger` is called exactly once between `sendWithParseRetry` and the conditional `ctx.send`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "[verbatim] [unit] When a review reprompt occurs, then exactly one emitted review event has `kind:\"review-reprompt-on-drop\"`.",
+    "refined": "Assert that after triggering a reprompt scenario, `emittedEvents.filter(e => e.kind === 'review-reprompt-on-drop').length === 1`. Use event bus mock to capture all emitted events and verify cardinality of exactly 1.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "[verbatim] [unit] When no review reprompt occurs, then zero emitted review events have `kind:\"review-reprompt-on-drop\"`.",
+    "refined": "Assert that after executing a review pass with no reprompt trigger, `emittedEvents.filter(e => e.kind === 'review-reprompt-on-drop').length === 0`. Verify event bus received zero emissions of this kind.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "[verbatim] [unit] When `kind:\"review-reprompt-on-drop\"` is emitted, then payload contains defined values for `storyId`, `reviewer`, `dropCount`, `repromptOutcome`, and `costUsd`, with `storyId` serialized first in the emitted object.",
+    "refined": "Assert emitted event satisfies: `typeof event.storyId === 'string' && event.storyId.length > 0`, `['adversarial', 'semantic'].includes(event.reviewer)`, `typeof event.dropCount === 'number' && event.dropCount >= 0`, `['recovered-blocking', 'recovered-advisory-only', 'still-dropped', 'parse-failed'].includes(event.repromptOutcome)`, `typeof event.costUsd === 'number' && event.costUsd >= 0`. Additionally assert `Object.keys(event).indexOf('storyId') === 0` to confirm storyId is serialized first.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "[verbatim] [integration] Given a mocked adversarial run where first response has only dropped blockers (`acIndex: 0`) and second response is grounded, when integration review executes, then adversarial session send count equals 2 and exactly one event with `kind:\"review-reprompt-on-drop\"` is emitted during this integration run.",
+    "refined": "Assert: `mockAdversarialSession.sendCount === 2` AND `emittedEvents.filter(e => e.kind === 'review-reprompt-on-drop').length === 1`. Setup: first mock response returns `{ findings: [{ acIndex: 0, severity: 'blocking' }] }`, second mock response returns `{ findings: [{ acIndex: 1, severity: 'advisory' }] }`. Both sends must be captured via session mock.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "[verbatim] [integration] Given that same integration run, when final review result is returned, then it is either `passed:true` or `passed:false` with at least one blocking finding visible in output findings.",
+    "refined": "Assert `finalResult.passed === true || finalResult.passed === false` AND `finalResult.findings.some(f => f.severity === 'blocking')`. The blocking finding must be present in `finalResult.findings` array with `severity: 'blocking'` property.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "[verbatim] [integration] Given a reprompt second turn that fails JSON parse, when review completes, then one telemetry event is emitted with `repromptOutcome:\"parse-failed\"`.",
+    "refined": "Assert `emittedEvents.filter(e => e.kind === 'review-reprompt-on-drop' && e.repromptOutcome === 'parse-failed').length === 1`. Mock second turn response as malformed JSON (e.g., `{ findings: [}`) to trigger parse failure path.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
