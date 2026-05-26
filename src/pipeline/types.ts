@@ -13,7 +13,6 @@ import type { Iteration } from "@/findings";
 import type { HooksConfig } from "@/hooks/types";
 import type { InteractionChain } from "@/interaction/chain";
 import type { StoryMetrics } from "@/metrics/types";
-import type { TestEditDeclaration } from "@/operations";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
 import type { DispatchContext } from "@/runtime/dispatch-context";
@@ -182,20 +181,6 @@ export interface PipelineContext extends DispatchContext {
   rectifyAttempt?: number;
   /** ADR-022 Phase 7: prior fix-cycle iterations carried across pipeline retries. */
   autofixPriorIterations?: Iteration[];
-  /**
-   * Pending TEST_EDIT_REASON declarations from the most recent implementer
-   * rectification attempt. Populated by autofix-cycle implementer strategy's
-   * extractApplied; consumed by the cycle's validate() to re-tag fixTarget on
-   * fresh findings. Always cleared after consumption.
-   */
-  testEditDeclarations?: TestEditDeclaration[];
-  /**
-   * Pending mock_structure handoff metadata from the most recent implementer
-   * rectification attempt. Populated by the cycle's validate() callback when
-   * validateMockStructureFiles classifies mock_structure declarations as valid.
-   * Contains file lists and reasoning detail for the TDD orchestrator to use.
-   */
-  pendingMockStructureHandoffs?: { files: string[]; reasonDetail: string }[];
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

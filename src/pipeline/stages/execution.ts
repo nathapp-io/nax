@@ -100,7 +100,7 @@ export const executionStage: PipelineStage = {
     const initialRef = tddMode ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
 
     const inputs = await _executionDeps.assemblePlanInputsFromCtx(ctx);
-    const plan = buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);
+    const plan = await buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);
 
     let planResult: StoryOrchestratorResult;
     try {

@@ -84,6 +84,11 @@ export type {
 export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
 export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
+export { applyTestEditDeclarations } from "./apply-test-edit-declarations";
+export { validateMockStructureFiles } from "./validate-mock-structure-files";
+export type { ValidateMockStructureDeps } from "./validate-mock-structure-files";
+export { makeDeclarationSink } from "./declaration-sink";
+export type { DeclarationSink } from "./declaration-sink";
 export { findingsToFailedChecks } from "./_finding-to-check";
 export {
   makeMechanicalLintFixStrategy,

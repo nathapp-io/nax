@@ -16,20 +16,27 @@
  * addX(input: I) overload of StoryOrchestratorBuilder.
  */
 
+import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { TestStrategy } from "../config/schema-types";
+import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
 import {
+  applyTestEditDeclarations,
   makeAutofixImplementerStrategy,
   makeAutofixTestWriterStrategy,
+  makeDeclarationSink,
   makeMechanicalFormatFixStrategy,
   makeMechanicalLintFixStrategy,
+  validateMockStructureFiles,
 } from "../operations";
+import type { TestEditDeclaration } from "../operations";
 import { shouldRunRectification } from "../operations/execution-gates";
 import { makeFullSuiteRectifyStrategy } from "../operations/full-suite-rectify";
 import type { CallContext } from "../operations/types";
 import type { UserStory } from "../prd/types";
+import { resolveTestFilePatterns } from "../test-runners";
 import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
 
@@ -72,6 +79,10 @@ function isFreshRun(story: UserStory): boolean {
 /**
  * Build an ExecutionPlan from strategy + story state + typed inputs.
  *
+ * This function is async because it eagerly resolves test-file patterns
+ * (needed for the postValidate closure that validates mock-structure handoffs
+ * during the rectification cycle).
+ *
  * Slot inclusion is determined by:
  *   1. test strategy (which phases are eligible)
  *   2. story state (fresh vs. retry — derived, never passed externally)
@@ -85,13 +96,13 @@ function isFreshRun(story: UserStory): boolean {
  * Rectification runs after all phases if both config.execution.rectification.enabled
  * and inputs.rectification are defined.
  */
-export function buildPlanForStrategy(
+export async function buildPlanForStrategy(
   ctx: CallContext,
   story: UserStory,
   config: NaxConfig,
   testStrategy: TestStrategy,
   inputs: PlanInputs,
-): ExecutionPlan {
+): Promise<ExecutionPlan> {
   const isThreeSession = isThreeSessionStrategy(testStrategy);
   const freshRun = isFreshRun(story);
 
@@ -138,6 +149,16 @@ export function buildPlanForStrategy(
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.
   if (shouldRunRectification(config) && inputs.rectification) {
+    // One shared sink for the implementer and test-writer strategies so
+    // declarations accumulate and mock handoffs are consumed by postValidate.
+    const sink = makeDeclarationSink();
+
+    // Resolve test-file patterns once at plan-build time — postValidate uses
+    // them to validate mock-structure file paths during the rectification cycle.
+    // ctx.packageDir = repo root (absolute); story.workdir = relative sub-path to package.
+    const packageDir = join(ctx.packageDir, story.workdir ?? "");
+    const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.packageDir, story.workdir);
+
     const strategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
 
     if (config.quality.commands.lintFix || config.quality.commands.lintFixScoped) {
@@ -150,13 +171,40 @@ export function buildPlanForStrategy(
       strategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
-      strategies.push(makeAutofixImplementerStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
-      strategies.push(makeAutofixTestWriterStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(
+        makeAutofixImplementerStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
+      strategies.push(
+        makeAutofixTestWriterStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
     }
+
+    const postValidate = async (findings: Finding[], _validateCtx: FixCycleContext): Promise<Finding[]> => {
+      if (sink.testEdits.length === 0 && sink.mockHandoffs.length === 0) return findings;
+
+      // Wrap mock handoffs as TestEditDeclaration shape for validateMockStructureFiles.
+      const pendingMock: TestEditDeclaration[] = sink.mockHandoffs.map((h) => ({
+        reason: "mock_structure" as const,
+        file: h.files[0] ?? "",
+        files: h.files,
+        reasonDetail: h.reasonDetail,
+      }));
+
+      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir);
+
+      // Replace sink.mockHandoffs with only valid entries for test-writer to consume.
+      sink.mockHandoffs = valid.map((d) => ({ files: d.files ?? [], reasonDetail: d.reasonDetail ?? "" }));
+
+      const allDeclarations = [...sink.testEdits, ...valid];
+      sink.testEdits = []; // consumed
+
+      return applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+    };
 
     const rectOpts: RectificationPhaseOptions = {
       ...inputs.rectification,
       strategies: [...strategies, ...inputs.rectification.strategies],
+      postValidate,
     };
     builder.addRectification(rectOpts);
   }

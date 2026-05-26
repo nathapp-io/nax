@@ -122,7 +122,7 @@ describe("AC1: review.checks=['lint'] gates lint-check in, typecheck/semantic/ad
     });
     const inputs = await assemblePlanInputsFromCtx(makeNonTddCtx(config));
     const ctx = makeMockCallContext();
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     const names = plan.phaseNames();
     expect(names).toContain("lint-check");
     expect(names).not.toContain("typecheck-check");
@@ -147,12 +147,12 @@ describe("AC2: review.enabled=false → no review/check phases in plan", () => {
     expect(inputs.adversarialReview).toBeUndefined();
   });
 
-  test("plan phaseNames contains none of lint-check, typecheck-check, semantic-review, adversarial-review", () => {
+  test("plan phaseNames contains none of lint-check, typecheck-check, semantic-review, adversarial-review", async () => {
     const story = makeStory();
     const config = makeNaxConfig({ review: { enabled: false } });
     const inputs = makeMockPlanInputs({ story, config, implementer: { story } });
     const ctx = makeMockCallContext();
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("lint-check");
     expect(names).not.toContain("typecheck-check");
@@ -249,7 +249,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).not.toContain("autofix-implementer");
     expect(capturedStrategyNames).not.toContain("autofix-test-writer");
@@ -265,7 +265,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).toContain("mechanical-lintfix");
   });
@@ -281,7 +281,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).not.toContain("mechanical-lintfix");
     expect(capturedStrategyNames).toContain("mechanical-formatfix");
@@ -297,7 +297,7 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
     });
     const { ctx, inputs } = makeRectifyInputs(story, config);
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     await plan.run();
     expect(capturedStrategyNames).not.toContain("mechanical-formatfix");
     expect(capturedStrategyNames).toContain("mechanical-lintfix");
@@ -355,7 +355,7 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC7: full-path regression scenarios under unified path", () => {
-  test("TDD success path: fresh three-session plan includes test-writer through verifier in order", () => {
+  test("TDD success path: fresh three-session plan includes test-writer through verifier in order", async () => {
     const story = makeStory({ attempts: 0 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
@@ -367,7 +367,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       fullSuiteGate: { story, workdir: "/tmp/test" },
       verifier: { story },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toEqual([
       "test-writer",
       "greenfield-gate",
@@ -377,7 +377,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
     ]);
   });
 
-  test("partial-progress retry: story.attempts=1 omits test-writer and greenfield-gate", () => {
+  test("partial-progress retry: story.attempts=1 omits test-writer and greenfield-gate", async () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
@@ -387,7 +387,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       fullSuiteGate: { story, workdir: "/tmp/test" },
       verifier: { story },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     const names = plan.phaseNames();
     expect(names).not.toContain("test-writer");
     expect(names).not.toContain("greenfield-gate");
@@ -396,7 +396,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
     expect(names).toContain("verifier");
   });
 
-  test("non-TDD path: no-test strategy includes implementer and verify-scoped, excludes TDD phases", () => {
+  test("non-TDD path: no-test strategy includes implementer and verify-scoped, excludes TDD phases", async () => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
@@ -405,7 +405,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       implementer: { story },
       verifyScoped: { workdir: "/tmp/test", storyId: story.id },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
     const names = plan.phaseNames();
     expect(names).toContain("implementer");
     expect(names).toContain("verify-scoped");
@@ -414,7 +414,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
     expect(names).not.toContain("verifier");
   });
 
-  test("TDD failure-then-fix path: rectification phase included when enabled and inputs present", () => {
+  test("TDD failure-then-fix path: rectification phase included when enabled and inputs present", async () => {
     const story = makeStory({ attempts: 1 });
     const config = makeNaxConfig({
       execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
@@ -427,7 +427,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       verifier: { story },
       rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: true },
     });
-    const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
     expect(plan.phaseNames()).toContain("rectification");
   });
 
@@ -459,7 +459,7 @@ describe("AC7: full-path regression scenarios under unified path", () => {
         verifier: { story },
         rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
       });
-      const plan = buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
       await plan.run();
 
       expect(capturedNames).toContain("mechanical-lintfix");
