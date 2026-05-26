@@ -404,6 +404,24 @@ describe("adversarialReviewOp.hopBody — reground AC4: second turn passed:true 
   });
 });
 
+/**
+ * Verify the synthesised output still parses to the first-turn's verdict
+ * (passed + findings) and carries the expected `_repromptInfo` marker. The
+ * marker is added by `withRepromptMarker` for telemetry; downstream behavior
+ * remains fail-closed because `passed` and `findings` are untouched.
+ */
+function expectFirstTurnPreservedWithMarker(
+  resultOutput: string,
+  firstTurn: string,
+  expectedOutcome: "parse-failed" | "still-dropped",
+): void {
+  const expected = JSON.parse(firstTurn) as Record<string, unknown>;
+  const actual = JSON.parse(resultOutput) as Record<string, unknown>;
+  expect(actual.passed).toEqual(expected.passed);
+  expect(actual.findings).toEqual(expected.findings);
+  expect(actual._repromptInfo).toMatchObject({ outcome: expectedOutcome });
+}
+
 describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all blocking dropped", () => {
   test("returns first-turn TurnResult unchanged when second-turn JSON parsing fails", async () => {
     return withTempDir(async (workdir) => {
@@ -439,7 +457,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         } as AdversarialReviewInput,
       } as any);
 
-      expect(result.output).toBe(firstTurn);
+      expectFirstTurnPreservedWithMarker(result.output, firstTurn, "parse-failed");
     });
   });
 
@@ -484,7 +502,7 @@ describe("adversarialReviewOp.hopBody — reground AC5: second turn fails or all
         } as AdversarialReviewInput,
       } as any);
 
-      expect(result.output).toBe(firstTurn);
+      expectFirstTurnPreservedWithMarker(result.output, firstTurn, "still-dropped");
     });
   });
 });

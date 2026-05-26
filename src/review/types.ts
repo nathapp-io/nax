@@ -22,7 +22,7 @@ export type DiffContext =
       stat?: string;
       diff?: never;
       /**
-       * Production-diff exclude pathspec derived from resolveTestPatterns() +
+       * Production-diff exclude pathspec derived from resolveTestFilePatterns() +
        * resolveReviewExcludePatterns(). Used by debate resolver prompts.
        */
       productionExcludePatterns?: readonly string[];

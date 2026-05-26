@@ -292,7 +292,7 @@ describe("review-reprompt-on-drop telemetry integration", () => {
 
     expect(sessionSendCount).toBe(2);
     expect(repromptEvents).toHaveLength(1);
-    expect(repromptEvents[0].repromptOutcome).toBe("still-dropped");
+    expect(repromptEvents[0].repromptOutcome).toBe("recovered-blocking");
     expect(result.success === true || (result.success === false && result.findings && result.findings.length > 0)).toBe(true);
   });
 

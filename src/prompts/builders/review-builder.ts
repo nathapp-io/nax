@@ -10,6 +10,7 @@
  */
 
 import type { Iteration } from "../../findings";
+import type { AcDroppedEntry, AcGroundingMinimalRejection } from "../../review/ac-quote-validator";
 import type { LLMFinding } from "../../review/semantic-helpers";
 import type { SemanticReviewConfig, SemanticStory } from "../../review/types";
 import { wrapJsonPrompt } from "../../utils/llm-json";
@@ -219,7 +220,7 @@ Rules:
    * Human-readable translations of AcGroundingMinimalRejection values.
    * Used in regroundDroppedFindings to explain why findings were dropped.
    */
-  static DROP_CODE_MESSAGES_MINIMAL: Record<string, string> = {
+  static DROP_CODE_MESSAGES_MINIMAL: Record<AcGroundingMinimalRejection, string> = {
     missing_ac_index: "no `acIndex` field was provided — every blocking finding must cite an AC by 1-based index",
     ac_index_out_of_range: "`acIndex` is 0 or larger than the AC list — ACs are 1-indexed; the lowest valid value is 1",
   };
@@ -230,15 +231,14 @@ Rules:
    * to re-issue those findings with correct acIndex grounding.
    */
   static regroundDroppedFindings(opts: {
-    drops: Array<{ finding: LLMFinding; code: string }>;
+    drops: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[];
     acceptanceCriteria: string[];
   }): string {
     const { drops, acceptanceCriteria } = opts;
     if (drops.length === 0) return "";
 
     const firstDrop = drops[0];
-    const codeMessage =
-      ReviewPromptBuilder.DROP_CODE_MESSAGES_MINIMAL[firstDrop.code] ?? `rejection code: ${firstDrop.code}`;
+    const codeMessage = ReviewPromptBuilder.DROP_CODE_MESSAGES_MINIMAL[firstDrop.code];
 
     const acList = acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 

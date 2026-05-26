@@ -1,4 +1,5 @@
 import { makeParseRetryStrategy } from "../agents/retry";
+import type { TurnResult } from "../agents/types";
 import { reviewConfigSelector } from "../config";
 import type { ReviewConfig } from "../config/selectors";
 import type { Finding, Iteration } from "../findings";
@@ -35,10 +36,32 @@ export interface SemanticReviewInput {
   excludePatterns?: string[];
   featureCtxBlock?: string;
   blockingThreshold?: "error" | "warning" | "info";
-  _repromptInfo?: {
-    dropCount: number;
-    outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
-    costUsd: number;
+}
+
+type RepromptInfo = {
+  dropCount: number;
+  outcome: "recovered-blocking" | "recovered-advisory-only" | "still-dropped" | "parse-failed";
+  costUsd: number;
+};
+
+function withRepromptMarker(output: string, info: RepromptInfo): string {
+  const parsed = tryParseLLMJson<Record<string, unknown>>(output);
+  if (!parsed || typeof parsed !== "object") return output;
+  return JSON.stringify({ ...parsed, _repromptInfo: info });
+}
+
+function extractRepromptInfo(raw: Record<string, unknown> | null | undefined): RepromptInfo | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const info = raw._repromptInfo;
+  if (!info || typeof info !== "object") return undefined;
+  const i = info as Record<string, unknown>;
+  if (typeof i.dropCount !== "number" || typeof i.costUsd !== "number" || typeof i.outcome !== "string") {
+    return undefined;
+  }
+  return {
+    dropCount: i.dropCount,
+    costUsd: i.costUsd,
+    outcome: i.outcome as RepromptInfo["outcome"],
   };
 }
 
@@ -105,76 +128,86 @@ const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOut
 
   if (ctx.input.mode !== "ref") return turn;
 
-  const firstFindings = requoted.findings;
-  const { accepted: firstAccepted } = filterByAcGroundingMinimal(firstFindings, ctx.input.story.acceptanceCriteria);
-  const firstShape: ValidatedSemanticShape = {
-    passed: parsed.passed,
-    findings: firstFindings,
-  };
+  // Same-session AC-grounding re-prompt (issue #1105). Gated solely on
+  // semanticConfig.acRegroundOnDrop.
+  const regroundEnabled = ctx.input.semanticConfig.acRegroundOnDrop !== false;
+  if (!regroundEnabled) return turn;
+
+  const firstShape: ValidatedSemanticShape = { passed: parsed.passed, findings: requoted.findings };
   const trigger = evaluateRepromptTrigger(firstShape, ctx.input);
   if (!trigger.shouldReprompt) return turn;
 
+  return performSemanticReground(turn, firstShape, trigger.acDropped, ctx);
+};
+
+/**
+ * Execute the re-prompt turn for semantic drop recovery. See the adversarial
+ * counterpart for outcome-label semantics.
+ */
+async function performSemanticReground(
+  turn: TurnResult,
+  firstParsed: ValidatedSemanticShape,
+  drops: AcDroppedEntry<LLMFinding, AcGroundingMinimalRejection>[],
+  ctx: HopBodyContext<SemanticReviewInput>,
+): Promise<TurnResult> {
+  const threshold = ctx.input.blockingThreshold ?? "error";
+  const acceptanceCriteria = ctx.input.story.acceptanceCriteria;
+  const { accepted: firstAccepted } = filterByAcGroundingMinimal(firstParsed.findings, acceptanceCriteria);
+  const firstAdvisory = firstAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
+
   const repromptPrompt = ReviewPromptBuilder.regroundDroppedFindings({
-    drops: trigger.acDropped,
-    acceptanceCriteria: ctx.input.story.acceptanceCriteria,
+    drops,
+    acceptanceCriteria,
   });
   const secondTurn = await ctx.send(repromptPrompt);
   const secondParsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
-  const repromptCostUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+
+  const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+  const dropCount = drops.length;
 
   if (!secondParsed) {
-    ctx.input._repromptInfo = {
-      dropCount: trigger.acDropped.length,
-      outcome: "parse-failed",
-      costUsd: repromptCostUsd,
+    return {
+      ...turn,
+      output: withRepromptMarker(turn.output, { dropCount, outcome: "parse-failed", costUsd }),
     };
-    return turn;
   }
 
-  const threshold = ctx.input.blockingThreshold ?? "error";
-  const { accepted: secondAccepted } = filterByAcGroundingMinimal(
-    secondParsed.findings,
-    ctx.input.story.acceptanceCriteria,
-  );
+  const { accepted: secondAccepted } = filterByAcGroundingMinimal(secondParsed.findings, acceptanceCriteria);
   const secondBlocking = secondAccepted.filter((f) => isBlockingSeverity(f.severity, threshold));
 
   if (secondBlocking.length > 0) {
-    ctx.input._repromptInfo = {
-      dropCount: trigger.acDropped.length,
-      outcome: "still-dropped",
-      costUsd: repromptCostUsd,
-    };
     return {
       ...turn,
-      output: JSON.stringify({ passed: false, findings: secondParsed.findings }),
-      estimatedCostUsd: repromptCostUsd,
+      output: JSON.stringify({
+        passed: false,
+        findings: secondParsed.findings,
+        _repromptInfo: { dropCount, outcome: "recovered-blocking", costUsd },
+      }),
+      estimatedCostUsd: costUsd,
     };
   }
 
-  if (secondAccepted.length === 0) {
-    ctx.input._repromptInfo = {
-      dropCount: trigger.acDropped.length,
-      outcome: "recovered-advisory-only",
-      costUsd: repromptCostUsd,
+  if (secondParsed.passed) {
+    // AC2: model agreed nothing to block on reflection — synthesise passed:true
+    // with advisories from both passes merged.
+    const secondAdvisory = secondAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
+    return {
+      ...turn,
+      output: JSON.stringify({
+        passed: true,
+        findings: [...firstAdvisory, ...secondAdvisory],
+        _repromptInfo: { dropCount, outcome: "recovered-advisory-only", costUsd },
+      }),
+      estimatedCostUsd: costUsd,
     };
-    return turn;
   }
 
-  const firstAdvisory = firstAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
-  const secondAdvisory = secondAccepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
-
-  ctx.input._repromptInfo = {
-    dropCount: trigger.acDropped.length,
-    outcome: secondParsed.passed ? "recovered-advisory-only" : "recovered-blocking",
-    costUsd: repromptCostUsd,
-  };
-
+  // Second pass still claims failure but every blocking finding dropped again.
   return {
     ...turn,
-    output: JSON.stringify({ passed: secondParsed.passed, findings: [...firstAdvisory, ...secondAdvisory] }),
-    estimatedCostUsd: repromptCostUsd,
+    output: withRepromptMarker(turn.output, { dropCount, outcome: "still-dropped", costUsd }),
   };
-};
+}
 
 export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig> = {
   kind: "run",
@@ -218,13 +251,14 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
   parse(output, _input, _ctx) {
     const raw = tryParseLLMJson<Record<string, unknown>>(output);
     const parsed = validateLLMShape(raw);
+    const repromptEvent = extractRepromptInfo(raw);
     if (parsed) {
       return {
         passed: parsed.passed,
         findings: parsed.findings,
         normalizedFindings: [],
         acDropped: [],
-        repromptEvent: _input._repromptInfo,
+        repromptEvent,
       };
     }
     if (/"passed"\s*:\s*false/.test(output)) {
@@ -234,7 +268,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
         normalizedFindings: [],
         acDropped: [],
         looksLikeFail: true,
-        repromptEvent: _input._repromptInfo,
+        repromptEvent,
       };
     }
     return FAIL_OPEN;

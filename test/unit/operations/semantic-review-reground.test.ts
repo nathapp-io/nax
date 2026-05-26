@@ -365,6 +365,18 @@ describe("semanticReviewOp.hopBody — reground AC4: second turn passed:true wit
   });
 });
 
+function expectFirstTurnPreservedWithMarker(
+  resultOutput: string,
+  firstTurn: string,
+  expectedOutcome: "parse-failed" | "still-dropped",
+): void {
+  const expected = JSON.parse(firstTurn) as Record<string, unknown>;
+  const actual = JSON.parse(resultOutput) as Record<string, unknown>;
+  expect(actual.passed).toEqual(expected.passed);
+  expect(actual.findings).toEqual(expected.findings);
+  expect(actual._repromptInfo).toMatchObject({ outcome: expectedOutcome });
+}
+
 describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all blocking dropped", () => {
   test("returns first-turn TurnResult unchanged when second-turn JSON parsing fails", async () => {
     return withTempDir(async (workdir) => {
@@ -399,7 +411,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
         } as SemanticReviewInput,
       } as any);
 
-      expect(result.output).toBe(firstTurn);
+      expectFirstTurnPreservedWithMarker(result.output, firstTurn, "parse-failed");
     });
   });
 
@@ -442,7 +454,7 @@ describe("semanticReviewOp.hopBody — reground AC5: second turn fails or all bl
         } as SemanticReviewInput,
       } as any);
 
-      expect(result.output).toBe(firstTurn);
+      expectFirstTurnPreservedWithMarker(result.output, firstTurn, "still-dropped");
     });
   });
 });
