@@ -128,6 +128,28 @@ describe("prepareSemanticReviewInput", () => {
 });
 
 describe("prepareAdversarialReviewInput", () => {
+  test("ref mode + empty stat: resolveTestFilePatterns is NOT invoked (parity with legacy early-return)", async () => {
+    // Only one spawn call should occur (collectDiffStat). If resolveTestFilePatterns
+    // runs after the !stat check, additional filesystem scans/spawns would fire.
+    const spawnMock = makeSpawnSequence([""]); // empty stat
+    _diffUtilsDeps.spawn = spawnMock;
+    const result = await prepareAdversarialReviewInput({
+      workdir: "/tmp/repo",
+      storyId: "S1",
+      storyGitRef: "abc123",
+      config: DEFAULT_CONFIG,
+      adversarialConfig: baseAdversarialConfig,
+    });
+    expect(result.skipReason).toBe("no changes detected");
+    // Note: testGlobs / refExcludePatterns aren't read by downstream callers when
+    // skipReason is set (both runSemantic/AdversarialReview and plan-inputs.ts
+    // early-return on skipReason). These assertions exist purely to prove that
+    // resolveTestFilePatterns was NOT invoked — i.e. they're a side-effect proof,
+    // not a behavioral contract.
+    expect(result.testGlobs).toEqual([]);
+    expect(result.refExcludePatterns).toEqual([]);
+  });
+
   test("ref mode: collects stat, no diff, no testInventory; surfaces testGlobs", async () => {
     _diffUtilsDeps.spawn = makeSpawnSequence([STAT_OUT]);
     const result = await prepareAdversarialReviewInput({

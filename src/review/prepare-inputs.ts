@@ -165,31 +165,36 @@ export async function prepareAdversarialReviewInput(
   const { packageDir, packageDirRelative } = derivePackageDirs(workdir, projectDir);
   const stat = await collectDiffStat(workdir, effectiveRef, { naxIgnoreIndex, packageDir });
 
+  const diffMode = adversarialConfig.diffMode ?? "ref";
+
+  // Parity with legacy adversarial.ts:169 — return on !stat (ref mode) BEFORE
+  // resolving test patterns. Avoids a wasted filesystem scan when there are no changes.
+  if (diffMode === "ref" && !stat) {
+    return {
+      effectiveRef,
+      stat: "",
+      diff: undefined,
+      testInventory: undefined,
+      excludePatterns: [],
+      testGlobs: [],
+      refExcludePatterns: [],
+      skipReason: "no changes detected",
+    };
+  }
+
   const effectiveConfig = config ?? reviewConfigSelector.select(DEFAULT_CONFIG);
   const resolved = await resolveTestFilePatterns(effectiveConfig, projectDir ?? workdir, packageDirRelative);
   const refExcludePatterns = [...resolveReviewExcludePatterns(adversarialConfig.excludePatterns, resolved)];
   const testGlobs = resolved.globs ?? [];
   const excludePatterns: string[] = [...(adversarialConfig.excludePatterns ?? [])];
 
-  const diffMode = adversarialConfig.diffMode ?? "ref";
   const testFilePatterns =
     (typeof config?.execution?.smartTestRunner === "object"
       ? config.execution.smartTestRunner?.testFilePatterns
       : undefined) ?? undefined;
 
   if (diffMode === "ref") {
-    if (!stat) {
-      return {
-        effectiveRef,
-        stat: "",
-        diff: undefined,
-        testInventory: undefined,
-        excludePatterns,
-        testGlobs,
-        refExcludePatterns,
-        skipReason: "no changes detected",
-      };
-    }
+    // !stat case handled above; surviving branch always has stat
     return {
       effectiveRef,
       stat,
