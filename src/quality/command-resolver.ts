@@ -8,7 +8,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { isMonorepoOrchestratorCommand } from "../verification/strategies/scoped";
+import { isMonorepoOrchestratorCommand } from "../test-runners";
 
 export interface ResolvedTestCommands {
   /**

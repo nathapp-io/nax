@@ -18,7 +18,18 @@
  */
 
 import { getLogger } from "../logger";
-import type { VerifyResult } from "../verification/orchestrator-types";
+// VerifyResult inlined here after orchestrator-types.ts deletion (issue #1116).
+// VerifyCompletedEvent is defined but not yet emitted — kept for future use.
+interface VerifyResult {
+  success: boolean;
+  status: string;
+  storyId: string;
+  passCount: number;
+  failCount: number;
+  durationMs: number;
+  countsTowardEscalation: boolean;
+  rawOutput?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Event types
