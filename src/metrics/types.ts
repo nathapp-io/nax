@@ -134,7 +134,7 @@ export interface StoryMetrics {
   rectificationCost?: number;
   /** Token usage for this story */
   tokens?: TokenUsage;
-  /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
+  /** When verifyScopedOp falls back to full suite due to threshold (issue #1116) */
   scopeTestFallback?: boolean;
   /**
    * Per-provider context engine metrics aggregated across all pipeline stages.
