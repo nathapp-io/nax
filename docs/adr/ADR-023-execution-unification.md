@@ -1,6 +1,6 @@
 # ADR-023: Execution Unification — One Builder Per Story
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-05-23
 **Author:** William Khoo, Claude
 **Supersedes:** SPEC-story-orchestrator-consolidation §1 (review-as-builder-phase portion), SPEC-rectification-unification (US-006a/b/c rectification plan)
@@ -99,6 +99,8 @@ queueCheck → routing → constitution → context → prompt → optimizer →
 
 `verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`, `regressionStage` are deleted. `acceptanceStage` (post-run pipeline) is unchanged — it already uses `runFixCycle`.
 
+> **Implementation note (2026-05-26):** `regressionStage` has been deleted as part of issue #1116 (PR #1124, PR #1125). The legacy `VerificationOrchestrator`, `ScopedStrategy`, `RegressionStrategy`, and `AcceptanceStrategy` classes were retired simultaneously. Per-story verification is now owned by `verifyScopedOp` and `fullSuiteGateOp` dispatched via `callOp`. Post-run regression continues via `src/execution/lifecycle/run-regression.ts`. The remaining four stages (`verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`) await Phase B–E of [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md).
+
 ### 6. Out of scope
 
 The following are explicitly **not** consolidated by this ADR:
@@ -168,4 +170,4 @@ See [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md) for:
 
 1. **`IReviewPlugin` retention.** If kept, requires a plugin-reviewer op adapter. If removed, requires a deprecation release first. Decision deferred to spec-level after pre-flight audit of internal/external consumers.
 2. **Plugin reviewer phase ordering.** If retained, do plugin reviews run before or after LLM reviews? Today's `reviewOrchestrator` runs them after built-in checks but before semantic/adversarial. Preserving that order is straightforward; deviating would surprise existing plugins.
-3. **`regressionStage` future.** Currently runs the post-acceptance regression check. If unified into the builder as another phase, it changes regression semantics (per-story instead of post-run). Likely stays as a post-run concern, but flagged for spec-level decision.
+3. ~~**`regressionStage` future.**~~ **Resolved (2026-05-26, issue #1116).** `regressionStage` is deleted. The resolution: per-story scoped verification is owned by `verifyScopedOp`; per-story full-suite verification is owned by `fullSuiteGateOp` (wired into the builder for TDD strategies and `regressionGate.mode === "per-story"`). Deferred post-run regression (the historical `regressionStage` concern) remains in `src/execution/lifecycle/run-regression.ts` as a lifecycle helper — not a pipeline stage — which keeps post-run semantics intact without requiring a builder phase. No further decision needed.
