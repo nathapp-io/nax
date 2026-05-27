@@ -1028,6 +1028,15 @@ export class ExecutionPlan {
     // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
     // entirely when rectification was exhausted — the story is already terminal.
     if (this.state.rectification && !rectResult.rectificationExhausted) {
+      // The first rectification ran with a strategy-specific revalidation set
+      // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
+      // resume block runs for the first time (e.g. full-suite-rectify excludes
+      // adversarial-review). A failure here is therefore a *new* finding that
+      // rectification never had as input — distinct from "rectification tried
+      // and could not fix this." Allow one additional rectification pass per
+      // story for such fresh failures before declaring terminal. Per-story
+      // (not per-phase) on purpose: bounds total LLM cost on the recovery path.
+      let resumeRectifyUsed = false;
       for (const phase of collectOrderedPhases(this.state)) {
         const name = phase.slot.op.name;
         if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
@@ -1044,11 +1053,33 @@ export class ExecutionPlan {
           throw error;
         }
         if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
-          // Terminal failure: rectification already exited "resolved" (per the
-          // guard above), so this failure happens AFTER the fix-cycle — it cannot
-          // trigger another rectification iteration. The story will be marked
-          // failed downstream. Surface this distinctly so operators don't confuse
-          // it with an in-cycle revalidation failure.
+          if (!resumeRectifyUsed) {
+            // Fresh failure: this phase was not in the prior strategy's
+            // revalidation scope, so rectification has never seen its findings.
+            // Invoke rectification once more on the now-current phaseOutputs.
+            // Bounded to a single retry per story; the inner cycle has its own
+            // maxAttempts budget so this cannot loop.
+            resumeRectifyUsed = true;
+            logger?.info(
+              "story-orchestrator",
+              "Phase failed in post-rectification resume — invoking second rectification pass",
+              { storyId: this.ctx.storyId, phase: name, source: "post-rectification-resume" },
+            );
+            const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+            if (secondRect.rectificationExhausted) {
+              logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {
+                storyId: this.ctx.storyId,
+                phase: name,
+                source: "post-rectification-resume",
+              });
+              break;
+            }
+            // Re-check the failed phase: revalidation inside runRectification
+            // may have re-run it. If it now passes, continue; otherwise terminal.
+            if (phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+              continue;
+            }
+          }
           logger?.warn(
             "story-orchestrator",
             "Terminal phase failure (post-rectification resume — bypasses rectification)",
@@ -1056,6 +1087,7 @@ export class ExecutionPlan {
               storyId: this.ctx.storyId,
               phase: name,
               source: "post-rectification-resume",
+              secondRectifyUsed: resumeRectifyUsed,
             },
           );
           break;
