@@ -157,4 +157,14 @@ describe("routeTddFailure", () => {
       expect(ctx.retryAsLite).toBeUndefined();
     }
   });
+
+  // issue #1132
+  it("escalates on runtime-crash with category in reason", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("runtime-crash", false, ctx);
+
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD runtime-crash");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
 });

@@ -61,7 +61,8 @@ export function routeTddFailure(
     failureCategory === "session-failure" ||
     failureCategory === "tests-failing" ||
     failureCategory === "full-suite-gate-exhausted" ||
-    failureCategory === "verifier-rejected"
+    failureCategory === "verifier-rejected" ||
+    failureCategory === "runtime-crash"
   ) {
     return { action: "escalate", reason: buildReason(failureCategory) };
   }
