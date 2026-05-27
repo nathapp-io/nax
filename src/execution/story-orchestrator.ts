@@ -889,8 +889,6 @@ export class ExecutionPlan {
     // the verifier run on broken-gate code as an "unrelated regression" escape
     // hatch, at the cost of every common case. The escalation boundary in
     // deriveTddFailureCategory now handles that case instead.
-    const shortCircuitExempt = new Set<string>();
-
     for (const phase of collectOrderedPhases(this.state)) {
       try {
         await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
@@ -904,15 +902,14 @@ export class ExecutionPlan {
       }
 
       // Short-circuit on any phase failure (spec §2C: any phase returning success=false halts execution).
-      // Exception: phases in shortCircuitExempt continue so rectification can consume their findings.
+      // No exemptions — verifier and reviews must never judge broken-gate code. Gate findings are
+      // captured in phaseOutputs before this check, so runRectification() still consumes them.
       if (!phasePassed(phase.slot.op.name, phaseOutputs[phase.slot.op.name], this.ctx.storyId)) {
-        if (!shortCircuitExempt.has(phase.slot.op.name)) {
-          logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
-            storyId: this.ctx.storyId,
-            phase: phase.slot.op.name,
-          });
-          break;
-        }
+        logger?.warn("story-orchestrator", "Short-circuiting on phase failure", {
+          storyId: this.ctx.storyId,
+          phase: phase.slot.op.name,
+        });
+        break;
       }
     }
 

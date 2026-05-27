@@ -347,9 +347,14 @@ function makePlanWithGateOnly(ctx: CallContext) {
 }
 
 describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", () => {
-  test("AC1.1: verifier passed + gate findings present → gathered initial findings exclude the gate findings", async () => {
-    // callOp: verifier passes, gate fails with TEST_RUNNER_FINDING
+  test("AC1.1: gate fails → loop halts before verifier → gate findings enter initial cycle (new: verifier-SSOT carve-out unreachable in initial phase)", async () => {
+    // New contract: gate failure halts the main loop before verifier runs. The verifier-as-SSOT
+    // carve-out (shouldSkipPhaseForRectification) only fires when verifier has ALREADY passed
+    // (e.g. in a post-rectification revalidation where verifier re-judged successfully).
+    // In the initial phase, verifier never ran → phaseOutputs[verifier] is undefined → carve-out
+    // does not fire → gate findings are included → runFixCycle IS called.
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      // Verifier is registered in the plan but never dispatched (loop halts at gate).
       if (op.name === "verifier") return { success: true, findings: [] };
       if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
       return { success: true };
@@ -370,14 +375,19 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     const plan = makePlanWithGateAndVerifier(ctx);
     await plan.run();
 
-    // verifier passed → gate findings are excluded from initial findings → no findings to fix →
-    // runFixCycle is never called. This is the correct carve-out behavior.
-    expect(capturedCycle).toBeNull();
+    // Gate findings flow through to the cycle — verifier never ran so carve-out doesn't fire.
+    expect(capturedCycle).not.toBeNull();
+    const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
+    expect(hasTestRunnerFinding).toBe(true);
   });
 
-  test("AC1.2: verifier explicitly failed → gate findings ARE included in initial findings", async () => {
+  test("AC1.2: gate fails → loop halts before verifier, gate findings still flow to cycle", async () => {
+    // Gate fails → loop short-circuits before verifier ever runs.
+    // The verifier mock below is unreachable; it exists only to confirm the mock is
+    // not the source of gate findings flowing through.
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
-      if (op.name === "verifier") return { success: false, findings: [VERIFIER_FINDING] };
+      if (op.name === "verifier") return { success: false, findings: [VERIFIER_FINDING] }; // unreachable
       if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
@@ -397,6 +407,8 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     const plan = makePlanWithGateAndVerifier(ctx);
     await plan.run();
 
+    // phaseOutputs[verifier] is undefined (verifier never ran), so the cross-iteration
+    // carve-out never fires. Gate findings flow to cycle unfiltered.
     expect(capturedCycle).not.toBeNull();
     const findings = (capturedCycle as unknown as FixCycle<Finding>).findings;
     const hasTestRunnerFinding = findings.some((f) => f.source === "test-runner");
@@ -430,10 +442,15 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     expect(hasTestRunnerFinding).toBe(true);
   });
 
-  test("AC1.4: in validate callback, gate findings excluded when verifier passed", async () => {
-    // Gate fails with TEST_RUNNER_FINDING, verifier passes
+  test("AC1.4: in validate callback, gate findings excluded when verifier already passed in a prior validate iteration (cross-iteration carve-out)", async () => {
+    // New contract: gate halts the main loop before verifier, so phaseOutputs[verifier]
+    // is undefined after the initial plan run. The shouldSkipPhaseForRectification carve-out
+    // fires only when verifier has ALREADY passed in a prior validate call (cross-iteration).
+    //
+    // Scenario: call validate twice — first call let verifier pass and populate phaseOutputs;
+    // second call should see verifier's prior pass and exclude gate findings.
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
-      if (op.name === "verifier") return { success: true, findings: [] };
+      // Gate fails, verifier is registered but never dispatched in main loop (gate halts first).
       if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
@@ -455,32 +472,44 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     const plan = makePlanWithGateAndVerifier(ctx);
     await plan.run();
 
-    // The validate callback should exclude gate findings when verifier passes
-    // We test by calling validate directly after the initial pass
-    // Reset callOp to track gate re-runs during validate
-    let gateCalledDuringValidate = false;
-    const prevCallOp = _storyOrchestratorDeps.callOp;
+    if (capturedCycle === null || capturedCtx === null) return;
+
+    // First validate call: gate runs → fails → shouldSkipPhaseForRectification sees no prior
+    // verifier pass → gate findings included. Then verifier runs → passes → populates phaseOutputs.
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      if (op.name === "verifier") return { success: true, findings: [] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const firstCallFindings = await (capturedCycle as FixCycle<Finding>).validate(
+      capturedCtx as FixCycleContext,
+      { mode: "full" },
+    );
+    // First call: verifier hadn't pre-passed in phaseOutputs → gate findings included
+    const firstHasTestRunner = firstCallFindings.some((f) => f.source === "test-runner");
+    expect(firstHasTestRunner).toBe(true);
+
+    // Second validate call: now phaseOutputs[verifier] has the prior passing result →
+    // shouldSkipPhaseForRectification fires on gate → gate findings excluded.
+    let gateCalledSecondTime = false;
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "full-suite-gate") {
-        gateCalledDuringValidate = true;
+        gateCalledSecondTime = true;
         return { success: false, findings: [TEST_RUNNER_FINDING] };
       }
       if (op.name === "verifier") return { success: true, findings: [] };
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    if (capturedCycle !== null && capturedCtx !== null) {
-      const validateFindings = await (capturedCycle as FixCycle<Finding>).validate(
-        capturedCtx as FixCycleContext,
-        { mode: "full" },
-      );
-      // Gate still ran (it's part of validationPhases)
-      expect(gateCalledDuringValidate).toBe(true);
-      // But gate findings are excluded because verifier passed
-      const hasTestRunnerInResult = validateFindings.some((f) => f.source === "test-runner");
-      expect(hasTestRunnerInResult).toBe(false);
-    }
-
-    _storyOrchestratorDeps.callOp = prevCallOp;
+    const secondCallFindings = await (capturedCycle as FixCycle<Finding>).validate(
+      capturedCtx as FixCycleContext,
+      { mode: "full" },
+    );
+    // Gate still ran (it's part of validationPhases — carve-out only filters findings, not dispatch)
+    expect(gateCalledSecondTime).toBe(true);
+    // But gate findings are excluded because verifier passed in the previous iteration
+    const secondHasTestRunner = secondCallFindings.some((f) => f.source === "test-runner");
+    expect(secondHasTestRunner).toBe(false);
   });
 });
