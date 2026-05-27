@@ -12,6 +12,7 @@
  */
 
 import type { AgentResult } from "../agents/types";
+import type { Finding } from "../findings/types";
 import { checkMergeConflict, isTriggerEnabled } from "../interaction/triggers";
 import { getLogger } from "../logger";
 import {
@@ -30,6 +31,7 @@ import { rollbackToRef } from "../tdd/rollback";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty, detectMergeConflict } from "../utils/git";
 import { failAndClose } from "./session-manager-runtime";
+import { EXHAUSTED_EXIT_REASONS } from "./story-orchestrator";
 import type { StoryOrchestratorResult } from "./story-orchestrator";
 import type { FailureCategory } from "./types";
 
@@ -94,7 +96,10 @@ export function extractPauseReason(phaseOutputs: Record<string, unknown>): strin
 }
 
 /** Derive TDD failure category from phase outputs after plan.run(). */
-export function deriveTddFailureCategory(phaseOutputs: Record<string, unknown>): FailureCategory | undefined {
+export function deriveTddFailureCategory(
+  phaseOutputs: Record<string, unknown>,
+  unfixedFindings?: readonly Finding[],
+): FailureCategory | undefined {
   // Test-writer failure → session-failure
   const testWriterOutput = phaseOutputs[testWriterOp.name] as { success?: boolean } | undefined;
   if (testWriterOutput?.success === false) {
@@ -124,6 +129,21 @@ export function deriveTddFailureCategory(phaseOutputs: Record<string, unknown>):
   // failures, the verifier has judged this story OK (e.g. unrelated regressions).
   // Skip the gate-derived category in that case.
   const verifierPassed = verifierOutput?.success === true;
+
+  // Full-suite gate exhausted: rectification ran out of retry budget AND at least
+  // one test-runner finding remains unfixed. Takes priority over the plain
+  // tests-failing branch below, but only fires when verifier did NOT pass (the
+  // verifierPassed guard above already short-circuits when verifier succeeded).
+  if (!verifierPassed && unfixedFindings && unfixedFindings.length > 0) {
+    const rectOutput = phaseOutputs.rectification as { exitReason?: string } | undefined;
+    if (
+      rectOutput?.exitReason &&
+      EXHAUSTED_EXIT_REASONS.has(rectOutput.exitReason) &&
+      unfixedFindings.some((f) => f.source === "test-runner")
+    ) {
+      return "full-suite-gate-exhausted";
+    }
+  }
 
   // Full-suite gate failure without an overriding verifier verdict → tests-failing.
   // Reached only when verifier either failed-without-category-but-handled-above, did
@@ -285,7 +305,10 @@ export async function applyPostRunInspection(
   }
 
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
-  const failureCategory = isTdd && !planResult.success ? deriveTddFailureCategory(planResult.phaseOutputs) : undefined;
+  const failureCategory =
+    isTdd && !planResult.success
+      ? deriveTddFailureCategory(planResult.phaseOutputs, planResult.unfixedFindings)
+      : undefined;
 
   // Diagnostic: if a TDD plan failed but no category was derived, the routing path
   // falls back to the generic "requires review" pause. Surface the per-phase

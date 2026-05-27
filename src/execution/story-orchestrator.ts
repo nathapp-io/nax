@@ -44,6 +44,20 @@ export const _storyOrchestratorDeps = {
 };
 
 /**
+ * Exit reasons from runRectification that indicate all retry budget was spent
+ * without resolving findings. Used by both runRectification (locally) and
+ * deriveTddFailureCategory (post-run.ts) to assign the full-suite-gate-exhausted
+ * FailureCategory. Single source of truth — import from here; do not redeclare.
+ */
+export const EXHAUSTED_EXIT_REASONS = new Set<string>([
+  "max-attempts-total",
+  "max-attempts-per-strategy",
+  "bail-when",
+  "no-strategy",
+  "agent-gave-up",
+]);
+
+/**
  * @internal
  * Refresh stat/diff/excludePatterns/effectiveRef on a semantic-review or
  * adversarial-review input just before dispatch. Plan-build captures these
@@ -924,14 +938,7 @@ async function runRectification(
     });
   }
 
-  const exhaustedReasons = new Set<string>([
-    "max-attempts-total",
-    "max-attempts-per-strategy",
-    "bail-when",
-    "no-strategy",
-    "agent-gave-up",
-  ]);
-  if (exhaustedReasons.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
+  if (EXHAUSTED_EXIT_REASONS.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
   }
 
