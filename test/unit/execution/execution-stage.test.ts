@@ -10,6 +10,7 @@ import { _executionDeps, executionStage, routeTddFailure } from "../../../src/pi
 import type { FailureCategory } from "../../../src/tdd";
 import { NaxError } from "../../../src/errors";
 import { makeNaxConfig } from "../../helpers";
+import { makeTestContext, makeTestStory } from "../../helpers/pipeline-context";
 import type { PipelineContext } from "../../../src/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ describe("routeTddFailure", () => {
       "tests-failing",
       "full-suite-gate-exhausted",
       "verifier-rejected",
+      "runtime-crash",
     ];
 
     for (const category of categories) {
@@ -179,31 +181,24 @@ describe("routeTddFailure", () => {
 describe("executionStage.execute — runtime-crash on thrown infra errors", () => {
   const cfg = makeNaxConfig();
 
-  // Shared minimal PipelineContext factory
+  // Shared PipelineContext factory — overrides only the fields execution stage needs.
   function makeCtx(): PipelineContext {
-    return {
-      story: {
-        id: "US-crash-01",
-        title: "Crash test",
-        status: "pending",
-        attempts: 0,
-        workdir: "",
-        escalations: [],
-        priorErrors: [],
-        priorFailures: [],
-      },
-      prd: { feature: "feat", userStories: [] } as unknown as PipelineContext["prd"],
+    return makeTestContext({
+      story: makeTestStory({ id: "US-crash-01", title: "Crash test" }),
       config: cfg,
       workdir: "/tmp/nax-crash-test",
-      routing: { modelTier: "fast", testStrategy: "three-session-tdd", agent: "claude" },
+      routing: { modelTier: "fast", testStrategy: "three-session-tdd", agent: "claude", complexity: "simple", reasoning: "" },
       packageView: { select: () => cfg } as unknown as PipelineContext["packageView"],
-      runtime: {
-        dispatchEvents: { onDispatch: () => () => {} },
-        signal: undefined,
-        packages: undefined,
-        onPidSpawned: undefined,
-      } as unknown as PipelineContext["runtime"],
-    } as unknown as PipelineContext;
+      // runtime lives on the DispatchContext parent — cast to satisfy Partial<PipelineContext>
+      ...({
+        runtime: {
+          dispatchEvents: { onDispatch: () => () => {} },
+          signal: undefined,
+          packages: undefined,
+          onPidSpawned: undefined,
+        },
+      } as unknown as Partial<PipelineContext>),
+    });
   }
 
   // Stub _executionDeps so plan.run() is the only thing that can throw.
@@ -215,7 +210,6 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.captureGitRef = async () => "HEAD";
     _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
-    // buildPlanForStrategy is added to _executionDeps in Step 3.3
     (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
       run: planRun,
     });
