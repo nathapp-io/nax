@@ -221,6 +221,25 @@ describe("deriveTddFailureCategory", () => {
     ]);
     expect(result).toBeUndefined();
   });
+
+  // ── issue #1132: validator-error → runtime-crash ──────────────────────────
+
+  test("returns runtime-crash when rectification exitReason is validator-error", () => {
+    // AC-2: mid-rectification validator crash → runtime-crash category
+    const result = deriveTddFailureCategory({
+      rectification: { exitReason: "validator-error", success: false },
+    });
+    expect(result).toBe("runtime-crash");
+  });
+
+  test("does NOT return runtime-crash for validator-error when verifier passed", () => {
+    // verifierPassed guard must suppress the validator-error branch
+    const result = deriveTddFailureCategory({
+      [verifierOp.name]: { success: true },
+      rectification: { exitReason: "validator-error", success: false },
+    });
+    expect(result).toBeUndefined();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

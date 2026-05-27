@@ -145,6 +145,16 @@ export function deriveTddFailureCategory(
     }
   }
 
+  // Mid-rectification crash: validator infrastructure threw during re-validation.
+  // runFixCycle sets exitReason "validator-error" when runPhase throws (story-orchestrator.ts:932).
+  // Distinct from EXHAUSTED_EXIT_REASONS — the crash, not budget exhaustion, is the root cause.
+  if (!verifierPassed) {
+    const rectOutputCrash = phaseOutputs.rectification as { exitReason?: string } | undefined;
+    if (rectOutputCrash?.exitReason === "validator-error") {
+      return "runtime-crash";
+    }
+  }
+
   // Full-suite gate failure without an overriding verifier verdict → tests-failing.
   // Reached only when verifier either failed-without-category-but-handled-above, did
   // not run, or has no output. Routed by `routeTddFailure` as `escalate` (same

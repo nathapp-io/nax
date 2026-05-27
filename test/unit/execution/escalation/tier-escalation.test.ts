@@ -4,37 +4,27 @@
  * Integration tests for escalation path branching:
  * - RUNTIME_CRASH → retry same tier (transient failure, not a code issue)
  * - TEST_FAILURE  → escalate to next tier (existing behaviour)
- *
- * Tests are RED until handleTierEscalation() checks verifyResult.status
- * and returns "retry-same" for RUNTIME_CRASH rather than escalating the tier.
  */
 
 import { describe, expect, test } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
-//
-// RED: This function does not exist yet. It will be exported from
-// src/execution/escalation/tier-escalation.ts as part of the implementation.
 // ---------------------------------------------------------------------------
 
 describe("shouldRetrySameTier", () => {
   test("returns true when verifyResult status is RUNTIME_CRASH", async () => {
-    // RED: shouldRetrySameTier is not exported yet — import will return undefined
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    // @ts-expect-error: shouldRetrySameTier does not exist until BUG-070 is implemented
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
     expect(
-      // @ts-expect-error: RUNTIME_CRASH not in VerifyStatus until BUG-070 is implemented
       shouldRetrySameTier({ status: "RUNTIME_CRASH", success: false }),
     ).toBe(true);
   });
 
   test("returns false when verifyResult status is TEST_FAILURE", async () => {
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    // @ts-expect-error: shouldRetrySameTier does not exist until BUG-070 is implemented
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -45,7 +35,6 @@ describe("shouldRetrySameTier", () => {
 
   test("returns false when verifyResult is undefined", async () => {
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    // @ts-expect-error: shouldRetrySameTier does not exist until BUG-070 is implemented
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -54,7 +43,6 @@ describe("shouldRetrySameTier", () => {
 
   test("returns false when verifyResult status is TIMEOUT", async () => {
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    // @ts-expect-error: shouldRetrySameTier does not exist until BUG-070 is implemented
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -65,7 +53,6 @@ describe("shouldRetrySameTier", () => {
 
   test("returns false when verifyResult status is PASS", async () => {
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    // @ts-expect-error: shouldRetrySameTier does not exist until BUG-070 is implemented
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
@@ -88,11 +75,7 @@ describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
       "../../../../src/execution/escalation/tier-escalation"
     );
 
-    // RED: "runtime-crash" is not in FailureCategory yet — returns "fail" currently
-    expect(
-      // @ts-expect-error: runtime-crash not in FailureCategory until BUG-070 is implemented
-      resolveMaxAttemptsOutcome("runtime-crash"),
-    ).toBe("pause");
+    expect(resolveMaxAttemptsOutcome("runtime-crash")).toBe("pause");
   });
 
   test("still returns fail for tests-failing (regression guard)", async () => {
@@ -123,77 +106,69 @@ describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
 describe("handleTierEscalation — tier escalation regression guard", () => {
   test("still escalates tier for TEST_FAILURE (regression guard)", async () => {
     const mod = await import("../../../../src/execution/escalation/tier-escalation");
-    const { handleTierEscalation } = mod;
-    // @ts-expect-error: _tierEscalationDeps does not exist until BUG-070 is implemented
-    const { _tierEscalationDeps } = mod;
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
 
-    if (_tierEscalationDeps) {
-      const origSavePRD = _tierEscalationDeps.savePRD;
-      _tierEscalationDeps.savePRD = () => Promise.resolve();
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
 
-      try {
-        const story = {
-          id: "US-001",
-          title: "Story",
-          description: "Test",
-          acceptanceCriteria: [],
-          tags: [],
-          dependencies: [],
-          status: "in-progress" as const,
-          passes: false,
-          escalations: [],
-          attempts: 0,
-          routing: { modelTier: "fast", testStrategy: "test-after" },
-        };
+    try {
+      const story = {
+        id: "US-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
 
-        const ctx = {
-          story,
-          storiesToExecute: [story],
-          isBatchExecution: false,
-          routing: { modelTier: "fast", testStrategy: "test-after" },
-          pipelineResult: { reason: "Tests failed", context: {} },
-          config: {
-            autoMode: {
-              escalation: {
-                enabled: true,
-                tierOrder: [
-                  { name: "fast", attempts: 1 },
-                  { name: "balanced", attempts: 2 },
-                ],
-                escalateEntireBatch: false,
-              },
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { name: "fast", attempts: 1 },
+                { name: "balanced", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
             },
-            routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-            models: {},
           },
-          prd: {
-            project: "test",
-            feature: "f",
-            branchName: "b",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            userStories: [story],
-          },
-          prdPath: "/tmp/test-prd.json",
-          featureDir: undefined,
-          hooks: { hooks: {} },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
           feature: "f",
-          totalCost: 0,
-          workdir: "/tmp",
-          verifyResult: { status: "TEST_FAILURE", success: false },
-        };
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
 
-        const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
 
-        // TEST_FAILURE must still escalate — existing behaviour preserved
-        expect(result.outcome).toBe("escalated");
-      } finally {
-        if (_tierEscalationDeps) {
-          _tierEscalationDeps.savePRD = origSavePRD;
-        }
-      }
-    } else {
-      expect(_tierEscalationDeps).not.toBeUndefined();
+      // TEST_FAILURE must still escalate — existing behaviour preserved
+      expect(result.outcome).toBe("escalated");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
     }
   });
 });
@@ -267,7 +242,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -340,7 +315,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -412,7 +387,7 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         verifyResult: { status: "TEST_FAILURE", success: false },
       };
 
-      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
 
       expect(result.outcome).toBe("escalated");
       const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");

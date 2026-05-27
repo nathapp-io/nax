@@ -6,8 +6,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { routeTddFailure } from "../../../src/pipeline/stages/execution";
+import { _executionDeps, executionStage, routeTddFailure } from "../../../src/pipeline/stages/execution";
 import type { FailureCategory } from "../../../src/tdd";
+import { NaxError } from "../../../src/errors";
+import { makeAgentAdapter, makeNaxConfig } from "../../helpers";
+import { makeTestContext, makeTestStory } from "../../helpers/pipeline-context";
+import type { PipelineContext } from "../../../src/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -134,6 +138,7 @@ describe("routeTddFailure", () => {
       "tests-failing",
       "full-suite-gate-exhausted",
       "verifier-rejected",
+      "runtime-crash",
     ];
 
     for (const category of categories) {
@@ -156,5 +161,123 @@ describe("routeTddFailure", () => {
       routeTddFailure(category, false, ctx);
       expect(ctx.retryAsLite).toBeUndefined();
     }
+  });
+
+  // issue #1132
+  it("escalates on runtime-crash with category in reason", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("runtime-crash", false, ctx);
+
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD runtime-crash");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// executionStage.execute — runtime-crash category on plan.run() throw (#1132)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("executionStage.execute — runtime-crash on thrown infra errors", () => {
+  const cfg = makeNaxConfig();
+
+  // Shared PipelineContext factory — overrides only the fields execution stage needs.
+  function makeCtx(): PipelineContext {
+    return makeTestContext({
+      story: makeTestStory({ id: "US-crash-01", title: "Crash test" }),
+      config: cfg,
+      workdir: "/tmp/nax-crash-test",
+      routing: { modelTier: "fast", testStrategy: "three-session-tdd", agent: "claude", complexity: "simple", reasoning: "" },
+      packageView: { select: () => cfg } as unknown as PipelineContext["packageView"],
+      // runtime lives on the DispatchContext parent — cast to satisfy Partial<PipelineContext>
+      ...({
+        runtime: {
+          dispatchEvents: { onDispatch: () => () => {} },
+          signal: undefined,
+          packages: undefined,
+          onPidSpawned: undefined,
+        },
+      } as unknown as Partial<PipelineContext>),
+    });
+  }
+
+  // Stub _executionDeps so plan.run() is the only thing that can throw.
+  // Returns a restore function — call it in the test's own finally block.
+  function stubDepsWithPlan(planRun: () => Promise<never>): () => void {
+    const saved = { ..._executionDeps };
+    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
+    _executionDeps.validateAgentForTier = () => true;
+    _executionDeps.captureGitRef = async () => "HEAD";
+    _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
+    (_executionDeps as Record<string, unknown>)["buildPlanForStrategy"] = async () => ({
+      run: planRun,
+    });
+    return () => Object.assign(_executionDeps, saved);
+  }
+
+  it("sets tddFailureCategory to runtime-crash when plan.run() throws CALL_OP_NO_OUTPUT", async () => {
+    // AC-1: CALL_OP_NO_OUTPUT → runtime-crash
+    const ctx = makeCtx();
+    const restore = stubDepsWithPlan(async () => {
+      throw new NaxError("agent returned no output", "CALL_OP_NO_OUTPUT", {
+        stage: "execution",
+        storyId: "US-crash-01",
+      });
+    });
+    let threw = false;
+    try {
+      await executionStage.execute(ctx);
+    } catch (err) {
+      threw = true;
+      expect((err as NaxError).code).toBe("CALL_OP_NO_OUTPUT");
+    } finally {
+      restore();
+    }
+    expect(threw).toBe(true);
+    expect(ctx.tddFailureCategory).toBe("runtime-crash");
+  });
+
+  it("sets tddFailureCategory to runtime-crash when plan.run() throws CALL_OP_MAX_RETRIES", async () => {
+    // AC-1: CALL_OP_MAX_RETRIES → runtime-crash
+    const ctx = makeCtx();
+    const restore = stubDepsWithPlan(async () => {
+      throw new NaxError("retry budget exhausted", "CALL_OP_MAX_RETRIES", {
+        stage: "execution",
+        storyId: "US-crash-01",
+      });
+    });
+    let threw = false;
+    try {
+      await executionStage.execute(ctx);
+    } catch (err) {
+      threw = true;
+      expect((err as NaxError).code).toBe("CALL_OP_MAX_RETRIES");
+    } finally {
+      restore();
+    }
+    expect(threw).toBe(true);
+    expect(ctx.tddFailureCategory).toBe("runtime-crash");
+  });
+
+  it("does NOT set tddFailureCategory when plan.run() throws CALL_OP_ABORTED", async () => {
+    // AC-3: user-initiated abort must not be classified as runtime-crash
+    const ctx = makeCtx();
+    const restore = stubDepsWithPlan(async () => {
+      throw new NaxError("aborted", "CALL_OP_ABORTED", {
+        stage: "execution",
+        storyId: "US-crash-01",
+      });
+    });
+    let threw = false;
+    try {
+      await executionStage.execute(ctx);
+    } catch (err) {
+      threw = true;
+      expect((err as NaxError).code).toBe("CALL_OP_ABORTED");
+    } finally {
+      restore();
+    }
+    expect(threw).toBe(true);
+    expect(ctx.tddFailureCategory).toBeUndefined();
   });
 });
