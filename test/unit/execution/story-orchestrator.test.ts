@@ -32,7 +32,13 @@ import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
 import type { ReviewCheckResult, Finding } from "@/findings";
 import { NaxError } from "@/errors";
-import { _storyOrchestratorDeps, phasesToRevalidate, formatPhaseResultMessage } from "@/execution";
+import {
+  _storyOrchestratorDeps,
+  formatPhaseResultMessage,
+  phasesToRevalidate,
+  refreshReviewInputForDispatch,
+  StoryOrchestratorBuilder,
+} from "@/execution";
 
 // ============================================================================
 // Test Helper: Mock Operations
@@ -1246,7 +1252,10 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
     const verifierRunCount = { n: 0 };
     let capturedCycle: any = null;
 
-    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    // Gate passes during validate so the revalidation short-circuit doesn't fire;
+    // this test asserts "verifier IS re-run when strategy maps to it", not gate-halt.
+    // Short-circuit behavior is covered by the dedicated test below.
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: true, findings: [] });
     const verOp = makeDeterministicOp("verifier", { success: false });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
@@ -1335,6 +1344,200 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
     }
+  });
+
+  test("AC-6: validate short-circuits on phase failure — verifier does not run on broken-gate code", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateRunCount = { n: 0 };
+    const verifierRunCount = { n: 0 };
+    let capturedCycle: any = null;
+
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "full-suite-gate") gateRunCount.n++;
+      if (op.name === "verifier") verifierRunCount.n++;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any) => {
+      capturedCycle = cycle;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [{ name: "s", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      if (capturedCycle) {
+        const beforeGate = gateRunCount.n;
+        const beforeVerifier = verifierRunCount.n;
+        await capturedCycle.validate(ctx, { mode: "full" });
+        // Gate runs during validate and fails.
+        expect(gateRunCount.n).toBeGreaterThan(beforeGate);
+        // Verifier MUST NOT run after a failing gate (spec §2C halt contract,
+        // mirrors the main loop's short-circuit; prevents verifier from judging
+        // broken-gate code, which was the bug in the 2026-05-27T05-06-41 run).
+        expect(verifierRunCount.n).toBe(beforeVerifier);
+      }
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("AC-7: post-rectification resume runs canonical phases skipped by short-circuit (e.g. adversarial-review)", async () => {
+    // Restores prior orchestrator behavior: after rectification resolves all findings,
+    // the canonical loop resumes from where it short-circuited so reviewers run on the
+    // fixed code. STRATEGY_TO_REVALIDATION_PHASES["full-suite-rectify"] intentionally
+    // excludes adversarial-review; without the resume, it never runs. See log
+    // 2026-05-27T05-06-41.jsonl line 521 — phasesSelected omitted adversarial.
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const opRuns: Record<string, number> = {};
+    const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "f", rule: "r", file: "f.ts" }] });
+    const verOp = makeDeterministicOp("verifier", { success: true });
+    const advOp = makeDeterministicOp("adversarial-review", { success: true, findings: [] });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      opRuns[op.name] = (opRuns[op.name] ?? 0) + 1;
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    // Simulate rectification resolving the gate: swap gateOp.execute to succeed
+    // during the validate sweep, then restore. After the swap, the cycle reports
+    // "resolved" so the post-rectification resume kicks in.
+    _storyOrchestratorDeps.runFixCycle = async (cycle: any, cycleCtx: any) => {
+      const origGateExecute = gateOp.execute;
+      (gateOp as any).execute = () => ({ success: true, findings: [] });
+      try {
+        await cycle.validate(cycleCtx, { mode: "full", strategiesRun: ["full-suite-rectify"] });
+      } finally {
+        (gateOp as any).execute = origGateExecute;
+      }
+      return { iterations: [{ strategyName: "full-suite-rectify" }], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    };
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new StoryOrchestratorBuilder()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addVerifier({ op: verOp, input: { code: "" } })
+        .addAdversarialReview({ op: advOp, input: { code: "" } })
+        .addRectification({ maxAttempts: 3, strategies: [{ name: "full-suite-rectify", appliesTo: () => true, fixOp: mockImplementerOp, buildInput: () => ({ code: "" }), maxAttempts: 1, coRun: "exclusive" as const }], abortOnIncreasingFailures: false })
+        .build(ctx);
+      await plan.run();
+
+      // Main loop short-circuited at gate, so adversarial never ran there.
+      // Rectification revalidation doesn't include adversarial in its set.
+      // Post-rectification resume MUST dispatch adversarial-review on the fixed code.
+      expect(opRuns["adversarial-review"] ?? 0).toBeGreaterThan(0);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+});
+
+// ============================================================================
+// refreshReviewInputForDispatch — re-prepare review inputs at dispatch time
+// ============================================================================
+
+describe("refreshReviewInputForDispatch — re-prepare review inputs at dispatch time (Bug A)", () => {
+  test("semantic-review input is refreshed with fresh stat/diff at dispatch", async () => {
+    
+    const origPrepare = _storyOrchestratorDeps.prepareSemanticReviewInput;
+    _storyOrchestratorDeps.prepareSemanticReviewInput = mock(async () => ({
+      effectiveRef: "fresh-ref",
+      stat: "src/foo.ts | 5 ++++-",
+      diff: "diff content",
+      excludePatterns: ["test/**"],
+    })) as typeof _storyOrchestratorDeps.prepareSemanticReviewInput;
+
+    try {
+      const staleInput = {
+        workdir: "/tmp/repo",
+        story: { id: "US-x" } as any,
+        semanticConfig: { diffMode: "ref" } as any,
+        mode: "ref" as const,
+        stat: "",
+        diff: undefined,
+        storyGitRef: "stale-ref",
+        excludePatterns: [],
+        _refresh: {
+          projectDir: "/tmp/repo",
+          storyId: "US-x",
+          storyGitRef: "stale-ref",
+        },
+      };
+      const refreshed = (await refreshReviewInputForDispatch("semantic-review", staleInput)) as any;
+      expect(refreshed.stat).toBe("src/foo.ts | 5 ++++-");
+      expect(refreshed.diff).toBe("diff content");
+      expect(refreshed.excludePatterns).toEqual(["test/**"]);
+      expect(refreshed.storyGitRef).toBe("fresh-ref");
+    } finally {
+      _storyOrchestratorDeps.prepareSemanticReviewInput = origPrepare;
+    }
+  });
+
+  test("adversarial-review input is refreshed with fresh stat/diff/testInventory at dispatch", async () => {
+    
+    const origPrepare = _storyOrchestratorDeps.prepareAdversarialReviewInput;
+    _storyOrchestratorDeps.prepareAdversarialReviewInput = mock(async () => ({
+      effectiveRef: "fresh-ref",
+      stat: "src/foo.ts | 5",
+      diff: "diff",
+      testInventory: { tests: 3 } as any,
+      excludePatterns: ["test/**"],
+      testGlobs: ["test/**/*.test.ts"],
+      refExcludePatterns: [":(exclude)test/**"],
+    })) as typeof _storyOrchestratorDeps.prepareAdversarialReviewInput;
+
+    try {
+      const refreshed = (await refreshReviewInputForDispatch("adversarial-review", {
+        workdir: "/tmp/repo",
+        story: { id: "US-x" } as any,
+        adversarialConfig: { diffMode: "ref" } as any,
+        mode: "ref" as const,
+        stat: "",
+        diff: undefined,
+        _refresh: { projectDir: "/tmp/repo", storyId: "US-x", storyGitRef: undefined },
+      })) as any;
+      expect(refreshed.stat).toBe("src/foo.ts | 5");
+      expect(refreshed.testInventory).toEqual({ tests: 3 });
+      expect(refreshed.testGlobs).toEqual(["test/**/*.test.ts"]);
+    } finally {
+      _storyOrchestratorDeps.prepareAdversarialReviewInput = origPrepare;
+    }
+  });
+
+  test("non-review phases pass through unchanged", async () => {
+    
+    const input = { foo: "bar" };
+    const result = await refreshReviewInputForDispatch("full-suite-gate", input);
+    expect(result).toBe(input);
+  });
+
+  test("input without _refresh payload passes through unchanged (backward compat)", async () => {
+    
+    const input = { workdir: "/tmp", semanticConfig: {} };
+    const result = await refreshReviewInputForDispatch("semantic-review", input);
+    expect(result).toBe(input);
   });
 });
 

@@ -474,24 +474,23 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
 
     if (capturedCycle === null || capturedCtx === null) return;
 
-    // First validate call: gate runs → fails → shouldSkipPhaseForRectification sees no prior
-    // verifier pass → gate findings included. Then verifier runs → passes → populates phaseOutputs.
+    // First validate call: gate PASSES (simulating fix landed) → loop proceeds to verifier
+    // → verifier passes → populates phaseOutputs[verifier]. Under the new halt contract
+    // (PR #1127 + revalidation short-circuit), verifier only judges green-gate code, so
+    // this iteration MUST have gate=passing for the carve-out to establish.
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
-      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      if (op.name === "full-suite-gate") return { success: true, findings: [] };
       if (op.name === "verifier") return { success: true, findings: [] };
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    const firstCallFindings = await (capturedCycle as FixCycle<Finding>).validate(
+    await (capturedCycle as FixCycle<Finding>).validate(
       capturedCtx as FixCycleContext,
       { mode: "full" },
     );
-    // First call: verifier hadn't pre-passed in phaseOutputs → gate findings included
-    const firstHasTestRunner = firstCallFindings.some((f) => f.source === "test-runner");
-    expect(firstHasTestRunner).toBe(true);
 
-    // Second validate call: now phaseOutputs[verifier] has the prior passing result →
-    // shouldSkipPhaseForRectification fires on gate → gate findings excluded.
+    // Second validate call: gate regresses to failing. phaseOutputs[verifier] still holds the
+    // prior passing result → shouldSkipPhaseForRectification fires on gate → gate findings excluded.
     let gateCalledSecondTime = false;
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "full-suite-gate") {
@@ -511,5 +510,44 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
     // But gate findings are excluded because verifier passed in the previous iteration
     const secondHasTestRunner = secondCallFindings.some((f) => f.source === "test-runner");
     expect(secondHasTestRunner).toBe(false);
+  });
+
+  test("AC1.5: gate fails in validate with no prior verifier pass — findings still collected before short-circuit", async () => {
+    // Companion to AC1.4: confirms that when verifier has NEVER passed (no SSOT
+    // carve-out), gate findings are still pushed into the findings array even
+    // though the new revalidation short-circuit breaks the sweep. The cycle
+    // needs those findings to drive the next fix iteration.
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    let capturedCtx: FixCycleContext | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>, cycleCtx: FixCycleContext) => {
+      capturedCycle = cycle;
+      capturedCtx = cycleCtx;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as FixCycleExitReason, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const ctx = makeCtx();
+    const plan = makePlanWithGateAndVerifier(ctx);
+    await plan.run();
+    if (capturedCycle === null || capturedCtx === null) return;
+
+    // Fresh validate with gate failing — phaseOutputs has no prior verifier pass.
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "full-suite-gate") return { success: false, findings: [TEST_RUNNER_FINDING] };
+      if (op.name === "verifier") return { success: true, findings: [] };
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const findings = await (capturedCycle as FixCycle<Finding>).validate(
+      capturedCtx as FixCycleContext,
+      { mode: "full" },
+    );
+    // Short-circuit fires AFTER pushing the gate finding into the findings array,
+    // so the cycle can still drive the next fix iteration.
+    expect(findings.some((f) => f.source === "test-runner")).toBe(true);
   });
 });

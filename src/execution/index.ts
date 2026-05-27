@@ -41,6 +41,7 @@ export {
   _storyOrchestratorDeps,
   phasesToRevalidate,
   formatPhaseResultMessage,
+  refreshReviewInputForDispatch,
   type OrchestratorSlot,
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,

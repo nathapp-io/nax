@@ -36,6 +36,24 @@ export interface SemanticReviewInput {
   excludePatterns?: string[];
   featureCtxBlock?: string;
   blockingThreshold?: "error" | "warning" | "info";
+  /**
+   * Optional refresh payload — when present, the orchestrator re-runs
+   * `prepareSemanticReviewInput` at dispatch time and overlays the fresh
+   * `stat`/`diff`/`excludePatterns`/`effectiveRef` onto this input.
+   *
+   * Required because plan-build happens BEFORE test-writer/implementer
+   * touch files, so the diff captured at plan-build is stale (often
+   * empty). Without dispatch-time refresh, the reviewer LLM sees no
+   * changes and silently fail-opens.
+   */
+  _refresh?: {
+    projectDir?: string;
+    storyId: string;
+    storyGitRef: string | undefined;
+    config?: import("../config/schema").NaxConfig;
+    naxIgnoreIndex?: import("../utils/path-filters").NaxIgnoreIndex;
+    resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
+  };
 }
 
 type RepromptInfo = {

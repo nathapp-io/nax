@@ -136,14 +136,20 @@ describe("assemblePlanInputsFromCtx — review + rectification wiring", () => {
     expect(inputs.semanticReview!.diff).toBeUndefined();
   });
 
-  test("semantic review slot is omitted when no changes detected", async () => {
-    _diffUtilsDeps.spawn = makeSpawnSequence([""]); // empty stat
+  test("semantic review slot is registered with _refresh payload even when plan-build diff is empty", async () => {
+    // Bug A regression: plan-build runs BEFORE test-writer/implementer, so the diff
+    // is naturally empty at this moment. Previously the slot was dropped permanently;
+    // now it stays registered and carries `_refresh` so the orchestrator re-prepares
+    // stat/diff at dispatch time (after the story has produced real changes).
+    _diffUtilsDeps.spawn = makeSpawnSequence([""]); // empty stat at plan-build
     const ctx = makeCtx({
       review: { ...DEFAULT_CONFIG.review, enabled: true, checks: ["semantic"] },
     });
     ctx.storyGitRef = "abc123";
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.semanticReview).toBeUndefined();
+    expect(inputs.semanticReview).toBeDefined();
+    expect(inputs.semanticReview!._refresh).toBeDefined();
+    expect(inputs.semanticReview!._refresh!.storyGitRef).toBe("abc123");
   });
 
   test("adversarial review input carries stat, testGlobs, refExcludePatterns", async () => {

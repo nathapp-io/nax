@@ -306,6 +306,13 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     !!ctx.config.review.semantic;
   const semanticReviewInput: SemanticReviewInput | undefined = semanticEnabled
     ? await (async (): Promise<SemanticReviewInput | undefined> => {
+        // Plan-build's diff is stale: test-writer/implementer haven't run yet, so
+        // `stat` is typically empty at this point. We still call prepare for the
+        // initial snapshot, but DO NOT drop the slot on `skipReason` — the
+        // orchestrator's runPhase re-runs prepare at dispatch time (see `_refresh`
+        // payload below) using the post-implementer diff. Dropping here would
+        // permanently strip the review from the plan even when the story later
+        // produces real changes (issue: US-002 in 2026-05-27T05-06-41.jsonl).
         const prepared = await prepareSemanticReviewInput({
           workdir: ctx.workdir,
           projectDir: ctx.projectDir,
@@ -317,9 +324,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
           semanticConfig: ctx.config.review!.semantic!,
         });
-        // Skip slot entirely when stat is empty / no ref — orchestrator will see no
-        // semantic-review phase and mark the check as not-applicable.
-        if (prepared.skipReason) return undefined;
         return {
           workdir: ctx.workdir,
           story,
@@ -335,6 +339,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           priorSemanticIterations: ctx.priorSemanticIterations,
           // biome-ignore lint/style/noNonNullAssertion: semanticEnabled guards presence
           blockingThreshold: ctx.config.review!.blockingThreshold,
+          _refresh: {
+            projectDir: ctx.projectDir,
+            storyId: story.id,
+            storyGitRef: ctx.storyGitRef,
+            config: ctx.config,
+            naxIgnoreIndex: ctx.naxIgnoreIndex,
+            resolvedTestPatterns,
+          },
         };
       })()
     : undefined;
@@ -345,6 +357,8 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     !!ctx.config.review.adversarial;
   const adversarialReviewInput: AdversarialReviewInput | undefined = adversarialEnabled
     ? await (async (): Promise<AdversarialReviewInput | undefined> => {
+        // Same rationale as semanticReviewInput above: plan-build diff is stale;
+        // orchestrator's runPhase re-prepares at dispatch via `_refresh`.
         const prepared = await prepareAdversarialReviewInput({
           workdir: ctx.workdir,
           projectDir: ctx.projectDir,
@@ -356,7 +370,6 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
           adversarialConfig: ctx.config.review!.adversarial!,
         });
-        if (prepared.skipReason) return undefined;
         return {
           workdir: ctx.workdir,
           story,
@@ -375,6 +388,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           priorAdversarialIterations: ctx.priorAdversarialIterations,
           // biome-ignore lint/style/noNonNullAssertion: adversarialEnabled guards presence
           blockingThreshold: ctx.config.review!.blockingThreshold,
+          _refresh: {
+            projectDir: ctx.projectDir,
+            storyId: story.id,
+            storyGitRef: ctx.storyGitRef,
+            config: ctx.config,
+            naxIgnoreIndex: ctx.naxIgnoreIndex,
+            resolvedTestPatterns,
+          },
         };
       })()
     : undefined;
