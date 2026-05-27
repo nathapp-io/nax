@@ -9,7 +9,7 @@ import { describe, expect, it } from "bun:test";
 import { _executionDeps, executionStage, routeTddFailure } from "../../../src/pipeline/stages/execution";
 import type { FailureCategory } from "../../../src/tdd";
 import { NaxError } from "../../../src/errors";
-import { makeNaxConfig } from "../../helpers";
+import { makeAgentAdapter, makeNaxConfig } from "../../helpers";
 import { makeTestContext, makeTestStory } from "../../helpers/pipeline-context";
 import type { PipelineContext } from "../../../src/pipeline/types";
 
@@ -205,8 +205,7 @@ describe("executionStage.execute — runtime-crash on thrown infra errors", () =
   // Returns a restore function — call it in the test's own finally block.
   function stubDepsWithPlan(planRun: () => Promise<never>): () => void {
     const saved = { ..._executionDeps };
-    _executionDeps.getAgent = () =>
-      ({ name: "claude", capabilities: { supportedTiers: ["fast"] } }) as never;
+    _executionDeps.getAgent = () => makeAgentAdapter({ name: "claude" }) as never;
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.captureGitRef = async () => "HEAD";
     _executionDeps.assemblePlanInputsFromCtx = async () => ({}) as never;
