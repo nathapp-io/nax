@@ -152,19 +152,27 @@ afterEach(async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC2.5: Integration — semantic findings route to autofix-implementer
+// AC2.5: Integration — gate findings route directly to rectification
+// (old verifier-as-SSOT carve-out removed: gate failure halts the main loop
+//  before verifier/semantic-review; those phases only run after rectification)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with semantic findings", () => {
-  test("AC2.5: gate has 6 test-runner findings, verifier passes, semantic has 3 → cycle gets only 3 semantic findings", async () => {
+describe("AC2.5: rectification routing — gate failure halts loop, gate findings enter cycle", () => {
+  test("AC2.5: gate has 6 test-runner findings → loop halts before verifier/semantic, cycle gets 6 gate findings", async () => {
+    // New contract: gate failure halts the main loop. Verifier and semantic-review
+    // do NOT run in the initial pass — they only run in phasesToRevalidate after
+    // rectification drives the gate back to green. The initial cycle findings
+    // are therefore the gate's test-runner findings, not semantic findings.
     const gateFindings = makeTestRunnerFindings(6);
-    const semanticFindings = makeSemanticFindings(3);
+
+    let verifierCalled = false;
+    let semanticCalled = false;
 
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
       if (op.name === "implementer") return { success: true };
       if (op.name === "full-suite-gate") return { success: false, findings: gateFindings };
-      if (op.name === "verifier") return { success: true, findings: [] };
-      if (op.name === "semantic-review") return { success: false, passed: false, findings: semanticFindings };
+      if (op.name === "verifier") { verifierCalled = true; return { success: true, findings: [] }; }
+      if (op.name === "semantic-review") { semanticCalled = true; return { success: false, passed: false, findings: [] }; }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
@@ -180,7 +188,6 @@ describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with seman
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
     const story = makeStory({ id: "US-routing" });
-    const config = makeNaxConfig();
 
     const ctx = makeCtx();
     const plan = new StoryOrchestratorBuilder()
@@ -200,37 +207,38 @@ describe("AC2.5: rectification routing — verifier-as-SSOT carve-out with seman
 
     await plan.run();
 
-    // runFixCycle must have been called (there are semantic findings)
+    // Gate halts the loop — verifier and semantic-review must NOT have run.
+    expect(verifierCalled).toBe(false);
+    expect(semanticCalled).toBe(false);
+
+    // runFixCycle must have been called (gate findings are present)
     expect(capturedCycle).not.toBeNull();
 
     const cycle = capturedCycle as unknown as FixCycle<Finding>;
 
-    // AC2.5a: exactly 3 findings (semantic only, not the 6 gate findings)
-    expect(cycle.findings).toHaveLength(3);
+    // AC2.5a: exactly 6 findings (gate findings, not semantic)
+    expect(cycle.findings).toHaveLength(6);
 
-    // AC2.5b: no test-runner findings in the cycle
-    const hasTestRunnerFinding = cycle.findings.some((f) => f.source === "test-runner");
-    expect(hasTestRunnerFinding).toBe(false);
+    // AC2.5b: all findings are from test-runner (gate output)
+    const allTestRunner = cycle.findings.every((f) => f.source === "test-runner");
+    expect(allTestRunner).toBe(true);
 
-    // AC2.5c: all findings are from semantic-review
-    const allSemantic = cycle.findings.every((f) => f.source === "semantic-review");
-    expect(allSemantic).toBe(true);
-
-    // AC2.5d: the first matching strategy for these findings is autofix-implementer, not full-suite-rectify
+    // AC2.5c: the first matching strategy for test-runner findings is full-suite-rectify
     const matchingStrategies = cycle.strategies.filter((s) =>
       cycle.findings.some((f) => s.appliesTo(f)),
     );
     expect(matchingStrategies.length).toBeGreaterThan(0);
-    expect(matchingStrategies[0]?.name).toBe("autofix-implementer");
+    expect(matchingStrategies[0]?.name).toBe("full-suite-rectify");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3.8: verifier is dispatched exactly once (initial run) — never during validate
+// AC3.8: verifier is dispatched during initial run and again during validate
+//        (new: autofix-implementer maps to verifier in phasesToRevalidate)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC3.8: verifier op dispatched exactly once — never re-run during validate", () => {
-  test("AC3.8: semantic findings only — verifier called during initial run, never during capturedCycle.validate", async () => {
+describe("AC3.8: verifier op dispatched during initial run and re-dispatched during validate for code-editing strategies", () => {
+  test("AC3.8: semantic findings only — verifier called during initial run, also called during capturedCycle.validate with autofix-implementer", async () => {
     const semanticFindings = makeSemanticFindings(3);
 
     // Track all callOp invocations (phase name → call count)
@@ -295,8 +303,9 @@ describe("AC3.8: verifier op dispatched exactly once — never re-run during val
       strategiesRun: ["autofix-implementer"],
     });
 
-    // Verifier must NOT have been called during validate
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    // New contract (Task 2): verifier IS re-dispatched during validate when autofix-implementer ran.
+    // autofix-implementer is a code-editing strategy → its revalidation set includes verifier.
+    expect(validateCallCounts["verifier"] ?? 0).toBeGreaterThan(0);
 
     // Semantic review should have been re-run (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
@@ -304,11 +313,11 @@ describe("AC3.8: verifier op dispatched exactly once — never re-run during val
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3.9: after autofix-implementer, full-suite-gate + semantic-review re-dispatched; verifier not
+// AC3.9: after autofix-implementer, full-suite-gate + verifier + semantic-review re-dispatched
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semantic-review re-dispatched; verifier excluded", () => {
-  test("AC3.9: validate with strategiesRun=['autofix-implementer'] → full-suite-gate + semantic-review called, verifier not called", async () => {
+describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semantic-review re-dispatched; verifier also re-dispatched (new contract)", () => {
+  test("AC3.9: validate with strategiesRun=['autofix-implementer'] → full-suite-gate + semantic-review + verifier called", async () => {
     const semanticFindings = makeSemanticFindings(2);
 
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
@@ -372,7 +381,8 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     // semantic-review MUST be re-dispatched (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
 
-    // verifier must NOT be re-dispatched
-    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
+    // New contract (Task 2): verifier MUST be re-dispatched — autofix-implementer is a code-editing
+    // strategy whose revalidation set includes verifier so it can re-judge the TDD verdict.
+    expect(validateCallCounts["verifier"] ?? 0).toBeGreaterThan(0);
   });
 });
