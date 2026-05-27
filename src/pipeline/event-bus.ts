@@ -18,19 +18,6 @@
  */
 
 import { getLogger } from "../logger";
-// VerifyResult inlined here after orchestrator-types.ts deletion (issue #1116).
-// VerifyCompletedEvent is defined but not yet emitted — kept for future use.
-interface VerifyResult {
-  success: boolean;
-  status: string;
-  storyId: string;
-  passCount: number;
-  failCount: number;
-  durationMs: number;
-  countsTowardEscalation: boolean;
-  rawOutput?: string;
-}
-
 // ---------------------------------------------------------------------------
 // Event types
 // ---------------------------------------------------------------------------
@@ -80,38 +67,6 @@ export interface StoryFailedEvent {
   /** Optional: passed by executor for interaction subscriber */
   feature?: string;
   attempts?: number;
-}
-
-export interface VerifyCompletedEvent {
-  type: "verify:completed";
-  storyId: string;
-  result: VerifyResult;
-}
-
-export interface RectifyStartedEvent {
-  type: "rectify:started";
-  storyId: string;
-  attempt: number;
-  testOutput: string;
-}
-
-export interface RectifyCompletedEvent {
-  type: "rectify:completed";
-  storyId: string;
-  attempt: number;
-  fixed: boolean;
-}
-
-export interface AutofixStartedEvent {
-  type: "autofix:started";
-  storyId: string;
-  command: string;
-}
-
-export interface AutofixCompletedEvent {
-  type: "autofix:completed";
-  storyId: string;
-  fixed: boolean;
 }
 
 export interface RegressionDetectedEvent {
@@ -182,11 +137,6 @@ export type PipelineEvent =
   | StoryStartedEvent
   | StoryCompletedEvent
   | StoryFailedEvent
-  | VerifyCompletedEvent
-  | RectifyStartedEvent
-  | RectifyCompletedEvent
-  | AutofixStartedEvent
-  | AutofixCompletedEvent
   | RegressionDetectedEvent
   | RunCompletedEvent
   | HumanReviewRequestedEvent

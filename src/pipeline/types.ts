@@ -225,12 +225,6 @@ export interface PipelineContext extends DispatchContext {
   /** Accumulated cost across all prior escalation attempts (BUG-067) */
   accumulatedAttemptCost?: number;
   /**
-   * Number of agent-swap hops completed for this story (Phase 5.5).
-   * Incremented by executionStage each time rebuildForSwap triggers a new agent.
-   * Checked against config.agent.fallback.maxHopsPerStory to cap swaps.
-   */
-  agentSwapCount?: number;
-  /**
    * Ordered log of agent-swap hops for this story (AC-41).
    * Each entry captures the agents involved, the failure that triggered the swap,
    * and the 1-indexed hop number. Surfaced in StoryMetrics.fallback.hops.

@@ -14,6 +14,7 @@ import {
   _postRunDeps,
 } from "../../../src/execution/post-run";
 import type { InspectionOptions } from "../../../src/execution/post-run";
+import { EXHAUSTED_EXIT_REASONS } from "../../../src/execution/story-orchestrator";
 import type { StoryOrchestratorResult } from "../../../src/execution/story-orchestrator";
 import type { Finding } from "../../../src/findings/types";
 import {
@@ -128,6 +129,96 @@ describe("deriveTddFailureCategory", () => {
       [fullSuiteGateOp.name]: { success: false, passed: false, findings: [] },
       [verifierOp.name]: { success: true },
     });
+    expect(result).toBeUndefined();
+  });
+
+  // ─── US-001: full-suite-gate-exhausted derivation ─────────────────────────
+
+  test("returns full-suite-gate-exhausted when rectification exhausted with max-attempts-total and test-runner finding", () => {
+    // AC-001-1
+    const unfixedFindings: Finding[] = [
+      { source: "test-runner", severity: "error", category: "test-failure", message: "failing test" },
+    ];
+    const result = deriveTddFailureCategory(
+      { rectification: { exitReason: "max-attempts-total", success: false } },
+      unfixedFindings,
+    );
+    expect(result).toBe("full-suite-gate-exhausted");
+  });
+
+  test("returns full-suite-gate-exhausted for every member of EXHAUSTED_EXIT_REASONS with a test-runner finding", () => {
+    // AC-001-2: confirms all members of EXHAUSTED_EXIT_REASONS trigger the branch
+    for (const exitReason of EXHAUSTED_EXIT_REASONS) {
+      const unfixedFindings: Finding[] = [
+        { source: "test-runner", severity: "error", category: "test-failure", message: "failing" },
+      ];
+      const result = deriveTddFailureCategory(
+        { rectification: { exitReason, success: false } },
+        unfixedFindings,
+      );
+      expect(result).toBe("full-suite-gate-exhausted");
+    }
+  });
+
+  test("does NOT return full-suite-gate-exhausted when rectification exitReason is resolved", () => {
+    // AC-001-3: non-exhausted exit reasons must not trigger the branch
+    const unfixedFindings: Finding[] = [
+      { source: "test-runner", severity: "error", category: "test-failure", message: "failing" },
+    ];
+    const result = deriveTddFailureCategory(
+      { rectification: { exitReason: "resolved", success: true } },
+      unfixedFindings,
+    );
+    expect(result).not.toBe("full-suite-gate-exhausted");
+  });
+
+  test("does NOT return full-suite-gate-exhausted when unfixedFindings has only lint source", () => {
+    // AC-001-4: lint-only findings must not trigger the branch
+    const unfixedFindings: Finding[] = [
+      { source: "lint", severity: "warning", category: "style", message: "lint issue" },
+    ];
+    const result = deriveTddFailureCategory(
+      { rectification: { exitReason: "max-attempts-total", success: false } },
+      unfixedFindings,
+    );
+    expect(result).not.toBe("full-suite-gate-exhausted");
+  });
+
+  test("verifier-SSOT short-circuit wins over full-suite-gate-exhausted when verifier passed", () => {
+    // AC-001-5: verifier pass still produces undefined even with exhausted rectification
+    const unfixedFindings: Finding[] = [
+      { source: "test-runner", severity: "error", category: "test-failure", message: "failing" },
+    ];
+    const result = deriveTddFailureCategory(
+      {
+        [verifierOp.name]: { success: true },
+        rectification: { exitReason: "max-attempts-total", success: false },
+      },
+      unfixedFindings,
+    );
+    expect(result).toBeUndefined();
+  });
+
+  test("does NOT return full-suite-gate-exhausted when unfixedFindings omitted (backwards compat)", () => {
+    // AC-001-6: single-arg call must not throw and must not return the new category
+    let threw = false;
+    let result: string | undefined;
+    try {
+      result = deriveTddFailureCategory({
+        rectification: { exitReason: "max-attempts-total", success: false },
+      });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+    expect(result).not.toBe("full-suite-gate-exhausted");
+  });
+
+  test("returns undefined for empty phaseOutputs regardless of unfixedFindings", () => {
+    // AC-001-7: no false-positive on completely empty outputs
+    const result = deriveTddFailureCategory({}, [
+      { source: "test-runner", severity: "error", category: "test-failure", message: "failing" },
+    ]);
     expect(result).toBeUndefined();
   });
 });
