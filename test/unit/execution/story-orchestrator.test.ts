@@ -32,7 +32,7 @@ import type { NaxRuntime } from "@/runtime";
 import type { CompleteResult, TurnResult } from "@/agents/types";
 import type { ReviewCheckResult, Finding } from "@/findings";
 import { NaxError } from "@/errors";
-import { _storyOrchestratorDeps } from "@/execution";
+import { _storyOrchestratorDeps, phasesToRevalidate, formatPhaseResultMessage } from "@/execution";
 
 // ============================================================================
 // Test Helper: Mock Operations
@@ -789,7 +789,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
 
-  test("when rectification configured: gate failure does NOT halt verifier (both run)", async () => {
+  test("when rectification configured: gate failure halts before verifier (verifier judges only on green code)", async () => {
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -802,7 +802,6 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
       if (op.name === "verifier") verifierRan = true;
       if (op.kind === "deterministic") return op.execute(input, _ctx);
-      // Run ops (implementer): return success so they don't short-circuit before gate/verifier
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
     _storyOrchestratorDeps.runFixCycle = async () => ({ iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 });
@@ -816,17 +815,17 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
       await plan.run();
-      expect(verifierRan).toBe(true);
+      // New contract: verifier MUST NOT run on broken-gate code when rectification is the responsible loop.
+      expect(verifierRan).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
     }
   });
 
-  test("when rectification NOT configured: gate failure still lets verifier run (verifier is SSOT)", async () => {
-    // Issue: verifier must judge after a gate failure, regardless of rectification —
-    // pre-existing/unrelated failures should be the verifier's call, not a hard halt.
-    // Rectification only adds an extra consume-findings loop on top of this.
+  test("when rectification NOT configured: gate failure halts plan (no verifier called)", async () => {
+    // New contract: gate failure halts the plan — no verifier call on broken code.
+    // Without rectification, escalation uses deriveTddFailureCategory("tests-failing").
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
@@ -849,25 +848,28 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       await plan.run();
-      expect(verifierRan).toBe(true);
+      // New contract: no rectification → gate halt → verifier not reached.
+      expect(verifierRan).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
   });
 
-  test("verifier-passed SSOT: gate-only failure does NOT fail the plan (no rollback)", async () => {
-    // When the verifier ran and judged the story OK, the full-suite gate's failure
-    // represents pre-existing/unrelated regressions. The aggregated planResult.success
-    // must follow the verifier's verdict; otherwise post-run rolls back over failures
-    // this story did not cause.
+  test("gate-only failure (no rectification) halts before verifier and fails the plan — escalation handles unrelated-regression case", async () => {
+    // Behaviour change: the old verifier-as-SSOT escape hatch (gate fails but
+    // verifier judges OK → pass) is now handled at the escalation boundary via
+    // deriveTddFailureCategory (returns "tests-failing" → escalate). In-plan,
+    // gate failure halts immediately when no rectification is configured.
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
+    let verifierRan = false;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "verifier") verifierRan = true;
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
@@ -880,7 +882,8 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
-      expect(result.success).toBe(true);
+      expect(verifierRan).toBe(false);
+      expect(result.success).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
@@ -1231,11 +1234,11 @@ describe("AC3 + AC5: gate-internal rectification — finding aggregation and ful
   });
 });
 
-describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode skips gate", () => {
+describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode skips gate only", () => {
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
 
-  test("AC-4: validate re-runs gate (mode=full) but never re-runs verifier (one-shot TDD isolation)", async () => {
+  test("AC-4: validate re-runs gate (mode=full) and re-runs verifier when strategy maps to it (new: previously hard-stripped)", async () => {
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -1275,10 +1278,9 @@ describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode 
         await capturedCycle.validate(ctx, { mode: "full" });
         // Gate still runs during validate (keeps phaseOutputs current for applyPostRunInspection).
         expect(gateRunCount.n).toBeGreaterThan(beforeGate);
-        // Verifier is NEVER re-run inside rectification (Patch 3 / Defect C): its TDD-isolation
-        // job is one-shot, anchored to the story-start git ref. The routing layer partitions
-        // source vs. test edits, so re-dispatching the verifier asks a question already answered.
-        expect(verifierRunCount.n).toBe(beforeVerifier);
+        // New contract (Task 2): verifier IS re-run when the strategy maps to it or is unknown.
+        // Unknown strategy "s" → fallback to all phases (conservative default) → verifier included.
+        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier);
       }
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
@@ -1324,9 +1326,194 @@ describe("AC-4 + AC-5: validate callback re-runs gate (not verifier), lite-mode 
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
         await capturedCycle.validate(ctx, { mode: "lite" });
-        expect(gateRunCount.n).toBe(beforeGate);     // lite mode: gate skipped
-        expect(verifierRunCount.n).toBe(beforeVerifier); // Patch 3: verifier never re-run
+        expect(gateRunCount.n).toBe(beforeGate);       // lite mode: gate skipped
+        // New contract (Task 2): verifier re-runs even in lite mode — lite only exempts the gate.
+        // Unknown strategy "s" → fallback to all phases → verifier included; gate guard fires only on "full-suite-gate".
+        expect(verifierRunCount.n).toBeGreaterThan(beforeVerifier);
       }
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+});
+
+// ============================================================================
+// phasesToRevalidate — verifier inclusion after fix strategies (Task 2)
+// ============================================================================
+
+describe("phasesToRevalidate — verifier inclusion after fix strategies", () => {
+  // Helper to construct an InternalPhase stub — only `kind` matters for filtering.
+  const phase = (kind: string) =>
+    ({ kind, slot: { op: { name: kind } as any, input: {} } }) as any;
+
+  const allPhases = [
+    phase("full-suite-gate"),
+    phase("verifier"),
+    phase("lint-check"),
+    phase("typecheck-check"),
+    phase("semantic-review"),
+    phase("adversarial-review"),
+  ];
+
+  test("full-suite-rectify strategy re-runs verifier (previously hard-stripped)", () => {
+    const result = phasesToRevalidate(["full-suite-rectify"], allPhases);
+    const kinds = result.map((p: any) => p.kind);
+    expect(kinds).toContain("verifier");
+    expect(kinds).toContain("full-suite-gate");
+  });
+
+  test("autofix-implementer strategy re-runs verifier", () => {
+    const result = phasesToRevalidate(["autofix-implementer"], allPhases);
+    expect(result.map((p: any) => p.kind)).toContain("verifier");
+  });
+
+  test("autofix-test-writer strategy re-runs verifier", () => {
+    const result = phasesToRevalidate(["autofix-test-writer"], allPhases);
+    expect(result.map((p: any) => p.kind)).toContain("verifier");
+  });
+
+  test("mechanical-lintfix does NOT re-run verifier (style-only, no semantic regression risk)", () => {
+    const result = phasesToRevalidate(["mechanical-lintfix"], allPhases);
+    expect(result.map((p: any) => p.kind)).not.toContain("verifier");
+    expect(result.map((p: any) => p.kind)).toEqual(["lint-check"]);
+  });
+
+  test("unknown strategy falls back to all phases including verifier", () => {
+    const result = phasesToRevalidate(["plugin-unknown-strategy"], allPhases);
+    expect(result.map((p: any) => p.kind)).toContain("verifier");
+  });
+
+  test("empty strategiesRun falls back to all phases including verifier", () => {
+    const result = phasesToRevalidate([], allPhases);
+    expect(result.map((p: any) => p.kind)).toContain("verifier");
+  });
+
+  test("undefined strategiesRun falls back to all phases including verifier", () => {
+    const result = phasesToRevalidate(undefined, allPhases);
+    expect(result.map((p: any) => p.kind)).toContain("verifier");
+  });
+});
+
+// ============================================================================
+// formatPhaseResultMessage — phase log wording (Task 4)
+// ============================================================================
+
+describe("formatPhaseResultMessage — phase log wording", () => {
+  test("greenfield-gate success → 'pre-existing tests detected' (not 'Phase passed')", () => {
+    const msg = formatPhaseResultMessage("greenfield-gate", true);
+    expect(msg).toContain("pre-existing tests detected");
+    expect(msg).toContain("not greenfield");
+    expect(msg).not.toContain("Phase passed");
+  });
+
+  test("greenfield-gate failure → 'no pre-existing tests, greenfield run'", () => {
+    const msg = formatPhaseResultMessage("greenfield-gate", false);
+    expect(msg).toContain("no pre-existing tests");
+    expect(msg).toContain("greenfield run");
+    expect(msg).not.toContain("Phase failed");
+  });
+
+  test("other phases use generic 'Phase passed: X' wording", () => {
+    expect(formatPhaseResultMessage("full-suite-gate", true)).toBe("Phase passed: full-suite-gate");
+    expect(formatPhaseResultMessage("verifier", true)).toBe("Phase passed: verifier");
+    expect(formatPhaseResultMessage("lint-check", true)).toBe("Phase passed: lint-check");
+  });
+
+  test("other phases use generic 'Phase failed: X' wording", () => {
+    expect(formatPhaseResultMessage("full-suite-gate", false)).toBe("Phase failed: full-suite-gate");
+    expect(formatPhaseResultMessage("verifier", false)).toBe("Phase failed: verifier");
+  });
+});
+
+// ============================================================================
+// rectification phase envelope (Task 3)
+// ============================================================================
+
+describe("rectification phase envelope", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("rectification 'resolved' exit produces { success: true, exitReason: 'resolved', ... }", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async () => ({
+      iterations: [{ iterationNum: 1, findingsBefore: 1, fixesApplied: [], findingsAfter: 0, outcome: "resolved" as const, startedAt: 0, finishedAt: 0 }],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0,
+    });
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      const result = await plan.run();
+
+      // Contract: rectification phase envelope must include explicit success
+      // matching the cycle's exit reason. The "neither 'success' nor 'passed'"
+      // warning is suppressed as a free consequence.
+      const rectOut = result.phaseOutputs?.rectification as Record<string, unknown> | undefined;
+      expect(rectOut).toBeDefined();
+      expect(rectOut?.success).toBe(true);
+      expect(rectOut?.exitReason).toBe("resolved");
+      expect(rectOut?.iterationCount).toBe(1);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("rectification 'max-attempts-total' exit produces { success: false, exitReason: 'max-attempts-total', ... }", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    });
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      const result = await plan.run();
+
+      const rectOut = result.phaseOutputs?.rectification as Record<string, unknown> | undefined;
+      expect(rectOut?.success).toBe(false);
+      expect(rectOut?.exitReason).toBe("max-attempts-total");
+      expect(rectOut?.finalFindingsCount).toBe(1);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
