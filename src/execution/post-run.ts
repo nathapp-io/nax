@@ -217,7 +217,6 @@ export async function applyPostRunInspection(
     ...(capturedTokenUsage ? { tokenUsage: capturedTokenUsage } : {}),
   };
   ctx.agentResult = agentResult;
-  ctx.agentSwapCount = 0;
 
   // Propagate full-suite gate result so verify stage can skip redundant run (BUG-054)
   const fullSuiteGateOutput = planResult.phaseOutputs[fullSuiteGateOp.name] as { passed?: boolean } | undefined;
