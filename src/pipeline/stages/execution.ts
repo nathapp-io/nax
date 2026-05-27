@@ -11,6 +11,7 @@
 
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
+import { NaxError } from "../../errors";
 import {
   buildPlanForStrategy,
   isThreeSessionStrategy,
@@ -28,6 +29,13 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
 export { resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
+
+/**
+ * NaxError codes that indicate agent/infrastructure failure rather than user intent.
+ * CALL_OP_ABORTED is intentionally excluded — user-initiated (Ctrl+C).
+ * CALL_OP_INVALID_FALLBACK / CALL_OP_INVALID_TIMEOUT are programmer errors, not crashes.
+ */
+const RUNTIME_CRASH_CODES = new Set(["CALL_OP_NO_OUTPUT", "CALL_OP_MAX_RETRIES"]);
 
 export const executionStage: PipelineStage = {
   name: "execution",
@@ -100,11 +108,24 @@ export const executionStage: PipelineStage = {
     const initialRef = tddMode ? ((await _executionDeps.captureGitRef(ctx.workdir)) ?? "HEAD") : null;
 
     const inputs = await _executionDeps.assemblePlanInputsFromCtx(ctx);
-    const plan = await buildPlanForStrategy(callCtx, ctx.story, ctx.config, ctx.routing.testStrategy, inputs);
+    const plan = await _executionDeps.buildPlanForStrategy(
+      callCtx,
+      ctx.story,
+      ctx.config,
+      ctx.routing.testStrategy,
+      inputs,
+    );
 
     let planResult: StoryOrchestratorResult;
     try {
       planResult = await plan.run();
+    } catch (err) {
+      // Enrich ctx before rethrowing so pipeline/runner.ts passes tddFailureCategory
+      // to markStoryFailed for observability. CALL_OP_ABORTED is user-initiated — excluded.
+      if (err instanceof NaxError && RUNTIME_CRASH_CODES.has(err.code)) {
+        ctx.tddFailureCategory = "runtime-crash";
+      }
+      throw err;
     } finally {
       unsubscribe();
     }
@@ -127,6 +148,7 @@ export const _executionDeps = {
   validateAgentForTier,
   captureGitRef,
   assemblePlanInputsFromCtx,
+  buildPlanForStrategy,
   applyPostRunInspection,
   decideStageAction,
 };
