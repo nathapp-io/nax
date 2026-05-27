@@ -40,6 +40,24 @@ export const _storyOrchestratorDeps = {
   captureGitRef,
 };
 
+/**
+ * Greenfield-gate has inverse semantics: it "passes" when pre-existing tests
+ * are found (= NOT greenfield, proceed normally) and "fails" when no tests are
+ * found (= greenfield, pause TDD). The generic "Phase passed/failed: X" wording
+ * reads as the opposite of what greenfield-gate actually decided, so we override
+ * the message text for that phase only.
+ *
+ * Exported for unit testing — pure function over (opName, success).
+ */
+export function formatPhaseResultMessage(opName: string, success: boolean): string {
+  if (opName === "greenfield-gate") {
+    return success
+      ? "Greenfield-gate: pre-existing tests detected (not greenfield) — proceeding with normal TDD"
+      : "Greenfield-gate: no pre-existing tests — greenfield run, pausing TDD test-writer";
+  }
+  return success ? `Phase passed: ${opName}` : `Phase failed: ${opName}`;
+}
+
 const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
 const STRICT_VERDICT_PHASE_NAMES = new Set<string>([
   fullSuiteGateOp.name,
@@ -318,10 +336,12 @@ function gatherRectificationFindings(
 
 /**
  * Collect all phases that participate in the rectification validation sweep.
- * NOTE: the verifier is intentionally included here so its output stays current
- * in phaseOutputs (consumed by shouldSkipPhaseForRectification). However,
- * phasesToRevalidate() is the SSOT that ensures the verifier is NEVER re-dispatched
- * during rectification validate iterations — it strips kind="verifier" unconditionally.
+ * Verifier is included here because phasesToRevalidate() now allows it to be
+ * re-dispatched when a code-editing strategy (full-suite-rectify, autofix-implementer,
+ * autofix-test-writer) ran. Without this, a stale verifier failure from before
+ * rectification would remain in phaseOutputs and mark the story failed even after
+ * the gate goes green. shouldSkipPhaseForRectification() gates the gate phase
+ * when verifier already explicitly passed (unrelated-regression case).
  */
 function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
   return [
@@ -341,39 +361,56 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
   // If a mechanical fix strategy ever edits logic (not just style), widen this set.
   "mechanical-lintfix": ["lint-check"],
   "mechanical-formatfix": ["lint-check"],
+  // Code-editing strategies may change behaviour — verifier re-judges the TDD verdict.
   "autofix-implementer": [
     "lint-check",
     "typecheck-check",
     "full-suite-gate",
+    "verifier",
     "verify-scoped",
     "semantic-review",
     "adversarial-review",
   ],
-  "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "adversarial-review"],
-  "full-suite-rectify": ["lint-check", "typecheck-check", "full-suite-gate", "verify-scoped", "semantic-review"],
+  "autofix-test-writer": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verifier",
+    "verify-scoped",
+    "adversarial-review",
+  ],
+  "full-suite-rectify": [
+    "lint-check",
+    "typecheck-check",
+    "full-suite-gate",
+    "verifier",
+    "verify-scoped",
+    "semantic-review",
+  ],
 };
 
 /**
  * Determine which phases to re-run after a fix iteration.
- * Verifier is always excluded — its TDD-isolation job is one-shot,
- * anchored to the story-start git ref. Re-dispatching it inside
- * rectification asks a question the routing layer has already answered.
  *
- * Falls back to all non-verifier phases when:
+ * The verifier IS eligible for revalidation when a strategy mapped to include
+ * it ran (e.g. full-suite-rectify, autofix-implementer). Before this fix,
+ * verifier was hard-stripped — leaving a stale failure verdict in phaseOutputs
+ * after rectification fixed the underlying gate failure.
+ *
+ * Falls back to all phases when:
  * - strategiesRun is undefined/empty (conservative default)
  * - any strategy name is unknown to the mapping (plugin-supplied strategy)
+ *
+ * Exported for unit testing — pure function over (strategiesRun, allPhases).
  */
-function phasesToRevalidate(
+export function phasesToRevalidate(
   strategiesRun: readonly string[] | undefined,
   allPhases: readonly InternalPhase[],
 ): readonly InternalPhase[] {
-  // Always exclude verifier — isolation is one-shot.
-  const sourceFiltered = allPhases.filter((p) => p.kind !== "verifier");
-
-  if (!strategiesRun || strategiesRun.length === 0) return sourceFiltered;
+  if (!strategiesRun || strategiesRun.length === 0) return allPhases;
 
   const unknown = strategiesRun.some((name) => STRATEGY_TO_REVALIDATION_PHASES[name] === undefined);
-  if (unknown) return sourceFiltered;
+  if (unknown) return allPhases;
 
   const needed = new Set<PhaseKind>();
   for (const name of strategiesRun) {
@@ -381,7 +418,7 @@ function phasesToRevalidate(
       needed.add(kind);
     }
   }
-  return sourceFiltered.filter((p) => needed.has(p.kind));
+  return allPhases.filter((p) => needed.has(p.kind));
 }
 
 function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
@@ -485,10 +522,11 @@ function logDeterministicPhaseOutcome(
   if (findingsCount !== undefined) data.findingsCount = findingsCount;
   if (status !== undefined) data.status = status;
 
+  const message = formatPhaseResultMessage(opName, success);
   if (success) {
-    logger?.info("story-orchestrator", `Phase passed: ${opName}`, data);
+    logger?.info("story-orchestrator", message, data);
   } else {
-    logger?.warn("story-orchestrator", `Phase failed: ${opName}`, data);
+    logger?.warn("story-orchestrator", message, data);
   }
 }
 

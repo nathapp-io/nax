@@ -39,6 +39,8 @@ export {
   StoryOrchestratorBuilder,
   ExecutionPlan,
   _storyOrchestratorDeps,
+  phasesToRevalidate,
+  formatPhaseResultMessage,
   type OrchestratorSlot,
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,
