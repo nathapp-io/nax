@@ -31,6 +31,7 @@ import type {
 } from "../operations";
 import type { AdversarialReviewInput } from "../operations";
 import { callOp } from "../operations/call";
+import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review/prepare-inputs";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 
@@ -38,7 +39,88 @@ export const _storyOrchestratorDeps = {
   callOp,
   runFixCycle,
   captureGitRef,
+  prepareSemanticReviewInput,
+  prepareAdversarialReviewInput,
 };
+
+/**
+ * @internal
+ * Refresh stat/diff/excludePatterns/effectiveRef on a semantic-review or
+ * adversarial-review input just before dispatch. Plan-build captures these
+ * fields too early (before test-writer/implementer have produced a real diff)
+ * so they go stale by the time the review actually runs.
+ *
+ * Behavior:
+ *   - Non-review phases pass through unchanged.
+ *   - Inputs without `_refresh` pass through unchanged (backward compat).
+ *   - The `_refresh` field is stripped from the returned input so the op
+ *     handler never sees the plan-time payload.
+ *   - If the prepare call throws (e.g. mid-write worktree, git errors), the
+ *     stale input is returned with a warn log — preserves the prior dispatch
+ *     rather than aborting the whole story.
+ *
+ * Exported for unit testing; not for external callers — use `runPhase`.
+ */
+export async function refreshReviewInputForDispatch(opName: string, input: unknown): Promise<unknown> {
+  if (opName !== "semantic-review" && opName !== "adversarial-review") return input;
+  const i = input as { _refresh?: SemanticReviewInput["_refresh"]; workdir?: string };
+  const { _refresh } = i;
+  if (!_refresh || !i.workdir) return input;
+  try {
+    if (opName === "semantic-review") {
+      const { _refresh: _, ...semInput } = input as SemanticReviewInput;
+      const fresh = await _storyOrchestratorDeps.prepareSemanticReviewInput({
+        workdir: semInput.workdir,
+        projectDir: _refresh.projectDir,
+        storyId: _refresh.storyId,
+        storyGitRef: _refresh.storyGitRef,
+        config: _refresh.config,
+        naxIgnoreIndex: _refresh.naxIgnoreIndex,
+        resolvedTestPatterns: _refresh.resolvedTestPatterns,
+        semanticConfig: semInput.semanticConfig,
+      });
+      return {
+        ...semInput,
+        stat: fresh.stat,
+        diff: fresh.diff,
+        excludePatterns: fresh.excludePatterns,
+        storyGitRef: fresh.effectiveRef ?? semInput.storyGitRef,
+      };
+    }
+    const { _refresh: __, ...advInput } = input as AdversarialReviewInput;
+    const fresh = await _storyOrchestratorDeps.prepareAdversarialReviewInput({
+      workdir: advInput.workdir,
+      projectDir: _refresh.projectDir,
+      storyId: _refresh.storyId,
+      storyGitRef: _refresh.storyGitRef,
+      config: _refresh.config,
+      naxIgnoreIndex: _refresh.naxIgnoreIndex,
+      resolvedTestPatterns: _refresh.resolvedTestPatterns,
+      adversarialConfig: advInput.adversarialConfig,
+    });
+    return {
+      ...advInput,
+      stat: fresh.stat,
+      diff: fresh.diff,
+      testInventory: fresh.testInventory,
+      excludePatterns: fresh.excludePatterns,
+      testGlobs: fresh.testGlobs,
+      refExcludePatterns: fresh.refExcludePatterns,
+      storyGitRef: fresh.effectiveRef ?? advInput.storyGitRef,
+    };
+  } catch (err) {
+    getSafeLogger()?.warn("story-orchestrator", "review input refresh failed — dispatching with stale input", {
+      storyId: _refresh.storyId,
+      phase: opName,
+      error: errorMessage(err),
+    });
+    // Strip _refresh even on the fallback so the op handler never sees it.
+    const { _refresh: _stripped, ...fallback } = input as Record<string, unknown> & {
+      _refresh?: unknown;
+    };
+    return fallback;
+  }
+}
 
 /**
  * Greenfield-gate has inverse semantics: it "passes" when pre-existing tests
@@ -614,8 +696,9 @@ async function runPhase(
 
   // Pre-phase: capture git ref for TDD phases; emit phase-begin log.
   const beforeRef = isTddPhase ? await _storyOrchestratorDeps.captureGitRef(ctx.packageDir) : undefined;
-  const dispatchInput =
-    isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
+  let dispatchInput = isTddPhase && beforeRef ? { ...(slot.input as Record<string, unknown>), beforeRef } : slot.input;
+  // Refresh stat/diff/etc for review phases — plan-build's snapshot is stale.
+  dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
 
   if (isTddPhase) {
     logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName });
@@ -783,7 +866,19 @@ async function runRectification(
         }
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
         if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
-        findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
+        const output = phaseOutputs[phase.slot.op.name];
+        findings.push(...extractPhaseFindings(output));
+        // Mirror the main loop's halt-on-failure contract (spec §2C, PR #1127):
+        // verifier and reviews must never judge broken-gate code, even inside the
+        // rectification revalidation sweep. Findings collected so far feed the next
+        // fix iteration; downstream phases are skipped to avoid stale-verdict pollution.
+        if (!phasePassed(phase.slot.op.name, output, ctx.storyId)) {
+          getSafeLogger()?.warn("story-orchestrator", "Short-circuiting revalidation on phase failure", {
+            storyId: ctx.storyId,
+            phase: phase.slot.op.name,
+          });
+          break;
+        }
       }
       return rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
     },
@@ -914,6 +1009,52 @@ export class ExecutionPlan {
     }
 
     const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+
+    // Resume the canonical loop after rectification resolves. The strategy-specific
+    // revalidation set (STRATEGY_TO_REVALIDATION_PHASES) intentionally narrow — e.g.
+    // full-suite-rectify excludes adversarial-review, autofix-test-writer excludes
+    // semantic-review — so without this resume, any phase NOT in the active strategy's
+    // set is silently skipped after the main loop short-circuited on gate failure.
+    //
+    // Restores prior behavior: rectify → gate green → verifier → reviews. Walks the
+    // canonical sequence and runs any phase whose output is missing or non-passing.
+    // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
+    // entirely when rectification was exhausted — the story is already terminal.
+    if (this.state.rectification && !rectResult.rectificationExhausted) {
+      for (const phase of collectOrderedPhases(this.state)) {
+        const name = phase.slot.op.name;
+        if (name in phaseOutputs && phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+          continue;
+        }
+        try {
+          await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
+        } catch (error) {
+          logger?.error("story-orchestrator", "Phase threw unexpected error (post-rectification resume)", {
+            storyId: this.ctx.storyId,
+            phase: name,
+            error: errorMessage(error),
+          });
+          throw error;
+        }
+        if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+          // Terminal failure: rectification already exited "resolved" (per the
+          // guard above), so this failure happens AFTER the fix-cycle — it cannot
+          // trigger another rectification iteration. The story will be marked
+          // failed downstream. Surface this distinctly so operators don't confuse
+          // it with an in-cycle revalidation failure.
+          logger?.warn(
+            "story-orchestrator",
+            "Terminal phase failure (post-rectification resume — bypasses rectification)",
+            {
+              storyId: this.ctx.storyId,
+              phase: name,
+              source: "post-rectification-resume",
+            },
+          );
+          break;
+        }
+      }
+    }
 
     // Aggregate success across every op that produced output, including fix-ops
     // dispatched during rectification (spec §2C / AC: "success === false when

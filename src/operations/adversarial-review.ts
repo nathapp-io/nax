@@ -46,6 +46,19 @@ export interface AdversarialReviewInput {
   priorAdversarialIterations?: Iteration[];
   /** Severity threshold from review config — drives the JSON-retry condensation prompt. */
   blockingThreshold?: "error" | "warning" | "info";
+  /**
+   * Optional refresh payload — see SemanticReviewInput._refresh. Lets the
+   * orchestrator re-prepare stat/diff/testInventory at dispatch time, after
+   * test-writer/implementer have produced a real diff.
+   */
+  _refresh?: {
+    projectDir?: string;
+    storyId: string;
+    storyGitRef: string | undefined;
+    config?: import("../config/schema").NaxConfig;
+    naxIgnoreIndex?: import("../utils/path-filters").NaxIgnoreIndex;
+    resolvedTestPatterns?: import("../test-runners").ResolvedTestPatterns;
+  };
 }
 
 type RepromptInfo = {
