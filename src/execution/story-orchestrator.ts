@@ -796,7 +796,12 @@ async function runRectification(
     { callOp: wrappedCallOp },
   );
 
-  phaseOutputs.rectification = { iterationCount: cycleResult.iterations.length };
+  phaseOutputs.rectification = {
+    success: cycleResult.exitReason === "resolved",
+    iterationCount: cycleResult.iterations.length,
+    exitReason: cycleResult.exitReason,
+    finalFindingsCount: cycleResult.finalFindings.length,
+  };
 
   // Rectification cycle summary — one line so the JSONL records what happened
   // (entry findings, iterations run, unfixed findings, exit reason, total cost).

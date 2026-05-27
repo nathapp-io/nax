@@ -1425,3 +1425,98 @@ describe("formatPhaseResultMessage — phase log wording", () => {
     expect(formatPhaseResultMessage("verifier", false)).toBe("Phase failed: verifier");
   });
 });
+
+// ============================================================================
+// rectification phase envelope (Task 3)
+// ============================================================================
+
+describe("rectification phase envelope", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => { await rt?.close(); });
+
+  test("rectification 'resolved' exit produces { success: true, exitReason: 'resolved', ... }", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async () => ({
+      iterations: [{ iterationNum: 1, findingsBefore: 1, fixesApplied: [], findingsAfter: 0, outcome: "resolved" as const, startedAt: 0, finishedAt: 0 }],
+      finalFindings: [],
+      exitReason: "resolved" as const,
+      costUsd: 0,
+    });
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      const result = await plan.run();
+
+      // Contract: rectification phase envelope must include explicit success
+      // matching the cycle's exit reason. The "neither 'success' nor 'passed'"
+      // warning is suppressed as a free consequence.
+      const rectOut = result.phaseOutputs?.rectification as Record<string, unknown> | undefined;
+      expect(rectOut).toBeDefined();
+      expect(rectOut?.success).toBe(true);
+      expect(rectOut?.exitReason).toBe("resolved");
+      expect(rectOut?.iterationCount).toBe(1);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("rectification 'max-attempts-total' exit produces { success: false, exitReason: 'max-attempts-total', ... }", async () => {
+    const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
+    rt = makeTestRuntime({ config });
+
+    const gateOp = makeDeterministicOp("full-suite-gate", {
+      success: false,
+      findings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+    });
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.kind === "deterministic") return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    };
+    _storyOrchestratorDeps.runFixCycle = async () => ({
+      iterations: [],
+      finalFindings: [{ source: "test-runner", category: "failed-test", severity: "error", message: "fail", rule: "t", file: "t.ts" }],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    });
+
+    try {
+      const ctx: CallContext = { runtime: rt, packageView: rt.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-t" } as any;
+      const plan = new (require("@/execution/story-orchestrator").StoryOrchestratorBuilder)()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-t" } as any, workdir: "/tmp" } })
+        .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx);
+      const result = await plan.run();
+
+      const rectOut = result.phaseOutputs?.rectification as Record<string, unknown> | undefined;
+      expect(rectOut?.success).toBe(false);
+      expect(rectOut?.exitReason).toBe("max-attempts-total");
+      expect(rectOut?.finalFindingsCount).toBe(1);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+});
