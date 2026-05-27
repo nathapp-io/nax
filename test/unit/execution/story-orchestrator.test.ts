@@ -789,7 +789,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
   let rt: NaxRuntime | undefined;
   afterEach(async () => { await rt?.close(); });
 
-  test("when rectification configured: gate failure does NOT halt verifier (both run)", async () => {
+  test("when rectification configured: gate failure halts before verifier (verifier judges only on green code)", async () => {
     const config = makeNaxConfig({ execution: { rectification: { enabled: true, maxAttemptsTotal: 3, abortOnIncreasingFailures: false } } });
     rt = makeTestRuntime({ config });
 
@@ -802,7 +802,6 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
     _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
       if (op.name === "verifier") verifierRan = true;
       if (op.kind === "deterministic") return op.execute(input, _ctx);
-      // Run ops (implementer): return success so they don't short-circuit before gate/verifier
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
     _storyOrchestratorDeps.runFixCycle = async () => ({ iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 });
@@ -816,17 +815,17 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
         .build(ctx);
       await plan.run();
-      expect(verifierRan).toBe(true);
+      // New contract: verifier MUST NOT run on broken-gate code when rectification is the responsible loop.
+      expect(verifierRan).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
     }
   });
 
-  test("when rectification NOT configured: gate failure still lets verifier run (verifier is SSOT)", async () => {
-    // Issue: verifier must judge after a gate failure, regardless of rectification —
-    // pre-existing/unrelated failures should be the verifier's call, not a hard halt.
-    // Rectification only adds an extra consume-findings loop on top of this.
+  test("when rectification NOT configured: gate failure halts plan (no verifier called)", async () => {
+    // New contract: gate failure halts the plan — no verifier call on broken code.
+    // Without rectification, escalation uses deriveTddFailureCategory("tests-failing").
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
@@ -849,25 +848,28 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       await plan.run();
-      expect(verifierRan).toBe(true);
+      // New contract: no rectification → gate halt → verifier not reached.
+      expect(verifierRan).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }
   });
 
-  test("verifier-passed SSOT: gate-only failure does NOT fail the plan (no rollback)", async () => {
-    // When the verifier ran and judged the story OK, the full-suite gate's failure
-    // represents pre-existing/unrelated regressions. The aggregated planResult.success
-    // must follow the verifier's verdict; otherwise post-run rolls back over failures
-    // this story did not cause.
+  test("gate-only failure (no rectification) halts before verifier and fails the plan — escalation handles unrelated-regression case", async () => {
+    // Behaviour change: the old verifier-as-SSOT escape hatch (gate fails but
+    // verifier judges OK → pass) is now handled at the escalation boundary via
+    // deriveTddFailureCategory (returns "tests-failing" → escalate). In-plan,
+    // gate failure halts immediately when no rectification is configured.
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
+    let verifierRan = false;
     const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [] });
     const verOp = makeDeterministicOp("verifier", { success: true });
 
     const origCallOp = _storyOrchestratorDeps.callOp;
     _storyOrchestratorDeps.callOp = async (_ctx: any, op: any, input: any) => {
+      if (op.name === "verifier") verifierRan = true;
       if (op.kind === "deterministic") return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     };
@@ -880,7 +882,8 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
         .addVerifier({ op: verOp, input: { code: "" } })
         .build(ctx);
       const result = await plan.run();
-      expect(result.success).toBe(true);
+      expect(verifierRan).toBe(false);
+      expect(result.success).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
     }

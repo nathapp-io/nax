@@ -832,22 +832,21 @@ export class ExecutionPlan {
     const startedAt = Date.now();
     const logger = getSafeLogger();
 
-    // Verifier is the SSOT for the TDD verdict — it must run after the gate even when
-    // the gate failed, so it can judge whether failures are this story's fault or
-    // pre-existing/unrelated regressions. The gate is therefore always exempt from
-    // short-circuit when verifier is present in the plan (regardless of rectification).
-    // Rectification, when configured, additionally consumes their findings.
-    // Use the registered slot op names — a custom slot may register a different op whose
-    // name differs from the default op constant (fullSuiteGateOp.name / verifierOp.name).
-    const verifierPresent = this.state.verifier !== undefined;
-    const rectificationExempt = this.state.rectification
-      ? [
-          ...(this.state.fullSuiteGate ? [this.state.fullSuiteGate.slot.op.name] : []),
-          ...(this.state.verifier ? [this.state.verifier.slot.op.name] : []),
-        ]
-      : [];
-    const verifierExempt = verifierPresent && this.state.fullSuiteGate ? [this.state.fullSuiteGate.slot.op.name] : [];
-    const shortCircuitExempt = new Set<string>([...rectificationExempt, ...verifierExempt]);
+    // TDD RED → GREEN → handover contract: a gate failure halts the canonical
+    // sequence unconditionally. Verifier and downstream review phases run only on
+    // green (passing-gate) code — they must never judge a broken state.
+    //
+    // Rectification (when configured) is invoked *after* this loop regardless of
+    // whether the loop broke early; it collects gate findings from phaseOutputs
+    // and drives the fix cycle independently. After rectification drives the gate
+    // back to green, phasesToRevalidate re-dispatches verifier and reviews so they
+    // judge only the fixed code (Task 2).
+    //
+    // This reverts the verifierExempt path added in ff640e6b — that change let
+    // the verifier run on broken-gate code as an "unrelated regression" escape
+    // hatch, at the cost of every common case. The escalation boundary in
+    // deriveTddFailureCategory now handles that case instead.
+    const shortCircuitExempt = new Set<string>();
 
     for (const phase of collectOrderedPhases(this.state)) {
       try {
