@@ -76,6 +76,8 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
       countsTowardEscalation: false,
       error: execution.error,
       output: execution.output,
+      exitCode: execution.exitCode,
+      command: finalCommand,
     };
   }
 
@@ -91,6 +93,8 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
         output: execution.output,
         passCount: analysis.passCount,
         failCount: analysis.failCount,
+        exitCode,
+        command: finalCommand,
       };
     }
     return {
@@ -100,10 +104,19 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
       output: execution.output,
       passCount: analysis.passCount,
       failCount: analysis.failCount,
+      exitCode,
+      command: finalCommand,
     };
   }
 
-  return { status: "SUCCESS", success: true, countsTowardEscalation: true, output: execution.output };
+  return {
+    status: "SUCCESS",
+    success: true,
+    countsTowardEscalation: true,
+    output: execution.output,
+    exitCode,
+    command: finalCommand,
+  };
 }
 
 /** Run entire test suite (regression gate). */

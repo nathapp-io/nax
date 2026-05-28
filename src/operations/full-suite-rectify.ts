@@ -20,7 +20,9 @@ export function makeFullSuiteRectifyStrategy(
 ): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> {
   return {
     name: "full-suite-rectify",
-    appliesTo: (finding) => finding.source === "test-runner" && finding.category === "failed-test",
+    appliesTo: (finding) =>
+      finding.source === "test-runner" &&
+      (finding.category === "failed-test" || finding.category === "execution-failed"),
     fixOp: implementerOp,
     buildInput: (findings) => ({
       story,

@@ -54,6 +54,12 @@ describe("makeFullSuiteRectifyStrategy", () => {
     expect(strategy.appliesTo(finding)).toBe(false);
   });
 
+  test("appliesTo returns true for test-runner + execution-failed (synth finding from gate)", () => {
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
+    const finding = makeTestFinding({ category: "execution-failed" });
+    expect(strategy.appliesTo(finding)).toBe(true);
+  });
+
   test("fixOp references implementerOp (name=implementer)", () => {
     const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig());
     expect(strategy.fixOp.name).toBe("implementer");
