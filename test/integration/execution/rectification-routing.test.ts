@@ -233,12 +233,12 @@ describe("AC2.5: rectification routing — gate failure halts loop, gate finding
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3.8: verifier is dispatched during initial run and again during validate
-//        (new: autofix-implementer maps to verifier in phasesToRevalidate)
+// AC3.8: verifier is dispatched during initial run; NOT re-dispatched for autofix-implementer
+//        (autofix-implementer addresses review findings, not the TDD isolation boundary)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC3.8: verifier op dispatched during initial run and re-dispatched during validate for code-editing strategies", () => {
-  test("AC3.8: semantic findings only — verifier called during initial run, also called during capturedCycle.validate with autofix-implementer", async () => {
+  test("AC3.8: semantic findings only — verifier called during initial run, NOT called during capturedCycle.validate with autofix-implementer", async () => {
     const semanticFindings = makeSemanticFindings(3);
 
     // Track all callOp invocations (phase name → call count)
@@ -303,11 +303,11 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
       strategiesRun: ["autofix-implementer"],
     });
 
-    // New contract (Task 2): verifier IS re-dispatched during validate when autofix-implementer ran.
-    // autofix-implementer is a code-editing strategy → its revalidation set includes verifier.
-    expect(validateCallCounts["verifier"] ?? 0).toBeGreaterThan(0);
+    // autofix-implementer addresses review findings, not the TDD isolation boundary.
+    // Verifier is a once-per-story phase and is NOT re-dispatched after autofix-implementer.
+    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
 
-    // Semantic review should have been re-run (it's in autofix-implementer's phase set)
+    // Semantic review MUST be re-run (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
   });
 });
@@ -316,8 +316,8 @@ describe("AC3.8: verifier op dispatched during initial run and re-dispatched dur
 // AC3.9: after autofix-implementer, full-suite-gate + verifier + semantic-review re-dispatched
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semantic-review re-dispatched; verifier also re-dispatched (new contract)", () => {
-  test("AC3.9: validate with strategiesRun=['autofix-implementer'] → full-suite-gate + semantic-review + verifier called", async () => {
+describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semantic-review re-dispatched; verifier excluded", () => {
+  test("AC3.9: validate with strategiesRun=['autofix-implementer'] → full-suite-gate + semantic-review called; verifier excluded", async () => {
     const semanticFindings = makeSemanticFindings(2);
 
     _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
@@ -381,8 +381,8 @@ describe("AC3.9: after autofix-implementer iteration, full-suite-gate and semant
     // semantic-review MUST be re-dispatched (it's in autofix-implementer's phase set)
     expect(validateCallCounts["semantic-review"] ?? 0).toBeGreaterThan(0);
 
-    // New contract (Task 2): verifier MUST be re-dispatched — autofix-implementer is a code-editing
-    // strategy whose revalidation set includes verifier so it can re-judge the TDD verdict.
-    expect(validateCallCounts["verifier"] ?? 0).toBeGreaterThan(0);
+    // autofix-implementer addresses review findings, not the TDD isolation boundary.
+    // Verifier is excluded from autofix-implementer's revalidation set (once-per-story phase).
+    expect(validateCallCounts["verifier"] ?? 0).toBe(0);
   });
 });

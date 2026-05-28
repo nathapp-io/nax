@@ -58,84 +58,38 @@ describe("verifierOp — RunOperation shape", () => {
   });
 });
 
-describe("verifierOp.parse — error handling", () => {
-  test("returns VerifierOutput with success=false when output is empty", async () => {
+describe("verifierOp.parse — error handling (strict: throws ParseValidationError)", () => {
+  test("throws ParseValidationError when output is empty", async () => {
     const { verifierOp } = await import("@/operations");
+    const { ParseValidationError } = await import("../../../src/agents/retry");
     const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse("", input, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.filesChanged).toEqual([]);
+    expect(() => verifierOp.parse("", input, ctx)).toThrow(ParseValidationError);
   });
 
-  test("returns VerifierOutput with success=false when output is unparseable", async () => {
+  test("throws ParseValidationError when output is unparseable prose", async () => {
     const { verifierOp } = await import("@/operations");
+    const { ParseValidationError } = await import("../../../src/agents/retry");
     const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse("could not parse", input, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.filesChanged).toEqual([]);
+    expect(() => verifierOp.parse("could not parse", input, ctx)).toThrow(ParseValidationError);
   });
 
-  test("returns VerifierOutput with success=false when output is malformed JSON", async () => {
+  test("throws ParseValidationError when output is malformed JSON", async () => {
     const { verifierOp } = await import("@/operations");
+    const { ParseValidationError } = await import("../../../src/agents/retry");
     const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse('{ "incomplete":', input, ctx);
-
-    expect(result.success).toBe(false);
-    expect(result.filesChanged).toEqual([]);
-  });
-
-  test("returns VerifierOutput with all required fields on parse failure", async () => {
-    const { verifierOp } = await import("@/operations");
-    const { DEFAULT_CONFIG } = await import("@/config");
-
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
-
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse("", input, ctx);
-
-    expect(result.success).toBeDefined();
-    expect(result.filesChanged).toBeDefined();
-    expect(typeof result.estimatedCostUsd).toBe("number");
-    expect(typeof result.durationMs).toBe("number");
-    expect(typeof result.output).toBe("string");
+    expect(() => verifierOp.parse('{ "incomplete":', input, ctx)).toThrow(ParseValidationError);
   });
 });
 
@@ -159,21 +113,26 @@ describe("verifierOp input type", () => {
   });
 });
 
+const VALID_VERDICT_JSON = JSON.stringify({
+  version: 1,
+  approved: true,
+  tests: { allPassing: true, passCount: 5, failCount: 0 },
+  testModifications: { detected: false, files: [], legitimate: true, reasoning: "n/a" },
+  acceptanceCriteria: { allMet: true, criteria: [] },
+  quality: { rating: "good", issues: [] },
+  fixes: [],
+  reasoning: "ok",
+});
+
 describe("verifierOp output type", () => {
   test("verifierOp output includes success, filesChanged, estimatedCostUsd, durationMs", async () => {
     const { verifierOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse("", input, ctx);
+    const result = verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
     expect("success" in result).toBe(true);
     expect("filesChanged" in result).toBe(true);
@@ -186,16 +145,10 @@ describe("verifierOp output type", () => {
     const { verifierOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
-    const ctx = {
-      packageView: {} as any,
-      config: DEFAULT_CONFIG,
-    };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-    const input = {
-      story: { id: "US-001" } as any,
-    };
-
-    const result = verifierOp.parse("", input, ctx);
+    const result = verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
     // isolation is optional, may be present or absent
     if ("isolation" in result) {
@@ -251,7 +204,10 @@ describe("verifierOp.verify — isolation", () => {
     }
   });
 
-  test("still returns null when parsed.success=false (defer to recover)", async () => {
+  test("returns parsed unchanged (non-null) for a failed verdict when no beforeRef (isolation skipped)", async () => {
+    // After the Issue 3 fix, verify() no longer returns null for failed parsed verdicts.
+    // parse() only succeeds when the verdict is structurally valid; the failure outcome
+    // is encoded in success=false on the output. verify() just attaches isolation.
     const { verifierOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
 
@@ -262,7 +218,7 @@ describe("verifierOp.verify — isolation", () => {
       durationMs: 0,
       output: "",
     };
-    const input = { story: { id: "US-001" } as any, beforeRef: "HEAD~1" };
+    const input = { story: { id: "US-001" } as any };
     const ctx = {
       packageView: { packageDir: "/tmp/x", config: DEFAULT_CONFIG } as any,
       config: DEFAULT_CONFIG.tdd,
@@ -271,6 +227,7 @@ describe("verifierOp.verify — isolation", () => {
     };
 
     const result = await verifierOp.verify!(parsed, input, ctx as any);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.success).toBe(false);
   });
 });

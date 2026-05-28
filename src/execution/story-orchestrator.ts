@@ -143,13 +143,22 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
  * reads as the opposite of what greenfield-gate actually decided, so we override
  * the message text for that phase only.
  *
- * Exported for unit testing — pure function over (opName, success).
+ * For rectification-stage ops (autofix-implementer, autofix-test-writer,
+ * mechanical-*), the op completing successfully is the entire success
+ * contract — whether the fix worked is judged by subsequent validation phases.
+ * Emitting "Phase failed: <name>" here is misleading because the op did run
+ * to completion. Return a rectification-specific message when stage="rectification".
+ *
+ * Exported for unit testing — pure function over (opName, success, stage?).
  */
-export function formatPhaseResultMessage(opName: string, success: boolean): string {
+export function formatPhaseResultMessage(opName: string, success: boolean, stage?: string): string {
   if (opName === "greenfield-gate") {
     return success
       ? "Greenfield-gate: pre-existing tests detected (not greenfield) — proceeding with normal TDD"
       : "Greenfield-gate: no pre-existing tests — greenfield run, pausing TDD test-writer";
+  }
+  if (stage === "rectification") {
+    return `Rectification strategy completed: ${opName}`;
   }
   return success ? `Phase passed: ${opName}` : `Phase failed: ${opName}`;
 }
@@ -432,12 +441,12 @@ function gatherRectificationFindings(
 
 /**
  * Collect all phases that participate in the rectification validation sweep.
- * Verifier is included here because phasesToRevalidate() now allows it to be
- * re-dispatched when a code-editing strategy (full-suite-rectify, autofix-implementer,
- * autofix-test-writer) ran. Without this, a stale verifier failure from before
- * rectification would remain in phaseOutputs and mark the story failed even after
- * the gate goes green. shouldSkipPhaseForRectification() gates the gate phase
- * when verifier already explicitly passed (unrelated-regression case).
+ * Verifier is included here because phasesToRevalidate() allows it to be
+ * re-dispatched when a code-editing strategy (full-suite-rectify only) ran.
+ * Without this, a stale verifier failure from before rectification would remain
+ * in phaseOutputs and mark the story failed even after the gate goes green.
+ * shouldSkipPhaseForRectification() gates the gate phase when verifier already
+ * explicitly passed (unrelated-regression case).
  */
 function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
   return [
@@ -457,24 +466,17 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
   // If a mechanical fix strategy ever edits logic (not just style), widen this set.
   "mechanical-lintfix": ["lint-check"],
   "mechanical-formatfix": ["lint-check"],
-  // Code-editing strategies may change behaviour — verifier re-judges the TDD verdict.
-  "autofix-implementer": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "verifier",
-    "verify-scoped",
-    "semantic-review",
-    "adversarial-review",
-  ],
-  "autofix-test-writer": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "verifier",
-    "verify-scoped",
-    "adversarial-review",
-  ],
+  // autofix-implementer addresses semantic/adversarial review findings on source
+  // code. It does NOT modify the test-writer/implementer TDD boundary, so the
+  // verifier (TDD isolation judge) is intentionally excluded — the verifier is a
+  // once-per-story phase, picked up by post-rectification-resume if not yet run.
+  "autofix-implementer": ["lint-check", "typecheck-check", "full-suite-gate", "semantic-review", "adversarial-review"],
+  // autofix-test-writer rewrites tests in response to adversarial-review findings.
+  // It does not re-do the TDD test-writer/implementer pair, so verifier stays
+  // excluded. Same once-per-story semantics as above.
+  "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "adversarial-review"],
+  // full-suite-rectify edits TEST code to fix failing tests — this legitimately
+  // changes the verifier's verdict, so verifier IS re-judged.
   "full-suite-rectify": [
     "lint-check",
     "typecheck-check",
@@ -489,9 +491,9 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
  * Determine which phases to re-run after a fix iteration.
  *
  * The verifier IS eligible for revalidation when a strategy mapped to include
- * it ran (e.g. full-suite-rectify, autofix-implementer). Before this fix,
- * verifier was hard-stripped — leaving a stale failure verdict in phaseOutputs
- * after rectification fixed the underlying gate failure.
+ * it ran (full-suite-rectify only — it edits test code, changing the verdict).
+ * autofix-implementer and autofix-test-writer address review findings, not the
+ * TDD isolation boundary, so verifier is excluded from their sets.
  *
  * Falls back to all phases when:
  * - strategiesRun is undefined/empty (conservative default)
@@ -603,6 +605,7 @@ function logDeterministicPhaseOutcome(
   output: unknown,
   durationMs: number,
   isTddPhase: boolean,
+  stage?: string,
 ): void {
   if (isTddPhase) return;
   if (opName === "semantic-review" || opName === "adversarial-review") return;
@@ -618,7 +621,16 @@ function logDeterministicPhaseOutcome(
   if (findingsCount !== undefined) data.findingsCount = findingsCount;
   if (status !== undefined) data.status = status;
 
-  const message = formatPhaseResultMessage(opName, success);
+  const message = formatPhaseResultMessage(opName, success, stage);
+
+  // Rectification ops complete successfully whenever the prompt finishes — the
+  // "did the fix work?" question is answered by subsequent validation phases.
+  // Always log at info for these; never emit a misleading "Phase failed" warn.
+  if (stage === "rectification") {
+    logger?.info("story-orchestrator", message, data);
+    return;
+  }
+
   if (success) {
     logger?.info("story-orchestrator", message, data);
   } else {
@@ -728,7 +740,7 @@ async function runPhase(
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
-    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase);
+    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase, slot.op.stage);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
