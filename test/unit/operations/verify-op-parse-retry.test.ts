@@ -1,0 +1,129 @@
+/**
+ * Tests for verifierOp strict parse + parse-retry contract.
+ *
+ * After the Issue 3 fix, verifierOp.parse throws ParseValidationError for
+ * empty/non-JSON/missing-field output. The retry strategy then re-prompts
+ * the same session. verifierOp.recover is the last-ditch disk fallback and
+ * must always return non-null (fail-closed VerifierOutput).
+ */
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { ParseValidationError } from "../../../src/agents/retry";
+import { verifierOp } from "../../../src/operations";
+import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
+
+const VALID_VERDICT = {
+  version: 1,
+  approved: true,
+  tests: { allPassing: true, passCount: 17, failCount: 0 },
+  testModifications: { detected: false, files: [], legitimate: true, reasoning: "n/a" },
+  acceptanceCriteria: { allMet: true, criteria: [] },
+  quality: { rating: "good", issues: [] },
+  fixes: [],
+  reasoning: "Story complete and tests pass.",
+};
+
+const VALID_VERDICT_JSON = JSON.stringify(VALID_VERDICT);
+
+function makeCtx(packageDir: string) {
+  return { packageView: { packageDir } } as any;
+}
+
+const STORY = { id: "US-001", title: "t", workdir: "" } as any;
+const INPUT = { story: STORY };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// op.parse — strict: throws ParseValidationError for invalid/empty stdout
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verifierOp.parse — strict: throws ParseValidationError", () => {
+  test("throws ParseValidationError when stdout is empty", () => {
+    expect(() => verifierOp.parse("", INPUT, makeCtx("/tmp"))).toThrow(ParseValidationError);
+  });
+
+  test("throws ParseValidationError when stdout is non-JSON prose", () => {
+    expect(() =>
+      verifierOp.parse("I finished verifying everything looks good.", INPUT, makeCtx("/tmp")),
+    ).toThrow(ParseValidationError);
+  });
+
+  test("throws ParseValidationError on truncated JSON (mid-array)", () => {
+    const truncated =
+      '{"version":1,"approved":true,"tests":{"allPassing":true,"passCount":17,"failCount":0},"acceptanceCriteria":{"allMet":true,"criteria":[{"criterion":"AC1",';
+    expect(() => verifierOp.parse(truncated, INPUT, makeCtx("/tmp"))).toThrow(ParseValidationError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// op.parse — success path: returns VerifierOutput when stdout is valid
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verifierOp.parse — success: returns VerifierOutput for valid verdict JSON", () => {
+  test("returns VerifierOutput with success=true when approved=true", () => {
+    const out = verifierOp.parse(VALID_VERDICT_JSON, INPUT, makeCtx("/tmp"));
+    expect(out.success).toBe(true);
+    expect(out.filesChanged).toBeDefined();
+    expect(typeof out.estimatedCostUsd).toBe("number");
+    expect(typeof out.durationMs).toBe("number");
+  });
+
+  test("returns VerifierOutput with success=false when approved=false with illegitimate test mods", () => {
+    // categorizeVerdict only blocks on illegitimate test mods or failing tests.
+    // Use illegitimate test mods to trigger a real failure.
+    const failedJson = JSON.stringify({
+      ...VALID_VERDICT,
+      approved: false,
+      testModifications: { detected: true, files: ["foo.test.ts"], legitimate: false, reasoning: "weakened assertions" },
+    });
+    const out = verifierOp.parse(failedJson, INPUT, makeCtx("/tmp"));
+    expect(out.success).toBe(false);
+    expect(out.reviewReason).toBeDefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// op.retry — declared
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verifierOp.retry — parse-retry strategy", () => {
+  test("retry strategy is declared on the op", () => {
+    expect(verifierOp.retry).toBeDefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// op.recover — always non-null (fail-closed when disk is missing/invalid)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verifierOp.recover — fail-closed when no usable disk verdict", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-verifier-recover-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(workdir);
+  });
+
+  test("returns non-null fail-closed VerifierOutput when disk verdict is missing", async () => {
+    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    expect(out).not.toBeNull();
+    expect(out!.success).toBe(false);
+    expect(out!.reviewReason).toMatch(/verdict|unparseable|invalid/i);
+  });
+
+  test("returns non-null fail-closed VerifierOutput when disk verdict is invalid JSON", async () => {
+    await Bun.write(join(workdir, ".nax-verifier-verdict.json"), '{"approved":');
+    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    expect(out).not.toBeNull();
+    expect(out!.success).toBe(false);
+  });
+
+  test("returns success=true when disk verdict is valid and approved", async () => {
+    await Bun.write(join(workdir, ".nax-verifier-verdict.json"), VALID_VERDICT_JSON);
+    const out = await verifierOp.recover!(INPUT, makeCtx(workdir));
+    expect(out).not.toBeNull();
+    expect(out!.success).toBe(true);
+  });
+});

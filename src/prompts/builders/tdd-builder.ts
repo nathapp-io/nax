@@ -290,6 +290,42 @@ export class TddPromptBuilder {
       .build();
   }
 
+  /**
+   * Follow-up prompt sent in the same verifier session when the previous
+   * reply could not be parsed as a valid VerifierVerdict JSON object.
+   * The verifier still has full session context — this turn only asks
+   * it to re-emit the verdict in the correct format.
+   */
+  static verdictRetry(): string {
+    return (
+      "Your previous reply could not be parsed as a valid VerifierVerdict JSON object.\n" +
+      "Re-emit the verdict as the FINAL content of your reply.\n" +
+      "Output ONLY the JSON object — no markdown fences, no explanation, no prose.\n" +
+      "The reply must start with { and end with } on its own line.\n" +
+      "Required top-level fields: version, approved, tests, testModifications, acceptanceCriteria, quality, fixes, reasoning."
+    );
+  }
+
+  /**
+   * Follow-up prompt when the previous verifier reply was truncated mid-JSON.
+   * Asks for a condensed verdict that drops the long acceptanceCriteria.criteria[]
+   * array (the most common source of truncation) and keeps only the minimal
+   * required fields so the JSON fits in the output budget.
+   */
+  static verdictRetryCondensed(): string {
+    return (
+      "Your previous reply was truncated and could not be parsed as valid JSON.\n" +
+      "Re-emit a CONDENSED verdict that omits the acceptanceCriteria.criteria[] entries:\n" +
+      "- Keep acceptanceCriteria.allMet (boolean) but use criteria=[] (empty array).\n" +
+      "- Keep quality.issues=[] and fixes=[] empty.\n" +
+      "- Set testModifications.reasoning to a single sentence.\n" +
+      "- Set reasoning to a single sentence.\n" +
+      "Output ONLY the JSON object — no markdown fences, no prose.\n" +
+      "Schema (minimal):\n" +
+      `{"version":1,"approved":boolean,"tests":{"allPassing":boolean,"passCount":number,"failCount":number},"testModifications":{"detected":boolean,"files":[],"legitimate":boolean,"reasoning":"..."},"acceptanceCriteria":{"allMet":boolean,"criteria":[]},"quality":{"rating":"good"|"acceptable"|"poor","issues":[]},"fixes":[],"reasoning":"..."}`
+    );
+  }
+
   /** Wrap a string-returning section builder into a PromptSection for the accumulator. */
   private s(id: string, content: string): PromptSection {
     return { id, content, overridable: false };

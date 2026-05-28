@@ -470,22 +470,11 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
   // code. It does NOT modify the test-writer/implementer TDD boundary, so the
   // verifier (TDD isolation judge) is intentionally excluded — the verifier is a
   // once-per-story phase, picked up by post-rectification-resume if not yet run.
-  "autofix-implementer": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "semantic-review",
-    "adversarial-review",
-  ],
+  "autofix-implementer": ["lint-check", "typecheck-check", "full-suite-gate", "semantic-review", "adversarial-review"],
   // autofix-test-writer rewrites tests in response to adversarial-review findings.
   // It does not re-do the TDD test-writer/implementer pair, so verifier stays
   // excluded. Same once-per-story semantics as above.
-  "autofix-test-writer": [
-    "lint-check",
-    "typecheck-check",
-    "full-suite-gate",
-    "adversarial-review",
-  ],
+  "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "adversarial-review"],
   // full-suite-rectify edits TEST code to fix failing tests — this legitimately
   // changes the verifier's verdict, so verifier IS re-judged.
   "full-suite-rectify": [

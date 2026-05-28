@@ -10,11 +10,14 @@ import type { UserStory } from "../../prd/types";
 export function buildVerdictSection(story: UserStory): string {
   return `# Verdict Instructions
 
-## Write Verdict File
+## Write Verdict File and Emit JSON in Final Reply
 
-After completing your verification, you **MUST** write a verdict file at the **project root**:
+After completing your verification, you **MUST** do BOTH of the following:
 
-**File:** \`.nax-verifier-verdict.json\`
+1. Write the verdict file at the **project root**: \`.nax-verifier-verdict.json\`
+2. Emit the same verdict JSON as the FINAL content of your reply — no prose
+   before or after, no markdown fences. Your reply must end with a closing
+   brace \`}\` on its own line. The orchestrator parses your reply as JSON.
 
 Set \`approved: true\` when ALL of these conditions are met:
 - All story-scoped tests pass (the orchestrator already attempted the full-suite gate — you only need to verify the story's own tests)
@@ -38,5 +41,5 @@ Set \`approved: false\` when ANY of these conditions are true:
 - \`fixes\` — keep this empty; the verifier must not apply code or test fixes
 - \`reasoning\` — brief summary of your overall assessment
 
-When done, do not commit code changes. Only write the verdict file.`;
+When done, do not commit code changes. Write the verdict file, then end your reply with the JSON object.`;
 }

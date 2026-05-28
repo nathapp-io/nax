@@ -166,3 +166,24 @@ describe("AC-21: when behavioralGuardrails='off', acc.add not called for guardra
     }
   });
 });
+
+describe("TddPromptBuilder.verdictRetry", () => {
+  test("returns a re-emit instruction with explicit start/end markers", () => {
+    const out = TddPromptBuilder.verdictRetry();
+    expect(out).toContain("could not be parsed");
+    expect(out).toContain("start with {");
+    expect(out).toContain("end with }");
+    expect(out).toContain("version");
+    expect(out).toContain("approved");
+  });
+});
+
+describe("TddPromptBuilder.verdictRetryCondensed", () => {
+  test("instructs the agent to drop acceptanceCriteria.criteria entries", () => {
+    const out = TddPromptBuilder.verdictRetryCondensed();
+    expect(out).toContain("truncated");
+    expect(out).toContain("criteria=[] (empty array)");
+    expect(out).toContain("acceptanceCriteria");
+    expect(out).toContain("allMet");
+  });
+});

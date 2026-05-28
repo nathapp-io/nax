@@ -1,11 +1,13 @@
+import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
+import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
-import { categorizeVerdict, cleanupVerdict, readVerdict } from "../tdd/verdict";
-import { parseSessionJsonOutput } from "./_session-output";
-import type { RunOperation, VerifyContext } from "./types";
+import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
+import { tryParseLLMJson } from "../utils/llm-json";
+import type { BuildContext, RunOperation, VerifyContext } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
 
@@ -34,6 +36,36 @@ export interface VerifierOutput {
   readonly reviewReason?: string;
 }
 
+/**
+ * Parse the agent's stdout into a VerifierOutput using the project's tolerant
+ * JSON extractor. Throws ParseValidationError when the output is empty, not
+ * JSON, or missing the required VerifierVerdict shape — the parse-retry
+ * strategy converts this into an in-session re-prompt.
+ */
+function parseVerdictFromStdout(output: string, _input: VerifierInput, _ctx: BuildContext<TddConfig>): VerifierOutput {
+  if (!output || !output.trim()) {
+    throw new ParseValidationError("verifier produced no stdout");
+  }
+  const raw = tryParseLLMJson<Record<string, unknown>>(output);
+  if (!raw || typeof raw !== "object") {
+    throw new ParseValidationError("verifier stdout is not a JSON object");
+  }
+  const verdict = isValidVerdict(raw) ? raw : coerceVerdict(raw);
+  if (!verdict) {
+    throw new ParseValidationError("verifier stdout JSON missing required VerifierVerdict fields");
+  }
+  const categorization = categorizeVerdict(verdict, verdict.tests.allPassing === true);
+  return {
+    success: categorization.success,
+    filesChanged: [],
+    estimatedCostUsd: 0,
+    durationMs: 0,
+    output,
+    ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
+    ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
+  };
+}
+
 async function runVerifierIsolation(
   beforeRef: string | undefined,
   ctx: VerifyContext<TddConfig>,
@@ -53,6 +85,23 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   stage: "verify",
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
+  // Mirror semantic-review: maxAttempts=2, in-session re-prompt on parse failure.
+  retry: makeParseRetryStrategy({
+    validate: (parsed) => {
+      if (!parsed || typeof parsed !== "object") return false;
+      const r = parsed as Record<string, unknown>;
+      return isValidVerdict(r) || coerceVerdict(r) !== null;
+    },
+    reviewerKind: "verifier",
+    maxAttempts: 2,
+    prompts: {
+      invalid: () => TddPromptBuilder.verdictRetry(),
+      truncated: () => TddPromptBuilder.verdictRetryCondensed(),
+    },
+    // No exhaustedFallback — let callOp fall through to op.recover so we keep
+    // the existing disk-file fallback path. op.recover always returns non-null,
+    // satisfying the retry-strategy escape-hatch rule.
+  }),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {
       return {
@@ -69,35 +118,44 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
       },
     };
   },
-  parse(output, _input, _ctx): VerifierOutput {
-    const envelope = parseSessionJsonOutput(output);
-    return { ...envelope, estimatedCostUsd: 0, durationMs: 0 };
-  },
+  parse: parseVerdictFromStdout,
   async verify(parsed, input, ctx): Promise<VerifierOutput | null> {
-    // Signal to recover when parse produced no usable value (success=false).
-    if (!parsed.success) return null;
+    // parsed is the result of op.parse — parse only returns for valid verdicts,
+    // so we don't need to signal recover here. Just attach isolation when configured.
     const isolation = await runVerifierIsolation(input.beforeRef, ctx);
     return isolation ? { ...parsed, isolation } : parsed;
   },
-  async recover(input, verifyCtx): Promise<VerifierOutput | null> {
-    // Derive outcome from the verdict file the verifier agent writes to disk (AC-5).
-    // Use try/finally to ensure verdict cleanup on every code path.
+  async recover(input, verifyCtx): Promise<VerifierOutput> {
+    // Last-ditch fallback: read .nax-verifier-verdict.json from disk. If the
+    // file is missing or unparseable, return a fail-closed VerifierOutput so
+    // the orchestrator records an explicit failure (never null — satisfies
+    // the parse-retry escape-hatch rule).
     const packageDir = verifyCtx.packageView.packageDir;
     try {
       const verdict = await readVerdict(packageDir);
-      if (!verdict) return null;
-      const testsAllPassing = verdict.tests.allPassing === true;
-      const categorization = categorizeVerdict(verdict, testsAllPassing);
-      const isolation = await runVerifierIsolation(input.beforeRef, verifyCtx);
+      if (verdict) {
+        const testsAllPassing = verdict.tests.allPassing === true;
+        const categorization = categorizeVerdict(verdict, testsAllPassing);
+        const isolation = await runVerifierIsolation(input.beforeRef, verifyCtx);
+        return {
+          success: categorization.success,
+          filesChanged: [],
+          estimatedCostUsd: 0,
+          durationMs: 0,
+          output: "",
+          ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
+          ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
+          ...(isolation && { isolation }),
+        };
+      }
       return {
-        success: categorization.success,
+        success: false,
         filesChanged: [],
         estimatedCostUsd: 0,
         durationMs: 0,
         output: "",
-        ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
-        ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
-        ...(isolation && { isolation }),
+        reviewReason:
+          "verifier produced unparseable verdict in stdout after retries and no usable verdict file on disk",
       };
     } finally {
       await cleanupVerdict(packageDir);
