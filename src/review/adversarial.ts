@@ -57,6 +57,7 @@ function recordAdversarialAudit(opts: {
   looksLikeFail?: boolean;
   failOpen?: boolean;
   passed?: boolean;
+  passReason?: string;
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
@@ -77,6 +78,7 @@ function recordAdversarialAudit(opts: {
     looksLikeFail: opts.looksLikeFail,
     failOpen: opts.failOpen,
     passed: opts.passed,
+    passReason: opts.passReason,
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,
@@ -489,6 +491,56 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   }
 
   if (!opResult.passed && acDropped.length > 0) {
+    const allHallucinated = acDropped.every((d) => d.code === "ac_quote_not_substring");
+
+    if (allHallucinated) {
+      // Case A: every blocking finding cited a quote that does not exist in any AC.
+      // The model fabricated its grounding. Treat as pass — demote each dropped finding
+      // to "warning" and surface as advisory so it remains auditable.
+      const demotedFindings = toAdversarialReviewFindings(
+        acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
+      );
+      const existingAdvisory = advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : [];
+      const allAdvisory = [...existingAdvisory, ...demotedFindings];
+
+      logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
+        storyId: story.id,
+        durationMs,
+        droppedCount: acDropped.length,
+        drops: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue })),
+      });
+      recordAdversarialAudit({
+        runtime,
+        workdir,
+        projectDir,
+        storyId: story.id,
+        featureName,
+        parsed: true,
+        failOpen: false,
+        passed: true,
+        passReason: "ac_quote_not_substring_demoted",
+        blockingThreshold: threshold,
+        result: { passed: true, findings: [] },
+        advisoryFindings: allAdvisory.length > 0 ? allAdvisory : undefined,
+        diffAvailable,
+        adversarialDropAnalysis,
+        adversarialAcceptAnalysis: [],
+      });
+      return {
+        check: "adversarial",
+        success: true,
+        passReason: "ac_quote_not_substring_demoted",
+        command: "",
+        exitCode: 0,
+        output: `Adversarial review passed: ${acDropped.length} blocking finding(s) demoted to advisory — all cited AC quotes were fabricated and could not be validated.`,
+        durationMs,
+        advisoryFindings: allAdvisory.length > 0 ? allAdvisory : undefined,
+        cost: llmCost,
+      };
+    }
+
+    // Case B: mix includes missing_ac_quote or ac_quote_does_not_constrain_locus —
+    // fail-closed (existing behavior unchanged).
     logger?.warn("review", "Adversarial review fail-closed: blocking findings dropped as ungrounded", {
       storyId: story.id,
       durationMs,

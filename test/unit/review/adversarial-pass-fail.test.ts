@@ -160,6 +160,122 @@ const PASSED_TRUE_WITH_ERROR_RESPONSE = JSON.stringify({
   ],
 });
 
+// Fixture: LLM says passed:false; one error finding with a fabricated acQuote
+// (not a substring of any AC). This should produce ac_quote_not_substring drop.
+const HALLUCINATED_QUOTE_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Exit code not set on partial failure",
+      suggestion: "Set process.exit(1) on failure",
+      acQuote: "this text does not appear in any acceptance criterion",
+      acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
+// Fixture: LLM says passed:false; two error findings.
+// First has fabricated acQuote (ac_quote_not_substring).
+// Second has no acQuote at all (missing_ac_quote).
+// Mixed drop codes → must stay fail-closed.
+const MIXED_DROP_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Exit code not set on partial failure",
+      suggestion: "Set process.exit(1)",
+      acQuote: "this text does not appear in any acceptance criterion",
+      acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+    {
+      severity: "error",
+      category: "input",
+      file: "src/log.ts",
+      line: 5,
+      issue: "Input not validated",
+      suggestion: "Add validation",
+      // no acQuote → missing_ac_quote drop; use same non-existent file as other fixtures
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
+// Fixture: LLM says passed:false; one error finding with no acQuote at all.
+// All drops should be missing_ac_quote → fail-closed (Case B regression).
+const ALL_MISSING_AC_QUOTE_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Exit code not set on partial failure",
+      suggestion: "Set process.exit(1)",
+      // no acQuote → missing_ac_quote drop
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
+// Fixture: LLM says passed:false; one error finding whose acQuote IS a verbatim
+// substring of the AC but contains no locus keyword (file stem "process" / "handler"
+// / "exit" not in "Users can"). Drops as ac_quote_does_not_constrain_locus → fail-closed (Case B regression).
+const ALL_LOCUS_MISMATCH_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/process-handler.ts",   // locus keywords: process, handler
+      line: 10,
+      issue: "Process exit not triggered on failure",  // extra keywords: exit
+      suggestion: "Call process.exit(1)",
+      acQuote: "Users can",             // IS a substring of "Users can log in"
+      acIndex: 1,                       // valid index
+      // "users can" contains none of: process, handler, exit → ac_quote_does_not_constrain_locus
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
+// Fixture: LLM says passed:false; one error with fabricated acQuote (dropped),
+// plus a warning finding that passes through to advisory.
+const HALLUCINATED_QUOTE_WITH_ADVISORY_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Exit code not set on partial failure",
+      suggestion: "Set process.exit(1)",
+      acQuote: "this text does not appear in any acceptance criterion",
+      acIndex: 1,
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+    {
+      severity: "warning",
+      category: "abandonment",
+      file: "src/auth.ts",
+      line: 20,
+      issue: "Token never invalidated on logout",
+      suggestion: "Call revokeToken()",
+    },
+  ],
+});
+
 // ---------------------------------------------------------------------------
 // Shared saved deps
 // ---------------------------------------------------------------------------
@@ -325,7 +441,7 @@ const FAILING_ERROR_UNGROUNDED_RESPONSE = JSON.stringify({
   ],
 });
 
-describe("runAdversarialReview — drops + fail-closed", () => {
+describe("runAdversarialReview — all drops ac_quote_not_substring flips to pass (#1031)", () => {
   beforeEach(() => {
     saveAllDeps();
     setupHappyPathDeps();
@@ -333,16 +449,15 @@ describe("runAdversarialReview — drops + fail-closed", () => {
 
   afterEach(restoreAllDeps);
 
-  test("fails closed when all blocking findings were dropped as ungrounded by acQuote validation", async () => {
+  test("passes when all blocking findings were dropped as ac_quote_not_substring", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    expect(result.success).toBe(false);
-    expect(result.exitCode).toBe(1);
+    expect(result.success).toBe(true);
+    expect(result.exitCode).toBe(0);
   });
 
-  test("output names the drop as the failure reason", async () => {
+  test("passReason is ac_quote_not_substring_demoted", async () => {
     const result = await callRunAdversarialReview(FAILING_ERROR_UNGROUNDED_RESPONSE);
-    expect(result.output).toContain("dropped as ungrounded");
-    expect(result.output).toContain("ExtendedPrismaClient");
+    expect(result.passReason).toBe("ac_quote_not_substring_demoted");
   });
 });
 
@@ -577,5 +692,67 @@ describe("runAdversarialReview — fail-open on LLM error", () => {
     });
 
     expect(result.output).toContain("skipped");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC: flip-to-pass when all drops are ac_quote_not_substring (#1031)
+// ---------------------------------------------------------------------------
+
+describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () => {
+  beforeEach(() => {
+    saveAllDeps();
+    setupHappyPathDeps();
+  });
+
+  afterEach(restoreAllDeps);
+
+  test("Case 1: all drops ac_quote_not_substring → success=true", async () => {
+    const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_RESPONSE);
+    expect(result.success).toBe(true);
+  });
+
+  test("Case 1: passReason is ac_quote_not_substring_demoted", async () => {
+    const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_RESPONSE);
+    expect(result.passReason).toBe("ac_quote_not_substring_demoted");
+  });
+
+  test("Case 1: demoted finding appears in advisoryFindings at warning severity", async () => {
+    const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_RESPONSE);
+    expect(result.advisoryFindings).toBeDefined();
+    expect(result.advisoryFindings!.length).toBeGreaterThan(0);
+    // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
+    const demoted = result.advisoryFindings!.find((f) => f.message.includes("Exit code not set on partial failure"));
+    expect(demoted).toBeDefined();
+    expect(demoted!.severity).toBe("warning");
+  });
+
+  test("Case 2: mixed drops (hallucinated + missing_ac_quote) → success=false", async () => {
+    const result = await callRunAdversarialReview(MIXED_DROP_RESPONSE);
+    expect(result.success).toBe(false);
+    expect(result.passReason).toBeUndefined();
+  });
+
+  test("Case 3: all drops missing_ac_quote → fail-closed (no regression)", async () => {
+    const result = await callRunAdversarialReview(ALL_MISSING_AC_QUOTE_RESPONSE);
+    expect(result.success).toBe(false);
+    expect(result.passReason).toBeUndefined();
+  });
+
+  test("Case 4: all drops ac_quote_does_not_constrain_locus → fail-closed (no regression)", async () => {
+    const result = await callRunAdversarialReview(ALL_LOCUS_MISMATCH_RESPONSE);
+    expect(result.success).toBe(false);
+    expect(result.passReason).toBeUndefined();
+  });
+
+  test("Case 5: all drops hallucinated + pre-existing advisory → advisory merged", async () => {
+    const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_WITH_ADVISORY_RESPONSE);
+    expect(result.success).toBe(true);
+    expect(result.advisoryFindings).toBeDefined();
+    // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
+    const hasDemoted = result.advisoryFindings!.some((f) => f.message.includes("Exit code not set on partial failure"));
+    const hasOriginal = result.advisoryFindings!.some((f) => f.message.includes("Token never invalidated on logout"));
+    expect(hasDemoted).toBe(true);
+    expect(hasOriginal).toBe(true);
   });
 });

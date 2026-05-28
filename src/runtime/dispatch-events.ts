@@ -105,6 +105,8 @@ export interface ReviewDecisionEvent {
   readonly diffAvailable?: boolean;
   readonly adversarialDropAnalysis?: readonly unknown[];
   readonly adversarialAcceptAnalysis?: readonly unknown[];
+  /** Set when the adversarial check passed due to all drops being ac_quote_not_substring. */
+  readonly passReason?: string;
 }
 
 export interface ReviewRepromptEvent {

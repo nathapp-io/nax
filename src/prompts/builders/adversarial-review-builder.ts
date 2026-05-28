@@ -155,6 +155,7 @@ Severity guide:
 - If you cannot quote an exact excerpt that proves your point, downgrade the finding to \`"unverifiable"\` rather than fabricating a quote.
 
 **AC-grounding rule — required for every "error" finding:**
+- Do NOT write an \`acQuote\` that does not appear verbatim in the listed AC text. If you cannot find an exact verbatim match, set severity to \`warning\` — never approximate, paraphrase, or synthesise a quote. A finding dropped for a fabricated quote wastes a review cycle and is worse than a correctly classified \`warning\`.
 - \`acQuote\` must be a verbatim substring of one AC bullet (from the Acceptance Criteria above) that names or constrains the exact **symbol** you are flagging — not merely the file the symbol lives in.
 - \`acIndex\` is the 1-based position of that AC bullet in the list.
 - Copy \`acQuote\` **exactly** from the AC text, including any backticks, asterisks, or punctuation. Do not paraphrase, strip formatting, or rewrite.
