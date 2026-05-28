@@ -682,7 +682,7 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
     const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_RESPONSE);
     expect(result.advisoryFindings).toBeDefined();
     expect(result.advisoryFindings!.length).toBeGreaterThan(0);
-    // Finding.message = joinMessage(issue, suggestion) = "Exit code not set on partial failure\n→ Set process.exit(1) on failure"
+    // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
     const demoted = result.advisoryFindings!.find((f) => f.message.includes("Exit code not set on partial failure"));
     expect(demoted).toBeDefined();
     expect(demoted!.severity).toBe("warning");
@@ -698,7 +698,7 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
     const result = await callRunAdversarialReview(HALLUCINATED_QUOTE_WITH_ADVISORY_RESPONSE);
     expect(result.success).toBe(true);
     expect(result.advisoryFindings).toBeDefined();
-    // Finding.message = joinMessage(issue, suggestion), so match with includes()
+    // Finding.message = f.issue (toAdversarialReviewFindings uses issue directly, not joinMessage)
     const hasDemoted = result.advisoryFindings!.some((f) => f.message.includes("Exit code not set on partial failure"));
     const hasOriginal = result.advisoryFindings!.some((f) => f.message.includes("Token never invalidated on logout"));
     expect(hasDemoted).toBe(true);
