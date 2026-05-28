@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
-import type { Finding } from "@/findings";
 
 const mockCtx = { runtime: {}, storyId: "US-001" } as any;
 
@@ -17,6 +16,7 @@ function makeDeps(overrides = {}) {
       output: "",
       parsedSummary: { passed: 5, failed: 0, failures: [] },
       timedOut: false,
+      command: "bun test",
     }),
     ...overrides,
   };
@@ -85,23 +85,38 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
     expect(out.status).not.toBe("rectification-exhausted");
   });
 
-  test("returns status=execution-failed and findings=[] when parser returns 0 structured failures despite non-zero exit", async () => {
+  test("returns status=execution-failed with a synth finding when parser returns 0 structured failures despite non-zero exit", async () => {
     const out = await fullSuiteGateOp.execute(
-      { story: { id: "US-001" } as any, workdir: "/tmp" },
+      { story: { id: "US-001", workdir: "packages/api" } as any, workdir: "/tmp" },
       mockCtx,
       makeDeps({
         runTests: async () => ({
           passed: false,
           failed: 3,
-          output: "process crashed",
+          output: "ModuleNotFoundError: stock_api._sse",
           parsedSummary: { passed: 0, failed: 3, failures: [] },
           timedOut: false,
+          exitCode: 2,
+          command: "pytest packages/api",
         }),
       }),
     );
     expect(out.success).toBe(false);
     expect(out.status).toBe("execution-failed");
-    expect(out.findings).toEqual([]);
+    expect(out.findings).toHaveLength(1);
+    const f = out.findings[0]!;
+    expect(f.source).toBe("test-runner");
+    expect(f.category).toBe("execution-failed");
+    expect(f.severity).toBe("error");
+    expect(f.message).toContain("pytest packages/api");
+    expect(f.message).toContain("exit 2");
+    expect(f.message).toContain("ModuleNotFoundError");
+    expect(f.meta).toMatchObject({
+      command: "pytest packages/api",
+      exitCode: 2,
+      packageDir: "packages/api",
+      cwd: "/tmp",
+    });
   });
 
   test("no runRectificationLoop dep exists on _fullSuiteGateDeps (AC-3)", () => {

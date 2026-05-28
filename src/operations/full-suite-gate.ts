@@ -19,7 +19,7 @@
 import type { NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
 import { NaxError } from "../errors";
-import { testSummaryToFindings } from "../findings";
+import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -85,6 +85,10 @@ interface RunTestsResult {
   readonly parsedSummary: TestSummary;
   /** True when the runner returned status=TIMEOUT — let execute() decide accept-on-timeout. */
   readonly timedOut: boolean;
+  /** Runner exit code (when known) — surfaced into synthetic findings on execution-failed. */
+  readonly exitCode?: number;
+  /** Final shell command actually executed (after buildTestCommand wrap) — for synth-finding context. */
+  readonly command?: string;
 }
 
 /**
@@ -156,6 +160,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       output: result.output ?? "",
       parsedSummary,
       timedOut: result.status === "TIMEOUT",
+      exitCode: result.exitCode,
+      command: result.command ?? gateCtx.testCmd,
     };
   },
 };
@@ -208,6 +214,13 @@ export const fullSuiteGateOp: DeterministicOperation<
     }
 
     const gateCtx = await deps.resolveGateContext(input, ctx);
+    logger.info("verify[regression]", "Running full-suite gate", {
+      storyId: input.story.id,
+      packageDir: input.story.workdir,
+      cwd: input.workdir,
+      command: gateCtx.testCmd,
+      timeoutSeconds: gateCtx.fullSuiteTimeout,
+    });
     const testResult = await deps.runTests(input, gateCtx);
 
     if (testResult.passed) {
@@ -245,14 +258,32 @@ export const fullSuiteGateOp: DeterministicOperation<
 
     const findings = testSummaryToFindings(testResult.parsedSummary);
     if (findings.length === 0) {
-      // Runner exited non-zero but parser found 0 structured failures — environmental failure.
+      // Runner exited non-zero but parser found 0 structured failures — environmental
+      // failure (e.g. config crash, missing dep, wrong cwd). Emit a single synth
+      // finding so rectification dispatches the implementer with concrete repair
+      // context (command + exit code + output tail) instead of no-oping on 0 findings
+      // and silently escalating.
+      const cmd = testResult.command ?? gateCtx.testCmd;
+      const synth = executionFailureToFinding({
+        command: cmd,
+        exitCode: testResult.exitCode,
+        output: testResult.output,
+        packageDir: input.story.workdir,
+        cwd: input.workdir,
+      });
+      logger.warn("verify[regression]", "Full-suite gate execution-failed — emitting synth finding", {
+        storyId: input.story.id,
+        command: cmd,
+        exitCode: testResult.exitCode,
+        packageDir: input.story.workdir,
+      });
       return {
         success: false,
         passed: false,
         status: "execution-failed",
         estimatedCostUsd: 0,
         attempts: 0,
-        findings: [],
+        findings: [synth],
       };
     }
 

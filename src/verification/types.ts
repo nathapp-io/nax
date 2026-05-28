@@ -50,6 +50,10 @@ export interface VerificationResult {
   missingFiles?: string[];
   passCount?: number;
   failCount?: number;
+  /** Runner exit code when known — surfaced on TEST_FAILURE / ENVIRONMENTAL_FAILURE paths. */
+  exitCode?: number;
+  /** Final shell command actually executed (post buildTestCommand wrap). */
+  command?: string;
 }
 
 /** Rectification state tracking per story execution */

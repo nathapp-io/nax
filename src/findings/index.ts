@@ -25,6 +25,7 @@ export {
   acceptanceDiagnoseRawToFinding,
   acFailureToFinding,
   acSentinelToFinding,
+  executionFailureToFinding,
   lintDiagnosticToFinding,
   pluginToFinding,
   reviewFindingToFinding,

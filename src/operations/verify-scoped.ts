@@ -126,6 +126,15 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // NOTE: regression() includes a 2s sleep before running tests (src/verification/runners.ts:142-145)
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
+    const scopedTimeout = ctxConfig.execution?.regressionGate?.timeoutSeconds ?? 600;
+    logger.info("verify[scoped]", "Running scoped tests", {
+      storyId: input.storyId,
+      packageDir: input.packageDir,
+      cwd: input.workdir,
+      command: selection.effectiveCommand,
+      timeoutSeconds: scopedTimeout,
+      isFullSuite: selection.isFullSuite,
+    });
     const start = Date.now();
     const result = await deps.regression({
       workdir: input.workdir,
