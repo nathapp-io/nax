@@ -357,3 +357,17 @@ describe("AdversarialReviewPromptBuilder — verifiedBy implementation-axis grou
     expect(result.toLowerCase()).toContain("downgrade");
   });
 });
+
+// ─── AC-grounding prohibition text (#1033 Obs 1) ──────────────────────────────
+
+describe("AdversarialReviewPromptBuilder — AC-grounding explicit prohibition", () => {
+  test("prompt contains explicit Do NOT write acQuote prohibition", () => {
+    const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(prompt).toContain("Do NOT write an `acQuote` that does not appear verbatim");
+  });
+
+  test("prompt instructs to set severity to warning rather than fabricating", () => {
+    const prompt = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(prompt).toContain("never approximate, paraphrase, or synthesise a quote");
+  });
+});
