@@ -249,11 +249,11 @@ describe("phasesToRevalidate — AC3.1: undefined strategiesRun → conservative
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3.2: strategiesRun=["autofix-implementer"] → all 6 non-verifier phases
+// AC3.2: strategiesRun=["autofix-implementer"] → review-relevant phases (verifier excluded)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("phasesToRevalidate — AC3.2: autofix-implementer → all phases including verifier", () => {
-  test("AC3.2: strategiesRun=['autofix-implementer'] → lint, typecheck, full-suite-gate, verifier, verify-scoped, semantic, adversarial called", async () => {
+describe("phasesToRevalidate — AC3.2: autofix-implementer → review-relevant phases (verifier excluded)", () => {
+  test("AC3.2: strategiesRun=['autofix-implementer'] → lint, typecheck, full-suite-gate, semantic, adversarial called; verifier and verify-scoped excluded", async () => {
     const ctx = makeCtx();
     const { capturedCycle, capturedCtx, getCalledOpsInValidate } = await captureAndSetupValidate(ctx);
 
@@ -266,13 +266,49 @@ describe("phasesToRevalidate — AC3.2: autofix-implementer → all phases inclu
 
     const called = getCalledOpsInValidate();
 
-    // autofix-implementer is a code-editing strategy — verifier re-judges the TDD verdict
-    expect(called.has("verifier")).toBe(true);
+    // autofix-implementer addresses review findings — it cannot legitimately
+    // change the TDD isolation verdict. Verifier stays a once-per-story phase.
+    expect(called.has("verifier")).toBe(false);
+    expect(called.has("verify-scoped")).toBe(false);
+
+    // Lint, typecheck, full-suite-gate, semantic-review, adversarial-review
+    // all remain in the revalidation set.
     expect(called.has("lint-check")).toBe(true);
     expect(called.has("typecheck-check")).toBe(true);
     expect(called.has("full-suite-gate")).toBe(true);
-    expect(called.has("verify-scoped")).toBe(true);
     expect(called.has("semantic-review")).toBe(true);
+    expect(called.has("adversarial-review")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC3.2b: strategiesRun=["autofix-test-writer"] → test-impacting phases without verifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("phasesToRevalidate — AC3.2b: autofix-test-writer → test-impacting phases without verifier", () => {
+  test("AC3.2b: strategiesRun=['autofix-test-writer'] → lint, typecheck, full-suite-gate, adversarial called; verifier and verify-scoped excluded", async () => {
+    const ctx = makeCtx();
+    const { capturedCycle, capturedCtx, getCalledOpsInValidate } = await captureAndSetupValidate(ctx);
+
+    expect(capturedCycle).not.toBeNull();
+
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+      strategiesRun: ["autofix-test-writer"],
+    });
+
+    const called = getCalledOpsInValidate();
+
+    // autofix-test-writer rewrites tests to satisfy adversarial-review — it
+    // does not re-do the TDD test-writer/implementer pair, so verifier stays
+    // out of the loop. The post-rectification-resume picks verifier up if it
+    // was never run.
+    expect(called.has("verifier")).toBe(false);
+    expect(called.has("verify-scoped")).toBe(false);
+
+    expect(called.has("lint-check")).toBe(true);
+    expect(called.has("typecheck-check")).toBe(true);
+    expect(called.has("full-suite-gate")).toBe(true);
     expect(called.has("adversarial-review")).toBe(true);
   });
 });
@@ -371,8 +407,8 @@ describe("phasesToRevalidate — AC3.5: unknown strategy → conservative fallba
 // AC3.6: strategiesRun=["mechanical-lintfix", "autofix-implementer"] → union (broad set)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("phasesToRevalidate — AC3.6: union of mechanical-lintfix + autofix-implementer → all phases including verifier", () => {
-  test("AC3.6: strategiesRun=['mechanical-lintfix','autofix-implementer'] → union includes verifier (from autofix-implementer)", async () => {
+describe("phasesToRevalidate — AC3.6: union of mechanical-lintfix + autofix-implementer → review phases without verifier", () => {
+  test("AC3.6: strategiesRun=['mechanical-lintfix','autofix-implementer'] → union excludes verifier (neither strategy includes it)", async () => {
     const ctx = makeCtx();
     const { capturedCycle, capturedCtx, getCalledOpsInValidate } = await captureAndSetupValidate(ctx);
 
@@ -386,13 +422,12 @@ describe("phasesToRevalidate — AC3.6: union of mechanical-lintfix + autofix-im
     const called = getCalledOpsInValidate();
 
     // Union of mechanical-lintfix (lint-check) + autofix-implementer
-    // (lint, typecheck, gate, verifier, scoped, semantic, adversarial) = all 7 phases
-    // autofix-implementer is a code-editing strategy — verifier is part of its set
-    expect(called.has("verifier")).toBe(true);
+    // (lint, typecheck, gate, semantic, adversarial) — verifier excluded from both.
+    expect(called.has("verifier")).toBe(false);
+    expect(called.has("verify-scoped")).toBe(false);
     expect(called.has("lint-check")).toBe(true);
     expect(called.has("typecheck-check")).toBe(true);
     expect(called.has("full-suite-gate")).toBe(true);
-    expect(called.has("verify-scoped")).toBe(true);
     expect(called.has("semantic-review")).toBe(true);
     expect(called.has("adversarial-review")).toBe(true);
   });

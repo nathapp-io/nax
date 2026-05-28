@@ -432,12 +432,12 @@ function gatherRectificationFindings(
 
 /**
  * Collect all phases that participate in the rectification validation sweep.
- * Verifier is included here because phasesToRevalidate() now allows it to be
- * re-dispatched when a code-editing strategy (full-suite-rectify, autofix-implementer,
- * autofix-test-writer) ran. Without this, a stale verifier failure from before
- * rectification would remain in phaseOutputs and mark the story failed even after
- * the gate goes green. shouldSkipPhaseForRectification() gates the gate phase
- * when verifier already explicitly passed (unrelated-regression case).
+ * Verifier is included here because phasesToRevalidate() allows it to be
+ * re-dispatched when a code-editing strategy (full-suite-rectify only) ran.
+ * Without this, a stale verifier failure from before rectification would remain
+ * in phaseOutputs and mark the story failed even after the gate goes green.
+ * shouldSkipPhaseForRectification() gates the gate phase when verifier already
+ * explicitly passed (unrelated-regression case).
  */
 function collectRectificationPhases(state: InternalBuildState): InternalPhase[] {
   return [
@@ -457,24 +457,28 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
   // If a mechanical fix strategy ever edits logic (not just style), widen this set.
   "mechanical-lintfix": ["lint-check"],
   "mechanical-formatfix": ["lint-check"],
-  // Code-editing strategies may change behaviour — verifier re-judges the TDD verdict.
+  // autofix-implementer addresses semantic/adversarial review findings on source
+  // code. It does NOT modify the test-writer/implementer TDD boundary, so the
+  // verifier (TDD isolation judge) is intentionally excluded — the verifier is a
+  // once-per-story phase, picked up by post-rectification-resume if not yet run.
   "autofix-implementer": [
     "lint-check",
     "typecheck-check",
     "full-suite-gate",
-    "verifier",
-    "verify-scoped",
     "semantic-review",
     "adversarial-review",
   ],
+  // autofix-test-writer rewrites tests in response to adversarial-review findings.
+  // It does not re-do the TDD test-writer/implementer pair, so verifier stays
+  // excluded. Same once-per-story semantics as above.
   "autofix-test-writer": [
     "lint-check",
     "typecheck-check",
     "full-suite-gate",
-    "verifier",
-    "verify-scoped",
     "adversarial-review",
   ],
+  // full-suite-rectify edits TEST code to fix failing tests — this legitimately
+  // changes the verifier's verdict, so verifier IS re-judged.
   "full-suite-rectify": [
     "lint-check",
     "typecheck-check",
@@ -489,9 +493,9 @@ const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[]> = {
  * Determine which phases to re-run after a fix iteration.
  *
  * The verifier IS eligible for revalidation when a strategy mapped to include
- * it ran (e.g. full-suite-rectify, autofix-implementer). Before this fix,
- * verifier was hard-stripped — leaving a stale failure verdict in phaseOutputs
- * after rectification fixed the underlying gate failure.
+ * it ran (full-suite-rectify only — it edits test code, changing the verdict).
+ * autofix-implementer and autofix-test-writer address review findings, not the
+ * TDD isolation boundary, so verifier is excluded from their sets.
  *
  * Falls back to all phases when:
  * - strategiesRun is undefined/empty (conservative default)
