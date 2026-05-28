@@ -12,6 +12,7 @@ import { _isolationDeps } from "../../../src/tdd/isolation";
 import { _rollbackDeps } from "../../../src/tdd/rollback";
 import { _gitDeps } from "../../../src/utils/git";
 import { _executorDeps } from "../../../src/verification/executor";
+import { _regressionRunnerDeps } from "../../../src/verification/runners";
 
 /** Saved originals for teardown */
 export interface SavedDeps {
@@ -20,6 +21,7 @@ export interface SavedDeps {
   gitSpawn: typeof _gitDeps.spawn;
   rollbackSpawn: typeof _rollbackDeps.spawn;
   fullSuiteGateResolveCtx: typeof _fullSuiteGateDeps.resolveGateContext;
+  regressionSleep: typeof _regressionRunnerDeps.sleep;
 }
 
 /** Save current deps state */
@@ -30,6 +32,7 @@ export function saveDeps(): SavedDeps {
     gitSpawn: _gitDeps.spawn,
     rollbackSpawn: _rollbackDeps.spawn,
     fullSuiteGateResolveCtx: _fullSuiteGateDeps.resolveGateContext,
+    regressionSleep: _regressionRunnerDeps.sleep,
   };
 }
 
@@ -40,6 +43,7 @@ export function restoreDeps(saved: SavedDeps): void {
   _gitDeps.spawn = saved.gitSpawn;
   _rollbackDeps.spawn = saved.rollbackSpawn;
   _fullSuiteGateDeps.resolveGateContext = saved.fullSuiteGateResolveCtx;
+  _regressionRunnerDeps.sleep = saved.regressionSleep;
 }
 
 /**
@@ -47,6 +51,10 @@ export function restoreDeps(saved: SavedDeps): void {
  * the full-suite gate without a real .nax/config.json. The TEST_COMMAND_MISSING
  * NaxError thrown by the production resolver is intentional at runtime — tests
  * bypass it by short-circuiting config resolution.
+ *
+ * Also stubs `_regressionRunnerDeps.sleep` to eliminate the 2s agent-cleanup delay
+ * that regression() inserts before every test run — without this, each fullSuiteGate
+ * call adds 2s of wall-clock time to integration tests.
  */
 export function stubFullSuiteGateContext(testCmd = "bun test"): void {
   _fullSuiteGateDeps.resolveGateContext = async () =>
@@ -55,6 +63,7 @@ export function stubFullSuiteGateContext(testCmd = "bun test"): void {
       testCmd,
       fullSuiteTimeout: 60,
     }) as any;
+  _regressionRunnerDeps.sleep = async () => {};
 }
 
 /** Create a mock agent that returns sequential results */
