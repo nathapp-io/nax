@@ -210,6 +210,45 @@ const MIXED_DROP_RESPONSE = JSON.stringify({
   ],
 });
 
+// Fixture: LLM says passed:false; one error finding with no acQuote at all.
+// All drops should be missing_ac_quote → fail-closed (Case B regression).
+const ALL_MISSING_AC_QUOTE_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/log.ts",
+      line: 10,
+      issue: "Exit code not set on partial failure",
+      suggestion: "Set process.exit(1)",
+      // no acQuote → missing_ac_quote drop
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
+// Fixture: LLM says passed:false; one error finding whose acQuote IS a verbatim
+// substring of the AC but contains no locus keyword (file stem "process" / "handler"
+// / "exit" not in "Users can"). Drops as ac_quote_does_not_constrain_locus → fail-closed (Case B regression).
+const ALL_LOCUS_MISMATCH_RESPONSE = JSON.stringify({
+  passed: false,
+  findings: [
+    {
+      severity: "error",
+      category: "error-path",
+      file: "src/process-handler.ts",   // locus keywords: process, handler
+      line: 10,
+      issue: "Process exit not triggered on failure",  // extra keywords: exit
+      suggestion: "Call process.exit(1)",
+      acQuote: "Users can",             // IS a substring of "Users can log in"
+      acIndex: 1,                       // valid index
+      // "users can" contains none of: process, handler, exit → ac_quote_does_not_constrain_locus
+      verifiedBy: { file: "src/log.ts", observed: "login handler stub" },
+    },
+  ],
+});
+
 // Fixture: LLM says passed:false; one error with fabricated acQuote (dropped),
 // plus a warning finding that passes through to advisory.
 const HALLUCINATED_QUOTE_WITH_ADVISORY_RESPONSE = JSON.stringify({
@@ -690,6 +729,18 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
 
   test("Case 2: mixed drops (hallucinated + missing_ac_quote) → success=false", async () => {
     const result = await callRunAdversarialReview(MIXED_DROP_RESPONSE);
+    expect(result.success).toBe(false);
+    expect(result.passReason).toBeUndefined();
+  });
+
+  test("Case 3: all drops missing_ac_quote → fail-closed (no regression)", async () => {
+    const result = await callRunAdversarialReview(ALL_MISSING_AC_QUOTE_RESPONSE);
+    expect(result.success).toBe(false);
+    expect(result.passReason).toBeUndefined();
+  });
+
+  test("Case 4: all drops ac_quote_does_not_constrain_locus → fail-closed (no regression)", async () => {
+    const result = await callRunAdversarialReview(ALL_LOCUS_MISMATCH_RESPONSE);
     expect(result.success).toBe(false);
     expect(result.passReason).toBeUndefined();
   });

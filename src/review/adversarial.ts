@@ -532,7 +532,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
         passReason: "ac_quote_not_substring_demoted",
         command: "",
         exitCode: 0,
-        output: "",
+        output: `Adversarial review passed: ${acDropped.length} blocking finding(s) demoted to advisory — all cited AC quotes were fabricated and could not be validated.`,
         durationMs,
         advisoryFindings: allAdvisory.length > 0 ? allAdvisory : undefined,
         cost: llmCost,
