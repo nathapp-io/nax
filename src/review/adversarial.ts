@@ -57,6 +57,7 @@ function recordAdversarialAudit(opts: {
   looksLikeFail?: boolean;
   failOpen?: boolean;
   passed?: boolean;
+  passReason?: string;
   blockingThreshold?: "error" | "warning" | "info";
   result: { passed: boolean; findings: unknown[] } | null;
   advisoryFindings?: unknown[];
@@ -77,6 +78,7 @@ function recordAdversarialAudit(opts: {
     looksLikeFail: opts.looksLikeFail,
     failOpen: opts.failOpen,
     passed: opts.passed,
+    passReason: opts.passReason,
     blockingThreshold: opts.blockingThreshold,
     result: opts.result,
     advisoryFindings: opts.advisoryFindings,

@@ -107,6 +107,13 @@ export interface ReviewCheckResult {
    * Consumers in a retry context (autofixAttempt > 0) must treat this as a non-genuine pass. */
   failOpen?: boolean;
   /**
+   * Set when the adversarial check passed because all blocking findings were
+   * discarded as hallucinated AC quotes (ac_quote_not_substring). Consumers
+   * in a retry context should treat this as a weaker pass signal than a genuine
+   * adversarial pass.
+   */
+  passReason?: "ac_quote_not_substring_demoted";
+  /**
    * Optional scoped-lint metadata for autofix/review consumers.
    * Provides explicit package grouping and structured out-of-scope status.
    */
