@@ -149,7 +149,7 @@ ${STEP2}${frameworkLine}
 ${STEP3_HEADER}
 ${STEP3_SHARED_RULES}
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
-- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${p.targetTestFilePath}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).
+- **Path anchor (CRITICAL — do NOT deviate)**: Write the test file to this exact path: \`${p.targetTestFilePath}\`. This path is intentional and computed by the orchestrator — do not change it based on what you observe in the project. In particular: if you see a \`.nax/features/\` directory at the repo root, that is for stories scoped to the repo root. When a story belongs to a specific package (e.g. \`packages/core\`), its acceptance test lives inside that package's \`.nax/features/\` directory so the test runner can resolve the package's imports correctly. The package root is 3 levels above the test file (\`../../../\` relative to the test file).
 - **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the **package root** (\`join(import.meta.dir, "../../..")\`) as your default — unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}`;
   }
 
