@@ -85,7 +85,10 @@ export function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
       // Default to a parseable JSON envelope so callOp's CALL_OP_NO_OUTPUT
       // guard accepts the response. Callers supplying explicit `output` (e.g.
       // for parser-specific assertions) override this default.
-      const defaultOutput = JSON.stringify({ success: r.success ?? true, filesChanged: [] });
+      // Include `approved` so verifierOp.parse (which uses coerceVerdict) can
+      // derive the correct approval status from the same envelope.
+      const approved = !!(r.success ?? true);
+      const defaultOutput = JSON.stringify({ success: r.success ?? true, filesChanged: [], approved });
       return {
         output: r.output ?? defaultOutput,
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
