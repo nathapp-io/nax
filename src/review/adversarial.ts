@@ -500,20 +500,15 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
       const demotedFindings = toAdversarialReviewFindings(
         acDropped.map((d) => ({ ...d.finding, severity: "warning" as const, acQuote: undefined, acIndex: undefined })),
       );
-      const existingAdvisory =
-        advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : [];
+      const existingAdvisory = advisoryFindings.length > 0 ? toAdversarialReviewFindings(advisoryFindings) : [];
       const allAdvisory = [...existingAdvisory, ...demotedFindings];
 
-      logger?.warn(
-        "review",
-        "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes",
-        {
-          storyId: story.id,
-          durationMs,
-          droppedCount: acDropped.length,
-          drops: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue })),
-        },
-      );
+      logger?.warn("review", "Adversarial review passed: all blocking findings discarded as hallucinated AC quotes", {
+        storyId: story.id,
+        durationMs,
+        droppedCount: acDropped.length,
+        drops: acDropped.map((d) => ({ file: d.finding.file, issue: d.finding.issue })),
+      });
       recordAdversarialAudit({
         runtime,
         workdir,
