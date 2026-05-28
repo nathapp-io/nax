@@ -1566,14 +1566,23 @@ describe("phasesToRevalidate — verifier inclusion after fix strategies", () =>
     expect(kinds).toContain("full-suite-gate");
   });
 
-  test("autofix-implementer strategy re-runs verifier", () => {
+  test("autofix-implementer strategy does NOT re-run verifier (once-per-story TDD isolation check)", () => {
     const result = phasesToRevalidate(["autofix-implementer"], allPhases);
-    expect(result.map((p: any) => p.kind)).toContain("verifier");
+    const kinds = result.map((p: any) => p.kind);
+    // autofix-implementer addresses review findings, not the TDD boundary — verifier excluded.
+    expect(kinds).not.toContain("verifier");
+    // Lint, typecheck, gate, semantic, adversarial are still re-run.
+    expect(kinds).toContain("full-suite-gate");
+    expect(kinds).toContain("lint-check");
   });
 
-  test("autofix-test-writer strategy re-runs verifier", () => {
+  test("autofix-test-writer strategy does NOT re-run verifier (once-per-story TDD isolation check)", () => {
     const result = phasesToRevalidate(["autofix-test-writer"], allPhases);
-    expect(result.map((p: any) => p.kind)).toContain("verifier");
+    const kinds = result.map((p: any) => p.kind);
+    // autofix-test-writer rewrites tests for adversarial-review — not re-doing TDD boundary.
+    expect(kinds).not.toContain("verifier");
+    expect(kinds).toContain("full-suite-gate");
+    expect(kinds).toContain("lint-check");
   });
 
   test("mechanical-lintfix does NOT re-run verifier (style-only, no semantic regression risk)", () => {

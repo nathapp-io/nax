@@ -143,13 +143,22 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
  * reads as the opposite of what greenfield-gate actually decided, so we override
  * the message text for that phase only.
  *
- * Exported for unit testing — pure function over (opName, success).
+ * For rectification-stage ops (autofix-implementer, autofix-test-writer,
+ * mechanical-*), the op completing successfully is the entire success
+ * contract — whether the fix worked is judged by subsequent validation phases.
+ * Emitting "Phase failed: <name>" here is misleading because the op did run
+ * to completion. Return a rectification-specific message when stage="rectification".
+ *
+ * Exported for unit testing — pure function over (opName, success, stage?).
  */
-export function formatPhaseResultMessage(opName: string, success: boolean): string {
+export function formatPhaseResultMessage(opName: string, success: boolean, stage?: string): string {
   if (opName === "greenfield-gate") {
     return success
       ? "Greenfield-gate: pre-existing tests detected (not greenfield) — proceeding with normal TDD"
       : "Greenfield-gate: no pre-existing tests — greenfield run, pausing TDD test-writer";
+  }
+  if (stage === "rectification") {
+    return `Rectification strategy completed: ${opName}`;
   }
   return success ? `Phase passed: ${opName}` : `Phase failed: ${opName}`;
 }
@@ -607,6 +616,7 @@ function logDeterministicPhaseOutcome(
   output: unknown,
   durationMs: number,
   isTddPhase: boolean,
+  stage?: string,
 ): void {
   if (isTddPhase) return;
   if (opName === "semantic-review" || opName === "adversarial-review") return;
@@ -622,7 +632,16 @@ function logDeterministicPhaseOutcome(
   if (findingsCount !== undefined) data.findingsCount = findingsCount;
   if (status !== undefined) data.status = status;
 
-  const message = formatPhaseResultMessage(opName, success);
+  const message = formatPhaseResultMessage(opName, success, stage);
+
+  // Rectification ops complete successfully whenever the prompt finishes — the
+  // "did the fix work?" question is answered by subsequent validation phases.
+  // Always log at info for these; never emit a misleading "Phase failed" warn.
+  if (stage === "rectification") {
+    logger?.info("story-orchestrator", message, data);
+    return;
+  }
+
   if (success) {
     logger?.info("story-orchestrator", message, data);
   } else {
@@ -732,7 +751,7 @@ async function runPhase(
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
-    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase);
+    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase, slot.op.stage);
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
