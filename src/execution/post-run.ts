@@ -358,9 +358,12 @@ export async function applyPostRunInspection(
   const needsHumanReview = failureCategory === "session-failure";
   const combinedOutput = (agentResult.output ?? "") + ((agentResult as { stderr?: string }).stderr ?? "");
 
-  // Belt-and-suspenders: verifierOp.recover cleans up on its happy path, but if the
-  // verifier never ran (short-circuit before verify) the file from a prior story may
-  // still be on disk. Best-effort — ignored failures.
+  // Primary success-path cleanup: verifierOp.parse (strict) + verifierOp.verify handle
+  // the normal flow without calling recover, so cleanupVerdict is never invoked inside
+  // verify.ts on the happy path. verifierOp.recover (disk-fallback after retry exhaustion)
+  // does call cleanupVerdict in its finally block — but this call here is the primary
+  // cleanup for the success path and also covers the case where the verifier never ran
+  // at all (short-circuit before verify). Best-effort — failures ignored.
   if (isTdd) {
     const { cleanupVerdict } = await import("../tdd/verdict");
     await cleanupVerdict(ctx.workdir).catch(() => undefined);

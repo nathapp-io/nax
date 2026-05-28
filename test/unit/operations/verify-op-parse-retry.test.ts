@@ -1,14 +1,16 @@
 /**
- * Tests for verifierOp strict parse + parse-retry contract.
+ * Tests for verifierOp parse-retry contract and recover fail-closed behavior.
  *
- * After the Issue 3 fix, verifierOp.parse throws ParseValidationError for
- * empty/non-JSON/missing-field output. The retry strategy then re-prompts
- * the same session. verifierOp.recover is the last-ditch disk fallback and
- * must always return non-null (fail-closed VerifierOutput).
+ * Covers the unique concerns of this file:
+ *   - op.parse success path (valid verdict JSON → VerifierOutput)
+ *   - op.retry is declared
+ *   - op.recover is fail-closed (always non-null) when disk is missing/invalid
+ *
+ * Parse *failure* cases (empty stdout, non-JSON, truncated) are covered in
+ * verify-op.test.ts to avoid duplication.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { ParseValidationError } from "../../../src/agents/retry";
 import { verifierOp } from "../../../src/operations";
 import { makeTempDir, cleanupTempDir } from "../../helpers/temp";
 
@@ -31,28 +33,6 @@ function makeCtx(packageDir: string) {
 
 const STORY = { id: "US-001", title: "t", workdir: "" } as any;
 const INPUT = { story: STORY };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// op.parse — strict: throws ParseValidationError for invalid/empty stdout
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("verifierOp.parse — strict: throws ParseValidationError", () => {
-  test("throws ParseValidationError when stdout is empty", () => {
-    expect(() => verifierOp.parse("", INPUT, makeCtx("/tmp"))).toThrow(ParseValidationError);
-  });
-
-  test("throws ParseValidationError when stdout is non-JSON prose", () => {
-    expect(() =>
-      verifierOp.parse("I finished verifying everything looks good.", INPUT, makeCtx("/tmp")),
-    ).toThrow(ParseValidationError);
-  });
-
-  test("throws ParseValidationError on truncated JSON (mid-array)", () => {
-    const truncated =
-      '{"version":1,"approved":true,"tests":{"allPassing":true,"passCount":17,"failCount":0},"acceptanceCriteria":{"allMet":true,"criteria":[{"criterion":"AC1",';
-    expect(() => verifierOp.parse(truncated, INPUT, makeCtx("/tmp"))).toThrow(ParseValidationError);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // op.parse — success path: returns VerifierOutput when stdout is valid
