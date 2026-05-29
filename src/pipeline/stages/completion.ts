@@ -31,6 +31,10 @@ export const completionStage: PipelineStage = {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
     const sessionCost = ctx.agentResult?.estimatedCostUsd || 0;
+    // In parallel worktree mode, a shared PRD and prd.json file is managed by the
+    // unified executor. Worktree pipelines must not race on it — skip both the in-memory
+    // mutation and the disk write when skipPrdPersistence is set.
+    const persistPrd = ctx.skipPrdPersistence !== true;
 
     // Calculate PRD path — prefer ctx.prdPath (already resolved by runner), fall back to
     // featureDir reconstruction, with a last-resort for contexts where neither is set (e.g. tests).
@@ -64,9 +68,11 @@ export const completionStage: PipelineStage = {
       }
     }
 
-    // Mark all stories in batch as passed
+    // Mark all stories in batch as passed (skipped in parallel worktree mode)
     for (const completedStory of ctx.stories) {
-      markStoryPassed(ctx.prd, completedStory.id);
+      if (persistPrd) {
+        markStoryPassed(ctx.prd, completedStory.id);
+      }
 
       const costPerStory = sessionCost / ctx.stories.length;
       logger.info("completion", "Story passed", {
@@ -118,8 +124,10 @@ export const completionStage: PipelineStage = {
       // Verdict is now written by the execution stage directly when available.
     }
 
-    // Save PRD
-    await _completionDeps.savePRD(ctx.prd, prdPath);
+    // Save PRD (skipped in parallel worktree mode — unified executor is the single writer)
+    if (persistPrd) {
+      await _completionDeps.savePRD(ctx.prd, prdPath);
+    }
 
     // Display progress
     const updatedCounts = countStories(ctx.prd);
