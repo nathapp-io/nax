@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-05-29T04-09-48-099Z",
+    "feature": "verifier-findings-and-cycle-honesty",
+    "startedAt": "2026-05-29T04:09:48.098Z",
+    "status": "failed",
+    "dryRun": false,
+    "pid": 42637
+  },
+  "progress": {
+    "total": 3,
+    "passed": 0,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 2
+  },
+  "cost": {
+    "spent": 4.18697935,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-05-29T04:26:06.103Z",
+  "durationMs": 978005,
+  "postRun": {
+    "acceptance": {
+      "status": "not-run"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-05-29T04:26:05.338Z"
+    }
+  }
+}
