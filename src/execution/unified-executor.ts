@@ -248,6 +248,7 @@ export async function executeUnified(
                 config: ctx.config,
                 rootConfig: ctx.config,
                 prd,
+                skipPrdPersistence: true, // CR-1: worktree pipelines must not persist PRD
                 projectDir: ctx.workdir,
                 naxIgnoreIndex,
                 hooks: ctx.hooks,
