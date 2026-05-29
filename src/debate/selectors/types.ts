@@ -5,7 +5,7 @@
 import type { IAgentManager } from "@/agents";
 import type { DebateConfig as DebateSelectorConfig } from "@/config/selectors";
 import type { CallContext } from "@/operations/types";
-import type { ResolverContext, SuccessfulProposal } from "../session-helpers";
+import type { SuccessfulProposal } from "../session-helpers";
 import type { DebateStageConfig, Debater } from "../types";
 
 export interface SelectorContext {
@@ -14,7 +14,6 @@ export interface SelectorContext {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateSelectorConfig;
   readonly proposals: SuccessfulProposal[];
-  readonly labeledProposals?: ResolverContext["labeledProposals"];
   readonly critiques: string[];
   readonly workdir: string;
   readonly featureName: string;

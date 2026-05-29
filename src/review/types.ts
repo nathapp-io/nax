@@ -12,7 +12,7 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
 /**
  * Diff context passed to debate resolver and prompt builders.
  * Discriminated on `mode` — prevents ambiguous routing when both
- * `diff` and `storyGitRef` might be present in a ResolverContext spread.
+ * `diff` and `storyGitRef` are present.
  */
 export type DiffContext =
   | { mode: "embedded"; diff: string; storyGitRef?: never; stat?: never }

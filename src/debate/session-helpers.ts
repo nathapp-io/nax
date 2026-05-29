@@ -40,11 +40,6 @@ export interface ResolveOutcome {
   findings?: unknown[];
 }
 
-/** Context passed to selectors after proposals are collected. */
-export interface ResolverContext {
-  labeledProposals: Array<{ debater: string; output: string }>;
-}
-
 export interface DebateSessionOptions extends DispatchContext {
   storyId: string;
   stage: string;

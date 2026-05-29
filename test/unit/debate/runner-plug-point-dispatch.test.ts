@@ -302,13 +302,6 @@ describe("runPanelOneShot() — post-debate verifier dispatch (US-004 AC5)", () 
       stageConfig,
       config: DEFAULT_DEBATE_CONFIG,
       workdir: "/tmp/work",
-      resolverContextInput: {
-        diffMode: "embedded",
-        diff: "",
-        story: { id: "US-004", title: "test", acceptanceCriteria: ["AC1"] },
-        semanticConfig: {} as any,
-        resolverType: "synthesis",
-      },
     });
 
     const result = await runner.run("test prompt");
