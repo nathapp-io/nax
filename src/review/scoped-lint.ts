@@ -26,6 +26,8 @@ interface ScopedLintArgs {
   story?: UserStory;
   storyGitRef?: string;
   env?: Record<string, string | undefined>;
+  /** Secret env var names to strip before spawning the lint command. */
+  stripEnvVars?: string[];
   naxIgnoreIndex?: NaxIgnoreIndex;
   scope?: AutofixLintScope;
 }
@@ -170,6 +172,7 @@ async function runLintCommand(
   storyId: string | undefined,
   env: Record<string, string | undefined> | undefined,
   command: string,
+  stripEnvVars?: string[],
 ): Promise<QualityCommandResult> {
   return runQualityCommand({
     commandName: SCOPED_LINT_CHECK,
@@ -177,6 +180,7 @@ async function runLintCommand(
     workdir,
     storyId,
     env,
+    stripEnvVars,
   });
 }
 
@@ -228,7 +232,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         storyId: args.storyId,
         reason: scope.degradedReason,
       });
-      const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand);
+      const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand, args.stripEnvVars);
       return withLintScope(
         attachLintFindings(toReviewCheck(fullResult), args.lintOutputFormat, args.workdir),
         scope,
@@ -259,13 +263,13 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
 
   if (scopedTemplate) {
     const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuotePath).join(" "));
-    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
+    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand, args.stripEnvVars);
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
   if (!scope.degradedReason && isSupportedDerivedScopedCommand(fullLintCommand)) {
     const scopedCommand = appendFilesToCommand(fullLintCommand, scope.files);
-    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand);
+    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand, args.stripEnvVars);
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
@@ -274,7 +278,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     storyId: args.storyId,
     reason: scope.degradedReason ?? "unsupported_scoped_command_shape",
   });
-  const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand);
+  const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand, args.stripEnvVars);
   if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
   const parsed = parseLintOutput(fullResult.output, args.lintOutputFormat ?? "auto", {
@@ -332,6 +336,8 @@ export async function runAutofixLint(args: {
   projectDir?: string;
   storyId?: string;
   env?: Record<string, string | undefined>;
+  /** Secret env var names to strip before spawning the lint command. */
+  stripEnvVars?: string[];
   naxIgnoreIndex?: NaxIgnoreIndex;
   scope: AutofixLintScope;
 }): Promise<ReviewCheckResult> {

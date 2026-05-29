@@ -34,6 +34,8 @@ export interface QualityCommandOptions {
   timeoutMs?: number;
   /** Optional environment overrides for the spawned process. */
   env?: Record<string, string | undefined>;
+  /** Secret env var names to strip before spawning the shell command. */
+  stripEnvVars?: string[];
 }
 
 export interface QualityCommandResult {
@@ -79,13 +81,21 @@ function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; ca
  * to avoid deadlocking on output larger than the OS pipe buffer (~64 KB).
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
-  const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS, env } = opts;
+  const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS, env, stripEnvVars } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
 
   logger?.info("quality", `Running ${commandName}`, { storyId, commandName, command, workdir });
 
   try {
+    // Build the base env, stripping any configured secret vars before spawning.
+    const baseEnv: Record<string, string | undefined> = {
+      ...(process.env as Record<string, string | undefined>),
+    };
+    for (const key of stripEnvVars ?? []) {
+      delete baseEnv[key];
+    }
+
     // Execute via shell to preserve quoting semantics of configured commands.
     // Splitting on whitespace loses quoted args and escaped spaces.
     const proc = _qualityRunnerDeps.spawn({
@@ -93,10 +103,7 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        ...(process.env as Record<string, string | undefined>),
-        ...(env ?? {}),
-      },
+      env: { ...baseEnv, ...(env ?? {}) },
     });
 
     let timedOut = false;

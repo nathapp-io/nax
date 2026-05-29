@@ -52,6 +52,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       command: command ?? "",
       workdir: input.workdir,
       storyId: input.storyId,
+      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
     });
 
     if (result.exitCode === 0) {
