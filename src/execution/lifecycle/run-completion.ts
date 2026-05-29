@@ -24,6 +24,7 @@ import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
+import type { DeferredReviewResult } from "../deferred-review";
 import { runDeferredRegression } from "./run-regression";
 
 /**
@@ -62,6 +63,12 @@ export interface RunCompletionOptions extends DispatchContext {
   projectDir?: string;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed after session teardown. */
   pluginProviderCache?: import("../../context/engine").PluginProviderCache;
+  /**
+   * Result of the end-of-run deferred plugin review (#1146 G2). Undefined when no
+   * IReviewPlugin reviewers are registered. Consumed here: always surfaced; gates
+   * the run only when config.review.pluginMode === "gating".
+   */
+  deferredReview?: DeferredReviewResult;
 }
 
 export interface RunCompletionResult {
@@ -82,6 +89,12 @@ export interface RunCompletionResult {
     skipped: number;
     pending: number;
   };
+  /**
+   * True when config.review.pluginMode === "gating" AND a deferred plugin reviewer
+   * failed. Propagated up to runner.ts to fail RunResult.success. Always false in
+   * observational mode (#1146 G2).
+   */
+  pluginGateFailed: boolean;
 }
 
 /**
@@ -222,6 +235,28 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
           };
         }
       }
+    }
+  }
+
+  // Deferred plugin review consumption (#1146 G2).
+  // The deferred review already ran inside executeUnified; here we make its result
+  // observable and, when opted in, gate the run on it. Default mode is observational:
+  // failures are surfaced but do NOT change run outcome (preserves ADR-023 D2 behavior).
+  // NB: do NOT call setRunStatus here — see Defect 2. Run outcome flows via the
+  // returned pluginGateFailed flag, which runner-completion.ts folds into finalStatus.
+  let pluginGateFailed = false;
+  const deferredReview = options.deferredReview;
+  if (deferredReview?.anyFailed) {
+    const failedReviewers = deferredReview.reviewerResults.filter((r) => !r.passed).map((r) => r.name);
+    const gating = config.review.pluginMode === "gating";
+    logger?.warn("review", "Deferred plugin reviewer(s) reported failures", {
+      storyId: runId,
+      failedReviewers,
+      pluginMode: config.review.pluginMode,
+      gating,
+    });
+    if (gating) {
+      pluginGateFailed = true;
     }
   }
 
@@ -418,5 +453,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       skipped: finalCounts.skipped,
       pending: finalCounts.pending,
     },
+    pluginGateFailed,
   };
 }
