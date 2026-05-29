@@ -25,6 +25,23 @@ type HookInput = {
   tool_input?: { command?: string };
 };
 
+/**
+ * Remove content that is data, not an executable command token, so a literal
+ * "bun test" inside a string argument (PR body, commit message, echo) or a
+ * heredoc body does not trip the guard. We strip:
+ *   - heredoc bodies     `<<'EOF' … \nEOF`  /  `<<EOF … \nEOF`  /  `<<-EOF`
+ *   - single-quoted      `'…'`
+ *   - double-quoted      `"…"` (honouring `\"` escapes)
+ * Heredocs are stripped first because their bodies routinely contain unmatched
+ * quotes that would otherwise desync the quote strippers.
+ */
+function stripNonCommandText(cmd: string): string {
+  return cmd
+    .replace(/<<-?\s*(['"]?)(\w+)\1[\s\S]*?\n[ \t]*\2\b/g, " ")
+    .replace(/'[^']*'/g, " ")
+    .replace(/"(?:[^"\\]|\\.)*"/g, " ");
+}
+
 async function main(): Promise<void> {
   const raw = await Bun.stdin.text();
   let payload: HookInput;
@@ -36,8 +53,13 @@ async function main(): Promise<void> {
 
   if (payload.tool_name !== "Bash") process.exit(0);
 
-  const cmd = (payload.tool_input?.command ?? "").trim();
-  if (!cmd) process.exit(0);
+  const rawCmd = (payload.tool_input?.command ?? "").trim();
+  if (!rawCmd) process.exit(0);
+
+  // Match against command tokens only — strip quoted/heredoc text so a literal
+  // "bun test" inside a string argument (e.g. `gh pr create --body "…"`) or a
+  // commit message is not mistaken for a test invocation.
+  const cmd = stripNonCommandText(rawCmd);
 
   // Allow wrapper scripts — they time-box internally.
   //   bun run test, bun run test:bail, bun run test:unit, etc.
