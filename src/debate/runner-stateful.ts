@@ -13,12 +13,7 @@ import {
   resolveStatefulSignal,
   runZeroSuccessFallback,
 } from "./runner-stateful-helpers";
-import {
-  type ResolveOutcome,
-  _debateSessionDeps,
-  buildFailedResult,
-  resolveOutcome,
-} from "./session-helpers";
+import { type ResolveOutcome, _debateSessionDeps, buildFailedResult, resolveOutcome } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal } from "./types";
 
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;

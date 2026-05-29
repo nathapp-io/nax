@@ -143,7 +143,6 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
   };
 }
 
-
 export async function runZeroSuccessFallback(
   ctx: StatefulCoordinatorCtx,
   prompt: string,

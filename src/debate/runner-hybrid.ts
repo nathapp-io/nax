@@ -18,7 +18,6 @@ import { createDebaterCallContext, resolveStatefulSignal } from "./runner-statef
 import {
   type ResolveOutcome,
   type ResolvedDebater,
-
   _debateSessionDeps,
   buildFailedResult,
   resolveOutcome,
