@@ -325,3 +325,18 @@ describe("DEFAULT_CONFIG includes debate section", () => {
     expect(DEFAULT_CONFIG.debate?.stages[stage].sessionMode).toBe(expected);
   });
 });
+
+test("dialogue-verdict is no longer a valid selector kind", () => {
+  const result = NaxConfigSchema.safeParse({
+    ...baseConfig,
+    debate: {
+      enabled: true,
+      stages: {
+        review: {
+          selector: { kind: "dialogue-verdict" },
+        },
+      },
+    },
+  });
+  expect(result.success).toBe(false);
+});

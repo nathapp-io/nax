@@ -40,7 +40,6 @@ describe("DebateStageConfigSchema — selector field", () => {
     "majority-fail-closed",
     "majority-fail-open",
     "judge",
-    "dialogue-verdict",
   ] as const;
 
   for (const kind of VALID_KINDS) {

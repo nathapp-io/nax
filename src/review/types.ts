@@ -12,7 +12,7 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
 /**
  * Diff context passed to debate resolver and prompt builders.
  * Discriminated on `mode` — prevents ambiguous routing when both
- * `diff` and `storyGitRef` might be present in a ResolverContext spread.
+ * `diff` and `storyGitRef` are present.
  */
 export type DiffContext =
   | { mode: "embedded"; diff: string; storyGitRef?: never; stat?: never }
@@ -167,16 +167,6 @@ export interface ReviewResult {
   };
 }
 
-/** Reviewer-implementer dialogue configuration */
-export interface ReviewDialogueConfig {
-  /** Enable reviewer-implementer dialogue mode */
-  enabled: boolean;
-  /** Maximum clarification exchanges per attempt */
-  maxClarificationsPerAttempt: number;
-  /** Maximum total messages in a dialogue session */
-  maxDialogueMessages: number;
-}
-
 /** Adversarial review configuration (when 'adversarial' is in checks) */
 export interface AdversarialReviewConfig {
   /**
@@ -260,6 +250,4 @@ export interface ReviewConfig {
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */
   adversarial?: AdversarialReviewConfig;
-  /** Reviewer-implementer dialogue configuration */
-  dialogue?: ReviewDialogueConfig;
 }

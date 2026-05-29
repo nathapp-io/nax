@@ -34,8 +34,6 @@ interface PlanCtx extends DispatchContext {
   readonly workdir?: string;
   readonly featureName?: string;
   readonly timeoutSeconds?: number;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: import("./session-helpers").ResolverContextInput;
 }
 
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;
@@ -377,8 +375,6 @@ export async function runPlan(
       stageConfig: ctx.stageConfig,
       config: ctx.config,
       callContext: ctx.callContext,
-      reviewerSession: ctx.reviewerSession,
-      resolverContextInput: ctx.resolverContextInput,
     },
     { workdir: opts.workdir, feature: opts.feature, specContent: opts.specContent },
     successful,

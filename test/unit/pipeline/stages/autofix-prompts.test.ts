@@ -12,8 +12,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { RectifierPromptBuilder } from "../../../../src/prompts";
-import type { DialogueMessage } from "../../../../src/review/dialogue";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+
+type DialogueMessage = { role: string; content: string };
 
 // ---------------------------------------------------------------------------
 // Helpers

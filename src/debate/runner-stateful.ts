@@ -9,18 +9,11 @@ import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
 import {
   buildRebuttalPromptBuilder,
-  buildResolverContext,
   createDebaterCallContext,
   resolveStatefulSignal,
   runZeroSuccessFallback,
 } from "./runner-stateful-helpers";
-import {
-  type ResolveOutcome,
-  type ResolverContextInput,
-  _debateSessionDeps,
-  buildFailedResult,
-  resolveOutcome,
-} from "./session-helpers";
+import { type ResolveOutcome, _debateSessionDeps, buildFailedResult, resolveOutcome } from "./session-helpers";
 import type { DebateResult, DebateStageConfig, Proposal } from "./types";
 
 const DEFAULT_MAX_CONCURRENT_DEBATERS = 2;
@@ -34,8 +27,6 @@ interface StatefulCtx extends DispatchContext {
   readonly featureName: string;
   readonly timeoutSeconds: number;
   readonly callContext: CallContext;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: ResolverContextInput;
   readonly resolverCallContext?: CallContext;
 }
 
@@ -222,8 +213,6 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
     ctx.featureName,
-    ctx.reviewerSession,
-    buildResolverContext(successfulProposals, ctx.resolverContextInput),
     undefined,
     successfulProposals.map((proposal) => proposal.debater),
     ctx.agentManager,

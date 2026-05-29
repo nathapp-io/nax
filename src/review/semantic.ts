@@ -76,7 +76,6 @@ export interface RunSemanticReviewOptions {
   agentManager: IAgentManager | undefined;
   naxConfig?: ReviewConfig;
   featureName?: string;
-  resolverSession?: import("./dialogue").ReviewerSession;
   priorSemanticIterations?: Iteration[];
   blockingThreshold?: "error" | "warning" | "info";
   featureContextMarkdown?: string;
@@ -98,7 +97,6 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
     agentManager,
     naxConfig,
     featureName,
-    resolverSession,
     priorSemanticIterations,
     blockingThreshold,
     featureContextMarkdown,
@@ -253,7 +251,6 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
       agentManager: effectiveAgentManager,
       featureName,
       story,
-      resolverSession,
       diffMode,
       diff,
       stat,

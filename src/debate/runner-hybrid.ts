@@ -13,12 +13,11 @@ import { DebatePromptBuilder } from "../prompts";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
 import { allSettledBounded } from "./concurrency";
-import { buildDebaterLabel, resolvePersonas } from "./personas";
+import { resolvePersonas } from "./personas";
 import { createDebaterCallContext, resolveStatefulSignal } from "./runner-stateful-helpers";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
-  type ResolverContextInput,
   _debateSessionDeps,
   buildFailedResult,
   resolveOutcome,
@@ -34,8 +33,6 @@ export interface HybridCtx extends DispatchContext {
   readonly featureName: string;
   readonly timeoutSeconds: number;
   readonly callContext: CallContext;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: ResolverContextInput;
   readonly resolverCallContext?: CallContext;
 }
 
@@ -226,16 +223,6 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
     ctx.featureName,
-    ctx.reviewerSession,
-    ctx.resolverContextInput
-      ? {
-          ...ctx.resolverContextInput,
-          labeledProposals: successfulResults.map((p) => ({
-            debater: buildDebaterLabel(p.debater),
-            output: p.output,
-          })),
-        }
-      : undefined,
     undefined,
     successfulResults.map((p) => p.debater),
     agentManager,

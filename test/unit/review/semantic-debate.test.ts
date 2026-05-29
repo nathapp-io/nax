@@ -8,6 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { pickBaseSelectorKind } from "../../../src/debate";
 import type { AgentResult } from "../../../src/agents/types";
 import type { AgentAdapter } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
@@ -282,47 +283,6 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     });
 
     expect(_semanticDeps.createDebateRunner).toHaveBeenCalled();
-  });
-
-  test("ref mode + resolverSession threads productionExcludePatterns into resolverContextInput", async () => {
-    const runMock = mock(async () => DEBATE_MAJORITY_PASS_RESULT);
-    const createDebateRunnerMock = mock(() => ({ run: runMock }));
-    _semanticDeps.createDebateRunner = createDebateRunnerMock as unknown as typeof _semanticDeps.createDebateRunner;
-
-    const agentManager = makeAgentManager(PROPOSAL_PASS);
-    const runtime = makeMockRuntime({ agentManager });
-    const resolverSession = { history: [] } as unknown as import("../../../src/review/dialogue").ReviewerSession;
-
-    await runSemanticReview({
-      workdir: WORKDIR,
-      storyGitRef: STORY_GIT_REF,
-      story: STORY,
-      semanticConfig: {
-        ...SEMANTIC_CONFIG,
-        diffMode: "ref",
-        excludePatterns: undefined,
-        substantiation: { requote: false, maxRequotes: 5 },
-      },
-      agentManager,
-      naxConfig: DEBATE_REVIEW_ENABLED_CONFIG,
-      runtime,
-      resolverSession,
-    });
-
-    expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
-    const [opts] = createDebateRunnerMock.mock.calls[0] as [
-      {
-        resolverContextInput?: {
-          productionExcludePatterns?: readonly string[];
-        };
-      },
-    ];
-    const excludes = opts.resolverContextInput?.productionExcludePatterns ?? [];
-    expect(excludes.length).toBeGreaterThan(0);
-    expect(excludes).toContain(":!test/");
-    expect(excludes).toContain(":!*.test.ts");
-    expect(excludes).toContain(":!.nax/");
-    expect(excludes).toContain(":!.nax-pids");
   });
 
   test("AC3: DebateSession.run() is called with the semantic review prompt", async () => {
@@ -603,4 +563,15 @@ describe("runSemanticReview — debate integration (US-004)", () => {
     expect(result.advisoryFindings ?? []).toHaveLength(0);
     expect(result.output).toContain("all findings were advisory");
   });
+});
+
+test("review-debate stageConfig resolves to the resolver-derived base selector, not dialogue-verdict", () => {
+  const configured = {
+    resolver: { type: "majority-fail-closed" as const },
+    sessionMode: "stateful" as const,
+    mode: "panel" as const,
+  };
+  const reviewSelectorKind = pickBaseSelectorKind(configured as never);
+  expect(reviewSelectorKind).toBe("majority-fail-closed");
+  expect(reviewSelectorKind).not.toBe("dialogue-verdict");
 });

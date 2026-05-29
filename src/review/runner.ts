@@ -36,7 +36,6 @@ export interface RunReviewOptions {
   naxConfig?: ReviewNaxConfig;
   retrySkipChecks?: Set<string>;
   featureName?: string;
-  resolverSession?: import("./dialogue").ReviewerSession;
   priorFailures?: Array<{ stage: string; modelTier: string }>;
   priorSemanticIterations?: Iteration[];
   featureContextMarkdown?: string;
@@ -263,7 +262,6 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
     naxConfig,
     retrySkipChecks,
     featureName,
-    resolverSession,
     priorFailures,
     priorSemanticIterations,
     featureContextMarkdown,
@@ -368,7 +366,6 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
         agentManager,
         naxConfig,
         featureName,
-        resolverSession,
         priorSemanticIterations,
         blockingThreshold: config.blockingThreshold,
         featureContextMarkdown,

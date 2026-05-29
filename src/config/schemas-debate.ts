@@ -42,7 +42,6 @@ const SelectorSchema = z
     z.object({ kind: z.literal("majority-fail-closed") }),
     z.object({ kind: z.literal("majority-fail-open") }),
     z.object({ kind: z.literal("judge") }),
-    z.object({ kind: z.literal("dialogue-verdict") }),
     z.object({
       kind: z.literal("verifier-pick"),
       patch: z

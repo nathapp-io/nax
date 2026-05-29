@@ -8,10 +8,11 @@
 
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
-import type { DebateRunner, DebateRunnerOptions } from "../debate";
+import { pickBaseSelectorKind } from "../debate";
+import type { DebateRunner, DebateRunnerOptions, DebateStageConfig } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
-import { findingsToReviewFindings, llmFindingsToReviewFindings } from "./finding-projection";
+import { llmFindingsToReviewFindings } from "./finding-projection";
 import {
   type LLMFinding,
   formatFindings,
@@ -57,7 +58,6 @@ export interface SemanticDebateOptions {
   agentManager: IAgentManager;
   featureName: string | undefined;
   story: SemanticStory;
-  resolverSession: import("./dialogue").ReviewerSession | undefined;
   diffMode: NonNullable<SemanticReviewConfig["diffMode"]>;
   diff: string | undefined;
   stat: string | undefined;
@@ -78,7 +78,6 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     agentManager,
     featureName,
     story,
-    resolverSession,
     diffMode,
     diff,
     stat,
@@ -93,16 +92,17 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
   const logger = getSafeLogger();
   // Safe: reviewDebateEnabled guard (in caller) confirms naxConfig.debate.stages.review is defined
   const configuredStageConfig = naxConfig.debate?.stages.review as import("../debate").DebateStageConfig;
-  // Explicit composition: review debate is always panel one-shot with dialogue-verdict selector
-  // and review-grounding-filter verifier (supersedes auto-elevation via pickSelectorKind).
+  // Explicit composition: review debate is always panel one-shot with the resolver-derived
+  // base selector and review-grounding-filter verifier. (Historically forced "dialogue-verdict",
+  // which always fell through to this same base selector because no ReviewerSession was ever
+  // produced — see 2026-05-29 ReviewerSession removal plan.)
   const reviewStageConfig: import("../debate").DebateStageConfig = {
     ...configuredStageConfig,
     sessionMode: "one-shot" as const,
     mode: "panel" as const,
-    selector: { kind: "dialogue-verdict" },
+    selector: { kind: pickBaseSelectorKind(configuredStageConfig) } as unknown as DebateStageConfig["selector"],
     postDebateVerifier: { kind: "review-grounding-filter" },
   };
-  const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
   const semanticAgentName =
     agentManager && typeof (agentManager as IAgentManager).getDefault === "function"
       ? (agentManager as IAgentManager).getDefault()
@@ -123,96 +123,11 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     workdir,
     featureName: featureName,
     timeoutSeconds: naxConfig.execution?.sessionTimeoutSeconds,
-    reviewerSession: resolverSession,
-    resolverContextInput: resolverSession
-      ? {
-          diffMode,
-          ...(diffMode === "ref" ? { storyGitRef: effectiveRef, stat, productionExcludePatterns } : { diff }),
-          story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
-          semanticConfig,
-          blockingThreshold,
-          resolverType: reviewStageConfig.resolver.type,
-          isReReview,
-        }
-      : undefined,
   });
-  // Track history length before to detect if the session was actually used by the resolver
-  const historyLenBefore = resolverSession?.history.length ?? 0;
   const debateResult = await debateRunner.run(prompt);
   const debateCost = debateResult.totalCostUsd ?? 0;
 
-  // When the ReviewerSession was used by the resolver (history grew), use its tool-verified
-  // verdict via getVerdict() instead of re-deriving from raw proposals.
-  const sessionUsed = resolverSession && resolverSession.history.length > historyLenBefore;
-  if (sessionUsed) {
-    const durationMs = Date.now() - startTime;
-    try {
-      const verdict = resolverSession.getVerdict();
-      const findings = verdict.findings ?? [];
-      if (!verdict.passed && findings.length > 0) {
-        logger?.warn("review", `Semantic review failed (debate+dialogue): ${findings.length} findings`, {
-          storyId: story.id,
-          durationMs,
-        });
-        recordSemanticDebateAudit({
-          runtime: runtime,
-          workdir,
-          storyId: story.id,
-          featureName,
-          parsed: true,
-          passed: false,
-          blockingThreshold,
-          result: {
-            passed: false,
-            findings: findingsToReviewFindings(findings, { source: "semantic-debate-review" }),
-          },
-        });
-        return {
-          check: "semantic",
-          success: false,
-          command: "",
-          exitCode: 1,
-          output: `Semantic review failed:\n\n${findings.map((f) => `${f.rule ?? "semantic"}: ${f.message}`).join("\n")}`,
-          durationMs,
-          findings,
-          cost: debateCost,
-        };
-      }
-      const label = verdict.passed
-        ? "Semantic review passed (debate+dialogue)"
-        : "Semantic review passed (debate+dialogue, all findings non-blocking)";
-      logger?.info("review", label, { storyId: story.id, durationMs });
-      recordSemanticDebateAudit({
-        runtime: runtime,
-        workdir,
-        storyId: story.id,
-        featureName,
-        parsed: true,
-        passed: true,
-        blockingThreshold,
-        result: {
-          passed: true,
-          findings: findingsToReviewFindings(findings, { source: "semantic-debate-review" }),
-        },
-      });
-      return {
-        check: "semantic",
-        success: true,
-        command: "",
-        exitCode: 0,
-        output: label,
-        durationMs,
-        cost: debateCost,
-      };
-    } catch {
-      // getVerdict() threw (e.g. session destroyed) — fall through to stateless path
-      logger?.warn("review", "getVerdict() failed after debate+dialogue — falling back to stateless verdict", {
-        storyId: story.id,
-      });
-    }
-  }
-
-  // Stateless fallback: re-derive verdict from proposals (existing behavior)
+  // Re-derive verdict from proposals (stateless path)
   const resolverPassed = debateResult.outcome === "passed";
   const allFindings: LLMFinding[] = [];
   for (const p of debateResult.proposals) {

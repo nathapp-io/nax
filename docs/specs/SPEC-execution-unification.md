@@ -610,6 +610,8 @@ Concrete impact:
 - US-005c adds: `grep -n "ctx.reviewerSession" src/pipeline/` returns `0` (only debate-internal callers remain).
 - `ReviewerSession` class file stays.
 
+> **Update (2026-05-29):** D4's "keep `ReviewerSession` for debate" decision rested on the assumption that debate consumers construct it. A verification pass disproved this — `createReviewerSession` had zero production callers, debate included. The class and the `dialogue-verdict` selector were therefore removed in full rather than retained. See `docs/superpowers/plans/2026-05-29-reviewersession-dialogue-removal.md`.
+
 ## Out-of-Scope Tracks (Coordinated, Not Bundled)
 
 - **Debate subsystem deprecation/removal.** Separate ADR if pursued. Migration code in this spec does not reference `src/debate/`.

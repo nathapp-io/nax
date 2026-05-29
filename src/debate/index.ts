@@ -9,7 +9,6 @@ export type { DebateRunnerOptions } from "./runner";
 export { _debateSessionDeps, resolveOutcome } from "./session-helpers";
 export type {
   DebateSessionOptions,
-  ResolverContextInput,
   ResolveOutcome,
   SuccessfulProposal,
 } from "./session-helpers";
