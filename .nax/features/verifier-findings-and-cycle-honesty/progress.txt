@@ -1,1 +1,4 @@
 [2026-05-29T04:26:02.068Z] US-001 — FAILED — Verifier emits structured findings from categorized rejection reasons — Stage "execution" threw error: [adversarial-review] parse failed: invalid JSON shape
+[2026-05-29T04:36:33.400Z] US-001 — PASSED — Verifier emits structured findings from categorized rejection reasons — Cost: $3.5137
+[2026-05-29T04:53:53.662Z] US-002 — PASSED — Cycle exit honesty: ValidateResult type and short-circuit flag — Cost: $2.9541
+[2026-05-29T05:28:36.642Z] US-003 — PASSED — Resume guard and RectificationResult: wire validate-short-circuit to liteScopeIncomplete — Cost: $5.7784
