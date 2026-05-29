@@ -104,17 +104,30 @@ async function detectTestFramework(
   return undefined;
 }
 
+// ── Language Detection Memo ───────────────────────────────────────────────────
+
+const _languageCache = new Map<string, ProjectProfile["language"] | undefined>();
+
+/** Clear the language-detection memo. Call in test teardown for isolation. */
+export function clearLanguageCache(): void {
+  _languageCache.clear();
+}
+
 // ── Public API (Language Detection) ───────────────────────────────────────────
 
 /**
- * Detect the language of a package directory.
+ * Detect the language of a package directory (memoized per process).
  *
  * Detection priority: Go > Rust > Python > TypeScript > JavaScript.
  * Returns `undefined` if no language markers are found.
+ * Call `clearLanguageCache()` in test teardown to reset the memo.
  */
 export async function detectLanguage(packageDir: string): Promise<ProjectProfile["language"] | undefined> {
+  if (_languageCache.has(packageDir)) return _languageCache.get(packageDir);
   const pkg = await _detectorDeps.readJson(join(packageDir, "package.json"));
-  return _detectLanguageImpl(packageDir, pkg);
+  const result = await _detectLanguageImpl(packageDir, pkg);
+  _languageCache.set(packageDir, result);
+  return result;
 }
 
 // ── lintTool inference ────────────────────────────────────────────────────────
