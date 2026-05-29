@@ -7,6 +7,7 @@ import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
 import type { FailureCategory, IsolationCheck } from "../tdd/types";
 import { categorizeVerdict, cleanupVerdict, coerceVerdict, isValidVerdict, readVerdict } from "../tdd/verdict";
+import type { VerdictCategorization, VerifierVerdict } from "../tdd/verdict";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation, VerifyContext } from "./types";
 
@@ -39,6 +40,50 @@ export interface VerifierOutput {
   readonly normalizedFindings: readonly Finding[];
 }
 
+function buildVerifierFindings(verdict: VerifierVerdict, categorization: VerdictCategorization): Finding[] {
+  if (categorization.success) return [];
+
+  switch (categorization.failureCategory) {
+    case "verifier-rejected": {
+      const files = verdict.testModifications.files;
+      return [
+        {
+          source: "tdd-verifier",
+          severity: "error",
+          category: "illegitimate-test-edits",
+          fixTarget: "test",
+          message:
+            files.length > 0
+              ? `Implementer edited test files illegitimately: ${files.join(", ")}`
+              : "Implementer made illegitimate test modifications",
+          meta: {
+            reasoning: verdict.testModifications.reasoning,
+            files,
+          },
+        },
+      ];
+    }
+    case "tests-failing": {
+      return [
+        {
+          source: "tdd-verifier",
+          severity: "error",
+          category: "tests-failed",
+          fixTarget: "source",
+          message: `${verdict.tests.failCount} story-scoped test(s) failed (verifier)`,
+          meta: {
+            passCount: verdict.tests.passCount,
+            failCount: verdict.tests.failCount,
+            reasoning: verdict.reasoning,
+          },
+        },
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
 /**
  * Parse the agent's stdout into a VerifierOutput using the project's tolerant
  * JSON extractor. Throws ParseValidationError when the output is empty, not
@@ -64,7 +109,7 @@ function parseVerdictFromStdout(output: string, _input: VerifierInput, _ctx: Bui
     estimatedCostUsd: 0,
     durationMs: 0,
     output,
-    normalizedFindings: [],
+    normalizedFindings: buildVerifierFindings(verdict, categorization),
     ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
     ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
   };
@@ -147,7 +192,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
           estimatedCostUsd: 0,
           durationMs: 0,
           output: "",
-          normalizedFindings: [],
+          normalizedFindings: buildVerifierFindings(verdict, categorization),
           ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
           ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
           ...(isolation && { isolation }),

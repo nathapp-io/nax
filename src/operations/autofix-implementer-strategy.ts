@@ -8,7 +8,7 @@ import type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofi
 import { implementerRectifyOp } from "./autofix-implementer";
 import type { DeclarationSink } from "./declaration-sink";
 
-const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review"]);
+const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review", "tdd-verifier"]);
 
 export function makeAutofixImplementerStrategy(
   story: UserStory,
