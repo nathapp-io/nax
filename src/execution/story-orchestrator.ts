@@ -390,7 +390,10 @@ function isFinding(value: unknown): value is Finding {
   );
 }
 
-function extractPhaseFindings(output: unknown): Finding[] {
+/**
+ * Exported for unit testing; not for external callers — use `runPhase`.
+ */
+export function extractPhaseFindings(output: unknown): Finding[] {
   if (output === null || output === undefined || typeof output !== "object") {
     return [];
   }

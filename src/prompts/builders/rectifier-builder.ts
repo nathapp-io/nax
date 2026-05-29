@@ -854,6 +854,10 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
     return parts.join("");
   }
 
+  static verifierContext(_findings: Finding[]): string {
+    throw new Error("not implemented");
+  }
+
   static failingTestContext(findings: Finding[]): string {
     if (findings.length === 0) {
       return "The full test suite has failing tests. Fix the implementation to make all tests pass.";

@@ -1,6 +1,7 @@
 import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
+import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
@@ -34,6 +35,8 @@ export interface VerifierOutput {
   readonly failureCategory?: FailureCategory;
   /** Human-readable reason for rejection from the verifier verdict. */
   readonly reviewReason?: string;
+  /** Structured findings populated when categorizeVerdict returned success=false. Always present; [] on success. */
+  readonly normalizedFindings: readonly Finding[];
 }
 
 /**
@@ -61,6 +64,7 @@ function parseVerdictFromStdout(output: string, _input: VerifierInput, _ctx: Bui
     estimatedCostUsd: 0,
     durationMs: 0,
     output,
+    normalizedFindings: [],
     ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
     ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
   };
@@ -143,6 +147,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
           estimatedCostUsd: 0,
           durationMs: 0,
           output: "",
+          normalizedFindings: [],
           ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
           ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
           ...(isolation && { isolation }),
@@ -154,6 +159,7 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
         estimatedCostUsd: 0,
         durationMs: 0,
         output: "",
+        normalizedFindings: [],
         reviewReason:
           "verifier produced unparseable verdict in stdout after retries and no usable verdict file on disk",
       };
