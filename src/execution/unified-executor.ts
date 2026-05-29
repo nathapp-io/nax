@@ -13,7 +13,7 @@ import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
-import { countStories, isComplete, isStalled, loadPRD } from "../prd";
+import { countStories, isComplete, isStalled, loadPRD, markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
 import { precomputeBatchPlan } from "./batching";
@@ -301,6 +301,11 @@ export async function executeUnified(
               pipelineResult,
             );
           }
+
+          // Single-writer PRD reconciliation (H-1): worktree pipelines skipped
+          // persistence, so record completed + merge-conflict outcomes here.
+          reconcileBatchOutcome(prd, batchResult);
+          await savePRD(prd, ctx.prdPath);
 
           await pipelineEventBus.drain();
           totalCost += batchResult.totalCost;
@@ -614,6 +619,32 @@ export async function executeUnified(
     // regression gate and exit summary — those run AFTER executeUnified returns.
     // stopHeartbeat() is called by runner.ts:finally (catches all exit paths)
     // and by runner-completion.ts after handleRunCompletion().
+  }
+}
+
+/**
+ * Single-writer reconciliation of a parallel batch outcome onto the in-memory PRD.
+ * Worktree pipelines no longer persist PRD (skipPrdPersistence), so the executor
+ * is the authority for:
+ *   - completed       → passed
+ *   - mergeConflicts  → passed iff rectified, else failed
+ * FAILED stories are intentionally NOT handled here — handlePipelineFailure
+ * (pipeline-result-handler.ts) already marks + saves them; touching them again
+ * double-increments attempts.
+ */
+export function reconcileBatchOutcome(
+  prd: PRD,
+  batchResult: Pick<RunParallelBatchResult, "completed" | "mergeConflicts">,
+): void {
+  for (const story of batchResult.completed) {
+    markStoryPassed(prd, story.id);
+  }
+  for (const conflict of batchResult.mergeConflicts) {
+    if (conflict.rectified) {
+      markStoryPassed(prd, conflict.story.id);
+    } else {
+      markStoryFailed(prd, conflict.story.id, undefined, "merge-conflict");
+    }
   }
 }
 
