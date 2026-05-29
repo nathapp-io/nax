@@ -9,7 +9,7 @@
 import type { IAgentManager } from "../agents";
 import type { ReviewConfig } from "../config/selectors";
 import { pickBaseSelectorKind } from "../debate";
-import type { DebateRunner, DebateRunnerOptions } from "../debate";
+import type { DebateRunner, DebateRunnerOptions, DebateStageConfig } from "../debate";
 import { getSafeLogger } from "../logger";
 import { filterByAcGroundingMinimal } from "./ac-quote-validator";
 import { llmFindingsToReviewFindings } from "./finding-projection";
@@ -100,7 +100,7 @@ export async function runSemanticDebate(opts: SemanticDebateOptions): Promise<Re
     ...configuredStageConfig,
     sessionMode: "one-shot" as const,
     mode: "panel" as const,
-    selector: { kind: pickBaseSelectorKind(configuredStageConfig) } as import("../debate").DebateStageConfig["selector"],
+    selector: { kind: pickBaseSelectorKind(configuredStageConfig) } as unknown as DebateStageConfig["selector"],
     postDebateVerifier: { kind: "review-grounding-filter" },
   };
   const semanticAgentName =

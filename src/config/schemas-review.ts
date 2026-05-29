@@ -44,12 +44,6 @@ const SemanticReviewConfigSchema = z.object({
   excludePatterns: z.array(z.string()).optional(),
 });
 
-export const ReviewDialogueConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  maxClarificationsPerAttempt: z.number().int().min(0).max(10).default(2),
-  maxDialogueMessages: z.number().int().min(5).max(100).default(20),
-});
-
 /**
  * Adversarial review config — ships off by default (opt-in via review.checks).
  * Destructive heuristics: finds what is missing or broken, not what is present.
