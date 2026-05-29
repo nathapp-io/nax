@@ -926,7 +926,9 @@ export async function runRectification(
           break;
         }
       }
-      const validated = rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
+      const validated = rectification.postValidate
+        ? await rectification.postValidate(findings, _validateCtx)
+        : findings;
       return { findings: validated, shortCircuited };
     },
   };

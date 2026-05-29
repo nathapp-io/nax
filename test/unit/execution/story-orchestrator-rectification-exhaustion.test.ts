@@ -501,10 +501,11 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    const secondCallFindings = await (capturedCycle as FixCycle<Finding>).validate(
+    const secondValidate = await (capturedCycle as FixCycle<Finding>).validate(
       capturedCtx as FixCycleContext,
       { mode: "full" },
     );
+    const secondCallFindings = Array.isArray(secondValidate) ? secondValidate : secondValidate.findings;
     // Gate still ran (it's part of validationPhases — carve-out only filters findings, not dispatch)
     expect(gateCalledSecondTime).toBe(true);
     // But gate findings are excluded because verifier passed in the previous iteration
@@ -542,12 +543,16 @@ describe("gatherRectificationFindings — verifier-as-SSOT carve-out (AC1.x)", (
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    const findings = await (capturedCycle as FixCycle<Finding>).validate(
+    const validateResult = await (capturedCycle as FixCycle<Finding>).validate(
       capturedCtx as FixCycleContext,
       { mode: "full" },
     );
+    const findings = Array.isArray(validateResult) ? validateResult : validateResult.findings;
     // Short-circuit fires AFTER pushing the gate finding into the findings array,
     // so the cycle can still drive the next fix iteration.
     expect(findings.some((f) => f.source === "test-runner")).toBe(true);
+    if (!Array.isArray(validateResult)) {
+      expect(validateResult.shortCircuited).toBe(true);
+    }
   });
 });
