@@ -165,9 +165,7 @@ export class Logger {
    */
   private writeToFile(entry: LogEntry): void {
     if (!this.filePath) return;
-    const safeEntry = entry.data
-      ? { ...entry, data: redactSecrets(entry.data) as Record<string, unknown> }
-      : entry;
+    const safeEntry = entry.data ? { ...entry, data: redactSecrets(entry.data) as Record<string, unknown> } : entry;
     const line = `${formatJsonl(safeEntry)}\n`;
     const filePath = this.filePath;
     this.writeQueueTail = this.writeQueueTail.then(() =>

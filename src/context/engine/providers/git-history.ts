@@ -105,9 +105,9 @@ export class GitHistoryProvider implements IContextProvider {
 
     const filesToProcess = touchedFiles.filter(isRelativeAndSafe).slice(0, MAX_FILES);
 
-    const sections = (
-      await Promise.all(filesToProcess.map((file) => fetchFileHistory(file, workdir)))
-    ).filter((section): section is string => section !== null);
+    const sections = (await Promise.all(filesToProcess.map((file) => fetchFileHistory(file, workdir)))).filter(
+      (section): section is string => section !== null,
+    );
 
     if (sections.length === 0) {
       return { chunks: [], pullTools: [] };

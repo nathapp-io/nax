@@ -8,8 +8,7 @@
  *     are scanned for token-shaped substrings (API keys, PATs, etc.).
  */
 
-const SECRET_KEY_PATTERN =
-  /(SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)/i;
+const SECRET_KEY_PATTERN = /(SECRET|TOKEN|API_?KEY|PASSWORD|PRIVATE_?KEY|ACCESS_?KEY|WEBHOOK)/i;
 
 /**
  * Patterns are reset via `re.lastIndex = 0` before every call because they carry

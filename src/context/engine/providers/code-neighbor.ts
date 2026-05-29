@@ -351,13 +351,7 @@ function scanDirectory(
   maxGlobFiles: number,
   globCtx: { storyId?: string; packageDir?: string } | undefined,
 ): ScannedDir {
-  const { files, truncated } = _codeNeighborDeps.glob(
-    sourceGlob,
-    workdir,
-    ignoreMatchers,
-    maxGlobFiles,
-    globCtx,
-  );
+  const { files, truncated } = _codeNeighborDeps.glob(sourceGlob, workdir, ignoreMatchers, maxGlobFiles, globCtx);
   return { workdir, files, truncated };
 }
 
@@ -365,10 +359,7 @@ function scanDirectory(
  * Read a file's content, using the shared cache to avoid redundant disk reads
  * when multiple touched files inspect the same candidate.
  */
-async function readCached(
-  absolutePath: string,
-  cache: Map<string, string>,
-): Promise<string | null> {
+async function readCached(absolutePath: string, cache: Map<string, string>): Promise<string | null> {
   const cached = cache.get(absolutePath);
   if (cached !== undefined) return cached;
   try {
@@ -423,7 +414,7 @@ async function collectNeighbors(
       if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
       if (srcFile === filePath) continue;
       const content = await readCached(join(scanWorkdir, srcFile), contentCache);
-      if (content !== null && content.includes(fileBaseName)) {
+      if (content?.includes(fileBaseName)) {
         for (const spec of parseImportSpecifiers(content)) {
           const resolved = resolveImport(spec, srcFile, scanWorkdir);
           if (resolved === filePath || resolved === fileNoExt) {
@@ -567,9 +558,7 @@ export class CodeNeighborProvider implements IContextProvider {
     // re-glob the same directory N times (once per touched file). A shared
     // content cache further ensures each candidate file is read at most once
     // across all touched files in this fetch() call.
-    const scannedDirs: ScannedDir[] = [
-      scanDirectory(sourceGlob, workdir, ignoreMatchers, this.maxGlobFiles, globCtx),
-    ];
+    const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, workdir, ignoreMatchers, this.maxGlobFiles, globCtx)];
     if (extraGlobWorkdirs) {
       for (const extraDir of extraGlobWorkdirs) {
         scannedDirs.push(scanDirectory(sourceGlob, extraDir, ignoreMatchers, this.maxGlobFiles, globCtx));

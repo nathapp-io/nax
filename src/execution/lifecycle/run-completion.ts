@@ -10,9 +10,6 @@
 
 import { resolveDefaultAgent } from "../../agents";
 import type { IAgentManager } from "../../agents";
-import { clearLanguageCache } from "../../project/detector";
-import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
-import { clearGitRootCache } from "../../verification/smart-runner";
 import type { NaxConfig } from "../../config";
 import { fireHook } from "../../hooks/runner";
 import type { HooksConfig } from "../../hooks/types";
@@ -22,9 +19,12 @@ import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
+import { clearLanguageCache } from "../../project/detector";
 import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
+import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
+import { clearGitRootCache } from "../../verification/smart-runner";
 import type { DeferredReviewResult } from "../deferred-review";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";

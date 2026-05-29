@@ -232,7 +232,13 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         storyId: args.storyId,
         reason: scope.degradedReason,
       });
-      const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand, args.stripEnvVars);
+      const fullResult = await _scopedLintDeps.runLintCommand(
+        args.workdir,
+        args.storyId,
+        args.env,
+        fullLintCommand,
+        args.stripEnvVars,
+      );
       return withLintScope(
         attachLintFindings(toReviewCheck(fullResult), args.lintOutputFormat, args.workdir),
         scope,
@@ -263,13 +269,25 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
 
   if (scopedTemplate) {
     const scopedCommand = scopedTemplate.replaceAll("{{files}}", scope.files.map(shellQuotePath).join(" "));
-    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand, args.stripEnvVars);
+    const scopedResult = await _scopedLintDeps.runLintCommand(
+      args.workdir,
+      args.storyId,
+      args.env,
+      scopedCommand,
+      args.stripEnvVars,
+    );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
   if (!scope.degradedReason && isSupportedDerivedScopedCommand(fullLintCommand)) {
     const scopedCommand = appendFilesToCommand(fullLintCommand, scope.files);
-    const scopedResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, scopedCommand, args.stripEnvVars);
+    const scopedResult = await _scopedLintDeps.runLintCommand(
+      args.workdir,
+      args.storyId,
+      args.env,
+      scopedCommand,
+      args.stripEnvVars,
+    );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
 
@@ -278,7 +296,13 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     storyId: args.storyId,
     reason: scope.degradedReason ?? "unsupported_scoped_command_shape",
   });
-  const fullResult = await _scopedLintDeps.runLintCommand(args.workdir, args.storyId, args.env, fullLintCommand, args.stripEnvVars);
+  const fullResult = await _scopedLintDeps.runLintCommand(
+    args.workdir,
+    args.storyId,
+    args.env,
+    fullLintCommand,
+    args.stripEnvVars,
+  );
   if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
   const parsed = parseLintOutput(fullResult.output, args.lintOutputFormat ?? "auto", {

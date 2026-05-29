@@ -182,7 +182,7 @@ async function discoverWorkspacePackagesUncached(workdir: string): Promise<strin
  * Wraps `discoverWorkspacePackagesUncached` — same return value, cached after first call.
  */
 export async function discoverWorkspacePackages(workdir: string): Promise<string[]> {
-  if (_workspaceCache.has(workdir)) return _workspaceCache.get(workdir)!;
+  if (_workspaceCache.has(workdir)) return _workspaceCache.get(workdir) ?? [];
   const result = await discoverWorkspacePackagesUncached(workdir);
   _workspaceCache.set(workdir, result);
   return result;
