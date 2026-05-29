@@ -215,6 +215,7 @@ export const NaxConfigSchema = z
       commands: {},
       audit: { enabled: false },
       blockingThreshold: "error",
+      pluginMode: "observational",
       semantic: {
         model: "balanced",
         diffMode: "ref",

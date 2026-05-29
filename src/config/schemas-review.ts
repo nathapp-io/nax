@@ -126,6 +126,15 @@ export const ReviewConfigSchema = z.object({
    * Mechanical checks (lint, typecheck, test, build) always block on failure.
    */
   blockingThreshold: z.enum(["error", "warning", "info"]).default("error"),
+  /**
+   * How `IReviewPlugin` deferred reviewers (run once at end-of-run) affect run outcome.
+   * "observational" (default): failures are logged + surfaced in run status but do NOT
+   *   fail the run — preserves the historical deferred-only behavior (ADR-023 D2, #1146).
+   * "gating": any failing plugin reviewer marks the run failed (RunResult.success = false).
+   * Note: this controls the deferred end-of-run review only. Per-story plugin gating
+   * (issue #1146 G1) was intentionally not restored.
+   */
+  pluginMode: z.enum(["observational", "gating"]).default("observational"),
   semantic: SemanticReviewConfigSchema.optional(),
   adversarial: AdversarialReviewConfigSchema.optional(),
 });
