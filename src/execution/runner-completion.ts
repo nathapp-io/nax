@@ -17,6 +17,7 @@ import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import { isComplete } from "@/prd";
 import type { PRD } from "@/prd";
+import type { DeferredReviewResult } from "./deferred-review";
 import type { DispatchContext } from "@/runtime/dispatch-context";
 import type { ISessionManager } from "@/session";
 import { errorMessage } from "@/utils/errors";
@@ -57,6 +58,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   prdPath: string;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
+  /** End-of-run deferred plugin review result (#1146 G2). Forwarded to handleRunCompletion. */
+  deferredReview?: DeferredReviewResult;
 }
 
 /**
@@ -69,6 +72,8 @@ export interface RunnerCompletionResult {
    *  passed, was skipped, or was already passed on a prior run. Used by runner.ts to set
    *  RunResult.success — regression-gate outcome cannot override an acceptance failure. */
   acceptancePassed: boolean;
+  /** True when a gating-mode deferred plugin reviewer failed. Factored into RunResult.success. */
+  pluginGateFailed: boolean;
 }
 
 /**
@@ -236,18 +241,22 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     skipRegression: regressionAlreadyPassed,
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
+    deferredReview: options.deferredReview,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
   });
 
-  const { durationMs, runCompletedAt, finalCounts, reportedTotal } = completionResult;
+  const { durationMs, runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
 
   // Write feature-level status (SFC-002).
   // Use reportedTotal (cost-aggregator-corrected) instead of the legacy
   // options.totalCost accumulator, which drops acceptance/review/diagnosis
   // spend (issue #909).
   if (options.featureDir) {
-    const finalStatus = isComplete(options.prd) ? "completed" : "failed";
+    // A gating-mode plugin reviewer failure fails the run even when all stories passed
+    // (#1146 G2). Folded in here — not via setRunStatus inside handleRunCompletion, which
+    // this line would otherwise clobber back to "completed".
+    const finalStatus = isComplete(options.prd) && !pluginGateFailed ? "completed" : "failed";
     options.statusWriter.setRunStatus(finalStatus);
     await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
   }
@@ -288,5 +297,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     durationMs,
     runCompletedAt,
     acceptancePassed,
+    pluginGateFailed,
   };
 }
