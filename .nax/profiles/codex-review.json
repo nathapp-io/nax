@@ -1,0 +1,10 @@
+{
+  "review": {
+    "adversarial": {
+      "model": { "agent": "codex", "model": "balanced" }
+    },
+    "semantic": {
+      "model": { "agent": "codex", "model": "balanced" }
+    }
+  }
+}

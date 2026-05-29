@@ -13,6 +13,7 @@ const SOURCE_TO_CHECK: Record<string, ReviewCheckName> = {
   "adversarial-review": "adversarial",
   lint: "lint",
   typecheck: "typecheck",
+  "tdd-verifier": "test",
 };
 
 /**

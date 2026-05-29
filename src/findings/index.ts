@@ -45,6 +45,7 @@ export type {
   FixStrategy,
   Iteration,
   IterationOutcome,
+  ValidateResult,
 } from "./cycle-types";
 
 export type { ReviewCheckResult } from "../review/types";

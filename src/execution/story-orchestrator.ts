@@ -55,6 +55,7 @@ export const EXHAUSTED_EXIT_REASONS = new Set<string>([
   "bail-when",
   "no-strategy",
   "agent-gave-up",
+  "validate-short-circuit",
 ]);
 
 /**
@@ -194,6 +195,8 @@ export interface StoryOrchestratorResult {
   readonly phaseOutputs: Record<string, unknown>;
   readonly rectificationExhausted?: boolean;
   readonly unfixedFindings?: readonly Finding[];
+  /** Set when rectification short-circuited with empty findings — resume ran scope-backfill. */
+  readonly liteScopeIncomplete?: boolean;
 }
 
 type PhaseKind =
@@ -390,16 +393,20 @@ function isFinding(value: unknown): value is Finding {
   );
 }
 
-function extractPhaseFindings(output: unknown): Finding[] {
+/**
+ * Exported for unit testing; not for external callers — use `runPhase`.
+ */
+export function extractPhaseFindings(output: unknown): Finding[] {
   if (output === null || output === undefined || typeof output !== "object") {
     return [];
   }
   const record = output as Record<string, unknown>;
-  const rawArray = Array.isArray(record.normalizedFindings)
-    ? record.normalizedFindings
-    : Array.isArray(record.findings)
-      ? record.findings
-      : [];
+  const rawArray =
+    Array.isArray(record.normalizedFindings) && record.normalizedFindings.length > 0
+      ? record.normalizedFindings
+      : Array.isArray(record.findings)
+        ? record.findings
+        : [];
   // Runtime guard: strip anything that isn't a source-tagged Finding. Strategies'
   // `appliesTo` predicates gate on `f.source` — entries without it cannot be
   // routed and previously caused the cycle to exit with "no matching strategy".
@@ -828,9 +835,20 @@ function withIncreasingFailuresBail(
 interface RectificationResult {
   rectificationExhausted?: boolean;
   unfixedFindings?: readonly Finding[];
+  /** Validate short-circuited with empty findings — resume must still run scope-backfill phases. */
+  liteScopeIncomplete?: boolean;
 }
 
-async function runRectification(
+/**
+ * @internal
+ * Run the rectification loop and return a structured result describing the exit.
+ * Returns `{ liteScopeIncomplete: true }` when the cycle exited with
+ * "validate-short-circuit" and no remaining findings — the resume block must
+ * still dispatch phases that were absent during the short-circuited validate.
+ *
+ * Exported for unit testing; not for external callers — use `ExecutionPlan.run`.
+ */
+export async function runRectification(
   ctx: CallContext,
   state: InternalBuildState,
   phaseCosts: Record<string, number>,
@@ -874,7 +892,7 @@ async function runRectification(
     ),
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
-      if (ctx.runtime.signal?.aborted) return [];
+      if (ctx.runtime.signal?.aborted) return { findings: [], shortCircuited: false };
       // opts is required by the FixCycle.validate contract but guard defensively for
       // plugin-supplied cycles that may call validate without opts (legacy shape).
       const lite = (opts?.mode ?? "full") === "lite";
@@ -886,6 +904,7 @@ async function runRectification(
         phasesSelected: phases.map((p) => p.kind),
       });
       const findings: Finding[] = [];
+      let shortCircuited = false;
       for (const phase of phases) {
         if (lite && phase.kind === "full-suite-gate") {
           continue;
@@ -903,10 +922,14 @@ async function runRectification(
             storyId: ctx.storyId,
             phase: phase.slot.op.name,
           });
+          shortCircuited = true;
           break;
         }
       }
-      return rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
+      const validated = rectification.postValidate
+        ? await rectification.postValidate(findings, _validateCtx)
+        : findings;
+      return { findings: validated, shortCircuited };
     },
   };
 
@@ -952,6 +975,10 @@ async function runRectification(
 
   if (EXHAUSTED_EXIT_REASONS.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
+  }
+  if (cycleResult.exitReason === "validate-short-circuit") {
+    // Empty findings — surface the lite-scope-backfill flag so resume can still run.
+    return { liteScopeIncomplete: true };
   }
 
   return {};
@@ -1039,7 +1066,7 @@ export class ExecutionPlan {
     // canonical sequence and runs any phase whose output is missing or non-passing.
     // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
     // entirely when rectification was exhausted — the story is already terminal.
-    if (this.state.rectification && !rectResult.rectificationExhausted) {
+    if (this.state.rectification && (!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete)) {
       // The first rectification ran with a strategy-specific revalidation set
       // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
       // resume block runs for the first time (e.g. full-suite-rectify excludes

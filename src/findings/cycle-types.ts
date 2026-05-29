@@ -54,6 +54,12 @@ export interface Iteration<F extends Finding = Finding> {
 
 // ─── Cycle result ────────────────────────────────────────────────────────────
 
+/** Structured return from a validate callback, enabling short-circuit signalling. */
+export interface ValidateResult<F extends Finding> {
+  readonly findings: readonly F[];
+  readonly shortCircuited?: boolean;
+}
+
 export type FixCycleExitReason =
   | "resolved"
   | "no-strategy"
@@ -61,7 +67,8 @@ export type FixCycleExitReason =
   | "max-attempts-per-strategy"
   | "validator-error"
   | "bail-when"
-  | "agent-gave-up";
+  | "agent-gave-up"
+  | "validate-short-circuit";
 
 export interface FixCycleResult<F extends Finding = Finding> {
   iterations: Iteration<F>[];
@@ -181,7 +188,10 @@ export interface FixCycle<F extends Finding> {
    * phases relevant to those strategies (e.g. skipping the full test suite when
    * only a lint-fix strategy ran).
    */
-  validate: (ctx: FixCycleContext, opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] }) => Promise<F[]>;
+  validate: (
+    ctx: FixCycleContext,
+    opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] },
+  ) => Promise<F[] | ValidateResult<F>>;
   config: FixCycleConfig;
   /**
    * Optional verdict string used to bias strategy selection when findings is

@@ -21,6 +21,7 @@ import type {
   FixStrategy,
   Iteration,
   IterationOutcome,
+  ValidateResult,
 } from "./cycle-types";
 import type { Finding } from "./types";
 import { findingKey } from "./types";
@@ -33,6 +34,10 @@ export const _cycleDeps = {
   callOp: _callOp as unknown as CallOpFn,
   now: () => new Date().toISOString(),
 };
+
+function normalizeValidateResult<F extends Finding>(r: F[] | ValidateResult<F>): ValidateResult<F> {
+  return Array.isArray(r) ? { findings: r, shortCircuited: false } : r;
+}
 
 // ─── classifyOutcome ─────────────────────────────────────────────────────────
 
@@ -305,11 +310,12 @@ export async function runFixCycle<F extends Finding>(
     });
     if (allExhausted) {
       let liteFindingsAfter: F[];
+      let liteShortCircuited = false;
       try {
-        liteFindingsAfter = await cycle.validate(ctx, {
-          mode: "lite",
-          strategiesRun: group.map((s) => s.name),
-        });
+        const liteRaw = await cycle.validate(ctx, { mode: "lite", strategiesRun: group.map((s) => s.name) });
+        const liteResult = normalizeValidateResult(liteRaw);
+        liteFindingsAfter = liteResult.findings as F[];
+        liteShortCircuited = liteResult.shortCircuited ?? false;
       } catch (err) {
         const finishedAt = now();
         cycle.iterations.push({
@@ -349,7 +355,7 @@ export async function runFixCycle<F extends Finding>(
       });
       cycle.findings = liteFindingsAfter;
 
-      if (liteFindingsAfter.length === 0) {
+      if (liteFindingsAfter.length === 0 && !liteShortCircuited) {
         logger?.info("findings.cycle", "cycle exited — resolved after terminal lite validate", {
           storyId,
           packageDir,
@@ -360,6 +366,22 @@ export async function runFixCycle<F extends Finding>(
           iterations: cycle.iterations,
           finalFindings: [],
           exitReason: "resolved",
+          costUsd: totalCostUsd,
+        };
+      }
+
+      if (liteShortCircuited) {
+        logger?.info("findings.cycle", "cycle exited — validate short-circuited", {
+          storyId,
+          packageDir,
+          cycleName,
+          reason: "validate-short-circuit",
+          liteFindingsAfterCount: liteFindingsAfter.length,
+        });
+        return {
+          iterations: cycle.iterations,
+          finalFindings: liteFindingsAfter,
+          exitReason: "validate-short-circuit",
           costUsd: totalCostUsd,
         };
       }
@@ -386,7 +408,8 @@ export async function runFixCycle<F extends Finding>(
     let validatorAttempt = 0;
     for (;;) {
       try {
-        findingsAfter = await cycle.validate(ctx, { mode: "full", strategiesRun: group.map((s) => s.name) });
+        const fullRaw = await cycle.validate(ctx, { mode: "full", strategiesRun: group.map((s) => s.name) });
+        findingsAfter = normalizeValidateResult(fullRaw).findings as F[];
         break;
       } catch (err) {
         if (validatorAttempt >= cycle.config.validatorRetries) {

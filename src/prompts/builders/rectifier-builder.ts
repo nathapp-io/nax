@@ -854,6 +854,22 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
     return parts.join("");
   }
 
+  static verifierContext(findings: Finding[]): string {
+    if (findings.length === 0) {
+      return "The verifier found no issues.";
+    }
+    const lines: string[] = [
+      `Fix the following ${findings.length} verifier finding${findings.length === 1 ? "" : "s"}:\n`,
+    ];
+    for (const f of findings) {
+      const reasoning = (f.meta?.reasoning as string | undefined) ?? "";
+      const detail = reasoning ? `  Reasoning: ${reasoning}\n` : "";
+      lines.push(`- [${f.category}] ${f.message}\n${detail}`);
+    }
+    lines.push("\nFix the implementation to resolve all verifier findings.");
+    return lines.join("\n");
+  }
+
   static failingTestContext(findings: Finding[]): string {
     if (findings.length === 0) {
       return "The full test suite has failing tests. Fix the implementation to make all tests pass.";

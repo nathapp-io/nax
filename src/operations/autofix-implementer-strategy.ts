@@ -8,7 +8,7 @@ import type { AutofixImplementerInput, AutofixImplementerOutput } from "./autofi
 import { implementerRectifyOp } from "./autofix-implementer";
 import type { DeclarationSink } from "./declaration-sink";
 
-const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review"]);
+const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review", "tdd-verifier"]);
 
 export function makeAutofixImplementerStrategy(
   story: UserStory,
@@ -22,6 +22,7 @@ export function makeAutofixImplementerStrategy(
     buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
       failedChecks: findingsToFailedChecks(findings),
       story,
+      findings,
     }),
     extractApplied: (output) => {
       // Accumulate test-edit declarations and mock handoffs into the shared sink

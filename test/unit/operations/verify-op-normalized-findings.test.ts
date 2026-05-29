@@ -1,0 +1,234 @@
+/**
+ * Tests for verifierOp.parse — normalizedFindings field (story: verifier-findings-and-cycle-honesty)
+ *
+ * AC1: tests-failing verdict → normalizedFindings has tdd-verifier error with category tests-failed, fixTarget source
+ * AC2: success / advisory-only verdict → normalizedFindings is empty
+ * AC3: verifier-rejected verdict → normalizedFindings has tdd-verifier error with category illegitimate-test-edits, fixTarget test
+ */
+
+import { describe, expect, test } from "bun:test";
+
+type ParseFn = (output: string, input: unknown, ctx: unknown) => { normalizedFindings: readonly unknown[] } & Record<string, unknown>;
+
+// Minimal context passed to parse — mirrors how tests in verify-op.test.ts invoke it.
+const makeCtx = async () => {
+  const { DEFAULT_CONFIG } = await import("@/config");
+  return { packageView: {} as never, config: DEFAULT_CONFIG };
+};
+
+const makeInput = () => ({ story: { id: "US-001" } as never });
+
+// ── Verdict helpers ──────────────────────────────────────────────────────────
+
+function makeApprovedVerdict() {
+  return JSON.stringify({
+    version: 1,
+    approved: true,
+    tests: { allPassing: true, passCount: 5, failCount: 0 },
+    testModifications: { detected: false, files: [], legitimate: true, reasoning: "ok" },
+    acceptanceCriteria: { allMet: true, criteria: [] },
+    quality: { rating: "good", issues: [] },
+    fixes: [],
+    reasoning: "all good",
+  });
+}
+
+function makeTestsFailingVerdict(failCount = 2) {
+  return JSON.stringify({
+    version: 1,
+    approved: false,
+    tests: { allPassing: false, passCount: 1, failCount },
+    testModifications: { detected: false, files: [], legitimate: true, reasoning: "no mods" },
+    acceptanceCriteria: { allMet: false, criteria: [] },
+    quality: { rating: "acceptable", issues: [] },
+    fixes: [],
+    reasoning: `${failCount} test(s) failed`,
+  });
+}
+
+function makeVerifierRejectedVerdict(files: string[] = ["test/unit/foo.test.ts"]) {
+  return JSON.stringify({
+    version: 1,
+    approved: false,
+    tests: { allPassing: true, passCount: 3, failCount: 0 },
+    testModifications: { detected: true, files, legitimate: false, reasoning: "loosened assertions" },
+    acceptanceCriteria: { allMet: true, criteria: [] },
+    quality: { rating: "good", issues: [] },
+    fixes: [],
+    reasoning: "illegitimate test edits detected",
+  });
+}
+
+/** Advisory-only rejection: tests pass, AC not met but quality advisory — categorizeVerdict returns success=true */
+function makeAdvisoryOnlyVerdict() {
+  return JSON.stringify({
+    version: 1,
+    approved: false,
+    tests: { allPassing: true, passCount: 5, failCount: 0 },
+    testModifications: { detected: false, files: [], legitimate: true, reasoning: "no mods" },
+    acceptanceCriteria: { allMet: false, criteria: [{ criterion: "AC-1", met: false }] },
+    quality: { rating: "poor", issues: ["missing docs"] },
+    fixes: [],
+    reasoning: "advisory only concerns",
+  });
+}
+
+// ── AC1: tests-failing → populated normalizedFindings ───────────────────────
+
+describe("AC1: normalizedFindings when tests-failing", () => {
+  test("AC1: normalizedFindings is non-empty when categorization.failureCategory === tests-failing", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
+
+    expect(Array.isArray(result.normalizedFindings)).toBe(true);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+  });
+
+  test("AC1: first finding has source === tdd-verifier", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
+    // Guard: fails assertively if stub returns []
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).source).toBe("tdd-verifier");
+  });
+
+  test("AC1: first finding has severity === error", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).severity).toBe("error");
+  });
+
+  test("AC1: first finding has category === tests-failed", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).category).toBe("tests-failed");
+  });
+
+  test("AC1: first finding has fixTarget === source", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).fixTarget).toBe("source");
+  });
+
+  test("AC1: first finding has a non-empty message", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeTestsFailingVerdict(3), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    const msg = (result.normalizedFindings[0] as Record<string, unknown>).message;
+    expect(typeof msg).toBe("string");
+    expect((msg as string).length).toBeGreaterThan(0);
+  });
+});
+
+// ── AC2: success / advisory → normalizedFindings is empty ───────────────────
+
+describe("AC2: normalizedFindings is empty on success", () => {
+  test("AC2: approved verdict → normalizedFindings.length === 0", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeApprovedVerdict(), makeInput(), ctx);
+
+    expect(result.normalizedFindings.length).toBe(0);
+  });
+
+  test("AC2: advisory-only verdict (tests pass, AC/quality concerns only) → normalizedFindings.length === 0", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    // categorizeVerdict treats AC/quality-only as success (advisory)
+    const result = parse(makeAdvisoryOnlyVerdict(), makeInput(), ctx);
+
+    expect(result.normalizedFindings.length).toBe(0);
+  });
+});
+
+// ── AC3: verifier-rejected → illegitimate-test-edits finding ────────────────
+
+describe("AC3: normalizedFindings when verifier-rejected", () => {
+  test("AC3: normalizedFindings contains exactly one entry", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
+
+    expect(result.normalizedFindings.length).toBe(1);
+  });
+
+  test("AC3: finding has source === tdd-verifier", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
+    // Guard: fails assertively if stub returns []
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).source).toBe("tdd-verifier");
+  });
+
+  test("AC3: finding has severity === error", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).severity).toBe("error");
+  });
+
+  test("AC3: finding has category === illegitimate-test-edits", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).category).toBe("illegitimate-test-edits");
+  });
+
+  test("AC3: finding has fixTarget === test", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict(), makeInput(), ctx);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).fixTarget).toBe("test");
+  });
+
+  test("AC3: normalizedFindings present when testModifications.files is empty list", async () => {
+    const { verifierOp } = await import("@/operations");
+    const ctx = await makeCtx();
+    const parse = verifierOp.parse as ParseFn;
+
+    const result = parse(makeVerifierRejectedVerdict([]), makeInput(), ctx);
+
+    expect(result.normalizedFindings.length).toBe(1);
+    expect(result.normalizedFindings.length).toBeGreaterThan(0);
+    expect((result.normalizedFindings[0] as Record<string, unknown>).category).toBe("illegitimate-test-edits");
+  });
+});

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { FixCycle, FixCycleContext } from "@/findings/cycle-types";
+import type { FixCycle, FixCycleContext, FixCycleExitReason, ValidateResult } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,5 +63,40 @@ describe("FixCycle — AC3.7: validate signature includes optional strategiesRun
 
     // Runtime check: the validate function must be callable with and without strategiesRun
     expect(typeof cycle.validate).toBe("function");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC1: FixCycleExitReason includes "validate-short-circuit"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("FixCycleExitReason — AC1: validate-short-circuit member", () => {
+  test("AC1: 'validate-short-circuit' is assignable to FixCycleExitReason", () => {
+    const reason: FixCycleExitReason = "validate-short-circuit";
+    expect(reason).toBe("validate-short-circuit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC2: ValidateResult interface shape
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ValidateResult — AC2: interface members", () => {
+  test("AC2: ValidateResult accepts findings and shortCircuited: true", () => {
+    const lintFinding: Finding = { source: "lint", message: "no-unused-vars", severity: "error", category: "test" };
+    const result: ValidateResult<Finding> = { findings: [lintFinding], shortCircuited: true };
+    expect(result.findings).toHaveLength(1);
+    expect(result.shortCircuited).toBe(true);
+  });
+
+  test("AC2: ValidateResult shortCircuited is optional (may be omitted)", () => {
+    const result: ValidateResult<Finding> = { findings: [] };
+    expect(result.findings).toHaveLength(0);
+    expect(result.shortCircuited).toBeUndefined();
+  });
+
+  test("AC2: ValidateResult accepts shortCircuited: false", () => {
+    const result: ValidateResult<Finding> = { findings: [], shortCircuited: false };
+    expect(result.shortCircuited).toBe(false);
   });
 });
