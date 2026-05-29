@@ -98,6 +98,13 @@ export interface PipelineContext extends DispatchContext {
   worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
   prdPath?: string;
+  /**
+   * When true, the completion stage must NOT mutate or save the shared PRD.
+   * Set by the parallel batch orchestrator so concurrent worktree pipelines
+   * do not race on the shared `prd` object or `prd.json` file. The unified
+   * executor becomes the single PRD writer after the batch (see plan A4).
+   */
+  skipPrdPersistence?: boolean;
   /** Feature directory (optional, e.g., nax/features/my-feature/) */
   featureDir?: string;
   /** Hooks configuration */
