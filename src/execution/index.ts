@@ -42,6 +42,7 @@ export {
   EXHAUSTED_EXIT_REASONS,
   phasesToRevalidate,
   formatPhaseResultMessage,
+  buildPhaseOutcomeLogData,
   refreshReviewInputForDispatch,
   type OrchestratorSlot,
   type RectificationPhaseOptions,

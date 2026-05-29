@@ -22,8 +22,22 @@ export interface ParseRetryOpts {
    * `storyId` and `originalByteSize` are always present; fields here are appended after them.
    */
   readonly logContext?: Record<string, unknown>;
+  /**
+   * When set, the warn log includes an `outputPreview` field — the first N bytes
+   * of the unparseable agent output (whitespace-collapsed). Without this, only
+   * `originalByteSize` is logged and the actual content is invisible in the run
+   * log, forcing a manual cross-reference against the prompt-audit files. Opt-in
+   * because some reviewers emit large or sensitive payloads. Off by default.
+   */
+  readonly outputPreviewBytes?: number;
   /** Injectable logger for testing. */
   readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };
+}
+
+/** Collapse whitespace and clip to `maxBytes` so the preview stays a single, log-friendly line. */
+function previewOutput(output: string, maxBytes: number): string {
+  const collapsed = output.replace(/\s+/g, " ").trim();
+  return collapsed.length > maxBytes ? `${collapsed.slice(0, maxBytes)}…` : collapsed;
 }
 
 export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
@@ -78,16 +92,22 @@ export function makeParseRetryStrategy(opts: ParseRetryOpts): RetryStrategy {
       const nextPrompt = isTruncated ? opts.prompts.truncated() : opts.prompts.invalid();
 
       const logger = opts._logger ?? getSafeLogger();
+      const preview =
+        opts.outputPreviewBytes && opts.outputPreviewBytes > 0
+          ? { outputPreview: previewOutput(ctx.lastOutput, opts.outputPreviewBytes) }
+          : {};
       if (isTruncated) {
         logger?.warn(opts.reviewerKind, "JSON parse retry — likely truncated", {
           storyId: ctx.storyId,
           originalByteSize: ctx.lastOutput.length,
+          ...preview,
           ...opts.logContext,
         });
       } else {
         logger?.warn(opts.reviewerKind, "JSON parse retry — invalid shape", {
           storyId: ctx.storyId,
           originalByteSize: ctx.lastOutput.length,
+          ...preview,
           ...opts.logContext,
         });
       }

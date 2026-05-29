@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatPhaseResultMessage } from "@/execution";
+import { buildPhaseOutcomeLogData, formatPhaseResultMessage } from "@/execution";
 
 describe("formatPhaseResultMessage — stage-aware messaging", () => {
   test("returns 'Phase passed' for a non-rectification op with success=true", () => {
@@ -26,5 +26,51 @@ describe("formatPhaseResultMessage — stage-aware messaging", () => {
     expect(formatPhaseResultMessage("greenfield-gate", false)).toBe(
       "Greenfield-gate: no pre-existing tests — greenfield run, pausing TDD test-writer",
     );
+  });
+});
+
+describe("buildPhaseOutcomeLogData — verdict detail surfacing", () => {
+  test("returns null for non-object output", () => {
+    expect(buildPhaseOutcomeLogData("US-001", "verifier", null, 100)).toBeNull();
+    expect(buildPhaseOutcomeLogData("US-001", "verifier", undefined, 100)).toBeNull();
+    expect(buildPhaseOutcomeLogData("US-001", "verifier", "string", 100)).toBeNull();
+  });
+
+  test("counts normalizedFindings (verifier shape), not legacy findings", () => {
+    const output = {
+      success: false,
+      normalizedFindings: [{ source: "tdd-verifier" }],
+      failureCategory: "tests-failing",
+      reviewReason: "1 story-scoped test failed",
+    };
+    const built = buildPhaseOutcomeLogData("US-001", "verifier", output, 956428);
+    expect(built).not.toBeNull();
+    expect(built?.success).toBe(false);
+    expect(built?.data).toMatchObject({
+      storyId: "US-001",
+      phase: "verifier",
+      durationMs: 956428,
+      findingsCount: 1,
+      failureCategory: "tests-failing",
+      reviewReason: "1 story-scoped test failed",
+    });
+  });
+
+  test("falls back to legacy findings array when normalizedFindings absent", () => {
+    const built = buildPhaseOutcomeLogData("US-001", "lint-check", { passed: false, findings: [{}, {}] }, 50);
+    expect(built?.data.findingsCount).toBe(2);
+  });
+
+  test("omits findingsCount/failureCategory/reviewReason when not present", () => {
+    const built = buildPhaseOutcomeLogData("US-001", "full-suite-gate", { success: true, status: "passed" }, 200);
+    expect(built?.success).toBe(true);
+    expect(built?.data).toEqual({ storyId: "US-001", phase: "full-suite-gate", durationMs: 200, status: "passed" });
+    expect(built?.data).not.toHaveProperty("findingsCount");
+    expect(built?.data).not.toHaveProperty("failureCategory");
+  });
+
+  test("storyId is the first key (parallel-log correlation)", () => {
+    const built = buildPhaseOutcomeLogData("US-001", "verifier", { success: false, normalizedFindings: [] }, 10);
+    expect(Object.keys(built!.data)[0]).toBe("storyId");
   });
 });

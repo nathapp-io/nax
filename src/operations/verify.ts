@@ -2,6 +2,7 @@ import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import { tddConfigSelector } from "../config";
 import type { TddConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { TddPromptBuilder } from "../prompts/builders/tdd-builder";
 import { _isolationDeps, verifyImplementerIsolation } from "../tdd/isolation";
@@ -143,6 +144,10 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
     },
     reviewerKind: "verifier",
     maxAttempts: 2,
+    // Surface the unparseable bytes in the run log — verifier verdicts are the
+    // single hardest phase to diagnose post-hoc, and "originalByteSize: 155"
+    // alone tells you nothing about what the agent actually emitted.
+    outputPreviewBytes: 600,
     prompts: {
       invalid: () => TddPromptBuilder.verdictRetry(),
       truncated: () => TddPromptBuilder.verdictRetryCondensed(),
@@ -180,24 +185,38 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
     // the orchestrator records an explicit failure (never null — satisfies
     // the parse-retry escape-hatch rule).
     const packageDir = verifyCtx.packageView.packageDir;
+    const logger = getSafeLogger();
+    const storyId = input.story.id;
     try {
       const verdict = await readVerdict(packageDir);
       if (verdict) {
         const testsAllPassing = verdict.tests.allPassing === true;
         const categorization = categorizeVerdict(verdict, testsAllPassing);
         const isolation = await runVerifierIsolation(input.beforeRef, verifyCtx);
+        const normalizedFindings = buildVerifierFindings(verdict, categorization);
+        logger?.warn("verifier", "Recovered verdict from disk after unparseable stdout", {
+          storyId,
+          packageDir,
+          success: categorization.success,
+          findingsCount: normalizedFindings.length,
+          ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
+        });
         return {
           success: categorization.success,
           filesChanged: [],
           estimatedCostUsd: 0,
           durationMs: 0,
           output: "",
-          normalizedFindings: buildVerifierFindings(verdict, categorization),
+          normalizedFindings,
           ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
           ...(categorization.reviewReason && { reviewReason: categorization.reviewReason }),
           ...(isolation && { isolation }),
         };
       }
+      logger?.error("verifier", "No usable verdict — unparseable stdout and no verdict file on disk (fail-closed)", {
+        storyId,
+        packageDir,
+      });
       return {
         success: false,
         filesChanged: [],
