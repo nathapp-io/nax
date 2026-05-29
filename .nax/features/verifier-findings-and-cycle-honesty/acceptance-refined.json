@@ -1,0 +1,149 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a `VerifierVerdict` where `categorizeVerdict(verdict, ...).success === false` and `categorizeVerdict(verdict, ...).failureCategory === \"tests-failing\"`, when `parseVerdictFromStdout` returns its `VerifierOutput`, then `output.normalizedFindings` is a non-empty `Finding[]` and each entry has `source === \"tdd-verifier\"`, `severity === \"error\"`, `category === \"tests-failed\"`, `fixTarget === \"source\"`, and a non-empty `message`.",
+    "refined": "When `parseVerdictFromStdout` is called with a `VerifierVerdict` where `categorizeVerdict(verdict, ...).success === false` and `failureCategory === \"tests-failing\"`, the returned `VerifierOutput.normalizedFindings` array contains exactly one `Finding` object with `source === \"tdd-verifier\"`, `severity === \"error\"`, `category === \"tests-failed\"`, `fixTarget === \"source\"`, `message` is non-empty string, and `meta.failCount > 0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a `VerifierVerdict` where `categorizeVerdict(verdict, ...).success === true` (including verdicts rejected for advisory `acceptanceCriteria` / `quality` reasons only), when `parseVerdictFromStdout` returns its `VerifierOutput`, then `output.normalizedFindings.length === 0`.",
+    "refined": "When `parseVerdictFromStdout` is called with a `VerifierVerdict` where `categorizeVerdict(verdict, ...).success === true`, the returned `VerifierOutput.normalizedFindings` array has length exactly `0`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a `VerifierVerdict` where `categorizeVerdict(verdict, ...).failureCategory === \"verifier-rejected\"` (illegitimate test modifications), when `parseVerdictFromStdout` returns its `VerifierOutput`, then `output.normalizedFindings` contains exactly one entry with `source === \"tdd-verifier\"`, `severity === \"error\"`, `category === \"illegitimate-test-edits\"`, and `fixTarget === \"test\"`.",
+    "refined": "When `parseVerdictFromStdout` is called with a `VerifierVerdict` where `categorizeVerdict(verdict, ...).failureCategory === \"verifier-rejected\"`, the returned `VerifierOutput.normalizedFindings` array contains exactly one `Finding` object with `source === \"tdd-verifier\"`, `severity === \"error\"`, `category === \"illegitimate-test-edits\"`, `fixTarget === \"test\"`, and non-empty `message`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "`src/operations/autofix-implementer-strategy.ts` contains exactly one line matching the regex `^const IMPLEMENTER_SOURCES = new Set\\([\"lint\", \"typecheck\", \"semantic-review\", \"tdd-verifier\"]\\);$`.",
+    "refined": "The file `src/operations/autofix-implementer-strategy.ts` contains the line `const IMPLEMENTER_SOURCES = new Set([\"lint\", \"typecheck\", \"semantic-review\", \"tdd-verifier\"]);` exactly once.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "`src/operations/_finding-to-check.ts` contains exactly one line matching the regex `^\\s*\"tdd-verifier\": \"test\",\\s*$` inside the `SOURCE_TO_CHECK` object literal.",
+    "refined": "The file `src/operations/_finding-to-check.ts` contains the substring `\"tdd-verifier\": \"test\",` exactly once inside the `SOURCE_TO_CHECK` object literal definition.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `phaseOutputs[\"verifier\"]` set to a `VerifierOutput` whose `normalizedFindings` is `[F1, F2]`, when `extractPhaseFindings(phaseOutputs[\"verifier\"])` is called, then it returns an array containing `F1` and `F2`.",
+    "refined": "When `extractPhaseFindings` is called with `phaseOutputs[\"verifier\"]` containing `normalizedFindings: [F1, F2]`, the returned array has length `2` and contains `F1` at index 0 and `F2` at index 1 (by reference or value equality).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "`src/prompts/index.ts` exports the symbol `RectifierPromptBuilder`, and `src/prompts/builders/rectifier-builder.ts` contains exactly one `static verifierContext(` method definition on the `RectifierPromptBuilder` class.",
+    "refined": "The file `src/prompts/index.ts` exports `RectifierPromptBuilder` (verify by import statement), and `src/prompts/builders/rectifier-builder.ts` defines exactly one static method named `verifierContext` on the `RectifierPromptBuilder` class.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "`src/prompts/sections/verdict.ts` is byte-identical to its state at SHA `52634c0b` (this PR does not modify the verifier prompt schema; PR #1138 owns that surface).",
+    "refined": "The file `src/prompts/sections/verdict.ts` contains no changes relative to commit `52634c0b` (verified by `git diff 52634c0b HEAD -- src/prompts/sections/verdict.ts` producing empty output).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "`src/findings/cycle-types.ts` contains exactly one line matching the regex `^\\s*\\|\\s*\"validate-short-circuit\"\\s*$` inside the `FixCycleExitReason` union.",
+    "refined": "File `src/findings/cycle-types.ts` contains the line `| \"validate-short-circuit\"` exactly once, appearing within the `FixCycleExitReason` type union definition.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "`src/findings/cycle-types.ts` contains a `ValidateResult` interface declaration with exactly two members named `findings` (typed `readonly F[]`) and `shortCircuited` (typed `readonly boolean` and optional via `?:`).",
+    "refined": "File `src/findings/cycle-types.ts` exports an interface `ValidateResult<F extends Finding>` with exactly two properties: (1) `readonly findings: readonly F[]`, and (2) `readonly shortCircuited?: boolean`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a `FixCycle.validate` callback that returns `{ findings: [], shortCircuited: true }` from the terminal lite-validate, when `runFixCycle` exits, then the returned `FixCycleResult.exitReason === \"validate-short-circuit\"` (NOT `\"resolved\"`) and `finalFindings.length === 0`.",
+    "refined": "Unit test: Call `runFixCycle(cycle, ctx)` where `cycle.validate` returns `{ findings: [], shortCircuited: true }` on the terminal lite-validate branch; assert the returned `FixCycleResult` has `exitReason === \"validate-short-circuit\"` and `finalFindings.length === 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a `FixCycle` whose strategies are all at their per-strategy attempt cap AND whose terminal lite-validate callback returns `{ findings: [], shortCircuited: false }`, when `runFixCycle` exits, then the returned `FixCycleResult.exitReason === \"resolved\"` (the terminal-branch path, not the loop-top early exit at `cycle.ts:158-160`).",
+    "refined": "Unit test: Call `runFixCycle(cycle, ctx)` where all strategies have exhausted their per-strategy attempt cap, `cycle.validate` returns `{ findings: [], shortCircuited: false }` on the terminal lite-validate branch; assert the returned `FixCycleResult` has `exitReason === \"resolved\"` (via the terminal branch logic, not an early loop exit).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a `FixCycle.validate` callback that returns a bare `Finding[]` (legacy shape) from the terminal lite-validate, when `runFixCycle` exits, then the returned `FixCycleResult.exitReason === \"resolved\"` if the array is empty, mirroring pre-change behaviour (backwards compatibility with `acceptance-loop.ts:297` and `run-regression.ts:345`).",
+    "refined": "Unit test: Call `runFixCycle(cycle, ctx)` where `cycle.validate` returns a bare empty array `[]` (not wrapped in `ValidateResult`) on the terminal lite-validate branch; assert the returned `FixCycleResult` has `exitReason === \"resolved\"` and `finalFindings.length === 0`, confirming backwards compatibility with legacy array-only return type.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "`src/execution/story-orchestrator.ts` contains exactly one line matching the regex `^\\s*\"validate-short-circuit\",\\s*$` inside the `EXHAUSTED_EXIT_REASONS` set literal.",
+    "refined": "Source file `src/execution/story-orchestrator.ts` contains the string literal `\"validate-short-circuit\"` as a single line entry within the `EXHAUSTED_EXIT_REASONS` constant declaration, matching the regex pattern `^\\s*\"validate-short-circuit\",\\s*$` with exactly one occurrence.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "`src/execution/story-orchestrator.ts` contains the field declaration `liteScopeIncomplete\\?: boolean;` inside the `RectificationResult` interface.",
+    "refined": "The `RectificationResult` interface in `src/execution/story-orchestrator.ts` declares an optional field `liteScopeIncomplete?: boolean;` at the type definition level.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given `runRectification` consuming a `FixCycleResult` with `exitReason === \"validate-short-circuit\"` and `finalFindings.length === 0`, when it returns, then the returned `RectificationResult` has `liteScopeIncomplete === true` and `rectificationExhausted` is `undefined`.",
+    "refined": "Unit test: invoke `runRectification` with a `FixCycleResult` mocked to have `exitReason: \"validate-short-circuit\"` and `finalFindings: []`, then assert the returned `RectificationResult` object has property `liteScopeIncomplete === true` and property `rectificationExhausted === undefined`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given `runRectification` consuming a `FixCycleResult` with `exitReason === \"validate-short-circuit\"` and `finalFindings.length > 0`, when it returns, then the returned `RectificationResult` has `rectificationExhausted === true`, `unfixedFindings === cycleResult.finalFindings`, and `liteScopeIncomplete` is `undefined`.",
+    "refined": "Unit test: invoke `runRectification` with a `FixCycleResult` mocked to have `exitReason: \"validate-short-circuit\"` and `finalFindings: [<non-empty array>]`, then assert the returned `RectificationResult` has `rectificationExhausted === true`, `unfixedFindings` reference-equals the input `finalFindings` array, and `liteScopeIncomplete === undefined`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `ExecutionPlan.run` with a `rectResult` of `{ rectificationExhausted: true }` (no `liteScopeIncomplete`), when control reaches the resume guard, then the post-rectification-resume block is NOT entered (no further `runPhase` calls beyond `runRectification`).",
+    "refined": "Integration test: mock `ExecutionPlan.run` to receive a `rectResult` of `{ rectificationExhausted: true }`, execute the plan, and assert that `runPhase` is never called after `runRectification` completes (verify via spy/mock call count on `runPhase`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `ExecutionPlan.run` with a `rectResult` of `{ liteScopeIncomplete: true }`, when control reaches the resume guard, then the post-rectification-resume block IS entered.",
+    "refined": "Integration test: mock `ExecutionPlan.run` to receive a `rectResult` of `{ liteScopeIncomplete: true }`, execute the plan, and assert that `runPhase` is called at least once after `runRectification` completes (verify via spy/mock that resume block phases are dispatched).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a mocked story run where verifier returns `VerifierOutput { success: false, normalizedFindings: [F_tests_failed] }` and `autofix-implementer` resolves the finding on its first attempt, when `ExecutionPlan.run` completes, then (a) the verifier op was dispatched exactly **once** before story success, AND (b) the rectifier prompt assembled for the autofix-implementer dispatch contains the verifier-context section produced by `RectifierPromptBuilder.verifierContext` (asserting the new builder method is actually invoked end-to-end, not merely defined).",
+    "refined": "Integration test AC20: mock verifier to return `{ success: false, normalizedFindings: [{ type: 'tests_failed', ... }] }` and mock autofix-implementer to resolve on first attempt, execute `ExecutionPlan.run`, then assert (a) verifier op dispatch count equals 1 prior to story success, AND (b) the agent prompt sent to autofix-implementer contains the string output of `RectifierPromptBuilder.verifierContext(...)` method call.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a mocked story run replicating the tier-2 lite-scope-incomplete path (verifier short-circuits validate with `normalizedFindings: []`, full-suite-gate is in the canonical phase list but absent from `phaseOutputs`), when `ExecutionPlan.run` completes, then `runRectification` returns `liteScopeIncomplete: true` and the resume block dispatches the full-suite-gate phase.",
+    "refined": "Integration test AC21: mock verifier to short-circuit validate with `{ success: false, normalizedFindings: [] }`, configure canonical phase list to include 'full-suite-gate' but omit it from `phaseOutputs`, execute `ExecutionPlan.run`, then assert (a) `runRectification` return value has `liteScopeIncomplete === true`, AND (b) 'full-suite-gate' phase is dispatched by the resume block (verify via spy that `runPhase('full-suite-gate', ...)` is called).",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
