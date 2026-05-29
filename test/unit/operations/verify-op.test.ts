@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
 
@@ -169,58 +169,68 @@ describe("verifierOp.parse — verdict logging", () => {
     reasoning: "AC8 typecheck fails due to missing dependency (environmental)",
   });
 
+  // The verdict log fires via getSafeLogger() (the singleton). We must control
+  // the singleton directly rather than spying on Logger.prototype — other unit
+  // test files initialize/spy the singleton *instance*, leaving an own `info`
+  // property that shadows the prototype, so a prototype spy silently misses the
+  // call in a full-suite run (passes in isolation, fails in CI). Spy on the
+  // exact instance getSafeLogger() returns, and reset to a clean baseline after.
+  let infoSpy: ReturnType<typeof spyOn> | undefined;
+
+  beforeEach(async () => {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const logger = initLogger({ level: "silent" });
+    infoSpy = spyOn(logger, "info");
+  });
+
+  afterEach(async () => {
+    infoSpy?.mockRestore();
+    infoSpy = undefined;
+    const { resetLogger } = await import("@/logger");
+    resetLogger();
+  });
+
   test("logs 'Verdict categorized' with advisoryOverride=true when approved:false but tests pass and mods legitimate", async () => {
     const { verifierOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
-    const { Logger } = await import("@/logger");
 
-    const infoSpy = spyOn(Logger.prototype, "info");
-    try {
-      const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-      const input = { story: { id: "US-001" } as any };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-001" } as any };
 
-      const result = verifierOp.parse(ADVISORY_VERDICT_JSON, input, ctx);
-      // Categorization treats approved:false (advisory AC/quality) as success.
-      expect(result.success).toBe(true);
+    const result = verifierOp.parse(ADVISORY_VERDICT_JSON, input, ctx);
+    // Categorization treats approved:false (advisory AC/quality) as success.
+    expect(result.success).toBe(true);
 
-      const call = infoSpy.mock.calls.find((c) => c[0] === "verifier" && c[1] === "Verdict categorized");
-      expect(call).toBeDefined();
-      const data = call?.[2] as Record<string, unknown>;
-      expect(data.storyId).toBe("US-001");
-      expect(data.approved).toBe(false);
-      expect(data.success).toBe(true);
-      expect(data.advisoryOverride).toBe(true);
-      expect(data.testsPassing).toBe(true);
-      // storyId must be the first key (parallel-log correlation rule).
-      expect(Object.keys(data)[0]).toBe("storyId");
-    } finally {
-      infoSpy.mockRestore();
-    }
+    const call = infoSpy?.mock.calls.find((c) => c[0] === "verifier" && c[1] === "Verdict categorized");
+    expect(call).toBeDefined();
+    const data = call?.[2] as Record<string, unknown>;
+    expect(data.storyId).toBe("US-001");
+    expect(data.approved).toBe(false);
+    expect(data.success).toBe(true);
+    expect(data.advisoryOverride).toBe(true);
+    expect(data.testsPassing).toBe(true);
+    // storyId must be the first key (parallel-log correlation rule).
+    expect(Object.keys(data)[0]).toBe("storyId");
   });
 
   test("logs advisoryOverride=false when verdict is approved", async () => {
     const { verifierOp } = await import("@/operations");
     const { DEFAULT_CONFIG } = await import("@/config");
-    const { Logger } = await import("@/logger");
 
-    const infoSpy = spyOn(Logger.prototype, "info");
-    try {
-      const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-      const input = { story: { id: "US-002" } as any };
+    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+    const input = { story: { id: "US-002" } as any };
 
-      verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
+    verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
 
-      const call = infoSpy.mock.calls.find(
-        (c) => c[0] === "verifier" && c[1] === "Verdict categorized" && (c[2] as any)?.storyId === "US-002",
-      );
-      expect(call).toBeDefined();
-      const data = call?.[2] as Record<string, unknown>;
-      expect(data.approved).toBe(true);
-      expect(data.success).toBe(true);
-      expect(data.advisoryOverride).toBe(false);
-    } finally {
-      infoSpy.mockRestore();
-    }
+    const call = infoSpy?.mock.calls.find(
+      (c) => c[0] === "verifier" && c[1] === "Verdict categorized" && (c[2] as any)?.storyId === "US-002",
+    );
+    expect(call).toBeDefined();
+    const data = call?.[2] as Record<string, unknown>;
+    expect(data.approved).toBe(true);
+    expect(data.success).toBe(true);
+    expect(data.advisoryOverride).toBe(false);
   });
 });
 
