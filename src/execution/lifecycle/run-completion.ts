@@ -22,9 +22,9 @@ import type { PRD } from "../../prd";
 import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
+import type { DeferredReviewResult } from "../deferred-review";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
-import type { DeferredReviewResult } from "../deferred-review";
 import { runDeferredRegression } from "./run-regression";
 
 /**

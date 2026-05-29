@@ -10,13 +10,13 @@ import {
   _runCompletionDeps,
   handleRunCompletion,
   type RunCompletionOptions,
-} from "@/execution/lifecycle/run-completion";
+} from "@/execution";
 import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { NaxConfig } from "@/config";
 import type { PRD, UserStory } from "@/prd";
 import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
-import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
+import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
+import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
 
 const origDeps = { ..._runCompletionDeps };
 
