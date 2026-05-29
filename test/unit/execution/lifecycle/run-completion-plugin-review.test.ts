@@ -66,11 +66,12 @@ function makeStatusWriter() {
 }
 
 function makeConfig(pluginMode: "observational" | "gating"): NaxConfig {
-  const cfg = makeNaxConfig();
-  // Disable regression so only deferred-review consumption runs.
-  (cfg.execution as Record<string, unknown>).regressionGate = { mode: "disabled" };
-  cfg.review.pluginMode = pluginMode;
-  return cfg;
+  return makeNaxConfig({
+    execution: {
+      regressionGate: { mode: "disabled" } as never,
+    },
+    review: { pluginMode },
+  });
 }
 
 function makeDeferredReview(anyFailed: boolean): DeferredReviewResult {

@@ -248,16 +248,13 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const deferredReview = options.deferredReview;
   if (deferredReview?.anyFailed) {
     const failedReviewers = deferredReview.reviewerResults.filter((r) => !r.passed).map((r) => r.name);
-    const gating = config.review.pluginMode === "gating";
+    pluginGateFailed = config.review.pluginMode === "gating";
     logger?.warn("review", "Deferred plugin reviewer(s) reported failures", {
       storyId: runId,
       failedReviewers,
       pluginMode: config.review.pluginMode,
-      gating,
+      gating: pluginGateFailed,
     });
-    if (gating) {
-      pluginGateFailed = true;
-    }
   }
 
   // Bug 909 fix — consult the cost aggregator for the authoritative spend total.
