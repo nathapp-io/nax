@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
 
@@ -153,6 +153,73 @@ describe("verifierOp output type", () => {
     // isolation is optional, may be present or absent
     if ("isolation" in result) {
       expect(typeof (result as any).isolation).toBeDefined();
+    }
+  });
+});
+
+describe("verifierOp.parse — verdict logging", () => {
+  const ADVISORY_VERDICT_JSON = JSON.stringify({
+    version: 1,
+    approved: false,
+    tests: { allPassing: true, passCount: 5, failCount: 0 },
+    testModifications: { detected: true, files: ["src/foo.test.ts"], legitimate: true, reasoning: "comment cleanup" },
+    acceptanceCriteria: { allMet: false, criteria: [{ criterion: "AC8 typecheck", met: false }] },
+    quality: { rating: "good", issues: [] },
+    fixes: [],
+    reasoning: "AC8 typecheck fails due to missing dependency (environmental)",
+  });
+
+  test("logs 'Verdict categorized' with advisoryOverride=true when approved:false but tests pass and mods legitimate", async () => {
+    const { verifierOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { Logger } = await import("@/logger");
+
+    const infoSpy = spyOn(Logger.prototype, "info");
+    try {
+      const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+      const input = { story: { id: "US-001" } as any };
+
+      const result = verifierOp.parse(ADVISORY_VERDICT_JSON, input, ctx);
+      // Categorization treats approved:false (advisory AC/quality) as success.
+      expect(result.success).toBe(true);
+
+      const call = infoSpy.mock.calls.find((c) => c[0] === "verifier" && c[1] === "Verdict categorized");
+      expect(call).toBeDefined();
+      const data = call?.[2] as Record<string, unknown>;
+      expect(data.storyId).toBe("US-001");
+      expect(data.approved).toBe(false);
+      expect(data.success).toBe(true);
+      expect(data.advisoryOverride).toBe(true);
+      expect(data.testsPassing).toBe(true);
+      // storyId must be the first key (parallel-log correlation rule).
+      expect(Object.keys(data)[0]).toBe("storyId");
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  test("logs advisoryOverride=false when verdict is approved", async () => {
+    const { verifierOp } = await import("@/operations");
+    const { DEFAULT_CONFIG } = await import("@/config");
+    const { Logger } = await import("@/logger");
+
+    const infoSpy = spyOn(Logger.prototype, "info");
+    try {
+      const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
+      const input = { story: { id: "US-002" } as any };
+
+      verifierOp.parse(VALID_VERDICT_JSON, input, ctx);
+
+      const call = infoSpy.mock.calls.find(
+        (c) => c[0] === "verifier" && c[1] === "Verdict categorized" && (c[2] as any)?.storyId === "US-002",
+      );
+      expect(call).toBeDefined();
+      const data = call?.[2] as Record<string, unknown>;
+      expect(data.approved).toBe(true);
+      expect(data.success).toBe(true);
+      expect(data.advisoryOverride).toBe(false);
+    } finally {
+      infoSpy.mockRestore();
     }
   });
 });
