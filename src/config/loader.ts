@@ -231,15 +231,20 @@ export function _applyLegacyReviewExecutionShim(
     result = { ...result, execution: restExecution };
   }
 
-  // legacy: review.pluginMode and review.dialogue stripped — removed in US-005c (D2/D4 decisions)
+  // legacy: review.pluginMode (only the old "per-story" value) and review.dialogue stripped
+  // The "per-story" pluginMode was removed in US-005c (D4 decision). The field has since been
+  // reintroduced (#1146) with valid values "observational" | "gating" — only the legacy
+  // "per-story" value is stripped; valid new values pass through to Zod.
   const review = (result.review ?? conf.review) as Record<string, unknown> | undefined;
   if (review && typeof review === "object") {
     let newReview = review;
 
-    const LEGACY_PLUGIN_MODE = "pluginMode"; // legacy-shim: removed in US-005c (D4 decision)
-    if (LEGACY_PLUGIN_MODE in review) {
-      warn("review.pluginMode is a legacy field that has been removed. Remove it from your config.");
-      const { [LEGACY_PLUGIN_MODE]: _pm, ...rest } = review;
+    const LEGACY_PLUGIN_MODE_VALUE = "per-story"; // legacy-shim: "per-story" removed in US-005c (D4 decision)
+    if ("pluginMode" in review && review.pluginMode === LEGACY_PLUGIN_MODE_VALUE) {
+      warn(
+        'review.pluginMode: "per-story" is a legacy value that has been removed. Remove it from your config (or set to "observational"/"gating").',
+      );
+      const { pluginMode: _pm, ...rest } = review;
       newReview = rest;
     }
 

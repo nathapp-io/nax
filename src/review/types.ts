@@ -246,6 +246,12 @@ export interface ReviewConfig {
    * Mechanical checks (lint, typecheck, test, build) always block on failure.
    */
   blockingThreshold?: "error" | "warning" | "info";
+  /**
+   * How `IReviewPlugin` deferred reviewers affect run outcome. Defaults to "observational".
+   * "observational": failures are logged but do NOT fail the run (ADR-023 D2, #1146).
+   * "gating": any failing plugin reviewer marks the run failed (RunResult.success = false).
+   */
+  pluginMode: "observational" | "gating";
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */

@@ -238,15 +238,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
       sessionManager,
       agentManager,
       pluginProviderCache,
+      deferredReview: executionResult.deferredReview,
       runtime,
       abortSignal: shutdownController.signal,
     });
 
-    const { durationMs, acceptancePassed } = completionResult;
+    const { durationMs, acceptancePassed, pluginGateFailed } = completionResult;
     runCompleted = true;
 
     return {
-      success: isComplete(prd) && acceptancePassed,
+      success: isComplete(prd) && acceptancePassed && !pluginGateFailed,
       iterations,
       storiesCompleted,
       totalCost,
