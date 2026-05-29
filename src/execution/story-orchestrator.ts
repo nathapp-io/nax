@@ -606,6 +606,49 @@ function logUnifiedReviewPhaseStart(storyId: string | undefined, opName: string)
  * TDD phases and review phases have their own dedicated loggers — skip those here
  * so a single phase doesn't produce duplicate outcome lines.
  */
+/**
+ * Build the structured log fields for a deterministic phase outcome from the op
+ * output. Pure over `(storyId, opName, output, durationMs)` — exported for unit
+ * testing. Returns `null` when the output is not a loggable object.
+ *
+ * `findingsCount` prefers `normalizedFindings` (the verifier's envelope) and
+ * falls back to the legacy `findings` array. Reading only `findings` left the
+ * verifier's "Phase failed" line bare even when it emitted a tdd-verifier
+ * finding. Among ops that reach this function the two fields are mutually
+ * exclusive — verifier carries only `normalizedFindings`; verify-scoped /
+ * lint-check / typecheck-check / full-suite-gate carry only `findings`; the
+ * dual-field review ops (semantic / adversarial) are filtered out by the caller
+ * before this runs — so the simple precedence below never diverges from
+ * extractPhaseFindings in practice. `failureCategory` / `reviewReason` carry the
+ * verifier verdict's rejection detail so the line explains *why* without a
+ * prompt-audit cross-reference.
+ */
+export function buildPhaseOutcomeLogData(
+  storyId: string | undefined,
+  opName: string,
+  output: unknown,
+  durationMs: number,
+): { success: boolean; data: Record<string, unknown> } | null {
+  if (output === null || output === undefined || typeof output !== "object") return null;
+
+  const r = output as Record<string, unknown>;
+  const success = r.success === true || r.passed === true;
+  const findingsCount = Array.isArray(r.normalizedFindings)
+    ? r.normalizedFindings.length
+    : Array.isArray(r.findings)
+      ? r.findings.length
+      : undefined;
+  const status = typeof r.status === "string" ? r.status : undefined;
+
+  const data: Record<string, unknown> = { storyId, phase: opName, durationMs };
+  if (findingsCount !== undefined) data.findingsCount = findingsCount;
+  if (status !== undefined) data.status = status;
+  if (typeof r.failureCategory === "string") data.failureCategory = r.failureCategory;
+  if (typeof r.reviewReason === "string") data.reviewReason = r.reviewReason;
+
+  return { success, data };
+}
+
 function logDeterministicPhaseOutcome(
   storyId: string | undefined,
   opName: string,
@@ -616,18 +659,12 @@ function logDeterministicPhaseOutcome(
 ): void {
   if (isTddPhase) return;
   if (opName === "semantic-review" || opName === "adversarial-review") return;
-  if (output === null || output === undefined || typeof output !== "object") return;
+
+  const built = buildPhaseOutcomeLogData(storyId, opName, output, durationMs);
+  if (!built) return;
+  const { success, data } = built;
 
   const logger = getSafeLogger();
-  const r = output as Record<string, unknown>;
-  const success = r.success === true || r.passed === true;
-  const findingsCount = Array.isArray(r.findings) ? r.findings.length : undefined;
-  const status = typeof r.status === "string" ? r.status : undefined;
-
-  const data: Record<string, unknown> = { storyId, phase: opName, durationMs };
-  if (findingsCount !== undefined) data.findingsCount = findingsCount;
-  if (status !== undefined) data.status = status;
-
   const message = formatPhaseResultMessage(opName, success, stage);
 
   // Rectification ops complete successfully whenever the prompt finishes — the

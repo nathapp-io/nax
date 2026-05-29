@@ -244,6 +244,39 @@ describe("makeParseRetryStrategy", () => {
     });
   });
 
+  describe("AC-10b: outputPreview surfaces unparseable content", () => {
+    function captureWarn(opts: Partial<Parameters<typeof makeParseRetryStrategy>[0]>, lastOutput: string) {
+      const warnCalls: Array<[string, string, Record<string, unknown>]> = [];
+      const strategy = makeParseRetryStrategy({
+        validate: () => false,
+        reviewerKind: "verifier",
+        parse: () => null,
+        looksTruncated: () => false,
+        prompts: { invalid: () => "invalid-prompt", truncated: () => "truncated-prompt" },
+        _logger: { warn: (k, m, d) => warnCalls.push([k, m, d]) },
+        ...opts,
+      } as Parameters<typeof makeParseRetryStrategy>[0]);
+      strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput }));
+      return warnCalls[0]![2];
+    }
+
+    test("includes whitespace-collapsed outputPreview when outputPreviewBytes is set", () => {
+      const data = captureWarn({ outputPreviewBytes: 600 }, "  not a\n\n verdict  ");
+      expect(data.outputPreview).toBe("not a verdict");
+      expect(data.originalByteSize).toBe("  not a\n\n verdict  ".length);
+    });
+
+    test("clips preview to outputPreviewBytes with an ellipsis", () => {
+      const data = captureWarn({ outputPreviewBytes: 10 }, "x".repeat(50));
+      expect(data.outputPreview).toBe(`${"x".repeat(10)}…`);
+    });
+
+    test("omits outputPreview when outputPreviewBytes is unset", () => {
+      const data = captureWarn({}, "some bad output");
+      expect(data).not.toHaveProperty("outputPreview");
+    });
+  });
+
   describe("AC-11: exported from index", () => {
     test("makeParseRetryStrategy is exported from src/agents/retry/index.ts", async () => {
       const mod = await import("../../../../src/agents/retry");
