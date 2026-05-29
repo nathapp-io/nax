@@ -206,11 +206,10 @@ export async function mapSourceToTests(
       candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
     }
 
-    for (const candidate of candidates) {
-      if (await _bunDeps.file(candidate).exists()) {
-        result.push(candidate);
-      }
-    }
+    const existsFlags = await Promise.all(candidates.map((c) => _bunDeps.file(c).exists()));
+    candidates.forEach((c, i) => {
+      if (existsFlags[i]) result.push(c);
+    });
   }
 
   return result;
