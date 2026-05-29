@@ -91,7 +91,7 @@ function buildVerifierFindings(verdict: VerifierVerdict, categorization: Verdict
  * JSON, or missing the required VerifierVerdict shape — the parse-retry
  * strategy converts this into an in-session re-prompt.
  */
-function parseVerdictFromStdout(output: string, _input: VerifierInput, _ctx: BuildContext<TddConfig>): VerifierOutput {
+function parseVerdictFromStdout(output: string, input: VerifierInput, _ctx: BuildContext<TddConfig>): VerifierOutput {
   if (!output || !output.trim()) {
     throw new ParseValidationError("verifier produced no stdout");
   }
@@ -104,6 +104,23 @@ function parseVerdictFromStdout(output: string, _input: VerifierInput, _ctx: Bui
     throw new ParseValidationError("verifier stdout JSON missing required VerifierVerdict fields");
   }
   const categorization = categorizeVerdict(verdict, verdict.tests.allPassing === true);
+  // Surface the verdict outcome on the success path. The agent's `approved`
+  // flag can disagree with the categorized outcome: categorizeVerdict treats
+  // approved:false for advisory AC/quality reasons as success (semantic review
+  // owns those), blocking only on TDD-integrity failures. Without this line the
+  // mapping is invisible in the run log and only recoverable from prompt-audit.
+  getSafeLogger()?.info("verifier", "Verdict categorized", {
+    storyId: input.story.id,
+    approved: verdict.approved,
+    success: categorization.success,
+    advisoryOverride: verdict.approved === false && categorization.success,
+    testsPassing: verdict.tests.allPassing,
+    passCount: verdict.tests.passCount,
+    failCount: verdict.tests.failCount,
+    testModsDetected: verdict.testModifications.detected,
+    testModsLegitimate: verdict.testModifications.legitimate,
+    ...(categorization.failureCategory && { failureCategory: categorization.failureCategory }),
+  });
   return {
     success: categorization.success,
     filesChanged: [],
