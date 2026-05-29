@@ -194,6 +194,8 @@ export interface StoryOrchestratorResult {
   readonly phaseOutputs: Record<string, unknown>;
   readonly rectificationExhausted?: boolean;
   readonly unfixedFindings?: readonly Finding[];
+  /** Set when rectification short-circuited with empty findings — resume ran scope-backfill. */
+  readonly liteScopeIncomplete?: boolean;
 }
 
 type PhaseKind =
@@ -831,9 +833,20 @@ function withIncreasingFailuresBail(
 interface RectificationResult {
   rectificationExhausted?: boolean;
   unfixedFindings?: readonly Finding[];
+  /** Validate short-circuited with empty findings — resume must still run scope-backfill phases. */
+  liteScopeIncomplete?: boolean;
 }
 
-async function runRectification(
+/**
+ * @internal
+ * Run the rectification loop and return a structured result describing the exit.
+ * Returns `{ liteScopeIncomplete: true }` when the cycle exited with
+ * "validate-short-circuit" and no remaining findings — the resume block must
+ * still dispatch phases that were absent during the short-circuited validate.
+ *
+ * Exported for unit testing; not for external callers — use `ExecutionPlan.run`.
+ */
+export async function runRectification(
   ctx: CallContext,
   state: InternalBuildState,
   phaseCosts: Record<string, number>,
