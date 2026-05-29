@@ -17,8 +17,8 @@ import {
   _storyOrchestratorDeps,
   StoryOrchestratorBuilder,
 } from "@/execution";
-import type { FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
+import type { FixStrategy } from "@/findings";
 import { pickSelector, DEFAULT_CONFIG } from "@/config";
 import { makeTestRuntime, makeStory, makeNaxConfig } from "@test/helpers";
 import { makeAutofixImplementerStrategy, makeDeclarationSink } from "@/operations";
@@ -208,12 +208,13 @@ describe("AC7: verifier findings route to autofix-implementer via verifierContex
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete and resume dispatches full-suite-gate", () => {
-  test("AC8: result.liteScopeIncomplete=true and full-suite-gate re-dispatched by resume when validate-short-circuit exits with no findings", async () => {
+  test("AC8: real runFixCycle path sets liteScopeIncomplete=true and resume re-dispatches full-suite-gate", async () => {
     const opCounts: Record<string, number> = {};
 
     // Gate fails on first dispatch (main loop), passes on resume re-dispatch.
-    // Verifier always passes (absent from autofix-implementer revalidation set,
-    // picked up by resume which sees it as absent from phaseOutputs).
+    // Verifier fails during lite validate with empty normalizedFindings, which
+    // should produce validate-short-circuit (not resolved) in the cycle.
+    // Resume then re-dispatches gate/verifier; both pass on those later calls.
     _storyOrchestratorDeps.callOp = mock(async (_ctx: any, op: any, _input: any) => {
       const name = op.name as string;
       opCounts[name] = (opCounts[name] ?? 0) + 1;
@@ -230,6 +231,18 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
         return { success: true, findings: [], normalizedFindings: [], estimatedCostUsd: 0 };
       }
       if (name === "verifier") {
+        // First verifier run happens in lite validate after full-suite-rectify.
+        // Return failure + empty findings to force short-circuit signalling.
+        if (opCounts["verifier"] === 1) {
+          return {
+            success: false,
+            normalizedFindings: [],
+            filesChanged: [],
+            estimatedCostUsd: 0,
+            durationMs: 0,
+            output: "",
+          };
+        }
         return {
           success: true,
           normalizedFindings: [],
@@ -242,17 +255,28 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
 
-    // Simulate validate-short-circuit with zero remaining findings — the
-    // lite-scope-incomplete path that should set liteScopeIncomplete: true.
-    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
-      iterations: [],
-      finalFindings: [],
-      exitReason: "validate-short-circuit" as FixCycleExitReason,
-      costUsd: 0,
-    })) as typeof _storyOrchestratorDeps.runFixCycle;
-
     const gateOp = makeDeterministicOp("full-suite-gate", { success: false, findings: [GATE_FINDING] });
     const verifierOp = makeDeterministicOp("verifier", { success: true });
+    const noopRectifyOp: RunOperation<{ story: { id: string } }, { success: boolean }, typeof DEFAULT_CONFIG> = {
+      kind: "run",
+      name: "full-suite-rectify-op",
+      stage: "rectification",
+      config: testSel as any,
+      session: { role: "implementer", lifetime: "warm" },
+      build: () => ({
+        role: { id: "r-rect", content: "Rectify", overridable: false },
+        task: { id: "t-rect", content: "Fix tests", overridable: false },
+      }),
+      parse: () => ({ success: true }),
+    };
+    const fullSuiteStrategy: FixStrategy<Finding, { story: { id: string } }, { success: boolean }> = {
+      name: "full-suite-rectify",
+      appliesTo: (f) => f.source === "test-runner",
+      fixOp: noopRectifyOp,
+      buildInput: () => ({ story: { id: "US-ac8" } }),
+      maxAttempts: 1,
+      coRun: "exclusive",
+    };
 
     const ctx = makeCtx("US-ac8");
 
@@ -260,21 +284,13 @@ describe("AC8: validate-short-circuit + empty findings → liteScopeIncomplete a
       .addImplementer({ op: mockImplementerOp, input: { code: "" } })
       .addFullSuiteGate({ op: gateOp, input: { story: makeStory({ id: "US-ac8" }), workdir: "/tmp" } })
       .addVerifier({ op: verifierOp, input: { story: makeStory({ id: "US-ac8" }), workdir: "/tmp" } as any })
-      .addRectification({ maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false })
+      .addRectification({ maxAttempts: 3, strategies: [fullSuiteStrategy], abortOnIncreasingFailures: false })
       .build(ctx)
       .run();
 
-    // AC8a (failing assertion before implementation): validate-short-circuit + empty findings
-    // must set liteScopeIncomplete: true on the result.
-    // Before implementation: runRectification returns {} → liteScopeIncomplete is undefined → FAILS.
-    // After implementation: returns { liteScopeIncomplete: true } → PASSES.
     expect(result.liteScopeIncomplete).toBe(true);
 
-    // AC8b: resume block IS entered and re-dispatches full-suite-gate.
-    // Gate failed in the main loop (count=1), so resume re-runs it (count=2).
-    // Before implementation: resume already enters (because !rectificationExhausted=true),
-    // so gate IS re-dispatched and this assertion passes now too.
-    // Both AC8a and AC8b together verify the complete liteScopeIncomplete contract.
     expect(opCounts["full-suite-gate"] ?? 0).toBeGreaterThanOrEqual(2);
+    expect(opCounts["verifier"] ?? 0).toBeGreaterThanOrEqual(2);
   });
 });

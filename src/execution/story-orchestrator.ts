@@ -892,7 +892,7 @@ export async function runRectification(
     ),
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
-      if (ctx.runtime.signal?.aborted) return [];
+      if (ctx.runtime.signal?.aborted) return { findings: [], shortCircuited: false };
       // opts is required by the FixCycle.validate contract but guard defensively for
       // plugin-supplied cycles that may call validate without opts (legacy shape).
       const lite = (opts?.mode ?? "full") === "lite";
@@ -904,6 +904,7 @@ export async function runRectification(
         phasesSelected: phases.map((p) => p.kind),
       });
       const findings: Finding[] = [];
+      let shortCircuited = false;
       for (const phase of phases) {
         if (lite && phase.kind === "full-suite-gate") {
           continue;
@@ -921,10 +922,12 @@ export async function runRectification(
             storyId: ctx.storyId,
             phase: phase.slot.op.name,
           });
+          shortCircuited = true;
           break;
         }
       }
-      return rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
+      const validated = rectification.postValidate ? await rectification.postValidate(findings, _validateCtx) : findings;
+      return { findings: validated, shortCircuited };
     },
   };
 
