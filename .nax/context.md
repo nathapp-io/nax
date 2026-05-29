@@ -41,7 +41,12 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
   → runExecutionPhase() [runner-execution.ts]
     → for each story (sequential or parallel):
       → UnifiedExecutor.execute()  [unified-executor.ts]
-        → Pipeline stages 1–13 (defaultPipeline)
+        → Pipeline stages 1–8 (defaultPipeline)
+        → executionStage delegates per-story work to
+          StoryOrchestratorBuilder.CANONICAL_ORDER (test-writer →
+          greenfield-gate → implementer → full-suite-gate → verifier →
+          verify-scoped → lint/typecheck checks → semantic/adversarial
+          review) + runFixCycle FixStrategies for rectification
         → Escalation on failure (fast → balanced → powerful)
   → runCompletionPhase() [lifecycle/run-completion.ts]
     → postRunPipeline (acceptance)
@@ -55,13 +60,13 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/execution/` | Runner loop, escalation, crash recovery, parallel execution, lifecycle phases |
 | `src/execution/escalation/` | Tier escalation on repeated failures (fast → balanced → powerful) |
 | `src/execution/lifecycle/` | Run lifecycle phases (setup, init, completion, cleanup, regression, acceptance) |
-| `src/pipeline/stages/` | 15 pipeline stages (13 default + pre-run + post-run) |
+| `src/pipeline/stages/` | 10 pipeline stages (8 default + 1 pre-run + 1 post-run) |
 | `src/pipeline/subscribers/` | Event-driven hooks (interaction, hooks.ts) |
 | `src/routing/` | Model-tier routing — keyword, LLM, plugin chain |
 | `src/routing/strategies/` | llm.ts, llm-prompts.ts |
 | `src/interaction/` | Interaction triggers + plugins (Auto, Webhook) |
 | `src/plugins/` | Plugin system — loader, registry, validator (7 extension points) |
-| `src/verification/` | Test execution, smart runner, scoped runner, rectification loop |
+| `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
 | `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` |

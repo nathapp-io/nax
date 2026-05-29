@@ -1,8 +1,10 @@
 # SPEC: Execution Unification — One Builder Per Story
 
 **ADR:** [ADR-023-execution-unification.md](../adr/ADR-023-execution-unification.md)
-**Status:** Draft
+**Status:** Implemented — D1/AC-005c.3 superseded by issue #1116 (see note below)
 **Date:** 2026-05-23
+
+> **Reconciliation note (2026-05-29):** The unification described here has shipped. Decision **D1** ("retain `regressionStage`") and the corresponding **AC-005c.3** (which required `regressionStage` in the post-cleanup `defaultPipeline`, 9 stages) were **overridden by issue #1116** after this spec was written. `regressionStage` is deleted; `defaultPipeline` is **8 stages** (`src/pipeline/stages/index.ts:32-41`); deferred post-run regression lives in `src/execution/lifecycle/run-regression.ts` as a lifecycle helper, not a pipeline stage. Treat D1/AC-005c.3 as historical. ADR-023 §5 + Open Question 3 reflect the as-built state. Remaining residual gaps are tracked in `docs/reports/2026-05-29-execution-unification-gap-audit.md` (#1146 for the `IReviewPlugin` regression).
 **Author:** William Khoo, Claude
 **Supersedes (partial):**
 - [SPEC-story-orchestrator-consolidation.md](./SPEC-story-orchestrator-consolidation.md) — review-as-builder-phase portion (`addSemanticReview` / `addAdversarialReview` slots gated by `execution.inlineReview`)
@@ -535,11 +537,11 @@ Verification story. Asserts that today's per-check + per-strategy gating granula
 
 Pure deletion story. Composed of `[verbatim]` negative assertions per the spec-writing guide's terminal-cleanup rule.
 
-Per Open Question #1: `regressionStage` is retained. The ACs below reflect that — `regressionStage` is NOT in the grep-zero list and `regression.ts` is NOT in the file-deletion list.
+Per Open Question #1: `regressionStage` was originally retained. ⚠️ **This was reversed by issue #1116** — `regressionStage` and `regression.ts` are now deleted (deferred regression moved to `src/execution/lifecycle/run-regression.ts`). The AC text below is historical; AC-005c.3 in particular no longer matches the code.
 
 - AC-005c.1 [verbatim] [grep] `grep -rnE "execution\\.inlineReview|review\\.dialogue|reviewDialogue|\\.inlineReview|review\\.pluginMode|pluginMode" src/ --include="*.ts" | grep -v "deprecat\\|legacy" | wc -l` returns `0` (covers `inlineReview`, `review.dialogue`, and `review.pluginMode` config field removal per D2/D4).
 - AC-005c.2 [verbatim] [file] Files do not exist after this story: `src/pipeline/stages/verify.ts`, `rectify.ts`, `review.ts`, `autofix.ts`, `autofix-cycle.ts`, `autofix-guards.ts`, `autofix-scope-split.ts`, `autofix-test-writer.ts`, `autofix-agent.ts`, `autofix-prompts.ts`. File `src/review/orchestrator.ts` does not exist.
-- AC-005c.3 [verbatim] [grep] `defaultPipeline` array in `src/pipeline/stages/index.ts` contains exactly the elements `queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage` — verified by `grep -cE "Stage,?$" src/pipeline/stages/index.ts` (inside the `defaultPipeline` definition) returning exactly `9`, and `grep -nE "verifyStage|rectifyStage|reviewStage|autofixStage" src/pipeline/stages/index.ts | wc -l` returning `0`.
+- AC-005c.3 [verbatim] [grep] ⚠️ **SUPERSEDED by issue #1116** — `regressionStage` was deleted, so the as-built `defaultPipeline` is **8 stages without `regressionStage`**: `queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, completionStage` (`grep -cE "Stage,?$"` returns `8`, not `9`). The original AC text below is historical. ~~`defaultPipeline` array in `src/pipeline/stages/index.ts` contains exactly the elements `queueCheckStage, routingStage, constitutionStage, contextStage, promptStage, optimizerStage, executionStage, regressionStage, completionStage` — verified by `grep -cE "Stage,?$" src/pipeline/stages/index.ts` (inside the `defaultPipeline` definition) returning exactly `9`, and `grep -nE "verifyStage|rectifyStage|reviewStage|autofixStage" src/pipeline/stages/index.ts | wc -l` returning `0`.~~
 - AC-005c.4 [verbatim] [grep] `grep -nE "addSemanticReview|addAdversarialReview" src/execution/story-orchestrator.ts | wc -l` returns `0` — the builder methods are removed.
 - AC-005c.5 [verbatim] [grep] `grep -nE "semanticReview\\??:|adversarialReview\\??:" src/execution/plan-inputs.ts | wc -l` returns `0` — the PlanInputs slot fields are removed.
 - AC-005c.6 [verbatim] [grep] `grep -rnE "ctx\\.reviewerSession|ctx\\.reviewResult|ctx\\.verifyResult|ctx\\.autofixAttempt" src/ --include="*.ts" | grep -vE "src/debate/|test" | wc -l` returns `0` — per D3 + D4, no non-debate consumer of these legacy ctx fields after cleanup.
@@ -551,9 +553,11 @@ Per Open Question #1: `regressionStage` is retained. The ACs below reflect that 
 
 All four open questions resolved 2026-05-23 via codebase audit. Documented here for traceability; the ACs reflect each resolution.
 
-### D1 — `regressionStage`: retain
+### D1 — `regressionStage`: retain — ⚠️ SUPERSEDED by issue #1116
 
-Stays as a post-run stage. Folding into the per-story builder would change regression-check semantics (per-story instead of per-run) and is out of scope. AC-005c.3 reflects this — `regressionStage` is included in the post-cleanup `defaultPipeline`.
+> **This decision was reversed.** Issue #1116 (PR #1124, #1125) **deleted** `regressionStage`. Deferred post-run regression now lives in `src/execution/lifecycle/run-regression.ts` as a lifecycle helper (preserving per-run semantics) rather than a pipeline stage. The post-cleanup `defaultPipeline` is **8 stages, without `regressionStage`** (`src/pipeline/stages/index.ts:32-41`). AC-005c.3 below is historical and no longer matches the code — see the reconciliation note in the header.
+
+Original decision (retained for traceability): Stays as a post-run stage. Folding into the per-story builder would change regression-check semantics (per-story instead of per-run) and is out of scope. AC-005c.3 reflects this — `regressionStage` is included in the post-cleanup `defaultPipeline`.
 
 ### D2 — `IReviewPlugin`: drop per-story integration, retain deferred-only
 

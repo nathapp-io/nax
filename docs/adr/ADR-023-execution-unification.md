@@ -1,11 +1,31 @@
 # ADR-023: Execution Unification — One Builder Per Story
 
-**Status:** Partially Implemented
+**Status:** Implemented (see Implementation Status below)
 **Date:** 2026-05-23
 **Author:** William Khoo, Claude
 **Supersedes:** SPEC-story-orchestrator-consolidation §1 (review-as-builder-phase portion), SPEC-rectification-unification (US-006a/b/c rectification plan)
 **Related:** ADR-021 (Finding type SSOT), ADR-022 (Fix Strategy + Cycle), ADR-017 (Incremental Consolidation)
 **Implementation:** [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md)
+
+---
+
+## Implementation Status (2026-05-29)
+
+The core decision is **implemented**. Verified against the live tree:
+
+- ✅ `defaultPipeline` shrunk to the 8 stages in §5 (`src/pipeline/stages/index.ts:32-41`).
+- ✅ `verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`, `regressionStage` all deleted (no live references).
+- ✅ `inlineReview` flag and `runRectificationLoop` deleted; rectification flows through `runFixCycle` + FixStrategies.
+- ✅ All five fix strategies wired (`src/execution/build-plan-for-strategy.ts`): `mechanical-lintfix`, `mechanical-formatfix`, `full-suite-rectify`, `autofix-implementer`, `autofix-test-writer`.
+- ✅ Per-story verification owned by `verifyScopedOp` / `fullSuiteGateOp`; `applyPostRunInspection` (`src/execution/post-run.ts`) is the sole builder→pipeline bridge.
+
+**Residual gaps** (see `docs/reports/2026-05-29-execution-unification-gap-audit.md`):
+
+- ⚠️ **`IReviewPlugin` per-story `plugin-reviews` phase (§1) was never wired**, and the retained deferred-only path is inert (`anyFailed` never consumed). Tracked in #1146.
+- ⚠️ **`format-check` phase (§1) never built** — formatting is only fixed reactively via `mechanical-formatfix` off lint findings. Divergence from the illustrative order; lint typically covers it.
+- ⚠️ **D4 (`ReviewerSession` dialogue removal) only half-done** — the config key is rejected but `src/review/dialogue.ts` remains as unreachable dead code.
+
+> **SPEC reconciliation:** [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md) Decision D1 ("retain `regressionStage`") and its AC-005c.3 were **overridden by issue #1116**, which deleted `regressionStage` (8-stage pipeline, not 9). The SPEC's D1/AC-005c.3 are superseded by #1116; this ADR's §5 + Open Question 3 reflect the as-built state.
 
 ---
 
@@ -99,7 +119,7 @@ queueCheck → routing → constitution → context → prompt → optimizer →
 
 `verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`, `regressionStage` are deleted. `acceptanceStage` (post-run pipeline) is unchanged — it already uses `runFixCycle`.
 
-> **Implementation note (2026-05-26):** `regressionStage` has been deleted as part of issue #1116 (PR #1124, PR #1125). The legacy `VerificationOrchestrator`, `ScopedStrategy`, `RegressionStrategy`, and `AcceptanceStrategy` classes were retired simultaneously. Per-story verification is now owned by `verifyScopedOp` and `fullSuiteGateOp` dispatched via `callOp`. Post-run regression continues via `src/execution/lifecycle/run-regression.ts`. The remaining four stages (`verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`) await Phase B–E of [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md).
+> **Implementation note (updated 2026-05-29):** All five stages are now deleted. `regressionStage` was removed first via issue #1116 (PR #1124, PR #1125), retiring `VerificationOrchestrator`, `ScopedStrategy`, `RegressionStrategy`, and `AcceptanceStrategy`; per-story verification is now owned by `verifyScopedOp` and `fullSuiteGateOp` dispatched via `callOp`, and post-run regression continues via `src/execution/lifecycle/run-regression.ts`. The remaining four stages (`verifyStage`, `rectifyStage`, `reviewStage`, `autofixStage`) have since been deleted as well — `defaultPipeline` is now the 8 stages listed in §5 (`src/pipeline/stages/index.ts:32-41`), `inlineReview` and `runRectificationLoop` are gone, and the `StoryOrchestratorBuilder` owns the unified per-story phases. See the Implementation Status section below for the residual gaps that remain.
 
 ### 6. Out of scope
 
