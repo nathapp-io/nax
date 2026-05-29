@@ -19,9 +19,12 @@ import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
+import { clearLanguageCache } from "../../project/detector";
 import type { DispatchContext } from "../../runtime/dispatch-context";
 import type { ISessionManager } from "../../session";
 import { purgeStaleScratch } from "../../session/scratch-purge";
+import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
+import { clearGitRootCache } from "../../verification/smart-runner";
 import type { DeferredReviewResult } from "../deferred-review";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
@@ -327,6 +330,11 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   if (options.pluginProviderCache) {
     await options.pluginProviderCache.disposeAll();
   }
+
+  // Clear per-run detection memos so subsequent runs in the same process start fresh.
+  clearLanguageCache();
+  clearWorkspaceCache();
+  clearGitRootCache();
 
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);

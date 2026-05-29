@@ -333,30 +333,73 @@ async function resolveSourceGlob(override: string | undefined, packageDir: strin
   return (language && SOURCE_GLOB_BY_LANGUAGE[language]) ?? FALLBACK_SOURCE_GLOB;
 }
 
+/** Result of a pre-scanned directory for reverse-dep matching. */
+interface ScannedDir {
+  workdir: string;
+  files: string[];
+  truncated: boolean;
+}
+
+/**
+ * Scan a directory once for candidate source files.
+ * Results are meant to be shared across all per-file calls in one fetch().
+ */
+function scanDirectory(
+  sourceGlob: string,
+  workdir: string,
+  ignoreMatchers: readonly NaxIgnoreMatcher[] | undefined,
+  maxGlobFiles: number,
+  globCtx: { storyId?: string; packageDir?: string } | undefined,
+): ScannedDir {
+  const { files, truncated } = _codeNeighborDeps.glob(sourceGlob, workdir, ignoreMatchers, maxGlobFiles, globCtx);
+  return { workdir, files, truncated };
+}
+
+/**
+ * Read a file's content, using the shared cache to avoid redundant disk reads
+ * when multiple touched files inspect the same candidate.
+ */
+async function readCached(absolutePath: string, cache: Map<string, string>): Promise<string | null> {
+  const cached = cache.get(absolutePath);
+  if (cached !== undefined) return cached;
+  try {
+    const content = await _codeNeighborDeps.readFile(absolutePath);
+    cache.set(absolutePath, content);
+    return content;
+  } catch {
+    // Mark as unreadable so we don't retry
+    cache.set(absolutePath, "");
+    return null;
+  }
+}
+
 /**
  * Collect neighbors for a single file: forward deps (JS/TS only), reverse deps
  * (language-aware glob, configurable cap), and sibling test (ADR-009 SSOT).
- * extraGlobWorkdirs enables cross-package reverse dep scanning (AC-62).
+ *
+ * Accepts pre-scanned directory results and a shared content cache so that
+ * the glob and file reads are not repeated across touched files in one fetch().
  */
 async function collectNeighbors(
   filePath: string,
   workdir: string,
-  sourceGlob: string,
-  maxGlobFiles: number,
-  extraGlobWorkdirs?: string[],
+  scannedDirs: ScannedDir[],
+  contentCache: Map<string, string>,
   siblingTestContext?: { globs: readonly string[]; regex: readonly RegExp[] },
-  ignoreMatchers?: readonly NaxIgnoreMatcher[],
-  globCtx?: { storyId?: string; packageDir?: string },
 ): Promise<{ neighbors: string[]; truncated: boolean }> {
   const neighbors = new Set<string>();
   let anyTruncated = false;
 
-  // Forward deps (JS/TS only)
-  if (await _codeNeighborDeps.fileExists(join(workdir, filePath))) {
-    const content = await _codeNeighborDeps.readFile(join(workdir, filePath));
-    for (const spec of parseImportSpecifiers(content)) {
-      const resolved = resolveImport(spec, filePath, workdir);
-      if (resolved && resolved !== filePath) neighbors.add(resolved);
+  // Forward deps (JS/TS only) — check existence first (consistent with original
+  // behaviour), then read via the shared cache.
+  const ownAbsPath = join(workdir, filePath);
+  if (await _codeNeighborDeps.fileExists(ownAbsPath)) {
+    const ownContent = await readCached(ownAbsPath, contentCache);
+    if (ownContent !== null && ownContent.length > 0) {
+      for (const spec of parseImportSpecifiers(ownContent)) {
+        const resolved = resolveImport(spec, filePath, workdir);
+        if (resolved && resolved !== filePath) neighbors.add(resolved);
+      }
     }
   }
 
@@ -365,42 +408,21 @@ async function collectNeighbors(
   const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
 
-  const scanForReverseDeps = async (scanWorkdir: string) => {
-    const { files: srcFiles, truncated } = _codeNeighborDeps.glob(
-      sourceGlob,
-      scanWorkdir,
-      ignoreMatchers,
-      maxGlobFiles,
-      globCtx,
-    );
+  outer: for (const { workdir: scanWorkdir, files: srcFiles, truncated } of scannedDirs) {
     if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
-      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
       if (srcFile === filePath) continue;
-      try {
-        const content = await _codeNeighborDeps.readFile(join(scanWorkdir, srcFile));
-        if (content.includes(fileBaseName)) {
-          for (const spec of parseImportSpecifiers(content)) {
-            const resolved = resolveImport(spec, srcFile, scanWorkdir);
-            if (resolved === filePath || resolved === fileNoExt) {
-              neighbors.add(srcFile);
-              break;
-            }
+      const content = await readCached(join(scanWorkdir, srcFile), contentCache);
+      if (content?.includes(fileBaseName)) {
+        for (const spec of parseImportSpecifiers(content)) {
+          const resolved = resolveImport(spec, srcFile, scanWorkdir);
+          if (resolved === filePath || resolved === fileNoExt) {
+            neighbors.add(srcFile);
+            break;
           }
         }
-      } catch {
-        // Skip unreadable files
       }
-    }
-  };
-
-  await scanForReverseDeps(workdir);
-
-  // AC-62: cross-package reverse deps — scan each extra workdir (workspace packages)
-  if (extraGlobWorkdirs) {
-    for (const extraDir of extraGlobWorkdirs) {
-      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
-      await scanForReverseDeps(extraDir);
     }
   }
 
@@ -532,18 +554,27 @@ export class CodeNeighborProvider implements IContextProvider {
     const sourceGlob = await resolveSourceGlob(this.sourceGlobOverride, request.packageDir);
     const globCtx = { storyId: request.storyId, packageDir: request.packageDir };
 
+    // Hoist the reverse-dep glob scan outside the per-file loop so we never
+    // re-glob the same directory N times (once per touched file). A shared
+    // content cache further ensures each candidate file is read at most once
+    // across all touched files in this fetch() call.
+    const scannedDirs: ScannedDir[] = [scanDirectory(sourceGlob, workdir, ignoreMatchers, this.maxGlobFiles, globCtx)];
+    if (extraGlobWorkdirs) {
+      for (const extraDir of extraGlobWorkdirs) {
+        scannedDirs.push(scanDirectory(sourceGlob, extraDir, ignoreMatchers, this.maxGlobFiles, globCtx));
+      }
+    }
+    const contentCache = new Map<string, string>();
+
     const sections: string[] = [];
     let anyTruncated = false;
     for (const file of filesToProcess) {
       const { neighbors, truncated } = await collectNeighbors(
         file,
         workdir,
-        sourceGlob,
-        this.maxGlobFiles,
-        extraGlobWorkdirs,
+        scannedDirs,
+        contentCache,
         siblingTestContext,
-        ignoreMatchers,
-        globCtx,
       );
       if (truncated) anyTruncated = true;
       if (neighbors.length > 0) {

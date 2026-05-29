@@ -11,6 +11,7 @@
  * classification is hard-filtered here. Everything else stays generic.
  */
 import { join, relative } from "node:path";
+import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
@@ -22,10 +23,13 @@ import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns }
  *
  * @internal
  */
-const _bunDeps = {
+export const _bunDeps = {
   glob: (p: string) => new Bun.Glob(p),
   file: (path: string) => Bun.file(path),
 };
+
+/** Cap on test files scanned by the import-grep fallback. */
+export const MAX_GREP_TEST_FILES = 200;
 
 /**
  * Injectable git utilities — defined before functions so getChangedTestFiles and
@@ -37,6 +41,28 @@ const _bunDeps = {
 export const _gitUtilDeps = {
   getGitRoot,
 };
+
+/** Per-process memo: workdir → resolved git root. Cleared at run end via clearGitRootCache(). */
+const _gitRootCache = new Map<string, string>();
+
+/**
+ * Clear the git-root memo cache.
+ * Called by run-completion.ts to reset state between runs in the same process.
+ */
+export function clearGitRootCache(): void {
+  _gitRootCache.clear();
+}
+
+/** Memoized git-root resolver — delegates to the injectable _gitUtilDeps.getGitRoot. */
+async function getGitRootMemo(workdir: string): Promise<string | null> {
+  const cached = _gitRootCache.get(workdir);
+  if (cached !== undefined) return cached;
+  const result = await _gitUtilDeps.getGitRoot(workdir);
+  if (result !== null && result !== undefined) {
+    _gitRootCache.set(workdir, result);
+  }
+  return result ?? null;
+}
 
 /**
  * Map source files to their corresponding test files.
@@ -132,33 +158,33 @@ export async function importGrepFallback(
   // Collect search terms from all changed source files
   const searchTerms = sourceFiles.flatMap(extractSearchTerms);
 
-  // Scan all test files matching the configured patterns
+  // Scan all test files matching the configured patterns, capped at MAX_GREP_TEST_FILES
   const testFilePaths: string[] = [];
-  for (const pattern of testFilePatterns) {
-    const glob = _bunDeps.glob(pattern);
-    for await (const file of glob.scan(workdir)) {
+  outer: for (const pattern of testFilePatterns) {
+    const g = _bunDeps.glob(pattern);
+    for await (const file of g.scan(workdir)) {
       testFilePaths.push(`${workdir}/${file}`);
-    }
-  }
-
-  // Return test files that contain any of the search terms
-  const matched: string[] = [];
-  for (const testFile of testFilePaths) {
-    let content: string;
-    try {
-      content = await _bunDeps.file(testFile).text();
-    } catch {
-      continue;
-    }
-    for (const term of searchTerms) {
-      if (content.includes(term)) {
-        matched.push(testFile);
-        break;
+      if (testFilePaths.length >= MAX_GREP_TEST_FILES) {
+        getSafeLogger()?.debug("smart-runner", "import-grep glob cap reached — results truncated", {
+          cap: MAX_GREP_TEST_FILES,
+        });
+        break outer;
       }
     }
   }
 
-  return matched;
+  // Read all collected files concurrently and filter to those containing any search term
+  const results = await Promise.all(
+    testFilePaths.map(async (testFile) => {
+      try {
+        const content = await _bunDeps.file(testFile).text();
+        return searchTerms.some((t) => content.includes(t)) ? testFile : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results.filter((p): p is string => p !== null);
 }
 
 export async function mapSourceToTests(
@@ -206,11 +232,10 @@ export async function mapSourceToTests(
       candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
     }
 
-    for (const candidate of candidates) {
-      if (await _bunDeps.file(candidate).exists()) {
-        result.push(candidate);
-      }
-    }
+    const existsFlags = await Promise.all(candidates.map((c) => _bunDeps.file(c).exists()));
+    candidates.forEach((c, i) => {
+      if (existsFlags[i]) result.push(c);
+    });
   }
 
   return result;
@@ -317,7 +342,7 @@ export async function getChangedNonTestFiles(
     // regardless of where the git root sits relative to the project root.
     let effectivePrefix = packagePrefix;
     if (packagePrefix && repoRoot) {
-      const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+      const gitRoot = await getGitRootMemo(workdir);
       const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
       effectivePrefix = extraPrefix ? `${extraPrefix}/${packagePrefix}` : packagePrefix;
     }
@@ -378,7 +403,7 @@ export async function getChangedTestFiles(
     // Issue #565: git diff paths are relative to the true git root, which may be an
     // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
     // regardless of where the git root sits relative to the project root.
-    const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+    const gitRoot = await getGitRootMemo(workdir);
     const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
     const effectivePrefix = packagePrefix
       ? extraPrefix

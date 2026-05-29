@@ -188,8 +188,9 @@ async function runCheck(
   workdir: string,
   storyId?: string,
   env?: Record<string, string | undefined>,
+  stripEnvVars?: string[],
 ): Promise<ReviewCheckResult> {
-  const result = await runQualityCommand({ commandName: check, command, workdir, storyId, env });
+  const result = await runQualityCommand({ commandName: check, command, workdir, storyId, env, stripEnvVars });
   return {
     check,
     command: result.command,
@@ -452,9 +453,14 @@ export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
             story: story as UserStory | undefined,
             storyGitRef,
             env,
+            stripEnvVars: naxConfig?.quality?.stripEnvVars ?? [],
             naxIgnoreIndex,
           })
-        : normalizeMechanicalFindings(checkName, await runCheck(checkName, command, workdir, storyId, env), workdir);
+        : normalizeMechanicalFindings(
+            checkName,
+            await runCheck(checkName, command, workdir, storyId, env, naxConfig?.quality?.stripEnvVars ?? []),
+            workdir,
+          );
     checks.push(result);
 
     // Log outcome of mechanical checks (lint / typecheck / build).

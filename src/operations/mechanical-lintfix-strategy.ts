@@ -63,6 +63,7 @@ const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, Mechan
       command,
       workdir: input.workdir,
       storyId: input.storyId,
+      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
     });
     return { applied: true, exitCode: result.exitCode };
   },

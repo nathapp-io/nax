@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../logging/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
+import { redactSecrets } from "./redact.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
@@ -164,7 +165,8 @@ export class Logger {
    */
   private writeToFile(entry: LogEntry): void {
     if (!this.filePath) return;
-    const line = `${formatJsonl(entry)}\n`;
+    const safeEntry = entry.data ? { ...entry, data: redactSecrets(entry.data) as Record<string, unknown> } : entry;
+    const line = `${formatJsonl(safeEntry)}\n`;
     const filePath = this.filePath;
     this.writeQueueTail = this.writeQueueTail.then(() =>
       appendFile(filePath, line).catch((error) => {

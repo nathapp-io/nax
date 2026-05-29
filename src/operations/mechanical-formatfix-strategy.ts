@@ -67,6 +67,7 @@ const mechanicalFormatFixOp: DeterministicOperation<
       command,
       workdir: input.workdir,
       storyId: input.storyId,
+      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
     });
     return { applied: true, exitCode: result.exitCode };
   },

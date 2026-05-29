@@ -1,8 +1,8 @@
 /** Track spawned agent PIDs and clean them up on crash without process-group kills. */
 
 import { existsSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
 import { getSafeLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 
 const PID_REGISTRY_FILE = ".nax-pids";
 const PID_TREE_KILL_GRACE_MS = 250;
@@ -29,6 +29,7 @@ export class PidRegistry {
   private readonly pidsFilePath: string;
   private readonly pids: Set<number> = new Set();
   private frozen = false;
+  private writeQueueTail: Promise<void> = Promise.resolve();
 
   constructor(workdir: string, _platform?: NodeJS.Platform) {
     this.workdir = workdir;
@@ -53,15 +54,8 @@ export class PidRegistry {
     }
     this.pids.add(pid);
 
-    const entry: PidEntry = {
-      pid,
-      spawnedAt: new Date().toISOString(),
-      workdir: this.workdir,
-    };
-
     try {
-      const line = `${JSON.stringify(entry)}\n`;
-      await appendFile(this.pidsFilePath, line);
+      await this.enqueueWrite();
       logger?.debug("pid-registry", `Registered PID ${pid}`, { pid });
     } catch (err) {
       logger?.warn("pid-registry", `Failed to write PID ${pid} to registry`, {
@@ -75,7 +69,7 @@ export class PidRegistry {
     this.pids.delete(pid);
 
     try {
-      await this.writePidsFile();
+      await this.enqueueWrite();
       logger?.debug("pid-registry", `Unregistered PID ${pid}`, { pid });
     } catch (err) {
       logger?.warn("pid-registry", `Failed to unregister PID ${pid}`, {
@@ -99,8 +93,8 @@ export class PidRegistry {
     await Promise.allSettled(killPromises);
 
     try {
-      await Bun.write(this.pidsFilePath, "");
       this.pids.clear();
+      await this.enqueueWrite();
       logger?.info("pid-registry", "All registered PIDs killed and registry cleared");
     } catch (err) {
       logger?.warn("pid-registry", "Failed to clear registry file", {
@@ -347,5 +341,47 @@ export class PidRegistry {
 
   getPids(): number[] {
     return Array.from(this.pids);
+  }
+
+  /** Returns the current in-memory PID set as an array. */
+  snapshot(): number[] {
+    return Array.from(this.pids);
+  }
+
+  /** Wait for all pending disk writes to complete. */
+  async flush(): Promise<void> {
+    await this.writeQueueTail;
+  }
+
+  /** Read PIDs from disk. Useful for testing consistency between disk and in-memory state. */
+  async readPidsFromDisk(): Promise<number[]> {
+    try {
+      if (!existsSync(this.pidsFilePath)) return [];
+      const content = await Bun.file(this.pidsFilePath).text();
+      return content
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => {
+          try {
+            return (JSON.parse(line) as PidEntry).pid;
+          } catch {
+            return null;
+          }
+        })
+        .filter((pid): pid is number => pid !== null);
+    } catch {
+      return [];
+    }
+  }
+
+  private enqueueWrite(): Promise<void> {
+    this.writeQueueTail = this.writeQueueTail.then(() =>
+      this.writePidsFile().catch((err) => {
+        getSafeLogger()?.warn("pid-registry", "Failed to flush PID file — on-disk registry may be stale", {
+          error: errorMessage(err),
+        });
+      }),
+    );
+    return this.writeQueueTail;
   }
 }

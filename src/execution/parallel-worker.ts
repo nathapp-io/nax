@@ -10,11 +10,24 @@ import { runPipeline } from "../pipeline/runner";
 import type { PipelineRunResult } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
-import type { UserStory } from "../prd";
+import type { PRD, UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import type { WorktreeDependencyContext } from "../worktree/types";
+
+/**
+ * Build the per-story pipeline context for a worktree run.
+ * Deep-clones `prd` so concurrent stories never mutate a shared object.
+ * Inherits `skipPrdPersistence` from the base (set by the executor) so the
+ * unified executor is the single PRD writer after the batch (CR-1/H-1).
+ */
+export function buildWorktreePipelineContext(
+  base: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing" | "storyGitRef">,
+  _story: UserStory,
+): Omit<PipelineContext, "story" | "stories" | "workdir" | "routing" | "storyGitRef"> {
+  return { ...base, prd: structuredClone(base.prd) as PRD };
+}
 
 export const _parallelWorkerDeps = {
   routeTask,
@@ -50,7 +63,7 @@ export async function executeStoryInWorktree(
     }
 
     const pipelineContext: PipelineContext = {
-      ...context,
+      ...buildWorktreePipelineContext(context, story),
       config: context.config,
       rootConfig: context.rootConfig,
       story,

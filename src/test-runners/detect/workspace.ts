@@ -139,12 +139,22 @@ async function detectNaxMonoLayout(workdir: string): Promise<string[]> {
   return dirs;
 }
 
+// ── Workspace Discovery Memo ──────────────────────────────────────────────────
+
+const _workspaceCache = new Map<string, string[]>();
+
+/** Clear the workspace-discovery memo. Call in test teardown for isolation. */
+export function clearWorkspaceCache(): void {
+  _workspaceCache.clear();
+}
+
 /**
- * Discover all monorepo package directories in the given workdir.
+ * Discover all monorepo package directories in the given workdir (memoized per process).
  * Returns a deduplicated list of relative paths.
  * Returns empty array for single-package projects.
+ * Call `clearWorkspaceCache()` in test teardown to reset the memo.
  */
-export async function discoverWorkspacePackages(workdir: string): Promise<string[]> {
+async function discoverWorkspacePackagesUncached(workdir: string): Promise<string[]> {
   const [fromPnpm, fromNpm, fromLerna, fromTurboNx, fromNaxMono] = await Promise.all([
     detectPnpmWorkspace(workdir),
     detectNpmWorkspaces(workdir),
@@ -165,4 +175,15 @@ export async function discoverWorkspacePackages(workdir: string): Promise<string
   }
 
   return unique;
+}
+
+/**
+ * Discover all monorepo package directories in the given workdir (memoized per process).
+ * Wraps `discoverWorkspacePackagesUncached` — same return value, cached after first call.
+ */
+export async function discoverWorkspacePackages(workdir: string): Promise<string[]> {
+  if (_workspaceCache.has(workdir)) return _workspaceCache.get(workdir) ?? [];
+  const result = await discoverWorkspacePackagesUncached(workdir);
+  _workspaceCache.set(workdir, result);
+  return result;
 }
