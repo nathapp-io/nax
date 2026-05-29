@@ -13,8 +13,7 @@ import {
 } from "@/execution";
 import type { DeferredReviewResult } from "@/execution/deferred-review";
 import type { NaxConfig } from "@/config";
-import type { PRD, UserStory } from "@/prd";
-import { makeNaxConfig, makeMockRuntime } from "@test/helpers";
+import { makeNaxConfig, makeMockRuntime, makePRD } from "@test/helpers";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
 
@@ -25,32 +24,6 @@ afterEach(() => {
   pipelineEventBus.clear();
   mock.restore();
 });
-
-function makeStory(id: string): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "Test story",
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "passed",
-    passes: true,
-    escalations: [],
-    attempts: 1,
-  } as unknown as UserStory;
-}
-
-function makePRD(): PRD {
-  return {
-    project: "p",
-    feature: "f",
-    branchName: "b",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    userStories: [makeStory("US-001")],
-  } as unknown as PRD;
-}
 
 function makeStatusWriter() {
   const setRunStatus = mock(() => {});
@@ -65,7 +38,7 @@ function makeStatusWriter() {
   };
 }
 
-function makeConfig(pluginMode: "observational" | "gating"): NaxConfig {
+function makePluginModeConfig(pluginMode: "observational" | "gating"): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: { mode: "disabled" } as never,
@@ -100,7 +73,7 @@ function makeOpts(
     startTime: Date.now(),
     workdir: "/tmp/x",
     statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
-    config: makeConfig(pluginMode),
+    config: makePluginModeConfig(pluginMode),
     deferredReview,
     runtime: makeMockRuntime(),
   } as unknown as RunCompletionOptions;
