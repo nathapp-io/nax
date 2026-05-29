@@ -23,7 +23,7 @@ The core decision is **implemented**. Verified against the live tree:
 
 - ⚠️ **`IReviewPlugin` per-story `plugin-reviews` phase (§1) was never wired**, and the retained deferred-only path is inert (`anyFailed` never consumed). Tracked in #1146.
 - ⚠️ **`format-check` phase (§1) never built** — formatting is only fixed reactively via `mechanical-formatfix` off lint findings. Divergence from the illustrative order; lint typically covers it.
-- ⚠️ **D4 (`ReviewerSession` dialogue removal) only half-done** — the config key is rejected but `src/review/dialogue.ts` remains as unreachable dead code.
+- ✅ **D4 (`ReviewerSession` dialogue removal) completed (2026-05-29).** A verification pass found that no production code ever constructed a `ReviewerSession` — the debate subsystem referenced the type but never produced one, so D4's original premise ("debate consumers genuinely use it") was incorrect. The interface, factory, the `dialogue-verdict` selector, and all `resolverSession`/`reviewerSession` plumbing were removed in full. The `config.review.dialogue` deprecation shim in `src/config/loader.ts` is retained as the migration guard.
 
 > **SPEC reconciliation:** [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md) Decision D1 ("retain `regressionStage`") and its AC-005c.3 were **overridden by issue #1116**, which deleted `regressionStage` (8-stage pipeline, not 9). The SPEC's D1/AC-005c.3 are superseded by #1116; this ADR's §5 + Open Question 3 reflect the as-built state.
 

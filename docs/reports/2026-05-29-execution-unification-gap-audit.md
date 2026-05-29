@@ -74,6 +74,8 @@
 
 **Recommendation:** Delete `src/review/dialogue.ts`, the `resolverSession`/`reviewerSession?` parameter chain in `runner.ts`/`semantic.ts`/`semantic-debate.ts`/debate runners, and `ReviewDialogueConfig` (`review/types.ts:171`).
 
+**Resolution (2026-05-29):** Removed in full. Verification confirmed no production producer existed (debate never constructed a `ReviewerSession`), so D4's "keep for debate" rationale was void. See `docs/superpowers/plans/2026-05-29-reviewersession-dialogue-removal.md`.
+
 ### G5 — Non-TDD full-suite gate unreachable under default config — **LOW (by design)**
 
 For non-TDD strategies, `fullSuiteGateOp` + `full-suite-rectify` are only added when `regressionGate.mode === "per-story"` (`build-plan-for-strategy.ts:124-128,171-173`); the schema default is `"deferred"`. This is **intentional** per issue #1116 — non-TDD stories verify via `verify-scoped`, and full-suite regression runs deferred at end-of-run (`run-regression.ts:105` ← `run-completion.ts:115`, confirmed functional). Flagged only because the condition reads as "always-false-under-default." **No action needed.**
