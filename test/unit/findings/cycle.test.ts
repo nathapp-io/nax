@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { CallOpFn } from "@/findings/cycle";
 import { classifyOutcome, runFixCycle } from "@/findings";
-import type { FixCycle, FixCycleContext, FixStrategy, Iteration } from "@/findings";
+import type { FixCycle, FixCycleContext, FixStrategy, Iteration, ValidateResult } from "@/findings";
 import type { Finding } from "@/findings";
 import { makeLogger, makeMockAgentManager, makeNaxConfig } from "@test/helpers";
 
@@ -62,7 +62,7 @@ function makeStrategy(
 function makeCycle(
   findings: Finding[],
   strategies: FixStrategy<Finding, unknown, unknown>[],
-  validateFn: (ctx: FixCycleContext, opts: { mode: "full" | "lite" }) => Promise<Finding[]>,
+  validateFn: FixCycle<Finding>["validate"],
   overrides?: Partial<FixCycle<Finding>>,
 ): FixCycle<Finding> {
   return {
@@ -542,5 +542,35 @@ callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as impo
     expect(infoCall).toBeDefined();
     expect(Object.keys(infoCall!.data!)[0]).toBe("storyId");
     expect(infoCall?.data).toMatchObject(expectedData);
+  });
+});
+
+// ─── runFixCycle — AC3/AC4: ValidateResult short-circuit flag ────────────────
+
+describe("runFixCycle — ValidateResult short-circuit flag", () => {
+  test("AC3: validate returning { findings: [], shortCircuited: true } exits as 'validate-short-circuit' not 'resolved'", async () => {
+    // validate signals that it short-circuited (a phase failed); runFixCycle must NOT classify this as "resolved"
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
+    const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: true };
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+
+    const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn });
+
+    expect(result.exitReason).toBe("validate-short-circuit");
+    expect(result.finalFindings).toHaveLength(0);
+  });
+
+  test("AC4: validate returning { findings: [], shortCircuited: false } exits as 'resolved' (clean sweep)", async () => {
+    // validate completed without short-circuiting; empty findings should still be "resolved"
+    const strategy = makeStrategy({ name: "lint-fix", maxAttempts: 1 });
+    const validateResult: ValidateResult<Finding> = { findings: [], shortCircuited: false };
+    const cycle = makeCycle([lintA], [strategy], async () => validateResult as unknown as Finding[]);
+
+    const result = await runFixCycle(cycle, makeCtx(), "sc-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn });
+
+    expect(result.exitReason).toBe("resolved");
+    expect(result.finalFindings).toHaveLength(0);
   });
 });
