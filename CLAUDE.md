@@ -112,7 +112,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | Interface | Loaded By | Purpose |
 |:----------|:----------|:--------|
 | `IContextProvider` | `context.ts` stage | Inject context into agent prompts |
-| `IReviewPlugin` | Review stage | Post-verify quality checks |
+| `IReviewPlugin` | Deferred end-of-run review (`deferred-review.ts`) | Observational by default; set `review.pluginMode: "gating"` to fail the run on findings. Per-story gating removed (ADR-023 / #1146). |
 | `IReporter` | Runner | onRunStart / onStoryComplete / onRunEnd events |
 | `IRoutingStrategy` | Router chain | Override model-tier routing |
 | `IPromptOptimizer` | Optimizer stage | Reduce token usage |
