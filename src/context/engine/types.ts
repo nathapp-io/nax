@@ -550,5 +550,5 @@ export interface IContextProvider {
    * share provider instances across parallel stories. Implementations must not
    * rely on per-call mutable state on the provider instance.
    */
-  fetch(request: ContextRequest): Promise<ContextProviderResult>;
+  fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult>;
 }

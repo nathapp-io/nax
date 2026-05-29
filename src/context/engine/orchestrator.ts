@@ -80,13 +80,39 @@ type ProviderActivationSource = NonNullable<NonNullable<ContextManifest["provide
 
 const PROVIDER_FETCH_TIMEOUT_MS = 5_000;
 
-async function fetchWithTimeout(provider: IContextProvider, request: ContextRequest): Promise<ContextProviderResult> {
+export async function fetchWithTimeout(
+  provider: IContextProvider,
+  request: ContextRequest,
+  timeoutMs = PROVIDER_FETCH_TIMEOUT_MS,
+): Promise<ContextProviderResult> {
+  const controller = new AbortController();
   let handle: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
   const timeout = new Promise<ContextProviderResult>((_, reject) => {
-    handle = setTimeout(() => reject(new Error(`Provider "${provider.id}" timed out`)), PROVIDER_FETCH_TIMEOUT_MS);
+    handle = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(new Error(`Provider "${provider.id}" timed out`));
+    }, timeoutMs);
   });
+
+  // Wrap the fetch so that if the abort fires synchronously inside abort(),
+  // we map it to a "timed out" rejection rather than letting the raw "aborted"
+  // error win the race against the timeout rejection.
+  const fetchPromise = provider.fetch(request, controller.signal).then(
+    (result) => result,
+    (err) => {
+      if (timedOut) {
+        // The abort we fired — suppress by never settling, letting timeout win.
+        return new Promise<ContextProviderResult>(() => {});
+      }
+      throw err;
+    },
+  );
+
   try {
-    return await Promise.race([provider.fetch(request), timeout]);
+    return await Promise.race([fetchPromise, timeout]);
   } finally {
     clearTimeout(handle);
   }
