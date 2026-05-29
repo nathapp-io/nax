@@ -157,21 +157,31 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mod
   const complexity = typeof data.complexity === "string" ? data.complexity : "unknown";
   const tier = typeof data.modelTier === "string" ? data.modelTier : "unknown";
   const attempt = typeof data.attempt === "number" ? data.attempt : 1;
+  const agent = typeof data.agent === "string" ? data.agent : undefined;
+  const progress =
+    typeof data.storyNumber === "number" && typeof data.storyTotal === "number"
+      ? `${data.storyNumber}/${data.storyTotal}`
+      : undefined;
 
   const lines: string[] = [];
   lines.push("");
   lines.push(c.bold(`${EMOJI.storyStart} ${c.cyan(storyId)}: ${title}`));
 
   if (mode === "verbose") {
+    if (progress) lines.push(`  ${c.gray("├─")} Story: ${c.cyan(progress)}`);
     lines.push(`  ${c.gray("├─")} Complexity: ${c.yellow(complexity)}`);
     lines.push(`  ${c.gray("├─")} Tier: ${c.magenta(tier)}`);
+    if (agent) lines.push(`  ${c.gray("├─")} Agent: ${c.cyan(agent)}`);
     if (attempt > 1) {
       lines.push(`  ${c.gray("└─")} Attempt: ${c.yellow(`#${attempt}`)} ${EMOJI.retry}`);
     } else {
       lines.push(`  ${c.gray("└─")} Status: ${c.green("starting")}`);
     }
   } else {
-    const metadata = [complexity, tier];
+    const metadata: string[] = [];
+    if (progress) metadata.push(progress);
+    metadata.push(complexity, tier);
+    if (agent) metadata.push(agent);
     if (attempt > 1) metadata.push(`attempt #${attempt} ${EMOJI.retry}`);
     lines.push(`  ${c.gray(metadata.join(" • "))}`);
   }
@@ -251,28 +261,30 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
   if (entry.storyId) {
     parts.push(c.dim(`[${entry.storyId}]`));
   }
+  // sessionRole is a first-class LogEntry field (stripped from data by the logger);
+  // render it as a tag so per-line provenance is visible without a JSONL cross-reference.
+  if (entry.sessionRole) {
+    parts.push(c.dim(`(${entry.sessionRole})`));
+  }
 
   parts.push(entry.message);
 
   let output = parts.join(" ");
 
-  // Always show key data fields (cost, duration, action, reason) in normal+ modes
+  // Surface key structured fields inline in normal+ modes. The headless console
+  // previously dropped agent identity, activity counts, status, and phase
+  // progress even though they are already present in the JSONL.
   const data = entry.data;
   if (data && typeof data === "object") {
-    const meta: string[] = [];
-    if (typeof data.cost === "number" && data.cost > 0) meta.push(`${EMOJI.cost} ${formatCost(data.cost)}`);
-    if (typeof data.durationMs === "number" && data.durationMs > 0)
-      meta.push(`${EMOJI.duration} ${formatDuration(data.durationMs)}`);
-    if (typeof data.action === "string") meta.push(`action: ${data.action}`);
-    if (typeof data.reason === "string" && mode !== "quiet") meta.push(data.reason);
+    const meta = buildDefaultMeta(data, mode);
     if (meta.length > 0) {
       output += `  ${c.gray(meta.join("  "))}`;
     }
 
-    // Full data dump only in verbose mode
+    // Full data dump only in verbose mode — exclude fields already surfaced
+    // above so they are not printed twice.
     if (mode === "verbose") {
-      // biome-ignore lint/suspicious/noExplicitAny: Intentional spread to filter known fields
-      const { cost: _c, durationMs: _d, action: _a, reason: _r, ...filtered } = data as any;
+      const filtered = stripConsumedMetaFields(data);
       if (Object.keys(filtered).length > 0) {
         output += `\n${c.gray(JSON.stringify(filtered, null, 2))}`;
       }
@@ -283,6 +295,84 @@ function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: s
     output,
     shouldDisplay: true,
   };
+}
+
+/** Data keys that {@link buildDefaultMeta} renders inline (excluded from the verbose JSON dump). */
+const CONSUMED_META_KEYS = [
+  "agentName",
+  "model",
+  "phaseIndex",
+  "totalPhases",
+  "status",
+  "findingsCount",
+  "messageUpdates",
+  "toolCallUpdates",
+  "thinkingUpdates",
+  "idleMs",
+  "cost",
+  "durationMs",
+  "action",
+  "reason",
+] as const;
+
+/**
+ * Build the inline metadata segment for a default log line.
+ *
+ * Order is fixed for scannability: identity (agent·model) → phase progress →
+ * status/findings → agent-stream activity counts → cost/duration → action/reason.
+ * Only present, meaningful fields are emitted, so unrelated lines stay terse.
+ */
+function buildDefaultMeta(data: Record<string, unknown>, mode: string): string[] {
+  const meta: string[] = [];
+
+  const identity = [data.agentName, data.model].filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (identity.length > 0) meta.push(`${EMOJI.agent} ${identity.join("·")}`);
+
+  if (typeof data.phaseIndex === "number" && typeof data.totalPhases === "number") {
+    meta.push(`${data.phaseIndex}/${data.totalPhases}`);
+  }
+
+  if (typeof data.status === "string") meta.push(`status: ${data.status}`);
+  if (typeof data.findingsCount === "number")
+    meta.push(`${data.findingsCount} finding${data.findingsCount === 1 ? "" : "s"}`);
+
+  const activity = buildActivityMeta(data);
+  if (activity) meta.push(activity);
+
+  if (typeof data.cost === "number" && data.cost > 0) meta.push(`${EMOJI.cost} ${formatCost(data.cost)}`);
+  if (typeof data.durationMs === "number" && data.durationMs > 0)
+    meta.push(`${EMOJI.duration} ${formatDuration(data.durationMs)}`);
+  if (typeof data.action === "string") meta.push(`action: ${data.action}`);
+  if (typeof data.reason === "string" && mode !== "quiet") meta.push(data.reason);
+
+  return meta;
+}
+
+/**
+ * Compact agent-stream activity summary (message / tool-call / thinking update
+ * counts + idle time). Returns null when no activity field is present so
+ * non-agent-stream lines are unaffected.
+ */
+function buildActivityMeta(data: Record<string, unknown>): string | null {
+  const segments: string[] = [];
+  if (typeof data.messageUpdates === "number" && data.messageUpdates > 0) segments.push(`msg ${data.messageUpdates}`);
+  if (typeof data.toolCallUpdates === "number" && data.toolCallUpdates > 0)
+    segments.push(`tools ${data.toolCallUpdates}`);
+  if (typeof data.thinkingUpdates === "number" && data.thinkingUpdates > 0)
+    segments.push(`think ${data.thinkingUpdates}`);
+  if (typeof data.idleMs === "number" && data.idleMs > 0) segments.push(`idle ${formatDuration(data.idleMs)}`);
+  return segments.length > 0 ? segments.join(" ") : null;
+}
+
+/** Remove fields already rendered inline so the verbose JSON dump shows only the remainder. */
+function stripConsumedMetaFields(data: Record<string, unknown>): Record<string, unknown> {
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (!(CONSUMED_META_KEYS as readonly string[]).includes(key)) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
 }
 
 /**
