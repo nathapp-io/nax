@@ -11,7 +11,7 @@ describe("importGrepFallback", () => {
     })) as any;
     let reads = 0;
     const origFile = _bunDeps.file;
-    _bunDeps.file = ((p: string) => ({
+    _bunDeps.file = ((_p: string) => ({
       async text() { reads++; return "needle"; },
       async exists() { return true; },
     })) as any;

@@ -12,6 +12,7 @@ import { resolveDefaultAgent } from "../../agents";
 import type { IAgentManager } from "../../agents";
 import { clearLanguageCache } from "../../project/detector";
 import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
+import { clearGitRootCache } from "../../verification/smart-runner";
 import type { NaxConfig } from "../../config";
 import { fireHook } from "../../hooks/runner";
 import type { HooksConfig } from "../../hooks/types";
@@ -333,6 +334,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // Clear per-run detection memos so subsequent runs in the same process start fresh.
   clearLanguageCache();
   clearWorkspaceCache();
+  clearGitRootCache();
 
   // Compute final story counts before emitting completion event (RL-002)
   const finalCounts = countStories(prd);

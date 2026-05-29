@@ -41,6 +41,28 @@ export const _gitUtilDeps = {
   getGitRoot,
 };
 
+/** Per-process memo: workdir → resolved git root. Cleared at run end via clearGitRootCache(). */
+const _gitRootCache = new Map<string, string>();
+
+/**
+ * Clear the git-root memo cache.
+ * Called by run-completion.ts to reset state between runs in the same process.
+ */
+export function clearGitRootCache(): void {
+  _gitRootCache.clear();
+}
+
+/** Memoized git-root resolver — delegates to the injectable _gitUtilDeps.getGitRoot. */
+async function getGitRootMemo(workdir: string): Promise<string | null> {
+  const cached = _gitRootCache.get(workdir);
+  if (cached !== undefined) return cached;
+  const result = await _gitUtilDeps.getGitRoot(workdir);
+  if (result !== null && result !== undefined) {
+    _gitRootCache.set(workdir, result);
+  }
+  return result ?? null;
+}
+
 /**
  * Map source files to their corresponding test files.
  *
@@ -316,7 +338,7 @@ export async function getChangedNonTestFiles(
     // regardless of where the git root sits relative to the project root.
     let effectivePrefix = packagePrefix;
     if (packagePrefix && repoRoot) {
-      const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+      const gitRoot = await getGitRootMemo(workdir);
       const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
       effectivePrefix = extraPrefix ? `${extraPrefix}/${packagePrefix}` : packagePrefix;
     }
@@ -377,7 +399,7 @@ export async function getChangedTestFiles(
     // Issue #565: git diff paths are relative to the true git root, which may be an
     // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
     // regardless of where the git root sits relative to the project root.
-    const gitRoot = await _gitUtilDeps.getGitRoot(workdir);
+    const gitRoot = await getGitRootMemo(workdir);
     const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
     const effectivePrefix = packagePrefix
       ? extraPrefix
