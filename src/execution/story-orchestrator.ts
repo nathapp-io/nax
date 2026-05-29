@@ -55,6 +55,7 @@ export const EXHAUSTED_EXIT_REASONS = new Set<string>([
   "bail-when",
   "no-strategy",
   "agent-gave-up",
+  "validate-short-circuit",
 ]);
 
 /**
@@ -400,11 +401,12 @@ export function extractPhaseFindings(output: unknown): Finding[] {
     return [];
   }
   const record = output as Record<string, unknown>;
-  const rawArray = Array.isArray(record.normalizedFindings)
-    ? record.normalizedFindings
-    : Array.isArray(record.findings)
-      ? record.findings
-      : [];
+  const rawArray =
+    Array.isArray(record.normalizedFindings) && record.normalizedFindings.length > 0
+      ? record.normalizedFindings
+      : Array.isArray(record.findings)
+        ? record.findings
+        : [];
   // Runtime guard: strip anything that isn't a source-tagged Finding. Strategies'
   // `appliesTo` predicates gate on `f.source` — entries without it cannot be
   // routed and previously caused the cycle to exit with "no matching strategy".
@@ -969,6 +971,10 @@ export async function runRectification(
   if (EXHAUSTED_EXIT_REASONS.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
     return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
   }
+  if (cycleResult.exitReason === "validate-short-circuit") {
+    // Empty findings — surface the lite-scope-backfill flag so resume can still run.
+    return { liteScopeIncomplete: true };
+  }
 
   return {};
 }
@@ -1055,7 +1061,7 @@ export class ExecutionPlan {
     // canonical sequence and runs any phase whose output is missing or non-passing.
     // Halts on first failure (same RED→GREEN contract as the main loop). Skipped
     // entirely when rectification was exhausted — the story is already terminal.
-    if (this.state.rectification && !rectResult.rectificationExhausted) {
+    if (this.state.rectification && (!rectResult.rectificationExhausted || rectResult.liteScopeIncomplete)) {
       // The first rectification ran with a strategy-specific revalidation set
       // (STRATEGY_TO_REVALIDATION_PHASES) that may have excluded phases this
       // resume block runs for the first time (e.g. full-suite-rectify excludes

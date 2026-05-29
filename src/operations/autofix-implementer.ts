@@ -1,5 +1,6 @@
 import { autofixConfigSelector } from "../config";
 import type { AutofixConfig } from "../config/selectors";
+import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
@@ -11,6 +12,8 @@ export interface AutofixImplementerInput {
   failedChecks: ReviewCheckResult[];
   story: UserStory;
   blockingThreshold?: "error" | "warning" | "info";
+  /** Raw findings — when all are from tdd-verifier, verifierContext prompt is used. */
+  findings?: readonly Finding[];
 }
 
 export interface AutofixImplementerOutput {
@@ -28,9 +31,16 @@ export const implementerRectifyOp: RunOperation<AutofixImplementerInput, Autofix
   session: { role: "implementer", lifetime: "warm" },
   config: autofixConfigSelector,
   build(input, _ctx) {
-    const prompt = RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story, {
-      blockingThreshold: input.blockingThreshold,
-    });
+    const verifierFindings = input.findings?.filter((f) => f.source === "tdd-verifier");
+    const useVerifierContext =
+      verifierFindings !== undefined &&
+      verifierFindings.length > 0 &&
+      verifierFindings.length === input.findings?.length;
+    const prompt = useVerifierContext
+      ? RectifierPromptBuilder.verifierContext(verifierFindings as Finding[])
+      : RectifierPromptBuilder.reviewRectification(input.failedChecks, input.story, {
+          blockingThreshold: input.blockingThreshold,
+        });
     return {
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },

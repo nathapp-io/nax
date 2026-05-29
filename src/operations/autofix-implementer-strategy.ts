@@ -22,6 +22,7 @@ export function makeAutofixImplementerStrategy(
     buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
       failedChecks: findingsToFailedChecks(findings),
       story,
+      findings,
     }),
     extractApplied: (output) => {
       // Accumulate test-edit declarations and mock handoffs into the shared sink
