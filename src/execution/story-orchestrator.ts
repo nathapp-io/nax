@@ -656,13 +656,15 @@ function logDeterministicPhaseOutcome(
   durationMs: number,
   isTddPhase: boolean,
   stage?: string,
+  progressData: Record<string, unknown> = {},
 ): void {
   if (isTddPhase) return;
   if (opName === "semantic-review" || opName === "adversarial-review") return;
 
   const built = buildPhaseOutcomeLogData(storyId, opName, output, durationMs);
   if (!built) return;
-  const { success, data } = built;
+  const { success } = built;
+  const data = { ...built.data, ...progressData };
 
   const logger = getSafeLogger();
   const message = formatPhaseResultMessage(opName, success, stage);
@@ -754,9 +756,13 @@ async function runPhase(
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
   isThreeSession = false,
+  progress?: { index: number; total: number },
 ): Promise<unknown> {
   const logger = getSafeLogger();
   const opName = slot.op.name;
+  // Phase progress counter (e.g. 5/8) for headless-log orientation in long runs.
+  // Only the canonical run() loop supplies it; rectification/fix-cycle callers omit it.
+  const progressData = progress ? { phaseIndex: progress.index, totalPhases: progress.total } : {};
   // Isolation enforcement + TDD-stage logs only apply when the orchestrator is
   // executing a three-session-tdd strategy. The single-session ("no-test") path
   // reuses implementerOp but has no boundary semantics to enforce, so capturing
@@ -771,9 +777,12 @@ async function runPhase(
   dispatchInput = await refreshReviewInputForDispatch(opName, dispatchInput);
 
   if (isTddPhase) {
-    logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName });
+    logger?.info("tdd", `-> Session: ${opName}`, { storyId: ctx.storyId, role: opName, ...progressData });
   } else if (isThreeSession && opName === "full-suite-gate") {
-    logger?.info("tdd", "-> Running full test suite gate (before Verifier)", { storyId: ctx.storyId });
+    logger?.info("tdd", "-> Running full test suite gate (before Verifier)", {
+      storyId: ctx.storyId,
+      ...progressData,
+    });
   }
   logUnifiedReviewPhaseStart(ctx.storyId, opName);
 
@@ -784,7 +793,15 @@ async function runPhase(
     phaseOutputs[opName] = output;
     emitReviewDecision(ctx, opName, output);
     logUnifiedReviewPhaseResult(ctx.storyId, opName, output);
-    logDeterministicPhaseOutcome(ctx.storyId, opName, output, Date.now() - phaseStartedAt, isTddPhase, slot.op.stage);
+    logDeterministicPhaseOutcome(
+      ctx.storyId,
+      opName,
+      output,
+      Date.now() - phaseStartedAt,
+      isTddPhase,
+      slot.op.stage,
+      progressData,
+    );
 
     // Post-phase logs (TDD phases only).
     if (isTddPhase) {
@@ -1067,9 +1084,13 @@ export class ExecutionPlan {
     // the verifier run on broken-gate code as an "unrelated regression" escape
     // hatch, at the cost of every common case. The escalation boundary in
     // deriveTddFailureCategory now handles that case instead.
-    for (const phase of collectOrderedPhases(this.state)) {
+    const orderedPhases = collectOrderedPhases(this.state);
+    for (const [phaseIndex, phase] of orderedPhases.entries()) {
       try {
-        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
+        await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession, {
+          index: phaseIndex + 1,
+          total: orderedPhases.length,
+        });
       } catch (error) {
         logger?.error("story-orchestrator", "Phase threw unexpected error", {
           storyId: this.ctx.storyId,
