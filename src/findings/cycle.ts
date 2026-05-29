@@ -35,11 +35,8 @@ export const _cycleDeps = {
   now: () => new Date().toISOString(),
 };
 
-// Stub: extracts findings from the validate return union so call-sites don't crash.
-// shortCircuited is intentionally NOT threaded yet — implementer replaces this body.
 function normalizeValidateResult<F extends Finding>(r: F[] | ValidateResult<F>): ValidateResult<F> {
-  const findings = Array.isArray(r) ? r : (r.findings as F[]);
-  return { findings, shortCircuited: false };
+  return Array.isArray(r) ? { findings: r, shortCircuited: false } : r;
 }
 
 // ─── classifyOutcome ─────────────────────────────────────────────────────────
@@ -313,9 +310,12 @@ export async function runFixCycle<F extends Finding>(
     });
     if (allExhausted) {
       let liteFindingsAfter: F[];
+      let liteShortCircuited = false;
       try {
         const liteRaw = await cycle.validate(ctx, { mode: "lite", strategiesRun: group.map((s) => s.name) });
-        liteFindingsAfter = normalizeValidateResult(liteRaw).findings as F[];
+        const liteResult = normalizeValidateResult(liteRaw);
+        liteFindingsAfter = liteResult.findings as F[];
+        liteShortCircuited = liteResult.shortCircuited ?? false;
       } catch (err) {
         const finishedAt = now();
         cycle.iterations.push({
@@ -355,7 +355,7 @@ export async function runFixCycle<F extends Finding>(
       });
       cycle.findings = liteFindingsAfter;
 
-      if (liteFindingsAfter.length === 0) {
+      if (liteFindingsAfter.length === 0 && !liteShortCircuited) {
         logger?.info("findings.cycle", "cycle exited — resolved after terminal lite validate", {
           storyId,
           packageDir,
@@ -366,6 +366,22 @@ export async function runFixCycle<F extends Finding>(
           iterations: cycle.iterations,
           finalFindings: [],
           exitReason: "resolved",
+          costUsd: totalCostUsd,
+        };
+      }
+
+      if (liteShortCircuited) {
+        logger?.info("findings.cycle", "cycle exited — validate short-circuited", {
+          storyId,
+          packageDir,
+          cycleName,
+          reason: "validate-short-circuit",
+          liteFindingsAfterCount: liteFindingsAfter.length,
+        });
+        return {
+          iterations: cycle.iterations,
+          finalFindings: liteFindingsAfter,
+          exitReason: "validate-short-circuit",
           costUsd: totalCostUsd,
         };
       }
