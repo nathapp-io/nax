@@ -11,7 +11,6 @@ import type { CallContext } from "../operations/types";
 import type { DebatePromptBuilder } from "../prompts";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { resolvePreDebatePhase } from "./pre-phase";
-import { buildResolverContext } from "./runner-stateful-helpers";
 import {
   type ScoredProposal,
   acOverlap,
@@ -22,7 +21,6 @@ import {
 import {
   type ResolveOutcome,
   type ResolvedDebater,
-  type ResolverContextInput,
   type SuccessfulProposal,
   _debateSessionDeps,
   resolveOutcome,
@@ -52,8 +50,6 @@ interface PlanCtxMinimal {
   readonly config: DebateConfig;
   readonly callContext: CallContext;
   readonly abortSignal?: AbortSignal;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: ResolverContextInput;
 }
 
 /** Run the pre-debate phase, returning the manifest section and accumulated cost. */
@@ -186,8 +182,6 @@ export async function scoreAndDispatchVerifierPick(
     agentManager,
     debaters: resolved.map((e) => e.debater),
     callContext: ctx.callContext,
-    ...(ctx.reviewerSession ? { reviewerSession: ctx.reviewerSession } : {}),
-    ...(ctx.resolverContextInput ? { resolverContextInput: ctx.resolverContextInput } : {}),
   } satisfies Parameters<typeof extractManifestFromContext>[0];
   const manifest = extractManifestFromContext(scoringCtx);
   const scored: ScoredProposal[] = await Promise.all(
@@ -231,8 +225,6 @@ interface PlanFinCtx {
   readonly stageConfig: DebateStageConfig;
   readonly config: DebateConfig;
   readonly callContext: CallContext;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: ResolverContextInput;
 }
 
 export async function finalizePlanRun(
@@ -298,8 +290,6 @@ export async function finalizePlanRun(
       agentManager,
       debaters: finalizedProposals.map((p) => p.debater),
       callContext: ctx.callContext,
-      ...(ctx.reviewerSession ? { reviewerSession: ctx.reviewerSession } : {}),
-      ...(ctx.resolverContextInput ? { resolverContextInput: ctx.resolverContextInput } : {}),
     } satisfies Parameters<typeof extractManifestFromContext>[0];
     const manifest = extractManifestFromContext(selectorCtx);
     const scored: ScoredProposal[] = await Promise.all(
@@ -336,11 +326,6 @@ export async function finalizePlanRun(
           resolverTimeoutMs,
           opts.workdir,
           opts.feature,
-          ctx.reviewerSession,
-          buildResolverContext(
-            finalizedProposals.map((p) => ({ debater: p.debater, agentName: p.agentName, output: p.output, cost: 0 })),
-            ctx.resolverContextInput,
-          ),
           buildPlanSynthesisSuffix(opts.specContent),
           finalizedProposals.map((p) => p.debater),
           agentManager,

@@ -81,7 +81,6 @@ export interface DebateStageConfig {
     | { kind: "majority-fail-closed" }
     | { kind: "majority-fail-open" }
     | { kind: "judge" }
-    | { kind: "dialogue-verdict" }
     | {
         kind: "verifier-pick";
         patch?: {

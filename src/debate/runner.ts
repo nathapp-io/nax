@@ -8,7 +8,7 @@ import type { CallContext } from "../operations/types";
 import { createNoOpCostAggregator } from "../runtime";
 import type { ISessionManager } from "../session/types";
 import { allSettledBounded } from "./concurrency";
-import { buildDebaterLabel, resolvePersonas } from "./personas";
+import { resolvePersonas } from "./personas";
 import { resolvePreDebatePhase } from "./pre-phase";
 import type { PreDebatePhaseContext } from "./pre-phase";
 import { runHybrid } from "./runner-hybrid";
@@ -17,7 +17,6 @@ import { runStateful } from "./runner-stateful";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
-  type ResolverContextInput,
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
@@ -38,8 +37,6 @@ export interface DebateRunnerOptions {
   readonly featureName?: string;
   readonly timeoutSeconds?: number;
   readonly sessionManager?: ISessionManager;
-  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
-  readonly resolverContextInput?: ResolverContextInput;
 }
 export class DebateRunner {
   private readonly ctx: CallContext;
@@ -50,8 +47,6 @@ export class DebateRunner {
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
   private readonly sessionManager: ISessionManager | undefined;
-  private readonly reviewerSession: DebateRunnerOptions["reviewerSession"];
-  private readonly resolverContextInput: DebateRunnerOptions["resolverContextInput"];
   constructor(opts: DebateRunnerOptions) {
     this.ctx = opts.ctx;
     this.stage = opts.stage;
@@ -61,8 +56,6 @@ export class DebateRunner {
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
     this.sessionManager = opts.sessionManager ?? opts.ctx.runtime?.sessionManager;
-    this.reviewerSession = opts.reviewerSession;
-    this.resolverContextInput = opts.resolverContextInput;
   }
   async run(prompt: string): Promise<DebateResult> {
     const sessionMode = this.stageConfig.sessionMode ?? "one-shot";
@@ -302,15 +295,6 @@ export class DebateRunner {
       }
 
       const proposalOutputs = successful.map((p) => p.output);
-      const fullResolverContext = this.resolverContextInput
-        ? {
-            ...this.resolverContextInput,
-            labeledProposals: successful.map((s) => ({
-              debater: buildDebaterLabel(s.debater),
-              output: s.output,
-            })),
-          }
-        : undefined;
       const selectorOutcome: ResolveOutcome = await resolveOutcome(
         proposalOutputs,
         critiqueOutputs,
@@ -321,8 +305,6 @@ export class DebateRunner {
         this.timeoutSeconds * 1000,
         this.workdir,
         this.featureName,
-        this.reviewerSession,
-        fullResolverContext,
         undefined,
         successful.map((s) => s.debater),
         agentManager,
@@ -336,8 +318,8 @@ export class DebateRunner {
           selectorResult: selectorOutcome,
           workdir: this.workdir,
           ctx: { ...this.ctx, scopeId: verifierScope.scopeId },
-          acceptanceCriteria: this.resolverContextInput?.story.acceptanceCriteria,
-          blockingThreshold: this.resolverContextInput?.blockingThreshold,
+          acceptanceCriteria: undefined,
+          blockingThreshold: undefined,
         };
         const verifierResult = await resolvePostDebateVerifier(config.postDebateVerifier.kind)(verifierCtx);
         finalOutcome = verifierResult.outcome;
@@ -377,8 +359,6 @@ export class DebateRunner {
       sessionManager: this.sessionManager ?? this.ctx.runtime.sessionManager,
       runtime: this.ctx.runtime,
       abortSignal: this.ctx.runtime.signal,
-      reviewerSession: this.reviewerSession,
-      resolverContextInput: this.resolverContextInput,
     };
   }
 

@@ -3,7 +3,6 @@
  */
 
 import { NaxError } from "@/errors";
-import { dialogueVerdictSelector } from "./dialogue-verdict";
 import { judgeSelector } from "./judge";
 import { majorityFailClosedSelector, majorityFailOpenSelector } from "./majority";
 import { synthesisSelector } from "./synthesis";
@@ -29,5 +28,4 @@ registerSelector("synthesis", synthesisSelector);
 registerSelector("majority-fail-closed", majorityFailClosedSelector);
 registerSelector("majority-fail-open", majorityFailOpenSelector);
 registerSelector("judge", judgeSelector);
-registerSelector("dialogue-verdict", dialogueVerdictSelector);
 registerSelector("verifier-pick", (ctx) => verifierPickSelector(ctx));

@@ -7,7 +7,7 @@ import { getSafeLogger } from "../logger";
 import type { CallContext } from "../operations/types";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import type { SessionRole } from "../session/types";
-import { pickBaseSelectorKind, pickSelectorKind, resolveSelector } from "./selectors";
+import { pickSelectorKind, resolveSelector } from "./selectors";
 import type { SelectorContext } from "./selectors";
 import type { DebateResult, DebateStageConfig, Debater } from "./types";
 
@@ -36,39 +36,14 @@ export interface ResolveOutcome {
   outcome: "passed" | "failed" | "skipped";
   /** Synthesised output from synthesis/custom resolver — undefined for majority resolver */
   output?: string;
-  /** Structured dialogue result from ReviewerSession resolver (debate+dialogue mode only) */
-  dialogueResult?: import("../review/dialogue").ReviewDialogueResult;
   /** Optional findings from selector output. */
   findings?: unknown[];
 }
 
-/** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
+/** Context passed to selectors after proposals are collected. */
 export interface ResolverContext {
-  /** How the diff is provided — drives DiffContext construction for the dialogue path */
-  diffMode: "embedded" | "ref";
-  /** Pre-collected diff (embedded mode) */
-  diff?: string;
-  /** Git baseline ref (ref mode) */
-  storyGitRef?: string;
-  /** Git diff --stat summary (ref mode) */
-  stat?: string;
-  /**
-   * Ref-mode production diff excludes derived from resolveTestFilePatterns().
-   * Used to avoid hardcoded language-specific test file patterns in debate prompts.
-   */
-  productionExcludePatterns?: readonly string[];
-  story: { id: string; title: string; acceptanceCriteria: string[] };
-  semanticConfig: import("../review/types").SemanticReviewConfig;
-  /** Blocking threshold used by semantic review post-processing. */
-  blockingThreshold?: "error" | "warning" | "info";
   labeledProposals: Array<{ debater: string; output: string }>;
-  resolverType: import("./types").ResolverType;
-  /** True when this is a re-review after autofix (calls reReviewDebate instead of resolveDebate) */
-  isReReview?: boolean;
 }
-
-/** Input type for DebateSessionOptions — ResolverContext without labeledProposals (added by sub-modules after proposals collected). */
-export type ResolverContextInput = Omit<ResolverContext, "labeledProposals">;
 
 export interface DebateSessionOptions extends DispatchContext {
   storyId: string;
@@ -78,10 +53,6 @@ export interface DebateSessionOptions extends DispatchContext {
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
-  /** Optional ReviewerSession for debate+dialogue mode (US-001/US-002) */
-  reviewerSession?: import("../review/dialogue").ReviewerSession;
-  /** Outer resolver context (without labeledProposals) — sub-modules complete it */
-  resolverContextInput?: ResolverContextInput;
 }
 
 /** Injectable deps for testability */
@@ -168,32 +139,15 @@ export async function resolveOutcome(
   timeoutMs: number,
   workdir: string | undefined,
   featureName: string | undefined,
-  reviewerSession: import("../review/dialogue").ReviewerSession | undefined,
-  resolverContext: ResolverContext | undefined,
   promptSuffix: string | undefined,
   debaters: Debater[] | undefined,
   agentManager: IAgentManager,
 ): Promise<ResolveOutcome> {
   const logger = _debateSessionDeps.getSafeLogger();
 
-  // Warn when session supplied without resolverContext
-  if (reviewerSession && !resolverContext) {
-    logger?.warn(
-      "debate",
-      "ReviewerSession provided but resolverContext is undefined — falling back to stateless resolver",
-      { storyId },
-    );
-  }
+  const kind = pickSelectorKind(stageConfig);
 
-  // Strip labeledProposals to build resolverContextInput
-  const resolverContextInput: ResolverContextInput | undefined = resolverContext
-    ? (({ labeledProposals: _lp, ...rest }) => rest)(resolverContext)
-    : undefined;
-
-  const kind = pickSelectorKind(stageConfig, { reviewerSession, resolverContextInput });
-
-  // Legacy: majority resolver warning when workdir is defined
-  if ((kind === "majority-fail-closed" || kind === "majority-fail-open") && workdir !== undefined && !reviewerSession) {
+  if ((kind === "majority-fail-closed" || kind === "majority-fail-open") && workdir !== undefined) {
     logger?.warn(
       "debate",
       "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",
@@ -238,53 +192,20 @@ export async function resolveOutcome(
     stageConfig,
     config: effectiveConfig,
     proposals: proposalList,
-    labeledProposals: resolverContext?.labeledProposals,
     critiques: critiqueOutputs,
     workdir: workdir ?? "",
     featureName: featureName ?? "",
     timeoutMs,
     agentManager: effectiveAgentManager,
-    reviewerSession,
-    resolverContextInput,
     promptSuffix,
     debaters: debaters ?? [],
     callContext: effectiveCallContext,
   };
-
-  // Stateless fallback kind: map resolver.type only (ignores explicit selector and dialogue-verdict elevation)
-  const resolverTypeMappedKind = pickBaseSelectorKind(stageConfig);
-
-  // Preserve the legacy dialogue fallback only for dialogue selection. Explicit
-  // non-dialogue selector failures should surface to the caller.
-  if (kind === "dialogue-verdict") {
-    try {
-      const result = await resolveSelector(kind)(selectorCtx);
-      return {
-        outcome: result.outcome,
-        output: result.output,
-        findings: result.findings,
-        dialogueResult: result.dialogueResult,
-      };
-    } catch (err) {
-      logger?.warn("debate", "dialogue-verdict selector failed, falling back to stateless", {
-        storyId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      const fallbackResult = await resolveSelector(resolverTypeMappedKind)(selectorCtx);
-      return {
-        outcome: fallbackResult.outcome,
-        output: fallbackResult.output,
-        findings: fallbackResult.findings,
-        dialogueResult: fallbackResult.dialogueResult,
-      };
-    }
-  }
 
   const result = await resolveSelector(kind)(selectorCtx);
   return {
     outcome: result.outcome,
     output: result.output,
     findings: result.findings,
-    dialogueResult: result.dialogueResult,
   };
 }

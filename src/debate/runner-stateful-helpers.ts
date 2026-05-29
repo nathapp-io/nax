@@ -2,8 +2,7 @@ import * as callModule from "../operations/call";
 import { type DebateStatefulInput, statefulDebaterOp } from "../operations/debate-stateful";
 import type { CallContext } from "../operations/types";
 import { DebatePromptBuilder } from "../prompts";
-import { buildDebaterLabel } from "./personas";
-import type { ResolvedDebater, ResolverContextInput, SuccessfulProposal } from "./session-helpers";
+import type { ResolvedDebater, SuccessfulProposal } from "./session-helpers";
 import type { Debater } from "./types";
 
 const DEFAULT_ABORT_SIGNAL = new AbortController().signal;
@@ -19,7 +18,6 @@ export interface StatefulCoordinatorCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly callContext: CallContext;
-  readonly resolverContextInput?: ResolverContextInput;
   readonly abortSignal?: AbortSignal;
 }
 
@@ -145,19 +143,6 @@ export function createOneShotDebaterCallContext(ctx: StatefulCoordinatorCtx, age
   };
 }
 
-export function buildResolverContext(
-  successfulProposals: SuccessfulProposal[],
-  resolverContextInput: ResolverContextInput | undefined,
-) {
-  if (!resolverContextInput) return undefined;
-  return {
-    ...resolverContextInput,
-    labeledProposals: successfulProposals.map((proposal) => ({
-      debater: buildDebaterLabel(proposal.debater),
-      output: proposal.output,
-    })),
-  };
-}
 
 export async function runZeroSuccessFallback(
   ctx: StatefulCoordinatorCtx,
