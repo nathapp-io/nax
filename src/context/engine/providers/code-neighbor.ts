@@ -408,10 +408,10 @@ async function collectNeighbors(
   const fileBaseName = (filePath.split("/").pop() ?? filePath).replace(/\.[^.]+$/, "");
   const fileNoExt = filePath.replace(/\.[^.]+$/, "");
 
-  for (const { workdir: scanWorkdir, files: srcFiles, truncated } of scannedDirs) {
+  outer: for (const { workdir: scanWorkdir, files: srcFiles, truncated } of scannedDirs) {
     if (truncated) anyTruncated = true;
     for (const srcFile of srcFiles) {
-      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break;
+      if (neighbors.size >= MAX_NEIGHBORS_PER_FILE) break outer;
       if (srcFile === filePath) continue;
       const content = await readCached(join(scanWorkdir, srcFile), contentCache);
       if (content?.includes(fileBaseName)) {

@@ -11,6 +11,7 @@
  * classification is hard-filtered here. Everything else stays generic.
  */
 import { join, relative } from "node:path";
+import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
@@ -164,6 +165,9 @@ export async function importGrepFallback(
     for await (const file of g.scan(workdir)) {
       testFilePaths.push(`${workdir}/${file}`);
       if (testFilePaths.length >= MAX_GREP_TEST_FILES) {
+        getSafeLogger()?.debug("smart-runner", "import-grep glob cap reached — results truncated", {
+          cap: MAX_GREP_TEST_FILES,
+        });
         break outer;
       }
     }

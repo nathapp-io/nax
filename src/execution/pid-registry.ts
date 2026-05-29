@@ -2,6 +2,7 @@
 
 import { existsSync } from "node:fs";
 import { getSafeLogger } from "@/logger";
+import { errorMessage } from "@/utils/errors";
 
 const PID_REGISTRY_FILE = ".nax-pids";
 const PID_TREE_KILL_GRACE_MS = 250;
@@ -374,7 +375,13 @@ export class PidRegistry {
   }
 
   private enqueueWrite(): Promise<void> {
-    this.writeQueueTail = this.writeQueueTail.then(() => this.writePidsFile());
+    this.writeQueueTail = this.writeQueueTail.then(() =>
+      this.writePidsFile().catch((err) => {
+        getSafeLogger()?.warn("pid-registry", "Failed to flush PID file — on-disk registry may be stale", {
+          error: errorMessage(err),
+        });
+      }),
+    );
     return this.writeQueueTail;
   }
 }
