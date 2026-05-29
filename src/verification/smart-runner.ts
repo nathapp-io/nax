@@ -22,10 +22,13 @@ import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns }
  *
  * @internal
  */
-const _bunDeps = {
+export const _bunDeps = {
   glob: (p: string) => new Bun.Glob(p),
   file: (path: string) => Bun.file(path),
 };
+
+/** Cap on test files scanned by the import-grep fallback. */
+export const MAX_GREP_TEST_FILES = 200;
 
 /**
  * Injectable git utilities — defined before functions so getChangedTestFiles and
@@ -132,33 +135,30 @@ export async function importGrepFallback(
   // Collect search terms from all changed source files
   const searchTerms = sourceFiles.flatMap(extractSearchTerms);
 
-  // Scan all test files matching the configured patterns
+  // Scan all test files matching the configured patterns, capped at MAX_GREP_TEST_FILES
   const testFilePaths: string[] = [];
-  for (const pattern of testFilePatterns) {
-    const glob = _bunDeps.glob(pattern);
-    for await (const file of glob.scan(workdir)) {
+  outer: for (const pattern of testFilePatterns) {
+    const g = _bunDeps.glob(pattern);
+    for await (const file of g.scan(workdir)) {
       testFilePaths.push(`${workdir}/${file}`);
-    }
-  }
-
-  // Return test files that contain any of the search terms
-  const matched: string[] = [];
-  for (const testFile of testFilePaths) {
-    let content: string;
-    try {
-      content = await _bunDeps.file(testFile).text();
-    } catch {
-      continue;
-    }
-    for (const term of searchTerms) {
-      if (content.includes(term)) {
-        matched.push(testFile);
-        break;
+      if (testFilePaths.length >= MAX_GREP_TEST_FILES) {
+        break outer;
       }
     }
   }
 
-  return matched;
+  // Read all collected files concurrently and filter to those containing any search term
+  const results = await Promise.all(
+    testFilePaths.map(async (testFile) => {
+      try {
+        const content = await _bunDeps.file(testFile).text();
+        return searchTerms.some((t) => content.includes(t)) ? testFile : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results.filter((p): p is string => p !== null);
 }
 
 export async function mapSourceToTests(
