@@ -16,6 +16,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
 import { clearCache as clearLlmCache } from "../routing/strategies/llm";
+import type { DeferredReviewResult } from "./deferred-review";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
@@ -63,6 +64,8 @@ export interface RunnerExecutionResult {
   allStoryMetrics: StoryMetrics[];
   completedEarly?: boolean;
   durationMs?: number;
+  /** End-of-run deferred plugin review result (#1146 G2). Forwarded to the completion phase. */
+  deferredReview?: DeferredReviewResult;
 }
 
 /**
@@ -185,5 +188,12 @@ export async function runExecutionPhase(
     storiesCompleted,
     totalCost,
   });
-  return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
+  return {
+    prd,
+    iterations,
+    storiesCompleted,
+    totalCost,
+    allStoryMetrics,
+    deferredReview: unifiedResult.deferredReview,
+  };
 }
