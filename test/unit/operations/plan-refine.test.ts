@@ -289,36 +289,52 @@ describe("planRefineOp.hopBody()", () => {
   });
 });
 
-describe("planRefineOp — verify floor rejects when self-heal still drops a verbatim AC", () => {
-  test("callOp throws PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED after the repair turn still misses", async () => {
-    await withTempDir(async (tempDir) => {
-      const outputPath = join(tempDir, "prd.json");
-      // Every turn (draft, refine, repair) writes a structurally valid PRD that
-      // never contains the [verbatim] grep — the self-heal cannot recover it, so
-      // the verify floor must fail the plan.
-      const lackingPrd = makeValidPrd("f", "feat/f");
+async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
+  const { resetLogger, initLogger } = await import("@/logger");
+  resetLogger();
+  const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
+  try {
+    return await fn(warnSpy);
+  } finally {
+    warnSpy.mockRestore();
+    resetLogger();
+  }
+}
 
-      const agentManager = makeMockAgentManager({
-        runWithFallbackFn: async (req: AgentRunRequest) => {
-          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
-          return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
-        },
-        runAsSessionFn: async () => {
-          await Bun.write(outputPath, JSON.stringify(lackingPrd));
-          return {
-            output: "written",
-            estimatedCostUsd: 1,
-            internalRoundTrips: 1,
-            tokenUsage: { inputTokens: 1, outputTokens: 1 },
-          };
-        },
-      });
+function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
+  return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
+}
 
-      const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
-      createdRuntimes.push(runtime);
+describe("planRefineOp — warn-and-continue when self-heal still drops a verbatim AC", () => {
+  test("callOp returns the PRD and warns (does not fail) after the repair turn still misses", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      await withTempDir(async (tempDir) => {
+        const outputPath = join(tempDir, "prd.json");
+        // Every turn (draft, refine, repair) writes a structurally valid PRD that
+        // never contains the [verbatim] grep — the self-heal cannot recover it, so
+        // the run continues but warns.
+        const lackingPrd = makeValidPrd("f", "feat/f");
 
-      await expect(
-        callOp(
+        const agentManager = makeMockAgentManager({
+          runWithFallbackFn: async (req: AgentRunRequest) => {
+            const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+            return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+          },
+          runAsSessionFn: async () => {
+            await Bun.write(outputPath, JSON.stringify(lackingPrd));
+            return {
+              output: "written",
+              estimatedCostUsd: 1,
+              internalRoundTrips: 1,
+              tokenUsage: { inputTokens: 1, outputTokens: 1 },
+            };
+          },
+        });
+
+        const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+        createdRuntimes.push(runtime);
+
+        const result = await callOp(
           {
             runtime,
             packageView: runtime.packages.repo(),
@@ -335,13 +351,18 @@ describe("planRefineOp — verify floor rejects when self-heal still drops a ver
             branchName: "feat/f",
             outputPath,
           },
-        ),
-      ).rejects.toThrow(/\[verbatim\] spec acceptance criterion/i);
+        );
+
+        expect(result.userStories.length).toBeGreaterThan(0); // plan continues
+        const warn = verbatimWarn(warnSpy);
+        expect(warn).toBeDefined();
+        expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(1);
+      });
     });
   });
 });
 
-describe("planRefineOp.verify — [verbatim] preservation gate", () => {
+describe("planRefineOp.verify — [verbatim] residual-drift warning", () => {
   const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
 
   function makeVerifyCtx(): VerifyContext<unknown> {
@@ -364,29 +385,36 @@ describe("planRefineOp.verify — [verbatim] preservation gate", () => {
     outputPath: "/tmp/x.json",
   };
 
-  test("throws when a [verbatim] spec AC is dropped from the PRD", async () => {
-    const prd = makeValidPrd("f", "feat/f"); // default AC does not contain the grep command
-    await expect(planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx())).rejects.toThrow(
-      /\[verbatim\] spec acceptance criterion/i,
-    );
+  test("warns and still returns the PRD when a [verbatim] spec AC is dropped", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const prd = makeValidPrd("f", "feat/f"); // default AC does not contain the grep command
+      const result = await planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx());
+      expect(result).toBeTruthy(); // continues
+      const warn = verbatimWarn(warnSpy);
+      expect(warn).toBeDefined();
+      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(1);
+    });
   });
 
-  test("passes when the [verbatim] command survives in some PRD AC", async () => {
-    const base = makeValidPrd("f", "feat/f");
-    const prd = {
-      ...base,
-      userStories: [
-        {
-          ...base.userStories[0],
-          acceptanceCriteria: [
-            'When cleanup completes, grep -rn "oldSym" src/ returns zero matches.',
-            "handler rejects invalid input", // satisfies the negative-path structural check
-          ],
-        },
-      ],
-    };
-    const result = await planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx());
-    expect(result).toBeTruthy();
+  test("does not warn when the [verbatim] command survives in some PRD AC", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const base = makeValidPrd("f", "feat/f");
+      const prd = {
+        ...base,
+        userStories: [
+          {
+            ...base.userStories[0],
+            acceptanceCriteria: [
+              'When cleanup completes, grep -rn "oldSym" src/ returns zero matches.',
+              "handler rejects invalid input", // satisfies the negative-path structural check
+            ],
+          },
+        ],
+      };
+      const result = await planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx());
+      expect(result).toBeTruthy();
+      expect(verbatimWarn(warnSpy)).toBeUndefined();
+    });
   });
 });
 

@@ -115,23 +115,21 @@ function validateRefinedPrd(prd: PRD): PRD {
 }
 
 /**
- * Hard gate: every `[verbatim]` spec AC must survive into the PRD. Paraphrasing
- * a verbatim grep / file-check / invariant destroys its verification mechanism
- * (docs/findings/nax-plan-prd-fidelity.md). Throws so the failure is loud at
- * plan time rather than a silent drift caught only by spec-review Phase 9.
+ * Soft gate: warn (loudly, structured) when a `[verbatim]` spec AC did not
+ * survive into the PRD. Paraphrasing a verbatim grep / file-check / invariant
+ * destroys its verification mechanism (docs/findings/nax-plan-prd-fidelity.md),
+ * but `nax plan` is intentionally recovery-tolerant — it always produces a
+ * usable PRD rather than hard-failing. The self-heal turn (hopBody) is the
+ * primary correction; this warning is the residual-drift signal, and
+ * spec-review Phase 9 remains the explicit gate before any story executes.
  */
-function assertVerbatimAcsPreserved(prd: PRD, specContent: string, featureName: string): void {
+function warnOnDroppedVerbatimAcs(prd: PRD, specContent: string, featureName: string): void {
   const missing = findMissingVerbatimAcs(specContent, prd);
   if (missing.length > 0) {
-    getSafeLogger()?.warn("plan", "[verbatim] spec acceptance criteria dropped from PRD — failing plan", {
-      featureName,
-      missingCount: missing.length,
-      missing,
-    });
-    throw new NaxError(
-      `[plan-refine verify] PRD dropped or altered ${missing.length} [verbatim] spec acceptance criterion(s): ${missing.join(" | ")}`,
-      "PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED",
-      { stage: "plan", missingCount: missing.length },
+    getSafeLogger()?.warn(
+      "plan",
+      "[verbatim] spec acceptance criteria dropped from PRD — run spec-review --prd before executing",
+      { featureName, missingCount: missing.length, missing },
     );
   }
 }
@@ -232,22 +230,16 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   },
   verify: async (parsed, input, _ctx) => {
     const validated = validateRefinedPrd(parsed);
-    assertVerbatimAcsPreserved(validated, input.specContent, input.featureName);
+    warnOnDroppedVerbatimAcs(validated, input.specContent, input.featureName);
     return validated;
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);
     if (!content) return null;
-    let prd: PRD;
     try {
-      prd = validatePlanOutput(content, input.featureName, input.branchName);
+      return validatePlanOutput(content, input.featureName, input.branchName);
     } catch {
       return null;
     }
-    // Mirror the verify gate here: callOp invokes recover on a verify throw, so
-    // without this a structurally-valid but [verbatim]-dropping PRD read back
-    // from disk would silently mask the gate. Throws to keep the floor hard.
-    assertVerbatimAcsPreserved(prd, input.specContent, input.featureName);
-    return prd;
   },
 };

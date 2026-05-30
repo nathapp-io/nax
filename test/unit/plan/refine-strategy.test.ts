@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import { NaxError } from "@/errors";
 import type { InteractionBridge } from "@/interaction/bridge-builder";
 import { RefinePlanStrategy, _refinePlanDeps } from "@/plan";
 import type { PlanDeps, PlanModeContext } from "@/plan/strategies/types";
@@ -127,24 +126,6 @@ describe("RefinePlanStrategy", () => {
     try {
       await expect(strategy.execute(ctx)).resolves.toBe(ctx.outputPath);
       expect(closeSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      _refinePlanDeps.callOp = originalCallOp;
-    }
-  });
-
-  test("rethrows (does NOT rescue from disk) when callOp reports a [verbatim] AC drop", async () => {
-    const strategy = new RefinePlanStrategy();
-    const closeSpy = mock(async () => {});
-    // Output file exists on disk — the generic catch would normally rescue it.
-    const ctx = makeCtx({ deps: makeDeps(true), runtime: makeRuntime(closeSpy) });
-    const originalCallOp = _refinePlanDeps.callOp;
-    _refinePlanDeps.callOp = mock(async () => {
-      throw new NaxError("dropped a verbatim AC", "PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED", { stage: "plan" });
-    }) as typeof _refinePlanDeps.callOp;
-
-    try {
-      await expect(strategy.execute(ctx)).rejects.toThrow(/verbatim/i);
-      expect(closeSpy).toHaveBeenCalledTimes(1); // finally still runs
     } finally {
       _refinePlanDeps.callOp = originalCallOp;
     }
