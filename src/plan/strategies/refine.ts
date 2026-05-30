@@ -1,7 +1,11 @@
+import { NaxError } from "@/errors";
 import { callOp, planRefineOp } from "@/operations";
 import type { PlanRefineInput } from "@/operations";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 import { writeOrRecoverPrd } from "./write-prd";
+
+/** Error code raised by planRefineOp when the PRD drops a `[verbatim]` spec AC. */
+const VERBATIM_DROP_CODE = "PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED";
 
 export const _refinePlanDeps = {
   callOp,
@@ -38,6 +42,9 @@ export class RefinePlanStrategy implements IPlanStrategy {
       );
       return writeOrRecoverPrd(ctx, prd);
     } catch (err) {
+      // Hard gate: a PRD that dropped a [verbatim] spec AC must not be rescued
+      // from disk — surface the failure instead of silently writing the drift.
+      if (err instanceof NaxError && err.code === VERBATIM_DROP_CODE) throw err;
       return writeOrRecoverPrd(ctx, null, err);
     } finally {
       await ctx.runtime.close().catch(() => {});

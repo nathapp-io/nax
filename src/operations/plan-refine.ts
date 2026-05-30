@@ -3,6 +3,7 @@ import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import { findMissingVerbatimAcs } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
@@ -119,9 +120,14 @@ function validateRefinedPrd(prd: PRD): PRD {
  * (docs/findings/nax-plan-prd-fidelity.md). Throws so the failure is loud at
  * plan time rather than a silent drift caught only by spec-review Phase 9.
  */
-function assertVerbatimAcsPreserved(prd: PRD, specContent: string): void {
+function assertVerbatimAcsPreserved(prd: PRD, specContent: string, featureName: string): void {
   const missing = findMissingVerbatimAcs(specContent, prd);
   if (missing.length > 0) {
+    getSafeLogger()?.warn("plan", "[verbatim] spec acceptance criteria dropped from PRD — failing plan", {
+      featureName,
+      missingCount: missing.length,
+      missing,
+    });
     throw new NaxError(
       `[plan-refine verify] PRD dropped or altered ${missing.length} [verbatim] spec acceptance criterion(s): ${missing.join(" | ")}`,
       "PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED",
@@ -143,6 +149,11 @@ async function readMissingVerbatimAcs(input: PlanRefineInput): Promise<string[]>
     const prd = validatePlanOutput(content, input.featureName, input.branchName);
     return findMissingVerbatimAcs(input.specContent, prd);
   } catch {
+    // Draft unparseable here — let the normal parse / recover / verify path own
+    // it. Skipping the self-heal turn means it falls straight to the verify floor.
+    getSafeLogger()?.debug("plan", "Skipped [verbatim] self-heal — draft PRD not yet parseable", {
+      featureName: input.featureName,
+    });
     return [];
   }
 }
@@ -200,9 +211,15 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
 
     // Deterministic [verbatim] self-heal: if the rewritten PRD dropped any
     // verbatim spec AC, issue exactly one targeted repair turn in the same
-    // session. `verify` is the hard floor if this turn still misses.
+    // session. `verify` re-runs the same check as the hard floor if this turn
+    // still misses, so the repair prompt and the gate must stay in sync — both
+    // route through findMissingVerbatimAcs (src/prd/verbatim-fidelity.ts).
     const missing = await readMissingVerbatimAcs(ctx.input);
     if (missing.length > 0) {
+      getSafeLogger()?.info("plan", "Refine dropped [verbatim] spec ACs — issuing one repair turn", {
+        featureName: ctx.input.featureName,
+        missingCount: missing.length,
+      });
       const turn3 = await ctx.send(builder.buildVerbatimRepair(missing, ctx.input.outputPath));
       totalCost += turn3.estimatedCostUsd ?? 0;
       last = turn3;
@@ -215,16 +232,22 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   },
   verify: async (parsed, input, _ctx) => {
     const validated = validateRefinedPrd(parsed);
-    assertVerbatimAcsPreserved(validated, input.specContent);
+    assertVerbatimAcsPreserved(validated, input.specContent, input.featureName);
     return validated;
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);
     if (!content) return null;
+    let prd: PRD;
     try {
-      return validatePlanOutput(content, input.featureName, input.branchName);
+      prd = validatePlanOutput(content, input.featureName, input.branchName);
     } catch {
       return null;
     }
+    // Mirror the verify gate here: callOp invokes recover on a verify throw, so
+    // without this a structurally-valid but [verbatim]-dropping PRD read back
+    // from disk would silently mask the gate. Throws to keep the floor hard.
+    assertVerbatimAcsPreserved(prd, input.specContent, input.featureName);
+    return prd;
   },
 };

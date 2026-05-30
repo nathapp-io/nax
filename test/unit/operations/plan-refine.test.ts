@@ -289,6 +289,58 @@ describe("planRefineOp.hopBody()", () => {
   });
 });
 
+describe("planRefineOp — verify floor rejects when self-heal still drops a verbatim AC", () => {
+  test("callOp throws PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED after the repair turn still misses", async () => {
+    await withTempDir(async (tempDir) => {
+      const outputPath = join(tempDir, "prd.json");
+      // Every turn (draft, refine, repair) writes a structurally valid PRD that
+      // never contains the [verbatim] grep — the self-heal cannot recover it, so
+      // the verify floor must fail the plan.
+      const lackingPrd = makeValidPrd("f", "feat/f");
+
+      const agentManager = makeMockAgentManager({
+        runWithFallbackFn: async (req: AgentRunRequest) => {
+          const hopResult = await req.executeHop!("claude", undefined, { kind: "primary" }, req.runOptions);
+          return { result: { ...hopResult.result, agentFallbacks: [] }, fallbacks: [] };
+        },
+        runAsSessionFn: async () => {
+          await Bun.write(outputPath, JSON.stringify(lackingPrd));
+          return {
+            output: "written",
+            estimatedCostUsd: 1,
+            internalRoundTrips: 1,
+            tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      });
+
+      const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+      createdRuntimes.push(runtime);
+
+      await expect(
+        callOp(
+          {
+            runtime,
+            packageView: runtime.packages.repo(),
+            packageDir: tempDir,
+            agentName: runtime.agentManager.getDefault(),
+            storyId: "f",
+            featureName: "f",
+          },
+          planRefineOp,
+          {
+            specContent: '## ACs\n- [verbatim] `grep -rn "X" src/` returns zero matches',
+            codebaseContext: "",
+            featureName: "f",
+            branchName: "feat/f",
+            outputPath,
+          },
+        ),
+      ).rejects.toThrow(/\[verbatim\] spec acceptance criterion/i);
+    });
+  });
+});
+
 describe("planRefineOp.verify — [verbatim] preservation gate", () => {
   const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
 

@@ -18,7 +18,7 @@ export type {
   VerificationStage,
 } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
-export { extractVerbatimAcLines, findMissingVerbatimAcs } from "./verbatim-fidelity";
+export { extractVerbatimAcs, findMissingVerbatimAcs } from "./verbatim-fidelity";
 export type { FailureCategory } from "../tdd/types";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
