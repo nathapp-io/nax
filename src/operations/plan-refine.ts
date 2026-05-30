@@ -3,6 +3,7 @@ import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
+import { findMissingVerbatimAcs } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD } from "../prd/types";
 import type { UserStory } from "../prd/types";
@@ -10,6 +11,17 @@ import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
+
+/** Injectable I/O for the hopBody self-heal step (testable without disk). */
+export const _planRefineDeps = {
+  readFile: async (path: string): Promise<string | null> => {
+    try {
+      return await Bun.file(path).text();
+    } catch {
+      return null;
+    }
+  },
+};
 
 export interface PlanRefineInput {
   specContent: string;
@@ -101,6 +113,40 @@ function validateRefinedPrd(prd: PRD): PRD {
   return prd;
 }
 
+/**
+ * Hard gate: every `[verbatim]` spec AC must survive into the PRD. Paraphrasing
+ * a verbatim grep / file-check / invariant destroys its verification mechanism
+ * (docs/findings/nax-plan-prd-fidelity.md). Throws so the failure is loud at
+ * plan time rather than a silent drift caught only by spec-review Phase 9.
+ */
+function assertVerbatimAcsPreserved(prd: PRD, specContent: string): void {
+  const missing = findMissingVerbatimAcs(specContent, prd);
+  if (missing.length > 0) {
+    throw new NaxError(
+      `[plan-refine verify] PRD dropped or altered ${missing.length} [verbatim] spec acceptance criterion(s): ${missing.join(" | ")}`,
+      "PLAN_REFINE_VERIFY_VERBATIM_AC_DROPPED",
+      { stage: "plan", missingCount: missing.length },
+    );
+  }
+}
+
+/**
+ * Read the PRD the refine turn wrote to disk and return the `[verbatim]` spec
+ * ACs it dropped. Returns `[]` when the file is absent or unparseable — those
+ * cases are handled by the normal parse / recover / verify path, not the
+ * self-heal turn.
+ */
+async function readMissingVerbatimAcs(input: PlanRefineInput): Promise<string[]> {
+  const content = await _planRefineDeps.readFile(input.outputPath);
+  if (!content) return [];
+  try {
+    const prd = validatePlanOutput(content, input.featureName, input.branchName);
+    return findMissingVerbatimAcs(input.specContent, prd);
+  } catch {
+    return [];
+  }
+}
+
 export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   kind: "run",
   name: "plan-refine",
@@ -145,20 +191,32 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     };
   },
   async hopBody(initialPrompt, ctx) {
+    const builder = new PlanPromptBuilder();
     const turn1 = await ctx.sendWithParseRetry(initialPrompt);
-    const refinePrompt = new PlanPromptBuilder().buildRefineContinuation(ctx.input.outputPath);
-    const turn2 = await ctx.send(refinePrompt);
+    const turn2 = await ctx.send(builder.buildRefineContinuation(ctx.input.outputPath));
 
-    return {
-      ...turn2,
-      estimatedCostUsd: (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0),
-    };
+    let totalCost = (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0);
+    let last = turn2;
+
+    // Deterministic [verbatim] self-heal: if the rewritten PRD dropped any
+    // verbatim spec AC, issue exactly one targeted repair turn in the same
+    // session. `verify` is the hard floor if this turn still misses.
+    const missing = await readMissingVerbatimAcs(ctx.input);
+    if (missing.length > 0) {
+      const turn3 = await ctx.send(builder.buildVerbatimRepair(missing, ctx.input.outputPath));
+      totalCost += turn3.estimatedCostUsd ?? 0;
+      last = turn3;
+    }
+
+    return { ...last, estimatedCostUsd: totalCost };
   },
   parse(output, input) {
     return validatePlanOutput(output, input.featureName, input.branchName);
   },
-  verify: async (parsed, _input, _ctx) => {
-    return validateRefinedPrd(parsed);
+  verify: async (parsed, input, _ctx) => {
+    const validated = validateRefinedPrd(parsed);
+    assertVerbatimAcsPreserved(validated, input.specContent);
+    return validated;
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);

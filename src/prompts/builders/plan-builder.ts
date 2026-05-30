@@ -164,6 +164,9 @@ Output ONLY the JSON object. Do not include markdown fences or explanation.`;
 
 Review the draft with a strict self-audit mindset. Re-read the codebase context and compare the PRD against it. Focus only on the issues below, then rewrite the PRD if needed.
 
+#### spec-ac-preservation
+Enumerate every acceptance criterion the spec states. Confirm each one appears in some story's acceptanceCriteria — never drop a spec AC during this audit. If an AC looks unsupported by the current codebase, keep it: the story may be adding that capability. Any AC the spec tags \`[verbatim]\` MUST appear character-for-character in an acceptanceCriteria entry — preserve every backtick-quoted command, file path, regex, and count exactly. If a \`[verbatim]\` AC is missing or altered, restore it verbatim.
+
 #### ac-testable
 For each acceptance criterion, ask whether the assertion is observable through a return value, exception, log output, file content, or state change. If any AC is not directly testable, rewrite it so it is observable.
 
@@ -176,7 +179,7 @@ Check whether any sentence in any description contradicts an acceptance criterio
 #### codebase-fit
 For each story, verify:
 1. Proposed files, helpers, tests, dependencies, and implementation notes match the codebase context. Remove invented helpers, files, call sites, or dependencies unless the change clearly requires creating them.
-2. Each acceptance criterion's semantic meaning matches the spec's actual interface and data flow. Criteria that assert incorrect parameter semantics, wrong data flow, or behavior that contradicts the spec must be corrected or removed. Cross-check each AC against the spec's interface definitions, pseudocode, and design notes.
+2. Each acceptance criterion's semantic meaning matches the spec's actual interface and data flow. Criteria that assert incorrect parameter semantics, wrong data flow, or behavior that contradicts the spec must be corrected. Never delete an AC that restates a spec AC — correct its wording to match the spec instead. Cross-check each AC against the spec's interface definitions, pseudocode, and design notes.
 
 #### contextfiles-spec-alignment
 For each story, compare contextFiles against files the spec explicitly lists as context (e.g., in "Context Files" sections). Ensure the most critical spec-recommended files are included, up to the 5-file limit. If a spec-recommended file is absent, add it (removing the least critical one if already at 5). Files the story will CREATE must not appear here.
@@ -194,6 +197,32 @@ If a story changes existing behavior, extracts a shared helper, extends an exist
 Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.
 
 Write the revised PRD to this file path: ${outputFilePath}
+Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
+  }
+
+  /**
+   * Verbatim-repair prompt — conditional third turn in refine mode.
+   *
+   * Fired only when the deterministic `[verbatim]` fidelity check finds spec ACs
+   * the rewritten PRD dropped or altered. Instructs the model to restore each
+   * one character-for-character into the most relevant story's acceptance
+   * criteria. This is the same-session self-heal; `planRefineOp.verify` is the
+   * hard floor that rejects the PRD if the repair still misses.
+   */
+  buildVerbatimRepair(missingAcs: readonly string[], outputFilePath: string): string {
+    const list = missingAcs.map((ac) => `- ${ac}`).join("\n");
+    return `Your revised PRD dropped or altered acceptance criteria the spec marked \`[verbatim]\`. These are load-bearing executable checks (greps, file-existence checks, regex/count assertions, or architectural invariants) and MUST survive character-for-character — paraphrasing destroys the verification mechanism.
+
+The following \`[verbatim]\` spec acceptance criteria are missing or altered in the PRD:
+
+${list}
+
+For each one:
+- Add it to the \`acceptanceCriteria\` array of the single most relevant user story.
+- Preserve every backtick-quoted command, file path, regex, and count exactly as written in the spec. Do not paraphrase, retag, split, or move them into a description.
+- Do not remove or weaken any acceptance criteria that are already correct.
+
+Write the corrected PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
   }
 

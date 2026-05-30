@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { callOp } from "@/operations";
+import { _planRefineDeps, callOp, planRefineOp } from "@/operations";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import { PlanPromptBuilder } from "@/prompts";
 import { planInteractiveOp } from "@/operations";
@@ -11,8 +11,10 @@ import type { HopBodyContext } from "@/operations/types";
 
 const createdRuntimes: NaxRuntime[] = [];
 
+const origReadFile = _planRefineDeps.readFile;
 afterEach(async () => {
   mock.restore();
+  _planRefineDeps.readFile = origReadFile;
   await Promise.allSettled(createdRuntimes.map((runtime) => runtime.close()));
   createdRuntimes.length = 0;
 });
@@ -133,6 +135,8 @@ describe("planRefineOp.hopBody()", () => {
     const buildRefineContinuationSpy = spyOn(PlanPromptBuilder.prototype, "buildRefineContinuation").mockReturnValue(
       refinePrompt,
     );
+    // No verbatim ACs in this spec → no self-heal turn. Stub disk to avoid real I/O.
+    _planRefineDeps.readFile = async () => null;
 
     const ctx: HopBodyContext<{
       specContent: string;
@@ -282,6 +286,121 @@ describe("planRefineOp.hopBody()", () => {
 
       expect(result.analysis).toBe("draft analysis");
     });
+  });
+});
+
+describe("planRefineOp.verify — [verbatim] preservation gate", () => {
+  const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
+
+  function makeVerifyCtx(): VerifyContext<unknown> {
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    return {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+  }
+
+  const input = {
+    specContent: SPEC_WITH_VERBATIM,
+    codebaseContext: "",
+    featureName: "f",
+    branchName: "feat/f",
+    outputPath: "/tmp/x.json",
+  };
+
+  test("throws when a [verbatim] spec AC is dropped from the PRD", async () => {
+    const prd = makeValidPrd("f", "feat/f"); // default AC does not contain the grep command
+    await expect(planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx())).rejects.toThrow(
+      /\[verbatim\] spec acceptance criterion/i,
+    );
+  });
+
+  test("passes when the [verbatim] command survives in some PRD AC", async () => {
+    const base = makeValidPrd("f", "feat/f");
+    const prd = {
+      ...base,
+      userStories: [
+        {
+          ...base.userStories[0],
+          acceptanceCriteria: [
+            'When cleanup completes, grep -rn "oldSym" src/ returns zero matches.',
+            "handler rejects invalid input", // satisfies the negative-path structural check
+          ],
+        },
+      ],
+    };
+    const result = await planRefineOp.verify?.(prd as never, input as never, makeVerifyCtx());
+    expect(result).toBeTruthy();
+  });
+});
+
+describe("planRefineOp.hopBody — [verbatim] self-heal turn", () => {
+  const SPEC = '## ACs\n- [verbatim] `grep -rn "X" src/` returns zero matches';
+
+  function turn(output: string, cost: number) {
+    return { output, estimatedCostUsd: cost, internalRoundTrips: 1, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
+  }
+
+  function makeCtx() {
+    const sendWithParseRetry = mock(async () => turn("draft", 1));
+    let sendCount = 0;
+    const send = mock(async (_p: string) => {
+      sendCount += 1;
+      return turn(sendCount === 1 ? "refined" : "repaired", 2);
+    });
+    const ctx = {
+      input: { specContent: SPEC, codebaseContext: "", featureName: "f", branchName: "feat/f", outputPath: "/tmp/p.json" },
+      send,
+      sendWithParseRetry,
+    } as unknown as Parameters<NonNullable<typeof planRefineOp.hopBody>>[1];
+    return { ctx, send, sendWithParseRetry };
+  }
+
+  test("fires exactly one repair turn when the written PRD dropped a verbatim AC", async () => {
+    _planRefineDeps.readFile = async () => JSON.stringify(makeValidPrd("f", "feat/f")); // AC lacks `grep ... "X"`
+    const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildVerbatimRepair").mockReturnValue("REPAIR-PROMPT");
+    const { ctx, send } = makeCtx();
+
+    const result = await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(2); // refine + repair
+    expect(repairSpy).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[1][0]).toBe("REPAIR-PROMPT");
+    expect(result.output).toBe("repaired");
+    expect(result.estimatedCostUsd).toBe(5); // 1 (draft) + 2 (refine) + 2 (repair)
+  });
+
+  test("no repair turn when the written PRD preserved the verbatim AC", async () => {
+    const base = makeValidPrd("f", "feat/f");
+    const preserved = {
+      ...base,
+      userStories: [{ ...base.userStories[0], acceptanceCriteria: ['grep -rn "X" src/ returns zero matches'] }],
+    };
+    _planRefineDeps.readFile = async () => JSON.stringify(preserved);
+    const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildVerbatimRepair");
+    const { ctx, send } = makeCtx();
+
+    const result = await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(1); // refine only
+    expect(repairSpy).not.toHaveBeenCalled();
+    expect(result.output).toBe("refined");
+    expect(result.estimatedCostUsd).toBe(3); // 1 (draft) + 2 (refine)
+  });
+
+  test("no repair turn when the PRD file is absent or unparseable", async () => {
+    _planRefineDeps.readFile = async () => null;
+    const repairSpy = spyOn(PlanPromptBuilder.prototype, "buildVerbatimRepair");
+    const { ctx, send } = makeCtx();
+
+    await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(repairSpy).not.toHaveBeenCalled();
   });
 });
 
