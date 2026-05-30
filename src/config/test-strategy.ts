@@ -184,7 +184,7 @@ export const SPEC_ANCHOR_RULES = `## Spec Fidelity Rules
 
 When a spec is provided, these rules govern acceptance criteria generation:
 
-1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`, verbatim or lightly rephrased for testability. Never silently drop a spec AC.
+1. **Preserve spec ACs.** Every acceptance criterion stated in the spec must appear in \`acceptanceCriteria\`. Never silently drop a spec AC. ACs the spec tags \`[verbatim]\` (typically executable greps, file-existence checks, regex/count assertions, or architectural invariants) MUST be copied **character-for-character** into an \`acceptanceCriteria\` entry — preserve every backtick-quoted command, file path, regex, and count exactly; do not paraphrase, retag, split, or move them into a description. Untagged ACs may be lightly rephrased for testability, but must retain the same assertion and concrete identifiers.
 2. **Do not invent spec ACs.** If you identify useful behavioral edge cases or negative paths that the spec did not explicitly list, place them in \`suggestedCriteria\` (a string array on the same story object) — never in \`acceptanceCriteria\`. These go through a separate hardening pass.
 3. **Respect story scope.** Each story's criteria must only cover what the spec says for that story. Do not assign criteria that belong to a different story's scope (wrong feature area, wrong file, wrong dependency chain).
 4. **\`suggestedCriteria\` format.** Each element must be a plain behavioral assertion — an observable output, return value, state change, or error condition that a test can assert. Never include implementation details (imports, internal structure), design suggestions, or vague descriptions.

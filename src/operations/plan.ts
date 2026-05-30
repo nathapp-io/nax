@@ -7,6 +7,7 @@ import type { PRD } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { RunOperation } from "./types";
+import { warnOnDroppedVerbatimAcs } from "./verbatim-warn";
 
 export interface PlanInteractiveInput {
   specContent: string;
@@ -67,8 +68,11 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
   parse(output, input, _ctx) {
     return validatePlanOutput(output, input.featureName, input.branchName);
   },
-  verify: async (parsed, _input, _ctx) => {
+  verify: async (parsed, input, _ctx) => {
     if (!parsed.userStories || parsed.userStories.length === 0) return null;
+    // Single mode is one-shot (no self-heal turn) — warn on residual [verbatim]
+    // drift and continue. Shared with refine via warnOnDroppedVerbatimAcs.
+    warnOnDroppedVerbatimAcs(parsed, input.specContent, input.featureName);
     return parsed;
   },
   recover: async (input, ctx) => {
