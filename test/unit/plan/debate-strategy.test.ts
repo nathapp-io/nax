@@ -197,6 +197,53 @@ describe("DebatePlanStrategy", () => {
     expect(ctx.runtime.close).toHaveBeenCalledTimes(1);
   });
 
+  async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
+    try {
+      return await fn(warnSpy);
+    } finally {
+      warnSpy.mockRestore();
+      resetLogger();
+    }
+  }
+
+  function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
+    return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
+  }
+
+  // Debate parity (#1160 follow-up): the synthesis path has no op verify, so the
+  // strategy must warn directly when synthesis drops a [verbatim] spec AC.
+  test("warns when the synthesis PRD drops a [verbatim] spec AC", async () => {
+    const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
+    const ctx = makeContext({
+      specContent: '- [verbatim] `grep -rn "gone" src/` returns zero matches',
+      deps: makeDeps({ createDebateRunner: mock(() => ({ runPlan: runPlanMock })) }),
+    });
+
+    await withWarnSpy(async (warnSpy) => {
+      await new DebatePlanStrategy().execute(ctx);
+      const warn = verbatimWarn(warnSpy);
+      expect(warn).toBeDefined();
+      expect((warn?.[2] as { missingCount: number }).missingCount).toBe(1);
+    });
+  });
+
+  test("does not warn when the synthesis PRD preserves the [verbatim] spec AC", async () => {
+    const runPlanMock = mock(async () => ({ outcome: "passed", output: JSON.stringify(SAMPLE_PRD) }));
+    const ctx = makeContext({
+      // SAMPLE_PRD's only AC is "The plan is produced" — match it verbatim.
+      specContent: "- [verbatim] The plan is produced",
+      deps: makeDeps({ createDebateRunner: mock(() => ({ runPlan: runPlanMock })) }),
+    });
+
+    await withWarnSpy(async (warnSpy) => {
+      await new DebatePlanStrategy().execute(ctx);
+      expect(verbatimWarn(warnSpy)).toBeUndefined();
+    });
+  });
+
   test("falls back to callOp with planInteractiveOp and persists via writeOrRecoverPrd when runPlan fails", async () => {
     const fallbackPrd = SAMPLE_PRD;
     const runPlanMock = mock(async () => ({
