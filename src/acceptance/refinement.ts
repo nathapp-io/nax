@@ -44,6 +44,28 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
 }
 
 /**
+ * True when `parseRefinementResponse` would discard the agent's output and fall
+ * back to the unrefined criteria — i.e. empty/whitespace response, output that
+ * fails JSON extraction/parse, or a non-array result. An empty array `[]` is a
+ * *successful* parse (returns `[]`), so it is NOT a fallback.
+ *
+ * Mirrors the fallback triggers in `parseRefinementResponse` above and lives
+ * beside it so the two stay in sync. Used by the acceptance-refine op (#3B) to
+ * log an accurate degradation warning — the log must only claim "fell back to
+ * unrefined criteria" when that is what actually happened.
+ */
+export function refinementWouldFallback(response: string): boolean {
+  if (!response || !response.trim()) return true;
+  try {
+    const fromFence = extractJsonFromMarkdown(response);
+    const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);
+    return !Array.isArray(JSON.parse(cleaned));
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Build fallback RefinedCriterion[] using original criterion text.
  */
 function fallbackCriteria(criteria: string[], storyId = ""): RefinedCriterion[] {

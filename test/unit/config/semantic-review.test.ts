@@ -127,6 +127,7 @@ describe("ReviewConfig semantic field", () => {
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
+        demandInspectionTrail: true,
         substantiation: { requote: true, maxRequotes: 5 },
         // excludePatterns is now optional (ADR-009): undefined means resolver will derive at runtime
       });
@@ -245,10 +246,7 @@ describe("ReviewConfigSchema semantic validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.review.semantic?.rules).toEqual([
-        "no-mutations",
-        "immutable-defaults",
-      ]);
+      expect(result.data.review.semantic?.rules).toEqual(["no-mutations", "immutable-defaults"]);
     }
   });
 });
@@ -273,8 +271,18 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
+      demandInspectionTrail: true,
       substantiation: { requote: true, maxRequotes: 5 },
-      excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
+      excludePatterns: [
+        ":!test/",
+        ":!tests/",
+        ":!*_test.go",
+        ":!*.test.ts",
+        ":!*.spec.ts",
+        ":!**/__tests__/",
+        ":!.nax/",
+        ":!.nax-pids",
+      ],
     });
   });
 });
@@ -296,6 +304,41 @@ describe("Semantic check in review.checks with semantic config", () => {
       expect(result.data.review.semantic).toBeDefined();
       expect(result.data.review.semantic?.model).toBe("balanced");
       expect(result.data.review.semantic?.rules).toEqual([]);
+    }
+  });
+});
+
+describe("demandInspectionTrail (#3A) — configurable on both reviewers", () => {
+  test("defaults to true on the DEFAULT_CONFIG for both reviewers", () => {
+    expect(DEFAULT_CONFIG.review?.semantic?.demandInspectionTrail).toBe(true);
+    expect(DEFAULT_CONFIG.review?.adversarial?.demandInspectionTrail).toBe(true);
+  });
+
+  test("defaults to true after parsing when omitted (not schema-stripped)", () => {
+    const parsed = NaxConfigSchema.parse({});
+    expect(parsed.review.semantic?.demandInspectionTrail).toBe(true);
+    expect(parsed.review.adversarial?.demandInspectionTrail).toBe(true);
+  });
+
+  test("an explicit false survives parse on the semantic reviewer", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      review: { ...DEFAULT_CONFIG.review, semantic: { demandInspectionTrail: false } },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.review.semantic?.demandInspectionTrail).toBe(false);
+    }
+  });
+
+  test("an explicit false survives parse on the adversarial reviewer", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      review: { ...DEFAULT_CONFIG.review, adversarial: { demandInspectionTrail: false } },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.review.adversarial?.demandInspectionTrail).toBe(false);
     }
   });
 });

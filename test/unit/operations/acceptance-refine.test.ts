@@ -8,7 +8,8 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { acceptanceRefineOp, refinementDegraded } from "../../../src/operations/acceptance-refine";
+import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance/refinement";
+import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
   criteria: ["User can log in", "User can log out"],
@@ -112,25 +113,36 @@ describe("acceptanceRefineOp.parse()", () => {
   });
 });
 
-describe("refinementDegraded (#3B observability)", () => {
+describe("refinementWouldFallback (#3B observability)", () => {
+  // The predicate must agree with parseRefinementResponse's ACTUAL fallback:
+  // true only when the parser discards output and returns the unrefined criteria.
   test.each([
     ["", true],
     ["   \n  ", true],
     ["not json", true],
-    ["[]", true],
-    ['{"passed":true}', true],
-  ] as const)("degraded(%p) === %p", (output, expected) => {
-    expect(refinementDegraded(output)).toBe(expected);
+    ['{"passed":true}', true], // non-array → fallback
+    ["[]", false], // empty array is a successful parse (returns []), NOT a fallback
+  ] as const)("wouldFallback(%p) === %p", (output, expected) => {
+    expect(refinementWouldFallback(output)).toBe(expected);
   });
 
-  test("usable refinement array is not degraded", () => {
+  test("agrees with parseRefinementResponse on the fallback cases", () => {
+    const criteria = ["User can log in", "User can log out"];
+    for (const output of ["", "not json", '{"x":1}']) {
+      // When wouldFallback is true, the parser returns exactly the unrefined criteria.
+      expect(refinementWouldFallback(output)).toBe(true);
+      expect(parseRefinementResponse(output, criteria).map((c) => c.refined)).toEqual(criteria);
+    }
+  });
+
+  test("usable refinement array does not fall back", () => {
     const usable = JSON.stringify([{ original: "a", refined: "a()", testable: true, storyId: "" }]);
-    expect(refinementDegraded(usable)).toBe(false);
+    expect(refinementWouldFallback(usable)).toBe(false);
   });
 
-  test("fenced JSON array is not degraded", () => {
+  test("fenced JSON array does not fall back", () => {
     const fenced = '```json\n[{"original":"a","refined":"a()","testable":true,"storyId":""}]\n```';
-    expect(refinementDegraded(fenced)).toBe(false);
+    expect(refinementWouldFallback(fenced)).toBe(false);
   });
   test("parses JSON wrapped in code fence", () => {
     const ctx = makeBuildCtx();

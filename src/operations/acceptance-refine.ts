@@ -1,24 +1,10 @@
-import { parseRefinementResponse } from "../acceptance/refinement";
+import { parseRefinementResponse, refinementWouldFallback } from "../acceptance/refinement";
 import type { RefinedCriterion } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
-import { tryParseLLMJson } from "../utils/llm-json";
 import type { CompleteOperation } from "./types";
-
-/**
- * True when the agent's response cannot yield a usable refinement and
- * `parseRefinementResponse` will silently fall back to the unrefined criteria —
- * empty/whitespace output, non-JSON, or an empty array. Used purely for
- * observability (#3B): the degradation was previously invisible, so a no-op from
- * a weaker agent looked identical to a successful refinement in the run log.
- */
-export function refinementDegraded(output: string): boolean {
-  if (!output || !output.trim()) return true;
-  const parsed = tryParseLLMJson<unknown>(output);
-  return !Array.isArray(parsed) || parsed.length === 0;
-}
 
 export interface AcceptanceRefineInput {
   criteria: string[];
@@ -53,7 +39,7 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     };
   },
   parse(output, input, _ctx) {
-    if (refinementDegraded(output)) {
+    if (refinementWouldFallback(output)) {
       getSafeLogger()?.warn(
         "acceptance",
         "AC refinement returned no usable JSON — falling back to unrefined criteria",

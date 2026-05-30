@@ -151,6 +151,12 @@ export function validateAcQuote(finding: AcQuotable, acceptanceCriteria: string[
   // present in the test file. Grounding by a valid acIndex + AC substring is
   // sufficient. This lets adversarial review block stories whose ACs are
   // "covered" only by tautological tests. (#2 / 2026-05-30 prompt-audit analysis.)
+  //
+  // `category` is LLM-controlled, so this only RELAXES the locus check — never
+  // evidence. A finding mislabelled "test-gap" still needs a valid acIndex +
+  // verbatim AC substring here, and still passes through verifiedBy / evidence
+  // substantiation in the op's verify(). Mislabelling makes a finding more
+  // likely to block (stricter), never bypass-to-pass.
   if (finding.category === "test-gap") {
     return { valid: true };
   }

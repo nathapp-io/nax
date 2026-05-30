@@ -331,6 +331,11 @@ async function performAdversarialReground(
  * verdict (which flows through parse/verify substantiation normally). Returns
  * null when the guard does not apply, so the caller falls through to the normal
  * reground/requote logic. Cost is charged only on the rare suspicious case.
+ *
+ * Asymmetry (intentional): findings produced on the adopted second turn still
+ * flow through parse()/verify() substantiation + AC-grounding, but skip the
+ * hopBody-level same-session reground/requote recovery that first-turn findings
+ * get. A reviewer that opened with a rubber-stamp forfeits that rescue turn.
  */
 async function maybeRepromptForInspection(
   turn: TurnResult,

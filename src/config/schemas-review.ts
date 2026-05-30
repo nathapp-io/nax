@@ -42,6 +42,13 @@ const SemanticReviewConfigSchema = z.object({
    * Any user-set value (including []) is returned as-is. (ADR-009 §4.4)
    */
   excludePatterns: z.array(z.string()).optional(),
+  /**
+   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
+   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
+   * reviewer actually open the code before passing (#3A inspection-trail guard).
+   * Mirrors the adversarial field so the guard is configurable on both reviewers.
+   */
+  demandInspectionTrail: z.boolean().default(true),
 });
 
 /**
