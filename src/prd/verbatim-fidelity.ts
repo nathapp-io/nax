@@ -10,8 +10,8 @@
  *
  * This module is the single source of truth for "did the PRD preserve every
  * `[verbatim]` spec AC?". It is pure and deterministic — no LLM, no I/O — so it
- * can back both the `planRefineOp.verify` hard gate and the `hopBody` self-heal
- * turn without divergence.
+ * can back both the `planRefineOp.verify` soft warning and the `hopBody`
+ * self-heal turn without divergence.
  *
  * ## Matching semantics — full-payload, per-AC
  *
@@ -92,6 +92,16 @@ function stripTagPrefix(block: string): string {
  * Every `[verbatim]`-tagged acceptance criterion in the spec, returned as a
  * single folded string each (continuation lines joined with a space). Returned
  * with tag prefix intact so callers can quote them in error/repair messages.
+ *
+ * Scope / assumptions (deliberate, given the warning is non-fatal):
+ * - A verbatim AC is expected to be a single bullet, optionally wrapped across
+ *   plain prose lines. Continuation folding stops at the next list item, blank
+ *   line, or heading — so an AC whose payload lives in an indented sub-bullet or
+ *   an embedded code fence (```) is not fully captured and may yield a spurious
+ *   warning. Acceptable because the gate only warns; write verbatim ACs inline.
+ * - The tag vocabulary is intentionally open: any `[token]` group at line start
+ *   counts as a tag, but only `[verbatim]` triggers extraction — so unrelated
+ *   bracket tags never cause a false warning.
  */
 export function extractVerbatimAcs(specContent: string): string[] {
   const lines = specContent.split("\n");

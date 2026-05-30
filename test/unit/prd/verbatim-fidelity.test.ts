@@ -135,6 +135,16 @@ describe("findMissingVerbatimAcs", () => {
     expect(findMissingVerbatimAcs(spec, prd)).toEqual([]);
   });
 
+  // M2 — documented limitation: a verbatim AC written as a fenced code block
+  // folds the fences/command into the payload, so a faithfully-preserved command
+  // still reads as "missing". Acceptable because the warning is non-fatal; pinned
+  // here so the behavior is intentional, not an accidental regression.
+  test("fenced multi-line verbatim AC yields a (tolerated) spurious warning", () => {
+    const spec = ["- [verbatim] run the check:", "  ```", '  grep -rn "X" src/', "  ```"].join("\n");
+    const prd = prdWithAcs('grep -rn "X" src/ returns zero matches'); // command IS preserved
+    expect(findMissingVerbatimAcs(spec, prd)).toHaveLength(1);
+  });
+
   test("flags every dropped verbatim AC independently", () => {
     const spec = [
       "- [verbatim] `grep -rn \"A\" src/` returns zero matches",

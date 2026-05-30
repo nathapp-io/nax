@@ -206,8 +206,8 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
    * Fired only when the deterministic `[verbatim]` fidelity check finds spec ACs
    * the rewritten PRD dropped or altered. Instructs the model to restore each
    * one character-for-character into the most relevant story's acceptance
-   * criteria. This is the same-session self-heal; `planRefineOp.verify` is the
-   * hard floor that rejects the PRD if the repair still misses.
+   * criteria. This is the same-session self-heal; `planRefineOp.verify` emits the
+   * residual-drift warning if the repair still misses (the plan still continues).
    */
   buildVerbatimRepair(missingAcs: readonly string[], outputFilePath: string): string {
     const list = missingAcs.map((ac) => `- ${ac}`).join("\n");

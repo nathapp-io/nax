@@ -148,7 +148,8 @@ async function readMissingVerbatimAcs(input: PlanRefineInput): Promise<string[]>
     return findMissingVerbatimAcs(input.specContent, prd);
   } catch {
     // Draft unparseable here — let the normal parse / recover / verify path own
-    // it. Skipping the self-heal turn means it falls straight to the verify floor.
+    // it. Skipping the self-heal turn just means `verify` will emit the residual
+    // warning later instead of this turn fixing it.
     getSafeLogger()?.debug("plan", "Skipped [verbatim] self-heal — draft PRD not yet parseable", {
       featureName: input.featureName,
     });
@@ -209,8 +210,8 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
 
     // Deterministic [verbatim] self-heal: if the rewritten PRD dropped any
     // verbatim spec AC, issue exactly one targeted repair turn in the same
-    // session. `verify` re-runs the same check as the hard floor if this turn
-    // still misses, so the repair prompt and the gate must stay in sync — both
+    // session. `verify` re-runs the same check and warns if this turn still
+    // misses, so the repair prompt and the warning must stay in sync — both
     // route through findMissingVerbatimAcs (src/prd/verbatim-fidelity.ts).
     const missing = await readMissingVerbatimAcs(ctx.input);
     if (missing.length > 0) {
