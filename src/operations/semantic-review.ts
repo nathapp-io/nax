@@ -9,6 +9,7 @@ import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   filterByAcGroundingMinimal,
+  hasInspectionTrail,
   isBlockingSeverity,
   sanitizeRefModeFindings,
   substantiateSemanticEvidence,
@@ -124,13 +125,54 @@ function evaluateRepromptTrigger(
   return { shouldReprompt: true, acDropped: dropped };
 }
 
+/**
+ * Inspection-trail guard (#3A). Fires only on the rubber-stamp signature: ref
+ * mode + passed:true + zero findings + no `inspectedFiles`. Issues exactly one
+ * re-prompt demanding the reviewer open the code, then returns the second turn's
+ * verdict (which flows through parse/verify substantiation normally). Returns
+ * null when the guard does not apply, so the caller falls through to the normal
+ * requote/reground logic. Cost is charged only on the rare suspicious case.
+ */
+async function maybeRepromptForInspection(
+  turn: TurnResult,
+  parsed: ValidatedSemanticShape,
+  rawObject: Record<string, unknown> | null | undefined,
+  ctx: HopBodyContext<SemanticReviewInput>,
+): Promise<TurnResult | null> {
+  if (ctx.input.mode !== "ref") return null;
+  if (ctx.input.semanticConfig.demandInspectionTrail === false) return null;
+  if (!parsed.passed || parsed.findings.length !== 0) return null;
+  if (hasInspectionTrail(rawObject)) return null;
+
+  const secondTurn = await ctx.send(ReviewPromptBuilder.demandInspection());
+  const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+  const secondParsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
+  getSafeLogger()?.warn("review", "Semantic reviewer returned empty pass with no inspection trail — re-prompted", {
+    storyId: ctx.input.story.id,
+    event: "review.semantic.inspection_trail.reprompted",
+    recovered: secondParsed !== null,
+  });
+  // Parseable second turn: adopt it (verify() substantiates any new findings).
+  // Unparseable second turn: keep the original pass (fail-open) but bank the cost.
+  return secondParsed
+    ? { ...turn, output: secondTurn.output, estimatedCostUsd: costUsd }
+    : { ...turn, estimatedCostUsd: costUsd };
+}
+
 const semanticReviewHopBody: RunOperation<SemanticReviewInput, SemanticReviewOutput, ReviewConfig>["hopBody"] = async (
   initialPrompt,
   ctx,
 ) => {
   const turn = await ctx.sendWithParseRetry(initialPrompt);
-  const parsed = validateLLMShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
+  const rawObject = tryParseLLMJson<Record<string, unknown>>(turn.output);
+  const parsed = validateLLMShape(rawObject);
   if (!parsed) return turn;
+
+  // Inspection-trail guard (#3A): a ref-mode empty-findings pass with no declared
+  // inspectedFiles is a rubber-stamp — the reviewer never opened the code. Give it
+  // exactly one chance to actually inspect before we trust the pass.
+  const inspectionGuard = await maybeRepromptForInspection(turn, parsed, rawObject, ctx);
+  if (inspectionGuard) return inspectionGuard;
 
   const requoted = await requoteBlockingFindings(parsed.findings, ctx);
   if (requoted.changed) {

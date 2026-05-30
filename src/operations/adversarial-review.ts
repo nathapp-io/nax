@@ -16,6 +16,7 @@ import {
   checkFindingEvidence,
   downgradeUnsubstantiatedFinding,
   filterByAcQuote,
+  hasInspectionTrail,
   substantiateAdversarialFindings,
 } from "../review/finding-filters";
 import type { AcDroppedEntry, AcQuoteRejectionCode } from "../review/finding-filters";
@@ -323,6 +324,39 @@ async function performAdversarialReground(
   };
 }
 
+/**
+ * Inspection-trail guard (#3A). Fires only on the rubber-stamp signature: ref
+ * mode + passed:true + zero findings + no `inspectedFiles`. Issues exactly one
+ * re-prompt demanding the reviewer open the code, then returns the second turn's
+ * verdict (which flows through parse/verify substantiation normally). Returns
+ * null when the guard does not apply, so the caller falls through to the normal
+ * reground/requote logic. Cost is charged only on the rare suspicious case.
+ */
+async function maybeRepromptForInspection(
+  turn: TurnResult,
+  parsed: ValidatedAdversarialShape,
+  rawObject: Record<string, unknown> | null | undefined,
+  ctx: HopBodyContext<AdversarialReviewInput>,
+): Promise<TurnResult | null> {
+  if (ctx.input.adversarialConfig.demandInspectionTrail === false) return null;
+  if (!parsed.passed || parsed.findings.length !== 0) return null;
+  if (hasInspectionTrail(rawObject)) return null;
+
+  const secondTurn = await ctx.send(AdversarialReviewPromptBuilder.demandInspection());
+  const costUsd = (turn.estimatedCostUsd ?? 0) + (secondTurn.estimatedCostUsd ?? 0);
+  const secondParsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(secondTurn.output));
+  getSafeLogger()?.warn("review", "Adversarial reviewer returned empty pass with no inspection trail — re-prompted", {
+    storyId: ctx.input.story.id,
+    event: "review.adversarial.inspection_trail.reprompted",
+    recovered: secondParsed !== null,
+  });
+  // Parseable second turn: adopt it (verify() substantiates any new findings).
+  // Unparseable second turn: keep the original pass (fail-open) but bank the cost.
+  return secondParsed
+    ? { ...turn, output: secondTurn.output, estimatedCostUsd: costUsd }
+    : { ...turn, estimatedCostUsd: costUsd };
+}
+
 export const adversarialReviewOp: RunOperation<AdversarialReviewInput, AdversarialReviewOutput, ReviewConfig> = {
   kind: "run",
   name: "adversarial-review",
@@ -334,10 +368,17 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
   retry: (input) => adversarialParseRetry(input),
   async hopBody(initialPrompt, ctx) {
     const turn = await ctx.sendWithParseRetry(initialPrompt);
-    const parsed = validateAdversarialShape(tryParseLLMJson<Record<string, unknown>>(turn.output));
+    const rawObject = tryParseLLMJson<Record<string, unknown>>(turn.output);
+    const parsed = validateAdversarialShape(rawObject);
     if (!parsed) return turn;
 
     if (ctx.input.mode !== "ref") return turn;
+
+    // Inspection-trail guard (#3A): a ref-mode empty-findings pass with no declared
+    // inspectedFiles is a rubber-stamp — the reviewer never opened the code. Give it
+    // exactly one chance to actually inspect before we trust the pass.
+    const inspectionGuard = await maybeRepromptForInspection(turn, parsed, rawObject, ctx);
+    if (inspectionGuard) return inspectionGuard;
 
     // Same-session AC-grounding re-prompt (issue #1105). Gated solely on
     // acRegroundOnDrop; independent of requote / maxRequotes which address a

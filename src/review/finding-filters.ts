@@ -31,6 +31,20 @@ export { filterByAcGroundingMinimal, filterByAcQuote } from "./ac-quote-validato
 export type { AcQuoteRejectionCode, AcDroppedEntry, AcGroundingMinimalRejection } from "./ac-quote-validator";
 
 /**
+ * True when the reviewer's raw response declares a non-empty `inspectedFiles`
+ * array — evidence that it actually opened the changed code. Used by the
+ * inspection-trail guard (#3A) to distinguish a genuine empty-findings pass
+ * from a rubber-stamp `{"passed":true,"findings":[]}` with no investigation.
+ *
+ * `raw` is the already-parsed JSON object (from `tryParseLLMJson`), or null
+ * when the response was unparseable (treated as "no trail").
+ */
+export function hasInspectionTrail(raw: Record<string, unknown> | null | undefined): boolean {
+  const files = raw?.inspectedFiles;
+  return Array.isArray(files) && files.some((f) => typeof f === "string" && f.trim().length > 0);
+}
+
+/**
  * Per-finding adversarial evidence substantiation.
  * Extracted from src/review/adversarial.ts:393-409.
  * Blocking findings whose verifiedBy.observed does not match HEAD are downgraded to

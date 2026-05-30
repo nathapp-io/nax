@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
 import type { NaxRuntime } from "../../../src/runtime";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
+import { acceptanceRefineOp, refinementDegraded } from "../../../src/operations/acceptance-refine";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
   criteria: ["User can log in", "User can log out"],
@@ -83,7 +83,12 @@ describe("acceptanceRefineOp.parse()", () => {
   test("parses valid JSON array of RefinedCriterion", () => {
     const ctx = makeBuildCtx();
     const json = JSON.stringify([
-      { original: "User can log in", refined: "login() returns true for valid credentials", testable: true, storyId: "US-001" },
+      {
+        original: "User can log in",
+        refined: "login() returns true for valid credentials",
+        testable: true,
+        storyId: "US-001",
+      },
       { original: "User can log out", refined: "logout() clears session token", testable: true, storyId: "US-001" },
     ]);
     const result = acceptanceRefineOp.parse(json, SAMPLE_INPUT, ctx);
@@ -104,6 +109,28 @@ describe("acceptanceRefineOp.parse()", () => {
     const result = acceptanceRefineOp.parse("", SAMPLE_INPUT, ctx);
     expect(result).toHaveLength(2);
     expect(result[0].original).toBe("User can log in");
+  });
+});
+
+describe("refinementDegraded (#3B observability)", () => {
+  test.each([
+    ["", true],
+    ["   \n  ", true],
+    ["not json", true],
+    ["[]", true],
+    ['{"passed":true}', true],
+  ] as const)("degraded(%p) === %p", (output, expected) => {
+    expect(refinementDegraded(output)).toBe(expected);
+  });
+
+  test("usable refinement array is not degraded", () => {
+    const usable = JSON.stringify([{ original: "a", refined: "a()", testable: true, storyId: "" }]);
+    expect(refinementDegraded(usable)).toBe(false);
+  });
+
+  test("fenced JSON array is not degraded", () => {
+    const fenced = '```json\n[{"original":"a","refined":"a()","testable":true,"storyId":""}]\n```';
+    expect(refinementDegraded(fenced)).toBe(false);
   });
   test("parses JSON wrapped in code fence", () => {
     const ctx = makeBuildCtx();

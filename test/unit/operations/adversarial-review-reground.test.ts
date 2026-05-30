@@ -551,7 +551,9 @@ describe("adversarialReviewOp.hopBody — reground AC7: no reprompt when trigger
       mkdirSync(join(workdir, "src"), { recursive: true });
       writeFileSync(join(workdir, "src", "auth.ts"), "function login(u, p) { return db.rawQuery(u + p); }\n");
 
-      const firstTurn = JSON.stringify({ passed: true, findings: [] });
+      // inspectedFiles present → the #3A inspection-trail guard is satisfied,
+      // so this test isolates the reground precondition (no reprompt on pass).
+      const firstTurn = JSON.stringify({ passed: true, inspectedFiles: ["src/auth.ts"], findings: [] });
 
       let callCount = 0;
       const mockSend = mock(async () => {

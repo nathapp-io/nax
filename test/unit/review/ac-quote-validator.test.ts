@@ -4,8 +4,6 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  type AcDroppedEntry,
-  type AcGroundingMinimalRejection,
   type AcQuotable,
   filterByAcGroundingMinimal,
   filterByAcQuote,
@@ -79,6 +77,61 @@ describe("validateAcQuote", () => {
       });
     });
 
+    describe("test-gap carve-out (placeholder/fake tests — #2)", () => {
+      // A fake test (`expect(true).toBe(true)`) covering an AC cannot name a
+      // symbol from the AC in its quote — the whole point is the test verifies
+      // nothing. The carve-out waives only the locus-keyword requirement; the
+      // acIndex + substring checks still apply.
+      test("test-gap error with valid acQuote but NO locus keyword → valid (waived)", () => {
+        const finding = makeFinding({
+          severity: "error",
+          category: "test-gap",
+          file: "test/unit/execution/story-orchestrator-gates.test.ts",
+          issue: "every test body is expect(true).toBe(true) — AC behaviour unverified",
+          acQuote: "must return a rejection code when acQuote is absent",
+          acIndex: 1,
+        });
+        expect(validateAcQuote(finding, ACS)).toEqual({ valid: true });
+      });
+
+      test("test-gap error still requires acQuote to be a substring of the AC", () => {
+        const finding = makeFinding({
+          severity: "error",
+          category: "test-gap",
+          file: "test/unit/foo.test.ts",
+          issue: "placeholder test",
+          acQuote: "this text is not in any AC",
+          acIndex: 1,
+        });
+        expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "ac_quote_not_substring" });
+      });
+
+      test("test-gap error still requires acIndex in range", () => {
+        const finding = makeFinding({
+          severity: "error",
+          category: "test-gap",
+          acQuote: "must return a rejection code",
+          acIndex: 0,
+        });
+        expect(validateAcQuote(finding, ACS)).toEqual({ valid: false, code: "ac_index_out_of_range" });
+      });
+
+      test("non-test-gap category with no locus keyword is still dropped (carve-out is scoped)", () => {
+        const finding = makeFinding({
+          severity: "error",
+          category: "convention",
+          file: "src/xyzzy-module.ts",
+          issue: "xyzzy function missing",
+          acQuote: "Warning and info findings must pass",
+          acIndex: 3,
+        });
+        expect(validateAcQuote(finding, ACS)).toEqual({
+          valid: false,
+          code: "ac_quote_does_not_constrain_locus",
+        });
+      });
+    });
+
     test("error with valid acQuote and matching locus keyword → valid", () => {
       const finding = makeFinding({
         severity: "error",
@@ -116,9 +169,7 @@ describe("validateAcQuote", () => {
       ["without backticks", "planInteractiveOp is a RunOperation exported from src/operations/plan.ts"],
       ["with backticks", "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`"],
     ] as const)("acQuote %s matches AC text that has backtick formatting", (_label, acQuote) => {
-      const backtickAcs = [
-        "`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`.",
-      ];
+      const backtickAcs = ["`planInteractiveOp` is a `RunOperation` exported from `src/operations/plan.ts`."];
       const finding: AcQuotable = {
         severity: "error",
         file: "src/operations/plan.ts",
@@ -171,8 +222,18 @@ test.each(FILTER_FNS)("%s — non-blocking findings always accepted", (_name, fn
 });
 
 test.each([
-  ["filterByAcQuote (missing_ac_quote)", filterByAcQuote, makeFinding({ severity: "error", issue: "sentinel" }), "missing_ac_quote"],
-  ["filterByAcGroundingMinimal (missing_ac_index)", filterByAcGroundingMinimal, makeFinding({ severity: "error", issue: "sentinel-minimal" }), "missing_ac_index"],
+  [
+    "filterByAcQuote (missing_ac_quote)",
+    filterByAcQuote,
+    makeFinding({ severity: "error", issue: "sentinel" }),
+    "missing_ac_quote",
+  ],
+  [
+    "filterByAcGroundingMinimal (missing_ac_index)",
+    filterByAcGroundingMinimal,
+    makeFinding({ severity: "error", issue: "sentinel-minimal" }),
+    "missing_ac_index",
+  ],
 ] as const)("%s — dropped entry preserves original finding reference", (_name, fn, finding, code) => {
   const result = fn([finding], ACS);
   expect(result.dropped[0].finding.issue).toBe(finding.issue);
@@ -182,7 +243,6 @@ test.each([
 // ─── filterByAcQuote ──────────────────────────────────────────────────────────
 
 describe("filterByAcQuote", () => {
-
   test("error finding without acQuote is dropped with missing_ac_quote", () => {
     const findings = [makeFinding({ severity: "error" })];
     const result = filterByAcQuote(findings, ACS);
@@ -227,7 +287,6 @@ describe("filterByAcQuote", () => {
     expect(result.dropped[0].code).toBe("missing_ac_quote");
   });
 
-
   test("preserves concrete AdversarialLLMFinding shape (category field)", () => {
     type AdversarialShape = AcQuotable & { category: string };
     const finding: AdversarialShape = {
@@ -271,7 +330,10 @@ describe("validateAcGroundingMinimal", () => {
 
     // Contract regression test: acQuote content is NEVER inspected — only acIndex range matters
     test.each<[string, ReturnType<typeof makeFinding>]>([
-      ["acQuote not in any AC", makeFinding({ severity: "error", acIndex: 1, acQuote: "this text is nowhere in any AC" })],
+      [
+        "acQuote not in any AC",
+        makeFinding({ severity: "error", acIndex: 1, acQuote: "this text is nowhere in any AC" }),
+      ],
       ["no acQuote", makeFinding({ severity: "error", acIndex: 1 })],
       ["acIndex at last AC", makeFinding({ severity: "error", acIndex: ACS.length })],
     ])("valid for %s", (_label, finding) => {

@@ -245,6 +245,7 @@ export const NaxConfigSchema = z
         parallel: false,
         maxConcurrentSessions: 2,
         acRegroundOnDrop: true,
+        demandInspectionTrail: true,
         substantiation: {
           requote: true,
           maxRequotes: 5,
