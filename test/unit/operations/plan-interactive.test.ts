@@ -10,9 +10,10 @@
  * - Has recover method for disk fallback
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
+import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { makeTestRuntime } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
@@ -225,7 +226,9 @@ describe("planInteractiveOp.verify", () => {
       userStories: [],
     };
 
-    const nullResult = await planInteractiveOp.verify!(emptyPRD as any, {} as any, ctx as any);
+    const input = { specContent: "Test spec", codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+
+    const nullResult = await planInteractiveOp.verify!(emptyPRD as any, input as any, ctx as any);
     expect(nullResult).toBeNull();
 
     const validPRD = {
@@ -237,9 +240,80 @@ describe("planInteractiveOp.verify", () => {
         escalations: [], attempts: 0,
       }],
     };
-    const prdResult = await planInteractiveOp.verify!(validPRD as any, {} as any, ctx as any);
+    const prdResult = await planInteractiveOp.verify!(validPRD as any, input as any, ctx as any);
     expect(prdResult).not.toBeNull();
     expect(prdResult).toEqual(validPRD);
+  });
+});
+
+describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single mode)", () => {
+  const SPEC_WITH_VERBATIM = '## Acceptance Criteria\n- [verbatim] `grep -rn "oldSym" src/` returns zero matches';
+
+  function makeVerifyCtx() {
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    return {
+      packageView: view,
+      config: view.select(planInteractiveOp.config),
+      readFile: async (_p: string) => null,
+      fileExists: async (_p: string) => false,
+    };
+  }
+
+  function storyWith(acs: string[]) {
+    return {
+      id: "US-001", title: "Story", description: "desc", acceptanceCriteria: acs,
+      contextFiles: [], tags: [], dependencies: [], status: "pending", passes: false,
+      routing: { complexity: "simple", testStrategy: "no-test", noTestJustification: "t", reasoning: "t" },
+      escalations: [], attempts: 0,
+    };
+  }
+
+  function prdWith(acs: string[]) {
+    return {
+      project: "p", feature: "test-feature", analysis: "a", branchName: "feat/test",
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      userStories: [storyWith(acs)],
+    };
+  }
+
+  async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
+    const { resetLogger, initLogger } = await import("@/logger");
+    resetLogger();
+    const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
+    try {
+      return await fn(warnSpy);
+    } finally {
+      warnSpy.mockRestore();
+      resetLogger();
+    }
+  }
+
+  function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
+    return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
+  }
+
+  const input = { specContent: SPEC_WITH_VERBATIM, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
+
+  test("warns and still returns the PRD when a [verbatim] spec AC is dropped", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const prd = prdWith(["unrelated AC that does not contain the grep"]);
+      const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+      expect(result).not.toBeNull();
+      const warn = verbatimWarn(warnSpy);
+      expect(warn).toBeDefined();
+      expect((warn?.[2] as Record<string, unknown>).missingCount).toBe(1);
+    });
+  });
+
+  test("does not warn when the [verbatim] command survives in a PRD AC", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const prd = prdWith(['When cleanup completes, grep -rn "oldSym" src/ returns zero matches.']);
+      const result = await planInteractiveOp.verify!(prd as any, input as any, makeVerifyCtx() as any);
+      expect(result).not.toBeNull();
+      expect(verbatimWarn(warnSpy)).toBeUndefined();
+    });
   });
 });
 

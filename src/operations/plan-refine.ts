@@ -12,6 +12,7 @@ import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
 import type { RunOperation } from "./types";
+import { warnOnDroppedVerbatimAcs } from "./verbatim-warn";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
 export const _planRefineDeps = {
@@ -112,26 +113,6 @@ function validateRefinedPrd(prd: PRD): PRD {
   }
   for (const story of prd.userStories) validateRefinedStory(story);
   return prd;
-}
-
-/**
- * Soft gate: warn (loudly, structured) when a `[verbatim]` spec AC did not
- * survive into the PRD. Paraphrasing a verbatim grep / file-check / invariant
- * destroys its verification mechanism (docs/findings/nax-plan-prd-fidelity.md),
- * but `nax plan` is intentionally recovery-tolerant — it always produces a
- * usable PRD rather than hard-failing. The self-heal turn (hopBody) is the
- * primary correction; this warning is the residual-drift signal, and
- * spec-review Phase 9 remains the explicit gate before any story executes.
- */
-function warnOnDroppedVerbatimAcs(prd: PRD, specContent: string, featureName: string): void {
-  const missing = findMissingVerbatimAcs(specContent, prd);
-  if (missing.length > 0) {
-    getSafeLogger()?.warn(
-      "plan",
-      "[verbatim] spec acceptance criteria dropped from PRD — run spec-review --prd before executing",
-      { featureName, missingCount: missing.length, missing },
-    );
-  }
 }
 
 /**
