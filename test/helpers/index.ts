@@ -33,3 +33,4 @@ export { waitForCondition } from "./timeout";
 export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
 export { makeMockPlanInputs } from "./plan-inputs";
+export { verbatimWarn, withWarnSpy } from "./verbatim-warn-spy";

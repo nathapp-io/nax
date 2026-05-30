@@ -3,6 +3,7 @@ export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
 export { planRefineOp, _planRefineDeps } from "./plan-refine";
 export type { PlanRefineInput } from "./plan-refine";
+export { warnOnDroppedVerbatimAcs } from "./verbatim-warn";
 export { decomposeOp } from "./decompose";
 export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
 export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";

@@ -10,12 +10,12 @@
  * - Has recover method for disk fallback
  */
 
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
 import type { RetryStrategy } from "@/agents";
 import { planInteractiveOp } from "@/operations";
 import { validatePlanOutput } from "@/prd";
-import { makeTestRuntime } from "@test/helpers";
+import { makeTestRuntime, verbatimWarn, withWarnSpy } from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -276,22 +276,6 @@ describe("planInteractiveOp.verify — [verbatim] residual-drift warning (single
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       userStories: [storyWith(acs)],
     };
-  }
-
-  async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
-    const { resetLogger, initLogger } = await import("@/logger");
-    resetLogger();
-    const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
-    try {
-      return await fn(warnSpy);
-    } finally {
-      warnSpy.mockRestore();
-      resetLogger();
-    }
-  }
-
-  function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
-    return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
   }
 
   const input = { specContent: SPEC_WITH_VERBATIM, codebaseContext: "", featureName: "test-feature", branchName: "feat/test", outputPath: "/tmp/prd.json" };
