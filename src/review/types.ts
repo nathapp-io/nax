@@ -79,6 +79,12 @@ export interface SemanticReviewConfig {
    * findings against the AC text.
    */
   acRegroundOnDrop?: boolean;
+  /**
+   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
+   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
+   * reviewer actually open the code before passing (#3A inspection-trail guard).
+   */
+  demandInspectionTrail?: boolean;
 }
 
 /** Review check result */
@@ -206,6 +212,12 @@ export interface AdversarialReviewConfig {
    * asking the reviewer to re-ground their findings against the AC text.
    */
   acRegroundOnDrop?: boolean;
+  /**
+   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
+   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
+   * reviewer actually open the code before passing (#3A inspection-trail guard).
+   */
+  demandInspectionTrail?: boolean;
 }
 
 /** Review configuration */

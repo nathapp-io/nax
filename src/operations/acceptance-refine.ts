@@ -1,7 +1,8 @@
-import { parseRefinementResponse } from "../acceptance/refinement";
+import { parseRefinementResponse, refinementWouldFallback } from "../acceptance/refinement";
 import type { RefinedCriterion } from "../acceptance/types";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
+import { getSafeLogger } from "../logger";
 import { AcceptancePromptBuilder } from "../prompts";
 import type { CompleteOperation } from "./types";
 
@@ -38,6 +39,13 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     };
   },
   parse(output, input, _ctx) {
+    if (refinementWouldFallback(output)) {
+      getSafeLogger()?.warn(
+        "acceptance",
+        "AC refinement returned no usable JSON — falling back to unrefined criteria",
+        { storyId: input.storyId, criteriaCount: input.criteria.length, responseBytes: output?.length ?? 0 },
+      );
+    }
     const items = parseRefinementResponse(output, input.criteria);
     return items.map((item) => ({ ...item, storyId: item.storyId || input.storyId }));
   },

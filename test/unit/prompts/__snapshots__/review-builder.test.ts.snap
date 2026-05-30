@@ -41,6 +41,7 @@ Do NOT flag: style issues, naming conventions, import ordering, file length, or 
 Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
+  "inspectedFiles": ["relative/path/you/actually/opened.ts"],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
@@ -64,7 +65,8 @@ Notes:
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
-If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+- \`inspectedFiles\` must list the relative paths you actually opened while reviewing. A \`passed:true\` verdict with an empty or absent \`inspectedFiles\` is invalid — walk each AC against the real files before passing.
+If all ACs are correctly implemented after inspecting the code, respond with { "passed": true, "inspectedFiles": ["..."], "findings": [] }.
 
 ## Git Diff (production code only — test files excluded)
 
@@ -120,6 +122,7 @@ Do NOT flag: style issues, naming conventions, import ordering, file length, or 
 Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
+  "inspectedFiles": ["relative/path/you/actually/opened.ts"],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
@@ -143,7 +146,8 @@ Notes:
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
-If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+- \`inspectedFiles\` must list the relative paths you actually opened while reviewing. A \`passed:true\` verdict with an empty or absent \`inspectedFiles\` is invalid — walk each AC against the real files before passing.
+If all ACs are correctly implemented after inspecting the code, respond with { "passed": true, "inspectedFiles": ["..."], "findings": [] }.
 
 ## Git Diff (production code only — test files excluded)
 

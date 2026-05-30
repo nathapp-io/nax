@@ -154,6 +154,28 @@ describe("AdversarialReviewPromptBuilder — embedded mode", () => {
 
 // ─── custom rules ─────────────────────────────────────────────────────────────
 
+describe("AdversarialReviewPromptBuilder — placeholder-test carve-out (#2) and inspection trail (#3A)", () => {
+  test("instructs emitting placeholder/tautological tests as error/test-gap", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(result).toContain("expect(true).toBe(true)");
+    expect(result).toContain('`category:"test-gap"`');
+    // The carve-out must override the "AC names the file but not the symbol" trap.
+    expect(result).toContain("The symbol-naming requirement is waived for this category.");
+  });
+
+  test("output schema requires an inspectedFiles trail and forbids rubber-stamping", () => {
+    const result = builder.buildAdversarialReviewPrompt(STORY, CONFIG, { mode: "ref", storyGitRef: STORY_GIT_REF });
+    expect(result).toContain('"inspectedFiles"');
+    expect(result).toContain("No rubber-stamping");
+  });
+
+  test("demandInspection re-prompt names inspectedFiles and demands tool use", () => {
+    const reprompt = AdversarialReviewPromptBuilder.demandInspection();
+    expect(reprompt).toContain("inspectedFiles");
+    expect(reprompt).toContain("did not open any of the changed files");
+  });
+});
+
 describe("AdversarialReviewPromptBuilder — custom rules", () => {
   test("prompt contains custom rule text when rules are set in config", () => {
     const configWithRules: AdversarialReviewConfig = {

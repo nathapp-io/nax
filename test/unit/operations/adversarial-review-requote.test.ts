@@ -332,7 +332,9 @@ describe("adversarialReviewOp.hopBody — same-session requote (AC16)", () => {
   });
 
   test("no-op when findings are empty (no requote needed)", async () => {
-    const initial = JSON.stringify({ passed: true, findings: [] });
+    // inspectedFiles present → the #3A inspection-trail guard is satisfied,
+    // so this test isolates the requote no-op (no findings to requote).
+    const initial = JSON.stringify({ passed: true, inspectedFiles: ["src/foo.ts"], findings: [] });
 
     let callCount = 0;
     const mockSend = mock(async () => {

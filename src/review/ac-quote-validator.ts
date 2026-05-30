@@ -26,6 +26,16 @@ export interface AcQuotable {
   issue: string;
   acQuote?: string;
   acIndex?: number;
+  /**
+   * Adversarial finding category. When `"test-gap"`, the locus-keyword check is
+   * waived: a test-gap is the *absence* of a verifying test for an AC's behaviour,
+   * so its acQuote is grounded by the AC it covers — not by a symbol present in
+   * the (fake/placeholder) test file. Without this waiver, a genuinely fake test
+   * (`expect(true).toBe(true)` covering AC-N) is dropped as
+   * `ac_quote_does_not_constrain_locus` and the story passes. See
+   * docs/findings/2026-05-30-prompt-audit-analysis.md (#2).
+   */
+  category?: string;
 }
 
 export type AcQuoteRejectionCode =
@@ -134,6 +144,21 @@ export function validateAcQuote(finding: AcQuotable, acceptanceCriteria: string[
 
   if (!acText.toLowerCase().includes(normalizedQuote.toLowerCase())) {
     return { valid: false, code: "ac_quote_not_substring" };
+  }
+
+  // test-gap carve-out: a fake/placeholder/missing test is the absence of a
+  // verifying symbol, so it cannot — and must not be required to — name a symbol
+  // present in the test file. Grounding by a valid acIndex + AC substring is
+  // sufficient. This lets adversarial review block stories whose ACs are
+  // "covered" only by tautological tests. (#2 / 2026-05-30 prompt-audit analysis.)
+  //
+  // `category` is LLM-controlled, so this only RELAXES the locus check — never
+  // evidence. A finding mislabelled "test-gap" still needs a valid acIndex +
+  // verbatim AC substring here, and still passes through verifiedBy / evidence
+  // substantiation in the op's verify(). Mislabelling makes a finding more
+  // likely to block (stricter), never bypass-to-pass.
+  if (finding.category === "test-gap") {
+    return { valid: true };
   }
 
   const keywords = extractLocusKeywords(finding);

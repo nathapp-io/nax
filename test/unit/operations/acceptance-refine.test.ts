@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
 import type { NaxRuntime } from "../../../src/runtime";
+import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
+import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance/refinement";
 import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
@@ -83,7 +84,12 @@ describe("acceptanceRefineOp.parse()", () => {
   test("parses valid JSON array of RefinedCriterion", () => {
     const ctx = makeBuildCtx();
     const json = JSON.stringify([
-      { original: "User can log in", refined: "login() returns true for valid credentials", testable: true, storyId: "US-001" },
+      {
+        original: "User can log in",
+        refined: "login() returns true for valid credentials",
+        testable: true,
+        storyId: "US-001",
+      },
       { original: "User can log out", refined: "logout() clears session token", testable: true, storyId: "US-001" },
     ]);
     const result = acceptanceRefineOp.parse(json, SAMPLE_INPUT, ctx);
@@ -104,6 +110,39 @@ describe("acceptanceRefineOp.parse()", () => {
     const result = acceptanceRefineOp.parse("", SAMPLE_INPUT, ctx);
     expect(result).toHaveLength(2);
     expect(result[0].original).toBe("User can log in");
+  });
+});
+
+describe("refinementWouldFallback (#3B observability)", () => {
+  // The predicate must agree with parseRefinementResponse's ACTUAL fallback:
+  // true only when the parser discards output and returns the unrefined criteria.
+  test.each([
+    ["", true],
+    ["   \n  ", true],
+    ["not json", true],
+    ['{"passed":true}', true], // non-array → fallback
+    ["[]", false], // empty array is a successful parse (returns []), NOT a fallback
+  ] as const)("wouldFallback(%p) === %p", (output, expected) => {
+    expect(refinementWouldFallback(output)).toBe(expected);
+  });
+
+  test("agrees with parseRefinementResponse on the fallback cases", () => {
+    const criteria = ["User can log in", "User can log out"];
+    for (const output of ["", "not json", '{"x":1}']) {
+      // When wouldFallback is true, the parser returns exactly the unrefined criteria.
+      expect(refinementWouldFallback(output)).toBe(true);
+      expect(parseRefinementResponse(output, criteria).map((c) => c.refined)).toEqual(criteria);
+    }
+  });
+
+  test("usable refinement array does not fall back", () => {
+    const usable = JSON.stringify([{ original: "a", refined: "a()", testable: true, storyId: "" }]);
+    expect(refinementWouldFallback(usable)).toBe(false);
+  });
+
+  test("fenced JSON array does not fall back", () => {
+    const fenced = '```json\n[{"original":"a","refined":"a()","testable":true,"storyId":""}]\n```';
+    expect(refinementWouldFallback(fenced)).toBe(false);
   });
   test("parses JSON wrapped in code fence", () => {
     const ctx = makeBuildCtx();

@@ -222,6 +222,7 @@ export const NaxConfigSchema = z
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
+        demandInspectionTrail: true,
         substantiation: {
           requote: true,
           maxRequotes: 5,
@@ -245,6 +246,7 @@ export const NaxConfigSchema = z
         parallel: false,
         maxConcurrentSessions: 2,
         acRegroundOnDrop: true,
+        demandInspectionTrail: true,
         substantiation: {
           requote: true,
           maxRequotes: 5,

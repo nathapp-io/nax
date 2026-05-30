@@ -42,6 +42,13 @@ const SemanticReviewConfigSchema = z.object({
    * Any user-set value (including []) is returned as-is. (ADR-009 §4.4)
    */
   excludePatterns: z.array(z.string()).optional(),
+  /**
+   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
+   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
+   * reviewer actually open the code before passing (#3A inspection-trail guard).
+   * Mirrors the adversarial field so the guard is configurable on both reviewers.
+   */
+  demandInspectionTrail: z.boolean().default(true),
 });
 
 /**
@@ -88,6 +95,15 @@ export const AdversarialReviewConfigSchema = z.object({
    * grounding formatting errors rather than model reasoning failure.
    */
   acRegroundOnDrop: z.boolean().default(true),
+  /**
+   * When true (default), in ref mode an empty-findings `passed:true` verdict that
+   * reports no inspected files (`inspectedFiles` absent/empty) triggers exactly one
+   * same-session re-prompt demanding the reviewer actually open the changed code
+   * before passing. Guards against weaker agents rubber-stamping reviews with a bare
+   * `{"passed":true,"findings":[]}` and zero investigation. See
+   * docs/findings/2026-05-30-prompt-audit-analysis.md (#3A).
+   */
+  demandInspectionTrail: z.boolean().default(true),
   /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
   substantiation: z
     .object({

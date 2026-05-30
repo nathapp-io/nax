@@ -100,6 +100,13 @@ What new exported units lack corresponding test files?
 - New public functions that only appear in implementation, not in tests
 - Acceptance criteria that touch a code path with no test coverage
 
+**Placeholder / tautological tests (blocking).** A test that exists but verifies nothing is worse than a missing test — it manufactures a false green. Treat the following as a **\`severity:"error"\`, \`category:"test-gap"\`** finding whenever the fake test is the only coverage for an acceptance criterion:
+- Bodies that always pass: \`expect(true).toBe(true)\`, \`expect(x).toBe(x)\`, \`expect(1).toBe(1)\`, an empty test body, or \`assert(true)\`.
+- Tests skipped/disabled (\`it.skip\`, \`test.todo\`, \`xit\`, commented-out assertions) that an AC depends on.
+- Assertions that never exercise the implementation (e.g. asserting on a literal, not on a value the production code produced).
+
+For each such finding: set \`acIndex\` to the AC the fake test purports to cover, \`acQuote\` to a verbatim substring of that AC, and \`verifiedBy.observed\` to the placeholder line itself (e.g. \`expect(true).toBe(true)\`). Do **not** downgrade these to \`warning\` — a green suite built on placeholder assertions is a failing implementation with hidden evidence.
+
 ### 5. Convention Breaks
 What pattern exists elsewhere that this code does not follow?
 - Logger calls missing \`storyId\` as first key in data object
@@ -121,6 +128,7 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
 \`\`\`json
 {
   "passed": true | false,
+  "inspectedFiles": ["relative/path/you/actually/opened.ts"],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
@@ -141,6 +149,8 @@ Respond with ONLY a JSON object — no preamble, no explanation outside the JSON
   ]
 }
 \`\`\`
+
+**No rubber-stamping:** \`inspectedFiles\` must list the relative paths you actually opened with your tools while reviewing. A \`passed:true\` verdict with an empty or absent \`inspectedFiles\` is invalid — it means you never looked at the code. Fetch the diff and open the changed files before forming any verdict.
 
 Severity guide:
 - \`"error"\`: confident this will cause real failure or regression
@@ -170,6 +180,8 @@ Worked example:
 - RIGHT: severity \`"info"\`, no \`acQuote\`. The convention violation is real, but no AC constrains \`ExtendedPrismaClient\`, so it cannot block the story.
 
 **Convention / coding-standard violations almost always belong as \`"info"\`** unless an AC specifically names the convention or the symbol it concerns.
+
+**Exception — the trap does NOT apply to \`category:"test-gap"\` findings.** A fake/placeholder/missing test is the *absence* of verification for an AC's behaviour; it cannot name a symbol that is present in the (worthless) test file, because the defect is precisely that the symbol-under-test is never exercised. A \`test-gap\` finding is grounded by the AC whose behaviour goes unverified — cite that AC's \`acIndex\` and a verbatim \`acQuote\` substring from it, and keep severity \`"error"\`. The symbol-naming requirement is waived for this category.
 
 **Scope constraints are not Acceptance Criteria:**
 The story description may contain a "Scope" section with "In:" and "Out:" bullets. These are implementation guidelines, not ACs. A finding about code changed outside the stated scope (e.g., a file listed under "Out:") cannot cite a scope constraint as its \`acQuote\`/\`acIndex\` because scope text is not in the numbered AC list. Emit scope-violation findings as \`"warning"\` — never \`"error"\`. Never use \`acIndex: 0\`; \`acIndex\` is 1-based (first AC bullet = 1).
@@ -376,6 +388,24 @@ Rules:
 - observed must be a 1-3 line excerpt that proves the claim, taken from at or near line ${line}.
 - If after reading the file you cannot find anything that proves the claim, set observed to "".
 - Do not return a full review. Do not include markdown fences or explanation.`;
+  }
+
+  /**
+   * Same-session re-prompt issued when the first verdict is a bare
+   * `passed:true` with no findings and an empty `inspectedFiles` list — the
+   * signature of a rubber-stamp review where the agent never opened the code.
+   * Gives the reviewer exactly one chance to actually inspect before the pass
+   * is trusted. See docs/findings/2026-05-30-prompt-audit-analysis.md (#3A).
+   */
+  static demandInspection(): string {
+    return `Your previous review returned \`passed:true\` with no findings and an empty (or absent) \`inspectedFiles\` list. That means you did not open any of the changed files — a verdict reached without inspecting the code is not valid.
+
+Use your git and file-reading tools NOW to fetch the diff and open the changed files for this story. Then re-issue your verdict as the same JSON object.
+
+Rules:
+- Populate \`inspectedFiles\` with the relative paths you actually opened.
+- If, after genuinely inspecting the code, there is truly nothing to flag, you may still return \`passed:true\` — but \`inspectedFiles\` must list the files you read.
+- Return ONLY the JSON object — no markdown fences, no explanation.`;
   }
 
   /**

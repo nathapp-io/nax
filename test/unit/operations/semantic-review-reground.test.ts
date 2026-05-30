@@ -505,6 +505,9 @@ describe("semanticReviewOp.hopBody — reground preconditions not met (AC7)", ()
 
       const firstTurn = JSON.stringify({
         passed: true,
+        // inspectedFiles present → the #3A inspection-trail guard is satisfied,
+        // so this test isolates the reground precondition (no reprompt on pass).
+        inspectedFiles: ["src/foo.ts"],
         findings: [],
       });
 

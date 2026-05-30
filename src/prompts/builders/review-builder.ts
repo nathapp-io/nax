@@ -51,6 +51,7 @@ Do NOT flag: style issues, naming conventions, import ordering, file length, or 
 const SEMANTIC_OUTPUT_SCHEMA = `Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
+  "inspectedFiles": ["relative/path/you/actually/opened.ts"],
   "findings": [
     {
       "severity": "error" | "warning" | "info" | "unverifiable",
@@ -74,7 +75,8 @@ Notes:
 - \`acIndex\` is required when severity is "error" (1-based, into the Acceptance Criteria list above).
 - \`acQuote\` is optional advisory metadata for human auditors — not validated.
 - Omit both for "warning", "info", "unverifiable".
-If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
+- \`inspectedFiles\` must list the relative paths you actually opened while reviewing. A \`passed:true\` verdict with an empty or absent \`inspectedFiles\` is invalid — walk each AC against the real files before passing.
+If all ACs are correctly implemented after inspecting the code, respond with { "passed": true, "inspectedFiles": ["..."], "findings": [] }.`;
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -193,6 +195,24 @@ Respond with a condensed summary:
 - Keep \`verifiedBy\` for every finding. If \`verifiedBy.observed\` is long, abbreviate it to one line — never drop the field.
 Output ONLY a complete, valid JSON object. It must start with { and end with }.
 Schema: {"passed": boolean, "findings": [{"severity": string, "category": string, "file": string, "line": number, "issue": string, "suggestion": string, "verifiedBy": {"command": string, "file": string, "line": number, "observed": string}}]}`;
+  }
+
+  /**
+   * Same-session re-prompt issued when the first semantic verdict is a bare
+   * `passed:true` with no findings and an empty `inspectedFiles` list — the
+   * signature of a rubber-stamp review where the agent never opened the code.
+   * Gives the reviewer one chance to actually inspect before the pass is
+   * trusted. See docs/findings/2026-05-30-prompt-audit-analysis.md (#3A).
+   */
+  static demandInspection(): string {
+    return `Your previous review returned \`passed:true\` with no findings and an empty (or absent) \`inspectedFiles\` list. That means you did not open any of the changed files — a verdict reached without reading the code is not valid.
+
+Use your file-reading tools NOW to open the changed files and walk each acceptance criterion against the real implementation. Then re-issue your verdict as the same JSON object.
+
+Rules:
+- Populate \`inspectedFiles\` with the relative paths you actually opened.
+- If, after genuinely inspecting the code, every AC is satisfied, you may still return \`passed:true\` — but \`inspectedFiles\` must list the files you read.
+- Return ONLY the JSON object — no markdown fences, no explanation.`;
   }
 
   static requoteVerbatim(opts: { finding: LLMFinding }): string {
