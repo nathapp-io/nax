@@ -8,7 +8,7 @@ import type { InteractionBridge } from "@/interaction/bridge-builder";
 import type { NaxRuntime } from "@/runtime";
 import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
-import { makeMockAgentManager } from "@test/helpers";
+import { makeMockAgentManager, verbatimWarn, withWarnSpy } from "@test/helpers";
 
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
   return {
@@ -196,22 +196,6 @@ describe("DebatePlanStrategy", () => {
     });
     expect(ctx.runtime.close).toHaveBeenCalledTimes(1);
   });
-
-  async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
-    const { resetLogger, initLogger } = await import("@/logger");
-    resetLogger();
-    const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
-    try {
-      return await fn(warnSpy);
-    } finally {
-      warnSpy.mockRestore();
-      resetLogger();
-    }
-  }
-
-  function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
-    return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
-  }
 
   // Debate parity (#1160 follow-up): the synthesis path has no op verify, so the
   // strategy must warn directly when synthesis drops a [verbatim] spec AC.

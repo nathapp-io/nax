@@ -6,7 +6,7 @@ import { PlanPromptBuilder } from "@/prompts";
 import { planInteractiveOp } from "@/operations";
 import type { VerifyContext } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import { makeMockAgentManager, makeSessionManager, makeTestRuntime, withTempDir } from "@test/helpers";
+import { makeMockAgentManager, makeSessionManager, makeTestRuntime, verbatimWarn, withTempDir, withWarnSpy } from "@test/helpers";
 import type { HopBodyContext } from "@/operations/types";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -289,21 +289,6 @@ describe("planRefineOp.hopBody()", () => {
   });
 });
 
-async function withWarnSpy<T>(fn: (warnSpy: ReturnType<typeof spyOn>) => Promise<T>): Promise<T> {
-  const { resetLogger, initLogger } = await import("@/logger");
-  resetLogger();
-  const warnSpy = spyOn(initLogger({ level: "silent" }), "warn");
-  try {
-    return await fn(warnSpy);
-  } finally {
-    warnSpy.mockRestore();
-    resetLogger();
-  }
-}
-
-function verbatimWarn(warnSpy: ReturnType<typeof spyOn>) {
-  return warnSpy.mock.calls.find((c) => c[0] === "plan" && String(c[1]).includes("[verbatim]"));
-}
 
 describe("planRefineOp — warn-and-continue when self-heal still drops a verbatim AC", () => {
   test("callOp returns the PRD and warns (does not fail) after the repair turn still misses", async () => {
