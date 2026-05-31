@@ -91,22 +91,14 @@ describe("markStoryFailed()", () => {
     expect(prd.userStories[0].status).toBe("failed");
   });
 
-  test("stores failureCategory='isolation-violation'", () => {
+  test.each([
+    ["isolation-violation" as const],
+    ["tests-failing" as const],
+    ["verifier-rejected" as const],
+  ])("stores failureCategory='%s'", (category) => {
     const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001", "isolation-violation");
-    expect(prd.userStories[0].failureCategory).toBe("isolation-violation");
-  });
-
-  test("stores failureCategory='tests-failing'", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001", "tests-failing");
-    expect(prd.userStories[0].failureCategory).toBe("tests-failing");
-  });
-
-  test("stores failureCategory='verifier-rejected'", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001", "verifier-rejected");
-    expect(prd.userStories[0].failureCategory).toBe("verifier-rejected");
+    markStoryFailed(prd, "US-001", category);
+    expect(prd.userStories[0].failureCategory).toBe(category);
   });
 
   test("increments attempts when failureCategory is given", () => {
@@ -162,17 +154,13 @@ describe("FailureCategory export from src/execution", () => {
 // ── markStoryPaused / markStoryPassed unaffected ─────────────────────────────
 
 describe("markStoryPaused and markStoryPassed — failureCategory not affected", () => {
-  test("markStoryPaused does not set failureCategory", () => {
+  test.each([
+    ["Paused" as const, (prd: PRD) => markStoryPaused(prd, "US-001"), "paused" as const],
+    ["Passed" as const, (prd: PRD) => markStoryPassed(prd, "US-001"), "passed" as const],
+  ])("markStory%s does not set failureCategory", (_label, fn, expectedStatus) => {
     const prd = makePrd([makeStory("US-001")]);
-    markStoryPaused(prd, "US-001");
-    expect(prd.userStories[0].status).toBe("paused");
-    expect(prd.userStories[0].failureCategory).toBeUndefined();
-  });
-
-  test("markStoryPassed does not set failureCategory", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryPassed(prd, "US-001");
-    expect(prd.userStories[0].status).toBe("passed");
+    fn(prd);
+    expect(prd.userStories[0].status).toBe(expectedStatus);
     expect(prd.userStories[0].failureCategory).toBeUndefined();
   });
 });
