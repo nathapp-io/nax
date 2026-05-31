@@ -35,12 +35,12 @@ describe("escalateTier", () => {
     expect(escalateTier("balanced", defaultTierOrder)).toEqual({ tier: "powerful", agent: undefined });
   });
 
-  it("returns null when at max tier", () => {
-    expect(escalateTier("powerful", defaultTierOrder)).toBeNull();
-  });
-
-  it("returns null when tier not found in order", () => {
-    expect(escalateTier("unknown", defaultTierOrder)).toBeNull();
+  it.each([
+    ["at max tier", "powerful", defaultTierOrder],
+    ["tier not found in order", "unknown", defaultTierOrder],
+    ["empty tier order", "fast", [] as TierConfig[]],
+  ])("returns null when %s", (_label, tier, tierOrder) => {
+    expect(escalateTier(tier, tierOrder)).toBeNull();
   });
 
   it("handles single-tier order", () => {
@@ -54,9 +54,6 @@ describe("escalateTier", () => {
     expect(escalateTier("opus", customTierOrder)).toBeNull();
   });
 
-  it("returns null for empty tier order", () => {
-    expect(escalateTier("fast", [])).toBeNull();
-  });
 
   it("returns agent from next tier entry when agent field is set (AC-1)", () => {
     const tierOrder: TierConfig[] = [
@@ -127,35 +124,13 @@ describe("getTierConfig", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("calculateMaxIterations", () => {
-  it("sums all tier attempts", () => {
-    // 5 + 3 + 2 = 10
-    expect(calculateMaxIterations(defaultTierOrder)).toBe(10);
-  });
-
-  it("handles single tier", () => {
-    const singleTier: TierConfig[] = [{ tier: "only", attempts: 7 }];
-    expect(calculateMaxIterations(singleTier)).toBe(7);
-  });
-
-  it("returns 0 for empty tier order", () => {
-    expect(calculateMaxIterations([])).toBe(0);
-  });
-
-  it("handles large attempt counts", () => {
-    const largeTiers: TierConfig[] = [
-      { tier: "a", attempts: 100 },
-      { tier: "b", attempts: 200 },
-      { tier: "c", attempts: 150 },
-    ];
-    expect(calculateMaxIterations(largeTiers)).toBe(450);
-  });
-
-  it("handles zero attempts", () => {
-    const zeroTiers: TierConfig[] = [
-      { tier: "a", attempts: 0 },
-      { tier: "b", attempts: 5 },
-      { tier: "c", attempts: 0 },
-    ];
-    expect(calculateMaxIterations(zeroTiers)).toBe(5);
+  it.each<[string, TierConfig[], number]>([
+    ["defaultTierOrder (5+3+2=10)", defaultTierOrder, 10],
+    ["single tier (7)", [{ tier: "only", attempts: 7 }], 7],
+    ["empty tier order (0)", [], 0],
+    ["large counts (100+200+150=450)", [{ tier: "a", attempts: 100 }, { tier: "b", attempts: 200 }, { tier: "c", attempts: 150 }], 450],
+    ["zero attempts (0+5+0=5)", [{ tier: "a", attempts: 0 }, { tier: "b", attempts: 5 }, { tier: "c", attempts: 0 }], 5],
+  ])("sums attempts for %s", (_label, tierOrder, expected) => {
+    expect(calculateMaxIterations(tierOrder)).toBe(expected);
   });
 });
