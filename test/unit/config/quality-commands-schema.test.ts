@@ -26,48 +26,23 @@ function buildConfigWithCommands(commands: Record<string, unknown>) {
 }
 
 describe("quality.commands schema", () => {
-  test("testScoped is preserved after schema parse (BUG-043 regression)", () => {
-    const input = buildConfigWithCommands({
-      testScoped: "bun test --timeout=60000 {{files}}",
-    });
+  test.each([
+    ["testScoped (BUG-043 regression)", "testScoped", "bun test --timeout=60000 {{files}}"],
+    ["lintFix", "lintFix", "bun run lint --fix"],
+    ["lintFixScoped", "lintFixScoped", "biome check --fix {{files}}"],
+    ["formatFix", "formatFix", "bun run format --write"],
+    ["formatFixScoped", "formatFixScoped", "biome format --write {{files}}"],
+    ["lintScoped", "lintScoped", "biome check {{files}}"],
+  ])("%s is preserved after schema parse", (_label, field, value) => {
+    const input = buildConfigWithCommands({ [field]: value });
     const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.testScoped).toBe("bun test --timeout=60000 {{files}}");
+    expect((result.quality.commands as Record<string, string>)[field]).toBe(value);
   });
 
   test("testScoped is optional — absent when not provided", () => {
     const input = buildConfigWithCommands({});
     const result = NaxConfigSchema.parse(input);
     expect(result.quality.commands.testScoped).toBeUndefined();
-  });
-
-  test("lintFix is preserved after schema parse", () => {
-    const input = buildConfigWithCommands({ lintFix: "bun run lint --fix" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.lintFix).toBe("bun run lint --fix");
-  });
-
-  test("lintFixScoped is preserved after schema parse", () => {
-    const input = buildConfigWithCommands({ lintFixScoped: "biome check --fix {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.lintFixScoped).toBe("biome check --fix {{files}}");
-  });
-
-  test("formatFix is preserved after schema parse", () => {
-    const input = buildConfigWithCommands({ formatFix: "bun run format --write" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.formatFix).toBe("bun run format --write");
-  });
-
-  test("formatFixScoped is preserved after schema parse", () => {
-    const input = buildConfigWithCommands({ formatFixScoped: "biome format --write {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.formatFixScoped).toBe("biome format --write {{files}}");
-  });
-
-  test("lintScoped is preserved after schema parse", () => {
-    const input = buildConfigWithCommands({ lintScoped: "biome check {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.lintScoped).toBe("biome check {{files}}");
   });
 
   test("all command fields coexist correctly", () => {
@@ -97,7 +72,7 @@ describe("quality.commands schema", () => {
   test("build is preserved after schema parse", () => {
     const input = buildConfigWithCommands({ build: "bun run build" });
     const result = NaxConfigSchema.parse(input);
-    expect(result.quality.commands.build).toBe("bun run build");
+    expect((result.quality.commands as Record<string, string>)["build"]).toBe("bun run build");
   });
 
   test("build is optional — absent when not provided", () => {
@@ -121,34 +96,16 @@ describe("review.commands schema — lintFix/formatFix not stripped by Zod", () 
     };
   }
 
-  test("lintFix in review.commands is preserved after schema parse", () => {
-    const input = buildConfigWithReviewCommands({ lintFix: "bun run lint:fix" });
+  test.each([
+    ["lintFix", "lintFix", "bun run lint:fix"],
+    ["lintFixScoped", "lintFixScoped", "eslint --fix {{files}}"],
+    ["formatFix", "formatFix", "bun run format --write"],
+    ["formatFixScoped", "formatFixScoped", "prettier --write {{files}}"],
+    ["lintScoped", "lintScoped", "eslint {{files}}"],
+  ])("%s in review.commands is preserved after schema parse", (_label, field, value) => {
+    const input = buildConfigWithReviewCommands({ [field]: value });
     const result = NaxConfigSchema.parse(input);
-    expect(result.review.commands.lintFix).toBe("bun run lint:fix");
-  });
-
-  test("lintFixScoped in review.commands is preserved after schema parse", () => {
-    const input = buildConfigWithReviewCommands({ lintFixScoped: "eslint --fix {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.review.commands.lintFixScoped).toBe("eslint --fix {{files}}");
-  });
-
-  test("formatFix in review.commands is preserved after schema parse", () => {
-    const input = buildConfigWithReviewCommands({ formatFix: "bun run format --write" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.review.commands.formatFix).toBe("bun run format --write");
-  });
-
-  test("formatFixScoped in review.commands is preserved after schema parse", () => {
-    const input = buildConfigWithReviewCommands({ formatFixScoped: "prettier --write {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.review.commands.formatFixScoped).toBe("prettier --write {{files}}");
-  });
-
-  test("lintScoped in review.commands is preserved after schema parse", () => {
-    const input = buildConfigWithReviewCommands({ lintScoped: "eslint {{files}}" });
-    const result = NaxConfigSchema.parse(input);
-    expect(result.review.commands.lintScoped).toBe("eslint {{files}}");
+    expect((result.review.commands as Record<string, string>)[field]).toBe(value);
   });
 
   test("lintFix and formatFix coexist with standard review commands", () => {
