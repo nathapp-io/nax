@@ -28,20 +28,14 @@ function makeBuildCtx() {
 }
 
 describe("acceptanceDiagnoseOp shape", () => {
-  test("kind is run", () => {
-    expect(acceptanceDiagnoseOp.kind).toBe("run");
-  });
-  test("name is acceptance-diagnose", () => {
-    expect(acceptanceDiagnoseOp.name).toBe("acceptance-diagnose");
-  });
-  test("session.role is diagnose", () => {
-    expect(acceptanceDiagnoseOp.session.role).toBe("diagnose");
-  });
-  test("session.lifetime is fresh", () => {
-    expect(acceptanceDiagnoseOp.session.lifetime).toBe("fresh");
-  });
-  test("stage is acceptance", () => {
-    expect(acceptanceDiagnoseOp.stage).toBe("acceptance");
+  test.each([
+    ["kind", acceptanceDiagnoseOp.kind, "run"],
+    ["name", acceptanceDiagnoseOp.name, "acceptance-diagnose"],
+    ["session.role", acceptanceDiagnoseOp.session.role, "diagnose"],
+    ["session.lifetime", acceptanceDiagnoseOp.session.lifetime, "fresh"],
+    ["stage", acceptanceDiagnoseOp.stage, "acceptance"],
+  ])("%s is %s", (_prop, actual, expected) => {
+    expect(actual).toBe(expected);
   });
   test("model resolves from acceptance.fix.diagnoseModel", () => {
     const config = makeNaxConfig({
@@ -69,15 +63,13 @@ describe("acceptanceDiagnoseOp.build()", () => {
     const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
     expect(result).toHaveProperty("task");
   });
-  test("task section content contains test output", () => {
+  test.each([
+    ["test output", "FAIL: expected 1 but got 2"],
+    ["source file content", "fn()"],
+  ])("task section content contains %s", (_label, needle) => {
     const ctx = makeBuildCtx();
     const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("FAIL: expected 1 but got 2");
-  });
-  test("task section content contains source file content", () => {
-    const ctx = makeBuildCtx();
-    const result = acceptanceDiagnoseOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("fn()");
+    expect(result.task.content).toContain(needle);
   });
   test("task section includes semantic verdict hints when provided", () => {
     const ctx = makeBuildCtx();
