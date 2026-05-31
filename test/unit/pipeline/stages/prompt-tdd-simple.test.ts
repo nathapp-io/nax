@@ -81,24 +81,14 @@ function makeCtx(
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("promptStage.enabled()", () => {
-  test("returns true for tdd-simple strategy", () => {
-    const ctx = makeCtx("tdd-simple");
-    expect(promptStage.enabled(ctx)).toBe(true);
-  });
-
-  test("returns true for test-after strategy", () => {
-    const ctx = makeCtx("test-after");
-    expect(promptStage.enabled(ctx)).toBe(true);
-  });
-
-  test("returns false for three-session-tdd strategy", () => {
-    const ctx = makeCtx("three-session-tdd");
-    expect(promptStage.enabled(ctx)).toBe(false);
-  });
-
-  test("returns false for three-session-tdd-lite strategy", () => {
-    const ctx = makeCtx("three-session-tdd-lite");
-    expect(promptStage.enabled(ctx)).toBe(false);
+  test.each([
+    ["tdd-simple", true],
+    ["test-after", true],
+    ["three-session-tdd", false],
+    ["three-session-tdd-lite", false],
+  ] as const)("returns %s for %s strategy", (strategy, expected) => {
+    const ctx = makeCtx(strategy);
+    expect(promptStage.enabled(ctx)).toBe(expected);
   });
 });
 
@@ -128,22 +118,14 @@ describe("promptStage.execute() — tdd-simple strategy", () => {
     expect(ctx.prompt).not.toContain("# Role: Single-Session");
   });
 
-  test("prompt contains RED phase instructions", async () => {
+  test.each([
+    ["RED phase instructions", /RED\s*[—-]/],
+    ["GREEN phase instructions", /GREEN\s*[—-]/],
+    ["REFACTOR phase instructions", /REFACTOR\s*[—-]/],
+  ])("prompt contains %s", async (_label, pattern) => {
     const ctx = makeCtx("tdd-simple");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toMatch(/RED\s*[—-]/);
-  });
-
-  test("prompt contains GREEN phase instructions", async () => {
-    const ctx = makeCtx("tdd-simple");
-    await promptStage.execute(ctx);
-    expect(ctx.prompt).toMatch(/GREEN\s*[—-]/);
-  });
-
-  test("prompt contains REFACTOR phase instructions", async () => {
-    const ctx = makeCtx("tdd-simple");
-    await promptStage.execute(ctx);
-    expect(ctx.prompt).toMatch(/REFACTOR\s*[—-]/);
+    expect(ctx.prompt).toMatch(pattern);
   });
 
   test("prompt contains 'Write failing tests FIRST' instruction", async () => {
@@ -152,16 +134,13 @@ describe("promptStage.execute() — tdd-simple strategy", () => {
     expect(ctx.prompt).toContain("Write failing tests FIRST");
   });
 
-  test("prompt includes story context (story title)", async () => {
+  test.each([
+    ["story context (story title)", "Implement login button"],
+    ["story acceptance criteria", "Button is visible"],
+  ])("prompt includes %s", async (_label, needle) => {
     const ctx = makeCtx("tdd-simple");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("Implement login button");
-  });
-
-  test("prompt includes story acceptance criteria", async () => {
-    const ctx = makeCtx("tdd-simple");
-    await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("Button is visible");
+    expect(ctx.prompt).toContain(needle);
   });
 
   test("prompt includes context markdown when present", async () => {
