@@ -43,17 +43,15 @@ function makeVerifyCtx(overrides: {
 }
 
 describe("acceptanceGenerateOp shape", () => {
-  test("kind is run", () => {
-    expect(acceptanceGenerateOp.kind).toBe("run");
-  });
-  test("name is acceptance-generate", () => {
-    expect(acceptanceGenerateOp.name).toBe("acceptance-generate");
+  test.each([
+    ["kind", acceptanceGenerateOp.kind, "run"],
+    ["name", acceptanceGenerateOp.name, "acceptance-generate"],
+    ["stage", acceptanceGenerateOp.stage, "acceptance"],
+  ])("%s is %s", (_prop, actual, expected) => {
+    expect(actual).toBe(expected);
   });
   test("session role is acceptance-gen with fresh lifetime", () => {
     expect(acceptanceGenerateOp.session).toEqual({ role: "acceptance-gen", lifetime: "fresh" });
-  });
-  test("stage is acceptance", () => {
-    expect(acceptanceGenerateOp.stage).toBe("acceptance");
   });
   test("model resolves from acceptance.model config", () => {
     const config = makeNaxConfig({
@@ -79,15 +77,13 @@ describe("acceptanceGenerateOp.build()", () => {
     const result = acceptanceGenerateOp.build(SAMPLE_INPUT, ctx);
     expect(result).toHaveProperty("task");
   });
-  test("task section content contains featureName", () => {
+  test.each([
+    ["featureName", "my-feature"],
+    ["criteria", "AC-1: do X"],
+  ])("task section content contains %s", (_label, needle) => {
     const ctx = makeBuildCtx();
     const result = acceptanceGenerateOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("my-feature");
-  });
-  test("task section content contains criteria", () => {
-    const ctx = makeBuildCtx();
-    const result = acceptanceGenerateOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("AC-1: do X");
+    expect(result.task.content).toContain(needle);
   });
 });
 
@@ -157,31 +153,13 @@ describe("acceptanceGenerateOp.verify()", () => {
     });
   });
 
-  test("returns null when disk file is missing", async () => {
-    const ctx = makeVerifyCtx({ readFile: async () => null });
-    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
-    expect(result).toBeNull();
-  });
-
-  test("returns null when disk content is stub-shaped (raw, no fence)", async () => {
-    const stubCode = "describe('x', () => { test('y', () => expect(true).toBe(false)); });";
-    const ctx = makeVerifyCtx({ readFile: async () => stubCode });
-    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
-    expect(result).toBeNull();
-  });
-
-  test("Tier 1: returns null when fenced block contains stub-shaped code (stub guard)", async () => {
-    // extractTestCode extracts the content inside the fence — but since it's
-    // stub-shaped the Tier-1 guard (!isStubTestContent) must reject it.
-    const fencedStub =
-      "```typescript\ndescribe('x', () => { test('y', () => expect(true).toBe(false)); });\n```";
-    const ctx = makeVerifyCtx({ readFile: async () => fencedStub });
-    const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
-    expect(result).toBeNull();
-  });
-
-  test("returns null when disk content has no test markers", async () => {
-    const ctx = makeVerifyCtx({ readFile: async () => "just some random text" });
+  test.each([
+    ["disk file is missing", async () => null as string | null],
+    ["disk content is stub-shaped (raw, no fence)", async () => "describe('x', () => { test('y', () => expect(true).toBe(false)); });"],
+    ["fenced block contains stub-shaped code (Tier 1 stub guard)", async () => "```typescript\ndescribe('x', () => { test('y', () => expect(true).toBe(false)); });\n```"],
+    ["disk content has no test markers", async () => "just some random text"],
+  ])("returns null when %s", async (_label, readFile) => {
+    const ctx = makeVerifyCtx({ readFile });
     const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
     expect(result).toBeNull();
   });
