@@ -68,18 +68,14 @@ const baseConfig = {
 };
 
 describe("debate config schema — AC-1: defaults when debate key is absent", () => {
-  test("debate.enabled defaults to false", () => {
+  test.each([
+    ["enabled" as const, false as const],
+    ["agents" as const, 3 as const],
+  ])("debate.%s defaults to %s", (field, expected) => {
     const result = NaxConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.data.debate?.enabled).toBe(false);
-  });
-
-  test("debate.agents defaults to 3", () => {
-    const result = NaxConfigSchema.safeParse(baseConfig);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.debate?.agents).toBe(3);
+    expect(result.data.debate?.[field]).toBe(expected);
   });
 
   test("plan stage defaults: stateful, synthesis, 3 rounds, enabled", () => {
@@ -139,48 +135,25 @@ describe("debate config schema — AC-1: defaults when debate key is absent", ()
 });
 
 describe("debate config schema — AC-2: no agent/model fields when not specified", () => {
-  test("no resolver.agent when not specified", () => {
+  test.each([
+    ["resolver.agent", (d: NonNullable<ReturnType<typeof NaxConfigSchema.parse>["debate"]>) => d.stages.plan.resolver.agent],
+    ["debaters array", (d: NonNullable<ReturnType<typeof NaxConfigSchema.parse>["debate"]>) => d.stages.plan.debaters],
+  ])("%s is undefined when not specified", (_label, getField) => {
     const result = NaxConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.data.debate?.stages.plan.resolver.agent).toBeUndefined();
-  });
-
-  test("no debaters array when not specified", () => {
-    const result = NaxConfigSchema.safeParse(baseConfig);
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.debate?.stages.plan.debaters).toBeUndefined();
+    expect(getField(result.data.debate!)).toBeUndefined();
   });
 });
 
 describe("debate config schema — AC-3: debaters array fewer than 2 entries", () => {
-  test("returns validation error with 'debaters must have at least 2 entries'", () => {
+  test.each([
+    ["single entry", [{ agent: "claude" }]],
+    ["empty array", [] as Array<{ agent: string }>],
+  ])("validation fails with %s", (_label, debaters) => {
     const config = {
       ...baseConfig,
-      debate: {
-        enabled: true,
-        stages: {
-          plan: {
-            debaters: [{ agent: "claude" }],
-          },
-        },
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    const messages = result.error.issues.map((i) => i.message);
-    expect(messages.some((m) => m.includes("debaters must have at least 2 entries"))).toBe(true);
-  });
-
-  test("empty debaters array also fails", () => {
-    const config = {
-      ...baseConfig,
-      debate: {
-        enabled: true,
-        stages: { plan: { debaters: [] } },
-      },
+      debate: { enabled: true, stages: { plan: { debaters } } },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
@@ -310,12 +283,11 @@ describe("debate config schema — resolver.model field (#352)", () => {
 });
 
 describe("DEFAULT_CONFIG includes debate section", () => {
-  test("debate.enabled is false by default", () => {
-    expect(DEFAULT_CONFIG.debate?.enabled).toBe(false);
-  });
-
-  test("debate.agents is 3 by default", () => {
-    expect(DEFAULT_CONFIG.debate?.agents).toBe(3);
+  test.each([
+    ["enabled" as const, false as const],
+    ["agents" as const, 3 as const],
+  ])("debate.%s is %s by default", (field, expected) => {
+    expect(DEFAULT_CONFIG.debate?.[field]).toBe(expected);
   });
 
   test.each([
