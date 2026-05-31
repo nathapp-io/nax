@@ -7,22 +7,13 @@ import {
 } from "../../../src/agents/cost";
 
 describe("estimateCost", () => {
-  test("calculates cost for fast tier (Haiku)", () => {
-    const cost = estimateCost("fast", 1_000_000, 1_000_000);
-    // $0.80 input + $4.00 output = $4.80
-    expect(cost).toBeCloseTo(4.8, 2);
-  });
-
-  test("calculates cost for balanced tier (Sonnet)", () => {
-    const cost = estimateCost("balanced", 1_000_000, 1_000_000);
-    // $3.00 input + $15.00 output = $18.00
-    expect(cost).toBeCloseTo(18.0, 2);
-  });
-
-  test("calculates cost for powerful tier (Opus)", () => {
-    const cost = estimateCost("powerful", 1_000_000, 1_000_000);
-    // $15.00 input + $75.00 output = $90.00
-    expect(cost).toBeCloseTo(90.0, 2);
+  test.each([
+    ["fast (Haiku)", "fast" as const, 4.8],
+    ["balanced (Sonnet)", "balanced" as const, 18.0],
+    ["powerful (Opus)", "powerful" as const, 90.0],
+  ])("calculates cost for %s tier", (_label, tier, expected) => {
+    const cost = estimateCost(tier, 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(expected, 2);
   });
 
   test("handles small token counts", () => {
@@ -38,21 +29,13 @@ describe("estimateCost", () => {
 });
 
 describe("estimateCostByDuration", () => {
-  test("estimates cost for 1 minute fast tier with fallback confidence", () => {
-    const estimate = estimateCostByDuration("fast", 60000);
-    expect(estimate.cost).toBeCloseTo(0.01, 2);
-    expect(estimate.confidence).toBe("fallback");
-  });
-
-  test("estimates cost for 2 minutes balanced tier with fallback confidence", () => {
-    const estimate = estimateCostByDuration("balanced", 120000);
-    expect(estimate.cost).toBeCloseTo(0.1, 2);
-    expect(estimate.confidence).toBe("fallback");
-  });
-
-  test("estimates cost for 30 seconds powerful tier with fallback confidence", () => {
-    const estimate = estimateCostByDuration("powerful", 30000);
-    expect(estimate.cost).toBeCloseTo(0.075, 3);
+  test.each([
+    ["1 minute fast", "fast" as const, 60000, 0.01, 2],
+    ["2 minutes balanced", "balanced" as const, 120000, 0.1, 2],
+    ["30 seconds powerful", "powerful" as const, 30000, 0.075, 3],
+  ])("estimates cost for %s tier with fallback confidence", (_label, tier, durationMs, expectedCost, precision) => {
+    const estimate = estimateCostByDuration(tier, durationMs);
+    expect(estimate.cost).toBeCloseTo(expectedCost, precision);
     expect(estimate.confidence).toBe("fallback");
   });
 
@@ -64,19 +47,12 @@ describe("estimateCostByDuration", () => {
 });
 
 describe("formatCostWithConfidence", () => {
-  test("formats exact confidence without prefix", () => {
-    const estimate = { cost: 0.12, confidence: "exact" as const };
-    expect(formatCostWithConfidence(estimate)).toBe("$0.12");
-  });
-
-  test("formats estimated confidence with tilde prefix", () => {
-    const estimate = { cost: 0.15, confidence: "estimated" as const };
-    expect(formatCostWithConfidence(estimate)).toBe("~$0.15");
-  });
-
-  test("formats fallback confidence with tilde and label", () => {
-    const estimate = { cost: 0.05, confidence: "fallback" as const };
-    expect(formatCostWithConfidence(estimate)).toBe("~$0.05 (duration-based)");
+  test.each([
+    ["exact confidence without prefix", { cost: 0.12, confidence: "exact" as const }, "$0.12"],
+    ["estimated confidence with tilde prefix", { cost: 0.15, confidence: "estimated" as const }, "~$0.15"],
+    ["fallback confidence with tilde and label", { cost: 0.05, confidence: "fallback" as const }, "~$0.05 (duration-based)"],
+  ])("formats %s", (_label, estimate, expected) => {
+    expect(formatCostWithConfidence(estimate)).toBe(expected);
   });
 
   test("formats very small costs correctly", () => {
