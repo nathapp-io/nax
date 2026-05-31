@@ -47,19 +47,13 @@ describe("SessionManager.resume()", () => {
     expect(mgr.resume("US-001", "implementer")).toBeNull();
   });
 
-  test("returns null for COMPLETED sessions", () => {
+  test.each([
+    ["COMPLETED", (mgr: SessionManager, id: string) => { mgr.transition(id, "RUNNING"); mgr.closeStory("US-001"); }],
+    ["FAILED", (mgr: SessionManager, id: string) => { mgr.transition(id, "RUNNING"); mgr.transition(id, "FAILED"); }],
+  ])("returns null for %s sessions", (_state, setupFn) => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    mgr.closeStory("US-001"); // force to COMPLETED
-    expect(mgr.resume("US-001", "implementer")).toBeNull();
-  });
-
-  test("returns null for FAILED sessions", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    mgr.transition(desc.id, "FAILED");
+    setupFn(mgr, desc.id);
     expect(mgr.resume("US-001", "implementer")).toBeNull();
   });
 
@@ -121,20 +115,15 @@ describe("SessionManager.closeStory()", () => {
     expect(closed).toHaveLength(0);
   });
 
-  test("transitions a CREATED session to COMPLETED", () => {
+  test.each([
+    ["CREATED", [] as string[]],
+    ["RUNNING", ["RUNNING"] as string[]],
+  ])("transitions a %s session to COMPLETED", (_state, extraTransitions) => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
+    for (const t of extraTransitions) mgr.transition(desc.id, t as Parameters<typeof mgr.transition>[1]);
     const closed = mgr.closeStory("US-001");
     expect(closed).toHaveLength(1);
-    expect(closed[0].state).toBe("COMPLETED");
-    expect(mgr.get(desc.id)?.state).toBe("COMPLETED");
-  });
-
-  test("transitions a RUNNING session to COMPLETED", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    const closed = mgr.closeStory("US-001");
     expect(closed[0].state).toBe("COMPLETED");
     expect(mgr.get(desc.id)?.state).toBe("COMPLETED");
   });
@@ -182,33 +171,14 @@ describe("SessionManager.closeStory()", () => {
     expect(mgr.resume("US-001", "implementer")).toBeNull();
   });
 
-  test("force-closes PAUSED session", () => {
+  test.each([
+    ["PAUSED", ["RUNNING", "PAUSED"]],
+    ["RESUMING", ["RUNNING", "PAUSED", "RESUMING"]],
+    ["CLOSING", ["RUNNING", "CLOSING"]],
+  ])("force-closes %s session", (_state, transitions) => {
     const mgr = new SessionManager();
     const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    mgr.transition(desc.id, "PAUSED");
-    const closed = mgr.closeStory("US-001");
-    expect(closed).toHaveLength(1);
-    expect(closed[0].state).toBe("COMPLETED");
-    expect(mgr.get(desc.id)?.state).toBe("COMPLETED");
-  });
-
-  test("force-closes RESUMING session", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    mgr.transition(desc.id, "PAUSED");
-    mgr.transition(desc.id, "RESUMING");
-    const closed = mgr.closeStory("US-001");
-    expect(closed).toHaveLength(1);
-    expect(closed[0].state).toBe("COMPLETED");
-  });
-
-  test("force-closes CLOSING session", () => {
-    const mgr = new SessionManager();
-    const desc = mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
-    mgr.transition(desc.id, "RUNNING");
-    mgr.transition(desc.id, "CLOSING");
+    for (const t of transitions) mgr.transition(desc.id, t as Parameters<typeof mgr.transition>[1]);
     const closed = mgr.closeStory("US-001");
     expect(closed).toHaveLength(1);
     expect(closed[0].state).toBe("COMPLETED");
