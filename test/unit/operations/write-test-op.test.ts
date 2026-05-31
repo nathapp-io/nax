@@ -32,16 +32,13 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(testWriterOp.session.lifetime).toBe("fresh");
   });
 
-  test("testWriterOp has a name", async () => {
+  test.each([
+    ["name" as const],
+    ["stage" as const],
+  ])("testWriterOp has a non-empty %s string", async (field) => {
     const { testWriterOp } = await import("@/operations");
-    expect(typeof testWriterOp.name).toBe("string");
-    expect(testWriterOp.name).toBeTruthy();
-  });
-
-  test("testWriterOp has a stage", async () => {
-    const { testWriterOp } = await import("@/operations");
-    expect(typeof testWriterOp.stage).toBe("string");
-    expect(testWriterOp.stage).toBeTruthy();
+    expect(typeof testWriterOp[field]).toBe("string");
+    expect(testWriterOp[field]).toBeTruthy();
   });
 
   test("testWriterOp has a config selector", async () => {
@@ -49,14 +46,12 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(testWriterOp.config).toBeDefined();
   });
 
-  test("testWriterOp has a build function", async () => {
+  test.each([
+    ["build" as const],
+    ["parse" as const],
+  ])("testWriterOp has a %s function", async (method) => {
     const { testWriterOp } = await import("@/operations");
-    expect(typeof testWriterOp.build).toBe("function");
-  });
-
-  test("testWriterOp has a parse function", async () => {
-    const { testWriterOp } = await import("@/operations");
-    expect(typeof testWriterOp.parse).toBe("function");
+    expect(typeof testWriterOp[method]).toBe("function");
   });
 });
 
