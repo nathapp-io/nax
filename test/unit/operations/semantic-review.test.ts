@@ -45,20 +45,14 @@ function makeBuildCtx() {
 }
 
 describe("semanticReviewOp shape", () => {
-  test("kind is run", () => {
-    expect(semanticReviewOp.kind).toBe("run");
-  });
-  test("name is semantic-review", () => {
-    expect(semanticReviewOp.name).toBe("semantic-review");
-  });
-  test("session.role is reviewer-semantic", () => {
-    expect(semanticReviewOp.session.role).toBe("reviewer-semantic");
-  });
-  test("session.lifetime is fresh", () => {
-    expect(semanticReviewOp.session.lifetime).toBe("fresh");
-  });
-  test("stage is review", () => {
-    expect(semanticReviewOp.stage).toBe("review");
+  test.each([
+    ["kind", semanticReviewOp.kind, "run"],
+    ["name", semanticReviewOp.name, "semantic-review"],
+    ["session.role", semanticReviewOp.session.role, "reviewer-semantic"],
+    ["session.lifetime", semanticReviewOp.session.lifetime, "fresh"],
+    ["stage", semanticReviewOp.stage, "review"],
+  ])("%s is %s", (_prop, actual, expected) => {
+    expect(actual).toBe(expected);
   });
 });
 
@@ -68,20 +62,14 @@ describe("semanticReviewOp.build()", () => {
     const result = semanticReviewOp.build(SAMPLE_INPUT, ctx);
     expect(result).toHaveProperty("task");
   });
-  test("task content contains story title", () => {
+  test.each([
+    ["story title", "Add login endpoint"],
+    ["acceptance criteria", "Returns 200 on valid credentials"],
+    ["git ref in ref mode", "abc1234"],
+  ])("task content contains %s", (_label, needle) => {
     const ctx = makeBuildCtx();
     const result = semanticReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("Add login endpoint");
-  });
-  test("task content contains acceptance criteria", () => {
-    const ctx = makeBuildCtx();
-    const result = semanticReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("Returns 200 on valid credentials");
-  });
-  test("task content contains git ref in ref mode", () => {
-    const ctx = makeBuildCtx();
-    const result = semanticReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("abc1234");
+    expect(result.task.content).toContain(needle);
   });
   test("task content contains embedded diff in embedded mode", () => {
     const ctx = makeBuildCtx();
