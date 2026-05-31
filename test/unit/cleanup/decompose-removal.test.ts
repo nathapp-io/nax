@@ -58,7 +58,7 @@ describe("AC1: src/decompose/ directory does not exist", () => {
 // AC2: routing.ts has no decompose imports or function references
 // ---------------------------------------------------------------------------
 
-describe("AC2: src/pipeline/stages/routing.ts — decompose imports and functions removed", () => {
+describe("AC2-AC3: src/pipeline/stages/routing.ts — decompose references removed", () => {
   const ROUTING = "src/pipeline/stages/routing.ts";
 
   test("does not import from ../../decompose/", async () => {
@@ -67,32 +67,14 @@ describe("AC2: src/pipeline/stages/routing.ts — decompose imports and function
     expect(content).not.toContain("from '../../decompose/");
   });
 
-  test("does not contain runDecompose reference", async () => {
+  test.each([
+    ["runDecompose"],
+    ["applyDecomposition"],
+    ["checkStoryOversized"],
+    ["decomposeConfig"],
+  ])("does not contain %s reference", async (needle) => {
     const content = await fileContent(ROUTING);
-    expect(content).not.toContain("runDecompose");
-  });
-
-  test("does not contain applyDecomposition reference", async () => {
-    const content = await fileContent(ROUTING);
-    expect(content).not.toContain("applyDecomposition");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC3: routing.ts has no checkStoryOversized or decomposeConfig references
-// ---------------------------------------------------------------------------
-
-describe("AC3: src/pipeline/stages/routing.ts — oversized detection removed", () => {
-  const ROUTING = "src/pipeline/stages/routing.ts";
-
-  test("does not contain checkStoryOversized reference", async () => {
-    const content = await fileContent(ROUTING);
-    expect(content).not.toContain("checkStoryOversized");
-  });
-
-  test("does not contain decomposeConfig reference", async () => {
-    const content = await fileContent(ROUTING);
-    expect(content).not.toContain("decomposeConfig");
+    expect(content).not.toContain(needle);
   });
 });
 
@@ -119,14 +101,12 @@ describe("AC4: src/pipeline/types.ts — decomposed action removed from StageAct
 // ---------------------------------------------------------------------------
 
 describe("AC5: src/pipeline/event-bus.ts — story:decomposed event removed", () => {
-  test("does not define StoryDecomposedEvent interface", async () => {
+  test.each([
+    ["StoryDecomposedEvent interface", "StoryDecomposedEvent"],
+    ["story:decomposed in PipelineEvent union", "story:decomposed"],
+  ])("does not contain %s", async (_label, needle) => {
     const content = await fileContent("src/pipeline/event-bus.ts");
-    expect(content).not.toContain("StoryDecomposedEvent");
-  });
-
-  test("does not include story:decomposed in PipelineEvent union", async () => {
-    const content = await fileContent("src/pipeline/event-bus.ts");
-    expect(content).not.toContain("story:decomposed");
+    expect(content).not.toContain(needle);
   });
 });
 
@@ -157,14 +137,12 @@ describe("AC7: src/pipeline/subscribers/hooks.ts — story:decomposed handler re
 // ---------------------------------------------------------------------------
 
 describe("AC8: src/interaction/triggers.ts — checkStoryOversized removed", () => {
-  test("does not export or define checkStoryOversized", async () => {
+  test.each([
+    ["checkStoryOversized"],
+    ["story-oversized"],
+  ])("does not contain %s", async (needle) => {
     const content = await fileContent("src/interaction/triggers.ts");
-    expect(content).not.toContain("checkStoryOversized");
-  });
-
-  test("does not reference story-oversized trigger", async () => {
-    const content = await fileContent("src/interaction/triggers.ts");
-    expect(content).not.toContain("story-oversized");
+    expect(content).not.toContain(needle);
   });
 });
 
