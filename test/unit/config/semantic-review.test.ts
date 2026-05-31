@@ -21,26 +21,11 @@ describe("ReviewCheckName type", () => {
     expect(checkName).toBe("semantic");
   });
 
-  test("schema accepts 'semantic' in review.checks", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["typecheck", "lint", "semantic"],
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("schema accepts 'semantic' as sole review check", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["semantic"],
-      },
-    };
+  test.each([
+    [["typecheck", "lint", "semantic"]],
+    [["semantic"]],
+  ])("schema accepts %j in review.checks", (checks) => {
+    const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
@@ -256,12 +241,11 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic).toBeDefined();
   });
 
-  test("DEFAULT_CONFIG.review.semantic.model equals 'balanced'", () => {
-    expect(DEFAULT_CONFIG.review.semantic?.model).toBe("balanced");
-  });
-
-  test("DEFAULT_CONFIG.review.semantic.rules equals empty array", () => {
-    expect(DEFAULT_CONFIG.review.semantic?.rules).toEqual([]);
+  test.each([
+    ["model" as const, "balanced"],
+    ["rules" as const, [] as string[]],
+  ])("DEFAULT_CONFIG.review.semantic.%s equals expected value", (field, expected) => {
+    expect(DEFAULT_CONFIG.review.semantic?.[field]).toEqual(expected);
   });
 
   test("DEFAULT_CONFIG.review.semantic has correct defaults", () => {
@@ -320,25 +304,17 @@ describe("demandInspectionTrail (#3A) — configurable on both reviewers", () =>
     expect(parsed.review.adversarial?.demandInspectionTrail).toBe(true);
   });
 
-  test("an explicit false survives parse on the semantic reviewer", () => {
+  test.each([
+    ["semantic" as const],
+    ["adversarial" as const],
+  ])("an explicit false survives parse on the %s reviewer", (reviewer) => {
     const result = NaxConfigSchema.safeParse({
       ...DEFAULT_CONFIG,
-      review: { ...DEFAULT_CONFIG.review, semantic: { demandInspectionTrail: false } },
+      review: { ...DEFAULT_CONFIG.review, [reviewer]: { demandInspectionTrail: false } },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.review.semantic?.demandInspectionTrail).toBe(false);
-    }
-  });
-
-  test("an explicit false survives parse on the adversarial reviewer", () => {
-    const result = NaxConfigSchema.safeParse({
-      ...DEFAULT_CONFIG,
-      review: { ...DEFAULT_CONFIG.review, adversarial: { demandInspectionTrail: false } },
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.review.adversarial?.demandInspectionTrail).toBe(false);
+      expect(result.data.review[reviewer]?.demandInspectionTrail).toBe(false);
     }
   });
 });
