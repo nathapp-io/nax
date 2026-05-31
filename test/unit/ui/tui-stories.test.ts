@@ -43,102 +43,20 @@ function createMockStory(id: string, status: StoryDisplayState["status"]): Story
 }
 
 describe("StoriesPanel", () => {
-  test("renders pending story with ⬚ icon", () => {
-    const stories = [createMockStory("US-001", "pending")];
+  test.each([
+    ["pending" as const, "⬚"],
+    ["running" as const, "🔄"],
+    ["passed" as const, "✅"],
+    ["failed" as const, "❌"],
+    ["skipped" as const, "⏭️"],
+    ["retrying" as const, "🔁"],
+    ["paused" as const, "⏸️"],
+  ])("renders %s story with %s icon", (status, icon) => {
+    const stories = [createMockStory("US-001", status)];
     const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
+      createElement(StoriesPanel, { stories, totalCost: 0, elapsedMs: 0, width: 30 }),
     );
-
-    expect(lastFrame()).toContain("⬚ US-001");
-  });
-
-  test("renders running story with 🔄 icon", () => {
-    const stories = [createMockStory("US-001", "running")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("🔄 US-001");
-  });
-
-  test("renders passed story with ✅ icon", () => {
-    const stories = [createMockStory("US-001", "passed")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("✅ US-001");
-  });
-
-  test("renders failed story with ❌ icon", () => {
-    const stories = [createMockStory("US-001", "failed")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("❌ US-001");
-  });
-
-  test("renders skipped story with ⏭️ icon", () => {
-    const stories = [createMockStory("US-001", "skipped")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("⏭️ US-001");
-  });
-
-  test("renders retrying story with 🔁 icon", () => {
-    const stories = [createMockStory("US-001", "retrying")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("🔁 US-001");
-  });
-
-  test("renders paused story with ⏸️ icon", () => {
-    const stories = [createMockStory("US-001", "paused")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("⏸️ US-001");
+    expect(lastFrame()).toContain(`${icon} US-001`);
   });
 
   test("displays routing info (complexity and model tier)", () => {
@@ -311,23 +229,12 @@ describe("StatusBar", () => {
 });
 
 describe("Layout breakpoints", () => {
-  test("single column mode for width < 80", () => {
-    // This would be tested via useLayout hook, but since we can't mock process.stdout.columns
-    // in Bun tests easily, we verify the logic manually:
-    const width = 70;
+  test.each([
+    ["single column mode (width < 80)", 70, "single"],
+    ["narrow mode (width 80-140)", 100, "narrow"],
+    ["wide mode (width > 140)", 150, "wide"],
+  ])("%s", (_label, width, expected) => {
     const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("single");
-  });
-
-  test("narrow mode for width 80-140", () => {
-    const width = 100;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("narrow");
-  });
-
-  test("wide mode for width > 140", () => {
-    const width = 150;
-    const mode = width < 80 ? "single" : width < 140 ? "narrow" : "wide";
-    expect(mode).toBe("wide");
+    expect(mode).toBe(expected);
   });
 });
