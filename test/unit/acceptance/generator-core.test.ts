@@ -15,33 +15,20 @@ import {
 } from "@/acceptance";
 
 describe("acceptanceTestFilename", () => {
-  test("returns .nax-acceptance.test.ts when no language is given", () => {
-    expect(acceptanceTestFilename()).toBe(".nax-acceptance.test.ts");
-  });
-
-  test("returns .nax-acceptance.test.ts for undefined language", () => {
-    expect(acceptanceTestFilename(undefined)).toBe(".nax-acceptance.test.ts");
-  });
-
-  test("returns .nax-acceptance_test.go for go", () => {
-    expect(acceptanceTestFilename("go")).toBe(".nax-acceptance_test.go");
-  });
-
-  test("returns _nax_acceptance_test.py for python", () => {
-    expect(acceptanceTestFilename("python")).toBe("_nax_acceptance_test.py");
-  });
-
-  test("returns .nax-acceptance.rs for rust", () => {
-    expect(acceptanceTestFilename("rust")).toBe(".nax-acceptance.rs");
+  test.each([
+    ["no argument", ".nax-acceptance.test.ts", () => acceptanceTestFilename()],
+    ["undefined", ".nax-acceptance.test.ts", () => acceptanceTestFilename(undefined)],
+    ["go", ".nax-acceptance_test.go", () => acceptanceTestFilename("go")],
+    ["python", "_nax_acceptance_test.py", () => acceptanceTestFilename("python")],
+    ["rust", ".nax-acceptance.rs", () => acceptanceTestFilename("rust")],
+    ["unknown language", ".nax-acceptance.test.ts", () => acceptanceTestFilename("ruby")],
+  ])("returns correct filename for %s", (_label, expected, call) => {
+    expect(call()).toBe(expected);
   });
 
   test("is case-insensitive for language", () => {
     expect(acceptanceTestFilename("GO")).toBe(".nax-acceptance_test.go");
     expect(acceptanceTestFilename("Python")).toBe("_nax_acceptance_test.py");
-  });
-
-  test("returns .nax-acceptance.test.ts for unknown language", () => {
-    expect(acceptanceTestFilename("ruby")).toBe(".nax-acceptance.test.ts");
   });
 });
 
@@ -51,43 +38,22 @@ describe("buildAcceptanceRunCommand", () => {
     expect(cmd).toEqual(["bun", "test", "/project/.nax-acceptance.test.ts", "--timeout=60000"]);
   });
 
-  test("uses vitest for vitest framework", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", "vitest");
-    expect(cmd).toEqual(["npx", "vitest", "run", "/pkg/.nax-acceptance.test.ts"]);
+  test.each([
+    ["vitest", "/pkg/.nax-acceptance.test.ts", "vitest" as const, ["npx", "vitest", "run", "/pkg/.nax-acceptance.test.ts"]],
+    ["jest", "/pkg/.nax-acceptance.test.ts", "jest" as const, ["npx", "jest", "/pkg/.nax-acceptance.test.ts"]],
+    ["pytest", "/pkg/.nax-acceptance.test.py", "pytest" as const, ["pytest", "/pkg/.nax-acceptance.test.py"]],
+    ["go-test", "/pkg/.nax-acceptance_test.go", "go-test" as const, ["go", "test", "/pkg/.nax-acceptance_test.go"]],
+    ["cargo-test", "/pkg/.nax-acceptance.rs", "cargo-test" as const, ["cargo", "test", "--test", "acceptance"]],
+  ])("uses %s framework command", (_framework, file, fw, expected) => {
+    expect(buildAcceptanceRunCommand(file, fw)).toEqual(expected);
   });
 
-  test("uses jest for jest framework", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", "jest");
-    expect(cmd).toEqual(["npx", "jest", "/pkg/.nax-acceptance.test.ts"]);
-  });
-
-  test("uses pytest for pytest framework", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.py", "pytest");
-    expect(cmd).toEqual(["pytest", "/pkg/.nax-acceptance.test.py"]);
-  });
-
-  test("uses go test for go-test framework", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance_test.go", "go-test");
-    expect(cmd).toEqual(["go", "test", "/pkg/.nax-acceptance_test.go"]);
-  });
-
-  test("uses cargo test for cargo-test framework", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.rs", "cargo-test");
-    expect(cmd).toEqual(["cargo", "test", "--test", "acceptance"]);
-  });
-
-  test("substitutes {{FILE}} in command override", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", undefined, "bun test {{FILE}}");
-    expect(cmd).toEqual(["bun", "test", "/pkg/.nax-acceptance.test.ts"]);
-  });
-
-  test("substitutes {{file}} in command override", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", undefined, "bun test {{file}}");
-    expect(cmd).toEqual(["bun", "test", "/pkg/.nax-acceptance.test.ts"]);
-  });
-
-  test("substitutes {{files}} in command override", () => {
-    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", undefined, "bun test {{files}}");
+  test.each([
+    ["{{FILE}}", "bun test {{FILE}}"],
+    ["{{file}}", "bun test {{file}}"],
+    ["{{files}}", "bun test {{files}}"],
+  ])("substitutes %s in command override", (_placeholder, override) => {
+    const cmd = buildAcceptanceRunCommand("/pkg/.nax-acceptance.test.ts", undefined, override);
     expect(cmd).toEqual(["bun", "test", "/pkg/.nax-acceptance.test.ts"]);
   });
 });
