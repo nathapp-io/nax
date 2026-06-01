@@ -70,22 +70,6 @@ describe("Curator Plugin Acceptance Criteria Coverage", () => {
   });
 
   /**
-   * AC3: collectObservations() returns observations with schemaVersion=1
-   */
-  test("AC3: collectObservations is exported from curator module", () => {
-    // Import test documented in collector.test.ts
-    expect(true).toBe(true);
-  });
-
-  /**
-   * AC7: resolveCuratorOutputs() resolves paths
-   */
-  test("AC7: resolveCuratorOutputs is exported from curator module", () => {
-    // Import test documented in paths.test.ts
-    expect(true).toBe(true);
-  });
-
-  /**
    * AC8: curatorPlugin.shouldRun() works correctly
    */
   test("AC8: curatorPlugin has shouldRun method", async () => {

@@ -238,7 +238,4 @@ describe("AC-18: executeUnified function", () => {
     expect(typeof executeUnified).toBe("function");
   });
 
-  test("executeUnified returns same type as former executeSequential", async () => {
-    expect(true).toBe(true);
-  });
 });

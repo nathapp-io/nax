@@ -120,11 +120,6 @@ describe("verifierPickSelector", () => {
       }
     });
 
-    test("documented weights constant is present", () => {
-      // After implementation, verify SCORE_WEIGHTS or similar constant is defined
-      // This is a placeholder test that will pass after implementation adds the constant
-      expect(true).toBe(true);
-    });
   });
 
   describe("AC 4: skips patching when patch disabled or overlap high", () => {
