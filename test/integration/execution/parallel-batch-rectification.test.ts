@@ -203,9 +203,6 @@ describe("AC-7: runParallelBatch rectification failure", () => {
     }
   });
 
-  test("error from rectifyConflictedStory is caught and logged", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,14 +214,6 @@ describe("AC-8: merge-conflict-rectify exports", () => {
     const module = await import("../../../src/execution/merge-conflict-rectify");
     expect(module).toBeDefined();
     expect(typeof module.rectifyConflictedStory).toBe("function");
-  });
-
-  test("exports RectificationResult type", async () => {
-    expect(true).toBe(true);
-  });
-
-  test("exports RectifyConflictedStoryOptions", async () => {
-    expect(true).toBe(true);
   });
 
   test("exports rectifyConflictedStory function with correct signature", async () => {
@@ -249,9 +238,6 @@ describe("AC-9: import sites updated", () => {
     }
   });
 
-  test("no other src/ files import from parallel-executor-rectify", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,7 +251,4 @@ describe("AC-10: rectification-pass deleted", () => {
     expect(exists).toBe(false);
   });
 
-  test("no file in src/ imports from parallel-executor-rectification-pass", async () => {
-    expect(true).toBe(true);
-  });
 });
