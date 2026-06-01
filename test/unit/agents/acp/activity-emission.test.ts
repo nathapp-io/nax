@@ -199,15 +199,6 @@ describe("parseAcpxJsonLine — no raw content in activity metadata (AC4)", () =
 // Stream callback and event emission tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Stream callback threading and event emission", () => {
-  test("AC5-AC10: placeholder — full coverage in integration tests (SpawnAcpClient/SpawnAcpSession)", () => {
-    // AC5: call_started before spawn; AC6: process_update after PID registration;
-    // AC7: message/thinking_update during stdout; AC8: call_ended once per call_started;
-    // AC9: spawn failure emits call_ended only; AC10: unique callId per invocation
-    expect(true).toBe(true);
-  });
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Additional edge cases
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,12 +357,6 @@ describe("Stream callback in AcpClient/AcpSession types", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Terminal event path validation
 // ─────────────────────────────────────────────────────────────────────────────
-
-describe("Event emission across terminal paths", () => {
-  test("placeholder — success/error/cancel/parse-failure/spawn-failure paths covered in integration tests", () => {
-    expect(true).toBe(true);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC9 — spawn failure must not emit call_started (bug: currently it does)
