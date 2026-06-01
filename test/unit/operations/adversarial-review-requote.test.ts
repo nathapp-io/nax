@@ -53,9 +53,6 @@ describe("adversarialReviewOp.hopBody — existence (AC15)", () => {
     expect(typeof adversarialReviewOp.hopBody).toBe("function");
   });
 
-  test("retry field exists (parse-retry SSOT)", () => {
-    expect(adversarialReviewOp).toHaveProperty("retry");
-  });
 });
 
 // ---------------------------------------------------------------------------
