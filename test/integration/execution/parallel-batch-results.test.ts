@@ -105,9 +105,6 @@ describe("AC-1: runParallelBatch completed stories", () => {
     }
   });
 
-  test("completed stories in result have passed pipeline and merged to base branch", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,9 +156,6 @@ describe("AC-2: runParallelBatch failed stories", () => {
     }
   });
 
-  test("failed stories include pipelineResult for downstream handling", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,9 +208,6 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
     }
   });
 
-  test("merge conflicts track whether rectification succeeded", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,9 +258,6 @@ describe("AC-4: runParallelBatch per-story costs", () => {
     }
   });
 
-  test("per-story costs match worker results", async () => {
-    expect(true).toBe(true);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -319,7 +307,4 @@ describe("AC-5: runParallelBatch totalCost", () => {
     }
   });
 
-  test("totalCost includes all branches (completed, failed, conflicts)", async () => {
-    expect(true).toBe(true);
-  });
 });
