@@ -134,6 +134,69 @@ ${exceptions.join("\n\n")}`;
 const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
 
 /**
+ * Single-session strategies in which ONE agent writes both the tests and the
+ * implementation in the same session. No separate test-writer owns the test
+ * contract, so the implementer authored the tests and MAY edit them during
+ * rectification (permit-with-guard) — unlike three-session TDD where the
+ * "do not modify test files" rule is absolute.
+ *
+ * `no-test` is excluded: it produces no tests, so there is nothing to own or edit.
+ */
+const SINGLE_SESSION_TEST_OWNING_STRATEGIES = new Set(["tdd-simple", "test-after"]);
+
+/**
+ * True when the story's strategy makes the implementer the author of its own
+ * tests (single-session). Such an implementer may edit test files to resolve
+ * genuine AC/spec contradictions during rectification.
+ */
+export function implementerOwnsTests(story: UserStory): boolean {
+  return SINGLE_SESSION_TEST_OWNING_STRATEGIES.has(story.routing?.testStrategy ?? "");
+}
+
+/**
+ * Permit-with-guard headline for single-session implementers. Replaces the
+ * "Do NOT change test files…" prohibition that three-session stories receive.
+ */
+const SINGLE_SESSION_PERMIT_HEADLINE =
+  "You authored these tests in the same session as the implementation, so you MAY edit test files — but ONLY to resolve a genuine contradiction between a test and this story's acceptance criteria (or between two acceptance criteria). NEVER weaken, delete, loosen, or skip a test merely to make it pass. See the test-edit guidance appended below.";
+
+/**
+ * Appended guidance block for single-session implementers. Stands in for the
+ * Exception 1–4 escape hatch (which encodes an absolute prohibition with narrow
+ * valves). Here the rule is inverted: edits are permitted but bounded.
+ */
+const SINGLE_SESSION_TEST_EDIT_POLICY = `
+
+## Test-edit guidance (single-session implementer)
+
+You wrote both the tests and the implementation for this story in one session, so no
+separate test-writer owns the test contract. You therefore MAY edit test files during
+rectification — subject to these limits:
+
+- Edit a test ONLY to resolve a genuine contradiction between the test and an acceptance
+  criterion, a contradiction between two acceptance criteria, or a clear defect in a test
+  you authored (wrong arity/type, impossible setup, or asserting behavior the ACs do not require).
+- NEVER weaken, delete, loosen, or \`skip\` a test simply because the implementation fails it.
+  A failing test usually means the SOURCE is wrong — fix the source first.
+- The semantic and adversarial reviewers still gate correctness; gaming a test to pass will be caught.
+
+If two findings or two acceptance criteria contradict each other and you cannot satisfy
+both even after adjusting tests, do not guess. Emit:
+UNRESOLVED: <which findings/ACs conflicted and why they cannot both be satisfied>`;
+
+/**
+ * Returns the test-edit directive sentence for a rectification prompt.
+ *
+ * For single-session strategies the implementer authored its own tests, so the
+ * directive permits bounded test edits. For all other strategies the caller's
+ * `prohibition` text (the existing "Do NOT … test files …" sentence) is returned
+ * verbatim, keeping three-session/no-test prompts byte-identical.
+ */
+export function testEditHeadline(story: UserStory, prohibition: string): string {
+  return implementerOwnsTests(story) ? SINGLE_SESSION_PERMIT_HEADLINE : prohibition;
+}
+
+/**
  * Returns "three" or "four" depending on whether the story uses a three-session TDD
  * flow that includes a test-writer agent. Use to interpolate counts in prompt text
  * that sits outside the escape-hatch block.
@@ -147,6 +210,7 @@ export function exceptionCountWord(story: UserStory): "three" | "four" {
  * based on whether the story runs a three-session TDD flow with a test-writer.
  */
 export function escapeHatchFor(story: UserStory): string {
+  if (implementerOwnsTests(story)) return SINGLE_SESSION_TEST_EDIT_POLICY;
   const isTdd = THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "");
   return buildEscapeHatch({ includeMockHandoff: isTdd });
 }
@@ -236,7 +300,7 @@ ${errors}
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
 
-Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.
+${testEditHeadline(story, `Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.`)}
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
@@ -309,6 +373,9 @@ export function mechanicalRectification(
   opts?: CheckErrorFormatOptions,
 ): string {
   const errors = formatCheckErrors(checks, opts);
+  const scopeDirective = implementerOwnsTests(story)
+    ? `Fix all errors listed above that are within this story's scope. ${SINGLE_SESSION_PERMIT_HEADLINE}`
+    : `Fix all errors listed above that are within this story's scope — see the ${exceptionCountWord(story)} narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.`;
 
   return `You are fixing lint/typecheck errors from a code review.
 
@@ -318,7 +385,7 @@ The following quality checks failed after implementation:
 
 ${errors}
 
-Fix all errors listed above that are within this story's scope — see the ${exceptionCountWord(story)} narrow exceptions appended below for sibling-story spillover. Do NOT change test files or test behavior except via those exceptions.
+${scopeDirective}
 Do NOT add new features — only fix the quality check errors.
 After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }

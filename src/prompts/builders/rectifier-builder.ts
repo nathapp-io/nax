@@ -37,6 +37,7 @@ import {
   formatCheckErrors,
   mechanicalRectification,
   semanticRectification,
+  testEditHeadline,
 } from "./rectifier-builder-helpers";
 
 export { CONTRADICTION_ESCAPE_HATCH } from "./rectifier-builder-helpers";
@@ -196,6 +197,8 @@ export class RectifierPromptBuilder {
     const parts: string[] = [];
     const attemptWord = maxAttempts === 1 ? "1 attempt" : `${maxAttempts} attempts`;
     const exCount = story ? exceptionCountWord(story) : "three";
+    const prohibition = `Do NOT change test files or test behavior — see the ${exCount} narrow exceptions appended below.`;
+    const testDirective = story ? testEditHeadline(story, prohibition) : prohibition;
 
     parts.push(
       `Review failed after your implementation. Fix the following issues (${attemptWord} available before escalation):\n`,
@@ -204,7 +207,7 @@ export class RectifierPromptBuilder {
     parts.push(renderPrioritizedFailures(failedChecks));
 
     parts.push(
-      `\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. Do NOT change test files or test behavior — see the ${exCount} narrow exceptions appended below. Commit your changes when all checks pass.`,
+      `\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. ${testDirective} Commit your changes when all checks pass.`,
     );
     parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
 
@@ -580,7 +583,7 @@ ${testCommands}
 6. Ensure ALL tests pass before completing.
 
 **IMPORTANT:**
-- Do NOT modify test files — see the ${exceptionCountWord(story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
+- ${testEditHeadline(story, `Do NOT modify test files — see the ${exceptionCountWord(story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.`)}
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.
 - When running tests, run ONLY the failing test files shown above${cmd ? ` — NEVER run \`${cmd}\` without a file filter` : " — never run the full test suite without a file filter"}.
@@ -710,7 +713,7 @@ ${errors}${reasoningSection}${historySection}
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
 
-Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.
+${testEditHeadline(story, `Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.`)}
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
   }
@@ -846,7 +849,7 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
 4. Do not declare done until step 3 shows 0 failures.
 
 **IMPORTANT:**
-- Do NOT modify test files — see the ${exceptionCountWord(opts.story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.
+- ${testEditHeadline(opts.story, `Do NOT modify test files — see the ${exceptionCountWord(opts.story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.`)}
 - Do NOT loosen assertions to mask implementation bugs.
 - Focus on fixing the source code to meet the test requirements.`);
 
