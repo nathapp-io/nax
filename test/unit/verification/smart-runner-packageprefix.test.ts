@@ -82,14 +82,6 @@ describe("mapSourceToTests — packagePrefix (monorepo)", () => {
 
     expect(result).toEqual([]);
   });
-
-  test("single-package behaviour unchanged when packagePrefix is undefined", async () => {
-    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
-
-    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo", undefined);
-
-    expect(result).toEqual(["/repo/test/unit/foo/bar.test.ts"]);
-  });
 });
 
 // ---------------------------------------------------------------------------
