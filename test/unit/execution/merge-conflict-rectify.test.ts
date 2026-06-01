@@ -27,7 +27,7 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure â
       originalCost: 0.5,
       workdir: "/tmp/nonexistent-workdir-for-test",
       config,
-      hooks: {},
+      hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
       agentManager: {
@@ -85,7 +85,7 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure â
       originalCost: 0,
       workdir: "/tmp/nonexistent-workdir-for-test",
       config,
-      hooks: {},
+      hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
       agentManager: { getDefault: () => "claude" } as never,
