@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RectifyConflictedStoryOptions } from "../../../src/execution/merge-conflict-rectify";
 import { rectifyConflictedStory } from "../../../src/execution/merge-conflict-rectify";
-import { makeNaxConfig, makePRD, makeStory } from "../../helpers";
+import { makeMockAgentManager, makeNaxConfig, makePRD, makeSessionManager, makeStory } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rect AC-7 — errors are caught, not propagated; returns { success: false }
@@ -30,10 +30,8 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
-      agentManager: {
-        getDefault: () => "claude",
-      } as never,
-      sessionManager: undefined as never,
+      agentManager: makeMockAgentManager(),
+      sessionManager: makeSessionManager(),
       runtime: {
         outputDir: "/tmp/nax-rect-test-output",
         costAggregator: {
@@ -88,8 +86,8 @@ describe("rect AC-7: rectifyConflictedStory catches errors and returns failure �
       hooks: { hooks: {} },
       pluginRegistry: { getReporters: () => [], getContextProviders: () => [] } as never,
       prd,
-      agentManager: { getDefault: () => "claude" } as never,
-      sessionManager: undefined as never,
+      agentManager: makeMockAgentManager(),
+      sessionManager: makeSessionManager(),
       runtime: {
         outputDir: "/tmp",
         costAggregator: {

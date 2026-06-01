@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 const SRC = join(import.meta.dir, "../../../src");
 
@@ -54,46 +55,20 @@ describe("exec AC-23 (source): handlePipelineFailure routes escalate action to h
 
 describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure for each batchResult.failed entry", () => {
   function makePendingStory(id: string) {
-    return {
-      id,
-      title: `Story ${id}`,
-      description: `Description for ${id}`,
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending" as const,
-      passes: false,
-      attempts: 0,
-      priorFailures: [],
-      escalations: [],
-    };
+    return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });
   }
 
   function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
-    return {
-      project: "test-project",
-      feature: "test-feature",
-      branchName: "test-branch",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userStories: stories,
-    };
+    return makePRD({ userStories: stories });
   }
 
   function makeCtx(parallelCount = 2) {
     return {
       prdPath: "/tmp/test-prd.json",
       workdir: "/tmp/test-workdir",
-      config: {
-        execution: {
-          maxIterations: 1,
-          costLimit: 100,
-          iterationDelayMs: 0,
-          rectification: { maxAttemptsTotal: 2 },
-        },
-        autoMode: { defaultAgent: "claude-code" },
-        interaction: {},
-      },
+      config: makeNaxConfig({
+        execution: { maxIterations: 1, costLimit: 100, iterationDelayMs: 0, rectification: { maxAttemptsTotal: 2 } },
+      }),
       hooks: {},
       feature: "test-feature",
       dryRun: false,
@@ -195,17 +170,15 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
 
     try {
       const mod = await import("../../../src/execution/unified-executor");
-      // Should not throw — failure routing is best-effort
-      await mod.executeUnified(makeCtx() as never, makePrd([story1, story2]) as never).catch(() => {});
+      // Failure routing is best-effort and must not throw.
+      const result = await mod
+        .executeUnified(makeCtx() as never, makePrd([story1, story2]) as never)
+        .catch(() => undefined);
 
-      // The test passes if executeUnified completes without crashing —
-      // the failure routing path was exercised.
-      // We also verify the PRD shows story2 as failed by checking savePRD was called
-      // (handlePipelineFailure calls savePRD when finalAction is 'fail')
-      const savePRDMock = _tierEscalationDeps.savePRD as ReturnType<typeof mock>;
-      // savePRD may be called by handlePipelineFailure (the pipeline-result-handler imports it directly)
-      // We confirm the failure path was entered by asserting no exception was thrown
-      expect(true).toBe(true); // Reached here means failure routing didn't crash
+      // The failed story (story2) must be routed through the failure path, NOT counted
+      // as completed: storiesCompleted reflects only the batch's `completed` array (story1).
+      expect(result).toBeDefined();
+      expect((result as { storiesCompleted: number }).storiesCompleted).toBe(1);
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;
       _resultHandlerDeps.spawn = origSpawn;

@@ -16,52 +16,28 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
+import { makeNaxConfig, makePRD, makeStory } from "../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixture helpers (local — mirrors existing unified-executor-dispatch patterns)
+// Fixture helpers — delegate to shared factories (test-helpers.md); local
+// wrappers keep call sites terse (makePendingStory(id) / makePrd(stories)).
 // ─────────────────────────────────────────────────────────────────────────────
 
 function makePendingStory(id: string) {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: `Description for ${id}`,
-    acceptanceCriteria: [],
-    tags: [],
-    dependencies: [],
-    status: "pending" as const,
-    passes: false,
-    attempts: 0,
-    priorFailures: [],
-    escalations: [],
-  };
+  return makeStory({ id, title: `Story ${id}`, description: `Description for ${id}` });
 }
 
 function makePrd(stories: ReturnType<typeof makePendingStory>[]) {
-  return {
-    project: "test-project",
-    feature: "test-feature",
-    branchName: "test-branch",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    userStories: stories,
-  };
+  return makePRD({ userStories: stories });
 }
 
 function makeCtx(overrides: Record<string, unknown> = {}) {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
-    config: {
-      execution: {
-        maxIterations: 1,
-        costLimit: 100,
-        iterationDelayMs: 0,
-        rectification: { maxAttemptsTotal: 2 },
-      },
-      autoMode: { defaultAgent: "claude-code" },
-      interaction: {},
-    },
+    config: makeNaxConfig({
+      execution: { maxIterations: 1, costLimit: 100, iterationDelayMs: 0, rectification: { maxAttemptsTotal: 2 } },
+    }),
     hooks: {},
     feature: "test-feature",
     dryRun: false,
