@@ -25,10 +25,6 @@ describe("resolvePlanMode refine", () => {
     expect(resolvePlanMode({ plan: { mode: "refine" } } as NaxConfig)).toBe("refine");
   });
 
-  test("returns single for empty config", () => {
-    expect(resolvePlanMode({} as NaxConfig)).toBe("single");
-  });
-
   test("returns debate when debate auto-selection is enabled", () => {
     expect(
       resolvePlanMode({

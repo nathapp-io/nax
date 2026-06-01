@@ -15,20 +15,13 @@ import { CRASH_PATTERNS, detectRuntimeCrash } from "../../../src/verification/cr
 // ---------------------------------------------------------------------------
 
 describe("CRASH_PATTERNS", () => {
-  test("includes panic(main thread)", () => {
-    expect(CRASH_PATTERNS).toContain("panic(main thread)");
-  });
-
-  test("includes Segmentation fault", () => {
-    expect(CRASH_PATTERNS).toContain("Segmentation fault");
-  });
-
-  test("includes Bun has crashed", () => {
-    expect(CRASH_PATTERNS).toContain("Bun has crashed");
-  });
-
-  test("includes oh no: Bun has crashed", () => {
-    expect(CRASH_PATTERNS).toContain("oh no: Bun has crashed");
+  test.each([
+    ["panic(main thread)" as const],
+    ["Segmentation fault" as const],
+    ["Bun has crashed" as const],
+    ["oh no: Bun has crashed" as const],
+  ])("includes '%s'", (pattern) => {
+    expect(CRASH_PATTERNS).toContain(pattern);
   });
 });
 
@@ -147,31 +140,14 @@ describe("detectRuntimeCrash — non-crash output", () => {
     expect(detectRuntimeCrash(output)).toBe(false);
   });
 
-  test("returns false for timeout output", () => {
-    const output = "Test suite exceeded 30 second timeout\n";
-    expect(detectRuntimeCrash(output)).toBe(false);
-  });
-
-  test("returns false for empty string", () => {
-    expect(detectRuntimeCrash("")).toBe(false);
-  });
-
-  test("returns false for undefined", () => {
-    expect(detectRuntimeCrash(undefined)).toBe(false);
-  });
-
-  test("returns false for null", () => {
-    expect(detectRuntimeCrash(null)).toBe(false);
-  });
-
-  test("returns false for output that mentions 'panic' without full pattern", () => {
-    // Partial matches must NOT trigger detection (pattern is exact phrase)
-    const output = "don't panic, everything is fine";
-    expect(detectRuntimeCrash(output)).toBe(false);
-  });
-
-  test("returns false for output that mentions 'crashed' without Bun prefix", () => {
-    const output = "The test process crashed unexpectedly";
+  test.each([
+    ["timeout output", "Test suite exceeded 30 second timeout\n"],
+    ["empty string", ""],
+    ["undefined", undefined as unknown as string],
+    ["null", null as unknown as string],
+    ["partial 'panic' without full pattern", "don't panic, everything is fine"],
+    ["partial 'crashed' without Bun prefix", "The test process crashed unexpectedly"],
+  ])("returns false for %s", (_label, output) => {
     expect(detectRuntimeCrash(output)).toBe(false);
   });
 });

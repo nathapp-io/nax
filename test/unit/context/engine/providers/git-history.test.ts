@@ -65,13 +65,11 @@ function captureWorkdirs(): string[] {
 describe("GitHistoryProvider", () => {
   const provider = new GitHistoryProvider();
 
-  test("returns empty when touchedFiles is absent", async () => {
-    const result = await provider.fetch(makeRequest());
-    expect(result.chunks).toHaveLength(0);
-  });
-
-  test("returns empty when touchedFiles is empty array", async () => {
-    const result = await provider.fetch(makeRequest({ touchedFiles: [] }));
+  test.each([
+    ["touchedFiles absent", makeRequest()],
+    ["touchedFiles empty array", makeRequest({ touchedFiles: [] })],
+  ])("returns empty when %s", async (_label, request) => {
+    const result = await provider.fetch(request);
     expect(result.chunks).toHaveLength(0);
   });
 
@@ -97,16 +95,14 @@ describe("GitHistoryProvider", () => {
     expect(result.chunks).toHaveLength(1);
   });
 
-  test("chunk has kind 'history'", async () => {
+  test.each([
+    ["kind", "kind" as const, "history" as const],
+    ["scope", "scope" as const, "story" as const],
+    ["rawScore", "rawScore" as const, 0.7 as const],
+  ])("chunk has %s property", async (_label, prop, expected) => {
     mockGit(new Map([["src/foo.ts", { stdout: "abc1234 fix: something", exitCode: 0 }]]));
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
-    expect(result.chunks[0]?.kind).toBe("history");
-  });
-
-  test("chunk has scope 'story'", async () => {
-    mockGit(new Map([["src/foo.ts", { stdout: "abc1234 fix: something", exitCode: 0 }]]));
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
-    expect(result.chunks[0]?.scope).toBe("story");
+    expect(result.chunks[0]?.[prop]).toBe(expected);
   });
 
   test("chunk role includes implementer and tdd", async () => {
@@ -114,12 +110,6 @@ describe("GitHistoryProvider", () => {
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
     expect(result.chunks[0]?.role).toContain("implementer");
     expect(result.chunks[0]?.role).toContain("tdd");
-  });
-
-  test("chunk rawScore is 0.7", async () => {
-    mockGit(new Map([["src/foo.ts", { stdout: "abc1234 fix: something", exitCode: 0 }]]));
-    const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
-    expect(result.chunks[0]?.rawScore).toBe(0.7);
   });
 
   test("chunk content includes file path as section header", async () => {

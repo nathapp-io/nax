@@ -327,40 +327,20 @@ function makeNonTddCtx(configOverride: Record<string, unknown> = {}): any {
 }
 
 describe("PlanInputs — AC1: new optional slots (US-005)", () => {
-  test("AC1: PlanInputs type accepts verifyScoped slot input", () => {
+  test.each([
+    ["verifyScoped", "verifyScoped" as const],
+    ["lintCheck", "lintCheck" as const],
+    ["typecheckCheck", "typecheckCheck" as const],
+  ])("AC1: PlanInputs type accepts %s slot input", (_label, slotKey) => {
     const story = makeStory({ id: "US-001" });
     const config = makeNaxConfig();
     const inputs: PlanInputs = {
       story,
       config,
-      verifyScoped: { workdir: "/tmp", storyId: "US-001" },
+      [slotKey]: { workdir: "/tmp", storyId: "US-001" },
     };
-    expect(inputs.verifyScoped).toBeDefined();
-    expect(inputs.verifyScoped?.workdir).toBe("/tmp");
-  });
-
-  test("AC1: PlanInputs type accepts lintCheck slot input", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-    const inputs: PlanInputs = {
-      story,
-      config,
-      lintCheck: { workdir: "/tmp", storyId: "US-001" },
-    };
-    expect(inputs.lintCheck).toBeDefined();
-    expect(inputs.lintCheck?.workdir).toBe("/tmp");
-  });
-
-  test("AC1: PlanInputs type accepts typecheckCheck slot input", () => {
-    const story = makeStory({ id: "US-001" });
-    const config = makeNaxConfig();
-    const inputs: PlanInputs = {
-      story,
-      config,
-      typecheckCheck: { workdir: "/tmp", storyId: "US-001" },
-    };
-    expect(inputs.typecheckCheck).toBeDefined();
-    expect(inputs.typecheckCheck?.workdir).toBe("/tmp");
+    expect(inputs[slotKey]).toBeDefined();
+    expect((inputs[slotKey] as { workdir: string })?.workdir).toBe("/tmp");
   });
 
   test("AC1: assemblePlanInputsFromCtx populates verifyScoped for non-TDD strategy", async () => {
@@ -370,22 +350,14 @@ describe("PlanInputs — AC1: new optional slots (US-005)", () => {
     expect(inputs.verifyScoped).toBeDefined();
   });
 
-  test("AC1: verifyScoped.regressionMode is 'deferred' when regressionGate.mode is 'deferred'", async () => {
-    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "deferred" } } });
+  test.each([
+    ["deferred", "deferred" as const, "deferred"],
+    ["per-story", "per-story" as const, "per-story"],
+    ["disabled (maps to deferred)", "disabled" as const, "deferred"],
+  ])("AC1: verifyScoped.regressionMode when regressionGate.mode=%s", async (_label, gateMode, expectedRegressionMode) => {
+    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: gateMode } } });
     const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.verifyScoped?.regressionMode).toBe("deferred");
-  });
-
-  test("AC1: verifyScoped.regressionMode is 'per-story' when regressionGate.mode is 'per-story'", async () => {
-    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "per-story" } } });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.verifyScoped?.regressionMode).toBe("per-story");
-  });
-
-  test("AC1: verifyScoped.regressionMode is 'deferred' when regressionGate.mode is 'disabled' (fullSuiteGate handles disabled, not verifyScopedOp)", async () => {
-    const ctx = makeNonTddCtx({ execution: { ...DEFAULT_CONFIG.execution, regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "disabled" } } });
-    const inputs = await assemblePlanInputsFromCtx(ctx);
-    expect(inputs.verifyScoped?.regressionMode).toBe("deferred");
+    expect(inputs.verifyScoped?.regressionMode).toBe(expectedRegressionMode);
   });
 
   test("AC1: assemblePlanInputsFromCtx populates lintCheck when 'lint' in review.checks and lint command configured", async () => {

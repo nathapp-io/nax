@@ -186,21 +186,15 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — non-TDD single-session", () => {
-  test("no-test strategy includes only implementer", async () => {
+  test.each([
+    ["no-test strategy", "no-test" as const],
+    ["test-after strategy", "test-after" as const],
+  ])("%s includes only implementer", async (_label, strategy) => {
     const story = makeStory();
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
     const inputs = makeNonTddInputs(story);
-    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toEqual(["implementer"]);
-  });
-
-  test("test-after strategy includes only implementer", async () => {
-    const story = makeStory();
-    const config = makeNaxConfig();
-    const ctx = makeMockCallContext();
-    const inputs = makeNonTddInputs(story);
-    const plan = await buildPlanForStrategy(ctx, story, config, "test-after", inputs);
+    const plan = await buildPlanForStrategy(ctx, story, config, strategy, inputs);
     expect(plan.phaseNames()).toEqual(["implementer"]);
   });
 
@@ -372,37 +366,19 @@ describe("buildPlanForStrategy — rectification", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildPlanForStrategy — AC3: new check phase wiring (US-005)", () => {
-  test("AC3: non-TDD + verifyScoped input → plan includes 'verify-scoped' phase", async () => {
+  test.each([
+    ["verifyScoped input", "verifyScoped" as const, "verify-scoped"],
+    ["lintCheck input", "lintCheck" as const, "lint-check"],
+    ["typecheckCheck input", "typecheckCheck" as const, "typecheck-check"],
+  ])("AC3: non-TDD + %s → plan includes '%s' phase", async (_label, inputKey, expectedPhase) => {
     const story = makeStory();
     const ctx = makeMockCallContext();
     const config = makeNaxConfig();
     const inputs = makeNonTddInputs(story, {
-      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+      [inputKey]: { workdir: "/tmp/test", storyId: story.id },
     });
     const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("verify-scoped");
-  });
-
-  test("AC3: lintCheck input → plan includes 'lint-check' phase", async () => {
-    const story = makeStory();
-    const ctx = makeMockCallContext();
-    const config = makeNaxConfig();
-    const inputs = makeNonTddInputs(story, {
-      lintCheck: { workdir: "/tmp/test", storyId: story.id },
-    });
-    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("lint-check");
-  });
-
-  test("AC3: typecheckCheck input → plan includes 'typecheck-check' phase", async () => {
-    const story = makeStory();
-    const ctx = makeMockCallContext();
-    const config = makeNaxConfig();
-    const inputs = makeNonTddInputs(story, {
-      typecheckCheck: { workdir: "/tmp/test", storyId: story.id },
-    });
-    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
-    expect(plan.phaseNames()).toContain("typecheck-check");
+    expect(plan.phaseNames()).toContain(expectedPhase);
   });
 
   test("AC3: semanticReview input → plan includes 'semantic-review' phase", async () => {

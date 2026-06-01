@@ -120,16 +120,12 @@ describe("suggestedTestFilename()", () => {
     expect(suggestedTestFilename("typescript")).toBe(".nax-suggested.test.ts");
   });
 
-  test("returns .nax-suggested_test.go for Go", () => {
-    expect(suggestedTestFilename("go")).toBe(".nax-suggested_test.go");
-  });
-
-  test("returns _nax_suggested_test.py for Python", () => {
-    expect(suggestedTestFilename("python")).toBe("_nax_suggested_test.py");
-  });
-
-  test("returns .nax-suggested.rs for Rust", () => {
-    expect(suggestedTestFilename("rust")).toBe(".nax-suggested.rs");
+  test.each([
+    ["go", ".nax-suggested_test.go"],
+    ["python", "_nax_suggested_test.py"],
+    ["rust", ".nax-suggested.rs"],
+  ] as const)("returns correct filename for %s", (lang, expected) => {
+    expect(suggestedTestFilename(lang)).toBe(expected);
   });
 });
 
@@ -145,18 +141,11 @@ describe("resolveSuggestedTestFile()", () => {
 });
 
 describe("resolveSuggestedPackageFeatureTestPath()", () => {
-  test("returns correct monorepo path", () => {
-    const result = resolveSuggestedPackageFeatureTestPath("/project/apps/api", "auth-feature");
-    expect(result).toBe("/project/apps/api/.nax/features/auth-feature/.nax-suggested.test.ts");
-  });
-
-  test("respects language", () => {
-    const result = resolveSuggestedPackageFeatureTestPath("/project", "feat", undefined, "go");
-    expect(result).toBe("/project/.nax/features/feat/.nax-suggested_test.go");
-  });
-
-  test("respects config override", () => {
-    const result = resolveSuggestedPackageFeatureTestPath("/project", "feat", "custom.test.ts");
-    expect(result).toBe("/project/.nax/features/feat/custom.test.ts");
+  test.each([
+    ["monorepo path", "/project/apps/api", "auth-feature", undefined as string | undefined, undefined as string | undefined, "/project/apps/api/.nax/features/auth-feature/.nax-suggested.test.ts"],
+    ["language", "/project", "feat", undefined as string | undefined, "go", "/project/.nax/features/feat/.nax-suggested_test.go"],
+    ["config override", "/project", "feat", "custom.test.ts", undefined as string | undefined, "/project/.nax/features/feat/custom.test.ts"],
+  ])("respects %s", (_label, pkg, feature, override, lang, expected) => {
+    expect(resolveSuggestedPackageFeatureTestPath(pkg, feature, override, lang)).toBe(expected);
   });
 });

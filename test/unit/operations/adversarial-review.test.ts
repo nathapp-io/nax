@@ -44,20 +44,14 @@ function makeBuildCtx() {
 }
 
 describe("adversarialReviewOp shape", () => {
-  test("kind is run", () => {
-    expect(adversarialReviewOp.kind).toBe("run");
-  });
-  test("name is adversarial-review", () => {
-    expect(adversarialReviewOp.name).toBe("adversarial-review");
-  });
-  test("session.role is reviewer-adversarial", () => {
-    expect(adversarialReviewOp.session.role).toBe("reviewer-adversarial");
-  });
-  test("session.lifetime is fresh", () => {
-    expect(adversarialReviewOp.session.lifetime).toBe("fresh");
-  });
-  test("stage is review", () => {
-    expect(adversarialReviewOp.stage).toBe("review");
+  test.each([
+    ["kind", adversarialReviewOp.kind, "run"],
+    ["name", adversarialReviewOp.name, "adversarial-review"],
+    ["session.role", adversarialReviewOp.session.role, "reviewer-adversarial"],
+    ["session.lifetime", adversarialReviewOp.session.lifetime, "fresh"],
+    ["stage", adversarialReviewOp.stage, "review"],
+  ])("%s is %s", (_prop, actual, expected) => {
+    expect(actual).toBe(expected);
   });
 });
 
@@ -67,20 +61,14 @@ describe("adversarialReviewOp.build()", () => {
     const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
     expect(result).toHaveProperty("task");
   });
-  test("task content contains story title", () => {
+  test.each([
+    ["story title", "Add logout endpoint"],
+    ["acceptance criteria", "Clears the session token"],
+    ["git ref in ref mode", "def5678"],
+  ])("task content contains %s", (_label, needle) => {
     const ctx = makeBuildCtx();
     const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("Add logout endpoint");
-  });
-  test("task content contains acceptance criteria", () => {
-    const ctx = makeBuildCtx();
-    const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("Clears the session token");
-  });
-  test("task content contains git ref in ref mode", () => {
-    const ctx = makeBuildCtx();
-    const result = adversarialReviewOp.build(SAMPLE_INPUT, ctx);
-    expect(result.task.content).toContain("def5678");
+    expect(result.task.content).toContain(needle);
   });
   test("task content contains embedded diff in embedded mode", () => {
     const ctx = makeBuildCtx();

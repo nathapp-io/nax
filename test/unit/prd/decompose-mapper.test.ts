@@ -40,28 +40,15 @@ function makeDecomposedStory(overrides: Partial<DecomposedStory> = {}): Decompos
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mapDecomposedStoriesToUserStories — routing field mapping", () => {
-  test("maps complexity to routing.complexity", () => {
-    const story = makeDecomposedStory({ complexity: "complex" });
+  test.each([
+    ["complexity", { complexity: "complex" as const }, "complexity" as const, "complex"],
+    ["testStrategy", { testStrategy: "tdd-simple" as const }, "testStrategy" as const, "tdd-simple"],
+    ["reasoning", { reasoning: "Clear isolated task" }, "reasoning" as const, "Clear isolated task"],
+    ["testStrategy fallback", { testStrategy: undefined }, "testStrategy" as const, "test-after"],
+  ])("maps %s correctly", (_label, override, field, expected) => {
+    const story = makeDecomposedStory(override);
     const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.complexity).toBe("complex");
-  });
-
-  test("maps testStrategy to routing.testStrategy", () => {
-    const story = makeDecomposedStory({ testStrategy: "tdd-simple" });
-    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.testStrategy).toBe("tdd-simple");
-  });
-
-  test("maps reasoning to routing.reasoning", () => {
-    const story = makeDecomposedStory({ reasoning: "Clear isolated task" });
-    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.reasoning).toBe("Clear isolated task");
-  });
-
-  test("uses test-after fallback when testStrategy is undefined", () => {
-    const story = makeDecomposedStory({ testStrategy: undefined });
-    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.testStrategy).toBe("test-after");
+    expect(result.routing?.[field]).toBe(expected);
   });
 
   test("maps all complexity values correctly", () => {
@@ -79,24 +66,18 @@ describe("mapDecomposedStoriesToUserStories — routing field mapping", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mapDecomposedStoriesToUserStories — lifecycle defaults", () => {
-  test("sets status to pending", () => {
+  test.each([
+    ["status", "status" as const, "pending" as const],
+    ["passes", "passes" as const, false as const],
+    ["attempts", "attempts" as const, 0 as const],
+  ])("sets %s to default", (_label, field, expected) => {
     const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
-    expect(result.status).toBe("pending");
-  });
-
-  test("sets passes to false", () => {
-    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
-    expect(result.passes).toBe(false);
+    expect(result[field]).toBe(expected);
   });
 
   test("sets escalations to empty array", () => {
     const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
     expect(result.escalations).toEqual([]);
-  });
-
-  test("sets attempts to 0", () => {
-    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
-    expect(result.attempts).toBe(0);
   });
 
   test("sets parentStoryId from argument", () => {
@@ -176,13 +157,11 @@ describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
     expect(result[1].workdir).toBe("apps/api");
   });
 
-  test("workdir is absent when parentWorkdir is not provided", () => {
-    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
-    expect(result.workdir).toBeUndefined();
-  });
-
-  test("workdir is absent when parentWorkdir is undefined", () => {
-    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001", undefined);
+  test.each([
+    ["not provided", undefined as string | undefined],
+    ["explicitly undefined", undefined],
+  ])("workdir is absent when parentWorkdir is %s", (_label, parentWorkdir) => {
+    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001", parentWorkdir);
     expect(result.workdir).toBeUndefined();
   });
 

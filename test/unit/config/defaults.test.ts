@@ -22,36 +22,20 @@ describe("DEFAULT_CONFIG review.checks", () => {
     expect(DEFAULT_CONFIG.review.checks).not.toContain("test");
   });
 
-  test("default review.checks includes 'typecheck'", () => {
-    expect(DEFAULT_CONFIG.review.checks).toContain("typecheck");
-  });
-
-  test("default review.checks includes 'lint'", () => {
-    expect(DEFAULT_CONFIG.review.checks).toContain("lint");
+  test.each([
+    ["typecheck"],
+    ["lint"],
+  ] as const)("default review.checks includes '%s'", (check) => {
+    expect(DEFAULT_CONFIG.review.checks).toContain(check);
   });
 });
 
 describe("schema backwards compatibility: 'test' remains a valid review check", () => {
-  test("schema accepts review.checks containing 'test'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["typecheck", "lint", "test"],
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("schema accepts review.checks with only 'test'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["test"],
-      },
-    };
+  test.each([
+    [["typecheck", "lint", "test"]],
+    [["test"]],
+  ])("schema accepts review.checks %j", (checks) => {
+    const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
@@ -70,26 +54,11 @@ describe("schema backwards compatibility: 'test' remains a valid review check", 
 });
 
 describe("schema: 'build' is a valid review check (BUILD-001)", () => {
-  test("schema accepts review.checks containing 'build'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["typecheck", "lint", "build"],
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("schema accepts review.checks with only 'build'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      review: {
-        ...DEFAULT_CONFIG.review,
-        checks: ["build"],
-      },
-    };
+  test.each([
+    [["typecheck", "lint", "build"]],
+    [["build"]],
+  ])("schema accepts review.checks %j", (checks) => {
+    const config = { ...DEFAULT_CONFIG, review: { ...DEFAULT_CONFIG.review, checks } };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
@@ -124,38 +93,24 @@ describe("DEFAULT_CONFIG.models per-agent shape (US-001-4)", () => {
     });
   });
 
-  test("models.claude.fast is 'haiku'", () => {
-    expect(DEFAULT_CONFIG.models.claude.fast).toBe("haiku");
-  });
-
-  test("models.claude.balanced is 'sonnet'", () => {
-    expect(DEFAULT_CONFIG.models.claude.balanced).toBe("sonnet");
-  });
-
-  test("models.claude.powerful is 'opus'", () => {
-    expect(DEFAULT_CONFIG.models.claude.powerful).toBe("opus");
+  test.each([
+    ["fast" as const, "haiku"],
+    ["balanced" as const, "sonnet"],
+    ["powerful" as const, "opus"],
+  ])("models.claude.%s is '%s'", (tier, expected) => {
+    expect(DEFAULT_CONFIG.models.claude[tier]).toBe(expected);
   });
 });
 
 describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
-  test("precheck.storySizeGate.action defaults to 'block'", () => {
-    expect(DEFAULT_CONFIG.precheck.storySizeGate.action).toBe("block");
-  });
-
-  test("precheck.storySizeGate.maxReplanAttempts defaults to 3", () => {
-    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxReplanAttempts).toBe(3);
-  });
-
-  test("precheck.storySizeGate.maxAcCount defaults to 10", () => {
-    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxAcCount).toBe(10);
-  });
-
-  test("precheck.storySizeGate.maxDescriptionLength defaults to 3000", () => {
-    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxDescriptionLength).toBe(3000);
-  });
-
-  test("precheck.storySizeGate.maxBulletPoints defaults to 12", () => {
-    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxBulletPoints).toBe(12);
+  test.each([
+    ["action" as const, "block" as const],
+    ["maxReplanAttempts" as const, 3 as const],
+    ["maxAcCount" as const, 10 as const],
+    ["maxDescriptionLength" as const, 3000 as const],
+    ["maxBulletPoints" as const, 12 as const],
+  ])("precheck.storySizeGate.%s defaults to %s", (field, expected) => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate[field]).toBe(expected);
   });
 });
 

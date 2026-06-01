@@ -20,25 +20,14 @@ describe("countFileLines", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("counts lines correctly in a file", () => {
-    const filePath = join(tempDir, "test.ts");
-    writeFileSync(filePath, "line1\nline2\nline3\n");
-    const count = countFileLines(filePath);
-    expect(count).toBe(3);
-  });
-
-  test("handles empty files", () => {
-    const filePath = join(tempDir, "empty.ts");
-    writeFileSync(filePath, "");
-    const count = countFileLines(filePath);
-    expect(count).toBe(0);
-  });
-
-  test("counts single line file correctly", () => {
-    const filePath = join(tempDir, "single.ts");
-    writeFileSync(filePath, "only line");
-    const count = countFileLines(filePath);
-    expect(count).toBe(1);
+  test.each([
+    ["multiple lines", "multi.ts", "line1\nline2\nline3\n", 3],
+    ["empty file", "empty.ts", "", 0],
+    ["single line", "single.ts", "only line", 1],
+  ])("counts %s correctly", (_label, filename, content, expected) => {
+    const filePath = join(tempDir, filename);
+    writeFileSync(filePath, content);
+    expect(countFileLines(filePath)).toBe(expected);
   });
 });
 
@@ -114,22 +103,12 @@ describe("findOversizedTestFiles", () => {
 });
 
 describe("shouldFailOnHardLimit", () => {
-  test("returns true when skipPrecheck is false and hardLimit is exceeded", () => {
-    const oversized = [{ path: "test/file.test.ts", lineCount: 850 }];
-    const result = shouldFailOnHardLimit(oversized, 800, false);
-    expect(result).toBe(true);
-  });
-
-  test("returns false when skipPrecheck is true even if hardLimit is exceeded", () => {
-    const oversized = [{ path: "test/file.test.ts", lineCount: 850 }];
-    const result = shouldFailOnHardLimit(oversized, 800, true);
-    expect(result).toBe(false);
-  });
-
-  test("returns false when all files are under hardLimit", () => {
-    const oversized = [{ path: "test/file.test.ts", lineCount: 750 }];
-    const result = shouldFailOnHardLimit(oversized, 800, false);
-    expect(result).toBe(false);
+  test.each([
+    ["skipPrecheck=false and hardLimit exceeded", [{ path: "test/file.test.ts", lineCount: 850 }], 800, false, true],
+    ["skipPrecheck=true even if hardLimit exceeded", [{ path: "test/file.test.ts", lineCount: 850 }], 800, true, false],
+    ["all files under hardLimit", [{ path: "test/file.test.ts", lineCount: 750 }], 800, false, false],
+  ])("returns %s when %s", (_label, oversized, limit, skip, expected) => {
+    expect(shouldFailOnHardLimit(oversized, limit, skip)).toBe(expected);
   });
 
   test("returns true when any file exceeds hardLimit", () => {
@@ -160,16 +139,12 @@ describe("generateTestSizesReport", () => {
     expect(report).toContain("820");
   });
 
-  test("includes warning indicator for soft limit violations", () => {
-    const oversized = [{ path: "test/unit/file1.test.ts", lineCount: 550 }];
+  test.each([
+    ["warning indicator for soft limit violations", [{ path: "test/unit/file1.test.ts", lineCount: 550 }], "⚠"],
+    ["failure indicator for hard limit violations", [{ path: "test/unit/file2.test.ts", lineCount: 820 }], "✗"],
+  ])("includes %s", (_label, oversized, indicator) => {
     const report = generateTestSizesReport(oversized, 500, 800);
-    expect(report).toContain("⚠");
-  });
-
-  test("includes failure indicator for hard limit violations", () => {
-    const oversized = [{ path: "test/unit/file2.test.ts", lineCount: 820 }];
-    const report = generateTestSizesReport(oversized, 500, 800);
-    expect(report).toContain("✗");
+    expect(report).toContain(indicator);
   });
 
   test("includes summary statistics", () => {

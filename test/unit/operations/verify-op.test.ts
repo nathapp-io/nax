@@ -30,16 +30,13 @@ describe("verifierOp — RunOperation shape", () => {
     expect(verifierOp.session.lifetime).toBe("fresh");
   });
 
-  test("verifierOp has a name", async () => {
+  test.each([
+    ["name" as const],
+    ["stage" as const],
+  ])("verifierOp has a non-empty %s string", async (field) => {
     const { verifierOp } = await import("@/operations");
-    expect(typeof verifierOp.name).toBe("string");
-    expect(verifierOp.name).toBeTruthy();
-  });
-
-  test("verifierOp has a stage", async () => {
-    const { verifierOp } = await import("@/operations");
-    expect(typeof verifierOp.stage).toBe("string");
-    expect(verifierOp.stage).toBeTruthy();
+    expect(typeof verifierOp[field]).toBe("string");
+    expect(verifierOp[field]).toBeTruthy();
   });
 
   test("verifierOp has a config selector", async () => {
@@ -47,19 +44,21 @@ describe("verifierOp — RunOperation shape", () => {
     expect(verifierOp.config).toBeDefined();
   });
 
-  test("verifierOp has a build function", async () => {
+  test.each([
+    ["build" as const],
+    ["parse" as const],
+  ])("verifierOp has a %s function", async (method) => {
     const { verifierOp } = await import("@/operations");
-    expect(typeof verifierOp.build).toBe("function");
-  });
-
-  test("verifierOp has a parse function", async () => {
-    const { verifierOp } = await import("@/operations");
-    expect(typeof verifierOp.parse).toBe("function");
+    expect(typeof verifierOp[method]).toBe("function");
   });
 });
 
 describe("verifierOp.parse — error handling (strict: throws ParseValidationError)", () => {
-  test("throws ParseValidationError when output is empty", async () => {
+  test.each([
+    ["empty output", ""],
+    ["unparseable prose", "could not parse"],
+    ["malformed JSON", '{ "incomplete":'],
+  ])("throws ParseValidationError when output is %s", async (_label, output) => {
     const { verifierOp } = await import("@/operations");
     const { ParseValidationError } = await import("../../../src/agents/retry");
     const { DEFAULT_CONFIG } = await import("@/config");
@@ -67,29 +66,7 @@ describe("verifierOp.parse — error handling (strict: throws ParseValidationErr
     const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
     const input = { story: { id: "US-001" } as any };
 
-    expect(() => verifierOp.parse("", input, ctx)).toThrow(ParseValidationError);
-  });
-
-  test("throws ParseValidationError when output is unparseable prose", async () => {
-    const { verifierOp } = await import("@/operations");
-    const { ParseValidationError } = await import("../../../src/agents/retry");
-    const { DEFAULT_CONFIG } = await import("@/config");
-
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
-
-    expect(() => verifierOp.parse("could not parse", input, ctx)).toThrow(ParseValidationError);
-  });
-
-  test("throws ParseValidationError when output is malformed JSON", async () => {
-    const { verifierOp } = await import("@/operations");
-    const { ParseValidationError } = await import("../../../src/agents/retry");
-    const { DEFAULT_CONFIG } = await import("@/config");
-
-    const ctx = { packageView: {} as any, config: DEFAULT_CONFIG };
-    const input = { story: { id: "US-001" } as any };
-
-    expect(() => verifierOp.parse('{ "incomplete":', input, ctx)).toThrow(ParseValidationError);
+    expect(() => verifierOp.parse(output, input, ctx)).toThrow(ParseValidationError);
   });
 });
 

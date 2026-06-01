@@ -45,20 +45,13 @@ describe("DEFAULT_CONFIG.acceptance.fix (US-001)", () => {
     });
   });
 
-  test("acceptance.fix.diagnoseModel is 'fast'", () => {
-    expect(DEFAULT_CONFIG.acceptance.fix.diagnoseModel).toBe("fast");
-  });
-
-  test("acceptance.fix.fixModel is 'balanced'", () => {
-    expect(DEFAULT_CONFIG.acceptance.fix.fixModel).toBe("balanced");
-  });
-
-  test("acceptance.fix.strategy is 'diagnose-first'", () => {
-    expect(DEFAULT_CONFIG.acceptance.fix.strategy).toBe("diagnose-first");
-  });
-
-  test("acceptance.fix.maxRetries is 2", () => {
-    expect(DEFAULT_CONFIG.acceptance.fix.maxRetries).toBe(2);
+  test.each([
+    ["diagnoseModel" as const, "fast" as const],
+    ["fixModel" as const, "balanced" as const],
+    ["strategy" as const, "diagnose-first" as const],
+    ["maxRetries" as const, 2 as const],
+  ])("acceptance.fix.%s is %s", (field, expected) => {
+    expect(DEFAULT_CONFIG.acceptance.fix[field]).toBe(expected);
   });
 });
 
@@ -74,40 +67,20 @@ describe("DiagnosisResult interface (US-001)", () => {
     expect(result.confidence).toBe(0.85);
   });
 
-  test("verdict accepts 'test_bug'", () => {
-    const result: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "The test is incorrect",
-      confidence: 0.9,
-    };
-    expect(result.verdict).toBe("test_bug");
+  test.each([
+    ["test_bug" as const],
+    ["both" as const],
+  ])("verdict accepts '%s'", (verdict) => {
+    const result: DiagnosisResult = { verdict, reasoning: "test", confidence: 0.9 };
+    expect(result.verdict).toBe(verdict);
   });
 
-  test("verdict accepts 'both'", () => {
-    const result: DiagnosisResult = {
-      verdict: "both",
-      reasoning: "Both source and test have issues",
-      confidence: 0.75,
-    };
-    expect(result.verdict).toBe("both");
-  });
-
-  test("confidence accepts 0", () => {
-    const result: DiagnosisResult = {
-      verdict: "source_bug",
-      reasoning: "No confidence in the analysis",
-      confidence: 0,
-    };
-    expect(result.confidence).toBe(0);
-  });
-
-  test("confidence accepts 1", () => {
-    const result: DiagnosisResult = {
-      verdict: "test_bug",
-      reasoning: "Certain about the test bug",
-      confidence: 1,
-    };
-    expect(result.confidence).toBe(1);
+  test.each([
+    [0 as const],
+    [1 as const],
+  ])("confidence accepts %s", (confidence) => {
+    const result: DiagnosisResult = { verdict: "source_bug", reasoning: "test", confidence };
+    expect(result.confidence).toBe(confidence);
   });
 
   test("findings is optional", () => {
@@ -144,48 +117,15 @@ describe("AcceptanceConfigSchema fix strategy validation (US-001)", () => {
     };
   }
 
-  test("accepts 'diagnose-first' strategy", () => {
-    const config = baseAcceptanceFixConfig({
-      diagnoseModel: "fast",
-      fixModel: "balanced",
-      strategy: "diagnose-first",
-      maxRetries: 2,
-    });
+  test.each([
+    ["diagnose-first", true],
+    ["implement-only", true],
+    ["invalid-strategy", false],
+    ["diagnose-only (wrong pattern)", false],
+  ])("strategy '%s' accepted=%s", (strategy, expected) => {
+    const config = baseAcceptanceFixConfig({ diagnoseModel: "fast", fixModel: "balanced", strategy, maxRetries: 2 });
     const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts 'implement-only' strategy", () => {
-    const config = baseAcceptanceFixConfig({
-      diagnoseModel: "fast",
-      fixModel: "balanced",
-      strategy: "implement-only",
-      maxRetries: 2,
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects unknown strategy value", () => {
-    const config = baseAcceptanceFixConfig({
-      diagnoseModel: "fast",
-      fixModel: "balanced",
-      strategy: "invalid-strategy",
-      maxRetries: 2,
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects strategy value 'diagnose-only' (wrong pattern)", () => {
-    const config = baseAcceptanceFixConfig({
-      diagnoseModel: "fast",
-      fixModel: "balanced",
-      strategy: "diagnose-only",
-      maxRetries: 2,
-    });
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(expected);
   });
 
   test("fix object is optional (backwards compat)", () => {

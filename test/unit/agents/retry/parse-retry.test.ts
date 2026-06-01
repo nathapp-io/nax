@@ -24,47 +24,30 @@ const plainError = new Error("transport failure");
 
 describe("makeParseRetryStrategy", () => {
   describe("AC-1: non-ParseValidationError falls through", () => {
-    test("returns { retry: false } for plain Error", () => {
+    test.each([
+      ["plain Error", plainError],
+      ["AdapterFailure-shaped error", Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false })],
+    ])("returns { retry: false } for %s", (_label, err) => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
         reviewerKind: "test",
         prompts: { invalid: () => "invalid", truncated: () => "truncated" },
       });
-      const result = strategy.shouldRetry(plainError, 0, makeCtx());
-      expect(result).toEqual({ retry: false });
-    });
-
-    test("returns { retry: false } for AdapterFailure-shaped error", () => {
-      const adapterErr = Object.assign(new Error("adapter"), { kind: "adapter-failure", retriable: false });
-      const strategy = makeParseRetryStrategy({
-        validate: () => false,
-        reviewerKind: "test",
-        prompts: { invalid: () => "invalid", truncated: () => "truncated" },
-      });
-      const result = strategy.shouldRetry(adapterErr, 0, makeCtx());
-      expect(result).toEqual({ retry: false });
+      expect(strategy.shouldRetry(err, 0, makeCtx())).toEqual({ retry: false });
     });
   });
 
   describe("AC-2: ParseValidationError with empty/undefined lastOutput", () => {
-    test("returns { retry: false } when lastOutput is undefined", () => {
+    test.each([
+      ["undefined", undefined as unknown as string],
+      ["empty string", ""],
+    ])("returns { retry: false } when lastOutput is %s", (_label, lastOutput) => {
       const strategy = makeParseRetryStrategy({
         validate: () => false,
         reviewerKind: "test",
         prompts: { invalid: () => "invalid", truncated: () => "truncated" },
       });
-      const result = strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: undefined }));
-      expect(result).toEqual({ retry: false });
-    });
-
-    test("returns { retry: false } when lastOutput is empty string", () => {
-      const strategy = makeParseRetryStrategy({
-        validate: () => false,
-        reviewerKind: "test",
-        prompts: { invalid: () => "invalid", truncated: () => "truncated" },
-      });
-      const result = strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "" }));
-      expect(result).toEqual({ retry: false });
+      expect(strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput }))).toEqual({ retry: false });
     });
   });
 
@@ -302,29 +285,13 @@ describe("makeParseRetryStrategy", () => {
       return content.slice(start, end + 3);
     }
 
-    test("example uses 'parse:' not the non-existent 'parser:' parameter", async () => {
+    test("example uses correct API surface (parse/prompts/validate/reviewerKind, not parser/nextPrompt)", async () => {
       const block = await extractMakeParseRetryExample();
-      // 'parser:' is not a valid ParseRetryOpts key — only 'parse:' is
       expect(block).not.toContain("parser:");
       expect(block).toContain("parse:");
-    });
-
-    test("example uses 'prompts:' with invalid/truncated callbacks, not 'nextPrompt:'", async () => {
-      const block = await extractMakeParseRetryExample();
-      // 'nextPrompt:' does not exist on ParseRetryOpts — the correct key is 'prompts:'
       expect(block).not.toContain("nextPrompt:");
       expect(block).toContain("prompts:");
-    });
-
-    test("example includes required 'validate:' field", async () => {
-      const block = await extractMakeParseRetryExample();
-      // validate is a required field on ParseRetryOpts
       expect(block).toContain("validate:");
-    });
-
-    test("example includes required 'reviewerKind:' field", async () => {
-      const block = await extractMakeParseRetryExample();
-      // reviewerKind is a required field on ParseRetryOpts
       expect(block).toContain("reviewerKind:");
     });
   });

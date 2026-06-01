@@ -64,51 +64,39 @@ describe("findMissingVerbatimAcs", () => {
     expect(findMissingVerbatimAcs(spec, prdWithAcs("anything"))).toEqual([]);
   });
 
-  test("not missing when the full verbatim phrase survives in a PRD AC", () => {
-    const spec = '- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches';
-    const prd = prdWithAcs(
-      'When cleanup completes, `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches.',
-    );
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([]);
+  test.each<[string, string, string]>([
+    ["full phrase survives in PRD AC",
+     '- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches',
+     'When cleanup completes, `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches.'],
+    ["whitespace and backtick-formatting differences",
+     '- [verbatim] `grep -rn "oldSym"   src/` returns zero matches',
+     'After this story, grep -rn "oldSym" src/ returns zero matches.'],
+    ["file-existence AC is preserved whole",
+     "- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story",
+     "When the story completes, File src/tdd/orchestrator.ts does not exist after this story."],
+    ["count assertion is preserved whole",
+     "- [verbatim] `src/a.ts` contains the regex `^export` exactly `2` times",
+     "src/a.ts contains the regex ^export exactly 2 times."],
+  ])("not missing when %s", (_label, spec, prdAc) => {
+    expect(findMissingVerbatimAcs(spec, prdWithAcs(prdAc))).toEqual([]);
   });
 
-  test("tolerates whitespace and backtick-formatting differences", () => {
-    const spec = '- [verbatim] `grep -rn "oldSym"   src/` returns zero matches';
-    const prd = prdWithAcs('After this story, grep -rn "oldSym" src/ returns zero matches.');
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([]);
-  });
-
-  test("missing when the assertion was paraphrased away", () => {
-    const spec = '- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches';
-    const prd = prdWithAcs("runThreeSessionTdd exports and usages are removed from the src and test trees.");
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([spec.trim()]);
-  });
-
-  test("not missing when a file-existence verbatim AC is preserved whole", () => {
-    const spec = "- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story";
-    const prd = prdWithAcs("When the story completes, File src/tdd/orchestrator.ts does not exist after this story.");
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([]);
-  });
-
-  // C1 regression — polarity inversion must be caught (the whole reason the gate exists).
-  test("missing when a 'does not exist' AC is inverted to 'still exists'", () => {
-    const spec = "- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story";
-    const prd = prdWithAcs("src/tdd/orchestrator.ts still exists for backward compatibility.");
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([spec.trim()]);
-  });
-
-  // C1 regression — a superstring path must not satisfy the AC.
-  test("missing when only a superstring of the path is present", () => {
-    const spec = "- [verbatim] File `src/a.ts` does not exist after this story";
-    const prd = prdWithAcs("src/a.ts.bak is created during migration.");
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([spec.trim()]);
-  });
-
-  // C2 regression — a count-only AC must not be satisfied by an unrelated stray digit.
-  test("missing when a count assertion survives only as a stray digit", () => {
-    const spec = "- [verbatim] `src/a.ts` contains the regex `^export` exactly `2` times";
-    const prd = prdWithAcs("The module is referenced 2 places across the suite.");
-    expect(findMissingVerbatimAcs(spec, prd)).toEqual([spec.trim()]);
+  // C1/C2 regressions — polarity inversion, superstring paths, stray digits
+  test.each<[string, string, string]>([
+    ["assertion was paraphrased away",
+     '- [verbatim] `grep -rn "runThreeSessionTdd" src/ test/` returns zero matches',
+     "runThreeSessionTdd exports and usages are removed from the src and test trees."],
+    ["'does not exist' AC is inverted to 'still exists'",
+     "- [verbatim] File `src/tdd/orchestrator.ts` does not exist after this story",
+     "src/tdd/orchestrator.ts still exists for backward compatibility."],
+    ["only a superstring of the path is present",
+     "- [verbatim] File `src/a.ts` does not exist after this story",
+     "src/a.ts.bak is created during migration."],
+    ["count assertion survives only as a stray digit",
+     "- [verbatim] `src/a.ts` contains the regex `^export` exactly `2` times",
+     "The module is referenced 2 places across the suite."],
+  ])("missing when %s", (_label, spec, prdAc) => {
+    expect(findMissingVerbatimAcs(spec, prdWithAcs(prdAc))).toEqual([spec.trim()]);
   });
 
   test("not missing when the count assertion is preserved whole", () => {

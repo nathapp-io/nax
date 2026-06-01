@@ -120,33 +120,12 @@ REASON: Structural rewrite required.`;
     expect(declarations[0].files).toHaveLength(3);
   });
 
-  test("ignores mock_structure block with empty FILES", () => {
-    const output = `TEST_EDIT_REASON: mock_structure
-FILES:
-REASON: Some reason.`;
-
-    expect(parseTestEditDeclarations(output)).toEqual([]);
-  });
-
-  test("ignores mock_structure block with missing FILES field", () => {
-    const output = `TEST_EDIT_REASON: mock_structure
-REASON: Some reason.`;
-
-    expect(parseTestEditDeclarations(output)).toEqual([]);
-  });
-
-  test("ignores mock_structure block with empty REASON", () => {
-    const output = `TEST_EDIT_REASON: mock_structure
-FILES: a.test.ts
-REASON:`;
-
-    expect(parseTestEditDeclarations(output)).toEqual([]);
-  });
-
-  test("ignores mock_structure block with missing REASON field", () => {
-    const output = `TEST_EDIT_REASON: mock_structure
-FILES: a.test.ts`;
-
+  test.each([
+    ["empty FILES", "TEST_EDIT_REASON: mock_structure\nFILES:\nREASON: Some reason."],
+    ["missing FILES field", "TEST_EDIT_REASON: mock_structure\nREASON: Some reason."],
+    ["empty REASON", "TEST_EDIT_REASON: mock_structure\nFILES: a.test.ts\nREASON:"],
+    ["missing REASON field", "TEST_EDIT_REASON: mock_structure\nFILES: a.test.ts"],
+  ])("ignores mock_structure block with %s", (_label, output) => {
     expect(parseTestEditDeclarations(output)).toEqual([]);
   });
 
@@ -162,21 +141,11 @@ REASON: Some reason.`;
 });
 
 describe("validatePrdQuote", () => {
-  test("returns true when quote appears verbatim in description", () => {
-    const story = makeStory({
-      description: "Implement getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>",
-    });
-    expect(validatePrdQuote("getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>", story)).toBe(true);
-  });
-
-  test("returns true when quote appears in an acceptance criterion", () => {
-    const story = makeStory({
-      acceptanceCriteria: [
-        "AC-1: API exposes `fnA(x: number): void`",
-        "AC-2: returns void",
-      ],
-    });
-    expect(validatePrdQuote("fnA(x: number): void", story)).toBe(true);
+  test.each<[string, ReturnType<typeof makeStory>, string]>([
+    ["verbatim in description", makeStory({ description: "Implement getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>" }), "getChangeImpact(repoId: string, sha: string): Promise<ImpactReport>"],
+    ["in acceptance criterion", makeStory({ acceptanceCriteria: ["AC-1: API exposes `fnA(x: number): void`", "AC-2: returns void"] }), "fnA(x: number): void"],
+  ])("returns true when quote appears %s", (_label, story, quote) => {
+    expect(validatePrdQuote(quote, story)).toBe(true);
   });
 
   test("normalises whitespace before matching", () => {
@@ -186,15 +155,10 @@ describe("validatePrdQuote", () => {
     expect(validatePrdQuote("fn(a: string, b: number): void", story)).toBe(true);
   });
 
-  test("returns false when quote is fabricated", () => {
-    const story = makeStory({
-      description: "fnA(): void",
-      acceptanceCriteria: ["AC-1: API does X"],
-    });
-    expect(validatePrdQuote("fnB(y: string): boolean", story)).toBe(false);
-  });
-
-  test("returns false on empty quote", () => {
-    expect(validatePrdQuote("", makeStory())).toBe(false);
+  test.each<[string, ReturnType<typeof makeStory>, string]>([
+    ["fabricated quote", makeStory({ description: "fnA(): void", acceptanceCriteria: ["AC-1: API does X"] }), "fnB(y: string): boolean"],
+    ["empty quote", makeStory(), ""],
+  ])("returns false when %s", (_label, story, quote) => {
+    expect(validatePrdQuote(quote, story)).toBe(false);
   });
 });

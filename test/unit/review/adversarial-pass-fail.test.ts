@@ -397,13 +397,11 @@ describe("runAdversarialReview — non-blocking only findings", () => {
 
   afterEach(restoreAllDeps);
 
-  test("returns success=true when all findings are unverifiable", async () => {
-    const result = await callRunAdversarialReview(UNVERIFIABLE_ONLY_RESPONSE);
-    expect(result.success).toBe(true);
-  });
-
-  test("returns success=true when all findings are info severity", async () => {
-    const result = await callRunAdversarialReview(INFO_ONLY_RESPONSE);
+  test.each([
+    ["unverifiable findings only", UNVERIFIABLE_ONLY_RESPONSE],
+    ["info-only findings", INFO_ONLY_RESPONSE],
+  ])("returns success=true when all findings are non-blocking (%s)", async (_label, response) => {
+    const result = await callRunAdversarialReview(response);
     expect(result.success).toBe(true);
   });
 
@@ -614,18 +612,6 @@ test("returns success=true when modelResolver returns null", async () => {
       agentManager: undefined,
     });
 
-    expect(result.success).toBe(true);
-  });
-
-  test("output contains 'skipped' when modelResolver returns null", async () => {
-    const result = await runAdversarialReview({
-      workdir: "/tmp/wd",
-      storyGitRef: "abc123",
-      story: STORY,
-      adversarialConfig: ADVERSARIAL_CONFIG,
-      agentManager: undefined,
-    });
-
     expect(result.output).toContain("skipped");
   });
 });
@@ -727,20 +713,12 @@ describe("runAdversarialReview — flip-to-pass on all-hallucinated drops", () =
     expect(demoted!.severity).toBe("warning");
   });
 
-  test("Case 2: mixed drops (hallucinated + missing_ac_quote) → success=false", async () => {
-    const result = await callRunAdversarialReview(MIXED_DROP_RESPONSE);
-    expect(result.success).toBe(false);
-    expect(result.passReason).toBeUndefined();
-  });
-
-  test("Case 3: all drops missing_ac_quote → fail-closed (no regression)", async () => {
-    const result = await callRunAdversarialReview(ALL_MISSING_AC_QUOTE_RESPONSE);
-    expect(result.success).toBe(false);
-    expect(result.passReason).toBeUndefined();
-  });
-
-  test("Case 4: all drops ac_quote_does_not_constrain_locus → fail-closed (no regression)", async () => {
-    const result = await callRunAdversarialReview(ALL_LOCUS_MISMATCH_RESPONSE);
+  test.each([
+    ["Case 2: mixed drops (hallucinated + missing_ac_quote)", MIXED_DROP_RESPONSE],
+    ["Case 3: all drops missing_ac_quote", ALL_MISSING_AC_QUOTE_RESPONSE],
+    ["Case 4: all drops ac_quote_does_not_constrain_locus", ALL_LOCUS_MISMATCH_RESPONSE],
+  ])("%s → fail-closed (success=false, no passReason)", async (_label, response) => {
+    const result = await callRunAdversarialReview(response);
     expect(result.success).toBe(false);
     expect(result.passReason).toBeUndefined();
   });

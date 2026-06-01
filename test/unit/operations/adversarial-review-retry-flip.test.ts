@@ -64,23 +64,6 @@ function makeBuildCtx() {
   return { packageView: view, config: view.select(adversarialReviewOp.config as any) };
 }
 
-// ─── AC1: adversarialReviewOp has both hopBody and retry ─────────────────────
-
-describe("AC1: adversarialReviewOp structure", () => {
-  test("adversarialReviewOp has a hopBody field (same-session requote recovery)", () => {
-    expect(adversarialReviewOp).toHaveProperty("hopBody");
-    expect(typeof adversarialReviewOp.hopBody).toBe("function");
-  });
-
-  test("adversarialReviewOp DOES have a retry field", () => {
-    expect(adversarialReviewOp).toHaveProperty("retry");
-  });
-
-  test("retry field is a function (resolver form)", () => {
-    expect(typeof adversarialReviewOp.retry).toBe("function");
-  });
-});
-
 // ─── AC2: Valid JSON = 1 send() call ─────────────────────────────────────────
 
 describe("AC2: retry behavior — valid JSON response", () => {

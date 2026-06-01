@@ -20,29 +20,14 @@ import type { AcceptanceTestStrategy } from "../../../src/config/runtime-types";
 const BASE_ACCEPTANCE = DEFAULT_CONFIG.acceptance;
 
 describe("AcceptanceTestStrategy type", () => {
-  test("accepts 'unit' as a valid AcceptanceTestStrategy value", () => {
-    const strategy: AcceptanceTestStrategy = "unit";
-    expect(strategy).toBe("unit");
-  });
-
-  test("accepts 'component' as a valid AcceptanceTestStrategy value", () => {
-    const strategy: AcceptanceTestStrategy = "component";
-    expect(strategy).toBe("component");
-  });
-
-  test("accepts 'cli' as a valid AcceptanceTestStrategy value", () => {
-    const strategy: AcceptanceTestStrategy = "cli";
-    expect(strategy).toBe("cli");
-  });
-
-  test("accepts 'e2e' as a valid AcceptanceTestStrategy value", () => {
-    const strategy: AcceptanceTestStrategy = "e2e";
-    expect(strategy).toBe("e2e");
-  });
-
-  test("accepts 'snapshot' as a valid AcceptanceTestStrategy value", () => {
-    const strategy: AcceptanceTestStrategy = "snapshot";
-    expect(strategy).toBe("snapshot");
+  test.each([
+    ["unit" as AcceptanceTestStrategy],
+    ["component" as AcceptanceTestStrategy],
+    ["cli" as AcceptanceTestStrategy],
+    ["e2e" as AcceptanceTestStrategy],
+    ["snapshot" as AcceptanceTestStrategy],
+  ])("accepts '%s' as a valid AcceptanceTestStrategy value", (strategy) => {
+    expect(strategy).toBe(strategy);
   });
 });
 
@@ -71,46 +56,17 @@ describe("AcceptanceConfig interface — optional fields", () => {
 });
 
 describe("AcceptanceConfigSchema — testStrategy validation", () => {
-  test("accepts testStrategy 'unit'", () => {
+  test.each([
+    ["unit"],
+    ["component"],
+    ["cli"],
+    ["e2e"],
+    ["snapshot"],
+    [undefined],
+  ])("accepts testStrategy %j (success=true)", (testStrategy) => {
     const config = {
       ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testStrategy: "unit" },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts testStrategy 'component'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testStrategy: "component" },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts testStrategy 'cli'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testStrategy: "cli" },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts testStrategy 'e2e'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testStrategy: "e2e" },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts testStrategy 'snapshot'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testStrategy: "snapshot" },
+      acceptance: testStrategy !== undefined ? { ...BASE_ACCEPTANCE, testStrategy } : { ...BASE_ACCEPTANCE },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -124,31 +80,17 @@ describe("AcceptanceConfigSchema — testStrategy validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
   });
-
-  test("accepts omitted testStrategy (optional field)", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
 });
 
 describe("AcceptanceConfigSchema — testFramework validation", () => {
-  test("accepts testFramework as a non-empty string", () => {
+  test.each([
+    ["jest"],
+    ["bun:test"],
+    [undefined],
+  ])("accepts testFramework %j (success=true)", (testFramework) => {
     const config = {
       ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testFramework: "jest" },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts testFramework 'bun:test'", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE, testFramework: "bun:test" },
+      acceptance: testFramework !== undefined ? { ...BASE_ACCEPTANCE, testFramework } : { ...BASE_ACCEPTANCE },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
@@ -162,24 +104,14 @@ describe("AcceptanceConfigSchema — testFramework validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
   });
-
-  test("accepts omitted testFramework (optional field)", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      acceptance: { ...BASE_ACCEPTANCE },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-  });
 });
 
 describe("DEFAULT_CONFIG acceptance defaults", () => {
-  test("default acceptance config does not set testStrategy", () => {
-    expect(DEFAULT_CONFIG.acceptance.testStrategy).toBeUndefined();
-  });
-
-  test("default acceptance config does not set testFramework", () => {
-    expect(DEFAULT_CONFIG.acceptance.testFramework).toBeUndefined();
+  test.each([
+    ["testStrategy" as const],
+    ["testFramework" as const],
+  ])("default acceptance config does not set %s", (field) => {
+    expect(DEFAULT_CONFIG.acceptance[field]).toBeUndefined();
   });
 });
 

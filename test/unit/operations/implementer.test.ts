@@ -36,16 +36,13 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.session.lifetime).toBe("warm");
   });
 
-  test("implementerOp has a name", async () => {
+  test.each([
+    ["name" as const],
+    ["stage" as const],
+  ])("implementerOp has a non-empty %s string", async (field) => {
     const { implementerOp } = await import("@/operations");
-    expect(typeof implementerOp.name).toBe("string");
-    expect(implementerOp.name).toBeTruthy();
-  });
-
-  test("implementerOp has a stage", async () => {
-    const { implementerOp } = await import("@/operations");
-    expect(typeof implementerOp.stage).toBe("string");
-    expect(implementerOp.stage).toBeTruthy();
+    expect(typeof implementerOp[field]).toBe("string");
+    expect(implementerOp[field]).toBeTruthy();
   });
 
   test("implementerOp has a config selector", async () => {
@@ -53,14 +50,12 @@ describe("implementerOp — RunOperation shape", () => {
     expect(implementerOp.config).toBeDefined();
   });
 
-  test("implementerOp has a build function", async () => {
+  test.each([
+    ["build" as const],
+    ["parse" as const],
+  ])("implementerOp has a %s function", async (method) => {
     const { implementerOp } = await import("@/operations");
-    expect(typeof implementerOp.build).toBe("function");
-  });
-
-  test("implementerOp has a parse function", async () => {
-    const { implementerOp } = await import("@/operations");
-    expect(typeof implementerOp.parse).toBe("function");
+    expect(typeof implementerOp[method]).toBe("function");
   });
 });
 

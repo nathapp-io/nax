@@ -89,6 +89,10 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
  * @internal
  */
 export function resetCrashHandlers(): void {
+  if (activeCleanup) {
+    activeCleanup();
+  } else {
+    stopHeartbeat();
+  }
   activeCleanup = null;
-  stopHeartbeat();
 }

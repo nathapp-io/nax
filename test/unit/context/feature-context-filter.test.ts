@@ -15,36 +15,15 @@ import {
 
 describe("parseAudienceTags", () => {
   test.each([
-    ["no tag present", "- **No tag here.**"],
-    ["plain text", "Some text without brackets"],
-  ])("returns ['all'] for %s", (_label, input) => {
-    expect(parseAudienceTags(input)).toEqual(["all"]);
-  });
-
-  test("parses single tag", () => {
-    expect(parseAudienceTags("- **Entry.** `[implementer]`")).toEqual(["implementer"]);
-  });
-
-  test("parses multi-tag", () => {
-    expect(parseAudienceTags("- **Entry.** `[implementer, test-writer]`")).toEqual([
-      "implementer",
-      "test-writer",
-    ]);
-  });
-
-  test("parses all tag", () => {
-    expect(parseAudienceTags("- **Entry.** `[all]`")).toEqual(["all"]);
-  });
-
-  test("is case insensitive", () => {
-    expect(parseAudienceTags("- **Entry.** `[IMPLEMENTER]`")).toEqual(["implementer"]);
-  });
-
-  test("trims whitespace in multi-tag", () => {
-    expect(parseAudienceTags("- **Entry.** `[ reviewer , reviewer-semantic ]`")).toEqual([
-      "reviewer",
-      "reviewer-semantic",
-    ]);
+    ["no tag present", "- **No tag here.**", ["all"]],
+    ["plain text", "Some text without brackets", ["all"]],
+    ["single tag", "- **Entry.** `[implementer]`", ["implementer"]],
+    ["multi-tag", "- **Entry.** `[implementer, test-writer]`", ["implementer", "test-writer"]],
+    ["all tag", "- **Entry.** `[all]`", ["all"]],
+    ["case insensitive", "- **Entry.** `[IMPLEMENTER]`", ["implementer"]],
+    ["whitespace in multi-tag", "- **Entry.** `[ reviewer , reviewer-semantic ]`", ["reviewer", "reviewer-semantic"]],
+  ])("parses %s", (_label, input, expected) => {
+    expect(parseAudienceTags(input)).toEqual(expected);
   });
 });
 
@@ -159,20 +138,16 @@ _Last updated: 2024-01-01_
     expect(result).not.toContain("Security concern");
   });
 
-  test("single-session sees [all], [implementer], and [test-writer] entries", () => {
-    const result = filterContextByRole(contextMd, "single-session");
-    expect(result).toContain("Database schema defined");
-    expect(result).toContain("Test fixtures available");
-    expect(result).toContain("Shared constraint");
-    expect(result).not.toContain("Security concern");
-  });
-
-  test("tdd-simple sees [all], [implementer], and [test-writer] entries", () => {
-    const result = filterContextByRole(contextMd, "tdd-simple");
-    expect(result).toContain("Database schema defined");
-    expect(result).toContain("Test fixtures available");
-    expect(result).toContain("Shared constraint");
-  });
+  test.each(["single-session", "tdd-simple"] as const)(
+    "%s sees [all], [implementer], and [test-writer] entries",
+    (role) => {
+      const result = filterContextByRole(contextMd, role);
+      expect(result).toContain("Database schema defined");
+      expect(result).toContain("Test fixtures available");
+      expect(result).toContain("Shared constraint");
+      expect(result).not.toContain("Security concern");
+    },
+  );
 
   test("reviewer-semantic sees [all], [reviewer], and [reviewer-semantic] entries", () => {
     const result = filterContextByRole(contextMd, "reviewer-semantic");

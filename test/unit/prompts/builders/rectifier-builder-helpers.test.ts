@@ -42,32 +42,16 @@ describe("buildEscapeHatch", () => {
   describe("TDD path (includeMockHandoff: true)", () => {
     const hatch = buildEscapeHatch({ includeMockHandoff: true });
 
-    test("says 'four narrow escape valves'", () => {
-      expect(hatch).toContain("four narrow escape valves");
-    });
-
-    test("'Outside these four cases the rule is absolute'", () => {
-      expect(hatch).toContain("Outside these four cases the rule is absolute");
-    });
-
-    test("'Exceptions 1–4' line present", () => {
-      expect(hatch).toContain("Exceptions 1–4");
-    });
-
-    test("includes Exception 4 — Mock-structure handoff", () => {
-      expect(hatch).toContain("### Exception 4 — Mock-structure handoff");
-    });
-
-    test("Exception 4 case (a): wrong mocks", () => {
-      expect(hatch).toContain("mocks reference primitives the new code bypasses");
-    });
-
-    test("Exception 4 case (b): required test-infrastructure", () => {
-      expect(hatch).toContain("Required test-infrastructure does not yet exist and must be introduced");
-    });
-
-    test("case (b) hermetic language", () => {
-      expect(hatch).toContain("hermetic/fixture-backed test surface");
+    test.each([
+      ["says 'four narrow escape valves'", "four narrow escape valves"],
+      ["'Outside these four cases the rule is absolute'", "Outside these four cases the rule is absolute"],
+      ["'Exceptions 1–4' line present", "Exceptions 1–4"],
+      ["includes Exception 4 heading", "### Exception 4 — Mock-structure handoff"],
+      ["Exception 4 case (a): wrong mocks", "mocks reference primitives the new code bypasses"],
+      ["Exception 4 case (b): required test-infrastructure", "Required test-infrastructure does not yet exist and must be introduced"],
+      ["case (b) hermetic language", "hermetic/fixture-backed test surface"],
+    ])("%s", (_label, needle) => {
+      expect(hatch).toContain(needle);
     });
 
     test("includes all four exception headings", () => {
@@ -85,16 +69,12 @@ describe("buildEscapeHatch", () => {
   describe("non-TDD path (includeMockHandoff: false)", () => {
     const hatch = buildEscapeHatch({ includeMockHandoff: false });
 
-    test("says 'three narrow escape valves'", () => {
-      expect(hatch).toContain("three narrow escape valves");
-    });
-
-    test("'Outside these three cases the rule is absolute'", () => {
-      expect(hatch).toContain("Outside these three cases the rule is absolute");
-    });
-
-    test("'Exceptions 1–3' line present", () => {
-      expect(hatch).toContain("Exceptions 1–3");
+    test.each([
+      ["says 'three narrow escape valves'", "three narrow escape valves"],
+      ["'Outside these three cases the rule is absolute'", "Outside these three cases the rule is absolute"],
+      ["'Exceptions 1–3' line present", "Exceptions 1–3"],
+    ])("%s", (_label, needle) => {
+      expect(hatch).toContain(needle);
     });
 
     test("excludes Exception 4", () => {
@@ -117,16 +97,12 @@ describe("buildEscapeHatch", () => {
 // ─── exceptionCountWord ───────────────────────────────────────────────────────
 
 describe("exceptionCountWord", () => {
-  test("three-session-tdd → 'four'", () => {
-    expect(exceptionCountWord(TDD_STORY)).toBe("four");
-  });
-
-  test("three-session-tdd-lite → 'four'", () => {
-    expect(exceptionCountWord(TDD_LITE_STORY)).toBe("four");
-  });
-
-  test("no-test → 'three'", () => {
-    expect(exceptionCountWord(NO_TEST_STORY)).toBe("three");
+  test.each([
+    ["three-session-tdd", TDD_STORY, "four" as const],
+    ["three-session-tdd-lite", TDD_LITE_STORY, "four" as const],
+    ["no-test", NO_TEST_STORY, "three" as const],
+  ])("%s → '%s'", (_strategy, story, expected) => {
+    expect(exceptionCountWord(story)).toBe(expected);
   });
 
   test("no routing → 'three'", () => {
