@@ -22,7 +22,10 @@ export const testWriterRectifyOp: RunOperation<AutofixTestWriterInput, AutofixTe
   kind: "run",
   name: "autofix-test-writer",
   stage: "rectification",
-  session: { role: "test-writer", lifetime: "fresh" },
+  // warm: resume the open test-writer session (from the test-writer phase) and keep it
+  // open across rectify iterations instead of `sessions ensure`-ing a cold session each
+  // turn. Unconditional, mirroring autofix-implementer.ts (already mid-rectification).
+  session: { role: "test-writer", lifetime: "warm" },
   config: autofixConfigSelector,
   build(input, _ctx) {
     const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, input.story, {

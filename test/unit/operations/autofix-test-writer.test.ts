@@ -42,6 +42,16 @@ describe("AutofixTestWriterInput", () => {
   });
 });
 
+describe("testWriterRectifyOp.session", () => {
+  test("role is 'test-writer'", () => {
+    expect(testWriterRectifyOp.session.role).toBe("test-writer");
+  });
+
+  test("lifetime is 'warm' (resumes the open test-writer session across iterations)", () => {
+    expect(testWriterRectifyOp.session.lifetime).toBe("warm");
+  });
+});
+
 describe("testWriterRectifyOp.build", () => {
   test("accepts mode: mock-restructure in input and builds prompt", () => {
     const story = makeStory({ description: "Test mock restructuring" });
