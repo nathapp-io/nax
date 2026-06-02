@@ -45,6 +45,7 @@ export {
   formatPhaseResultMessage,
   buildPhaseOutcomeLogData,
   refreshReviewInputForDispatch,
+  withIncreasingFailuresBail,
   type OrchestratorSlot,
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,

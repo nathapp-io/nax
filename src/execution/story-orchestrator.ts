@@ -183,6 +183,9 @@ export interface RectificationPhaseOptions {
   // biome-ignore lint/suspicious/noExplicitAny: rectification strategies are heterogeneous over their fixOp input/output
   readonly strategies: FixStrategy<Finding, any, any, any>[];
   readonly abortOnIncreasingFailures: boolean;
+  /** Consecutive regressing iterations required before the increasing-failures
+   * bail fires. Defaults to 1 (legacy single-iteration behaviour) when omitted. */
+  readonly consecutiveIncreasesToBail?: number;
   /** Optional: transform findings after validate() returns, before next iteration's strategy selection. */
   readonly postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
 }
@@ -858,23 +861,35 @@ async function runPhase(
 }
 
 /**
- * Wrap each strategy with a bailWhen predicate that fires when the last iteration's
- * findingsAfter count exceeds its findingsBefore count. Preserves user-supplied bailWhen
- * if present (user predicate wins). Returns the unchanged strategies when the option is off.
+ * Wrap each strategy with a bailWhen predicate that fires only after
+ * `consecutiveIncreases` *trailing* iterations have each regressed the finding
+ * count (findingsAfter > findingsBefore). A threshold of 1 reproduces the legacy
+ * "bail on the first regressing iteration" behaviour; higher values tolerate a
+ * transient regression — e.g. a tightened test surfacing more verifier failures
+ * before the implementer fixes the source. Preserves user-supplied bailWhen if
+ * present (user predicate wins). Returns the unchanged strategies when off.
+ *
+ * @internal Exported for unit testing; not for external callers.
  */
-function withIncreasingFailuresBail(
+export function withIncreasingFailuresBail(
   strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
   enabled: boolean,
+  consecutiveIncreases: number,
 ): FixStrategy<Finding, unknown, unknown, unknown>[] {
   if (!enabled) return strategies;
+  const threshold = Math.max(1, consecutiveIncreases);
   return strategies.map((strategy) => ({
     ...strategy,
     bailWhen: (iterations: Iteration<Finding>[]): string | null => {
       const userReason = strategy.bailWhen?.(iterations) ?? null;
       if (userReason !== null) return userReason;
-      const last = iterations[iterations.length - 1];
-      if (last && last.findingsAfter.length > last.findingsBefore.length) {
-        return `failure count increased: ${last.findingsBefore.length} -> ${last.findingsAfter.length}`;
+      if (iterations.length < threshold) return null;
+      const trailing = iterations.slice(-threshold);
+      const allRegressed = trailing.every((it) => it.findingsAfter.length > it.findingsBefore.length);
+      if (allRegressed) {
+        const first = trailing[0];
+        const last = trailing[trailing.length - 1];
+        return `failure count increased for ${threshold} consecutive iteration(s): ${first.findingsBefore.length} -> ${last.findingsAfter.length}`;
       }
       return null;
     },
@@ -958,6 +973,7 @@ export async function runRectification(
     strategies: withIncreasingFailuresBail(
       rectification.strategies as FixStrategy<Finding, unknown, unknown, unknown>[],
       rectification.abortOnIncreasingFailures,
+      rectification.consecutiveIncreasesToBail ?? 1,
     ),
     config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {

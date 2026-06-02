@@ -79,6 +79,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
   "execution.rectification.maxFailureSummaryChars": "Max characters in failure summary",
   "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
+  "execution.rectification.consecutiveIncreasesToBail":
+    "Consecutive regressing iterations required before abortOnIncreasingFailures bails (default: 2; 1 = legacy behaviour)",
   "execution.rectification.escalateOnExhaustion":
     "Enable model tier escalation when attempts are exhausted with remaining failures",
   "execution.rectification.rethinkAtAttempt":
