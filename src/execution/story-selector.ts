@@ -45,8 +45,8 @@ export function selectNextStories(
     );
 
     if (storiesToExecute.length === 0) {
-      // Batch exhausted (all already done) — advance index, caller retries
-      return { selection: null as unknown as StorySelection, nextBatchIndex: currentBatchIndex + 1 };
+      // Batch exhausted — signal caller to stop (no more work in this batch)
+      return null;
     }
 
     const story = storiesToExecute[0];
