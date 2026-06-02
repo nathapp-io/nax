@@ -117,3 +117,47 @@ describe("routingStage - _routingDeps exposes savePRD", () => {
     expect(typeof _routingDeps.savePRD).toBe("function");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Unknown tier handling (BUG-001)
+// ---------------------------------------------------------------------------
+
+describe("routingStage - unknown previousTier is not escalated", () => {
+  let origRoutingDeps: typeof RoutingDeps;
+
+  afterEach(() => {
+    mock.restore();
+    if (origRoutingDeps) {
+      const { _routingDeps } = require("../../../../src/pipeline/stages/routing");
+      Object.assign(_routingDeps, origRoutingDeps);
+    }
+  });
+
+  test("uses derivedTier when previousTier is an unknown string", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
+    _routingDeps.savePRD = mock(() => Promise.resolve());
+    _routingDeps.resolveRouting = mock(() =>
+      Promise.resolve({ modelTier: "fast" as const, complexity: "simple" as const, testStrategy: "test-after" as const, agent: "claude", reasoning: "test" }),
+    );
+
+    // Story with a garbage tier persisted from a corrupted prd.json
+    const story = makeStory({
+      routing: { modelTier: "ultra-mega" as any, complexity: "medium" as any, testStrategy: "test-after" as any, reasoning: "corrupted" },
+      status: "in-progress",
+      passes: false,
+      attempts: 0,
+    });
+    const ctx = makeCtx(story);
+
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    // Must NOT escalate to "ultra-mega" — should use the derived "fast"
+    expect(ctx.story.routing?.modelTier).toBe("fast");
+  });
+});

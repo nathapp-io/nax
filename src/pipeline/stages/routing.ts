@@ -41,7 +41,17 @@ export const routingStage: PipelineStage = {
     const TIER_RANK: Record<string, number> = { fast: 0, balanced: 1, powerful: 2 };
     const derivedTier = decision.modelTier;
     const previousTier = ctx.story.routing?.modelTier;
-    const isEscalated = previousTier !== undefined && (TIER_RANK[previousTier] ?? 0) > (TIER_RANK[derivedTier] ?? 0);
+    const previousRank = previousTier !== undefined ? TIER_RANK[previousTier] : undefined;
+    const derivedRank = TIER_RANK[derivedTier];
+    if (previousTier !== undefined && previousRank === undefined) {
+      logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
+        storyId: ctx.story.id,
+        previousTier,
+        derivedTier,
+      });
+    }
+    const isEscalated =
+      previousTier !== undefined && previousRank !== undefined && derivedRank !== undefined && previousRank > derivedRank;
     const modelTier = isEscalated ? previousTier : derivedTier;
 
     const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
