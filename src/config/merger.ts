@@ -60,25 +60,25 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
         // Collect all hook event names
         const allHookNames = new Set([...Object.keys(baseHookDefs), ...Object.keys(overrideHookDefs)]);
 
-        // For each hook event, concatenate hooks into an array
+        // For each hook event, flatten both sides (either may already be an array
+        // from a prior merge pass) then concatenate into a single flat array.
         for (const hookName of allHookNames) {
           const baseHook = baseHookDefs[hookName];
           const overrideHook = overrideHookDefs[hookName];
 
-          if (baseHook && overrideHook) {
-            // Both exist - create array with both
-            mergedHookDefs[hookName] = [baseHook, overrideHook];
-          } else if (overrideHook) {
-            // Only override exists
-            mergedHookDefs[hookName] = overrideHook;
-          } else {
-            // Only base exists
-            mergedHookDefs[hookName] = baseHook;
-          }
+          const baseItems: unknown[] = Array.isArray(baseHook) ? baseHook : baseHook ? [baseHook] : [];
+          const overrideItems: unknown[] = Array.isArray(overrideHook)
+            ? overrideHook
+            : overrideHook
+              ? [overrideHook]
+              : [];
+          const combined = [...baseItems, ...overrideItems];
+          mergedHookDefs[hookName] = combined.length === 1 ? combined[0] : combined.length > 1 ? combined : undefined;
         }
 
         merged.hooks = mergedHookDefs;
-      } else if (overrideHooks.hooks) {
+      } else if (isPlainObject(overrideHooks.hooks)) {
+        // Guard: only assign if it's a plain object (not an array or primitive)
         merged.hooks = overrideHooks.hooks;
       }
 
