@@ -51,7 +51,10 @@ export const routingStage: PipelineStage = {
       });
     }
     const isEscalated =
-      previousTier !== undefined && previousRank !== undefined && derivedRank !== undefined && previousRank > derivedRank;
+      previousTier !== undefined &&
+      previousRank !== undefined &&
+      derivedRank !== undefined &&
+      previousRank > derivedRank;
     const modelTier = isEscalated ? previousTier : derivedTier;
 
     const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
