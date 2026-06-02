@@ -38,12 +38,14 @@ describe("CLIInteractionPlugin.promptUser — setTimeout cleanup", () => {
     };
 
     const promptUser = (plugin as any).promptUser.bind(plugin);
-    // Three sequential short-timeout calls — leaked timers would keep the process alive
-    await promptUser(makeRequest("req-1"), 5);
-    await promptUser(makeRequest("req-2"), 5);
-    await promptUser(makeRequest("req-3"), 5);
+    // Three sequential short-timeout calls — if clearTimeout were missing, leaked
+    // timers would prevent Bun from exiting cleanly after the test suite.
+    const r1 = await promptUser(makeRequest("req-1"), 5);
+    const r2 = await promptUser(makeRequest("req-2"), 5);
+    const r3 = await promptUser(makeRequest("req-3"), 5);
 
-    // Reaching here means timers resolved and were cleaned up
-    expect(true).toBe(true);
+    expect(r1.respondedBy).toBe("timeout");
+    expect(r2.respondedBy).toBe("timeout");
+    expect(r3.respondedBy).toBe("timeout");
   });
 });

@@ -73,7 +73,7 @@ export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, ov
               ? [overrideHook]
               : [];
           const combined = [...baseItems, ...overrideItems];
-          mergedHookDefs[hookName] = combined.length === 1 ? combined[0] : combined.length > 1 ? combined : undefined;
+          mergedHookDefs[hookName] = combined.length === 1 ? combined[0] : combined;
         }
 
         merged.hooks = mergedHookDefs;

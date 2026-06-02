@@ -6,6 +6,12 @@ import { appendFileSync } from "node:fs";
 import { getSafeLogger } from "../logger";
 import type { StatusWriter } from "./status-writer";
 
+/** @internal — test use only */
+export const _heartbeatDeps = {
+  sleep: async (ms: number) => Bun.sleep(ms),
+  getSafeLogger,
+};
+
 let heartbeatActive = false;
 
 /**
@@ -19,10 +25,10 @@ async function heartbeatLoop(
   getIterations: () => number,
   jsonlFilePath?: string,
 ): Promise<void> {
-  const logger = getSafeLogger();
+  const logger = _heartbeatDeps.getSafeLogger();
 
   while (heartbeatActive) {
-    await Bun.sleep(60_000);
+    await _heartbeatDeps.sleep(60_000);
     if (!heartbeatActive) break;
 
     try {
@@ -63,13 +69,13 @@ export function startHeartbeat(
   getIterations: () => number,
   jsonlFilePath?: string,
 ): void {
-  const logger = getSafeLogger();
+  const logger = _heartbeatDeps.getSafeLogger();
 
   stopHeartbeat();
 
   heartbeatActive = true;
   heartbeatLoop(statusWriter, getTotalCost, getIterations, jsonlFilePath).catch((err: unknown) => {
-    logger?.warn("crash-recovery", "Heartbeat loop crashed; status updates stopped", {
+    _heartbeatDeps.getSafeLogger()?.warn("crash-recovery", "Heartbeat loop crashed; status updates stopped", {
       error: err instanceof Error ? err.message : String(err),
     });
   });

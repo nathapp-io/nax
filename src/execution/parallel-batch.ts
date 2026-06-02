@@ -151,20 +151,28 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     stories
       .filter((story) => story.workdir)
       .map(async (story) => {
-        const effectiveConfig = await _parallelBatchDeps.loadConfigForWorkdir(
-          rootConfigPath,
-          story.workdir as string,
-          profileOverride,
-        );
-        return { storyId: story.id, effectiveConfig };
+        try {
+          const effectiveConfig = await _parallelBatchDeps.loadConfigForWorkdir(
+            rootConfigPath,
+            story.workdir as string,
+            profileOverride,
+          );
+          return { storyId: story.id, effectiveConfig };
+        } catch (err) {
+          // Enrich the error so the rejection carries the storyId for logging.
+          const enriched = new Error(err instanceof Error ? err.message : String(err));
+          (enriched as NodeJS.ErrnoException & { storyId?: string }).storyId = story.id;
+          throw enriched;
+        }
       }),
   );
   for (const result of configResults) {
     if (result.status === "fulfilled") {
       storyEffectiveConfigs.set(result.value.storyId, result.value.effectiveConfig);
     } else {
+      const storyId = (result.reason as { storyId?: string })?.storyId ?? "(unknown)";
       logger?.warn("parallel-batch", "Failed to load per-story config; using root config", {
-        storyId: "(unknown)",
+        storyId,
         reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
       });
     }
