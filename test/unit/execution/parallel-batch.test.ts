@@ -699,3 +699,50 @@ describe("AC-10: parallel-executor-rectification-pass.ts is deleted", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-story config loading resilience (BUG-007)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("per-story config loading — resilience", () => {
+  test("config load failure for one story does not prevent the batch from running", async () => {
+    const goodStory = makeStory("good", { workdir: "packages/good" });
+    const badStory = makeStory("bad", { workdir: "packages/bad" });
+    const prd = makePrd([goodStory, badStory]);
+    const ctx = makeCtx(tmpDir);
+
+    let configLoadCallCount = 0;
+    _parallelBatchDeps.loadConfigForWorkdir = mock(
+      async (_root: string, workdir: string, _prof: unknown) => {
+        configLoadCallCount++;
+        if (workdir === "packages/bad") throw new Error("Malformed per-package config");
+        return DEFAULT_CONFIG as NaxConfig;
+      },
+    );
+    _parallelBatchDeps.createWorktreeManager = mock(async () => ({
+      create: mock(async () => {}),
+      remove: mock(async () => {}),
+    })) as typeof _parallelBatchDeps.createWorktreeManager;
+    _parallelBatchDeps.executeParallelBatch = mock(async () =>
+      makeWorkerBatchResult({ pipelinePassed: [goodStory, badStory], merged: [goodStory, badStory] }),
+    );
+    _parallelBatchDeps.createMergeEngine = mock(async () => ({
+      mergeAll: mock(async () => [
+        { success: true, storyId: "good" },
+        { success: true, storyId: "bad" },
+      ]),
+    })) as typeof _parallelBatchDeps.createMergeEngine;
+
+    let threwOnConfigLoad = false;
+    try {
+      await runParallelBatch({ stories: [goodStory, badStory], ctx, prd });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes("Malformed per-package config")) {
+        threwOnConfigLoad = true;
+      }
+    }
+
+    expect(threwOnConfigLoad).toBe(false);
+    expect(configLoadCallCount).toBe(2);
+  });
+});
