@@ -68,7 +68,11 @@ export function startHeartbeat(
   stopHeartbeat();
 
   heartbeatActive = true;
-  heartbeatLoop(statusWriter, getTotalCost, getIterations, jsonlFilePath).catch(() => {});
+  heartbeatLoop(statusWriter, getTotalCost, getIterations, jsonlFilePath).catch((err: unknown) => {
+    logger?.warn("crash-recovery", "Heartbeat loop crashed; status updates stopped", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   logger?.debug("crash-recovery", "Heartbeat started (60s interval)");
 }
