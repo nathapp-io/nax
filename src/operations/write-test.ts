@@ -4,6 +4,7 @@ import type { UserStory } from "../prd";
 import { _isolationDeps, verifyTestWriterIsolation } from "../tdd/isolation";
 import type { IsolationCheck } from "../tdd/types";
 import { parseSessionJsonOutput } from "./_session-output";
+import { shouldKeepSessionOpen } from "./execution-gates";
 import type { RunOperation } from "./types";
 
 void _isolationDeps; // re-export to keep test mocks pointed at the same singleton
@@ -43,8 +44,12 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   kind: "run",
   name: "test-writer",
   stage: "run",
-  session: { role: "test-writer", lifetime: "fresh" },
+  // warm + keepOpen: keep the test-writer session open after RED (when review or
+  // rectification will run) so autofix-test-writer can resume the same ACP session.
+  // acpx `sessions ensure` only resumes a still-open session. Mirrors implement.ts.
+  session: { role: "test-writer", lifetime: "warm" },
   config: tddConfigSelector,
+  keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "test-writer"),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {
       return {

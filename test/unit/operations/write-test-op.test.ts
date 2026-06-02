@@ -6,7 +6,7 @@ import type { NaxConfig } from "@/config";
  * Tests for testWriterOp — the full RunOperation shape for the test-writer role.
  *
  * AC-2: testWriterOp.session.role equals "test-writer" and
- * testWriterOp.session.lifetime equals "fresh".
+ * testWriterOp.session.lifetime equals "warm" (keepOpen resolver gates actual retention).
  *
  * AC-4: Given testWriterOp.parse receives empty output, when parse executes,
  * then it returns TestWriterOutput with success: false and filesChanged: [].
@@ -27,9 +27,14 @@ describe("testWriterOp — RunOperation shape", () => {
     expect(testWriterOp.session.role).toBe("test-writer");
   });
 
-  test("testWriterOp.session.lifetime equals 'fresh'", async () => {
+  test("testWriterOp.session.lifetime equals 'warm'", async () => {
     const { testWriterOp } = await import("@/operations");
-    expect(testWriterOp.session.lifetime).toBe("fresh");
+    expect(testWriterOp.session.lifetime).toBe("warm");
+  });
+
+  test("testWriterOp declares a keepOpen resolver", async () => {
+    const { testWriterOp } = await import("@/operations");
+    expect(typeof testWriterOp.keepOpen).toBe("function");
   });
 
   test.each([
