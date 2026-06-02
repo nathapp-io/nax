@@ -39,6 +39,44 @@ export function resolveTestStrategy(raw: string | undefined): TestStrategy {
   return "test-after"; // safe fallback
 }
 
+// ─── Classification predicates (SSOT) ────────────────────────────────────────
+
+/**
+ * Strategies that use the three-session TDD orchestration: a separate
+ * test-writer, implementer, and verifier session, with a full-suite gate
+ * between implementer and verifier. These are the only strategies that assemble
+ * the `autofix-test-writer` rectification strategy.
+ */
+export const THREE_SESSION_STRATEGIES: ReadonlySet<TestStrategy> = new Set([
+  "three-session-tdd",
+  "three-session-tdd-lite",
+]);
+
+/**
+ * Single-session strategies in which ONE agent writes both the tests and the
+ * implementation in the same session. The implementer authored its own tests
+ * and therefore MAY edit them during rectification (permit-with-guard) — unlike
+ * three-session TDD where the "do not modify test files" rule is absolute.
+ *
+ * `no-test` is excluded: it produces no tests, so there is nothing to own or edit.
+ */
+export const SINGLE_SESSION_TEST_OWNING_STRATEGIES: ReadonlySet<TestStrategy> = new Set(["tdd-simple", "test-after"]);
+
+/** True for strategies that run the three-session TDD orchestration. */
+export function isThreeSessionStrategy(strategy: TestStrategy | undefined): boolean {
+  return strategy !== undefined && THREE_SESSION_STRATEGIES.has(strategy);
+}
+
+/**
+ * True when the strategy makes the implementer the author of its own tests
+ * (single-session, test-owning), so it may edit test files to resolve genuine
+ * AC/spec contradictions during rectification. False for `no-test` and all
+ * three-session strategies.
+ */
+export function isSingleSessionTestOwningStrategy(strategy: TestStrategy | undefined): boolean {
+  return strategy !== undefined && SINGLE_SESSION_TEST_OWNING_STRATEGIES.has(strategy);
+}
+
 // ─── Prompt fragments (shared by plan.ts and claude-decompose.ts) ────────────
 
 export const COMPLEXITY_GUIDE = `## Complexity Classification Guide

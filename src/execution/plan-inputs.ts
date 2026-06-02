@@ -7,6 +7,7 @@
  */
 
 import { relative, sep } from "node:path";
+import { isThreeSessionStrategy } from "../config";
 import type { NaxConfig } from "../config/schema";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
@@ -27,7 +28,6 @@ import { TddPromptBuilder } from "../prompts";
 import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
-import { isThreeSessionStrategy } from "./build-plan-for-strategy";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**

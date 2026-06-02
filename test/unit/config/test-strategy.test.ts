@@ -3,9 +3,13 @@ import {
   AC_QUALITY_RULES,
   COMPLEXITY_GUIDE,
   GROUPING_RULES,
+  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
   TEST_STRATEGY_GUIDE,
+  THREE_SESSION_STRATEGIES,
   VALID_TEST_STRATEGIES,
   getAcQualityRules,
+  isSingleSessionTestOwningStrategy,
+  isThreeSessionStrategy,
   resolveTestStrategy,
 } from "../../../src/config/test-strategy";
 
@@ -46,6 +50,50 @@ describe("VALID_TEST_STRATEGIES", () => {
     expect(VALID_TEST_STRATEGIES).toContain("tdd-simple");
     expect(VALID_TEST_STRATEGIES).toContain("three-session-tdd");
     expect(VALID_TEST_STRATEGIES).toContain("three-session-tdd-lite");
+  });
+});
+
+describe("strategy classification predicates (SSOT)", () => {
+  test("THREE_SESSION_STRATEGIES holds exactly the two three-session variants", () => {
+    expect([...THREE_SESSION_STRATEGIES].sort()).toEqual(["three-session-tdd", "three-session-tdd-lite"]);
+  });
+
+  test("SINGLE_SESSION_TEST_OWNING_STRATEGIES holds exactly tdd-simple and test-after", () => {
+    expect([...SINGLE_SESSION_TEST_OWNING_STRATEGIES].sort()).toEqual(["tdd-simple", "test-after"]);
+  });
+
+  test.each([
+    ["three-session-tdd", true],
+    ["three-session-tdd-lite", true],
+    ["tdd-simple", false],
+    ["test-after", false],
+    ["no-test", false],
+  ] as const)("isThreeSessionStrategy(%s) === %s", (strategy, expected) => {
+    expect(isThreeSessionStrategy(strategy)).toBe(expected);
+  });
+
+  test("isThreeSessionStrategy(undefined) is false", () => {
+    expect(isThreeSessionStrategy(undefined)).toBe(false);
+  });
+
+  test.each([
+    ["tdd-simple", true],
+    ["test-after", true],
+    ["no-test", false],
+    ["three-session-tdd", false],
+    ["three-session-tdd-lite", false],
+  ] as const)("isSingleSessionTestOwningStrategy(%s) === %s", (strategy, expected) => {
+    expect(isSingleSessionTestOwningStrategy(strategy)).toBe(expected);
+  });
+
+  test("isSingleSessionTestOwningStrategy(undefined) is false", () => {
+    expect(isSingleSessionTestOwningStrategy(undefined)).toBe(false);
+  });
+
+  test("three-session and single-session-test-owning sets are disjoint", () => {
+    for (const s of THREE_SESSION_STRATEGIES) {
+      expect(SINGLE_SESSION_TEST_OWNING_STRATEGIES.has(s)).toBe(false);
+    }
   });
 });
 

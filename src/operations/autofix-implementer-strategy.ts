@@ -10,14 +10,32 @@ import type { DeclarationSink } from "./declaration-sink";
 
 const IMPLEMENTER_SOURCES = new Set(["lint", "typecheck", "semantic-review", "tdd-verifier"]);
 
+/** Options controlling which findings the implementer rectifier claims. */
+export interface AutofixImplementerStrategyOptions {
+  /**
+   * When true, the implementer also claims `adversarial-review` findings
+   * regardless of their `fixTarget`. Used for single-session strategies
+   * (tdd-simple / test-after / no-test) where there is no separate test-writer
+   * session — the one warm implementer session owns both source and tests, so
+   * routing adversarial findings to a fresh cold test-writer session (the
+   * three-session default) is wrong. See build-plan-for-strategy.ts.
+   * (default: false)
+   */
+  includeAdversarialReview?: boolean;
+}
+
 export function makeAutofixImplementerStrategy(
   story: UserStory,
   config: NaxConfig,
   sink: DeclarationSink,
+  opts: AutofixImplementerStrategyOptions = {},
 ): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
+  const claimsAdversarial = opts.includeAdversarialReview === true;
   return {
     name: "autofix-implementer",
-    appliesTo: (f) => f.fixTarget === "source" && IMPLEMENTER_SOURCES.has(f.source),
+    appliesTo: (f) =>
+      (f.fixTarget === "source" && IMPLEMENTER_SOURCES.has(f.source)) ||
+      (claimsAdversarial && f.source === "adversarial-review"),
     fixOp: implementerRectifyOp,
     buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
       failedChecks: findingsToFailedChecks(findings),

@@ -76,6 +76,46 @@ describe("makeAutofixImplementerStrategy", () => {
     });
   });
 
+  describe("single-session: includeAdversarialReview opt-in", () => {
+    test("claims adversarial-review findings (fixTarget undefined) when includeAdversarialReview=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: true,
+      });
+      const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(true);
+    });
+
+    test("claims adversarial-review test-gap findings (fixTarget=test) when includeAdversarialReview=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: true,
+      });
+      const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(true);
+    });
+
+    test("does NOT claim adversarial-review findings by default (three-session)", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+
+    test("still claims semantic-review source findings when includeAdversarialReview=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: true,
+      });
+      const finding = makeFinding({ fixTarget: "source", source: "semantic-review" });
+      expect(strategy.appliesTo(finding)).toBe(true);
+    });
+
+    test("does not claim unrelated test-runner findings even when includeAdversarialReview=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: true,
+      });
+      const finding = makeFinding({ fixTarget: "test", source: "test-runner" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+  });
+
   test("AC2.3: buildInput converts semantic finding to ReviewCheckResult", () => {
     const story = makeStory();
     const strategy = makeAutofixImplementerStrategy(story, makeNaxConfig(), makeSink());

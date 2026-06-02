@@ -5,6 +5,7 @@
  * All helpers are pure functions with no dependencies on the builder class.
  */
 
+import { isSingleSessionTestOwningStrategy, isThreeSessionStrategy } from "@/config";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
@@ -130,27 +131,15 @@ declaration in your output. Outside these ${countWord} cases the rule is absolut
 ${exceptions.join("\n\n")}`;
 }
 
-/** Strategies that include a test-writer agent and therefore support Exception 4. */
-const THREE_SESSION_STRATEGIES = new Set(["three-session-tdd", "three-session-tdd-lite"]);
-
-/**
- * Single-session strategies in which ONE agent writes both the tests and the
- * implementation in the same session. No separate test-writer owns the test
- * contract, so the implementer authored the tests and MAY edit them during
- * rectification (permit-with-guard) — unlike three-session TDD where the
- * "do not modify test files" rule is absolute.
- *
- * `no-test` is excluded: it produces no tests, so there is nothing to own or edit.
- */
-const SINGLE_SESSION_TEST_OWNING_STRATEGIES = new Set(["tdd-simple", "test-after"]);
-
 /**
  * True when the story's strategy makes the implementer the author of its own
  * tests (single-session). Such an implementer may edit test files to resolve
  * genuine AC/spec contradictions during rectification.
+ *
+ * Strategy classification is the SSOT in `src/config/test-strategy.ts`.
  */
 export function implementerOwnsTests(story: UserStory): boolean {
-  return SINGLE_SESSION_TEST_OWNING_STRATEGIES.has(story.routing?.testStrategy ?? "");
+  return isSingleSessionTestOwningStrategy(story.routing?.testStrategy);
 }
 
 /**
@@ -202,7 +191,7 @@ export function testEditHeadline(story: UserStory, prohibition: string): string 
  * that sits outside the escape-hatch block.
  */
 export function exceptionCountWord(story: UserStory): "three" | "four" {
-  return THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "") ? "four" : "three";
+  return isThreeSessionStrategy(story.routing?.testStrategy) ? "four" : "three";
 }
 
 /**
@@ -211,7 +200,7 @@ export function exceptionCountWord(story: UserStory): "three" | "four" {
  */
 export function escapeHatchFor(story: UserStory): string {
   if (implementerOwnsTests(story)) return SINGLE_SESSION_TEST_EDIT_POLICY;
-  const isTdd = THREE_SESSION_STRATEGIES.has(story.routing?.testStrategy ?? "");
+  const isTdd = isThreeSessionStrategy(story.routing?.testStrategy);
   return buildEscapeHatch({ includeMockHandoff: isTdd });
 }
 
