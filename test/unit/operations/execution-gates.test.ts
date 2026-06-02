@@ -44,12 +44,16 @@ describe("shouldKeepSessionOpen", () => {
     expect(shouldKeepSessionOpen(withNeither(), "implementer")).toBe(false);
   });
 
-  test("returns false for test-writer when review is enabled (AC4)", () => {
-    expect(shouldKeepSessionOpen(withReview(true), "test-writer")).toBe(false);
+  test("returns true for test-writer when review is enabled (AC4 — extended for session continuity)", () => {
+    expect(shouldKeepSessionOpen(withReview(true), "test-writer")).toBe(true);
   });
 
-  test("returns false for test-writer when rectification is enabled (AC4)", () => {
-    expect(shouldKeepSessionOpen(withRectification(true), "test-writer")).toBe(false);
+  test("returns true for test-writer when rectification is enabled (AC4 — extended for session continuity)", () => {
+    expect(shouldKeepSessionOpen(withRectification(true), "test-writer")).toBe(true);
+  });
+
+  test("returns false for test-writer when both are absent or false (AC4)", () => {
+    expect(shouldKeepSessionOpen(withNeither(), "test-writer")).toBe(false);
   });
 
   test("returns false for verifier when review is enabled (AC5)", () => {
