@@ -110,6 +110,7 @@ export const _parallelBatchDeps = {
     return rectifyConflictedStory(opts);
   },
   prepareWorktreeDependencies,
+  loadConfigForWorkdir,
 };
 
 /**
@@ -142,18 +143,40 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // PKG-003 (parallel): Resolve per-story effective configs so per-package quality/review
   // command overrides apply in parallel mode (same as iteration-runner does for sequential).
   // Without this, all parallel stories use the root config regardless of story.workdir.
-  // Loads run concurrently (Promise.all) since each is an independent file-system read.
+  // allSettled so a single malformed per-package config doesn't crash the whole batch.
   const rootConfigPath = path.join(workdir, ".nax", "config.json");
   const profileOverride = config.profile && config.profile !== "default" ? { profile: config.profile } : undefined;
   const storyEffectiveConfigs = new Map<string, NaxConfig>();
-  await Promise.all(
+  const configResults = await Promise.allSettled(
     stories
       .filter((story) => story.workdir)
       .map(async (story) => {
-        const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir as string, profileOverride);
-        storyEffectiveConfigs.set(story.id, effectiveConfig);
+        try {
+          const effectiveConfig = await _parallelBatchDeps.loadConfigForWorkdir(
+            rootConfigPath,
+            story.workdir as string,
+            profileOverride,
+          );
+          return { storyId: story.id, effectiveConfig };
+        } catch (err) {
+          // Enrich the error so the rejection carries the storyId for logging.
+          const enriched = new Error(err instanceof Error ? err.message : String(err));
+          (enriched as NodeJS.ErrnoException & { storyId?: string }).storyId = story.id;
+          throw enriched;
+        }
       }),
   );
+  for (const result of configResults) {
+    if (result.status === "fulfilled") {
+      storyEffectiveConfigs.set(result.value.storyId, result.value.effectiveConfig);
+    } else {
+      const storyId = (result.reason as { storyId?: string })?.storyId ?? "(unknown)";
+      logger?.warn("parallel-batch", "Failed to load per-story config; using root config", {
+        storyId,
+        reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  }
 
   const dependencyContexts = new Map<string, WorktreeDependencyContext>();
   const readyStories: UserStory[] = [];

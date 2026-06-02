@@ -96,8 +96,9 @@ export class CLIInteractionPlugin implements InteractionPlugin {
       throw new Error("CLI plugin not initialized");
     }
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<InteractionResponse>((resolve) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         resolve({
           requestId: request.id,
           action: "skip",
@@ -109,8 +110,11 @@ export class CLIInteractionPlugin implements InteractionPlugin {
 
     const userPromise = this.getUserInput(request);
 
-    const response = await Promise.race([userPromise, timeoutPromise]);
-    return response;
+    try {
+      return await Promise.race([userPromise, timeoutPromise]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
   }
 
   /**

@@ -491,6 +491,7 @@ export async function executeUnified(
       const selected = selectNextStories(prd, ctx.config, currentBatchPlan, 0, lastStoryId, ctx.useBatch);
       if (!selected) return buildResult("no-stories");
       const { selection } = selected;
+      if (!selection) return buildResult("no-stories"); // defensive: type contract guarantees non-null when selected is non-null
       if (!ctx.useBatch) lastStoryId = selection.story.id;
 
       {

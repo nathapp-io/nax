@@ -5,8 +5,11 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { selectIndependentBatch, groupStoriesByDependencies } from "../../../src/execution/story-selector";
+import { selectIndependentBatch, groupStoriesByDependencies, selectNextStories } from "../../../src/execution/story-selector";
 import type { UserStory } from "../../../src/prd/types";
+import type { StoryBatch } from "../../../src/execution/batching";
+import { makePRD, makeStory } from "../../helpers/mock-story";
+import { DEFAULT_CONFIG } from "../../../src/config";
 
 /**
  * Helper to create a minimal UserStory for testing
@@ -203,5 +206,31 @@ describe("groupStoriesByDependencies", () => {
     expect(batches).toHaveLength(2);
     expect(batches[0].map((s) => s.id)).toEqual(["US-001"]);
     expect(batches[1].map((s) => s.id)).toEqual(["US-002"]);
+  });
+});
+
+describe("selectNextStories — batch exhaustion", () => {
+  test("returns null (not a null-selection object) when all batch stories are already passed", () => {
+    const story = makeStory({ id: "s1", status: "passed", passes: true });
+    const prd = makePRD({ userStories: [story] });
+    const batch: StoryBatch[] = [{ stories: [story], isBatch: false }];
+    const result = selectNextStories(prd, DEFAULT_CONFIG, batch, 0, null, true);
+    // Must be null, NOT { selection: null, nextBatchIndex: 1 }
+    expect(result).toBeNull();
+  });
+
+  test("returns null when batch plan is empty", () => {
+    const prd = makePRD({ userStories: [] });
+    const result = selectNextStories(prd, DEFAULT_CONFIG, [], 0, null, true);
+    expect(result).toBeNull();
+  });
+
+  test("returns a valid selection when batch has pending stories", () => {
+    const story = makeStory({ id: "s1", status: "pending", passes: false });
+    const prd = makePRD({ userStories: [story] });
+    const batch: StoryBatch[] = [{ stories: [story], isBatch: false }];
+    const result = selectNextStories(prd, DEFAULT_CONFIG, batch, 0, null, true);
+    expect(result).not.toBeNull();
+    expect(result?.selection.story.id).toBe("s1");
   });
 });

@@ -362,4 +362,32 @@ describe("config/merger", () => {
       expect(deepMergeConfig({}, {})).toEqual({});
     });
   });
+
+  describe("three-level hook merge (BUG-005 / BUG-010)", () => {
+    test("flattens hooks to a 1D array when the same event appears in all three config levels", () => {
+      const defaults = { hooks: { hooks: { "on-complete": { command: "echo defaults" } } } };
+      const global = { hooks: { hooks: { "on-complete": { command: "echo global" } } } };
+      const project = { hooks: { hooks: { "on-complete": { command: "echo project" } } } };
+
+      const merged1 = deepMergeConfig(defaults, global);
+      const merged2 = deepMergeConfig(merged1, project);
+
+      const onComplete = (merged2 as any).hooks?.hooks?.["on-complete"];
+      expect(Array.isArray(onComplete)).toBe(true);
+      expect(onComplete).toHaveLength(3);
+      // No nesting — first element must be a plain object, not an array
+      expect(Array.isArray(onComplete[0])).toBe(false);
+    });
+
+    test("does not assign overrideHooks.hooks when it is not a plain object", () => {
+      const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
+      const override = { hooks: { hooks: ["not-an-object"] } };
+
+      const result = deepMergeConfig(base, override as any);
+
+      // The base hooks should be preserved; the invalid override should be ignored
+      const onStart = (result as any).hooks?.hooks?.["on-start"];
+      expect(onStart).toEqual({ command: "echo base" });
+    });
+  });
 });

@@ -188,16 +188,22 @@ async function detectTestDir(workdir: string, resolvedGlobs?: readonly string[])
   const candidateDirs =
     resolvedDirs.length > 0 ? [...new Set([...resolvedDirs, ...DEFAULT_SCAN_TEST_DIRS])] : DEFAULT_SCAN_TEST_DIRS;
 
-  for (const dir of candidateDirs) {
-    const fullPath = path.join(workdir, dir);
-    try {
-      // Bun.file().exists() returns false for directories, use shell test -d
-      const proc = Bun.spawn(["test", "-d", fullPath], { stdout: "pipe", stderr: "pipe" });
-      const exitCode = await proc.exited;
-      if (exitCode === 0) return dir;
-    } catch {}
-  }
-  return null;
+  // Run all directory checks in parallel; return the first match in candidate order.
+  const checks = await Promise.all(
+    candidateDirs.map(async (dir) => {
+      const fullPath = path.join(workdir, dir);
+      try {
+        // Bun.file().exists() returns false for directories, use shell test -d
+        const proc = Bun.spawn(["test", "-d", fullPath], { stdout: "pipe", stderr: "pipe" });
+        const exitCode = await proc.exited;
+        return exitCode === 0 ? dir : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return checks.find((dir) => dir !== null) ?? null;
 }
 
 /**
