@@ -19,7 +19,19 @@ export function shouldRunRectification(config: GatesConfig): boolean {
   return config.execution?.rectification?.enabled === true;
 }
 
-/** Returns true when the implementer session must stay open after the agent turn. */
+/**
+ * Roles whose ACP session is kept open across fix stages so the agent retains memory of
+ * what it produced: the implementer (the code it wrote) and the test-writer (the tests it
+ * wrote — resumed by autofix-test-writer). Verifier and reviewers are one-shot, so they
+ * stay fresh. Extends the implementer-only session continuity of ADR-007/008 to the
+ * test-writer; see docs/adr/ADR-008.
+ */
+const SESSION_CONTINUITY_ROLES = new Set<SessionRole>(["implementer", "test-writer"]);
+
+/**
+ * Returns true when the role's session must stay open after the agent turn so a later fix
+ * stage (review / rectification) can resume it with full context.
+ */
 export function shouldKeepSessionOpen(config: GatesConfig, role: SessionRole): boolean {
-  return role === "implementer" && (shouldRunReview(config) || shouldRunRectification(config));
+  return SESSION_CONTINUITY_ROLES.has(role) && (shouldRunReview(config) || shouldRunRectification(config));
 }

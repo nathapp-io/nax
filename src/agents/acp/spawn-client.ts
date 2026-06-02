@@ -532,8 +532,13 @@ function parseSessionIds(stdout: string): { sessionId: string | undefined; recor
  * The cmdStr is parsed to extract --model and agent name:
  *   "acpx --model claude-sonnet-4-5 claude" → model=claude-sonnet-4-5, agent=claude
  *
- * createSession() spawns: acpx <agent> sessions ensure --name <name>
- * loadSession() tries to resume an existing named session.
+ * createSession() and loadSession() both run: acpx <agent> sessions ensure --name <name>
+ * `sessions ensure` resumes the named session ONLY while it is still open; if no open
+ * session with that name exists (e.g. it was previously `sessions close`d), acpx creates
+ * a fresh one. A session closed via closeSession() is therefore NOT resumable — the next
+ * loadSession() returns a brand-new, context-less session. Ops whose conversation context
+ * must survive across turns keep their session open via shouldKeepSessionOpen (the
+ * keepOpen resolver), which skips closeSession.
  */
 export class SpawnAcpClient implements AcpClient {
   private readonly model: string;
@@ -660,7 +665,9 @@ export class SpawnAcpClient implements AcpClient {
   }
 
   async loadSession(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null> {
-    // Try to ensure session exists — --format json surfaces the session UUID in stdout
+    // `sessions ensure` resumes an OPEN named session, or creates a new one if none is
+    // open (a closed session is not resumable — it yields a fresh, context-less session).
+    // --format json surfaces the session UUID in stdout.
     const cmd = ["acpx", "--cwd", this.cwd, "--format", "json", agentName, "sessions", "ensure", "--name", sessionName];
 
     const { exitCode, stdout } = await this.trackedSpawn(cmd);

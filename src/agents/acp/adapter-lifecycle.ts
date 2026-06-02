@@ -139,8 +139,11 @@ export function computeAcpHandle(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Ensure an ACP session exists: try to resume via loadSession, fall back to
- * createSession. Returns the AcpSession ready for prompt() calls.
+ * Ensure an ACP session exists: try to resume via loadSession (which runs
+ * `acpx sessions ensure` and resumes an OPEN session of that name), falling back to
+ * createSession when none is open. A session previously closed via closeSession is NOT
+ * resumable here — loadSession returns null and a fresh, context-less session is created.
+ * Keeping the session open (shouldKeepSessionOpen) is what preserves context across turns.
  */
 export async function ensureAcpSession(
   client: AcpClient,
