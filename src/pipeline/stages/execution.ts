@@ -9,14 +9,11 @@
  *   → applyPostRunInspection → decideStageAction.
  */
 
+import { isThreeSessionStrategy } from "@/config";
 import { validateAgentForTier } from "../../agents";
 import type { AgentAdapter } from "../../agents/types";
 import { NaxError } from "../../errors";
-import {
-  buildPlanForStrategy,
-  isThreeSessionStrategy,
-  requiresInitialRefCapture,
-} from "../../execution/build-plan-for-strategy";
+import { buildPlanForStrategy, requiresInitialRefCapture } from "../../execution/build-plan-for-strategy";
 import { assemblePlanInputsFromCtx } from "../../execution/plan-inputs";
 import { _postRunDeps, applyPostRunInspection, decideStageAction } from "../../execution/post-run";
 import type { TddMode } from "../../execution/post-run";

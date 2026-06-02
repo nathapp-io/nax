@@ -90,4 +90,8 @@ export {
   getAcQualityRules,
   resolveTestStrategy,
   VALID_TEST_STRATEGIES,
+  THREE_SESSION_STRATEGIES,
+  SINGLE_SESSION_TEST_OWNING_STRATEGIES,
+  isThreeSessionStrategy,
+  isSingleSessionTestOwningStrategy,
 } from "./test-strategy";

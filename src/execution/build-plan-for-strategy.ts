@@ -18,6 +18,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { isThreeSessionStrategy } from "../config";
 import type { TestStrategy } from "../config/schema-types";
 import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
@@ -41,25 +42,12 @@ import type { PlanInputs } from "./plan-inputs";
 import { type ExecutionPlan, type RectificationPhaseOptions, StoryOrchestratorBuilder } from "./story-orchestrator";
 
 /**
- * Strategies that use the three-session TDD orchestration (test-writer +
- * implementer + verifier, with full-suite gate between implementer and verifier).
- *
- * `tdd-simple` is NOT in this set — it is a single-session strategy where one
- * agent writes tests AND implements within the same session. The pre-US-005
- * execution stage gated the three-session path on the same two strategies
- * (see src/metrics/tracker.ts:142-143 and the archived single-session branch
- * in execution.ts before commit d97e25ae).
- */
-const THREE_SESSION_STRATEGIES = new Set<TestStrategy>(["three-session-tdd", "three-session-tdd-lite"]);
-
-export function isThreeSessionStrategy(strategy: TestStrategy): boolean {
-  return THREE_SESSION_STRATEGIES.has(strategy);
-}
-
-/**
  * Whether the wrapper must capture an initial git ref before the plan runs.
  * Only TDD strategies require this — non-TDD strategies have no rollback path.
  * Extracted so pipeline/stages/execution.ts can stay strategy-blind beyond this call.
+ *
+ * Strategy classification (`isThreeSessionStrategy`) is the SSOT in
+ * `src/config/test-strategy.ts` — do not re-declare the set here.
  */
 export function requiresInitialRefCapture(strategy: TestStrategy): boolean {
   return isThreeSessionStrategy(strategy);
