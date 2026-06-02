@@ -33,6 +33,12 @@ const RectificationConfigSchema = z.object({
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
+  /** Number of consecutive iterations whose finding count must increase
+   * (findingsAfter > findingsBefore) before `abortOnIncreasingFailures` bails.
+   * 1 = bail on the first regressing iteration (legacy behaviour); higher
+   * values tolerate transient regressions (e.g. a tightened test temporarily
+   * surfacing more verifier failures before the implementer fixes the source). */
+  consecutiveIncreasesToBail: z.number().int().min(1).max(10).default(2),
   escalateOnExhaustion: z.boolean().optional().default(true),
   // Per-strategy attempt counters — reset when a new strategy runs.
   // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).

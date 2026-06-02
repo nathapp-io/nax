@@ -55,6 +55,9 @@ export interface RectificationConfig {
   maxFailureSummaryChars: number;
   /** Abort rectification if failure count increases (default: true) */
   abortOnIncreasingFailures: boolean;
+  /** Consecutive regressing iterations required before abortOnIncreasingFailures
+   * bails. 1 = legacy single-iteration behaviour. (default: 2) */
+  consecutiveIncreasesToBail: number;
   /** Escalate to higher model tier after exhausting maxAttemptsTotal (default: true) */
   escalateOnExhaustion: boolean;
   /** Per-strategy attempt number at which "rethink your approach" language is

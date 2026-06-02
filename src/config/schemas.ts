@@ -113,6 +113,7 @@ export const NaxConfigSchema = z
         fullSuiteTimeoutSeconds: 300,
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
+        consecutiveIncreasesToBail: 2,
         escalateOnExhaustion: true,
         rethinkAtAttempt: 2,
         urgencyAtAttempt: 3,
