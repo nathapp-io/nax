@@ -41,6 +41,7 @@ export {
   _storyOrchestratorDeps,
   EXHAUSTED_EXIT_REASONS,
   phasesToRevalidate,
+  orderGateLast,
   formatPhaseResultMessage,
   buildPhaseOutcomeLogData,
   refreshReviewInputForDispatch,

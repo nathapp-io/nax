@@ -526,6 +526,21 @@ export function phasesToRevalidate(
   return allPhases.filter((p) => needed.has(p.kind));
 }
 
+/**
+ * Move `full-suite-gate` phases to the end of the revalidation order, preserving
+ * the relative order of every other phase.
+ *
+ * Used by the terminal lite-validate so the expensive gate runs only after all
+ * cheaper phases have passed (they short-circuit first on failure), while still
+ * acting as the final arbiter of "resolved" rather than being skipped. Pure over
+ * its input — exported for unit testing.
+ */
+export function orderGateLast(phases: readonly InternalPhase[]): InternalPhase[] {
+  const rest = phases.filter((p) => p.kind !== "full-suite-gate");
+  const gates = phases.filter((p) => p.kind === "full-suite-gate");
+  return [...rest, ...gates];
+}
+
 function toReviewDecisionPayload(opName: string, output: unknown): ReviewDecisionPayload | null {
   if (output === null || output === undefined || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
@@ -950,7 +965,26 @@ export async function runRectification(
       // opts is required by the FixCycle.validate contract but guard defensively for
       // plugin-supplied cycles that may call validate without opts (legacy shape).
       const lite = (opts?.mode ?? "full") === "lite";
-      const phases = phasesToRevalidate(opts?.strategiesRun, validationPhases);
+      const selected = phasesToRevalidate(opts?.strategiesRun, validationPhases);
+      // Terminal lite-validate: the full-suite gate is the most expensive phase
+      // AND, for gate-seeded cycles (full-suite-rectify), the actual arbiter of
+      // "resolved". It used to be SKIPPED entirely in lite mode, which let the
+      // cycle declare "resolved" off the cheaper phases alone (semantic last)
+      // without ever re-running the gate that had just received a fix — a
+      // dishonest exit. Instead run it LAST: a failing cheaper phase
+      // short-circuits before the gate is ever dispatched (preserving the cost
+      // saving that motivated lite mode), and when everything cheaper is green
+      // the gate is re-run to validate the fix.
+      //
+      // Caveat — the verifier-SSOT carve-out still applies: when a verifier ran
+      // and passed, `shouldSkipPhaseForRectification` discards the gate's finding
+      // (unrelated-regression policy, lines ~430), so in that case the gate is
+      // dispatched (validating the just-applied fix per Q1) but does NOT block
+      // "resolved". The gate is the decisive arbiter only when no passing
+      // verifier overrides it (single-session, or a failed/absent verifier).
+      // Session-agnostic — also covers a single-session per-story
+      // full-suite-gate; verify-scoped was never skipped and is unaffected.
+      const phases = lite ? orderGateLast(selected) : selected;
       getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
         storyId: ctx.storyId,
         mode: opts?.mode ?? "full",
@@ -960,9 +994,6 @@ export async function runRectification(
       const findings: Finding[] = [];
       let shortCircuited = false;
       for (const phase of phases) {
-        if (lite && phase.kind === "full-suite-gate") {
-          continue;
-        }
         await runPhase(ctx, phase.slot, phaseCosts, phaseOutputs);
         if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
         const output = phaseOutputs[phase.slot.op.name];

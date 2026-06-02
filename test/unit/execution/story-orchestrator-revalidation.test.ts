@@ -14,13 +14,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _storyOrchestratorDeps, StoryOrchestratorBuilder } from "@/execution";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
+import { StoryOrchestratorBuilder, _storyOrchestratorDeps, orderGateLast } from "@/execution";
 import type { FixCycle, FixCycleContext, FixCycleExitReason } from "@/findings/cycle-types";
 import type { Finding } from "@/findings/types";
-import { pickSelector, DEFAULT_CONFIG } from "@/config";
-import { makeTestRuntime } from "@test/helpers";
+import type { CallContext, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
-import type { RunOperation, CallContext } from "@/operations";
+import { makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -430,5 +430,125 @@ describe("phasesToRevalidate — AC3.6: union of mechanical-lintfix + autofix-im
     expect(called.has("full-suite-gate")).toBe(true);
     expect(called.has("semantic-review")).toBe(true);
     expect(called.has("adversarial-review")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Terminal lite-validate — the full-suite gate runs LAST as the final arbiter,
+// instead of being skipped. Previously lite mode skipped the gate entirely, so
+// the cycle declared "resolved" off the cheaper phases alone (semantic last)
+// without ever re-running the gate that had just received a fix — a dishonest
+// exit. The gate now runs after every cheaper phase: a failing cheaper phase
+// short-circuits before it (cost preserved), and when everything cheaper is
+// green the gate decides the verdict. Session-agnostic — also covers a
+// single-session per-story full-suite-gate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Capture the cycle, then install an ORDER-recording callOp with per-op failures. */
+async function captureWithOrderedTracker(
+  ctx: CallContext,
+  failingOps: ReadonlySet<string> = new Set(),
+): Promise<{
+  capturedCycle: FixCycle<Finding> | null;
+  capturedCtx: FixCycleContext | null;
+  order: string[];
+}> {
+  const { capturedCycle, capturedCtx } = await captureAndSetupValidate(ctx);
+  const order: string[] = [];
+  _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+    order.push(op.name);
+    if (failingOps.has(op.name)) return { success: false, passed: false, findings: [LINT_FINDING] };
+    return { success: true, passed: true, findings: [] };
+  }) as typeof _storyOrchestratorDeps.callOp;
+  return { capturedCycle, capturedCtx, order };
+}
+
+describe("terminal lite-validate — gate runs LAST as final arbiter (Q1/Q3)", () => {
+  test("lite mode: full-suite-gate IS re-run, and runs after every cheaper phase", async () => {
+    const ctx = makeCtx();
+    const { capturedCycle, capturedCtx, order } = await captureWithOrderedTracker(ctx);
+    expect(capturedCycle).not.toBeNull();
+
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "lite",
+      strategiesRun: ["full-suite-rectify"],
+    });
+
+    // Gate must actually run in lite mode (previously skipped -> dishonest "resolved").
+    expect(order).toContain("full-suite-gate");
+    // ...and it must be the LAST phase: every other revalidation phase precedes it.
+    expect(order[order.length - 1]).toBe("full-suite-gate");
+  });
+
+  test("lite mode: a failing cheaper phase short-circuits BEFORE the gate (cost preserved)", async () => {
+    const ctx = makeCtx();
+    // semantic-review is a cheaper phase than the full-suite gate.
+    const { capturedCycle, capturedCtx, order } = await captureWithOrderedTracker(ctx, new Set(["semantic-review"]));
+    expect(capturedCycle).not.toBeNull();
+
+    const result = await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "lite",
+      strategiesRun: ["full-suite-rectify"],
+    });
+
+    expect(order).toContain("semantic-review");
+    // Short-circuit on the cheaper failure means the expensive gate never runs.
+    expect(order).not.toContain("full-suite-gate");
+    // validate signals the short-circuit so the cycle cannot report a false "resolved".
+    expect((result as { shortCircuited?: boolean }).shortCircuited).toBe(true);
+  });
+
+  test("full mode is unchanged: gate keeps its canonical position (not forced last)", async () => {
+    const ctx = makeCtx();
+    const { capturedCycle, capturedCtx, order } = await captureWithOrderedTracker(ctx);
+    expect(capturedCycle).not.toBeNull();
+
+    await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "full",
+      strategiesRun: ["full-suite-rectify"],
+    });
+
+    // Canonical order places full-suite-gate before verifier; full mode preserves it.
+    expect(order).toContain("full-suite-gate");
+    expect(order.indexOf("full-suite-gate")).toBeLessThan(order.indexOf("verifier"));
+  });
+
+  test("lite mode: verifier-SSOT carve-out — a red gate is dispatched (last) but its finding is discarded when the verifier passed", async () => {
+    const ctx = makeCtx();
+    // Only the gate fails; the verifier (and everything cheaper) passes.
+    const { capturedCycle, capturedCtx, order } = await captureWithOrderedTracker(ctx, new Set(["full-suite-gate"]));
+    expect(capturedCycle).not.toBeNull();
+
+    const result = await (capturedCycle as FixCycle<Finding>).validate(capturedCtx as FixCycleContext, {
+      mode: "lite",
+      strategiesRun: ["full-suite-rectify"],
+    });
+
+    // The gate still RUNS (last) — it validates the just-applied fix (Q1) ...
+    expect(order[order.length - 1]).toBe("full-suite-gate");
+    // ... but because the verifier passed, shouldSkipPhaseForRectification discards
+    // the gate's finding (unrelated-regression policy). So the cycle is not blocked:
+    // no findings surface and it does NOT short-circuit on the gate failure.
+    expect(result.findings).toHaveLength(0);
+    expect((result as { shortCircuited?: boolean }).shortCircuited).toBe(false);
+  });
+});
+
+describe("orderGateLast — pure ordering helper", () => {
+  const mk = (kind: string) => ({ kind, slot: { op: { name: kind } } }) as never;
+
+  test("moves full-suite-gate to the end, preserving order of the other phases", () => {
+    const input = [mk("full-suite-gate"), mk("verifier"), mk("lint-check"), mk("semantic-review")];
+    expect(orderGateLast(input).map((p) => p.kind)).toEqual([
+      "verifier",
+      "lint-check",
+      "semantic-review",
+      "full-suite-gate",
+    ]);
+  });
+
+  test("is a no-op when there is no full-suite-gate phase", () => {
+    const input = [mk("lint-check"), mk("typecheck-check"), mk("semantic-review")];
+    expect(orderGateLast(input).map((p) => p.kind)).toEqual(["lint-check", "typecheck-check", "semantic-review"]);
   });
 });
