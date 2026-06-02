@@ -20,6 +20,7 @@ import {
   makeMechanicalLintFixStrategy,
 } from "@/operations";
 import type { CallContext } from "@/operations";
+import type { Finding } from "@/findings";
 import type { PipelineContext } from "@/pipeline/types";
 import type { NaxRuntime } from "@/runtime";
 import {
@@ -301,6 +302,123 @@ describe("AC4-AC5: fix strategy gating in rectification phase", () => {
     await plan.run();
     expect(capturedStrategyNames).not.toContain("mechanical-formatfix");
     expect(capturedStrategyNames).toContain("mechanical-lintfix");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single-session adversarial routing: tdd-simple / no-test route adversarial-review
+// findings to the warm implementer, NOT a fresh test-writer session.
+// Regression for run 2026-06-01T16-27-51 (US-003 tdd-simple).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("single-session adversarial-review routing", () => {
+  let capturedCycle: { strategies: Array<{ name: string; appliesTo: (f: Finding) => boolean }> } | null;
+  let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
+  let origCallOp: typeof _storyOrchestratorDeps.callOp;
+  let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
+  let runtime: NaxRuntime;
+
+  const adversarialFinding: Finding = {
+    source: "adversarial-review",
+    severity: "error",
+    category: "",
+    message: "AC11 not propagated",
+    file: "src/foo.ts",
+    line: 1,
+  };
+
+  beforeEach(() => {
+    capturedCycle = null;
+    origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    origCallOp = _storyOrchestratorDeps.callOp;
+    origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
+
+    _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
+    // Fail adversarial-review so the rectification cycle is actually entered;
+    // all other phases pass. This works for both single- and three-session plans.
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "adversarial-review") {
+        return { success: false, passed: false, findings: [adversarialFinding] };
+      }
+      return { success: true, passed: true, findings: [] };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: unknown) => {
+      capturedCycle = cycle as typeof capturedCycle;
+      return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+  });
+
+  afterEach(async () => {
+    _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    _storyOrchestratorDeps.callOp = origCallOp;
+    _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
+    await runtime?.close();
+  });
+
+  function rectifyInputs(story: ReturnType<typeof makeStory>, config: NaxConfig) {
+    runtime = makeTestRuntime({ config });
+    return {
+      ctx: makeMockCallContext({ runtime }),
+      inputs: makeMockPlanInputs({
+        story,
+        implementer: { story },
+        fullSuiteGate: { story, workdir: "/tmp/test" },
+        verifier: { story },
+        semanticReview: { story },
+        adversarialReview: { story },
+        rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+      }),
+    };
+  }
+
+  test("tdd-simple: no autofix-test-writer strategy is assembled", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const { ctx, inputs } = rectifyInputs(story, config);
+    const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    await plan.run();
+
+    // Guard: the cycle must actually have been entered, otherwise the
+    // not.toContain assertion below would pass vacuously against [].
+    expect(capturedCycle).not.toBeNull();
+    const names = (capturedCycle?.strategies ?? []).map((s) => s.name);
+    expect(names).toContain("autofix-implementer");
+    expect(names).not.toContain("autofix-test-writer");
+  });
+
+  test("tdd-simple: autofix-implementer claims adversarial-review findings", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const { ctx, inputs } = rectifyInputs(story, config);
+    const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+    await plan.run();
+
+    expect(capturedCycle).not.toBeNull();
+    const matching = (capturedCycle?.strategies ?? []).filter((s) => s.appliesTo(adversarialFinding));
+    expect(matching.map((s) => s.name)).toEqual(["autofix-implementer"]);
+  });
+
+  test("three-session-tdd: adversarial-review still routes to autofix-test-writer (unchanged)", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const { ctx, inputs } = rectifyInputs(story, config);
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+
+    const names = (capturedCycle?.strategies ?? []).map((s) => s.name);
+    expect(names).toContain("autofix-test-writer");
+
+    const matching = (capturedCycle?.strategies ?? []).filter((s) => s.appliesTo(adversarialFinding));
+    expect(matching.map((s) => s.name)).toEqual(["autofix-test-writer"]);
   });
 });
 

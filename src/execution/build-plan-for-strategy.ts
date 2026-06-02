@@ -173,12 +173,28 @@ export async function buildPlanForStrategy(
       strategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     if (config.quality.autofix?.enabled !== false) {
+      // Single-session strategies (tdd-simple / test-after / no-test) have no
+      // separate test-writer session — the one warm implementer session authored
+      // both source and tests. Route adversarial-review findings to that
+      // implementer instead of spinning up a fresh, context-less test-writer.
+      //
+      // Note: AC-HOOK / AC-ERROR sentinel findings (test-runner, fixTarget=test)
+      // are intentionally NOT re-routed here — they are owned by the acceptance
+      // loop, not the per-story rectification cycle, and a cold test-writer never
+      // resolved them usefully either.
       strategies.push(
-        makeAutofixImplementerStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+        makeAutofixImplementerStrategy(story, config, sink, {
+          includeAdversarialReview: !isThreeSession,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
-      strategies.push(
-        makeAutofixTestWriterStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
-      );
+      // The autofix-test-writer strategy only belongs to three-session TDD,
+      // where the test-writer phase itself exists (see gating above where
+      // addTestWriter is conditioned on isThreeSession).
+      if (isThreeSession) {
+        strategies.push(
+          makeAutofixTestWriterStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+        );
+      }
     }
 
     const postValidate = async (findings: Finding[], _validateCtx: FixCycleContext): Promise<Finding[]> => {
