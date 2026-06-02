@@ -152,6 +152,22 @@ describe("buildHopCallback — primary hop (no failure)", () => {
     expect(hop.result.protocolIds).toEqual({ recordId: "rec-turn", sessionId: "sess-turn" });
     expect(hop.result.internalRoundTrips).toBe(1);
   });
+
+  test("keepOpen:true — closeSession is NOT called after the turn", async () => {
+    const sessionManager = makeSessionManager({
+      openSession: mock(async () => makeHandle("nax-warm-handle")),
+      closeSession: mock(async () => {}),
+    });
+    const agentManager = makeAgentManagerStub();
+    const ctx = makeCtx({ sessionManager, agentManager });
+    const warmOptions = { ...makeBaseOptions(), keepOpen: true } as AgentRunOptions;
+
+    const cb = buildHopCallback(ctx, SESSION_ID, warmOptions);
+    const hop = await cb("claude", makeBundle(), { kind: "primary" } satisfies HopKind, warmOptions);
+
+    expect(hop.result.success).toBe(true);
+    expect(sessionManager.closeSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("buildHopCallback — failure hop (fallback)", () => {
