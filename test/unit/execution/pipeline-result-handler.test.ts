@@ -370,3 +370,81 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
     expect(worktreeRemoveCalls.length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// story:skipped event emission
+// ---------------------------------------------------------------------------
+
+import { pipelineEventBus } from "../../../src/pipeline/event-bus";
+import type { StorySkippedEvent } from "../../../src/pipeline/event-bus";
+
+describe("handlePipelineFailure — story:skipped event", () => {
+  let capturedSkipped: StorySkippedEvent[];
+  let unsub: () => void;
+
+  beforeEach(() => {
+    capturedSkipped = [];
+    pipelineEventBus.clear();
+    unsub = pipelineEventBus.on("story:skipped", (ev) => {
+      capturedSkipped.push(ev as StorySkippedEvent);
+    });
+  });
+
+  afterEach(() => {
+    unsub();
+    pipelineEventBus.clear();
+  });
+
+  test("emits story:skipped event with storyId and reason when finalAction is 'skip'", async () => {
+    const story = makeStory("US-skip-01");
+    const ctx = makeCtx(story);
+
+    const skipResult: PipelineRunResult = {
+      success: false,
+      finalAction: "skip",
+      reason: "Dependency not met",
+      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+    };
+
+    await handlePipelineFailure(ctx, skipResult);
+
+    expect(capturedSkipped).toHaveLength(1);
+    expect(capturedSkipped[0].type).toBe("story:skipped");
+    expect(capturedSkipped[0].storyId).toBe("US-skip-01");
+    expect(capturedSkipped[0].reason).toBe("Dependency not met");
+  });
+
+  test("uses fallback reason when pipelineResult.reason is undefined", async () => {
+    const story = makeStory("US-skip-02");
+    const ctx = makeCtx(story);
+
+    const skipResult: PipelineRunResult = {
+      success: false,
+      finalAction: "skip",
+      reason: undefined,
+      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+    };
+
+    await handlePipelineFailure(ctx, skipResult);
+
+    expect(capturedSkipped).toHaveLength(1);
+    expect(capturedSkipped[0].storyId).toBe("US-skip-02");
+    expect(capturedSkipped[0].reason).toBe("Story skipped");
+  });
+
+  test("does NOT emit story:skipped when finalAction is 'fail'", async () => {
+    const story = makeStory("US-skip-03", { status: "pending", passes: false, attempts: 2 });
+    const ctx = makeCtx(story);
+
+    const failResult: PipelineRunResult = {
+      success: false,
+      finalAction: "fail",
+      reason: "Tests failed",
+      context: { agentResult: { estimatedCostUsd: 0 } } as unknown as PipelineRunResult["context"],
+    };
+
+    await handlePipelineFailure(ctx, failResult);
+
+    expect(capturedSkipped).toHaveLength(0);
+  });
+});
