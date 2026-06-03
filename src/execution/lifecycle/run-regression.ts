@@ -15,6 +15,7 @@ import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
+import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import { hasCommitsForStory } from "@/utils/git";
@@ -307,6 +308,15 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       storyDurations: {},
       storyOutcomes: {},
     };
+  }
+
+  // Emit regression:detected for each affected story
+  for (const storyId of affectedStories) {
+    pipelineEventBus.emit({
+      type: "regression:detected",
+      storyId,
+      failedTests: testSummary.failed,
+    });
   }
 
   // Step 3: Attempt rectification per story, with early-exit after each success
