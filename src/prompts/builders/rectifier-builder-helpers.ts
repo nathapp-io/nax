@@ -288,6 +288,7 @@ ${errors}
 1. Read the relevant files to verify each finding is a real issue
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
+4. Break the fix into one small step per valid finding before touching code, each verified by re-running the relevant check
 
 ${testEditHeadline(story, `Do NOT change test files or test behavior — see the ${exceptionCountWord(story)} narrow exceptions appended below.`)}
 Do NOT add new features — only fix valid issues.
@@ -317,6 +318,7 @@ ${errors}
 1. Read the relevant files to verify each finding is a real issue
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
+4. Break the fix into one small step per valid finding before touching code, each verified by re-running the relevant check
 
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
@@ -350,6 +352,7 @@ ${adversarialErrors}
 1. Read the relevant files to verify each finding is a real issue
 2. Only fix findings that are actually valid problems
 3. Do NOT add keys, functions, or imports that already exist — check first
+4. Break the fix into one small step per valid finding before touching code, each verified by re-running the relevant check
 
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
