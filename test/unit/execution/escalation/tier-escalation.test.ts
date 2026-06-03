@@ -6,7 +6,8 @@
  * - TEST_FAILURE  → escalate to next tier (existing behaviour)
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -394,6 +395,100 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
       expect(updatedStory?.routing?.modelTier).toBe("balanced");
       // No agent field set — caller uses defaultAgent
       expect(updatedStory?.routing?.agent).toBeUndefined();
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleTierEscalation — story:escalated event emission
+// ---------------------------------------------------------------------------
+
+describe("handleTierEscalation — story:escalated event emission", () => {
+  type StoryEscalatedPayload = { type: "story:escalated"; storyId: string; fromTier: string; toTier: string };
+  let capturedEvents: StoryEscalatedPayload[] = [];
+  let unsubscribe: (() => void) | undefined;
+
+  beforeEach(() => {
+    capturedEvents = [];
+    unsubscribe = pipelineEventBus.on("story:escalated", (event) => {
+      capturedEvents.push(event as StoryEscalatedPayload);
+    });
+  });
+
+  afterEach(() => {
+    unsubscribe?.();
+  });
+
+  test("emits story:escalated event with correct storyId, fromTier, and toTier on successful escalation", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      const story = {
+        id: "US-escalated-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { name: "fast", attempts: 1 },
+                { name: "balanced", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd-escalated.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+      };
+
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+      expect(capturedEvents).toHaveLength(1);
+      expect(capturedEvents[0]).toMatchObject({
+        type: "story:escalated",
+        storyId: "US-escalated-001",
+        fromTier: "fast",
+        toTier: "balanced",
+      });
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;
     }

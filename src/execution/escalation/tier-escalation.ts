@@ -16,6 +16,7 @@ import { markStoryFailed, savePRD } from "../../prd";
 import { tryLlmBatchRoute } from "../../routing";
 import { clearCacheForStory } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
+import { pipelineEventBus } from "../../pipeline/event-bus";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
@@ -438,6 +439,13 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       runtime: ctx.runtime,
     });
   }
+
+  pipelineEventBus.emit({
+    type: "story:escalated",
+    storyId: ctx.story.id,
+    fromTier: ctx.routing.modelTier,
+    toTier: escalatedTier,
+  });
 
   return {
     outcome: "escalated",
