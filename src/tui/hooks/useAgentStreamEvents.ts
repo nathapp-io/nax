@@ -13,6 +13,10 @@ export interface ActiveCallState {
   usageUpdates: number;
   toolCallUpdates: number;
   status: "active" | "ended";
+  /** Model used for this call (from agent.call_started) */
+  model?: string;
+  /** Most recently called tool name (from agent.tool_call_update) */
+  lastToolName?: string;
 }
 
 export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
@@ -42,6 +46,7 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
               usageUpdates: 0,
               toolCallUpdates: 0,
               status: "active",
+              model: event.model,
             });
             break;
           }
@@ -85,6 +90,7 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
                 ...state,
                 toolCallUpdates: state.toolCallUpdates + 1,
                 lastActivityAt: event.timestamp,
+                lastToolName: event.toolName,
               });
             }
             break;
