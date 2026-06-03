@@ -57,6 +57,28 @@ describe("PromptBuilder.acceptanceContext() — fluent API", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("PromptBuilder.build() — with acceptanceContext()", () => {
+  test("content is fenced as a typescript code block", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "fence.test.ts", content: "const x = 1;" }])
+      .build();
+    expect(prompt).toContain("```typescript");
+  });
+
+  test("multiple entries each render their path and content", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([
+        { testPath: "test/a.test.ts", content: "CONTENT_A" },
+        { testPath: "test/b.test.ts", content: "CONTENT_B" },
+      ])
+      .build();
+    expect(prompt).toContain("test/a.test.ts");
+    expect(prompt).toContain("test/b.test.ts");
+    expect(prompt).toContain("CONTENT_A");
+    expect(prompt).toContain("CONTENT_B");
+  });
+
   test("build() output contains the test path when acceptanceContext() is called", async () => {
     const prompt = await PromptBuilder.for("implementer")
       .story(makeStory())
@@ -112,6 +134,18 @@ describe("PromptBuilder.build() — with acceptanceContext()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("PromptBuilder.build() — without acceptanceContext()", () => {
+  test("build() is deterministic across two calls", async () => {
+    const story = makeStory({ title: "DETERMINISM_STORY" });
+    const a = await PromptBuilder.for("implementer").story(story).build();
+    const b = await PromptBuilder.for("implementer").story(story).build();
+    expect(a).toBe(b);
+  });
+
+  test("build() does not contain truncation markers when acceptanceContext() is not called", async () => {
+    const prompt = await PromptBuilder.for("implementer").story(makeStory()).build();
+    expect(prompt).not.toContain("[truncated — full file at");
+  });
+
   test("build() does not emit an acceptance section when acceptanceContext() is not called", async () => {
     const story = makeStory({ title: "NO_ACCEPTANCE_CONTEXT_STORY" });
 
