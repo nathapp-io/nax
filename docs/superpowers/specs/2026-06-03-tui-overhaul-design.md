@@ -61,6 +61,7 @@ Events consumed:
 | `run:started` | Set total story count, start elapsed timer |
 | `story:started` | Mark story `running`, record `modelTier` + `agent` + `iteration` |
 | `story:completed` | Mark story `passed`, accumulate cost |
+| `story:skipped` | Mark story `skipped` (new event — see Event Bus Gaps below) |
 | `story:failed` | Mark story `failed`, store `reason` on `StoryDisplayState` |
 | `story:paused` | Mark story `paused`, store `reason` |
 | `run:paused` | Show run-level pause indicator in header |
@@ -95,7 +96,7 @@ export interface StoryDisplayState {
 
 ### 4. `LiveActivityPanel` — new component (replaces `AgentPanel`)
 
-Consumes `activeCalls: Map<string, ActiveCallState>` (from existing `useAgentStreamEvents`) and `runSummary?: RunSummary`.
+Consumes `activeCalls: Map<string, ActiveCallState>` (from existing `useAgentStreamEvents`) and `runSummary?: RunCompletedEvent` (from `src/pipeline/event-bus.ts`, not the old `RunSummary` from `src/pipeline/events.ts` — these are different types with different field names).
 
 **Active state:** renders each call as a 2-line entry:
 ```
@@ -106,9 +107,9 @@ Tool icons: `🔧` for file ops (Write/Edit/Read), `🔩` for Bash, `💬` for t
 When `activeCalls` is empty and run not complete: spinner "Waiting for agent..."
 
 **Complete state:** when `runSummary` is set, replaces the active list with:
-- Counts row: `{N passed}  {N failed}  {N skipped}`  
-- `Total cost: $X.XXXX`
-- `Duration: Xm Xs`
+- Counts row: `{runSummary.passedStories} passed  {runSummary.failedStories} failed  {runSummary.skippedStories} skipped`
+- `Total cost: $X.XXXX` (from `runSummary.totalCost`)
+- `Duration: Xm Xs` (from `runSummary.durationMs`)
 - One line per failed story: `{id}: {reason}`
 
 **Escalation log:** a dimmed sub-section below active calls showing recent escalation messages (e.g. "story-5 escalated fast → balanced after 2 failures"). Populated from `story:started` events where `iteration > 1`.
@@ -141,9 +142,23 @@ Defined in `PipelineEventBus` but never emitted. Two options:
 
 Decision: **wire it**. The regression gate already has the failure count; emitting gives the TUI a precise failure mode.
 
+### `story:skipped` — add to new bus
+
+The `case "skip":` branch in `src/execution/pipeline-result-handler.ts` logs a warning and updates the PRD but emits nothing on `pipelineEventBus`. Without this event the TUI has no way to transition skipped stories out of `running`. Add:
+
+```typescript
+export interface StorySkippedEvent {
+  type: "story:skipped";
+  storyId: string;
+  reason: string;
+}
+```
+
+Emit from `pipeline-result-handler.ts` in the `case "skip":` branch, immediately after the existing `logger.warn` call.
+
 ### `story:escalated` — add to new bus
 
-The new `PipelineEventBus` has no escalation event. `tier-outcome.ts` emits `story:paused` + `story:failed` but carries no tier transition info. Add:
+The new `PipelineEventBus` has no escalation event. `tier-outcome.ts` handles the *failure* cases (no tier available); the actual tier promotion — where both `fromTier` and `toTier` are known — happens in `src/execution/escalation/tier-escalation.ts` around line 151, after `escalateTier()` is called and `escalatedTier` is computed. Add:
 
 ```typescript
 export interface StoryEscalatedEvent {
@@ -154,7 +169,7 @@ export interface StoryEscalatedEvent {
 }
 ```
 
-Emit from `tier-outcome.ts` when escalating (before emitting `story:paused`). The TUI uses this to populate the escalation log in `LiveActivityPanel` and to update the `→{tier}` suffix in the Stories panel row.
+Emit from `tier-escalation.ts` (not `tier-outcome.ts`) immediately after `escalatedTier` is assigned. The TUI uses this to populate the escalation log in `LiveActivityPanel` and to update the `→{tier}` suffix in the Stories panel row.
 
 ---
 
@@ -170,8 +185,10 @@ Emit from `tier-outcome.ts` when escalating (before emitting `story:paused`). Th
 | `src/tui/components/StatusBar.tsx` | Keybinding hints left, context right |
 | `src/tui/App.tsx` | New header, wire new hook + panel, remove dead fields |
 | `src/tui/types.ts` | Add `failureReason`, `modelTier`, `iteration` to `StoryDisplayState`; update `TuiProps` |
-| `src/pipeline/event-bus.ts` | Add `StoryEscalatedEvent` type and union entry |
-| `src/execution/escalation/tier-outcome.ts` | Emit `story:escalated` before `story:paused` |
+| `src/pipeline/event-bus.ts` | Add `StorySkippedEvent`, `StoryEscalatedEvent` types and union entries |
+| `src/pipeline/index.ts` | Export `pipelineEventBus` singleton so `usePipelineBusEvents` can import via barrel (`@/pipeline`) |
+| `src/execution/pipeline-result-handler.ts` | Emit `story:skipped` in `case "skip":` branch |
+| `src/execution/escalation/tier-escalation.ts` | Emit `story:escalated` after `escalatedTier` is assigned |
 | `src/execution/lifecycle/run-regression.ts` | Emit `regression:detected` on failure |
 | `bin/nax.ts` | Remove `totalCost`/`elapsedMs` from `renderTui` call |
 | `test/unit/tui/` | Tests for new hook and `LiveActivityPanel` |
