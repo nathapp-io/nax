@@ -70,7 +70,6 @@ import {
 } from "../src/cli/config-profile";
 import { generateCommand } from "../src/cli/generate";
 import { detectCommand } from "../src/commands/detect";
-import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
 import { runsCommand } from "../src/commands/runs";
@@ -1061,28 +1060,6 @@ program
         list: options.list,
         run: options.run,
         json: options.json,
-      });
-    } catch (err) {
-      console.error(chalk.red(`Error: ${(err as Error).message}`));
-      process.exit(1);
-    }
-  });
-
-// ── diagnose ─────────────────────────────────────────
-program
-  .command("diagnose")
-  .description("Diagnose run failures and generate recommendations")
-  .option("-f, --feature <name>", "Feature name (defaults to current feature)")
-  .option("-d, --dir <path>", "Working directory", process.cwd())
-  .option("--json", "Output machine-readable JSON", false)
-  .option("--verbose", "Verbose output with story breakdown", false)
-  .action(async (options) => {
-    try {
-      await diagnose({
-        feature: options.feature,
-        workdir: options.dir,
-        json: options.json,
-        verbose: options.verbose,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
