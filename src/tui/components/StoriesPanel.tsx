@@ -127,8 +127,7 @@ export function StoriesPanel({ stories, width, compact = false, maxHeight }: Sto
               : s.status === "running" && shortTier
                 ? shortTier
                 : "";
-          const showFailureLine =
-            (s.status === "failed" || s.status === "paused") && s.failureReason;
+          const showFailureLine = (s.status === "failed" || s.status === "paused") && s.failureReason;
           return (
             <Box key={s.story.id} flexDirection="column">
               <Text>
@@ -136,9 +135,7 @@ export function StoriesPanel({ stories, width, compact = false, maxHeight }: Sto
                 <Text dimColor>{routing}</Text>
                 {tierSuffix ? <Text dimColor> {tierSuffix}</Text> : null}
               </Text>
-              {showFailureLine && (
-                <Text dimColor>{"  └ " + (s.failureReason as string).slice(0, 25)}</Text>
-              )}
+              {showFailureLine && <Text dimColor>{`  └ ${(s.failureReason as string).slice(0, 25)}`}</Text>}
             </Box>
           );
         })}

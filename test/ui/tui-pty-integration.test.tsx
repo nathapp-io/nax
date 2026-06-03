@@ -2,7 +2,7 @@
  * Tests for TUI PTY integration (ENH-3).
  *
  * Tests that App.tsx correctly wires the usePty hook and routes
- * keyboard input to the PTY when the agent panel is focused.
+ * keyboard input to the live activity panel when the agent panel is focused.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -47,8 +47,6 @@ describe("App PTY integration", () => {
       <App
         feature="test-feature"
         stories={stories}
-        totalCost={0}
-        elapsedMs={0}
         events={emitter}
         ptyOptions={ptyOptions}
       />,
@@ -64,7 +62,7 @@ describe("App PTY integration", () => {
 
     // Should render without errors when ptyOptions is null
     const { lastFrame } = render(
-      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
+      <App feature="test-feature" stories={stories} events={emitter} ptyOptions={null} />,
     );
 
     // Verify App renders
@@ -77,29 +75,29 @@ describe("App PTY integration", () => {
 
     // Should render without errors when ptyOptions is undefined
     const { lastFrame } = render(
-      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} />,
+      <App feature="test-feature" stories={stories} events={emitter} />,
     );
 
     // Verify App renders
     expect(lastFrame()).toContain("test-feature");
   });
 
-  test("displays agent panel with waiting message when no PTY output", () => {
+  test("displays live activity panel with waiting message when no PTY output", () => {
     const emitter = new PipelineEventEmitter();
     const stories = [createMockStory("US-001", "pending")];
 
     const { lastFrame } = render(
-      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
+      <App feature="test-feature" stories={stories} events={emitter} ptyOptions={null} />,
     );
 
     const frame = lastFrame();
 
-    // Verify agent panel shows waiting message
-    expect(frame).toContain("Agent");
+    // Verify live activity panel shows waiting message
+    expect(frame).toContain("Live Activity");
     expect(frame).toContain("Waiting for agent...");
   });
 
-  test.skipIf(!canSpawnPty)("AgentPanel is present in layout", () => {
+  test.skipIf(!canSpawnPty)("LiveActivityPanel is present in layout", () => {
     const emitter = new PipelineEventEmitter();
     const stories = [createMockStory("US-001", "pending")];
 
@@ -107,20 +105,19 @@ describe("App PTY integration", () => {
       <App
         feature="test-feature"
         stories={stories}
-        totalCost={0}
-        elapsedMs={0}
         events={emitter}
         ptyOptions={{
           command: "echo",
           args: ["test"],
+          cwd: "/project",
         }}
       />,
     );
 
     const frame = lastFrame();
 
-    // Verify agent panel header is visible
-    expect(frame).toContain("Agent");
+    // Verify live activity panel header is visible
+    expect(frame).toContain("Live Activity");
   });
 
   test("focus can be toggled with Tab key", () => {
@@ -128,7 +125,7 @@ describe("App PTY integration", () => {
     const stories = [createMockStory("US-001", "pending")];
 
     const { lastFrame, stdin } = render(
-      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
+      <App feature="test-feature" stories={stories} events={emitter} ptyOptions={null} />,
     );
 
     // Initial state: stories panel focused (agent not focused)

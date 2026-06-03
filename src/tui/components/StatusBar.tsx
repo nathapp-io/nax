@@ -23,9 +23,7 @@ export function StatusBar({
   isParallel,
   activeCount = 0,
 }: StatusBarProps) {
-  const hints = runComplete
-    ? "q quit  c cost  ? help"
-    : "p pause  a abort  s skip  c cost  ? help";
+  const hints = runComplete ? "q quit  c cost  ? help" : "p pause  a abort  s skip  c cost  ? help";
 
   let context: string;
   if (runComplete) {

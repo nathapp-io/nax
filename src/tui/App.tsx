@@ -14,7 +14,7 @@ import { StatusBar } from "./components/StatusBar";
 import { StoriesPanel } from "./components/StoriesPanel";
 import { useAgentStreamEvents } from "./hooks/useAgentStreamEvents";
 import { type KeyboardAction, useKeyboard } from "./hooks/useKeyboard";
-import { COMPACT_MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH, MAX_VISIBLE_STORIES, useLayout } from "./hooks/useLayout";
+import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH, useLayout } from "./hooks/useLayout";
 import { usePipelineBusEvents } from "./hooks/usePipelineBusEvents";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
 import { usePty } from "./hooks/usePty";

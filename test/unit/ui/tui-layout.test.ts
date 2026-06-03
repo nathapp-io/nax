@@ -59,8 +59,6 @@ describe("StoriesPanel — compact mode", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.42,
-        elapsedMs: 120000,
         width: 30,
         compact: true,
       }),
@@ -70,34 +68,13 @@ describe("StoriesPanel — compact mode", () => {
     expect(output).toContain("⬚ US-001");
     // Should NOT contain routing info in compact mode
     expect(output).not.toContain("sim");
-    expect(output).not.toContain("fast");
   });
 
-  test("compact mode shows condensed cost and time in footer", () => {
+  test("normal mode (not compact) shows routing complexity", () => {
     const stories = [createMockStory("US-001", "pending")];
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.4235,
-        elapsedMs: 263000,
-        width: 30,
-        compact: true,
-      }),
-    );
-
-    const output = lastFrame();
-    // Compact mode shows: "$X.XX · Mm Ss"
-    expect(output).toContain("$0.42");
-    expect(output).toContain("4m 23s");
-  });
-
-  test("normal mode (not compact) shows full details", () => {
-    const stories = [createMockStory("US-001", "pending")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0.42,
-        elapsedMs: 120000,
         width: 30,
         compact: false,
       }),
@@ -107,10 +84,6 @@ describe("StoriesPanel — compact mode", () => {
     expect(output).toContain("⬚ US-001");
     // Should contain routing info
     expect(output).toContain("sim");
-    expect(output).toContain("fast");
-    // Should show separate cost and time lines
-    expect(output).toContain("Cost:");
-    expect(output).toContain("Time:");
   });
 });
 
@@ -123,8 +96,6 @@ describe("StoriesPanel — scrolling", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.1,
-        elapsedMs: 60000,
         width: 30,
       }),
     );
@@ -146,8 +117,6 @@ describe("StoriesPanel — scrolling", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.2,
-        elapsedMs: 120000,
         width: 30,
       }),
     );
@@ -169,8 +138,6 @@ describe("StoriesPanel — scrolling", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.12,
-        elapsedMs: 60000,
         width: 30,
         compact: true,
       }),
@@ -192,8 +159,6 @@ describe("StoriesPanel — scrolling", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.05,
-        elapsedMs: 30000,
         width: 30,
         compact: true,
       }),
@@ -224,28 +189,28 @@ describe("Edge cases", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories: [],
-        totalCost: 0,
-        elapsedMs: 0,
         width: 30,
       }),
     );
 
     const output = lastFrame();
-    // Should still show header and footer
+    // Should still show header
     expect(output).toContain("Stories");
-    expect(output).toContain("Cost:");
-    expect(output).toContain("Time:");
   });
 
   test("no scroll at exactly MAX_VISIBLE_STORIES; scroll indicator at MAX+1", () => {
-    const atMax = Array.from({ length: MAX_VISIBLE_STORIES }, (_, i) => createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"));
-    const out1 = render(createElement(StoriesPanel, { stories: atMax, totalCost: 0.15, elapsedMs: 90000, width: 30 })).lastFrame();
+    const atMax = Array.from({ length: MAX_VISIBLE_STORIES }, (_, i) =>
+      createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"),
+    );
+    const out1 = render(createElement(StoriesPanel, { stories: atMax, width: 30 })).lastFrame();
     expect(out1).not.toContain("▲");
     expect(out1).not.toContain("▼");
     expect(out1).not.toContain("total");
 
-    const overMax = Array.from({ length: MAX_VISIBLE_STORIES + 1 }, (_, i) => createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"));
-    const out2 = render(createElement(StoriesPanel, { stories: overMax, totalCost: 0.16, elapsedMs: 90000, width: 30 })).lastFrame();
+    const overMax = Array.from({ length: MAX_VISIBLE_STORIES + 1 }, (_, i) =>
+      createMockStory(`US-${String(i + 1).padStart(3, "0")}`, "pending"),
+    );
+    const out2 = render(createElement(StoriesPanel, { stories: overMax, width: 30 })).lastFrame();
     expect(out2).toContain("▼");
     expect(out2).toContain("1 more below");
   });
@@ -256,8 +221,6 @@ describe("Edge cases", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.01,
-        elapsedMs: 10000,
         width: 30,
         compact: true,
       }),
@@ -268,31 +231,5 @@ describe("Edge cases", () => {
     expect(output).toContain("⬚");
     // Story ID might wrap to multiple lines due to panel width
     expect(output).toContain("US-VERY-LONG-STORY-ID");
-  });
-
-  test("handles zero cost and zero elapsed time", () => {
-    const stories = [createMockStory("US-001", "pending")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 0,
-        width: 30,
-      }),
-    );
-
-    const output = lastFrame();
-    expect(output).toContain("$0.0000");
-    expect(output).toContain("0m 0s");
-  });
-
-  test("large cost: 4 decimal places in normal mode; 2 decimal places in compact mode", () => {
-    const stories = [createMockStory("US-001", "passed")];
-    const out1 = render(createElement(StoriesPanel, { stories, totalCost: 123.456789, elapsedMs: 3600000, width: 30 })).lastFrame();
-    expect(out1).toContain("$123.4568");
-    expect(out1).toContain("60m 0s");
-
-    const out2 = render(createElement(StoriesPanel, { stories, totalCost: 123.456789, elapsedMs: 3600000, width: 30, compact: true })).lastFrame();
-    expect(out2).toContain("$123.46");
   });
 });

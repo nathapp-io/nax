@@ -13,9 +13,9 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findi
 import { runFixCycle, testSummaryToFindings } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
+import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
-import { pipelineEventBus } from "@/pipeline";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import { hasCommitsForStory } from "@/utils/git";

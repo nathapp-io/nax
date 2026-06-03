@@ -554,8 +554,6 @@ program
       tuiInstance = renderTui({
         feature: options.feature,
         stories: initialStories,
-        totalCost: 0,
-        elapsedMs: 0,
         events: eventEmitter,
         ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it
       });

@@ -138,9 +138,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
     const unsubSkipped = pipelineEventBus.on("story:skipped", (event) => {
       setState((prev) => ({
         ...prev,
-        stories: prev.stories.map((s) =>
-          s.story.id === event.storyId ? { ...s, status: "skipped" as const } : s,
-        ),
+        stories: prev.stories.map((s) => (s.story.id === event.storyId ? { ...s, status: "skipped" as const } : s)),
       }));
     });
 
@@ -154,9 +152,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       };
       setState((prev) => ({
         ...prev,
-        stories: prev.stories.map((s) =>
-          s.story.id === event.storyId ? { ...s, status: "retrying" as const } : s,
-        ),
+        stories: prev.stories.map((s) => (s.story.id === event.storyId ? { ...s, status: "retrying" as const } : s)),
         escalationLog: [...prev.escalationLog, entry],
       }));
     });
