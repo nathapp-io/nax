@@ -323,6 +323,8 @@ ${findingLines}
 
 **Task:** For each bug above, write a NEW failing test that asserts the spec-correct behavior described in the finding. The test should FAIL with the current (buggy) implementation and PASS once the implementer fixes the source.
 
+Break the work into one small task per bug before writing: for each, note the failing test's name and which spec-correct behavior it pins down.
+
 Rules:
 1. Write the test against the SPECIFICATION, not the current behavior.
 2. Do NOT fix the source files — only write test files.
@@ -352,6 +354,8 @@ ${fileList}
 
 ### Implementer handoff
 ${reason}
+
+Break the work into one small task per listed file before editing: for each, note how its mock setup and dispatch wiring must change to match the AC-mandated dispatch shape.
 
 Rules:
 1. Modify ONLY the files listed above.
@@ -413,7 +417,8 @@ Before making any changes:
 2. Do NOT loosen assertions to match current implementation behavior. If a test is failing because the source is wrong, the source is the suspect — not the test.
 3. Do NOT delete a failing test because the implementation makes it hard to assert on. Refactor the test structure if needed; never silently drop coverage.
 4. If the current behavior disagrees with the acceptance criteria, write the test against the spec and let the implementer fix the source.
-5. Do NOT modify source implementation files.`;
+5. Do NOT modify source implementation files.
+6. Break the work into one small change per flagged test before editing, each verified by re-running that test.`;
 
     return `${opener}
 
@@ -660,7 +665,7 @@ ${acList}
 ### Findings
 ${llmSection}
 
-**Important:** LLM reviewers may flag false positives. Before making changes for LLM review findings, read the relevant files to verify each finding is a real issue. Do NOT add keys, functions, or imports that already exist.
+**Important:** LLM reviewers may flag false positives. Before making changes for LLM review findings, read the relevant files to verify each finding is a real issue, then break the fix into one small step per valid finding before touching code, each verified by re-running the relevant check. Do NOT add keys, functions, or imports that already exist.
 
 Do NOT add new features — only fix the identified issues.
 Commit your fixes when done.${scopeConstraint}${escapeHatchFor(story)}`;
@@ -869,7 +874,9 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
       const detail = reasoning ? `  Reasoning: ${reasoning}\n` : "";
       lines.push(`- [${f.category}] ${f.message}\n${detail}`);
     }
-    lines.push("\nFix the implementation to resolve all verifier findings.");
+    lines.push(
+      "\nBefore editing, break the work into one small fix per finding above (fix -> re-run to verify). Then fix the implementation to resolve all verifier findings.",
+    );
     return lines.join("\n");
   }
 

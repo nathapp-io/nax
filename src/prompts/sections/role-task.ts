@@ -75,9 +75,10 @@ Your task: make the failing tests pass by writing real source code.
 Workflow:
 1. Read every failing test in scope. The tests are the contract — understand what each one asserts before editing source.
 2. Run the scoped test files once to establish the baseline (which fail, which pass, and why).
-3. Implement source code in the package's source location (the project context names it).
-4. After each meaningful change, re-run only the scoped test files — never the full suite.
-5. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+3. Break the work into small steps before writing: for each step, note the source change and the failing test that verifies it (step -> verify). Resolve ambiguities now, not mid-edit.
+4. Implement source code in the package's source location (the project context names it).
+5. After each meaningful change, re-run only the scoped test files — never the full suite.
+6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
 
 Rules:
 - Do NOT modify test files. Three narrow exceptions: (a) a lint-only fix to a test, (b) a contract drift where the test imports a removed/renamed symbol, (c) a sibling test file rename forced by your source change. Name which exception applies in the commit body before editing any test file.
@@ -94,10 +95,11 @@ Context: A test-writer session has already created tests and may have added mini
 Workflow:
 1. Run the existing scoped tests to see which fail and why (assertion failure vs import error).
 2. Read each failing test. Note which ACs they cover and which they DON'T.
-3. Replace stubs with real implementations. A stub is one of: a type-only declaration, a function returning a placeholder/throwing "not implemented", or a const placeholder.
-4. If any AC has no test, add one before implementing — do not implement uncovered behavior.
-5. Re-run only the scoped test files after each meaningful change.
-6. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
+3. Break the work into small steps before writing: for each stub, note the real implementation that replaces it and the test that verifies it (step -> verify); flag any AC still missing a test. Resolve ambiguities now, not mid-edit.
+4. Replace stubs with real implementations. A stub is one of: a type-only declaration, a function returning a placeholder/throwing "not implemented", or a const placeholder.
+5. If any AC has no test, add one before implementing — do not implement uncovered behavior.
+6. Re-run only the scoped test files after each meaningful change.
+7. When all scoped tests pass, stage and commit ALL changed files: \`git commit -m '${commitMsg}'\`.
 
 Rules:
 - Three test-modification exceptions apply (lint-only fix, contract drift, sibling rename). Name the exception in the commit body before editing any test the test-writer wrote.
@@ -115,10 +117,11 @@ Context: You are session 1 of a multi-session workflow. An implementer will foll
 
 Workflow:
 1. Re-read the acceptance criteria above.
-2. Create test files in the location the project uses for tests.
-3. Create stubs in the package's source location so the tests can import and compile. A stub is one of: a type/interface declaration, a function returning a placeholder/throwing "not implemented" (no more than 3 lines of body), or a const placeholder. If a stub body needs real logic, you have crossed into implementer territory — stop.
-4. For each AC: at least one success-path test and one boundary/failure-path test.
-5. Run the new test files. Confirm tests compile (stubs work) AND fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
+2. Break the work into small tasks before writing: treat each AC as one task and note the test name(s) you will add (success + boundary) and the minimal stub each test needs to compile. This per-AC list is your checklist.
+3. Create test files in the location the project uses for tests.
+4. Create stubs in the package's source location so the tests can import and compile. A stub is one of: a type/interface declaration, a function returning a placeholder/throwing "not implemented" (no more than 3 lines of body), or a const placeholder. If a stub body needs real logic, you have crossed into implementer territory — stop.
+5. For each AC: at least one success-path test and one boundary/failure-path test.
+6. Run the new test files. Confirm tests compile (stubs work) AND fail with ASSERTION failures — NOT import errors or compile errors. A test that errors before reaching its assertion does not prove the behavior is missing.
 
 Rules:
 - Stubs are NOT implementations. The implementer in the next session writes real logic.
@@ -136,9 +139,10 @@ Context: You are session 1 of a multi-session workflow.
 
 Workflow:
 1. Re-read the acceptance criteria above.
-2. Create test files in the location the project uses for tests (project context names it).
-3. For each AC: write at least one test for the success path AND at least one for a boundary/failure path (zero, empty, negative, missing, throws). ACs worded as "throws X" require a test asserting the throw.
-4. Run the new test files. Confirm every test fails with an ASSERTION failure — NOT an import error, compile error, or runtime crash before assertion. A test that errors before reaching its assertion does not prove the behavior is missing.
+2. Break the work into small tasks before writing: treat each AC as one task and note the test name(s) you will write (success + boundary) and which file they belong in. This per-AC list is your checklist.
+3. Create test files in the location the project uses for tests (project context names it).
+4. For each AC: write at least one test for the success path AND at least one for a boundary/failure path (zero, empty, negative, missing, throws). ACs worded as "throws X" require a test asserting the throw.
+5. Run the new test files. Confirm every test fails with an ASSERTION failure — NOT an import error, compile error, or runtime crash before assertion. A test that errors before reaching its assertion does not prove the behavior is missing.
 
 Rules:
 - Do NOT create or modify any source files. Read source for types/interfaces only.
