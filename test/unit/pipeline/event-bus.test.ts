@@ -102,4 +102,26 @@ describe("PipelineEventBus", () => {
 
     expect(received).toHaveLength(0);
   });
+
+  test("story:skipped event is typed and receivable", () => {
+    const bus = new PipelineEventBus();
+    const received: PipelineEvent[] = [];
+    bus.on("story:skipped", (e) => received.push(e));
+
+    bus.emit({ type: "story:skipped", storyId: "US-001", reason: "user requested skip" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("story:skipped");
+  });
+
+  test("story:escalated event is typed and receivable", () => {
+    const bus = new PipelineEventBus();
+    const received: PipelineEvent[] = [];
+    bus.on("story:escalated", (e) => received.push(e));
+
+    bus.emit({ type: "story:escalated", storyId: "US-001", fromTier: "fast", toTier: "balanced" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("story:escalated");
+  });
 });

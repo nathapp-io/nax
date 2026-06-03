@@ -18,3 +18,14 @@ export type { PipelineRunResult } from "./runner";
 export { PipelineEventEmitter } from "./events";
 export type { PipelineEvents, RunSummary } from "./events";
 export { executionStage, _executionDeps } from "./stages";
+
+export { pipelineEventBus } from "./event-bus";
+export type {
+  PipelineEvent,
+  PipelineEventType,
+  RunCompletedEvent,
+  StorySkippedEvent,
+  StoryEscalatedEvent,
+  StoryStartedEvent,
+  StoryFailedEvent,
+} from "./event-bus";
