@@ -561,6 +561,7 @@ program
         events: eventEmitter,
         ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it
         agentStreamEvents,
+        queueFilePath: join(workdir, ".queue.txt"),
       });
     } else {
       console.log(chalk.dim("   [Headless mode — pipe output]"));

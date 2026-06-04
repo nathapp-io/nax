@@ -33,6 +33,11 @@ export type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 
 const TERMINAL_ACTIONS = new Set(["fail", "skip", "pause"]);
 
+// Tracks internal run-scoped unsubscribers so we can tear them down without
+// calling pipelineEventBus.clear(), which would also wipe external subscribers
+// like the TUI's usePipelineBusEvents hook.
+let _prevRunUnsubscribers: Array<() => void> = [];
+
 async function closeStoryIfTerminal(
   ctx: SequentialExecutionContext,
   storyId: string,
@@ -78,15 +83,17 @@ export async function executeUnified(
     return nextIndex;
   };
 
-  pipelineEventBus.clear();
-  // Wire subscribers — unsubscribe fns are NOT called here because run:completed
-  // fires after executeUnified() returns (in runCompletionPhase). Cleanup happens
-  // via pipelineEventBus.clear() at the start of the next run.
-  wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
-  wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
-  wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
-  wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
-  wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir);
+  // Tear down previous run's internal subscribers before wiring fresh ones.
+  // Calling stored unsubscribers instead of pipelineEventBus.clear() preserves
+  // external subscribers (e.g. TUI's usePipelineBusEvents) across run boundaries.
+  for (const fn of _prevRunUnsubscribers) fn();
+  _prevRunUnsubscribers = [
+    wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature),
+    wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime),
+    wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config),
+    wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir),
+    wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir),
+  ];
 
   // Emit run:started once — subscribers (hooks.ts, reporters.ts) own the fan-out.
   // Direct fireHook("on-start") and reporter.onRunStart() calls have been removed.
