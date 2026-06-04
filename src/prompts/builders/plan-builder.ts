@@ -163,7 +163,7 @@ Output ONLY the JSON object. Do not include markdown fences or explanation.`;
     const specGuardItems = specGuard
       ? `
 #### orphan-acs
-Every acceptance criterion in the PRD must trace back to a requirement stated in the spec. An AC that introduces scope the spec never mentions — new enum values, new status codes, new config keys, extra validation rules, invented helper behaviour — is scope bleed from candidate-PRD merging. Delete it, or reduce it to exactly what the spec says.
+Every acceptance criterion in the PRD must trace back to a requirement stated in the spec. An AC that introduces scope the spec never mentions — new enum values, new status codes, new config keys, extra validation rules, invented helper behaviour — is scope bleed from candidate-PRD merging. Delete it, or reduce it to exactly what the spec says. **\`suggestedCriteria\` entries are exempt from this rule** — they are intentionally out-of-spec edge cases and must be preserved unchanged.
 
 #### no-behavior-degradation
 No acceptance criterion may use a deprecated verification tag (\`[grep]\`, \`[file]\`, \`[verbatim]\`) or contain a shell-command pattern (\`grep -\`, \`wc\`, \`|\` inside a backtick span). These signal a file-content check that the agent cannot implement as a runtime test. Rewrite any such AC as a behavioural assertion: what the function returns, throws, or emits — not what the source file contains.`
