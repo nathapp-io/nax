@@ -159,7 +159,16 @@ Output ONLY the JSON object. Do not include markdown fences or explanation.`;
    * The model must write the revised PRD to disk, then reply with a brief
    * confirmation only.
    */
-  buildRefineContinuation(outputFilePath: string): string {
+  buildRefineContinuation(outputFilePath: string, specGuard = false): string {
+    const specGuardItems = specGuard
+      ? `
+#### orphan-acs
+Every acceptance criterion in the PRD must trace back to a requirement stated in the spec. An AC that introduces scope the spec never mentions — new enum values, new status codes, new config keys, extra validation rules, invented helper behaviour — is scope bleed from candidate-PRD merging. Delete it, or reduce it to exactly what the spec says.
+
+#### no-behavior-degradation
+No acceptance criterion may use a deprecated verification tag (\`[grep]\`, \`[file]\`, \`[verbatim]\`) or contain a shell-command pattern (\`grep -\`, \`wc\`, \`|\` inside a backtick span). These signal a file-content check that the agent cannot implement as a runtime test. Rewrite any such AC as a behavioural assertion: what the function returns, throws, or emits — not what the source file contains.`
+      : "";
+
     return `You are in the second turn of a refine pass. Assume this draft has flaws, and audit it adversarially before you trust it.
 
 Review the draft with a strict self-audit mindset. Re-read the codebase context and compare the PRD against it. Focus only on the issues below, then rewrite the PRD if needed.
@@ -194,9 +203,38 @@ Re-check routing.complexity and routing.testStrategy against the current codebas
 If a story changes existing behavior, extracts a shared helper, extends an existing function signature, or replaces a warning/stub path with real behavior, ensure there is at least one acceptance criterion protecting backward compatibility or proving the old placeholder behavior is gone.
 
 #### scope-consistency
-Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.
+Check each story's title, description, scope, contextFiles, and acceptance criteria for internal consistency. If the story says a file or command is in scope anywhere else, do not list it as out of scope. If the title or acceptance criteria clearly include CLI, output, tests, or helper extraction work, the Scope section must reflect that accurately.${specGuardItems}
 
 Write the revised PRD to this file path: ${outputFilePath}
+Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
+  }
+
+  /**
+   * Spec-drift repair prompt — conditional fourth turn in refine mode (specGuard only).
+   *
+   * Fired when the deterministic spec-drift check finds PRD ACs with deprecated
+   * tags or shell-command patterns. Instructs the model to rewrite each flagged
+   * AC as a runtime-testable behavioural assertion. `planRefineOp.verify` emits
+   * the residual warning if violations remain after this turn.
+   */
+  buildSpecDriftRepair(
+    violations: ReadonlyArray<{ storyId: string; acIndex: number; ac: string; reason: string }>,
+    outputFilePath: string,
+  ): string {
+    const list = violations.map((v) => `- ${v.storyId} AC[${v.acIndex}] (${v.reason}): ${v.ac}`).join("\n");
+    return `Your PRD contains acceptance criteria that cannot be implemented as runtime tests — they use deprecated verification tags or shell-command patterns that describe file-content checks rather than observable behaviour. These must be rewritten.
+
+Flagged acceptance criteria:
+
+${list}
+
+For each one:
+- Replace the AC with a behavioural assertion: what the function, method, or CLI command returns, throws, logs, or emits — not what the source file contains.
+- Remove any deprecated tags (\`[grep]\`, \`[file]\`, \`[verbatim]\`) from the leading tag group. Replace with \`[unit]\`, \`[integration]\`, or \`[cli]\` as appropriate.
+- Remove any shell-command patterns (\`grep -\`, \`wc\`, pipe \`|\` inside backticks). Express the same invariant as an assertion on the runtime value.
+- Do not remove or weaken acceptance criteria that are already correct.
+
+Write the corrected PRD to this file path: ${outputFilePath}
 Do not output the PRD in chat. After writing the file, reply with a brief text confirmation only.`;
   }
 

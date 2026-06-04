@@ -162,7 +162,7 @@ describe("planRefineOp.hopBody()", () => {
     expect(sendWithParseRetry).toHaveBeenCalledWith(initialPrompt);
     expect(send).toHaveBeenCalledTimes(1);
     expect(buildRefineContinuationSpy).toHaveBeenCalledTimes(1);
-    expect(buildRefineContinuationSpy).toHaveBeenCalledWith("/tmp/plan-refine-prd.json");
+    expect(buildRefineContinuationSpy).toHaveBeenCalledWith("/tmp/plan-refine-prd.json", false);
     expect(send).toHaveBeenCalledWith(refinePrompt);
     expect(result.output).toBe("refined-confirmation");
     expect(result.estimatedCostUsd).toBe(4);
@@ -466,6 +466,117 @@ describe("planRefineOp.hopBody — [verbatim] self-heal turn", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(repairSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("planRefineOp.hopBody — specGuard spec-drift repair turn", () => {
+  const SPEC = "# Spec\n- [unit] does a thing";
+
+  function turn(output: string, cost: number) {
+    return { output, estimatedCostUsd: cost, internalRoundTrips: 1, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
+  }
+
+  function makeCtx(specGuard: boolean) {
+    const sendWithParseRetry = mock(async () => turn("draft", 1));
+    let sendCount = 0;
+    const send = mock(async (_p: string) => {
+      sendCount += 1;
+      return turn(sendCount === 1 ? "refined" : "drift-repaired", 2);
+    });
+    return {
+      ctx: {
+        input: { specContent: SPEC, codebaseContext: "", featureName: "f", branchName: "feat/f", outputPath: "/tmp/p.json", specGuard },
+        send,
+        sendWithParseRetry,
+      } as unknown as Parameters<NonNullable<typeof planRefineOp.hopBody>>[1],
+      send,
+    };
+  }
+
+  function makeDriftPrd() {
+    const base = makeValidPrd("f", "feat/f");
+    return {
+      ...base,
+      userStories: [{ ...base.userStories[0], acceptanceCriteria: ["- [grep] `grep -rn foo src/` returns 0", "handler rejects invalid input"] }],
+    };
+  }
+
+  test("fires exactly one repair turn when specGuard=true and PRD has a deprecated-tag AC", async () => {
+    _planRefineDeps.readFile = async () => JSON.stringify(makeDriftPrd());
+    const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair").mockReturnValue("DRIFT-REPAIR");
+    const { ctx, send } = makeCtx(true);
+
+    const result = await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(2); // refine + drift repair
+    expect(driftSpy).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[1]?.[0]).toBe("DRIFT-REPAIR");
+    expect(result.output).toBe("drift-repaired");
+    expect(result.estimatedCostUsd).toBe(5); // 1 (draft) + 2 (refine) + 2 (drift repair)
+  });
+
+  test("no repair turn when specGuard=true but PRD is clean", async () => {
+    _planRefineDeps.readFile = async () => JSON.stringify(makeValidPrd("f", "feat/f"));
+    const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair");
+    const { ctx, send } = makeCtx(true);
+
+    const result = await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(1); // refine only
+    expect(driftSpy).not.toHaveBeenCalled();
+    expect(result.output).toBe("refined");
+    expect(result.estimatedCostUsd).toBe(3); // 1 (draft) + 2 (refine)
+  });
+
+  test("no repair turn when specGuard=false even if PRD has drift violations", async () => {
+    _planRefineDeps.readFile = async () => JSON.stringify(makeDriftPrd());
+    const driftSpy = spyOn(PlanPromptBuilder.prototype, "buildSpecDriftRepair");
+    const { ctx, send } = makeCtx(false);
+
+    await planRefineOp.hopBody!("init", ctx);
+
+    expect(send).toHaveBeenCalledTimes(1); // refine only
+    expect(driftSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("planRefineOp.verify — specGuard warnOnSpecDrift", () => {
+  function makeVerifyCtx(specGuard: boolean): VerifyContext<unknown> {
+    const runtime = makeTestRuntime();
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const base = view.select(planRefineOp.config) as Record<string, unknown>;
+    return {
+      packageView: view,
+      config: { ...base, plan: { ...(base.plan as object), specGuard } } as never,
+      readFile: async () => null,
+      fileExists: async () => false,
+    };
+  }
+
+  const input = { specContent: "# Spec", codebaseContext: "", featureName: "f", branchName: "feat/f", outputPath: "/tmp/x.json" };
+
+  function makeDriftPrd() {
+    const base = makeValidPrd("f", "feat/f");
+    return { ...base, userStories: [{ ...base.userStories[0], acceptanceCriteria: ["- [grep] `grep foo` returns 0", "handler rejects invalid input"] }] };
+  }
+
+  test("emits spec-drift warning when specGuard=true and violations remain", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const result = await planRefineOp.verify?.(makeDriftPrd() as never, input as never, makeVerifyCtx(true));
+      expect(result).toBeTruthy();
+      const call = warnSpy.mock.calls.find((c) => typeof c[1] === "string" && c[1].includes("spec-drift"));
+      expect(call).toBeDefined();
+      expect((call?.[2] as Record<string, unknown>).violationCount).toBe(1);
+    });
+  });
+
+  test("does not emit spec-drift warning when specGuard=false even with violations", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      await planRefineOp.verify?.(makeDriftPrd() as never, input as never, makeVerifyCtx(false));
+      const driftWarn = warnSpy.mock.calls.find((c) => typeof c[1] === "string" && c[1].includes("spec-drift"));
+      expect(driftWarn).toBeUndefined();
+    });
   });
 });
 

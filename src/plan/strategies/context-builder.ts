@@ -94,7 +94,6 @@ export async function buildPlanModeContext(
     branchName,
     timeoutSeconds,
     config,
-    fullConfig,
     options,
     runtime,
     interactionChain,

@@ -9,6 +9,7 @@ import { makeMockAgentManager } from "@test/helpers";
 function makeRuntime(closeImpl?: () => Promise<void>): NaxRuntime {
   return {
     runId: "run-1",
+    configLoader: { current: () => ({} as never) },
     packages: { resolve: () => ({}) },
     agentManager: makeMockAgentManager({ getDefaultAgent: "agent-pipeline" }),
     close: closeImpl ?? (async () => {}),
@@ -29,8 +30,7 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     projectName: "acme",
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
-    config: { citationThreshold: 0.55 } as never,
-    fullConfig: { project: { language: "ts" } } as never,
+    config: { citationThreshold: 0.55, plan: { citationThreshold: 0.55 }, project: { language: "ts" } } as never,
     options: { from: "/tmp/spec.md", feature: "feat-x" },
     runtime: makeRuntime(),
     interactionChain: null,
@@ -67,7 +67,7 @@ describe("PipelinePlanStrategy", () => {
       }
       if (op === _pipelinePlanDeps.planDraftOp) {
         sequence.push("draft");
-        expect(input.projectProfile).toBe(ctx.fullConfig?.project);
+        expect(input.projectProfile).toBe(ctx.config.project);
         expect(input.packages).toEqual(ctx.relativePackages);
         expect(input.packageDetails).toEqual(ctx.packageDetails);
         return { prd: { userStories: [] } };

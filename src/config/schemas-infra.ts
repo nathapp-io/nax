@@ -19,6 +19,13 @@ export const PlanConfigSchema = z.object({
   citationThreshold: z.number().min(0).max(1).default(0.5),
   /** Model tier for the pipeline LLM critic. */
   criticModel: ConfiguredModelSchema.default("fast"),
+  /**
+   * When true, the refine hopBody runs a deterministic spec-drift check after
+   * Turn 2 and issues a repair turn if violations are found. Also adds
+   * orphan-acs and no-behavior-degradation items to the Turn 2 audit checklist.
+   * Ignored for modes other than "refine". Default: false (opt-in for A/B).
+   */
+  specGuard: z.boolean().default(false),
 });
 
 const AcceptanceFixConfigSchema = z.object({

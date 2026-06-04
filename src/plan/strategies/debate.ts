@@ -28,7 +28,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
       undefined,
       ctx.relativePackages,
       ctx.packageDetails,
-      ctx.fullConfig?.project,
+      ctx.config.project,
     );
     const planStage = ctx.config.debate?.stages?.plan;
     if (!planStage) {
@@ -57,7 +57,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
       ctx: callCtx,
       stage: "plan",
       stageConfig,
-      config: ctx.fullConfig,
+      config: ctx.runtime.configLoader.current(),
       workdir: ctx.workdir,
       featureName: ctx.options.feature,
       timeoutSeconds: ctx.timeoutSeconds,
@@ -70,7 +70,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
         feature: ctx.options.feature,
         outputDir: ctx.outputDir,
         timeoutSeconds: ctx.timeoutSeconds,
-        maxInteractionTurns: ctx.fullConfig?.agent?.maxInteractionTurns,
+        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
         specContent: ctx.specContent,
       });
 
@@ -89,7 +89,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
         {
           ...callCtx,
           interactionBridge: ctx.interactionBridge,
-          maxInteractionTurns: ctx.fullConfig?.agent?.maxInteractionTurns,
+          maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
         },
         planInteractiveOp,
         {
@@ -100,7 +100,7 @@ export class DebatePlanStrategy implements IPlanStrategy {
           outputPath: ctx.outputPath,
           packages: ctx.relativePackages,
           packageDetails: ctx.packageDetails,
-          projectProfile: ctx.fullConfig.project,
+          projectProfile: ctx.config.project,
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);

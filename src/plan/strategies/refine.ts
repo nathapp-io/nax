@@ -22,7 +22,7 @@ export class RefinePlanStrategy implements IPlanStrategy {
           storyId: ctx.options.feature,
           featureName: ctx.options.feature,
           interactionBridge: ctx.interactionBridge,
-          maxInteractionTurns: ctx.fullConfig.agent?.maxInteractionTurns,
+          maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
         },
         _refinePlanDeps.planRefineOp,
         {
@@ -33,7 +33,8 @@ export class RefinePlanStrategy implements IPlanStrategy {
           outputPath: ctx.outputPath,
           packages: ctx.relativePackages,
           packageDetails: ctx.packageDetails,
-          projectProfile: ctx.fullConfig.project,
+          projectProfile: ctx.config.project,
+          specGuard: ctx.config.plan.specGuard ?? false,
         } satisfies PlanRefineInput,
       );
       return writeOrRecoverPrd(ctx, prd);

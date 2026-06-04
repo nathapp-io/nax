@@ -43,7 +43,6 @@ export interface PlanModeContext {
   readonly branchName: string;
   readonly timeoutSeconds: number;
   readonly config: PlanConfig;
-  readonly fullConfig: NaxConfig;
   readonly options: PlanCommandOptions;
   readonly runtime: NaxRuntime;
   readonly interactionChain: InteractionChain | null;

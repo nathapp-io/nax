@@ -166,7 +166,6 @@ describe("buildPlanModeContext", () => {
       expect(deps.mkdirp).toHaveBeenCalledWith(ctx.outputDir);
       expect(ctx.config).toEqual(planConfigSelector.select(fullConfig));
       expect(ctx.config).not.toBe(fullConfig);
-      expect(ctx.fullConfig).toBe(fullConfig);
       expect(ctx.runtime).toBe(expectedRuntime);
       expect(_planDeps.createRuntime).toHaveBeenCalledWith(fullConfig, SAMPLE_WORKDIR, SAMPLE_FEATURE);
     } finally {

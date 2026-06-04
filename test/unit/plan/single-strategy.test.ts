@@ -60,7 +60,6 @@ function makeCtx(overrides: Partial<PlanModeContext> = {}): PlanModeContext {
     branchName: "feat/feat-x",
     timeoutSeconds: 30,
     config: { timeoutSeconds: 30 } as never,
-    fullConfig: {} as never,
     options: { from: "/tmp/spec.md", feature: "feat-x" },
     runtime: makeRuntime(),
     interactionChain: null,
@@ -89,7 +88,7 @@ describe("SinglePlanStrategy", () => {
       expect(callCtx.storyId).toBe(ctx.options.feature);
       expect(callCtx.featureName).toBe(ctx.options.feature);
       expect(callCtx.interactionBridge).toBe(ctx.interactionBridge);
-      expect(callCtx.maxInteractionTurns).toBe(ctx.fullConfig.agent?.maxInteractionTurns);
+      expect(callCtx.maxInteractionTurns).toBe(ctx.config.agent?.maxInteractionTurns);
       expect(operation).toBe(_singlePlanDeps.planInteractiveOp);
       expect(input).toEqual({
         specContent: ctx.specContent,
@@ -99,7 +98,7 @@ describe("SinglePlanStrategy", () => {
         outputPath: ctx.outputPath,
         packages: ctx.relativePackages,
         packageDetails: ctx.packageDetails,
-        projectProfile: ctx.fullConfig.project,
+        projectProfile: ctx.config.project,
       });
     } finally {
       _singlePlanDeps.callOp = originalCallOp;
