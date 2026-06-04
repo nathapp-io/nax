@@ -94,20 +94,6 @@ export function App({
   const isParallel = runningStories.length > 1;
   const currentRunningStory = runningStories[0];
 
-  // Adapt busState.runSummary (RunSummary) to RunCompletedEvent shape for LiveActivityPanel
-  const runSummaryForPanel = busState.runSummary
-    ? {
-        type: "run:completed" as const,
-        totalStories: busState.runSummary.totalStories,
-        passedStories: busState.runSummary.passedStories,
-        failedStories: busState.runSummary.failedStories,
-        skippedStories: busState.runSummary.skippedStories,
-        pausedStories: busState.runSummary.pausedStories,
-        durationMs: busState.runSummary.durationMs,
-        totalCost: busState.runSummary.totalCost,
-      }
-    : undefined;
-
   // Adapt busState.runErrored (boolean) to string | undefined for LiveActivityPanel
   const runErroredForPanel = busState.runErrored ? "Run encountered an error" : undefined;
 
@@ -263,7 +249,7 @@ export function App({
         <LiveActivityPanel
           focused={focus === PanelFocus.Agent}
           activeCalls={activeCalls}
-          runSummary={runSummaryForPanel}
+          runSummary={busState.runSummary}
           runErrored={runErroredForPanel}
           escalationLog={busState.escalationLog}
         />

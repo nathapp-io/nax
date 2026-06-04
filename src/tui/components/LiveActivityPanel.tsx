@@ -9,9 +9,8 @@
 
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { RunCompletedEvent } from "../../pipeline/event-bus";
-import type { EscalationEntry } from "../hooks/usePipelineBusEvents";
 import type { ActiveCallState } from "../hooks/useAgentStreamEvents";
+import type { EscalationEntry, RunSummary } from "../hooks/usePipelineBusEvents";
 
 /**
  * Props for the LiveActivityPanel component.
@@ -22,7 +21,7 @@ export interface LiveActivityPanelProps {
   /** Active agent call states from stream events */
   activeCalls?: Map<string, ActiveCallState>;
   /** Run completion summary, set when run:completed fires */
-  runSummary?: RunCompletedEvent;
+  runSummary?: RunSummary;
   /** Error message string, set when the run errors */
   runErrored?: string;
   /** Log of escalation events from pipeline bus */
@@ -128,7 +127,7 @@ function ActiveCallRow({ call }: { call: ActiveCallState }) {
   );
 }
 
-function RunSummaryRow({ summary }: { summary: RunCompletedEvent }) {
+function RunSummaryRow({ summary }: { summary: RunSummary }) {
   const cost = summary.totalCost !== undefined ? `$${summary.totalCost.toFixed(4)}` : null;
 
   return (
@@ -136,12 +135,8 @@ function RunSummaryRow({ summary }: { summary: RunCompletedEvent }) {
       <Box flexDirection="row" gap={1}>
         <Text bold>Run complete</Text>
         <Text color="green">{summary.passedStories} passed</Text>
-        {summary.failedStories > 0 && (
-          <Text color="red">{summary.failedStories} failed</Text>
-        )}
-        {summary.skippedStories > 0 && (
-          <Text dimColor>{summary.skippedStories} skipped</Text>
-        )}
+        {summary.failedStories > 0 && <Text color="red">{summary.failedStories} failed</Text>}
+        {summary.skippedStories > 0 && <Text dimColor>{summary.skippedStories} skipped</Text>}
         {cost && <Text dimColor>{cost}</Text>}
       </Box>
     </Box>

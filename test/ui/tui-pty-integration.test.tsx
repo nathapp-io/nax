@@ -135,9 +135,11 @@ describe("App PTY integration", () => {
     // Press Tab to switch focus to agent panel
     stdin.write("\t");
 
-    // Note: In ink-testing-library, the frame update may not be synchronous
-    // The important thing is that the keyboard handler is wired up correctly
-    // This test verifies that the component accepts Tab input without errors
-    expect(true).toBe(true);
+    // Note: In ink-testing-library, frame updates after stdin.write are not
+    // guaranteed to be synchronous. We verify that the component continues to
+    // render valid output after receiving the Tab keypress (no crash/blank frame).
+    const afterFrame = lastFrame();
+    expect(afterFrame).not.toBeNull();
+    expect(afterFrame!.length).toBeGreaterThan(0);
   });
 });
