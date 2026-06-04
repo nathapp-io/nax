@@ -10,9 +10,9 @@
  * cancellable timer handle via clearInterval.
  */
 
-import { useEffect, useRef, useState } from "react";
 import { pipelineEventBus } from "@/pipeline";
 import type { RunCompletedEvent } from "@/pipeline";
+import { useEffect, useRef, useState } from "react";
 import type { StoryDisplayState } from "../types";
 
 /** Entry in the escalation log. */
@@ -163,9 +163,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       setState((prev) => ({
         ...prev,
         stories: prev.stories.map((s) =>
-          s.story.id === event.storyId
-            ? { ...s, status: "paused" as const, failureReason: event.reason }
-            : s,
+          s.story.id === event.storyId ? { ...s, status: "paused" as const, failureReason: event.reason } : s,
         ),
       }));
     });
