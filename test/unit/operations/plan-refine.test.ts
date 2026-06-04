@@ -162,7 +162,7 @@ describe("planRefineOp.hopBody()", () => {
     expect(sendWithParseRetry).toHaveBeenCalledWith(initialPrompt);
     expect(send).toHaveBeenCalledTimes(1);
     expect(buildRefineContinuationSpy).toHaveBeenCalledTimes(1);
-    expect(buildRefineContinuationSpy).toHaveBeenCalledWith("/tmp/plan-refine-prd.json");
+    expect(buildRefineContinuationSpy).toHaveBeenCalledWith("/tmp/plan-refine-prd.json", false);
     expect(send).toHaveBeenCalledWith(refinePrompt);
     expect(result.output).toBe("refined-confirmation");
     expect(result.estimatedCostUsd).toBe(4);

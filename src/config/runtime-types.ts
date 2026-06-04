@@ -284,6 +284,11 @@ export interface PlanConfig {
   citationThreshold: number;
   /** Model tier for the pipeline LLM critic. Default: "fast" */
   criticModel: ConfiguredModel;
+  /**
+   * When true, the refine hopBody runs a deterministic spec-drift check after
+   * Turn 2 and issues a repair turn if violations are found. Default: false.
+   */
+  specGuard?: boolean;
 }
 
 /** Valid test strategy values for acceptance testing */

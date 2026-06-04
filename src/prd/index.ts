@@ -19,6 +19,8 @@ export type {
 } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
 export { extractVerbatimAcs, findMissingVerbatimAcs } from "./verbatim-fidelity";
+export { findSpecDriftViolations } from "./spec-drift";
+export type { SpecDriftViolation } from "./spec-drift";
 export type { FailureCategory } from "../tdd/types";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */

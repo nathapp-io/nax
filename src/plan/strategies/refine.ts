@@ -34,6 +34,7 @@ export class RefinePlanStrategy implements IPlanStrategy {
           packages: ctx.relativePackages,
           packageDetails: ctx.packageDetails,
           projectProfile: ctx.fullConfig.project,
+          specGuard: ctx.fullConfig.plan?.specGuard ?? false,
         } satisfies PlanRefineInput,
       );
       return writeOrRecoverPrd(ctx, prd);

@@ -260,6 +260,7 @@ export const NaxConfigSchema = z
       timeoutSeconds: 600,
       citationThreshold: 0.5,
       criticModel: "fast",
+      specGuard: false,
     }),
     acceptance: AcceptanceConfigSchema.default({
       enabled: true,
