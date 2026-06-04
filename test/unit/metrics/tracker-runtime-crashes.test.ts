@@ -18,6 +18,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import { makeNaxConfig } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
 const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;
@@ -67,6 +68,7 @@ function makeContext(story: UserStory, overrides?: Partial<PipelineContext>): Pi
     },
     workdir: WORKDIR,
     hooks: { hooks: {} },
+    runtime: makeMockRuntime(),
     ...overrides,
   } as PipelineContext;
 }
@@ -173,7 +175,8 @@ describe("collectBatchMetrics - runtimeCrashes per story", () => {
       workdir: WORKDIR_BATCH,
       hooks: { hooks: {} },
       agentResult: { success: true, estimatedCostUsd: 0.01, durationMs: 1000 },
-    } as PipelineContext;
+      runtime: makeMockRuntime(),
+    } as unknown as PipelineContext;
 
     const batchMetrics = collectBatchMetrics(ctx, STORY_START_TIME);
 

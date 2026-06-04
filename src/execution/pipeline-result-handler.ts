@@ -234,7 +234,7 @@ export async function handlePipelineFailure(
         type: "story:paused",
         storyId: ctx.story.id,
         reason: pipelineResult.reason || "Pipeline paused",
-        cost: ctx.totalCost,
+        cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
       });
       break;
 
@@ -281,6 +281,7 @@ export async function handlePipelineFailure(
         countsTowardEscalation: true,
         feature: ctx.feature,
         attempts: ctx.story.attempts,
+        cost: ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
       });
 
       if (

@@ -67,6 +67,8 @@ export interface StoryFailedEvent {
   /** Optional: passed by executor for interaction subscriber */
   feature?: string;
   attempts?: number;
+  /** Total cost accumulated across all attempts for this story. */
+  cost?: number;
 }
 
 export interface RegressionDetectedEvent {

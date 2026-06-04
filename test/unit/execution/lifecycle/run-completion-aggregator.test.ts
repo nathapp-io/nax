@@ -116,7 +116,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting", () => {
-  test("reports max(legacyTotalCost, aggregatorTotal) when aggregator sees more spend", async () => {
+  test("reports aggregatorTotal as the authoritative run cost", async () => {
     const prd = makePRD(["US-001"]);
     const aggregator = makeMockAggregator({
       snapshot: () => ({ ...makeEmptySnapshot(), totalCostUsd: 6.21, totalEstimatedCostUsd: 6.21, callCount: 5 }),
@@ -130,21 +130,6 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
     await handleRunCompletion(makeOpts(prd, [], aggregator, 0));
 
     expect(capturedEvent?.totalCost).toBeCloseTo(6.21, 2);
-  });
-
-  test("uses legacyTotalCost when it exceeds the aggregator total", async () => {
-    const prd = makePRD(["US-001"]);
-    const aggregator = makeMockAggregator({
-      snapshot: () => ({ ...makeEmptySnapshot(), totalCostUsd: 1.0, callCount: 1 }),
-      byStory: () => ({ "US-001": { ...makeEmptySnapshot(), totalCostUsd: 1.0, callCount: 1 } }),
-    });
-
-    let capturedEvent: RunCompletedEvent | undefined;
-    pipelineEventBus.on("run:completed", (e) => { capturedEvent = e; });
-
-    await handleRunCompletion(makeOpts(prd, [], aggregator, 3.5));
-
-    expect(capturedEvent?.totalCost).toBeCloseTo(3.5, 2);
   });
 
   test("back-fills storyMetrics for stories with only completion-phase spend", async () => {

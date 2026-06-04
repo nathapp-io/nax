@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { makeMockRuntime } from "../../helpers/runtime";
 import { _tierEscalationDeps } from "../../../src/execution/escalation/tier-escalation";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _gitDeps } from "../../../src/utils/git";
@@ -77,6 +78,7 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
     isBatchExecution: false,
     allStoryMetrics: [],
     storyGitRef: "abc123",
+    runtime: makeMockRuntime(),
     ...overrides,
   };
 }

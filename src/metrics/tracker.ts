@@ -151,7 +151,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     attempts,
     finalTier,
     success: agentResult?.success || false,
-    cost: (ctx.accumulatedAttemptCost ?? 0) + (agentResult?.estimatedCostUsd || 0),
+    cost: ctx.runtime.costAggregator.byStory()[story.id]?.totalCostUsd ?? 0,
     durationMs: agentResult?.durationMs || 0,
     firstPassSuccess,
     startedAt: storyStartTime,
@@ -196,9 +196,9 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
 
-  const totalCost = agentResult?.estimatedCostUsd || 0;
+  const batchTotal = ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? 0;
   const totalDuration = agentResult?.durationMs || 0;
-  const costPerStory = totalCost / stories.length;
+  const costPerStory = batchTotal / stories.length;
   const durationPerStory = totalDuration / stories.length;
 
   const batchAgentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);

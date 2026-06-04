@@ -14,6 +14,7 @@ import type { ContextManifest } from "../../../src/context/engine/types";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
 import { makeStory } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 const PROJECT_DIR = "/repo";
 const FEATURE = "test-feature";
@@ -38,6 +39,7 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     projectDir: PROJECT_DIR,
     hooks: { hooks: {} },
     agentResult: { success: true, output: "", estimatedCostUsd: 0.01, durationMs: 5000 },
+    runtime: makeMockRuntime(),
     ...overrides,
   } as unknown as PipelineContext;
 }

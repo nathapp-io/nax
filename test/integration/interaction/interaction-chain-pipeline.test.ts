@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { makeMockRuntime } from "../../helpers/runtime";
 import type { NaxConfig } from "../../../src/config";
 import { InteractionChain } from "../../../src/interaction/chain";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
@@ -261,6 +262,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
         allStoryMetrics: [],
         timeoutRetryCountMap: new Map(),
         storyGitRef: null,
+        runtime: makeMockRuntime(),
         // @ts-expect-error — interactionChain not in PipelineHandlerContext yet
         interactionChain: chain,
       },
@@ -333,6 +335,7 @@ describe("AC2: max retries triggers human-review interaction", () => {
         allStoryMetrics: [],
         timeoutRetryCountMap: new Map(),
         storyGitRef: null,
+        runtime: makeMockRuntime(),
         interactionChain: chain,
       },
       {
