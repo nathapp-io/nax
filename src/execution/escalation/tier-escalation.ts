@@ -183,7 +183,14 @@ export async function preIterationTierCheck(
           : s,
       ) as PRD["userStories"],
     } as PRD;
-    await savePRD(updatedPrd, prdPath);
+    await _tierEscalationDeps.savePRD(updatedPrd, prdPath);
+
+    pipelineEventBus.emit({
+      type: "story:escalated",
+      storyId: story.id,
+      fromTier: currentTier,
+      toTier: escalatedTier,
+    });
 
     // Clear routing cache for story to avoid returning old cached decision
     clearCacheForStory(story.id);
@@ -208,7 +215,7 @@ export async function preIterationTierCheck(
 
   const failedPrd = { ...prd };
   markStoryFailed(failedPrd, story.id, undefined, undefined);
-  await savePRD(failedPrd, prdPath);
+  await _tierEscalationDeps.savePRD(failedPrd, prdPath);
 
   if (featureDir) {
     await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
