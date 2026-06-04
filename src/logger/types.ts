@@ -41,6 +41,8 @@ export interface LoggerOptions {
   formatterMode?: "quiet" | "normal" | "verbose" | "json";
   /** Whether running in headless mode (enables formatter) */
   headless?: boolean;
+  /** Suppress all console output (file-only logging). Set true in TUI mode so Ink's terminal is not corrupted. */
+  suppressConsole?: boolean;
 }
 
 /**

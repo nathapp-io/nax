@@ -14,6 +14,7 @@
 
 import * as os from "node:os";
 import path from "node:path";
+import { pipelineEventBus } from "@/pipeline";
 import type { NaxConfig } from "../../config";
 import { globalConfigDir } from "../../config/paths";
 import { LockAcquisitionError, NaxError } from "../../errors";
@@ -21,7 +22,6 @@ import type { LoadedHooksConfig } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
-import { pipelineEventBus } from "../../pipeline/event-bus";
 import type { AgentGetFn } from "../../pipeline/types";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -98,6 +98,8 @@ export interface RunSetupOptions {
   agentGetFn?: AgentGetFn;
   /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called at run start. */
   agentManager?: import("../../agents").IAgentManager;
+  /** Pre-built AgentStreamEventBus to inject into the runtime so external subscribers (e.g. TUI) can receive events. */
+  agentStreamEvents?: import("../../runtime").IAgentStreamEventBus;
 }
 
 export interface RunSetupResult {
@@ -182,6 +184,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     sessionManager,
     agentManager: options.agentManager,
     featureName: options.feature,
+    agentStreamEvents: options.agentStreamEvents,
   });
 
   // Cleanup stale PIDs from previous crashed runs

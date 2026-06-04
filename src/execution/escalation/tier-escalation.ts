@@ -7,11 +7,11 @@
  * - Max attempts outcome resolution (pause vs fail)
  */
 
+import { pipelineEventBus } from "@/pipeline";
 import type { NaxConfig } from "../../config";
 import type { Finding } from "../../findings";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
-import { pipelineEventBus } from "../../pipeline/event-bus";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
 import { tryLlmBatchRoute } from "../../routing";
