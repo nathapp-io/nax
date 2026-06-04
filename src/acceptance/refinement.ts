@@ -26,7 +26,7 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
   try {
     const fromFence = extractJsonFromMarkdown(response);
     const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);
-    const parsed: unknown = JSON.parse(cleaned);
+    const parsed: unknown = recoverJsonArray(cleaned) ?? JSON.parse(cleaned);
 
     if (!Array.isArray(parsed)) {
       return fallbackCriteria(criteria);
@@ -59,10 +59,50 @@ export function refinementWouldFallback(response: string): boolean {
   try {
     const fromFence = extractJsonFromMarkdown(response);
     const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);
-    return !Array.isArray(JSON.parse(cleaned));
+    const parsed = recoverJsonArray(cleaned) ?? JSON.parse(cleaned);
+    return !Array.isArray(parsed);
   } catch {
     return true;
   }
+}
+
+/**
+ * Recovers a JSON array that was truncated before its closing `]` — the
+ * pattern produced when an LLM hits its output-token limit mid-generation.
+ *
+ * Strategy 1: append `]` directly (handles the common case where the last
+ *             complete item ends with `}`).
+ * Strategy 2: truncate to the last complete `}` then append `]` (handles
+ *             the rarer case where truncation happened inside the last item).
+ *
+ * Returns the parsed array on success, or null if recovery is not applicable
+ * (response is already valid, does not start with `[`, or cannot be repaired).
+ */
+function recoverJsonArray(text: string): unknown[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("[") || trimmed.endsWith("]")) return null;
+
+  // Strategy 1: simple close
+  try {
+    const closed = stripTrailingCommas(`${trimmed}]`);
+    const parsed = JSON.parse(closed);
+    if (Array.isArray(parsed)) return parsed as unknown[];
+  } catch {
+    /* fall through to strategy 2 */
+  }
+
+  // Strategy 2: truncate to the last complete item boundary then close
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (lastBrace === -1) return null;
+  try {
+    const recovered = `${stripTrailingCommas(trimmed.slice(0, lastBrace + 1))}]`;
+    const parsed = JSON.parse(recovered);
+    if (Array.isArray(parsed)) return parsed as unknown[];
+  } catch {
+    /* unrecoverable */
+  }
+
+  return null;
 }
 
 /**
