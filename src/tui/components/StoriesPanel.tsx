@@ -1,5 +1,5 @@
 /**
- * StoriesPanel — displays story list with status icons, cost, and elapsed time.
+ * StoriesPanel — displays story list with status icons, tier indicators, and failure reasons.
  *
  * Supports scrolling for >15 stories and compact mode for single-column layout.
  */
@@ -15,10 +15,6 @@ import type { StoryDisplayState } from "../types";
 export interface StoriesPanelProps {
   /** Stories to display */
   stories: StoryDisplayState[];
-  /** Total cost accumulated */
-  totalCost: number;
-  /** Elapsed time in milliseconds */
-  elapsedMs: number;
   /** Panel width (columns) */
   width?: number;
   /** Compact mode (fewer details, for single-column layout) */
@@ -50,33 +46,21 @@ function getStatusIcon(status: StoryDisplayState["status"]): string {
 }
 
 /**
- * Format elapsed time as mm:ss.
- */
-function formatElapsedTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
-}
-
-/**
  * StoriesPanel component.
  *
- * Displays all stories with status icons, routing info, cost total, and elapsed time.
+ * Displays all stories with status icons, routing info, tier indicators, and failure reasons.
  * Supports scrolling for >15 stories (or >8 in compact mode) and shows scroll indicators.
  *
  * @example
  * ```tsx
  * <StoriesPanel
  *   stories={storyStates}
- *   totalCost={0.42}
- *   elapsedMs={263000}
  *   width={30}
  *   compact={false}
  * />
  * ```
  */
-export function StoriesPanel({ stories, totalCost, elapsedMs, width, compact = false, maxHeight }: StoriesPanelProps) {
+export function StoriesPanel({ stories, width, compact = false, maxHeight }: StoriesPanelProps) {
   // Determine max visible stories based on mode
   const maxVisible = compact ? COMPACT_MAX_VISIBLE_STORIES : MAX_VISIBLE_STORIES;
   const needsScrolling = stories.length > maxVisible;
@@ -134,14 +118,24 @@ export function StoriesPanel({ stories, totalCost, elapsedMs, width, compact = f
             );
           }
 
-          // Normal mode: icon, ID, and routing info
-          const routing = s.routing ? ` ${s.routing.complexity.slice(0, 3)} ${s.routing.modelTier}` : "";
+          // Normal mode: icon, ID, routing info, tier suffix, and failure sub-line
+          const routing = s.routing ? ` ${s.routing.complexity.slice(0, 3)}` : "";
+          const shortTier = s.modelTier?.slice(0, 3);
+          const tierSuffix =
+            s.status === "retrying" && shortTier
+              ? `→${shortTier}`
+              : s.status === "running" && shortTier
+                ? shortTier
+                : "";
+          const showFailureLine = (s.status === "failed" || s.status === "paused") && s.failureReason;
           return (
-            <Box key={s.story.id}>
+            <Box key={s.story.id} flexDirection="column">
               <Text>
                 {icon} {s.story.id}
                 <Text dimColor>{routing}</Text>
+                {tierSuffix ? <Text dimColor> {tierSuffix}</Text> : null}
               </Text>
+              {showFailureLine && <Text dimColor>{`  └ ${(s.failureReason as string).slice(0, 25)}`}</Text>}
             </Box>
           );
         })}
@@ -153,25 +147,6 @@ export function StoriesPanel({ stories, totalCost, elapsedMs, width, compact = f
           <Text dimColor>▼ {stories.length - scrollOffset - maxVisible} more below</Text>
         </Box>
       )}
-
-      {/* Footer — Cost and time */}
-      <Box flexDirection="column" paddingX={1} paddingY={1} borderStyle="single" borderTop borderColor="gray">
-        {!compact && (
-          <>
-            <Text>
-              Cost: <Text color="green">${totalCost.toFixed(4)}</Text>
-            </Text>
-            <Text>
-              Time: <Text color="cyan">{formatElapsedTime(elapsedMs)}</Text>
-            </Text>
-          </>
-        )}
-        {compact && (
-          <Text>
-            ${totalCost.toFixed(2)} · {formatElapsedTime(elapsedMs)}
-          </Text>
-        )}
-      </Box>
     </Box>
   );
 }

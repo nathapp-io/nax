@@ -1,63 +1,48 @@
 /**
- * StatusBar — displays current story and pipeline stage information.
+ * StatusBar — keybinding hints (left) and current story context (right).
  */
 
 import { Box, Text } from "ink";
-import type { UserStory } from "../../prd/types";
 
-/**
- * Props for StatusBar component.
- */
 export interface StatusBarProps {
-  /** Current story being executed */
-  currentStory?: UserStory;
-  /** Current pipeline stage */
   currentStage?: string;
-  /** Model tier for current story */
+  currentStoryId?: string;
   modelTier?: string;
-  /** Test strategy for current story */
-  testStrategy?: string;
+  runPaused?: boolean;
+  runComplete?: boolean;
+  isParallel?: boolean;
+  activeCount?: number;
 }
 
-/**
- * StatusBar component.
- *
- * Displays a single line showing the current story ID, stage, model tier, and test strategy.
- *
- * @example
- * ```tsx
- * <StatusBar
- *   currentStory={story}
- *   currentStage="execution"
- *   modelTier="balanced"
- *   testStrategy="single-session"
- * />
- * ```
- */
-export function StatusBar({ currentStory, currentStage, modelTier, testStrategy }: StatusBarProps) {
-  if (!currentStory) {
-    return (
-      <Box paddingX={1} borderStyle="single" borderColor="gray">
-        <Text dimColor>Idle</Text>
-      </Box>
-    );
+export function StatusBar({
+  currentStage,
+  currentStoryId,
+  modelTier,
+  runPaused,
+  runComplete,
+  isParallel,
+  activeCount = 0,
+}: StatusBarProps) {
+  const hints = runComplete ? "q quit  c cost  ? help" : "p pause  a abort  s skip  c cost  ? help";
+
+  let context: string;
+  if (runComplete) {
+    context = "done";
+  } else if (runPaused) {
+    context = "run paused";
+  } else if (isParallel && activeCount > 0) {
+    context = `parallel · ${activeCount} active`;
+  } else if (currentStoryId) {
+    const parts = [currentStoryId, currentStage, modelTier].filter(Boolean);
+    context = parts.join(" · ");
+  } else {
+    context = "idle";
   }
 
-  const storyInfo = `Story ${currentStory.id}`;
-  const stageInfo = currentStage ? ` · ${currentStage}` : "";
-  const tierInfo = modelTier ? ` · ${modelTier}` : "";
-  const strategyInfo = testStrategy ? ` · ${testStrategy}` : "";
-
   return (
-    <Box paddingX={1} borderStyle="single" borderColor="gray">
-      <Text>
-        <Text bold>{storyInfo}</Text>
-        <Text dimColor>
-          {stageInfo}
-          {tierInfo}
-          {strategyInfo}
-        </Text>
-      </Text>
+    <Box paddingX={1} borderStyle="single" borderColor="gray" justifyContent="space-between">
+      <Text dimColor>{hints}</Text>
+      <Text dimColor>{context}</Text>
     </Box>
   );
 }

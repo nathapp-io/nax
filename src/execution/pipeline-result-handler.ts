@@ -240,6 +240,11 @@ export async function handlePipelineFailure(
 
     case "skip":
       logger?.warn("pipeline", "Story skipped", { storyId: ctx.story.id, reason: pipelineResult.reason });
+      pipelineEventBus.emit({
+        type: "story:skipped",
+        storyId: ctx.story.id,
+        reason: pipelineResult.reason || "Story skipped",
+      });
       prdDirty = true;
       break;
 

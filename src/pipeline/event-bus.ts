@@ -121,6 +121,19 @@ export interface StoryPausedEvent {
   cost: number;
 }
 
+export interface StorySkippedEvent {
+  type: "story:skipped";
+  storyId: string;
+  reason: string;
+}
+
+export interface StoryEscalatedEvent {
+  type: "story:escalated";
+  storyId: string;
+  fromTier: string;
+  toTier: string;
+}
+
 export interface RunResumedEvent {
   type: "run:resumed";
   feature: string;
@@ -143,6 +156,8 @@ export type PipelineEvent =
   | RunStartedEvent
   | RunPausedEvent
   | StoryPausedEvent
+  | StorySkippedEvent
+  | StoryEscalatedEvent
   | RunResumedEvent
   | RunErroredEvent;
 

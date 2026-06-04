@@ -3,7 +3,8 @@
  * TUI Stories Panel Tests
  *
  * Tests the StoriesPanel component rendering with different story states,
- * cost display, elapsed time formatting, and layout breakpoint logic.
+ * routing info, tier indicators, and failure sub-lines.
+ * Also tests StatusBar with keybinding hints and context display.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -54,53 +55,35 @@ describe("StoriesPanel", () => {
   ])("renders %s story with %s icon", (status, icon) => {
     const stories = [createMockStory("US-001", status)];
     const { lastFrame } = render(
-      createElement(StoriesPanel, { stories, totalCost: 0, elapsedMs: 0, width: 30 }),
+      createElement(StoriesPanel, { stories, width: 30 }),
     );
     expect(lastFrame()).toContain(`${icon} US-001`);
   });
 
-  test("displays routing info (complexity and model tier)", () => {
+  test("displays routing complexity in story row", () => {
     const stories = [createMockStory("US-001", "pending")];
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0,
-        elapsedMs: 0,
         width: 30,
       }),
     );
 
     const output = lastFrame();
     expect(output).toContain("sim"); // "simple".slice(0, 3) = "sim"
-    expect(output).toContain("fast");
   });
 
-  test("displays total cost", () => {
-    const stories = [createMockStory("US-001", "passed")];
+  test("displays tier suffix for running stories", () => {
+    const stories = [{ ...createMockStory("US-001", "running"), modelTier: "fast" }];
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.4235,
-        elapsedMs: 0,
         width: 30,
       }),
     );
 
-    expect(lastFrame()).toContain("$0.4235");
-  });
-
-  test("displays elapsed time in mm:ss format", () => {
-    const stories = [createMockStory("US-001", "running")];
-    const { lastFrame } = render(
-      createElement(StoriesPanel, {
-        stories,
-        totalCost: 0,
-        elapsedMs: 263000, // 4 minutes 23 seconds
-        width: 30,
-      }),
-    );
-
-    expect(lastFrame()).toContain("4m 23s");
+    const output = lastFrame();
+    expect(output).toContain("fas"); // "fast".slice(0, 3) = "fas"
   });
 
   test("renders multiple stories", () => {
@@ -113,8 +96,6 @@ describe("StoriesPanel", () => {
     const { lastFrame } = render(
       createElement(StoriesPanel, {
         stories,
-        totalCost: 0.05,
-        elapsedMs: 120000,
         width: 30,
       }),
     );
@@ -124,54 +105,46 @@ describe("StoriesPanel", () => {
     expect(output).toContain("🔄 US-002");
     expect(output).toContain("⬚ US-003");
   });
-});
 
-describe("StatusBar", () => {
-  test("displays 'Idle' when no current story", () => {
-    const { lastFrame } = render(createElement(StatusBar, {}));
-    expect(lastFrame()).toContain("Idle");
-  });
-
-  test("displays current story ID", () => {
-    const story: UserStory = {
-      id: "US-042",
-      title: "Test story",
-      description: "Test",
-      acceptanceCriteria: [],
-      dependencies: [],
-      tags: [],
-      passes: false,
-      status: "pending",
-      escalations: [],
-      attempts: 0,
-    };
+  test("displays failure sub-line for failed story", () => {
+    const stories = [{
+      ...createMockStory("US-001", "failed"),
+      failureReason: "Tests failed to pass",
+    }];
 
     const { lastFrame } = render(
-      createElement(StatusBar, {
-        currentStory: story,
+      createElement(StoriesPanel, {
+        stories,
+        width: 40,
       }),
     );
 
-    expect(lastFrame()).toContain("Story US-042");
+    const output = lastFrame();
+    expect(output).toContain("❌ US-001");
+    expect(output).toContain("Tests failed to pass");
+  });
+});
+
+describe("StatusBar", () => {
+  test("displays 'idle' when no current story", () => {
+    const { lastFrame } = render(createElement(StatusBar, {}));
+    expect(lastFrame()).toContain("idle");
+  });
+
+  test("displays current story ID", () => {
+    const { lastFrame } = render(
+      createElement(StatusBar, {
+        currentStoryId: "US-042",
+      }),
+    );
+
+    expect(lastFrame()).toContain("US-042");
   });
 
   test("displays current stage", () => {
-    const story: UserStory = {
-      id: "US-001",
-      title: "Test",
-      description: "Test",
-      acceptanceCriteria: [],
-      dependencies: [],
-      tags: [],
-      passes: false,
-      status: "pending",
-      escalations: [],
-      attempts: 0,
-    };
-
     const { lastFrame } = render(
       createElement(StatusBar, {
-        currentStory: story,
+        currentStoryId: "US-001",
         currentStage: "execution",
       }),
     );
@@ -180,22 +153,9 @@ describe("StatusBar", () => {
   });
 
   test("displays model tier", () => {
-    const story: UserStory = {
-      id: "US-001",
-      title: "Test",
-      description: "Test",
-      acceptanceCriteria: [],
-      dependencies: [],
-      tags: [],
-      passes: false,
-      status: "pending",
-      escalations: [],
-      attempts: 0,
-    };
-
     const { lastFrame } = render(
       createElement(StatusBar, {
-        currentStory: story,
+        currentStoryId: "US-001",
         modelTier: "balanced",
       }),
     );
@@ -203,28 +163,33 @@ describe("StatusBar", () => {
     expect(lastFrame()).toContain("balanced");
   });
 
-  test("displays test strategy", () => {
-    const story: UserStory = {
-      id: "US-001",
-      title: "Test",
-      description: "Test",
-      acceptanceCriteria: [],
-      dependencies: [],
-      tags: [],
-      passes: false,
-      status: "pending",
-      escalations: [],
-      attempts: 0,
-    };
+  test("displays keybinding hints when run is active", () => {
+    const { lastFrame } = render(createElement(StatusBar, {}));
+    const output = lastFrame();
+    expect(output).toContain("pause");
+    expect(output).toContain("abort");
+  });
 
+  test("displays done context when run is complete", () => {
     const { lastFrame } = render(
-      createElement(StatusBar, {
-        currentStory: story,
-        testStrategy: "three-session-tdd",
-      }),
+      createElement(StatusBar, { runComplete: true }),
     );
+    expect(lastFrame()).toContain("done");
+  });
 
-    expect(lastFrame()).toContain("three-session-tdd");
+  test("displays run paused context", () => {
+    const { lastFrame } = render(
+      createElement(StatusBar, { runPaused: true }),
+    );
+    expect(lastFrame()).toContain("run paused");
+  });
+
+  test("displays parallel mode with active count", () => {
+    const { lastFrame } = render(
+      createElement(StatusBar, { isParallel: true, activeCount: 3 }),
+    );
+    expect(lastFrame()).toContain("parallel");
+    expect(lastFrame()).toContain("3");
   });
 });
 

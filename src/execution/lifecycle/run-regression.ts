@@ -13,6 +13,7 @@ import type { Finding, FixCycle, FixCycleContext, FixCycleResult } from "@/findi
 import { runFixCycle, testSummaryToFindings } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import { makeFullSuiteRectifyStrategy } from "@/operations";
+import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
@@ -307,6 +308,15 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       storyDurations: {},
       storyOutcomes: {},
     };
+  }
+
+  // Emit regression:detected for each affected story
+  for (const storyId of affectedStories) {
+    pipelineEventBus.emit({
+      type: "regression:detected",
+      storyId,
+      failedTests: testSummary.failed,
+    });
   }
 
   // Step 3: Attempt rectification per story, with early-exit after each success

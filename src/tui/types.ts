@@ -20,6 +20,12 @@ export interface StoryDisplayState {
   routing?: StoryRouting;
   /** Cost incurred for this story */
   cost?: number;
+  /** Active model tier (from story:started) */
+  modelTier?: string;
+  /** Failure reason for display (from story:failed.reason, truncated) */
+  failureReason?: string;
+  /** Attempt iteration count — >1 means escalated (from story:started.iteration) */
+  iteration?: number;
 }
 
 /**
@@ -58,21 +64,13 @@ export interface PtySpawnOptions {
 export interface TuiProps {
   /** Feature name */
   feature: string;
-  /** All stories to display */
+  /** All stories to display (initial state; updates come from pipeline bus) */
   stories: StoryDisplayState[];
-  /** Current story being executed */
-  currentStory?: UserStory;
-  /** Current pipeline stage */
-  currentStage?: string;
-  /** Total cost accumulated */
-  totalCost: number;
-  /** Elapsed time in milliseconds */
-  elapsedMs: number;
-  /** Pipeline event emitter for live updates */
+  /** Pipeline event emitter for stage tracking (stage:enter/stage:exit) */
   events: PipelineEventEmitter;
   /** Path to queue file for writing commands (optional) */
   queueFilePath?: string;
-  /** PTY spawn options for agent session (optional) */
+  /** PTY spawn options — reserved for future PTY re-integration */
   ptyOptions?: PtySpawnOptions | null;
   /** Agent stream event bus for live call metadata (optional) */
   agentStreamEvents?: IAgentStreamEventBus | null;
