@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseRefinementResponse } from "../../../src/acceptance/refinement";
+import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance/refinement";
 import { AcceptancePromptBuilder } from "../../../src/prompts";
 import type { RefinedCriterion } from "../../../src/acceptance/types";
 
@@ -137,6 +137,57 @@ describe("parseRefinementResponse", () => {
     for (const item of fallback) {
       expect(item.testable).toBe(true);
     }
+  });
+});
+
+describe("parseRefinementResponse — truncated array recovery", () => {
+  const criteria = ["AC-1: system returns 200", "AC-2: response body is JSON"];
+
+  function makeItems(cs: string[]) {
+    return cs.map((c) => ({ original: c, refined: `Verify: ${c}`, testable: true, storyId: "" }));
+  }
+
+  test("recovers array missing closing ] (strategy 1 — simple close)", () => {
+    const items = makeItems(criteria);
+    const truncated = JSON.stringify(items).slice(0, -1); // strip trailing ]
+    expect(truncated.endsWith("]")).toBe(false);
+
+    const result = parseRefinementResponse(truncated, criteria);
+    expect(result).toHaveLength(criteria.length);
+    expect(result[0].refined).toBe("Verify: AC-1: system returns 200");
+    expect(result[1].refined).toBe("Verify: AC-2: response body is JSON");
+  });
+
+  test("recovers array truncated mid-last-item (strategy 2 — truncate to last complete item)", () => {
+    const items = makeItems(criteria);
+    const full = JSON.stringify(items);
+    // truncate inside the last item (remove last 20 chars — cuts into refined field)
+    const truncated = full.slice(0, full.lastIndexOf("}") - 20);
+    expect(truncated.endsWith("]")).toBe(false);
+
+    const result = parseRefinementResponse(truncated, criteria);
+    // at least the first complete item is recovered; second falls back to original
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    expect(result[0].refined).toBe("Verify: AC-1: system returns 200");
+  });
+
+  test("recovers array with trailing comma before missing ] (common LLM pattern)", () => {
+    const items = makeItems(criteria);
+    const withTrailingComma = JSON.stringify(items).slice(0, -1) + ","; // strip ] then add ,
+    const result = parseRefinementResponse(withTrailingComma, criteria);
+    expect(result).toHaveLength(criteria.length);
+  });
+
+  test("refinementWouldFallback returns false for truncated-but-recoverable response", () => {
+    const items = makeItems(criteria);
+    const truncated = JSON.stringify(items).slice(0, -1);
+    expect(refinementWouldFallback(truncated)).toBe(false);
+  });
+
+  test("refinementWouldFallback returns true for genuinely unrecoverable response", () => {
+    expect(refinementWouldFallback("not json at all")).toBe(true);
+    expect(refinementWouldFallback("")).toBe(true);
+    expect(refinementWouldFallback("[{broken")).toBe(true);
   });
 });
 
