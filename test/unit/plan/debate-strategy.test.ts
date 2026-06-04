@@ -10,10 +10,12 @@ import type { PRD } from "@/prd/types";
 import { PlanPromptBuilder } from "@/prompts";
 import { makeMockAgentManager, verbatimWarn, withWarnSpy } from "@test/helpers";
 
+const MOCK_FULL_CONFIG = {} as never;
+
 function makeRuntime(closeImpl = mock(async () => {})): NaxRuntime {
   return {
     runId: "run-123",
-    configLoader: {} as never,
+    configLoader: { current: () => MOCK_FULL_CONFIG },
     workdir: "/tmp/workdir",
     projectDir: "/tmp/workdir",
     outputDir: "/tmp/workdir/.nax",
@@ -79,9 +81,6 @@ function makeContext(overrides: Partial<PlanModeContext> = {}): PlanModeContext 
     branchName: "feat/feat-debate",
     timeoutSeconds: 90,
     config: {
-      debate: { stages: { plan: planStageConfig } },
-    } as never,
-    fullConfig: {
       debate: { stages: { plan: planStageConfig } },
       agent: { maxInteractionTurns: 7 },
       project: { kind: "sentinel" },
@@ -163,12 +162,12 @@ describe("DebatePlanStrategy", () => {
       undefined,
       ctx.relativePackages,
       ctx.packageDetails,
-      ctx.fullConfig.project,
+      ctx.config.project,
     );
     expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);
 
-    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [{ stage: string; stageConfig: DebateStageConfig; config: typeof ctx.fullConfig; workdir: string; featureName: string; timeoutSeconds: number; sessionManager: unknown }];
+    const [runnerOptions] = createDebateRunnerMock.mock.calls[0] as unknown as [{ stage: string; stageConfig: DebateStageConfig; config: unknown; workdir: string; featureName: string; timeoutSeconds: number; sessionManager: unknown }];
     expect(runnerOptions.stage).toBe("plan");
     expect(runnerOptions.stageConfig).toEqual({
       enabled: true,
@@ -176,7 +175,7 @@ describe("DebatePlanStrategy", () => {
       sessionMode: "one-shot",
       rounds: 1,
     });
-    expect(runnerOptions.config).toBe(ctx.fullConfig);
+    expect(runnerOptions.config).toBe(ctx.runtime.configLoader.current());
     expect(runnerOptions.workdir).toBe(ctx.workdir);
     expect(runnerOptions.featureName).toBe(ctx.options.feature);
     expect(runnerOptions.timeoutSeconds).toBe(ctx.timeoutSeconds);
@@ -261,7 +260,7 @@ describe("DebatePlanStrategy", () => {
         outputPath: ctx.outputPath,
         packages: ctx.relativePackages,
         packageDetails: ctx.packageDetails,
-        projectProfile: ctx.fullConfig.project,
+        projectProfile: ctx.config.project,
       });
       expect(_debatePlanDeps.writeOrRecoverPrd).toHaveBeenCalledWith(ctx, fallbackPrd);
       expect(ctx.runtime.close).toHaveBeenCalledTimes(1);

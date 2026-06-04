@@ -17,7 +17,7 @@ export class PipelinePlanStrategy implements IPlanStrategy {
   readonly mode = "pipeline" as const;
 
   async execute(ctx: PlanModeContext): Promise<string> {
-    if (ctx.fullConfig?.debate?.enabled === true) {
+    if (ctx.config.debate?.enabled === true) {
       ctx.deps.getLogger()?.warn("plan", "pipeline mode active; debate config ignored", {
         storyId: ctx.options.feature,
         mode: "pipeline",
@@ -56,10 +56,10 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         codebaseContext: ctx.codebaseContext,
         feature: ctx.options.feature,
         branchName: ctx.branchName,
-        citationThreshold: ctx.fullConfig.plan?.citationThreshold ?? 0.5,
+        citationThreshold: ctx.config.plan.citationThreshold,
         packages: ctx.relativePackages,
         packageDetails: ctx.packageDetails,
-        projectProfile: ctx.fullConfig?.project,
+        projectProfile: ctx.config.project,
       };
       const draft = await _pipelinePlanDeps.callOp(callCtx, _pipelinePlanDeps.planDraftOp, draftCtx);
 
@@ -69,7 +69,7 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         workdir: ctx.workdir,
         runId: ctx.runtime.runId,
         storyId: ctx.options.feature,
-        config: ctx.fullConfig,
+        config: ctx.runtime.configLoader.current(),
         callCtx,
         draftCtx,
       });
