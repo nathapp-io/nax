@@ -38,8 +38,12 @@ const LEADING_TAG_GROUP = /^\s*(?:[-*]|\d+\.)?\s*((?:\[[a-z][a-z-]*\]\s*)+)/i;
 /** Tags that are banned as leading tags on PRD ACs. */
 const DEPRECATED_TAG = /\[(grep|file|verbatim)\]/i;
 
-/** Shell pipe inside a backtick span. */
-const SHELL_PIPE = /`[^`]*\|[^`]*`/;
+/**
+ * Shell pipe inside a backtick span, anchored to a known shell command on
+ * either side. Requiring a command keyword avoids false positives on
+ * TypeScript/Rust union types like `Success | Failure` or `'a' | 'b'`.
+ */
+const SHELL_PIPE = /`[^`]*\b(grep|find|wc|awk|sed|sort|head|tail|xargs|cut|uniq)\b[^`]*\|[^`]*`/i;
 
 /** `wc` command inside a backtick span. */
 const SHELL_WC = /`[^`]*\bwc\b[^`]*`/;

@@ -37,12 +37,17 @@ describe("findSpecDriftViolations", () => {
   });
 
   describe("shell-pattern detection", () => {
-    test("flags shell pipe inside backticks", () => {
+    test("flags shell pipe with a known command keyword on either side", () => {
       const violations = findSpecDriftViolations(
         prdWithAcs("- [unit] `grep -rn foo src/ | wc -l` returns 0"),
       );
       expect(violations).toHaveLength(1);
       expect(violations[0].reason).toBe("shell-pattern");
+    });
+
+    test("does not flag TypeScript union types inside backticks", () => {
+      expect(findSpecDriftViolations(prdWithAcs("result is `Success | Failure`"))).toHaveLength(0);
+      expect(findSpecDriftViolations(prdWithAcs("type is `'left' | 'right'`"))).toHaveLength(0);
     });
 
     test("flags wc inside backticks", () => {
