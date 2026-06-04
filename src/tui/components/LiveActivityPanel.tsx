@@ -19,6 +19,8 @@ export interface LiveActivityPanelProps {
   focused?: boolean;
   /** Active agent call states from stream events */
   activeCalls?: Map<string, ActiveCallState>;
+  /** Current orchestrator step per storyId (e.g. "test-writer", "implementer") */
+  storySteps?: Record<string, string>;
   /** Run completion summary, set when run:completed fires */
   runSummary?: RunSummary;
   /** Error message string, set when the run errors */
@@ -41,6 +43,7 @@ const MAX_ESCALATION_DISPLAY = 5;
 export function LiveActivityPanel({
   focused = false,
   activeCalls,
+  storySteps,
   runSummary,
   runErrored,
   escalationLog = [],
@@ -80,7 +83,7 @@ export function LiveActivityPanel({
       {hasActiveCalls && (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
           {activeCallList.map((call) => (
-            <ActiveCallRow key={call.callId} call={call} />
+            <ActiveCallRow key={call.callId} call={call} step={call.storyId ? storySteps?.[call.storyId] : undefined} />
           ))}
         </Box>
       )}
@@ -95,8 +98,20 @@ export function LiveActivityPanel({
         </Box>
       )}
 
+      {/* Step-only rows: story step is known but no active LLM call yet (deterministic gates) */}
+      {!hasActiveCalls && storySteps && Object.keys(storySteps).length > 0 && (
+        <Box flexDirection="column" paddingX={1} paddingY={1}>
+          {Object.entries(storySteps).map(([sid, step]) => (
+            <Box key={sid} flexDirection="row" gap={1}>
+              <Text>{sid}</Text>
+              <Text color="yellow">[{step}]</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
       {/* Waiting state when nothing to show */}
-      {!hasActiveCalls && !hasSummary && !hasError && (
+      {!hasActiveCalls && !hasSummary && !hasError && (!storySteps || Object.keys(storySteps).length === 0) && (
         <Box paddingX={1} paddingY={1}>
           <Text dimColor>Waiting for agent...</Text>
         </Box>
@@ -105,13 +120,13 @@ export function LiveActivityPanel({
   );
 }
 
-function ActiveCallRow({ call }: { call: ActiveCallState }) {
+function ActiveCallRow({ call, step }: { call: ActiveCallState; step?: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box flexDirection="row" gap={1}>
         <Text color="cyan">{call.agentName}</Text>
         {call.storyId && <Text>{call.storyId}</Text>}
-        {call.stage && <Text dimColor>[{call.stage}]</Text>}
+        {step ? <Text color="yellow">[{step}]</Text> : call.stage ? <Text dimColor>[{call.stage}]</Text> : null}
       </Box>
       <Box flexDirection="row" gap={1}>
         {call.model && <Text dimColor>model:{call.model}</Text>}

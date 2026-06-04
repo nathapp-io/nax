@@ -28,4 +28,7 @@ export type {
   StoryEscalatedEvent,
   StoryStartedEvent,
   StoryFailedEvent,
+  StoryStepEvent,
+  PostRunPhaseStartedEvent,
+  PostRunPhaseCompletedEvent,
 } from "./event-bus";

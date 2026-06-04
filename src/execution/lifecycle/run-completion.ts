@@ -120,6 +120,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     // Regression phase already passed on a prior run — skip
   } else if (regressionMode === "deferred" && config.quality.commands.test) {
     statusWriter.setPostRunPhase("regression", { status: "running" });
+    pipelineEventBus.emit({ type: "postrun:phase:started", phase: "regression" });
 
     const regressionResult = await _runCompletionDeps.runDeferredRegression({
       config,
@@ -138,6 +139,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
     if (regressionResult.success) {
       statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
+      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true });
     } else {
       statusWriter.setPostRunPhase("regression", {
         status: "failed",
@@ -145,6 +147,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         affectedStories: regressionResult.affectedStories,
         lastRunAt,
       });
+      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "regression", passed: false });
 
       // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
       // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
@@ -242,6 +245,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // returned pluginGateFailed flag, which runner-completion.ts folds into finalStatus.
   let pluginGateFailed = false;
   const deferredReview = options.deferredReview;
+  if (deferredReview !== undefined) {
+    // postrun:phase:started was already emitted in unified-executor.ts before the review ran.
+    pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "review", passed: !deferredReview.anyFailed });
+  }
   if (deferredReview?.anyFailed) {
     const failedReviewers = deferredReview.reviewerResults.filter((r) => !r.passed).map((r) => r.name);
     pluginGateFailed = config.review.pluginMode === "gating";

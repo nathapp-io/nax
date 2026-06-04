@@ -147,6 +147,26 @@ export interface RunErroredEvent {
   feature?: string;
 }
 
+/** Emitted at the start of each orchestrator phase (test-writer, implementer, verifier, etc.). */
+export interface StoryStepEvent {
+  type: "story:step";
+  storyId: string;
+  /** Op name — e.g. "test-writer", "implementer", "verifier", "semantic-review", "adversarial-review",
+   *  "lint-check", "typecheck-check", "full-suite-gate", "greenfield-gate" */
+  step: string;
+}
+
+export interface PostRunPhaseStartedEvent {
+  type: "postrun:phase:started";
+  phase: "regression" | "acceptance" | "review";
+}
+
+export interface PostRunPhaseCompletedEvent {
+  type: "postrun:phase:completed";
+  phase: "regression" | "acceptance" | "review";
+  passed: boolean;
+}
+
 /** Discriminated union of all pipeline events. */
 export type PipelineEvent =
   | StoryStartedEvent
@@ -161,7 +181,10 @@ export type PipelineEvent =
   | StorySkippedEvent
   | StoryEscalatedEvent
   | RunResumedEvent
-  | RunErroredEvent;
+  | RunErroredEvent
+  | StoryStepEvent
+  | PostRunPhaseStartedEvent
+  | PostRunPhaseCompletedEvent;
 
 export type PipelineEventType = PipelineEvent["type"];
 

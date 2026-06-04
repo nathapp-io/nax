@@ -31,6 +31,7 @@ import type {
 } from "../operations";
 import type { AdversarialReviewInput } from "../operations";
 import { callOp } from "../operations/call";
+import { pipelineEventBus } from "../pipeline/event-bus";
 import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review/prepare-inputs";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
@@ -803,6 +804,11 @@ async function runPhase(
     });
   }
   logUnifiedReviewPhaseStart(ctx.storyId, opName);
+
+  // Emit TUI step event so the live activity panel can show the current orchestrator step.
+  if (ctx.storyId) {
+    pipelineEventBus.emit({ type: "story:step", storyId: ctx.storyId, step: opName });
+  }
 
   const phaseStartedAt = Date.now();
   const scope = ctx.runtime.costAggregator.openScope();
