@@ -11,8 +11,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { RunCompletedEvent } from "../../pipeline/event-bus";
-import { pipelineEventBus } from "../../pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
+import type { RunCompletedEvent } from "@/pipeline";
 import type { StoryDisplayState } from "../types";
 
 /** Entry in the escalation log. */
@@ -23,7 +23,7 @@ export interface EscalationEntry {
   at: number;
 }
 
-/** Run summary from run:completed event. */
+/** Run summary from run:completed event. Export for consumers (e.g. LiveActivityPanel). */
 export interface RunSummary {
   totalStories: number;
   passedStories: number;
@@ -100,13 +100,14 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       }));
     });
 
-    // story:completed — mark story passed/failed, accumulate cost
+    // story:completed — mark story passed/failed, set cost (replace, not accumulate,
+    // to avoid double-counting when a story is retried across tiers)
     const unsubCompleted = pipelineEventBus.on("story:completed", (event) => {
       setState((prev) => {
         const newStories = prev.stories.map((s) => {
           if (s.story.id === event.storyId) {
             const status = event.passed ? ("passed" as const) : ("failed" as const);
-            const storyCost = (s.cost ?? 0) + (event.cost ?? 0);
+            const storyCost = event.cost ?? s.cost;
             return { ...s, status, cost: storyCost };
           }
           return s;
@@ -157,6 +158,18 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       }));
     });
 
+    // story:paused — mark individual story as paused
+    const unsubStoryPaused = pipelineEventBus.on("story:paused", (event) => {
+      setState((prev) => ({
+        ...prev,
+        stories: prev.stories.map((s) =>
+          s.story.id === event.storyId
+            ? { ...s, status: "paused" as const, failureReason: event.reason }
+            : s,
+        ),
+      }));
+    });
+
     // run:paused — mark run as paused
     const unsubPaused = pipelineEventBus.on("run:paused", (_event) => {
       setState((prev) => ({ ...prev, runPaused: true }));
@@ -167,8 +180,9 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       setState((prev) => ({ ...prev, runPaused: false }));
     });
 
-    // run:completed — set run summary and final total cost
+    // run:completed — freeze elapsed timer at durationMs, set run summary and final total cost
     const unsubCompleted2 = pipelineEventBus.on("run:completed", (event: RunCompletedEvent) => {
+      clearInterval(timer);
       const summary: RunSummary = {
         totalStories: event.totalStories,
         passedStories: event.passedStories,
@@ -180,6 +194,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       };
       setState((prev) => ({
         ...prev,
+        elapsedMs: event.durationMs,
         runSummary: summary,
         totalCost: event.totalCost ?? prev.totalCost,
       }));
@@ -197,6 +212,7 @@ export function usePipelineBusEvents(initialStories: StoryDisplayState[]): Pipel
       unsubFailed();
       unsubSkipped();
       unsubEscalated();
+      unsubStoryPaused();
       unsubPaused();
       unsubResumed();
       unsubCompleted2();
