@@ -125,6 +125,7 @@ export async function executeUnified(
     if (isComplete(prd)) {
       logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
       const naxIgnoreIndex = await getRunNaxIgnoreIndex(prd);
+      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
       deferredReview = await runDeferredReview(
         ctx.workdir,
         ctx.config.review,
@@ -190,6 +191,7 @@ export async function executeUnified(
           if (!shouldProceed) return buildResult("pre-merge-aborted");
         }
         logger?.debug("execution", "Running deferred review");
+        pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
         deferredReview = await runDeferredReview(
           ctx.workdir,
           ctx.config.review,

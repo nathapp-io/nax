@@ -5,7 +5,7 @@
  */
 
 import { Box, Text, useApp, useInput } from "ink";
-import { useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { writeQueueCommand } from "../utils/queue-writer";
 import { CostOverlay } from "./components/CostOverlay";
 import { HelpOverlay } from "./components/HelpOverlay";
@@ -21,6 +21,10 @@ import { usePty } from "./hooks/usePty";
 import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
 
+// Memoized panels — only re-render when their own props change, not on every timer tick
+const MemoStoriesPanel = memo(StoriesPanel);
+const MemoLiveActivityPanel = memo(LiveActivityPanel);
+
 /**
  * Format elapsed milliseconds as "Nm Ns" string.
  */
@@ -35,6 +39,15 @@ function formatElapsed(ms: number): string {
  */
 function formatCost(cost: number): string {
   return `$${cost.toFixed(4)}`;
+}
+
+/**
+ * Format token count as e.g. "21.1k" or "1.5M".
+ */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return `${n}`;
 }
 
 /**
@@ -62,6 +75,7 @@ function formatCost(cost: number): string {
  */
 export function App({
   feature,
+  version,
   stories: initialStories,
   events,
   queueFilePath,
@@ -72,6 +86,16 @@ export function App({
   const busState = usePipelineBusEvents(initialStories);
   const { currentStage } = usePipelineEvents(events);
   const { exit } = useApp();
+
+  // Separate elapsed time state — isolated so the 1s timer only re-renders
+  // the header, not StoriesPanel or LiveActivityPanel (those are memoized).
+  const startTimeRef = useRef(Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (busState.runSummary) return; // Run complete — timer already frozen
+    const timer = setInterval(() => setElapsedMs(Date.now() - startTimeRef.current), 1000);
+    return () => clearInterval(timer);
+  }, [busState.runSummary]);
 
   // Focus management (Tab toggles between Stories and Agent panels)
   const [focus, setFocus] = useState<PanelFocus>(PanelFocus.Stories);
@@ -85,8 +109,8 @@ export function App({
   // Wire PTY hook for agent session
   const { handle: ptyHandle } = usePty(ptyOptions ?? null);
 
-  // Wire agent stream events for live call metadata
-  const { activeCalls } = useAgentStreamEvents(agentStreamEvents);
+  // Wire agent stream events for live call metadata and token accumulation
+  const { activeCalls, inputTokens, outputTokens } = useAgentStreamEvents(agentStreamEvents);
 
   // Derived state
   const isRunComplete = !!busState.runSummary;
@@ -204,12 +228,16 @@ export function App({
   // Warn if terminal is too small
   const isTooSmall = layout.width < MIN_TERMINAL_WIDTH;
 
-  // Header right side: "N running · $cost · elapsed"
+  // Header right side: "N running · $cost · Xk in / Yk out · elapsed"
   const activeCount = runningStories.length;
+  const displayElapsed = busState.runSummary ? busState.runSummary.durationMs : elapsedMs;
+  const tokensStr =
+    inputTokens > 0 || outputTokens > 0 ? `${formatTokens(inputTokens)} in / ${formatTokens(outputTokens)} out` : null;
   const headerRight = [
     activeCount > 0 ? `${activeCount} running` : null,
     formatCost(busState.totalCost),
-    formatElapsed(busState.elapsedMs),
+    tokensStr,
+    formatElapsed(displayElapsed),
   ]
     .filter(Boolean)
     .join("  ·  ");
@@ -222,6 +250,12 @@ export function App({
       <Box paddingX={1} borderStyle="single" borderBottom borderColor="cyan" justifyContent="space-between">
         <Text bold color="cyan">
           nax run — {feature}
+          {version ? (
+            <Text dimColor color="cyan">
+              {" "}
+              {version}
+            </Text>
+          ) : null}
         </Text>
         <Text dimColor>{headerRight}</Text>
       </Box>
@@ -238,17 +272,19 @@ export function App({
       {/* Main content area */}
       <Box flexDirection={layout.mode === "single" ? "column" : "row"} flexGrow={1}>
         {/* Stories panel */}
-        <StoriesPanel
+        <MemoStoriesPanel
           stories={busState.stories}
+          postRunPhases={busState.postRunPhases}
           width={layout.mode === "single" ? layout.width : layout.storiesPanelWidth}
           compact={layout.mode === "single"}
           maxHeight={maxHeight}
         />
 
         {/* Live activity panel */}
-        <LiveActivityPanel
+        <MemoLiveActivityPanel
           focused={focus === PanelFocus.Agent}
           activeCalls={activeCalls}
+          storySteps={busState.storySteps}
           runSummary={busState.runSummary}
           runErrored={runErroredForPanel}
           escalationLog={busState.escalationLog}

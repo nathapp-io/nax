@@ -12,6 +12,7 @@ import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
+import { pipelineEventBus } from "@/pipeline";
 import type { PipelineEventEmitter } from "@/pipeline/events";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
@@ -126,6 +127,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
     } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance" });
 
       // Compute per-package acceptance test paths from PRD story workdirs.
       // This is necessary because preRunCtx.acceptanceTestPaths is ephemeral and
@@ -194,6 +196,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       const lastRunAt = new Date().toISOString();
       if (acceptanceResult.success) {
         options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: true });
       } else {
         acceptancePassed = false;
         options.statusWriter.setPostRunPhase("acceptance", {
@@ -202,6 +205,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
           retries: acceptanceResult.retries ?? 0,
           lastRunAt,
         });
+        pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: false });
       }
 
       Object.assign(options, {

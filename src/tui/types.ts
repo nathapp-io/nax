@@ -64,6 +64,8 @@ export interface PtySpawnOptions {
 export interface TuiProps {
   /** Feature name */
   feature: string;
+  /** nax version string (e.g. "0.68.7"), shown in the header */
+  version?: string;
   /** All stories to display (initial state; updates come from pipeline bus) */
   stories: StoryDisplayState[];
   /** Pipeline event emitter for stage tracking (stage:enter/stage:exit) */

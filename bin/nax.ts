@@ -81,7 +81,7 @@ import { type LogLevel, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
-import { NAX_VERSION } from "../src/version";
+import { NAX_BUILD_INFO, NAX_VERSION } from "../src/version";
 
 const program = new Command();
 
@@ -557,6 +557,7 @@ program
 
       tuiInstance = renderTui({
         feature: options.feature,
+        version: NAX_BUILD_INFO,
         stories: initialStories,
         events: eventEmitter,
         ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it

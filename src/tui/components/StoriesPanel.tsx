@@ -7,6 +7,7 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES } from "../hooks/useLayout";
+import type { PostRunPhaseState } from "../hooks/usePipelineBusEvents";
 import type { StoryDisplayState } from "../types";
 
 /**
@@ -15,6 +16,12 @@ import type { StoryDisplayState } from "../types";
 export interface StoriesPanelProps {
   /** Stories to display */
   stories: StoryDisplayState[];
+  /** Post-run phase statuses (acceptance, regression, review) */
+  postRunPhases?: {
+    acceptance?: PostRunPhaseState;
+    regression?: PostRunPhaseState;
+    review?: PostRunPhaseState;
+  };
   /** Panel width (columns) */
   width?: number;
   /** Compact mode (fewer details, for single-column layout) */
@@ -60,7 +67,7 @@ function getStatusIcon(status: StoryDisplayState["status"]): string {
  * />
  * ```
  */
-export function StoriesPanel({ stories, width, compact = false, maxHeight }: StoriesPanelProps) {
+export function StoriesPanel({ stories, postRunPhases, width, compact = false, maxHeight }: StoriesPanelProps) {
   // Determine max visible stories based on mode
   const maxVisible = compact ? COMPACT_MAX_VISIBLE_STORIES : MAX_VISIBLE_STORIES;
   const needsScrolling = stories.length > maxVisible;
@@ -147,6 +154,33 @@ export function StoriesPanel({ stories, width, compact = false, maxHeight }: Sto
           <Text dimColor>▼ {stories.length - scrollOffset - maxVisible} more below</Text>
         </Box>
       )}
+
+      {/* Post-run phases */}
+      {postRunPhases && (postRunPhases.acceptance || postRunPhases.regression || postRunPhases.review) && (
+        <Box flexDirection="column" paddingX={1} paddingTop={1}>
+          <Box borderStyle="single" borderTop borderColor="gray" />
+          <Text dimColor>Post-Run</Text>
+          {postRunPhases.acceptance && (
+            <PostRunPhaseRow label="acceptance" phase={postRunPhases.acceptance} compact={compact} />
+          )}
+          {postRunPhases.regression && (
+            <PostRunPhaseRow label="regression" phase={postRunPhases.regression} compact={compact} />
+          )}
+          {postRunPhases.review && <PostRunPhaseRow label="review" phase={postRunPhases.review} compact={compact} />}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function PostRunPhaseRow({ label, phase, compact }: { label: string; phase: PostRunPhaseState; compact: boolean }) {
+  const icon = phase.status === "running" ? ">" : phase.status === "passed" ? "[OK]" : "[X]";
+  const color = phase.status === "running" ? "cyan" : phase.status === "passed" ? "green" : "red";
+  return (
+    <Box>
+      <Text color={color}>
+        {icon} {compact ? label.slice(0, 3) : label}
+      </Text>
     </Box>
   );
 }

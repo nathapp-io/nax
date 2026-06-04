@@ -1,5 +1,5 @@
 import type { AgentStreamEvent, IAgentStreamEventBus } from "@/runtime";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface ActiveCallState {
   callId: string;
@@ -21,8 +21,15 @@ export interface ActiveCallState {
 
 export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
   activeCalls: Map<string, ActiveCallState>;
+  inputTokens: number;
+  outputTokens: number;
 } {
   const [activeCalls, setActiveCalls] = useState<Map<string, ActiveCallState>>(new Map());
+  const [inputTokens, setInputTokens] = useState(0);
+  const [outputTokens, setOutputTokens] = useState(0);
+  // Track the last cumulative token counts per callId so we add only the delta.
+  // ACP emits usage_update with cumulative totals, not incremental deltas.
+  const lastTokensRef = useRef<Map<string, { input: number; output: number }>>(new Map());
 
   useEffect(() => {
     if (!bus) return;
@@ -81,6 +88,17 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
                 lastActivityAt: event.timestamp,
               });
             }
+            // Add only the delta: ACP usage_update carries cumulative totals per call.
+            {
+              const last = lastTokensRef.current.get(event.callId) ?? { input: 0, output: 0 };
+              const newInput = event.inputTokens ?? last.input;
+              const newOutput = event.outputTokens ?? last.output;
+              const deltaIn = newInput - last.input;
+              const deltaOut = newOutput - last.output;
+              lastTokensRef.current.set(event.callId, { input: newInput, output: newOutput });
+              if (deltaIn > 0) setInputTokens((prev) => prev + deltaIn);
+              if (deltaOut > 0) setOutputTokens((prev) => prev + deltaOut);
+            }
             break;
           }
           case "agent.tool_call_update": {
@@ -102,6 +120,8 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
               // Remove ended calls to keep the map clean
               next.delete(event.callId);
             }
+            // Release the per-call token baseline to prevent unbounded map growth
+            lastTokensRef.current.delete(event.callId);
             break;
           }
           default:
@@ -115,5 +135,5 @@ export function useAgentStreamEvents(bus?: IAgentStreamEventBus | null): {
     return unsubscribe;
   }, [bus]);
 
-  return { activeCalls };
+  return { activeCalls, inputTokens, outputTokens };
 }
