@@ -217,10 +217,11 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
    * AC as a runtime-testable behavioural assertion. `planRefineOp.verify` emits
    * the residual warning if violations remain after this turn.
    */
-  buildSpecDriftRepair(violations: ReadonlyArray<{ storyId: string; acIndex: number; ac: string; reason: string }>, outputFilePath: string): string {
-    const list = violations
-      .map((v) => `- ${v.storyId} AC[${v.acIndex}] (${v.reason}): ${v.ac}`)
-      .join("\n");
+  buildSpecDriftRepair(
+    violations: ReadonlyArray<{ storyId: string; acIndex: number; ac: string; reason: string }>,
+    outputFilePath: string,
+  ): string {
+    const list = violations.map((v) => `- ${v.storyId} AC[${v.acIndex}] (${v.reason}): ${v.ac}`).join("\n");
     return `Your PRD contains acceptance criteria that cannot be implemented as runtime tests — they use deprecated verification tags or shell-command patterns that describe file-content checks rather than observable behaviour. These must be rewritten.
 
 Flagged acceptance criteria:

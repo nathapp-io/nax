@@ -32,10 +32,10 @@ export function warnOnDroppedVerbatimAcs(prd: PRD, specContent: string, featureN
 export function warnOnSpecDrift(prd: PRD, featureName: string): void {
   const violations = findSpecDriftViolations(prd);
   if (violations.length > 0) {
-    getSafeLogger()?.warn(
-      "plan",
-      "spec-drift violations remain after specGuard repair — review PRD before executing",
-      { featureName, violationCount: violations.length, violations },
-    );
+    getSafeLogger()?.warn("plan", "spec-drift violations remain after specGuard repair — review PRD before executing", {
+      featureName,
+      violationCount: violations.length,
+      violations,
+    });
   }
 }
