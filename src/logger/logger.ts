@@ -43,7 +43,7 @@ export class Logger {
   private readonly filePath?: string;
   private readonly useChalk: boolean;
   private readonly formatterMode?: VerbosityMode;
-  private readonly headless: boolean;
+  private readonly suppressConsole: boolean;
   /** Tail of the async write chain — await this to know all writes have landed */
   private writeQueueTail: Promise<void> = Promise.resolve();
 
@@ -52,7 +52,7 @@ export class Logger {
     this.filePath = options.filePath;
     this.useChalk = options.useChalk ?? true;
     this.formatterMode = options.formatterMode;
-    this.headless = options.headless ?? false;
+    this.suppressConsole = options.suppressConsole ?? false;
 
     // Ensure parent directory exists if file path provided
     if (this.filePath) {
@@ -108,7 +108,7 @@ export class Logger {
     };
 
     // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
-    if (this.shouldLog(level) && this.headless) {
+    if (this.shouldLog(level) && !this.suppressConsole) {
       let consoleOutput: string | null = null;
 
       if (this.formatterMode) {

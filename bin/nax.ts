@@ -524,6 +524,7 @@ program
       useChalk: true,
       formatterMode: useHeadless ? formatterMode : undefined,
       headless: useHeadless,
+      suppressConsole: !useHeadless,
     });
 
     // Override config from CLI

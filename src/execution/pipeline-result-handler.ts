@@ -7,12 +7,12 @@
  */
 
 import { join } from "node:path";
+import { pipelineEventBus } from "@/pipeline";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { pipelineEventBus } from "@/pipeline";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";

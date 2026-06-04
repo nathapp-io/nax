@@ -14,6 +14,7 @@
 
 import * as os from "node:os";
 import path from "node:path";
+import { pipelineEventBus } from "@/pipeline";
 import type { NaxConfig } from "../../config";
 import { globalConfigDir } from "../../config/paths";
 import { LockAcquisitionError, NaxError } from "../../errors";
@@ -21,7 +22,6 @@ import type { LoadedHooksConfig } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
-import { pipelineEventBus } from "@/pipeline";
 import type { AgentGetFn } from "../../pipeline/types";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";

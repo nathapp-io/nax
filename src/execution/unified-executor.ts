@@ -1,10 +1,10 @@
 /** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
+import { pipelineEventBus } from "@/pipeline";
 import { resolveDefaultAgent } from "../agents";
 import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { pipelineEventBus } from "@/pipeline";
 import { runPipeline } from "../pipeline/runner";
 import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
