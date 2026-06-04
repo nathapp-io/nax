@@ -14,6 +14,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectBatchMetrics, collectStoryMetrics } from "../../../src/metrics/tracker";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 const WORKDIR = `/tmp/nax-tracker-gate-test-${randomUUID()}`;
 
@@ -73,6 +74,7 @@ function makeCtx(
       estimatedCostUsd: 0.01,
       durationMs: 5000,
     },
+    runtime: makeMockRuntime(),
     ...ctxOverrides,
   } as unknown as PipelineContext;
 }
@@ -213,6 +215,7 @@ describe("collectBatchMetrics - fullSuiteGatePassed always false", () => {
         durationMs: 10000,
       },
       fullSuiteGatePassed: true,
+      runtime: makeMockRuntime(),
     } as unknown as PipelineContext;
 
     const metrics = collectBatchMetrics(ctx, new Date().toISOString());

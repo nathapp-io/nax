@@ -13,6 +13,7 @@ import { _manifestStoreDeps } from "../../../src/context/engine/manifest-store";
 import type { ContextManifest } from "../../../src/context/engine/types";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saved originals
@@ -78,6 +79,7 @@ function makeCtx(id: string, featureId: string): PipelineContext {
     workdir: "/repo",
     routing: { tier: "balanced" },
     agentResult: { success: true, cost: 0 },
+    runtime: makeMockRuntime(),
   } as unknown as PipelineContext;
 }
 

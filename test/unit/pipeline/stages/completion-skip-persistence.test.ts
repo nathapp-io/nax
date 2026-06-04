@@ -11,6 +11,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { _completionDeps, completionStage } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
+import { makeMockRuntime } from "../../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -40,6 +41,7 @@ function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
     agentResult: { success: true, estimatedCostUsd: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
     hooks: {} as PipelineContext["hooks"],
     storyStartTime: new Date().toISOString(),
+    runtime: makeMockRuntime(),
     ...overrides,
   } as unknown as PipelineContext;
 }

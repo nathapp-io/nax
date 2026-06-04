@@ -85,7 +85,7 @@ export function wireHooks(
         fireHook(
           hooks,
           "on-story-fail",
-          hookCtx(feature, { storyId: ev.storyId, status: "failed", reason: ev.reason }),
+          hookCtx(feature, { storyId: ev.storyId, status: "failed", reason: ev.reason, cost: ev.cost }),
           workdir,
         ),
       );

@@ -16,6 +16,7 @@ import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { withTempDir } from "../../../helpers/temp";
 import { makeNaxConfig } from "../../../helpers";
+import { makeMockRuntime } from "../../../helpers/runtime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -103,6 +104,7 @@ function makeCtx(config: ReturnType<typeof makeNaxConfig>, tempDir: string, inte
     hooks: {} as PipelineContext["hooks"],
     interaction,
     storyStartTime: new Date().toISOString(),
+    runtime: makeMockRuntime(),
   } as unknown as PipelineContext;
 }
 

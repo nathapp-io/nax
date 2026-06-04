@@ -284,13 +284,18 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeConfig("disabled");
     const opts = makeOpts(config, prd);
-    opts.totalCost = 2.75;
+    opts.runtime.costAggregator.record({
+      ts: Date.now(), runId: "run-001", agentName: "claude", model: "test",
+      storyId: "US-001", tokens: { input: 0, output: 0 },
+      estimatedCostUsd: 2.75, exactCostUsd: 2.75, costUsd: 2.75,
+      confidence: "exact", durationMs: 0,
+    });
 
     try {
       await handleRunCompletion(opts);
 
       expect(capturedEvents).toHaveLength(1);
-      expect(capturedEvents[0]?.totalCost).toBe(2.75);
+      expect(capturedEvents[0]?.totalCost).toBeCloseTo(2.75, 2);
     } finally {
       unsub();
     }

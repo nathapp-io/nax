@@ -28,6 +28,7 @@ interface VerifyResult {
   scopeTestFallback?: boolean;
 }
 import { makeNaxConfig } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
@@ -89,6 +90,7 @@ function makeCtx(
       durationMs: 5000,
     },
     verifyResult,
+    runtime: makeMockRuntime(),
   } as unknown as PipelineContext;
 }
 
@@ -355,7 +357,7 @@ describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
     const story = makeStory();
     const ctx = makeCtx(story);
     ctx.agentFallbacks = [
-      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1 },
+      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-quota", category: "availability", hop: 1, costUsd: 0 },
     ];
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
@@ -390,8 +392,8 @@ describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
     const story = makeStory();
     const ctx = makeCtx(story);
     ctx.agentFallbacks = [
-      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-service-down", category: "availability", hop: 1 },
-      { storyId: "US-001", priorAgent: "codex", newAgent: "opencode", outcome: "fail-rate-limit", category: "availability", hop: 2 },
+      { storyId: "US-001", priorAgent: "claude", newAgent: "codex", outcome: "fail-service-down", category: "availability", hop: 1, costUsd: 0 },
+      { storyId: "US-001", priorAgent: "codex", newAgent: "opencode", outcome: "fail-rate-limit", category: "availability", hop: 2, costUsd: 0 },
     ];
 
     const metrics = await collectStoryMetrics(ctx, new Date().toISOString());

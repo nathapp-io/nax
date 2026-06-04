@@ -30,7 +30,7 @@ export const completionStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
-    const sessionCost = ctx.agentResult?.estimatedCostUsd || 0;
+    const sessionCost = ctx.runtime.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? 0;
     // In parallel worktree mode, a shared PRD and prd.json file is managed by the
     // unified executor. Worktree pipelines must not race on it — skip both the in-memory
     // mutation and the disk write when skipPrdPersistence is set.

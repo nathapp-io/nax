@@ -77,13 +77,7 @@ export interface RunCompletionOptions extends DispatchContext {
 export interface RunCompletionResult {
   durationMs: number;
   runCompletedAt: string;
-  /**
-   * Authoritative run total — max of the legacy per-iteration accumulator and
-   * the cost aggregator snapshot. Callers MUST use this for downstream reporting
-   * (exit summary, headless footer, feature-status file) instead of the stale
-   * `options.totalCost`, which only covers execution-phase work and silently
-   * drops acceptance/review/diagnosis spend (issue #909).
-   */
+  /** Authoritative run total from the cost aggregator. Use for all downstream reporting. */
   reportedTotal: number;
   finalCounts: {
     total: number;
@@ -111,7 +105,6 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     startedAt,
     prd,
     allStoryMetrics,
-    totalCost,
     storiesCompleted,
     iterations,
     startTime,
@@ -260,21 +253,8 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     });
   }
 
-  // Bug 909 fix — consult the cost aggregator for the authoritative spend total.
-  // Every agent call dispatched through AgentManager emits a DispatchEvent with cost,
-  // captured by attachCostSubscriber into runtime.costAggregator. The legacy `totalCost`
-  // only counts execution-phase work and silently drops acceptance/hardening/diagnosis spend.
   const aggSnap = options.runtime.costAggregator.snapshot();
-  const aggregatorTotal = aggSnap.totalCostUsd;
-  const reportedTotal = Math.max(totalCost, aggregatorTotal);
-
-  if (aggregatorTotal > totalCost + 0.01) {
-    logger?.debug("run.complete", "Cost aggregator total exceeds accumulated totalCost", {
-      totalCost,
-      aggregatorTotal,
-      gap: aggregatorTotal - totalCost,
-    });
-  }
+  const reportedTotal = aggSnap.totalCostUsd;
 
   const aggByStage = options.runtime.costAggregator.byStage();
   const aggByStory = options.runtime.costAggregator.byStory();

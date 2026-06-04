@@ -48,7 +48,7 @@ export async function handleNoTierAvailable(
       type: "story:paused",
       storyId: ctx.story.id,
       reason: `Execution stopped (${failureCategory ?? "unknown"} requires human review)`,
-      cost: ctx.totalCost,
+      cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
     });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
@@ -73,6 +73,7 @@ export async function handleNoTierAvailable(
     story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
     reason: "Execution failed",
     countsTowardEscalation: true,
+    cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
   });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };
@@ -111,7 +112,7 @@ export async function handleMaxAttemptsReached(
       type: "story:paused",
       storyId: ctx.story.id,
       reason: `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`,
-      cost: ctx.totalCost,
+      cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
     });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
@@ -137,6 +138,7 @@ export async function handleMaxAttemptsReached(
     story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
     reason: "Max attempts reached",
     countsTowardEscalation: true,
+    cost: ctx.runtime?.costAggregator.byStory()[ctx.story.id]?.totalCostUsd ?? ctx.totalCost,
   });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };

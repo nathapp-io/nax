@@ -30,6 +30,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
 import { makeNaxConfig } from "../../helpers";
+import { makeMockRuntime } from "../../helpers/runtime";
 
 const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
 const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;
@@ -102,6 +103,7 @@ function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): Pip
       estimatedCostUsd: 0.10,
       durationMs: 5000,
     },
+    runtime: makeMockRuntime(),
     ...overrides,
   } as unknown as PipelineContext;
 }
@@ -315,6 +317,40 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
         priorFailures,
       });
 
+      const runtime = makeMockRuntime();
+
+      // Record prior attempt spend to the aggregator
+      if (priorAttemptCost > 0) {
+        runtime.costAggregator.record({
+          ts: Date.now(),
+          runId: "test",
+          agentName: "claude",
+          model: "test",
+          storyId: story.id,
+          tokens: { input: 0, output: 0 },
+          estimatedCostUsd: priorAttemptCost,
+          exactCostUsd: priorAttemptCost,
+          costUsd: priorAttemptCost,
+          confidence: "exact",
+          durationMs: 0,
+        });
+      }
+
+      // Record current attempt spend to the aggregator
+      runtime.costAggregator.record({
+        ts: Date.now(),
+        runId: "test",
+        agentName: "claude",
+        model: "test",
+        storyId: story.id,
+        tokens: { input: 0, output: 0 },
+        estimatedCostUsd: currentAttemptCost,
+        exactCostUsd: currentAttemptCost,
+        costUsd: currentAttemptCost,
+        confidence: "exact",
+        durationMs: 0,
+      });
+
       const ctx = makeCtx(story, {
         routing:
           priorFailuresCount === 2
@@ -338,8 +374,8 @@ describe("collectStoryMetrics — cost accumulates across all tier escalations",
           estimatedCostUsd: currentAttemptCost,
           durationMs: priorFailuresCount === 2 ? 30000 : 5000,
         },
-        accumulatedAttemptCost: priorAttemptCost,
-      } as any);
+        runtime,
+      });
 
       const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
       expect(metrics.cost).toBeCloseTo(expectedCost, 5);
