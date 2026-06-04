@@ -79,7 +79,7 @@ import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
 import { type LogLevel, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
-import { projectOutputDir } from "../src/runtime";
+import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
 import { NAX_VERSION } from "../src/version";
 
@@ -539,6 +539,9 @@ program
     // Create event emitter for TUI integration
     const eventEmitter = new PipelineEventEmitter();
 
+    // Shared agent stream bus — created here so TUI can subscribe before run() starts
+    const agentStreamEvents = useHeadless ? undefined : new AgentStreamEventBus();
+
     // Render TUI if not in headless mode
     let tuiInstance: ReturnType<typeof renderTui> | undefined;
     if (!useHeadless) {
@@ -556,6 +559,7 @@ program
         stories: initialStories,
         events: eventEmitter,
         ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it
+        agentStreamEvents,
       });
     } else {
       console.log(chalk.dim("   [Headless mode — pipe output]"));
@@ -590,6 +594,7 @@ program
       formatterMode: useHeadless ? formatterMode : undefined,
       headless: useHeadless,
       skipPrecheck: options.skipPrecheck ?? false,
+      agentStreamEvents,
     });
 
     // Create/update latest.jsonl symlink

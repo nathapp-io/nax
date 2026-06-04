@@ -4,7 +4,7 @@ import { resolveDefaultAgent } from "../agents";
 import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { pipelineEventBus } from "../pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
 import { runPipeline } from "../pipeline/runner";
 import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";

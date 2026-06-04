@@ -73,6 +73,8 @@ export interface RunOptions {
   headless?: boolean;
   /** Skip precheck validations (for advanced users) */
   skipPrecheck?: boolean;
+  /** Pre-built AgentStreamEventBus so the TUI can subscribe to live agent events. */
+  agentStreamEvents?: import("../runtime").IAgentStreamEventBus;
 }
 
 /** Run result */
@@ -104,6 +106,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     formatterMode = "normal",
     headless = false,
     skipPrecheck = false,
+    agentStreamEvents,
   } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
@@ -136,6 +139,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     skipPrecheck,
     headless,
     formatterMode,
+    agentStreamEvents,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // @design: BUG-017: Pass getters for run.complete event on SIGTERM

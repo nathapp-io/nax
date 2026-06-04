@@ -107,12 +107,11 @@ export class Logger {
       ...(strippedData && { data: strippedData }),
     };
 
-    // Console output (level-gated)
-    if (this.shouldLog(level)) {
+    // Console output (level-gated, suppressed in TUI mode to avoid corrupting Ink's terminal)
+    if (this.shouldLog(level) && this.headless) {
       let consoleOutput: string | null = null;
 
-      // Use formatter in headless mode if mode is specified
-      if (this.headless && this.formatterMode) {
+      if (this.formatterMode) {
         const formatterOptions: FormatterOptions = {
           mode: this.formatterMode,
           useColor: this.useChalk,
@@ -121,13 +120,10 @@ export class Logger {
         if (formatted.shouldDisplay) {
           consoleOutput = formatted.output;
         }
-        // If formatter says not to display, consoleOutput stays null
       } else {
-        // Default console formatting (existing behavior)
         consoleOutput = this.useChalk ? formatConsole(entry) : this.formatPlainConsole(entry);
       }
 
-      // Only log if we have output to display
       if (consoleOutput !== null) {
         console.log(consoleOutput);
       }

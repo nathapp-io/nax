@@ -36,6 +36,8 @@ export interface RunnerSetupOptions {
   agentGetFn?: AgentGetFn;
   /** Per-run AgentManager (ADR-012). When provided, validateCredentials() is called during setup. */
   agentManager?: import("../agents").IAgentManager;
+  /** Pre-built AgentStreamEventBus injected so TUI can subscribe to live agent events. */
+  agentStreamEvents?: import("../runtime").IAgentStreamEventBus;
 }
 
 /**
@@ -85,6 +87,7 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     getTotalStories: options.getTotalStories,
     agentGetFn: options.agentGetFn,
     agentManager: options.agentManager,
+    agentStreamEvents: options.agentStreamEvents,
   });
 
   return setupResult;

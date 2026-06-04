@@ -145,6 +145,12 @@ export interface CreateRuntimeOptions {
    * PidRegistry(workdir). Supply one in tests to control lifecycle.
    */
   pidRegistry?: PidRegistry;
+  /**
+   * Pre-built AgentStreamEventBus. When provided (e.g. from bin/nax.ts so the
+   * TUI can subscribe before run() starts), the runtime uses it instead of
+   * creating a new one. Callers must not close or replace the bus mid-run.
+   */
+  agentStreamEvents?: IAgentStreamEventBus;
 }
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
@@ -159,7 +165,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const configLoader = createConfigLoader(config);
   const dispatchEvents: IDispatchEventBus = new DispatchEventBus();
-  const agentStreamEvents: IAgentStreamEventBus = new AgentStreamEventBus();
+  const agentStreamEvents: IAgentStreamEventBus = opts?.agentStreamEvents ?? new AgentStreamEventBus();
 
   const projectKey = config.name?.trim() || basename(workdir);
   const outputDir = projectOutputDir(projectKey, config.outputDir);

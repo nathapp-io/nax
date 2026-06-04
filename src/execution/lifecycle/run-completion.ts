@@ -16,7 +16,7 @@ import type { HooksConfig } from "../../hooks/types";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { deriveRunFallbackAggregates, saveRunMetrics } from "../../metrics";
-import { pipelineEventBus } from "../../pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import { clearLanguageCache } from "../../project/detector";
