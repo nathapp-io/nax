@@ -213,6 +213,12 @@ async function normalizeStoryFiles(
 
   if (moved.length === 0) return { story, changed: false };
 
+  // NOTE: `expectedFiles` currently only drives context create-intent hints
+  // (src/context/builder.ts). It is NOT yet wired into the post-run asset gate
+  // (verifyAssets in src/verification/runners.ts). This move is a best-effort
+  // heuristic — an LLM typo or incidental path could land here. If expectedFiles
+  // is ever promoted to a hard gate, promotion must stay opt-in (or this move
+  // must require explicit create-intent), so a misclassified path cannot fail a run.
   const newExpected = [...getExpectedFiles(story)];
   for (const filePath of moved) {
     if (!newExpected.includes(filePath)) newExpected.push(filePath);

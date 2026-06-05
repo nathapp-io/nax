@@ -741,4 +741,29 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
     expect(out).toBe(prd as never);
     expect(fileExists).not.toHaveBeenCalled();
   });
+
+  test("across multiple stories: moves in the changed story, preserves the unchanged story's reference", async () => {
+    await withWarnSpy(async () => {
+      const base = makeValidPrd("f", "feat/f");
+      const s0 = { ...base.userStories[0], id: "US-001", contextFiles: ["src/real.ts"] }; // exists → unchanged
+      const s1 = { ...base.userStories[0], id: "US-002", contextFiles: ["src/_new.ts"] }; // absent → moved
+      const prd = { ...base, userStories: [s0, s1] };
+      // Only src/real.ts exists on disk.
+      const fileExists = mock(async (p: string) => p.endsWith("src/real.ts"));
+
+      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
+        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
+      };
+
+      expect(out).not.toBe(prd as never); // a story changed → new PRD object
+      const a = out.userStories.find((s) => s.id === "US-001")!;
+      const b = out.userStories.find((s) => s.id === "US-002")!;
+      // Unchanged story keeps its original object reference (no needless copy).
+      expect(a).toBe(s0 as never);
+      expect(a.contextFiles).toEqual(["src/real.ts"]);
+      // Changed story moved its absent read to expectedFiles.
+      expect(b.contextFiles ?? []).toEqual([]);
+      expect(b.expectedFiles).toEqual(["src/_new.ts"]);
+    });
+  });
 });
