@@ -8,7 +8,7 @@ import { getSafeLogger } from "../logger";
 import { findMissingVerbatimAcs, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
-import type { PRD } from "../prd/types";
+import type { ContextFileEntry, PRD } from "../prd/types";
 import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
@@ -166,36 +166,80 @@ async function readSpecDriftViolations(input: PlanRefineInput): Promise<SpecDrif
   }
 }
 
+/** Result of normalizing one story's contextFiles against the filesystem. */
+interface StoryNormalization {
+  story: UserStory;
+  changed: boolean;
+}
+
 /**
- * Non-fatal safety net: warn when a story's `contextFiles` entry is absent on
- * disk and is NOT already declared as an output in `expectedFiles`. Such an
- * entry is either a file the story creates (it belongs in `expectedFiles`, not
- * `contextFiles`) or a hallucinated reference. Either way it should not sit in
- * `contextFiles`, whose contract is "existing files to read before coding".
- *
- * Warns only — planning stays resilient; the convention fix lives in the spec
- * writer and plan mapping (layers 1–2). Skipped when `workdir` is unset.
+ * Normalize one story: an uncited `contextFiles` entry that is absent on disk is
+ * a file the story CREATES — move it to `expectedFiles`. A cited entry (factId)
+ * that is absent claims broken manifest grounding, so it is kept and warned
+ * (not silently moved). Existing files and already-declared outputs are left
+ * untouched. Returns a new story object when anything moved (immutable update).
  */
-export async function auditContextFileExistence(
+async function normalizeStoryFiles(
+  story: UserStory,
+  workdir: string,
+  fileExists: (path: string) => Promise<boolean>,
+): Promise<StoryNormalization> {
+  const contextFiles = story.contextFiles ?? [];
+  if (contextFiles.length === 0) return { story, changed: false };
+
+  const logger = getSafeLogger();
+  const expected = new Set(getExpectedFiles(story));
+  const kept: Array<string | ContextFileEntry> = [];
+  const moved: string[] = [];
+
+  for (const entry of contextFiles) {
+    const filePath = typeof entry === "string" ? entry : entry.path;
+    const factId = typeof entry === "string" ? undefined : entry.factId;
+    if (expected.has(filePath) || (await fileExists(join(workdir, filePath)))) {
+      kept.push(entry); // already an output, or a legitimate existing read
+      continue;
+    }
+    if (factId) {
+      logger?.warn("plan", "Context file cites a manifest fact but is absent on disk", {
+        storyId: story.id,
+        filePath,
+        factId,
+      });
+      kept.push(entry); // broken grounding — keep so the citation check still flags it
+      continue;
+    }
+    moved.push(filePath); // uncited + absent → the story creates it
+  }
+
+  if (moved.length === 0) return { story, changed: false };
+
+  const newExpected = [...getExpectedFiles(story)];
+  for (const filePath of moved) {
+    if (!newExpected.includes(filePath)) newExpected.push(filePath);
+  }
+  logger?.info("plan", "Moved absent contextFiles entries to expectedFiles (story creates them)", {
+    storyId: story.id,
+    moved,
+  });
+  return { story: { ...story, contextFiles: kept, expectedFiles: newExpected }, changed: true };
+}
+
+/**
+ * Deterministic safety net that closes the read/create gap left when a spec or
+ * plan routes a created file into `contextFiles`. For every story, an uncited
+ * `contextFiles` entry absent on disk is moved to `expectedFiles` (its correct
+ * home — a post-run asset gate, not a read list). Returns a new PRD when any
+ * entry moved; otherwise the input PRD unchanged. Skipped when `workdir` is unset.
+ */
+export async function normalizeCreatedContextFiles(
   prd: PRD,
   workdir: string | undefined,
   fileExists: (path: string) => Promise<boolean>,
-): Promise<void> {
-  if (!workdir) return;
-  const logger = getSafeLogger();
-  if (!logger) return;
-  for (const story of prd.userStories) {
-    const expected = new Set(getExpectedFiles(story));
-    for (const entry of story.contextFiles ?? []) {
-      const filePath = typeof entry === "string" ? entry : entry.path;
-      if (expected.has(filePath)) continue; // already declared as a created file — absence is expected
-      if (await fileExists(join(workdir, filePath))) continue;
-      logger.warn("plan", "Context file not on disk — if the story creates it, move it to expectedFiles", {
-        storyId: story.id,
-        filePath,
-      });
-    }
-  }
+): Promise<PRD> {
+  if (!workdir) return prd;
+  const results = await Promise.all(prd.userStories.map((story) => normalizeStoryFiles(story, workdir, fileExists)));
+  if (!results.some((r) => r.changed)) return prd;
+  return { ...prd, userStories: results.map((r) => r.story) };
 }
 
 export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
@@ -294,8 +338,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     if (ctx.config.plan.specGuard) {
       warnOnSpecDrift(validated, input.featureName);
     }
-    await auditContextFileExistence(validated, input.workdir, ctx.fileExists);
-    return validated;
+    return await normalizeCreatedContextFiles(validated, input.workdir, ctx.fileExists);
   },
   recover: async (input, ctx) => {
     const content = await ctx.readFile(input.outputPath);

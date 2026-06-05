@@ -349,6 +349,40 @@ describe("validatePlanOutput — SEC-503 contextFiles path security", () => {
 });
 
 // ---------------------------------------------------------------------------
+// expectedFiles (files the story creates) — Layer 2
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — expectedFiles parsing", () => {
+  test("preserves expectedFiles on story when present", () => {
+    const story = makeStory({ expectedFiles: ["src/_chat.ts", "src/_tools/web.ts"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].expectedFiles).toEqual(["src/_chat.ts", "src/_tools/web.ts"]);
+  });
+
+  test("filters non-string and empty entries from expectedFiles", () => {
+    const story = makeStory({ expectedFiles: ["src/new.ts", "", 42, null, "  src/two.ts  "] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].expectedFiles).toEqual(["src/new.ts", "src/two.ts"]);
+  });
+
+  test.each([
+    ["not present on story", makeStory()],
+    ["empty array", makeStory({ expectedFiles: [] })],
+  ])("omits expectedFiles when %s", (_label, story) => {
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].expectedFiles).toBeUndefined();
+  });
+
+  test.each([
+    ["contains '..'", "../../../etc/passwd", /expectedFiles.*\.\./i],
+    ["is an absolute path", "/etc/passwd", /expectedFiles.*absolute/i],
+  ])("throws when an expectedFiles entry %s", (_label, path, pattern) => {
+    const story = makeStory({ expectedFiles: [path] });
+    expect(() => validatePlanOutput(makeInput([story]), "feat", "feat/feat")).toThrow(pattern);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // suggestedCriteria validation
 // ---------------------------------------------------------------------------
 
