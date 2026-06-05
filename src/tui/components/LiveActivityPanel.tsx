@@ -27,6 +27,8 @@ export interface LiveActivityPanelProps {
   runErrored?: string;
   /** Log of escalation events from pipeline bus */
   escalationLog?: EscalationEntry[];
+  /** Current phase/stage label for display (e.g. "acceptance-setup", "post-run: acceptance") */
+  currentStage?: string;
 }
 
 /**
@@ -47,6 +49,7 @@ export function LiveActivityPanel({
   runSummary,
   runErrored,
   escalationLog = [],
+  currentStage,
 }: LiveActivityPanelProps) {
   const borderColor = focused ? "cyan" : "gray";
   const activeCallList = activeCalls ? Array.from(activeCalls.values()) : [];
@@ -83,7 +86,12 @@ export function LiveActivityPanel({
       {hasActiveCalls && (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
           {activeCallList.map((call) => (
-            <ActiveCallRow key={call.callId} call={call} step={call.storyId ? storySteps?.[call.storyId] : undefined} />
+            <ActiveCallRow
+              key={call.callId}
+              call={call}
+              step={call.storyId ? storySteps?.[call.storyId] : undefined}
+              currentStage={currentStage}
+            />
           ))}
         </Box>
       )}
@@ -113,20 +121,34 @@ export function LiveActivityPanel({
       {/* Waiting state when nothing to show */}
       {!hasActiveCalls && !hasSummary && !hasError && (!storySteps || Object.keys(storySteps).length === 0) && (
         <Box paddingX={1} paddingY={1}>
-          <Text dimColor>Waiting for agent...</Text>
+          {currentStage ? (
+            <Box flexDirection="row" gap={1}>
+              <Text color="yellow">[{currentStage}]</Text>
+              <Text dimColor>preparing...</Text>
+            </Box>
+          ) : (
+            <Text dimColor>Waiting for agent...</Text>
+          )}
         </Box>
       )}
     </Box>
   );
 }
 
-function ActiveCallRow({ call, step }: { call: ActiveCallState; step?: string }) {
+function ActiveCallRow({ call, step, currentStage }: { call: ActiveCallState; step?: string; currentStage?: string }) {
+  const stageLabel = step ? (
+    <Text color="yellow">[{step}]</Text>
+  ) : call.stage ? (
+    <Text dimColor>[{call.stage}]</Text>
+  ) : currentStage ? (
+    <Text dimColor>[{currentStage}]</Text>
+  ) : null;
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box flexDirection="row" gap={1}>
         <Text color="cyan">{call.agentName}</Text>
         {call.storyId && <Text>{call.storyId}</Text>}
-        {step ? <Text color="yellow">[{step}]</Text> : call.stage ? <Text dimColor>[{call.stage}]</Text> : null}
+        {stageLabel}
       </Box>
       <Box flexDirection="row" gap={1}>
         {call.model && <Text dimColor>model:{call.model}</Text>}

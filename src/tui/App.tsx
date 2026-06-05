@@ -84,7 +84,7 @@ export function App({
 }: TuiProps) {
   const layout = useLayout();
   const busState = usePipelineBusEvents(initialStories);
-  const { currentStage } = usePipelineEvents(events);
+  const { currentStage, preRunPhases } = usePipelineEvents(events);
   const { exit } = useApp();
 
   // Separate elapsed time state — isolated so the 1s timer only re-renders
@@ -117,6 +117,17 @@ export function App({
   const runningStories = busState.stories.filter((s) => s.status === "running");
   const isParallel = runningStories.length > 1;
   const currentRunningStory = runningStories[0];
+
+  // Resolve current phase label for Live Activity: post-run phases take priority over pipeline stage
+  const runningPostRunPhase =
+    busState.postRunPhases.acceptance?.status === "running"
+      ? "post-run: acceptance"
+      : busState.postRunPhases.regression?.status === "running"
+        ? "post-run: regression"
+        : busState.postRunPhases.review?.status === "running"
+          ? "post-run: review"
+          : undefined;
+  const currentPhaseLabel = runningPostRunPhase ?? currentStage;
 
   // Adapt busState.runErrored (boolean) to string | undefined for LiveActivityPanel
   const runErroredForPanel = busState.runErrored ? "Run encountered an error" : undefined;
@@ -231,8 +242,11 @@ export function App({
   // Header right side: "N running · $cost · Xk in / Yk out · elapsed"
   const activeCount = runningStories.length;
   const displayElapsed = busState.runSummary ? busState.runSummary.durationMs : elapsedMs;
-  const tokensStr =
-    inputTokens > 0 || outputTokens > 0 ? `${formatTokens(inputTokens)} in / ${formatTokens(outputTokens)} out` : null;
+  const tokenParts = [
+    inputTokens > 0 ? `${formatTokens(inputTokens)} in` : null,
+    outputTokens > 0 ? `${formatTokens(outputTokens)} out` : null,
+  ].filter(Boolean);
+  const tokensStr = tokenParts.length > 0 ? tokenParts.join(" / ") : null;
   const headerRight = [
     activeCount > 0 ? `${activeCount} running` : null,
     formatCost(busState.totalCost),
@@ -274,6 +288,7 @@ export function App({
         {/* Stories panel */}
         <MemoStoriesPanel
           stories={busState.stories}
+          preRunPhases={preRunPhases}
           postRunPhases={busState.postRunPhases}
           width={layout.mode === "single" ? layout.width : layout.storiesPanelWidth}
           compact={layout.mode === "single"}
@@ -288,6 +303,7 @@ export function App({
           runSummary={busState.runSummary}
           runErrored={runErroredForPanel}
           escalationLog={busState.escalationLog}
+          currentStage={currentPhaseLabel}
         />
       </Box>
 

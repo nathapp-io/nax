@@ -8,6 +8,7 @@ import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES } from "../hooks/useLayout";
 import type { PostRunPhaseState } from "../hooks/usePipelineBusEvents";
+import type { PreRunPhaseState } from "../hooks/usePipelineEvents";
 import type { StoryDisplayState } from "../types";
 
 /**
@@ -16,6 +17,8 @@ import type { StoryDisplayState } from "../types";
 export interface StoriesPanelProps {
   /** Stories to display */
   stories: StoryDisplayState[];
+  /** Pre-run phase statuses keyed by stage name (e.g. "acceptance-setup") */
+  preRunPhases?: Record<string, PreRunPhaseState>;
   /** Post-run phase statuses (acceptance, regression, review) */
   postRunPhases?: {
     acceptance?: PostRunPhaseState;
@@ -67,7 +70,14 @@ function getStatusIcon(status: StoryDisplayState["status"]): string {
  * />
  * ```
  */
-export function StoriesPanel({ stories, postRunPhases, width, compact = false, maxHeight }: StoriesPanelProps) {
+export function StoriesPanel({
+  stories,
+  preRunPhases,
+  postRunPhases,
+  width,
+  compact = false,
+  maxHeight,
+}: StoriesPanelProps) {
   // Determine max visible stories based on mode
   const maxVisible = compact ? COMPACT_MAX_VISIBLE_STORIES : MAX_VISIBLE_STORIES;
   const needsScrolling = stories.length > maxVisible;
@@ -98,9 +108,18 @@ export function StoriesPanel({ stories, postRunPhases, width, compact = false, m
     <Box flexDirection="column" width={width} height={maxHeight} borderStyle="single" borderColor="gray">
       {/* Header */}
       <Box paddingX={1} borderStyle="single" borderBottom borderColor="gray">
-        <Text bold>Stories</Text>
+        <Text bold>Progress</Text>
         {needsScrolling && <Text dimColor> ({stories.length} total)</Text>}
       </Box>
+
+      {/* Pre-run phase rows */}
+      {preRunPhases && Object.keys(preRunPhases).length > 0 && (
+        <Box flexDirection="column" paddingX={1} paddingTop={1}>
+          {Object.entries(preRunPhases).map(([name, phase]) => (
+            <PreRunPhaseRow key={name} label={name} phase={phase} compact={compact} />
+          ))}
+        </Box>
+      )}
 
       {/* Scroll indicator (top) */}
       {needsScrolling && canScrollUp && (
@@ -158,7 +177,6 @@ export function StoriesPanel({ stories, postRunPhases, width, compact = false, m
       {/* Post-run phases */}
       {postRunPhases && (postRunPhases.acceptance || postRunPhases.regression || postRunPhases.review) && (
         <Box flexDirection="column" paddingX={1} paddingTop={1}>
-          <Box borderStyle="single" borderTop borderColor="gray" />
           <Text dimColor>Post-Run</Text>
           {postRunPhases.acceptance && (
             <PostRunPhaseRow label="acceptance" phase={postRunPhases.acceptance} compact={compact} />
@@ -169,6 +187,19 @@ export function StoriesPanel({ stories, postRunPhases, width, compact = false, m
           {postRunPhases.review && <PostRunPhaseRow label="review" phase={postRunPhases.review} compact={compact} />}
         </Box>
       )}
+    </Box>
+  );
+}
+
+function PreRunPhaseRow({ label, phase, compact }: { label: string; phase: PreRunPhaseState; compact: boolean }) {
+  const icon = phase.status === "running" ? "●" : phase.status === "passed" ? "✓" : "✗";
+  const color = phase.status === "running" ? "yellow" : phase.status === "passed" ? "green" : "red";
+  const displayLabel = compact ? label.slice(0, 6) : label;
+  return (
+    <Box>
+      <Text color={color}>
+        {icon} {displayLabel}
+      </Text>
     </Box>
   );
 }
