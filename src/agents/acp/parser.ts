@@ -107,14 +107,26 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
         // Usage update — emit activity metadata with token/cost info
         if (update.sessionUpdate === "usage_update") {
           const activity: AcpxLineActivity = { kind: "usage_update" };
-          // Extract token counts if available
-          if (typeof update.used === "number") {
+          // _meta.usage carries the per-turn breakdown (inputTokens, outputTokens) when
+          // the agent reports it (Claude Code does; other adapters may omit it).
+          const metaUsage =
+            update._meta != null && typeof update._meta === "object"
+              ? ((update._meta as Record<string, unknown>).usage as Record<string, unknown> | undefined)
+              : undefined;
+          if (metaUsage != null && typeof metaUsage === "object") {
+            const inp = metaUsage.inputTokens ?? metaUsage.input_tokens;
+            if (typeof inp === "number") activity.inputTokens = inp;
+            const out = metaUsage.outputTokens ?? metaUsage.output_tokens;
+            if (typeof out === "number") activity.outputTokens = out;
+          }
+          // Fall back to update.used for output tokens if breakdown was absent
+          if (activity.outputTokens == null && typeof update.used === "number") {
             activity.outputTokens = update.used;
           }
           // Extract cost if available
-          if (typeof update.cost?.amount === "number") {
-            activity.costUsd = update.cost.amount;
-            state.exactCostUsd = update.cost.amount;
+          if (typeof (update.cost as Record<string, unknown> | undefined)?.amount === "number") {
+            activity.costUsd = (update.cost as Record<string, unknown>).amount as number;
+            state.exactCostUsd = activity.costUsd;
           }
           return activity;
         }
