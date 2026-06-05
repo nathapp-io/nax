@@ -195,7 +195,7 @@ describe("Edge cases", () => {
 
     const output = lastFrame();
     // Should still show header
-    expect(output).toContain("Stories");
+    expect(output).toContain("Progress");
   });
 
   test("no scroll at exactly MAX_VISIBLE_STORIES; scroll indicator at MAX+1", () => {

@@ -70,7 +70,14 @@ function getStatusIcon(status: StoryDisplayState["status"]): string {
  * />
  * ```
  */
-export function StoriesPanel({ stories, preRunPhases, postRunPhases, width, compact = false, maxHeight }: StoriesPanelProps) {
+export function StoriesPanel({
+  stories,
+  preRunPhases,
+  postRunPhases,
+  width,
+  compact = false,
+  maxHeight,
+}: StoriesPanelProps) {
   // Determine max visible stories based on mode
   const maxVisible = compact ? COMPACT_MAX_VISIBLE_STORIES : MAX_VISIBLE_STORIES;
   const needsScrolling = stories.length > maxVisible;

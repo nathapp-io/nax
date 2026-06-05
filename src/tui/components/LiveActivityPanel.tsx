@@ -136,11 +136,13 @@ export function LiveActivityPanel({
 }
 
 function ActiveCallRow({ call, step, currentStage }: { call: ActiveCallState; step?: string; currentStage?: string }) {
-  const stageLabel =
-    step ? <Text color="yellow">[{step}]</Text>
-    : call.stage ? <Text dimColor>[{call.stage}]</Text>
-    : currentStage ? <Text dimColor>[{currentStage}]</Text>
-    : null;
+  const stageLabel = step ? (
+    <Text color="yellow">[{step}]</Text>
+  ) : call.stage ? (
+    <Text dimColor>[{call.stage}]</Text>
+  ) : currentStage ? (
+    <Text dimColor>[{currentStage}]</Text>
+  ) : null;
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box flexDirection="row" gap={1}>
