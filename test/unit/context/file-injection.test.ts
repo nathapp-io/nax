@@ -555,3 +555,133 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
     expect(fileElements[0].filePath).toBe("explicit.ts");
   });
 });
+
+describe("contextFiles vs expectedFiles — created files (created-vs-read)", () => {
+  const CREATE_HINT = "you will CREATE it";
+  const READ_HINT = "read this file before implementing";
+
+  test("missing contextFile declared in expectedFiles is surfaced as create-intent, not dropped", async () => {
+    const tempDir = await setupGitRepo({ "src/existing.ts": "export const existing = true;" });
+    try {
+      const prd = createTestPRD([
+        {
+          id: "US-001",
+          title: "Create the chat store",
+          description: "Mirror _history.py",
+          acceptanceCriteria: ["Works"],
+          // _chat.py is a NEW file the story creates — mislisted into contextFiles
+          // by the spec writer but also (correctly) declared in expectedFiles.
+          contextFiles: ["src/existing.ts", "src/_chat.ts"],
+          expectedFiles: ["src/_chat.ts"],
+        },
+      ]);
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: "US-001",
+        workdir: tempDir,
+        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+      };
+
+      const built = await buildContext(storyContext, BUDGET);
+      const fileElements = built.elements.filter((e) => e.type === "file");
+      const byPath = Object.fromEntries(fileElements.map((e) => [e.filePath, e.content]));
+
+      // Existing file → read hint; absent-but-expected file → create-intent hint (not dropped).
+      expect(byPath["src/existing.ts"]).toContain(READ_HINT);
+      expect(byPath["src/_chat.ts"]).toContain(CREATE_HINT);
+      expect(byPath["src/_chat.ts"]).not.toContain(READ_HINT);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("missing contextFile NOT declared in expectedFiles is dropped (genuine missing reference)", async () => {
+    const tempDir = await setupGitRepo({ "src/existing.ts": "export const existing = true;" });
+    try {
+      const prd = createTestPRD([
+        {
+          id: "US-001",
+          title: "Hallucinated reference",
+          description: "References a file that does not exist and is not created",
+          acceptanceCriteria: ["Works"],
+          contextFiles: ["src/existing.ts", "src/ghost.ts"],
+          // no expectedFiles — src/ghost.ts is a genuine missing reference
+        },
+      ]);
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: "US-001",
+        workdir: tempDir,
+        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+      };
+
+      const built = await buildContext(storyContext, BUDGET);
+      const paths = built.elements.filter((e) => e.type === "file").map((e) => e.filePath);
+
+      expect(paths).toContain("src/existing.ts");
+      expect(paths).not.toContain("src/ghost.ts");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("expectedFiles absent on disk are surfaced as create-intent even with no contextFiles", async () => {
+    const tempDir = await setupGitRepo({ "src/existing.ts": "export const existing = true;" });
+    try {
+      const prd = createTestPRD([
+        {
+          id: "US-001",
+          title: "Pure create story",
+          description: "Creates a brand new module",
+          acceptanceCriteria: ["Works"],
+          // No contextFiles at all — only expectedFiles.
+          expectedFiles: ["src/brand_new.ts"],
+        },
+      ]);
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: "US-001",
+        workdir: tempDir,
+        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+      };
+
+      const built = await buildContext(storyContext, BUDGET);
+      const fileElements = built.elements.filter((e) => e.type === "file");
+
+      expect(fileElements.length).toBe(1);
+      expect(fileElements[0].filePath).toBe("src/brand_new.ts");
+      expect(fileElements[0].content).toContain(CREATE_HINT);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("expectedFiles already on disk get no create-intent element", async () => {
+    const tempDir = await setupGitRepo({ "src/already.ts": "export const already = true;" });
+    try {
+      const prd = createTestPRD([
+        {
+          id: "US-001",
+          title: "Expected file already produced by a prior story",
+          description: "Depends on earlier work",
+          acceptanceCriteria: ["Works"],
+          expectedFiles: ["src/already.ts"],
+        },
+      ]);
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: "US-001",
+        workdir: tempDir,
+        config: { context: { fileInjection: "disabled", testCoverage: { enabled: false } } } as any,
+      };
+
+      const built = await buildContext(storyContext, BUDGET);
+      const fileElements = built.elements.filter((e) => e.type === "file");
+
+      // It exists on disk and was not in contextFiles → nothing to surface.
+      expect(fileElements.length).toBe(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -107,6 +107,7 @@ describe("RefinePlanStrategy", () => {
         packageDetails: ctx.packageDetails,
         projectProfile: ctx.config.project,
         specGuard: false,
+        workdir: ctx.workdir,
       });
       expect(closeSpy).toHaveBeenCalledTimes(1);
     } finally {

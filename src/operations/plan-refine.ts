@@ -1,10 +1,11 @@
+import { join } from "node:path";
 import { makeParseRetryStrategy } from "../agents/retry";
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import { findMissingVerbatimAcs, findSpecDriftViolations } from "../prd";
+import { findMissingVerbatimAcs, findSpecDriftViolations, getExpectedFiles } from "../prd";
 import { validatePlanOutput } from "../prd/schema";
 import type { SpecDriftViolation } from "../prd/spec-drift";
 import type { PRD } from "../prd/types";
@@ -37,6 +38,11 @@ export interface PlanRefineInput {
   projectProfile?: ProjectProfile;
   /** When true, enables the deterministic spec-drift repair turn (Turn 4). */
   specGuard?: boolean;
+  /**
+   * Absolute repo/package root used by `verify` to audit `contextFiles`
+   * existence on disk. When omitted, the existence audit is skipped.
+   */
+  workdir?: string;
 }
 
 const NEGATIVE_PATH_TOKENS = [
@@ -160,6 +166,38 @@ async function readSpecDriftViolations(input: PlanRefineInput): Promise<SpecDrif
   }
 }
 
+/**
+ * Non-fatal safety net: warn when a story's `contextFiles` entry is absent on
+ * disk and is NOT already declared as an output in `expectedFiles`. Such an
+ * entry is either a file the story creates (it belongs in `expectedFiles`, not
+ * `contextFiles`) or a hallucinated reference. Either way it should not sit in
+ * `contextFiles`, whose contract is "existing files to read before coding".
+ *
+ * Warns only — planning stays resilient; the convention fix lives in the spec
+ * writer and plan mapping (layers 1–2). Skipped when `workdir` is unset.
+ */
+export async function auditContextFileExistence(
+  prd: PRD,
+  workdir: string | undefined,
+  fileExists: (path: string) => Promise<boolean>,
+): Promise<void> {
+  if (!workdir) return;
+  const logger = getSafeLogger();
+  if (!logger) return;
+  for (const story of prd.userStories) {
+    const expected = new Set(getExpectedFiles(story));
+    for (const entry of story.contextFiles ?? []) {
+      const filePath = typeof entry === "string" ? entry : entry.path;
+      if (expected.has(filePath)) continue; // already declared as a created file — absence is expected
+      if (await fileExists(join(workdir, filePath))) continue;
+      logger.warn("plan", "Context file not on disk — if the story creates it, move it to expectedFiles", {
+        storyId: story.id,
+        filePath,
+      });
+    }
+  }
+}
+
 export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   kind: "run",
   name: "plan-refine",
@@ -256,6 +294,7 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     if (ctx.config.plan.specGuard) {
       warnOnSpecDrift(validated, input.featureName);
     }
+    await auditContextFileExistence(validated, input.workdir, ctx.fileExists);
     return validated;
   },
   recover: async (input, ctx) => {

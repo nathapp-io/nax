@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { _planRefineDeps, callOp, planRefineOp } from "@/operations";
+import { _planRefineDeps, auditContextFileExistence, callOp, planRefineOp } from "@/operations";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import { PlanPromptBuilder } from "@/prompts";
 import { planInteractiveOp } from "@/operations";
@@ -664,5 +664,59 @@ describe("planRefineOp.recover()", () => {
     );
 
     expect(result).toBeNull();
+  });
+});
+
+describe("auditContextFileExistence — contextFiles existence safety net", () => {
+  const WORKDIR = "/repo";
+  const MSG = "Context file not on disk";
+
+  function prdWith(contextFiles: string[], expectedFiles?: string[]) {
+    const base = makeValidPrd("f", "feat/f");
+    return {
+      ...base,
+      userStories: [{ ...base.userStories[0], contextFiles, expectedFiles }],
+    };
+  }
+
+  function contextFileWarn(warnSpy: ReturnType<typeof spyOn>) {
+    return warnSpy.mock.calls.filter((c) => c[0] === "plan" && String(c[1]).includes(MSG));
+  }
+
+  test("warns for a contextFile absent on disk and not declared in expectedFiles", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const fileExists = mock(async () => false);
+      await auditContextFileExistence(prdWith(["src/ghost.ts"]) as never, WORKDIR, fileExists);
+      const warns = contextFileWarn(warnSpy);
+      expect(warns.length).toBe(1);
+      expect((warns[0][2] as Record<string, unknown>).filePath).toBe("src/ghost.ts");
+      expect(fileExists).toHaveBeenCalledWith(join(WORKDIR, "src/ghost.ts"));
+    });
+  });
+
+  test("does not warn when the contextFile exists on disk", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const fileExists = mock(async () => true);
+      await auditContextFileExistence(prdWith(["src/real.ts"]) as never, WORKDIR, fileExists);
+      expect(contextFileWarn(warnSpy).length).toBe(0);
+    });
+  });
+
+  test("does not warn when an absent contextFile is declared in expectedFiles (a created file)", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const fileExists = mock(async () => false);
+      await auditContextFileExistence(prdWith(["src/_chat.ts"], ["src/_chat.ts"]) as never, WORKDIR, fileExists);
+      // absence is expected for a file the story creates — no warn, no disk check needed
+      expect(contextFileWarn(warnSpy).length).toBe(0);
+    });
+  });
+
+  test("is a no-op when workdir is undefined", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const fileExists = mock(async () => false);
+      await auditContextFileExistence(prdWith(["src/ghost.ts"]) as never, undefined, fileExists);
+      expect(contextFileWarn(warnSpy).length).toBe(0);
+      expect(fileExists).not.toHaveBeenCalled();
+    });
   });
 });
