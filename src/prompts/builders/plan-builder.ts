@@ -46,6 +46,19 @@ ${COMPLEXITY_GUIDE}
 ${TEST_STRATEGY_GUIDE}`;
 }
 
+/**
+ * Shared `contextFiles` (read) vs `expectedFiles` (create) rule. Both the main
+ * `build()` and the cited `buildDraft()` prompts emit this so the read/create
+ * split stays identical across plan modes. Created files route to
+ * `expectedFiles` (a post-run asset gate), never to `contextFiles`.
+ */
+const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today. The pipeline verifies every \`contextFiles\` entry against the filesystem; a path that does not exist is treated as a missing-context warning.
+
+**\`expectedFiles\` rule — files this story CREATES.** List every NEW file the story authors (relative paths). A file the story will create belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both.`;
+
+/** Output-schema line for the `expectedFiles` field, shared by both prompts. */
+const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (relative paths, omit if none)"],`;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Revision finding from a verifier — passed to buildDraft when revising a rejected draft. */
@@ -324,9 +337,9 @@ Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
 ${buildSharedQualityRules(specContent, projectProfile)}
 
-For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
+For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference. Set "expectedFiles" to the NEW files the story creates.
 
-**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today. Files the story will CREATE belong in the description (under "Files touched" or "Approach"), never in contextFiles. The pipeline verifies every contextFiles entry against the filesystem; new-file paths placed here are treated as missing-context warnings and may block the plan.`;
+${CONTEXT_VS_EXPECTED_FILES_RULE}`;
 
     const suggestedCriteriaField = specContent.trim()
       ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],`
@@ -353,7 +366,8 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
       "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],${suggestedCriteriaField}
-      "contextFiles": ["string — key source files the agent should read (max 5, relative paths)"],
+      "contextFiles": ["string — EXISTING source files the agent should read (max 5, relative paths)"],
+      ${EXPECTED_FILES_SCHEMA_FIELD}
       "tags": ["string — routing tags, e.g. feature, security, api"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "status": "pending",
@@ -440,9 +454,9 @@ Every concrete claim referencing existing code must cite [F-NNN] or [S-NNN] from
 
 ${buildSharedQualityRules(input.specContent, input.projectProfile)}
 
-For each story, set "contextFiles" to the key source files the implementer should read before starting (max 5 per story). Cite manifest factIds where relevant.
+For each story, set "contextFiles" to the key source files the implementer should read before starting (max 5 per story). Cite manifest factIds where relevant. Set "expectedFiles" to the NEW files the story creates.
 
-**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today (cited via manifest factIds where possible). Files the story will CREATE belong in the description (under "Files touched" or "Approach"), never in contextFiles. Uncited paths that do not exist on disk are flagged by the pipeline.
+${CONTEXT_VS_EXPECTED_FILES_RULE}
 
 ## Output Schema
 
@@ -458,7 +472,8 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "title": "string — concise story title",
       "description": "string — detailed description of what to implement",
       "acceptanceCriteria": ["string — behavioral criterion, format: 'When [X], then [Y]'. One assertion per item."],${suggestedCriteriaField}
-      "contextFiles": ["string — relative paths the implementer should read (max 5)"],
+      "contextFiles": ["string — EXISTING relative paths the implementer should read (max 5)"],
+      ${EXPECTED_FILES_SCHEMA_FIELD}
       "tags": ["string"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "routing": {

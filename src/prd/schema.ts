@@ -233,6 +233,28 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     }
   }
 
+  // expectedFiles — optional array of relative paths the story CREATES. Same
+  // path rules as contextFiles, but plain strings only (no factId citations —
+  // a file that does not exist yet cannot be grounded in the facts manifest).
+  const rawExpectedFiles = s.expectedFiles;
+  const expectedFiles: string[] = [];
+  if (Array.isArray(rawExpectedFiles)) {
+    for (const f of rawExpectedFiles as unknown[]) {
+      if (typeof f !== "string") continue; // non-string entries silently filtered
+      const trimmed = f.trim();
+      if (trimmed === "") continue;
+      if (trimmed.startsWith("/")) {
+        throw new Error(
+          `[schema] story[${index}].expectedFiles entry must be relative (no absolute paths): "${trimmed}"`,
+        );
+      }
+      if (trimmed.includes("..")) {
+        throw new Error(`[schema] story[${index}].expectedFiles entry must not contain '..': "${trimmed}"`);
+      }
+      expectedFiles.push(trimmed);
+    }
+  }
+
   // verifiedBy — optional citation anchor (Phase 2)
   const VALID_VERIFIED_BY_KINDS = ["test", "symbol", "file"] as const;
   type VerifiedByKind = (typeof VALID_VERIFIED_BY_KINDS)[number];
@@ -274,6 +296,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     },
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
+    ...(expectedFiles.length > 0 ? { expectedFiles } : {}),
     ...(suggestedCriteria !== undefined ? { suggestedCriteria } : {}),
     ...(verifiedBy !== undefined ? { verifiedBy } : {}),
     ...(intent !== undefined ? { intent } : {}),

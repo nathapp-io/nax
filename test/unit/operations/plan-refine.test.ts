@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { _planRefineDeps, callOp, planRefineOp } from "@/operations";
+import { _planRefineDeps, callOp, normalizeCreatedContextFiles, planRefineOp } from "@/operations";
 import type { AgentRunRequest } from "@/agents/manager-types";
 import { PlanPromptBuilder } from "@/prompts";
 import { planInteractiveOp } from "@/operations";
@@ -664,5 +664,106 @@ describe("planRefineOp.recover()", () => {
     );
 
     expect(result).toBeNull();
+  });
+});
+
+describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", () => {
+  const WORKDIR = "/repo";
+
+  function prdWith(contextFiles: Array<string | { path: string; factId?: string }>, expectedFiles?: string[]) {
+    const base = makeValidPrd("f", "feat/f");
+    return {
+      ...base,
+      userStories: [{ ...base.userStories[0], contextFiles, expectedFiles }],
+    };
+  }
+
+  function story0(prd: { userStories: Array<Record<string, unknown>> }) {
+    return prd.userStories[0] as { contextFiles?: unknown[]; expectedFiles?: string[] };
+  }
+
+  test("moves an uncited contextFile absent on disk into expectedFiles", async () => {
+    await withWarnSpy(async () => {
+      const fileExists = mock(async () => false);
+      const out = await normalizeCreatedContextFiles(prdWith(["src/_chat.ts"]) as never, WORKDIR, fileExists);
+      const s = story0(out as never);
+      expect(s.expectedFiles).toEqual(["src/_chat.ts"]);
+      expect(s.contextFiles ?? []).toEqual([]); // removed from the read list
+      expect(fileExists).toHaveBeenCalledWith(join(WORKDIR, "src/_chat.ts"));
+    });
+  });
+
+  test("keeps a contextFile that exists on disk as a read (no move)", async () => {
+    await withWarnSpy(async () => {
+      const fileExists = mock(async () => true);
+      const prd = prdWith(["src/real.ts"]);
+      const out = await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists);
+      expect(out).toBe(prd as never); // unchanged → same reference
+    });
+  });
+
+  test("does not duplicate a path already declared in expectedFiles", async () => {
+    await withWarnSpy(async () => {
+      const fileExists = mock(async () => false);
+      const out = await normalizeCreatedContextFiles(
+        prdWith(["src/_chat.ts"], ["src/_chat.ts"]) as never,
+        WORKDIR,
+        fileExists,
+      );
+      const s = story0(out as never);
+      // already an output — absence is expected, no move, no duplicate
+      expect(s.expectedFiles).toEqual(["src/_chat.ts"]);
+    });
+  });
+
+  test("keeps and warns for a CITED contextFile absent on disk (broken grounding, not a create)", async () => {
+    await withWarnSpy(async (warnSpy) => {
+      const fileExists = mock(async () => false);
+      const out = await normalizeCreatedContextFiles(
+        prdWith([{ path: "src/cited.ts", factId: "F-001" }]) as never,
+        WORKDIR,
+        fileExists,
+      );
+      const s = story0(out as never);
+      expect(s.contextFiles).toEqual([{ path: "src/cited.ts", factId: "F-001" }]); // kept
+      expect(s.expectedFiles ?? []).toEqual([]); // NOT moved
+      const warns = warnSpy.mock.calls.filter(
+        (c) => c[0] === "plan" && String(c[1]).includes("cites a manifest fact"),
+      );
+      expect(warns.length).toBe(1);
+    });
+  });
+
+  test("is a no-op (returns input) when workdir is undefined", async () => {
+    const fileExists = mock(async () => false);
+    const prd = prdWith(["src/ghost.ts"]);
+    const out = await normalizeCreatedContextFiles(prd as never, undefined, fileExists);
+    expect(out).toBe(prd as never);
+    expect(fileExists).not.toHaveBeenCalled();
+  });
+
+  test("across multiple stories: moves in the changed story, preserves the unchanged story's reference", async () => {
+    await withWarnSpy(async () => {
+      const base = makeValidPrd("f", "feat/f");
+      const s0 = { ...base.userStories[0], id: "US-001", contextFiles: ["src/real.ts"] }; // exists → unchanged
+      const s1 = { ...base.userStories[0], id: "US-002", contextFiles: ["src/_new.ts"] }; // absent → moved
+      const prd = { ...base, userStories: [s0, s1] };
+      // Only src/real.ts exists on disk.
+      const fileExists = mock(async (p: string) => p.endsWith("src/real.ts"));
+
+      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
+        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
+      };
+
+      expect(out).not.toBe(prd as never); // a story changed → new PRD object
+      const a = out.userStories.find((s) => s.id === "US-001")!;
+      const b = out.userStories.find((s) => s.id === "US-002")!;
+      // Unchanged story keeps its original object reference (no needless copy).
+      expect(a).toBe(s0 as never);
+      expect(a.contextFiles).toEqual(["src/real.ts"]);
+      // Changed story moved its absent read to expectedFiles.
+      expect(b.contextFiles ?? []).toEqual([]);
+      expect(b.expectedFiles).toEqual(["src/_new.ts"]);
+    });
   });
 });

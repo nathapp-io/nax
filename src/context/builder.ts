@@ -8,7 +8,7 @@ import path from "node:path";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
-import { countStories, getContextFiles } from "../prd";
+import { countStories, getContextFiles, getExpectedFiles } from "../prd";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
 import { errorMessage } from "../utils/errors";
 import { autoDetectContextFiles } from "./auto-detect";
@@ -29,6 +29,21 @@ import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "
 export const _contextBuilderDeps = {
   autoDetectContextFiles,
 };
+
+/** Max number of explicit context/expected files surfaced into the prompt. */
+const FILE_INJECTION_MAX_FILES = 5;
+/** Base priority for file-path context elements (decremented per file). */
+const FILE_CONTEXT_PRIORITY_BASE = 60;
+
+/** Path-only "read this" hint for an existing reference file. */
+function readContextMessage(relativeFilePath: string): string {
+  return `_Path: \`${relativeFilePath}\` — read this file before implementing._`;
+}
+
+/** Path-only "you will create this" hint for a declared-but-absent output file. */
+function createIntentMessage(relativeFilePath: string): string {
+  return `_Path: \`${relativeFilePath}\` — this file does not exist yet; you will CREATE it as part of this story._`;
+}
 
 // Re-export for backward compatibility
 export {
@@ -207,7 +222,6 @@ async function addFileElements(
   storyContext: StoryContext,
   story: UserStory,
 ): Promise<void> {
-  const MAX_FILES = 5;
   const fileInjection = storyContext.config?.context?.fileInjection;
 
   // Explicit contextFiles from the PRD are always honored regardless of fileInjection setting.
@@ -257,30 +271,76 @@ async function addFileElements(
     }
   }
 
-  if (contextFiles.length === 0) return;
-  const filesToLoad = contextFiles.slice(0, MAX_FILES);
+  const expectedFiles = getExpectedFiles(story);
+  if (contextFiles.length === 0 && expectedFiles.length === 0) return;
   const { workdir } = storyContext;
   if (!workdir) {
     getLogger().warn("context", "workdir not set — cannot load context files", { storyId: story.id });
     return;
   }
 
+  const expectedSet = new Set(expectedFiles);
+  // Tracks paths already surfaced (read or create-intent) so the expectedFiles
+  // recovery pass below does not emit a duplicate element for the same path.
+  const surfaced = new Set<string>();
+  const filesToLoad = contextFiles.slice(0, FILE_INJECTION_MAX_FILES);
+
   for (let i = 0; i < filesToLoad.length; i++) {
     const relativeFilePath = filesToLoad[i];
+    surfaced.add(relativeFilePath);
     const absolutePath = path.resolve(workdir, relativeFilePath);
-    const file = Bun.file(absolutePath);
-    if (!(await file.exists())) {
-      getLogger().warn("context", "Relevant file not found", { filePath: relativeFilePath, storyId: story.id });
-      continue;
-    }
     // Always emit path-only — agent reads when needed; avoids token bloat from inlining.
     // Use decreasing priority per index so insertion order is preserved after sort.
+    if (await Bun.file(absolutePath).exists()) {
+      elements.push(
+        createFileContext(relativeFilePath, readContextMessage(relativeFilePath), FILE_CONTEXT_PRIORITY_BASE - i),
+      );
+      continue;
+    }
+    // Missing on disk. A file the story CREATES (declared in expectedFiles) is not
+    // a hallucinated reference — surface it as create-intent so the path hint is
+    // not lost. Genuinely-absent references (not expected) still warn.
+    if (expectedSet.has(relativeFilePath)) {
+      elements.push(
+        createFileContext(relativeFilePath, createIntentMessage(relativeFilePath), FILE_CONTEXT_PRIORITY_BASE - i),
+      );
+      getLogger().debug("context", "Context file does not exist yet — treated as to-be-created", {
+        storyId: story.id,
+        filePath: relativeFilePath,
+      });
+    } else {
+      getLogger().warn("context", "Relevant file not found", { filePath: relativeFilePath, storyId: story.id });
+    }
+  }
+
+  await addCreateIntentElements(elements, workdir, expectedFiles, surfaced);
+}
+
+/**
+ * Surface declared-but-absent `expectedFiles` as create-intent context so the
+ * agent still receives the path hint even when an output file was never listed
+ * in (or was mislisted into) `contextFiles`. Files already on disk or already
+ * surfaced by the contextFiles pass are skipped.
+ */
+async function addCreateIntentElements(
+  elements: ContextElement[],
+  workdir: string,
+  expectedFiles: string[],
+  surfaced: Set<string>,
+): Promise<void> {
+  let idx = 0;
+  for (const relativeFilePath of expectedFiles.slice(0, FILE_INJECTION_MAX_FILES)) {
+    if (surfaced.has(relativeFilePath)) continue;
+    const absolutePath = path.resolve(workdir, relativeFilePath);
+    if (await Bun.file(absolutePath).exists()) continue;
     elements.push(
       createFileContext(
         relativeFilePath,
-        `_Path: \`${relativeFilePath}\` — read this file before implementing._`,
-        60 - i,
+        createIntentMessage(relativeFilePath),
+        FILE_CONTEXT_PRIORITY_BASE - FILE_INJECTION_MAX_FILES - idx,
       ),
     );
+    surfaced.add(relativeFilePath);
+    idx++;
   }
 }
