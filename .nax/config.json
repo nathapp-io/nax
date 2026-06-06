@@ -136,7 +136,6 @@
       "lintFix": "bun run lint:fix",
       "formatFix": "bun run lint:fix"
     },
-    "pluginMode": "deferred",
     "semantic": {
       "modelTier": "fast",
       "rules": []

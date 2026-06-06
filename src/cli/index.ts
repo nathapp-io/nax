@@ -30,6 +30,7 @@ export {
   type ExportPromptCommandOptions,
 } from "./prompts";
 export { initCommand, type InitOptions } from "./init";
+export { setupCommand, type SetupOptions } from "./setup";
 export { pluginsListCommand } from "./plugins";
 export {
   interactListCommand,

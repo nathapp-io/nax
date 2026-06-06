@@ -15,6 +15,7 @@ export type PermissionProfile = "unrestricted" | "safe" | "scoped";
 export type PipelineStage =
   | "plan"
   | "run"
+  | "setup"
   | "verify"
   | "review"
   | "rectification"

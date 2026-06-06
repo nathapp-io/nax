@@ -28,7 +28,8 @@ export type CanonicalSessionRole =
   | "fix-gen"
   | "auto"
   | "synthesis"
-  | "judge";
+  | "judge"
+  | "setup";
 
 export type SessionRole = CanonicalSessionRole | `debate-${string}`;
 
@@ -55,6 +56,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "auto",
   "synthesis",
   "judge",
+  "setup",
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {

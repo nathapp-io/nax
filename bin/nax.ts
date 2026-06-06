@@ -320,6 +320,34 @@ Run \`nax generate\` to regenerate agent config files (CLAUDE.md, AGENTS.md, .cu
     console.log(chalk.dim("\nNext: nax features create <name>"));
   });
 
+// ── setup ─────────────────────────────────────────────
+program
+  .command("setup")
+  .description("Analyze repo and generate .nax/config.json via LLM")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-a, --agent <name>", "Force a specific agent")
+  .option("--fill-scripts", "Add missing quality-gate scripts to package.json", false)
+  .option("--dry-run", "Preview planned config without writing files", false)
+  .option("--force", "Overwrite existing .nax/config.json", false)
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+    const { setupCommand } = await import("../src/cli/setup");
+    const exitCode = await setupCommand({
+      dir: workdir,
+      agent: options.agent,
+      fillScripts: options.fillScripts,
+      dryRun: options.dryRun,
+      force: options.force,
+    });
+    process.exit(exitCode);
+  });
+
 // ── run ──────────────────────────────────────────────
 program
   .command("run")

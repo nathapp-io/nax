@@ -6,10 +6,17 @@
  * AI mode (--ai flag): LLM-powered narrative context
  */
 
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { getLogger } from "../logger";
+
+async function bunFileExists(path: string): Promise<boolean> {
+  return Bun.file(path).exists();
+}
+
+async function bunMkdirp(path: string): Promise<void> {
+  const proc = Bun.spawn(["mkdir", "-p", path]);
+  await proc.exited;
+}
 
 /** Project scan results */
 export interface ProjectScan {
@@ -98,7 +105,7 @@ async function findFiles(dir: string, maxFiles = 200): Promise<string[]> {
 async function readPackageManifest(projectRoot: string): Promise<PackageManifest | null> {
   const packageJsonPath = join(projectRoot, "package.json");
 
-  if (!existsSync(packageJsonPath)) {
+  if (!(await bunFileExists(packageJsonPath))) {
     return null;
   }
 
@@ -122,7 +129,7 @@ async function readPackageManifest(projectRoot: string): Promise<PackageManifest
 async function readReadmeSnippet(projectRoot: string): Promise<string | null> {
   const readmePath = join(projectRoot, "README.md");
 
-  if (!existsSync(readmePath)) {
+  if (!(await bunFileExists(readmePath))) {
     return null;
   }
 
@@ -144,7 +151,7 @@ async function detectEntryPoints(projectRoot: string): Promise<string[]> {
 
   for (const candidate of candidates) {
     const path = join(projectRoot, candidate);
-    if (existsSync(path)) {
+    if (await bunFileExists(path)) {
       found.push(candidate);
     }
   }
@@ -161,7 +168,7 @@ async function detectConfigFiles(projectRoot: string): Promise<string[]> {
 
   for (const candidate of candidates) {
     const path = join(projectRoot, candidate);
-    if (existsSync(path)) {
+    if (await bunFileExists(path)) {
       found.push(candidate);
     }
   }
@@ -301,12 +308,13 @@ Keep it under 2000 tokens. Use markdown formatting. Be specific to the detected 
 
   try {
     const result = await _initContextDeps.callLLM(prompt);
-    logger.info("init", "Generated context.md with LLM");
+    logger.info("init", "Generated context.md with LLM", { storyId: "init-context" });
     return result;
   } catch (err) {
     logger.warn(
       "init",
       `LLM context generation failed, falling back to template: ${err instanceof Error ? err.message : String(err)}`,
+      { storyId: "init-context" },
     );
     return generateContextTemplate(scan);
   }
@@ -354,18 +362,21 @@ export async function initPackage(repoRoot: string, packagePath: string, force =
   const naxDir = join(repoRoot, ".nax", "mono", packagePath);
   const contextPath = join(naxDir, "context.md");
 
-  if (existsSync(contextPath) && !force) {
-    logger.info("init", "Package context.md already exists (use --force to overwrite)", { path: contextPath });
+  if ((await bunFileExists(contextPath)) && !force) {
+    logger.info("init", "Package context.md already exists (use --force to overwrite)", {
+      storyId: "init-context",
+      path: contextPath,
+    });
     return;
   }
 
-  if (!existsSync(naxDir)) {
-    await mkdir(naxDir, { recursive: true });
+  if (!(await bunFileExists(naxDir))) {
+    await bunMkdirp(naxDir);
   }
 
   const content = generatePackageContextTemplate(packagePath);
   await Bun.write(contextPath, content);
-  logger.info("init", "Created package context.md", { path: contextPath });
+  logger.info("init", "Created package context.md", { storyId: "init-context", path: contextPath });
 }
 
 /**
@@ -377,14 +388,17 @@ export async function initContext(projectRoot: string, options: InitContextOptio
   const contextPath = join(naxDir, "context.md");
 
   // Check if context.md already exists
-  if (existsSync(contextPath) && !options.force) {
-    logger.info("init", "context.md already exists, skipping (use --force to overwrite)", { path: contextPath });
+  if ((await bunFileExists(contextPath)) && !options.force) {
+    logger.info("init", "context.md already exists, skipping (use --force to overwrite)", {
+      storyId: "init-context",
+      path: contextPath,
+    });
     return;
   }
 
   // Create nax directory if needed
-  if (!existsSync(naxDir)) {
-    await mkdir(naxDir, { recursive: true });
+  if (!(await bunFileExists(naxDir))) {
+    await bunMkdirp(naxDir);
   }
 
   // Scan the project
@@ -400,5 +414,8 @@ export async function initContext(projectRoot: string, options: InitContextOptio
 
   // Write context.md
   await Bun.write(contextPath, content);
-  logger.info("init", "Generated .nax/context.md template from project scan", { path: contextPath });
+  logger.info("init", "Generated .nax/context.md template from project scan", {
+    storyId: "init-context",
+    path: contextPath,
+  });
 }
