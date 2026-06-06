@@ -447,7 +447,7 @@ describe("setupCommand — AC11: analyzeRepo and generateSetupPlan invocation ch
 // ─── AC13: --fill-scripts invokes fillScripts before write step ──────────────
 
 describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set", () => {
-  test("AC6: fillScripts dep is called when fillScripts option is true", async () => {
+  test("AC13: fillScripts dep is called when fillScripts option is true", async () => {
     let fillScriptsCalled = false;
     _setupDeps.fillScripts = mock(async () => {
       fillScriptsCalled = true;
@@ -460,7 +460,7 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
     });
   });
 
-  test("AC6: fillScripts is called before writeFile for config", async () => {
+  test("AC13: fillScripts is called before writeFile for config", async () => {
     const callOrder: string[] = [];
     _setupDeps.fillScripts = mock(async () => {
       callOrder.push("fillScripts");
@@ -478,7 +478,7 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
     });
   });
 
-  test("AC7: fillScripts dep is not called when fillScripts option is omitted", async () => {
+  test("AC13: fillScripts dep is not called when fillScripts option is omitted", async () => {
     let fillScriptsCalled = false;
     _setupDeps.fillScripts = mock(async () => {
       fillScriptsCalled = true;
