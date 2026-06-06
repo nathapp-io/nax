@@ -68,6 +68,9 @@ export { SLOT_ORDER } from "./core/types";
 // Prior iterations prompt block — ADR-022 §8; replaces legacy carry-forward blocks.
 export { buildPriorIterationsBlock } from "./builders/prior-iterations-builder";
 
+// Setup prompt builder — LLM-driven nax init config generation.
+export { SetupPromptBuilder } from "./builders/setup-builder";
+
 // Wave 1 composition utilities — slot-ordered assembly and serialisation.
 export { composeSections, join } from "./compose";
 export type { ComposeInput } from "./compose";

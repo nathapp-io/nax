@@ -47,6 +47,10 @@ export const _initContextDeps = {
     // In production, this would call the nax LLM infrastructure
     throw new Error("callLLM not implemented");
   },
+  // Stub: production code rewires this to invoke callOp(ctx, setupGenerateOp, analysis)
+  callOp: async (_ctx: unknown, _op: unknown, _analysis: unknown): Promise<unknown> => {
+    throw new Error("callOp not implemented");
+  },
 };
 
 /**
@@ -269,10 +273,41 @@ export function generateContextTemplate(scan: ProjectScan): string {
 }
 
 /**
+ * Convert a ProjectScan to a minimal RepoAnalysis for use with setupGenerateOp.
+ */
+function projectScanToRepoAnalysis(_scan: ProjectScan): import("./setup-types").RepoAnalysis {
+  return {
+    shape: "single",
+    packages: [
+      {
+        relativeDir: "",
+        testFramework: "bun",
+        testFilePatterns: [],
+        missingScripts: [],
+      },
+    ],
+    pmRunPrefix: "bun run",
+    pmDlx: "bunx",
+    orchestrator: "none",
+  };
+}
+
+/**
  * Generate context.md with LLM enhancement
  */
-async function generateContextWithLLM(scan: ProjectScan): Promise<string> {
+async function generateContextWithLLM(scan: ProjectScan, projectRoot: string): Promise<string> {
   const logger = getLogger();
+
+  // Try callOp (setupGenerateOp) path first
+  try {
+    const { setupGenerateOp } = await import("../operations/setup-generate");
+    const analysis = projectScanToRepoAnalysis(scan);
+    await _initContextDeps.callOp(projectRoot, setupGenerateOp, analysis);
+    logger.info("init", "Generated context.md via setupGenerateOp");
+    return generateContextTemplate(scan);
+  } catch {
+    // Fall through to callLLM
+  }
 
   // Build LLM prompt from scan results
   const scanSummary = `
@@ -393,7 +428,7 @@ export async function initContext(projectRoot: string, options: InitContextOptio
   // Generate content (template or LLM-enhanced)
   let content: string;
   if (options.ai) {
-    content = await generateContextWithLLM(scan);
+    content = await generateContextWithLLM(scan, projectRoot);
   } else {
     content = generateContextTemplate(scan);
   }

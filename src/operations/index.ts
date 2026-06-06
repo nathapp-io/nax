@@ -87,6 +87,8 @@ export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
 export { applyTestEditDeclarations } from "./apply-test-edit-declarations";
 export { validateMockStructureFiles } from "./validate-mock-structure-files";
+export { setupGenerateOp, MAX_SETUP_LLM_ATTEMPTS } from "./setup-generate";
+export type { SetupPlan, MonoPackageConfig, RawSetupPlan } from "./setup-generate";
 export type { ValidateMockStructureDeps } from "./validate-mock-structure-files";
 export { makeDeclarationSink } from "./declaration-sink";
 export type { DeclarationSink } from "./declaration-sink";
