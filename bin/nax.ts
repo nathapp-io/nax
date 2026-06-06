@@ -326,6 +326,7 @@ program
   .description("Analyze repo and generate .nax/config.json via LLM")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("-a, --agent <name>", "Force a specific agent")
+  .option("--fill-scripts", "Add missing quality-gate scripts to package.json", false)
   .option("--dry-run", "Preview planned config without writing files", false)
   .option("--force", "Overwrite existing .nax/config.json", false)
   .action(async (options) => {
@@ -340,6 +341,7 @@ program
     const exitCode = await setupCommand({
       dir: workdir,
       agent: options.agent,
+      fillScripts: options.fillScripts,
       dryRun: options.dryRun,
       force: options.force,
     });
