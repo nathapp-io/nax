@@ -6,7 +6,6 @@
  * is implemented.
  */
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import {
@@ -284,8 +283,7 @@ describe("initContext — creates context.md from template", () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
-      expect(existsSync(join(dir, ".nax"))).toBe(true);
-      expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
+      expect(await Bun.file(join(dir, ".nax", "context.md")).exists()).toBe(true);
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content.length).toBeGreaterThan(0);
     });
@@ -341,7 +339,7 @@ describe("initContext — AI mode (--ai flag)", () => {
         await mod.initContext(dir, { ai: true });
 
         // Should have fallen back — context.md must still be created
-        expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
+        expect(await Bun.file(join(dir, ".nax", "context.md")).exists()).toBe(true);
 
         const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content.length).toBeGreaterThan(0);
@@ -411,34 +409,3 @@ describe("initContext — AI mode (--ai flag)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// AC9: rewired callLLM uses callOp with setupGenerateOp
-// ---------------------------------------------------------------------------
-
-describe("initContext (ai mode) — AC9: callLLM rewired to callOp with setupGenerateOp", () => {
-  test("AC9: resolves via callOp(setupGenerateOp) instead of throwing callLLM not implemented", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "test-proj", scripts: {} }));
-
-      const mod = await import("../../../src/cli/init-context");
-      const { setupGenerateOp } = await import("../../../src/operations/setup-generate");
-
-      let capturedOp: unknown;
-      const origCallOp = mod._initContextDeps.callOp;
-
-      mod._initContextDeps.callOp = mock(async (_ctx: unknown, op: unknown, _analysis: unknown) => {
-        capturedOp = op;
-        // Return minimal SetupPlan so the caller doesn't crash
-        return { config: {}, monoConfigs: [], gaps: [] };
-      });
-
-      try {
-        await mod.initContext(dir, { ai: true, force: true });
-        expect(capturedOp).toBe(setupGenerateOp);
-        expect(mod._initContextDeps.callOp).toHaveBeenCalledTimes(1);
-      } finally {
-        mod._initContextDeps.callOp = origCallOp;
-      }
-    });
-  });
-});

@@ -67,20 +67,18 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
   const analysis = await _setupDeps.analyzeRepo(workdir);
 
   const { ctx, close } = await _setupDeps.buildCallContext(workdir, options.agent);
-
   let plan: SetupPlan;
   try {
-    plan = await _setupDeps.generateSetupPlan(ctx, analysis);
-  } catch (err) {
-    await close();
-    if (err instanceof NaxError && err.code === "SETUP_PLAN_INVALID") {
-      _setupDeps.stderr(`[setup] ${err.message}`);
-      return 1;
+    try {
+      plan = await _setupDeps.generateSetupPlan(ctx, analysis);
+    } catch (err) {
+      if (err instanceof NaxError && err.code === "SETUP_PLAN_INVALID") {
+        _setupDeps.stderr(`[setup] ${err.message}`);
+        return 1;
+      }
+      throw err;
     }
-    throw err;
-  }
 
-  try {
     if (options.dryRun) {
       _setupDeps.stdout(`[setup] Dry run — planned root config:\n${JSON.stringify(plan.config, null, 2)}`);
       return 0;
@@ -110,6 +108,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
 
     return 0;
   } finally {
-    await close();
+    await close();   // called exactly once, always
   }
 }

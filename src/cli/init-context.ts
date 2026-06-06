@@ -54,11 +54,6 @@ export const _initContextDeps = {
     // In production, this would call the nax LLM infrastructure
     throw new Error("callLLM not implemented");
   },
-  // Stub: production code rewires this to invoke callOp(ctx, setupGenerateOp, analysis)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  callOp: async (_ctx: import("../operations/types").CallContext, _op: any, _analysis: any): Promise<any> => {
-    throw new Error("callOp not implemented");
-  },
 };
 
 /**
@@ -281,56 +276,10 @@ export function generateContextTemplate(scan: ProjectScan): string {
 }
 
 /**
- * Convert a ProjectScan to a minimal RepoAnalysis for use with setupGenerateOp.
- */
-function projectScanToRepoAnalysis(_scan: ProjectScan): import("./setup-types").RepoAnalysis {
-  return {
-    shape: "single",
-    packages: [
-      {
-        relativeDir: "",
-        testFramework: "bun",
-        testFilePatterns: [],
-        missingScripts: [],
-      },
-    ],
-    pmRunPrefix: "bun run",
-    pmDlx: "bunx",
-    orchestrator: "none",
-  };
-}
-
-/**
  * Generate context.md with LLM enhancement
  */
-async function generateContextWithLLM(scan: ProjectScan, projectRoot: string): Promise<string> {
+async function generateContextWithLLM(scan: ProjectScan): Promise<string> {
   const logger = getLogger();
-
-  // Try callOp (setupGenerateOp) path first
-  try {
-    const { setupGenerateOp } = await import("../operations/setup-generate");
-    const { loadConfig } = await import("../config");
-    const { createRuntime } = await import("../runtime");
-
-    const config = await loadConfig(projectRoot);
-    const rt = createRuntime(config, projectRoot);
-    try {
-      const callCtx = {
-        runtime: rt,
-        packageView: rt.packages.resolve(),
-        packageDir: projectRoot,
-        agentName: rt.agentManager.getDefault(),
-      };
-      const analysis = projectScanToRepoAnalysis(scan);
-      const setupPlan = await _initContextDeps.callOp(callCtx, setupGenerateOp, analysis);
-      logger.info("init", "Generated context.md via setupGenerateOp", { storyId: "init-context" });
-      return JSON.stringify(setupPlan);
-    } finally {
-      await rt.close();
-    }
-  } catch {
-    // Fall through to callLLM
-  }
 
   // Build LLM prompt from scan results
   const scanSummary = `
@@ -452,7 +401,7 @@ export async function initContext(projectRoot: string, options: InitContextOptio
   // Generate content (template or LLM-enhanced)
   let content: string;
   if (options.ai) {
-    content = await generateContextWithLLM(scan, projectRoot);
+    content = await generateContextWithLLM(scan);
   } else {
     content = generateContextTemplate(scan);
   }

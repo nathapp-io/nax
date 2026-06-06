@@ -491,7 +491,7 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
     });
   });
 
-  test("AC7: fillScripts dep is not called when fillScripts option is false", async () => {
+  test("AC13 boundary: fillScripts dep is not called when fillScripts option is false", async () => {
     let fillScriptsCalled = false;
     _setupDeps.fillScripts = mock(async () => {
       fillScriptsCalled = true;
