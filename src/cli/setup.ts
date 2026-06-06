@@ -1,13 +1,13 @@
 import { join } from "node:path";
-import { NaxError } from "../errors";
 import type { NaxConfig } from "../config";
-import type { CallContext } from "../operations/types";
+import { NaxError } from "../errors";
 import type { SetupPlan } from "../operations/setup-generate";
+import type { CallContext } from "../operations/types";
 import { analyzeRepo } from "./setup-analyze";
 import { fillScripts } from "./setup-fill";
 import { generateSetupPlan as _generateSetupPlan } from "./setup-llm";
-import { runSetupGate } from "./setup-verify";
 import type { RepoAnalysis } from "./setup-types";
+import { runSetupGate } from "./setup-verify";
 
 export interface SetupOptions {
   dir?: string;
@@ -40,16 +40,19 @@ export const _setupDeps = {
   },
   generateSetupPlan: (ctx: CallContext, analysis: RepoAnalysis): Promise<SetupPlan> =>
     _generateSetupPlan(ctx, analysis),
-  runGate: (workdir: string, config: NaxConfig): Promise<number> =>
-    runSetupGate(workdir, config),
+  runGate: (workdir: string, config: NaxConfig): Promise<number> => runSetupGate(workdir, config),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   mkdir: async (path: string): Promise<void> => {
     const proc = Bun.spawn(["mkdir", "-p", path]);
     await proc.exited;
   },
-  stdout: (msg: string): void => { process.stdout.write(`${msg}\n`); },
-  stderr: (msg: string): void => { process.stderr.write(`${msg}\n`); },
+  stdout: (msg: string): void => {
+    process.stdout.write(`${msg}\n`);
+  },
+  stderr: (msg: string): void => {
+    process.stderr.write(`${msg}\n`);
+  },
 };
 
 export async function setupCommand(options: SetupOptions = {}): Promise<number> {
@@ -108,6 +111,6 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
 
     return 0;
   } finally {
-    await close();   // called exactly once, always
+    await close(); // called exactly once, always
   }
 }

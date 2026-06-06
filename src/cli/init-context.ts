@@ -363,7 +363,10 @@ export async function initPackage(repoRoot: string, packagePath: string, force =
   const contextPath = join(naxDir, "context.md");
 
   if ((await bunFileExists(contextPath)) && !force) {
-    logger.info("init", "Package context.md already exists (use --force to overwrite)", { storyId: "init-context", path: contextPath });
+    logger.info("init", "Package context.md already exists (use --force to overwrite)", {
+      storyId: "init-context",
+      path: contextPath,
+    });
     return;
   }
 
@@ -386,7 +389,10 @@ export async function initContext(projectRoot: string, options: InitContextOptio
 
   // Check if context.md already exists
   if ((await bunFileExists(contextPath)) && !options.force) {
-    logger.info("init", "context.md already exists, skipping (use --force to overwrite)", { storyId: "init-context", path: contextPath });
+    logger.info("init", "context.md already exists, skipping (use --force to overwrite)", {
+      storyId: "init-context",
+      path: contextPath,
+    });
     return;
   }
 
@@ -408,5 +414,8 @@ export async function initContext(projectRoot: string, options: InitContextOptio
 
   // Write context.md
   await Bun.write(contextPath, content);
-  logger.info("init", "Generated .nax/context.md template from project scan", { storyId: "init-context", path: contextPath });
+  logger.info("init", "Generated .nax/context.md template from project scan", {
+    storyId: "init-context",
+    path: contextPath,
+  });
 }
