@@ -435,6 +435,7 @@ describe("initContext (ai mode) — AC9: callLLM rewired to callOp with setupGen
       try {
         await mod.initContext(dir, { ai: true, force: true });
         expect(capturedOp).toBe(setupGenerateOp);
+        expect(mod._initContextDeps.callOp).toHaveBeenCalledTimes(1);
       } finally {
         mod._initContextDeps.callOp = origCallOp;
       }
