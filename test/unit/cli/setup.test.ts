@@ -60,6 +60,10 @@ let saved: Deps;
 beforeEach(() => {
   saved = { ..._setupDeps };
   _setupDeps.analyzeRepo = mock(async () => SINGLE_ANALYSIS);
+  _setupDeps.buildCallContext = mock(async () => ({
+    ctx: {} as import("../../../src/operations/types").CallContext,
+    close: mock(async () => {}),
+  }));
   _setupDeps.generateSetupPlan = mock(async () => MOCK_PLAN);
   _setupDeps.runGate = mock(async () => 0);
   _setupDeps.stdout = mock((_msg: string) => {});
@@ -427,7 +431,7 @@ describe("setupCommand — AC11: analyzeRepo and generateSetupPlan invocation ch
     _setupDeps.analyzeRepo = mock(async () => customAnalysis);
 
     const capturedAnalyses: RepoAnalysis[] = [];
-    _setupDeps.generateSetupPlan = mock(async (analysis: RepoAnalysis) => {
+    _setupDeps.generateSetupPlan = mock(async (_ctx: unknown, analysis: RepoAnalysis) => {
       capturedAnalyses.push(analysis);
       return MOCK_PLAN;
     });

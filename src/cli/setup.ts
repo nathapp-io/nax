@@ -1,8 +1,12 @@
 import { join } from "node:path";
 import { NaxError } from "../errors";
+import type { NaxConfig } from "../config";
+import type { CallContext } from "../operations/types";
 import type { SetupPlan } from "../operations/setup-generate";
 import { analyzeRepo } from "./setup-analyze";
 import { fillScripts } from "./setup-fill";
+import { generateSetupPlan as _generateSetupPlan } from "./setup-llm";
+import { runSetupGate } from "./setup-verify";
 import type { RepoAnalysis } from "./setup-types";
 
 export interface SetupOptions {
@@ -16,16 +20,36 @@ export interface SetupOptions {
 export const _setupDeps = {
   analyzeRepo: analyzeRepo as (workdir: string) => Promise<RepoAnalysis>,
   fillScripts: fillScripts as (workdir: string, analysis: RepoAnalysis) => Promise<void>,
-  generateSetupPlan: (_analysis: RepoAnalysis): Promise<SetupPlan> => {
-    throw new NaxError("generateSetupPlan: wire to callOp before production use", "SETUP_PLAN_INVALID");
+  buildCallContext: async (
+    workdir: string,
+    agentName?: string,
+  ): Promise<{ ctx: CallContext; close: () => Promise<void> }> => {
+    const { loadConfig } = await import("../config");
+    const { createRuntime } = await import("../runtime");
+    const config = await loadConfig(workdir);
+    const rt = createRuntime(config, workdir);
+    return {
+      ctx: {
+        runtime: rt,
+        packageView: rt.packages.resolve(),
+        packageDir: workdir,
+        agentName: agentName ?? rt.agentManager.getDefault(),
+      },
+      close: () => rt.close(),
+    };
   },
-  runGate: (): Promise<number> => Promise.resolve(0),
+  generateSetupPlan: (ctx: CallContext, analysis: RepoAnalysis): Promise<SetupPlan> =>
+    _generateSetupPlan(ctx, analysis),
+  runGate: (workdir: string, config: NaxConfig): Promise<number> =>
+    runSetupGate(workdir, config),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
-  mkdir: (path: string): Promise<void> =>
-    import("node:fs/promises").then((m) => m.mkdir(path, { recursive: true }).then(() => {})),
-  stdout: console.log.bind(console) as (msg: string) => void,
-  stderr: console.error.bind(console) as (msg: string) => void,
+  mkdir: async (path: string): Promise<void> => {
+    const proc = Bun.spawn(["mkdir", "-p", path]);
+    await proc.exited;
+  },
+  stdout: (msg: string): void => { process.stdout.write(`${msg}\n`); },
+  stderr: (msg: string): void => { process.stderr.write(`${msg}\n`); },
 };
 
 export async function setupCommand(options: SetupOptions = {}): Promise<number> {
@@ -33,21 +57,22 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
   const naxDir = join(workdir, ".nax");
   const naxConfigPath = join(naxDir, "config.json");
 
-  // AC6: collision check — refuse if config exists and --force not set
+  // Collision check — refuse if config exists and --force not set
   const exists = await _setupDeps.fileExists(naxConfigPath);
   if (exists && !options.force) {
     _setupDeps.stderr("[setup] .nax/config.json already exists. Use --force to overwrite.");
     return 1;
   }
 
-  // AC11: analyzeRepo called once with resolved workdir
   const analysis = await _setupDeps.analyzeRepo(workdir);
 
-  // AC5, AC11: generateSetupPlan called with analysis; SETUP_PLAN_INVALID → exit 1
+  const { ctx, close } = await _setupDeps.buildCallContext(workdir, options.agent);
+
   let plan: SetupPlan;
   try {
-    plan = await _setupDeps.generateSetupPlan(analysis);
+    plan = await _setupDeps.generateSetupPlan(ctx, analysis);
   } catch (err) {
+    await close();
     if (err instanceof NaxError && err.code === "SETUP_PLAN_INVALID") {
       _setupDeps.stderr(`[setup] ${err.message}`);
       return 1;
@@ -55,40 +80,36 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
     throw err;
   }
 
-  // AC4: dry-run exits 0 with no writes
-  if (options.dryRun) {
-    _setupDeps.stdout(`[setup] Dry run — planned root config:\n${JSON.stringify(plan.config, null, 2)}`);
+  try {
+    if (options.dryRun) {
+      _setupDeps.stdout(`[setup] Dry run — planned root config:\n${JSON.stringify(plan.config, null, 2)}`);
+      return 0;
+    }
+
+    for (const gap of plan.gaps) {
+      _setupDeps.stderr(`[setup] gap: ${gap}`);
+    }
+
+    if (options.fillScripts) {
+      await _setupDeps.fillScripts(workdir, analysis);
+    }
+
+    await _setupDeps.mkdir(naxDir);
+    await _setupDeps.writeFile(naxConfigPath, JSON.stringify(plan.config, null, 2));
+
+    for (const mc of plan.monoConfigs) {
+      const monoDir = join(naxDir, "mono", mc.relativeDir);
+      await _setupDeps.mkdir(monoDir);
+      await _setupDeps.writeFile(join(monoDir, "config.json"), JSON.stringify(mc.config, null, 2));
+    }
+
+    const gateResult = await _setupDeps.runGate(workdir, plan.config);
+    if (gateResult !== 0) {
+      return gateResult;
+    }
+
     return 0;
+  } finally {
+    await close();
   }
-
-  // AC8: emit each gap as a stderr warning
-  for (const gap of plan.gaps) {
-    _setupDeps.stderr(`[setup] gap: ${gap}`);
-  }
-
-  // AC6: optionally fill missing scripts before writing .nax/ files
-  if (options.fillScripts) {
-    await _setupDeps.fillScripts(workdir, analysis);
-  }
-
-  // AC1: write root .nax/config.json
-  await _setupDeps.mkdir(naxDir);
-  await _setupDeps.writeFile(naxConfigPath, JSON.stringify(plan.config, null, 2));
-
-  // AC2: write .nax/mono/<relativeDir>/config.json per member package
-  for (const mc of plan.monoConfigs) {
-    const monoDir = join(naxDir, "mono", mc.relativeDir);
-    await _setupDeps.mkdir(monoDir);
-    await _setupDeps.writeFile(join(monoDir, "config.json"), JSON.stringify(mc.config, null, 2));
-  }
-
-  // AC9: invoke verification gate exactly once
-  const gateResult = await _setupDeps.runGate();
-
-  // AC10: gate non-zero → propagate failure
-  if (gateResult !== 0) {
-    return gateResult;
-  }
-
-  return 0;
 }
