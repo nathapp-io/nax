@@ -7,7 +7,7 @@ import { SetupPromptBuilder } from "../prompts/builders/setup-builder";
 import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation } from "./types";
 
-export const MAX_SETUP_LLM_ATTEMPTS = 3;
+export const MAX_SETUP_LLM_ATTEMPTS = 2;
 
 export interface MonoPackageConfig {
   relativeDir: string;
@@ -38,8 +38,11 @@ function validateSetupOutput(parsed: unknown): boolean {
 }
 
 export function crossCheckCommands(config: NaxConfig, analysis: RepoAnalysis): { config: NaxConfig; gaps: string[] } {
-  const allMissing = new Set(analysis.packages.flatMap((p) => p.missingScripts));
-  if (allMissing.size === 0) return { config, gaps: [] };
+  // Root config is checked against root package only (relativeDir === "").
+  // Per-package mono configs check their own packages separately.
+  const rootPkg = analysis.packages.find((p) => p.relativeDir === "") ?? analysis.packages[0];
+  const missing = new Set(rootPkg?.missingScripts ?? []);
+  if (missing.size === 0) return { config, gaps: [] };
 
   const quality = config.quality as { commands?: Record<string, string> } | undefined;
   if (!quality?.commands) return { config, gaps: [] };
@@ -47,7 +50,7 @@ export function crossCheckCommands(config: NaxConfig, analysis: RepoAnalysis): {
   const gaps: string[] = [];
   const commands: Record<string, string> = {};
   for (const [key, value] of Object.entries(quality.commands)) {
-    if (allMissing.has(key)) {
+    if (missing.has(key)) {
       gaps.push(`Script "${key}" in quality.commands.${key} is missing from package.json`);
     } else {
       commands[key] = value;
