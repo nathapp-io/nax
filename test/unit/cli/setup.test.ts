@@ -67,6 +67,7 @@ beforeEach(() => {
   _setupDeps.fileExists = mock(async () => false);
   _setupDeps.writeFile = mock(async () => {});
   _setupDeps.mkdir = mock(async () => {});
+  _setupDeps.fillScripts = mock(async () => {});
 });
 
 afterEach(() => {
@@ -435,6 +436,66 @@ describe("setupCommand — AC11: analyzeRepo and generateSetupPlan invocation ch
       await runSetup({ dir });
       expect(capturedAnalyses).toHaveLength(1);
       expect(capturedAnalyses[0]).toEqual(customAnalysis);
+    });
+  });
+});
+
+// ─── AC13: --fill-scripts invokes fillScripts before write step ──────────────
+
+describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set", () => {
+  test("AC6: fillScripts dep is called when fillScripts option is true", async () => {
+    let fillScriptsCalled = false;
+    _setupDeps.fillScripts = mock(async () => {
+      fillScriptsCalled = true;
+    });
+
+    await withTempDir(async (dir) => {
+      const exitCode = await runSetup({ dir, fillScripts: true });
+      expect(exitCode).toBe(0);
+      expect(fillScriptsCalled).toBe(true);
+    });
+  });
+
+  test("AC6: fillScripts is called before writeFile for config", async () => {
+    const callOrder: string[] = [];
+    _setupDeps.fillScripts = mock(async () => {
+      callOrder.push("fillScripts");
+    });
+    _setupDeps.writeFile = mock(async () => {
+      callOrder.push("writeFile");
+    });
+
+    await withTempDir(async (dir) => {
+      await runSetup({ dir, fillScripts: true });
+      const fillIdx = callOrder.indexOf("fillScripts");
+      const writeIdx = callOrder.indexOf("writeFile");
+      expect(fillIdx).toBeGreaterThanOrEqual(0);
+      expect(fillIdx).toBeLessThan(writeIdx);
+    });
+  });
+
+  test("AC7: fillScripts dep is not called when fillScripts option is omitted", async () => {
+    let fillScriptsCalled = false;
+    _setupDeps.fillScripts = mock(async () => {
+      fillScriptsCalled = true;
+    });
+
+    await withTempDir(async (dir) => {
+      const exitCode = await runSetup({ dir });
+      expect(exitCode).toBe(0);
+      expect(fillScriptsCalled).toBe(false);
+    });
+  });
+
+  test("AC7: fillScripts dep is not called when fillScripts option is false", async () => {
+    let fillScriptsCalled = false;
+    _setupDeps.fillScripts = mock(async () => {
+      fillScriptsCalled = true;
+    });
+
+    await withTempDir(async (dir) => {
+      await runSetup({ dir, fillScripts: false });
+      expect(fillScriptsCalled).toBe(false);
     });
   });
 });

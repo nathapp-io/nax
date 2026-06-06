@@ -1,18 +1,21 @@
 import { join } from "node:path";
 import { NaxError } from "../errors";
-import { analyzeRepo } from "./setup-analyze";
-import type { RepoAnalysis } from "./setup-types";
 import type { SetupPlan } from "../operations/setup-generate";
+import { analyzeRepo } from "./setup-analyze";
+import { fillScripts } from "./setup-fill";
+import type { RepoAnalysis } from "./setup-types";
 
 export interface SetupOptions {
   dir?: string;
   agent?: string;
   dryRun?: boolean;
   force?: boolean;
+  fillScripts?: boolean;
 }
 
 export const _setupDeps = {
   analyzeRepo: analyzeRepo as (workdir: string) => Promise<RepoAnalysis>,
+  fillScripts: fillScripts as (workdir: string, analysis: RepoAnalysis) => Promise<void>,
   generateSetupPlan: (_analysis: RepoAnalysis): Promise<SetupPlan> => {
     throw new NaxError("generateSetupPlan: wire to callOp before production use", "SETUP_PLAN_INVALID");
   },
@@ -33,7 +36,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
   // AC6: collision check — refuse if config exists and --force not set
   const exists = await _setupDeps.fileExists(naxConfigPath);
   if (exists && !options.force) {
-    _setupDeps.stderr(`[setup] .nax/config.json already exists. Use --force to overwrite.`);
+    _setupDeps.stderr("[setup] .nax/config.json already exists. Use --force to overwrite.");
     return 1;
   }
 
@@ -61,6 +64,11 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
   // AC8: emit each gap as a stderr warning
   for (const gap of plan.gaps) {
     _setupDeps.stderr(`[setup] gap: ${gap}`);
+  }
+
+  // AC6: optionally fill missing scripts before writing .nax/ files
+  if (options.fillScripts) {
+    await _setupDeps.fillScripts(workdir, analysis);
   }
 
   // AC1: write root .nax/config.json
