@@ -7,14 +7,13 @@
 
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { ParseValidationError } from "@/agents";
-import { NaxConfigSchema } from "@/config/schemas";
-import { callOp } from "@/operations";
-import { setupGenerateOp } from "@/operations/setup-generate";
-import { SetupPromptBuilder } from "@/prompts/builders/setup-builder";
+import type { NaxConfig } from "@/config";
+import { NaxConfigSchema } from "@/config";
+import { callOp, setupGenerateOp } from "@/operations";
+import type { BuildContext } from "@/operations/types";
+import { SetupPromptBuilder } from "@/prompts";
 import type { RepoAnalysis } from "@/cli/setup-types";
 import { makeAgentAdapter, makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
-import type { BuildContext } from "@/operations/types";
-import type { NaxConfig } from "@/config";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

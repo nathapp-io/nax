@@ -1,9 +1,9 @@
 import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
-import { NaxConfigSchema } from "../config/schemas";
-import { parseLLMJson } from "../utils/llm-json";
-import { SetupPromptBuilder } from "../prompts/builders/setup-builder";
-import type { NaxConfig } from "../config";
 import type { RepoAnalysis } from "../cli/setup-types";
+import type { NaxConfig } from "../config";
+import { NaxConfigSchema } from "../config/schemas";
+import { SetupPromptBuilder } from "../prompts/builders/setup-builder";
+import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation } from "./types";
 
 export const MAX_SETUP_LLM_ATTEMPTS = 3;
@@ -32,10 +32,7 @@ function validateSetupOutput(parsed: unknown): boolean {
   return NaxConfigSchema.safeParse(config).success;
 }
 
-export function crossCheckCommands(
-  config: NaxConfig,
-  analysis: RepoAnalysis,
-): { config: NaxConfig; gaps: string[] } {
+export function crossCheckCommands(config: NaxConfig, analysis: RepoAnalysis): { config: NaxConfig; gaps: string[] } {
   const allMissing = new Set(analysis.packages.flatMap((p) => p.missingScripts));
   if (allMissing.size === 0) return { config, gaps: [] };
 
@@ -68,8 +65,7 @@ const setupRetryStrategy = makeParseRetryStrategy({
   prompts: {
     invalid: () =>
       "The response was not valid JSON or failed schema validation. Please respond with a valid JSON object.",
-    truncated: () =>
-      "The response was truncated. Please provide the complete JSON config.",
+    truncated: () => "The response was truncated. Please provide the complete JSON config.",
   },
   exhaustedFallback: () => {
     throw new SetupPlanError("LLM failed to generate a valid setup plan after exhausting retries");
