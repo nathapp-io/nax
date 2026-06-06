@@ -22,6 +22,7 @@ export interface SetupPlan {
 
 export interface RawSetupPlan {
   config: unknown;
+  monoConfigs?: Array<{ relativeDir: string; config: unknown }>;
 }
 
 class SetupPlanError extends ParseValidationError {
@@ -61,9 +62,15 @@ export function crossCheckCommands(config: NaxConfig, analysis: RepoAnalysis): {
   return { config: { ...config, quality: { ...quality, commands } } as NaxConfig, gaps };
 }
 
-export function buildMonoConfigs(analysis: RepoAnalysis): MonoPackageConfig[] {
+export function buildMonoConfigs(parsed: RawSetupPlan, analysis: RepoAnalysis): MonoPackageConfig[] {
   if (analysis.shape !== "mono") return [];
-  return analysis.packages.map((pkg) => ({ relativeDir: pkg.relativeDir, config: {} }));
+  const rawMonoConfigs = parsed.monoConfigs ?? [];
+  return analysis.packages.map((pkg) => {
+    const rawMono = rawMonoConfigs.find((m) => m.relativeDir === pkg.relativeDir);
+    const validated = rawMono ? NaxConfigSchema.safeParse(rawMono.config) : undefined;
+    const config = (validated?.success ? validated.data : undefined) ?? {};
+    return { relativeDir: pkg.relativeDir, config: config as Partial<NaxConfig> };
+  });
 }
 
 const setupRetryStrategy = makeParseRetryStrategy({
@@ -92,21 +99,22 @@ export const setupGenerateOp: RunOperation<RepoAnalysis, SetupPlan, NaxConfig> =
     return new SetupPromptBuilder().build(analysis);
   },
   parse(output: string, analysis: RepoAnalysis, _ctx: BuildContext<NaxConfig>): SetupPlan {
-    let parsed: unknown;
+    let parsedRaw: unknown;
     try {
-      parsed = parseLLMJson(output);
+      parsedRaw = parseLLMJson(output);
     } catch {
       throw new SetupPlanError("Failed to parse LLM output as JSON");
     }
 
-    const rawConfig = (parsed as { config?: unknown } | null)?.config ?? parsed;
+    const parsedObj = parsedRaw as RawSetupPlan | null;
+    const rawConfig = parsedObj?.config ?? parsedRaw;
     const result = NaxConfigSchema.safeParse(rawConfig);
     if (!result.success) {
       throw new SetupPlanError(`Config failed NaxConfigSchema: ${result.error.message}`);
     }
 
     const { config, gaps } = crossCheckCommands(result.data as NaxConfig, analysis);
-    const monoConfigs = buildMonoConfigs(analysis);
+    const monoConfigs = buildMonoConfigs(parsedObj ?? { config: rawConfig }, analysis);
     return { config, monoConfigs, gaps };
   },
 };

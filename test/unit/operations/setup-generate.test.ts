@@ -13,7 +13,7 @@ import { callOp, setupGenerateOp } from "@/operations";
 import type { BuildContext } from "@/operations/types";
 import { SetupPromptBuilder } from "@/prompts";
 import type { RepoAnalysis } from "@/cli/setup-types";
-import { makeAgentAdapter, makeMockCallContext, makeRuntimeWithFakeAgent } from "@test/helpers";
+import { makeAgentAdapter, makeMockCallContext, makeRuntimeWithFakeAgent, makeNaxConfig } from "@test/helpers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -110,6 +110,44 @@ describe("setupGenerateOp.parse — AC6: mono shape returns N monoConfigs", () =
     const output = fenced({});
     const result = setupGenerateOp.parse(output, makeMonoAnalysis(n), NO_BUILD_CTX);
     expect(result.monoConfigs).toHaveLength(n);
+  });
+});
+
+// ─── AC6 extension: mono monoConfigs carries LLM per-package config ──────────
+
+describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-package config", () => {
+  test("AC6 ext: monoConfigs carries config extracted from LLM-provided monoConfigs", () => {
+    const analysis: RepoAnalysis = {
+      shape: "mono",
+      packages: [
+        { relativeDir: "packages/pkg-0", testFramework: "bun", testFilePatterns: [], missingScripts: [] },
+        { relativeDir: "packages/pkg-1", testFramework: "jest", testFilePatterns: [], missingScripts: [] },
+      ],
+      pmRunPrefix: "bun run",
+      pmDlx: "bunx",
+      orchestrator: "none",
+    };
+
+    const pkg0Config = makeNaxConfig({ execution: { maxIterations: 11 } });
+    const pkg1Config = makeNaxConfig({ execution: { maxIterations: 22 } });
+
+    const output =
+      "```json\n" +
+      JSON.stringify({
+        config: {},
+        monoConfigs: [
+          { relativeDir: "packages/pkg-0", config: pkg0Config },
+          { relativeDir: "packages/pkg-1", config: pkg1Config },
+        ],
+      }) +
+      "\n```";
+
+    const result = setupGenerateOp.parse(output, analysis, NO_BUILD_CTX);
+    expect(result.monoConfigs).toHaveLength(2);
+    expect(result.monoConfigs[0].relativeDir).toBe("packages/pkg-0");
+    expect((result.monoConfigs[0].config as NaxConfig).execution.maxIterations).toBe(11);
+    expect(result.monoConfigs[1].relativeDir).toBe("packages/pkg-1");
+    expect((result.monoConfigs[1].config as NaxConfig).execution.maxIterations).toBe(22);
   });
 });
 
