@@ -1,0 +1,261 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a fixture with only a root `package.json` and a lockfile, when `analyzeRepo` runs, then it returns a `RepoAnalysis` whose `shape` is `\"single\"` and whose `packages` array has length 1.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with shape === 'single' and packages.length === 1 for a single-package repo with root package.json and lockfile",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a fixture declaring `workspaces` with N member packages, when `analyzeRepo` runs, then it returns `shape` equal to `\"mono\"` and a `packages` array of length N.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with shape === 'mono' and packages.length === N for a monorepo with N workspace members declared in package.json",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a fixture containing `bun.lock`, when `analyzeRepo` runs, then it returns `pmRunPrefix` equal to `\"bun run\"` and `pmDlx` equal to `\"bunx\"`.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with pmRunPrefix === 'bun run' and pmDlx === 'bunx' when bun.lock exists in repo root",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given a fixture containing `package-lock.json`, when `analyzeRepo` runs, then it returns `pmRunPrefix` equal to `\"npm run\"` and `pmDlx` equal to `\"npx\"`.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with pmRunPrefix === 'npm run' and pmDlx === 'npx' when package-lock.json exists in repo root",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a package whose `package.json` scripts omit `type-check` and `lint:fix`, when `analyzeRepo` runs, then the matching `PackageFacts.missingScripts` array includes both `\"type-check\"` and `\"lint:fix\"`.",
+    "refined": "analyzeRepo(workdir) returns PackageFacts with missingScripts array containing both 'type-check' and 'lint:fix' when those script keys are absent from the package.json scripts object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a root `turbo.json`, when `analyzeRepo` runs, then it returns `orchestrator` equal to `\"turbo\"`.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with orchestrator === 'turbo' when turbo.json exists at repo root",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a single-package fixture with no `turbo.json` or `nx.json`, when `analyzeRepo` runs, then it returns `orchestrator` equal to `\"none\"`.",
+    "refined": "analyzeRepo(workdir) returns RepoAnalysis with orchestrator === 'none' for a single-package repo with neither turbo.json nor nx.json at repo root",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given a package fixture using a Jest config, when `analyzeRepo` runs, then the matching `PackageFacts.testFramework` equals `\"jest\"` and `PackageFacts.testFilePatterns` comes from `detectTestFilePatternsForWorkspace`.",
+    "refined": "analyzeRepo(workdir) returns PackageFacts with testFramework === 'jest' and testFilePatterns matching the output of detectTestFilePatternsForWorkspace(workdir, [packageDir]) when Jest configuration is detected in package",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a member package at `packages/foo`, when `analyzeRepo` runs, then the matching `PackageFacts.relativeDir` equals `\"packages/foo\"` and is never an absolute path.",
+    "refined": "analyzeRepo(workdir) returns PackageFacts with relativeDir === 'packages/foo' (relative path, not absolute) for a workspace member located at packages/foo relative to repo root",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given a fenced ```json output and a `RepoAnalysis` input, when `setupGenerateOp.parse` runs, then it returns a `SetupPlan` whose `config` is accepted by `NaxConfigSchema.safeParse`.",
+    "refined": "Given a fenced ```json output and a `RepoAnalysis` input, when `setupGenerateOp.parse` runs, then it returns a `SetupPlan` whose `config` is accepted by `NaxConfigSchema.safeParse`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given a plan whose `quality.commands.test` names a script absent from the `RepoAnalysis` input, when `setupGenerateOp.parse` runs, then the returned `SetupPlan.config.quality.commands` excludes that command and the returned `gaps` array records it.",
+    "refined": "Given a plan whose `quality.commands.test` names a script absent from the `RepoAnalysis` input, when `setupGenerateOp.parse` runs, then the returned `SetupPlan.config.quality.commands` excludes that command and the returned `gaps` array records it.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given output that is not valid JSON (all `parseLLMJson` extraction tiers exhausted), when `setupGenerateOp.parse` runs, then it throws `ParseValidationError` so the failure triggers the same-session retry path.",
+    "refined": "Given output that is not valid JSON (all `parseLLMJson` extraction tiers exhausted), when `setupGenerateOp.parse` runs, then it throws `ParseValidationError` so the failure triggers the same-session retry path.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a schema-invalid `config`, when `setupGenerateOp.parse` runs, then it throws `ParseValidationError`.",
+    "refined": "Given a schema-invalid `config`, when `setupGenerateOp.parse` runs, then it throws `ParseValidationError`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a `RepoAnalysis` with `shape` equal to `\"single\"`, when `setupGenerateOp.parse` runs, then it returns a `SetupPlan` whose `monoConfigs` array is empty.",
+    "refined": "Given a `RepoAnalysis` with `shape` equal to `\"single\"`, when `setupGenerateOp.parse` runs, then it returns a `SetupPlan` whose `monoConfigs` array is empty.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a `RepoAnalysis` with `shape` equal to `\"mono\"` and N packages, when `setupGenerateOp.parse` runs, then it returns N `monoConfigs` entries.",
+    "refined": "Given a `RepoAnalysis` with `shape` equal to `\"mono\"` and N packages, when `setupGenerateOp.parse` runs, then it returns N `monoConfigs` entries.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When `setupGenerateOp.build(analysis)` runs, then it returns the string produced by `new SetupPromptBuilder().build(analysis)`.",
+    "refined": "When `setupGenerateOp.build(analysis)` runs, then it returns the string produced by `new SetupPromptBuilder().build(analysis)`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given an injected session that returns a schema-invalid config on every turn, when `callOp` is invoked with `setupGenerateOp`, then it rejects with a `NaxError` whose `code` equals `\"SETUP_PLAN_INVALID\"` after `MAX_SETUP_LLM_ATTEMPTS` attempts.",
+    "refined": "Given an injected session that returns a schema-invalid config on every turn, when `callOp` is invoked with `setupGenerateOp`, then it rejects with a `NaxError` whose `code` equals `\"SETUP_PLAN_INVALID\"` after `MAX_SETUP_LLM_ATTEMPTS` attempts.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a stubbed `callOp`, when the rewired `callLLM` in `init-context.ts` is invoked, then it calls `callOp` with `setupGenerateOp` and resolves to that result instead of throwing `\"callLLM not implemented\"`.",
+    "refined": "Given a stubbed `callOp`, when the rewired `callLLM` in `init-context.ts` is invoked, then it calls `callOp` with `setupGenerateOp` and resolves to that result instead of throwing `\"callLLM not implemented\"`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given an injected agent and a fixture directory, when `nax setup --dir <fixture>` runs, then it exits 0 and produces a `.nax/config.json` whose parsed content is accepted by `NaxConfigSchema.safeParse`.",
+    "refined": "Exit code is 0; file <fixture>/.nax/config.json exists; NaxConfigSchema.safeParse(JSON.parse(readFileSync(<fixture>/.nax/config.json))) succeeds (no error thrown)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a monorepo fixture, when `nax setup` runs, then it produces one `.nax/mono/<relativeDir>/config.json` per member package.",
+    "refined": "For each discovered package with relative path R in the fixture, file <fixture>/.nax/mono/R/config.json exists and NaxConfigSchema.safeParse succeeds on its parsed content; file count equals package count",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a single-package fixture, when `nax setup` runs, then it produces no `.nax/mono` directory.",
+    "refined": "Exit code is 0; directory <fixture>/.nax/mono does not exist",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When `nax setup --dry-run` runs, then it exits 0, creates no files under `.nax`, and prints the planned root config summary to stdout.",
+    "refined": "Exit code is 0; no files exist under .nax/ directory; stdout contains serialized config object with keys (e.g., 'execution', 'agent', 'quality')",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given `generateSetupPlan` rejects with a `NaxError` whose `code` equals `\"SETUP_PLAN_INVALID\"`, when `nax setup` runs, then it exits 1 and writes no `.nax/config.json`.",
+    "refined": "Exit code is 1; file <fixture>/.nax/config.json does not exist",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given a fixture that already has a `.nax/config.json` and no `--force`, when `setupCommand` runs, then it resolves without overwriting the existing file and exits non-zero.",
+    "refined": "Exit code is non-zero; MD5(readFileSync(<fixture>/.nax/config.json before)) equals MD5(readFileSync(<fixture>/.nax/config.json after))",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given a fixture that already has a `.nax/config.json`, when `setupCommand --force` runs, then it replaces that file's content with the generated config.",
+    "refined": "Exit code is 0; MD5(readFileSync(<fixture>/.nax/config.json after)) differs from MD5(readFileSync(<fixture>/.nax/config.json before)); parsed content matches generated config structure",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given a `SetupPlan` carrying `gaps`, when `setupCommand` runs in report-only mode, then it emits each gap as a warning on stderr and exits 0.",
+    "refined": "Exit code is 0; stderr output contains at least one warning message; gap count in stderr >= gap count in SetupPlan.gaps",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given a leaf package fixture and a stubbed gate runner, when `setupCommand` runs, then it invokes the configured verification gate exactly once.",
+    "refined": "Mock gate runner call count equals 1; mock called with resolved packageDir and gate command from config",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given a gate runner that reports a non-zero result, when `setupCommand` runs, then it exits non-zero.",
+    "refined": "Stubbed gate runner returns exit code !== 0; setupCommand exit code is non-zero",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a stubbed `analyzeRepo`, when `setupCommand` runs, then `analyzeRepo` is invoked once with the resolved workdir and `generateSetupPlan` is invoked with the `RepoAnalysis` that `analyzeRepo` returned.",
+    "refined": "Mock analyzeRepo call count equals 1; call argument is resolved workdir; mock generateSetupPlan call count equals 1; generateSetupPlan first argument has same shape as analyzeRepo return value",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given the CLI registration in `bin/nax.ts`, when `nax setup` is invoked, then it dispatches to `setupCommand`.",
+    "refined": "Command string 'nax setup' resolves to setupCommand function; bin/nax.ts contains lazy import of setupCommand; CLI dispatch table routes 'setup' to setupCommand",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given a `PackageFacts` missing `type-check`, when `fillScripts` runs, then it writes a `type-check` script equal to `\"tsc --noEmit -p tsconfig.json\"` into that package's `package.json` and leaves existing scripts present and unchanged.",
+    "refined": "fillScripts(packageFacts) where packageFacts.missingScripts includes 'type-check' produces a modified package.json where scripts['type-check'] equals 'tsc --noEmit -p tsconfig.json', all pre-existing script keys remain with identical values, and file is persisted to disk.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given the same package, when `fillScripts` runs twice, then the resulting `package.json` has a single `type-check` key and the second run adds no duplicate entry.",
+    "refined": "fillScripts(packageFacts) called twice consecutively produces a package.json where Object.keys(scripts).filter(k => k === 'type-check').length === 1 after each run, and the second invocation does not add a second 'type-check' entry or overwrite the existing value.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given `shape` equal to `\"mono\"` with a turbo orchestrator, when `fillScripts` runs, then it adds a `type-check` task to `turbo.json` and a `type-check` passthrough script to the root `package.json`.",
+    "refined": "fillScripts(packageFacts, {shape: 'mono', orchestrator: 'turbo'}) produces turbo.json containing a task definition for 'type-check' and root package.json containing scripts['type-check'] with value indicating passthrough/orchestration.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given `shape` equal to `\"single\"`, when `fillScripts` runs, then it adds the `type-check` script to the root `package.json` only and writes no orchestrator task.",
+    "refined": "fillScripts(packageFacts, {shape: 'single'}) produces root package.json with scripts['type-check'] === 'tsc --noEmit -p tsconfig.json' and does not create, modify, or reference any turbo.json, package orchestrator file, or task definition outside package.json.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given a fixture where `fillScripts` has run for the filled gates, when `analyzeRepo` runs again over the same fixture, then the resulting `PackageFacts.missingScripts` no longer lists those gates.",
+    "refined": "After fillScripts(packageFacts) completes and modifies package.json on disk, calling analyzeRepo(fixtureDir) returns PackageFacts where missingScripts does not include 'type-check' or any other gates that were populated by the prior fillScripts invocation.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-36",
+    "original": "Given `setupCommand --fill-scripts`, when `setupCommand` runs, then it invokes `fillScripts` before the write step.",
+    "refined": "setupCommand invoked with argv containing '--fill-scripts' calls fillScripts(packageFacts) before any config file write operation to `.nax/` or `package.json`, verified via call order or execution log.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-37",
+    "original": "Given `setupCommand` without `--fill-scripts`, when it runs, then it does not invoke `fillScripts`.",
+    "refined": "setupCommand invoked without '--fill-scripts' flag does not call fillScripts at any point during execution, verified via absence of fillScripts call in execution trace or spy.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
