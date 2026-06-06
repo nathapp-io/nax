@@ -173,16 +173,49 @@ interface StoryNormalization {
 }
 
 /**
- * Normalize one story: an uncited `contextFiles` entry that is absent on disk is
- * a file the story CREATES — move it to `expectedFiles`. A cited entry (factId)
- * that is absent claims broken manifest grounding, so it is kept and warned
- * (not silently moved). Existing files and already-declared outputs are left
- * untouched. Returns a new story object when anything moved (immutable update).
+ * Collect every file produced (created) by the stories `story` transitively
+ * depends on. A file created by an upstream dependency does not exist at plan
+ * time but WILL exist at this story's execution time — sequential mode shares one
+ * workdir (the producer ran first), and parallel mode merges each batch back to
+ * HEAD before the next batch's worktrees branch from it (see
+ * docs/architecture/spec-to-prd-pipeline.md, src/execution/parallel-coordinator.ts,
+ * src/worktree/manager.ts). So an absent `contextFiles` entry that an upstream
+ * story creates is a legitimate read hint, NOT a file this story authors.
+ */
+function collectUpstreamProducedFiles(story: UserStory, byId: Map<string, UserStory>): Set<string> {
+  const produced = new Set<string>();
+  const seen = new Set<string>();
+  const stack = [...(story.dependencies ?? [])];
+  while (stack.length > 0) {
+    const depId = stack.pop();
+    if (!depId || seen.has(depId)) continue;
+    seen.add(depId);
+    const dep = byId.get(depId);
+    if (!dep) continue;
+    for (const filePath of getExpectedFiles(dep)) produced.add(filePath);
+    stack.push(...(dep.dependencies ?? []));
+  }
+  return produced;
+}
+
+/**
+ * Normalize one story's `contextFiles` against the filesystem and the dependency
+ * graph:
+ * - An entry that exists on disk, or is already a declared output, is kept.
+ * - An entry absent on disk but produced by an UPSTREAM dependency is kept as a
+ *   read hint — it exists at this story's runtime; moving it to `expectedFiles`
+ *   would wrongly claim this story authors it (see spec-to-prd-pipeline.md).
+ * - An uncited entry absent on disk and produced by no upstream story is a file
+ *   this story CREATES — move it to `expectedFiles`.
+ * - A cited entry (factId) that is absent claims broken manifest grounding, so it
+ *   is kept and warned (not silently moved).
+ * Returns a new story object when anything moved (immutable update).
  */
 async function normalizeStoryFiles(
   story: UserStory,
   workdir: string,
   fileExists: (path: string) => Promise<boolean>,
+  upstreamProduced: Set<string>,
 ): Promise<StoryNormalization> {
   const contextFiles = story.contextFiles ?? [];
   if (contextFiles.length === 0) return { story, changed: false };
@@ -197,6 +230,17 @@ async function normalizeStoryFiles(
     const factId = typeof entry === "string" ? undefined : entry.factId;
     if (expected.has(filePath) || (await fileExists(join(workdir, filePath)))) {
       kept.push(entry); // already an output, or a legitimate existing read
+      continue;
+    }
+    if (upstreamProduced.has(filePath)) {
+      // Created by an upstream dependency — absent at plan time, present at this
+      // story's runtime. Keep it as a read hint; do NOT move to expectedFiles
+      // (this story reads/modifies it but does not author it).
+      kept.push(entry);
+      logger?.debug("plan", "Kept cross-story produced file in contextFiles (upstream dependency creates it)", {
+        storyId: story.id,
+        filePath,
+      });
       continue;
     }
     if (factId) {
@@ -233,8 +277,10 @@ async function normalizeStoryFiles(
 /**
  * Deterministic safety net that closes the read/create gap left when a spec or
  * plan routes a created file into `contextFiles`. For every story, an uncited
- * `contextFiles` entry absent on disk is moved to `expectedFiles` (its correct
- * home — a post-run asset gate, not a read list). Returns a new PRD when any
+ * `contextFiles` entry absent on disk AND produced by no upstream dependency is
+ * moved to `expectedFiles` (its correct home — a post-run asset gate, not a read
+ * list). An absent entry an upstream dependency creates is kept (it exists at
+ * this story's runtime — see spec-to-prd-pipeline.md). Returns a new PRD when any
  * entry moved; otherwise the input PRD unchanged. Skipped when `workdir` is unset.
  */
 export async function normalizeCreatedContextFiles(
@@ -243,7 +289,12 @@ export async function normalizeCreatedContextFiles(
   fileExists: (path: string) => Promise<boolean>,
 ): Promise<PRD> {
   if (!workdir) return prd;
-  const results = await Promise.all(prd.userStories.map((story) => normalizeStoryFiles(story, workdir, fileExists)));
+  const byId = new Map(prd.userStories.map((story) => [story.id, story]));
+  const results = await Promise.all(
+    prd.userStories.map((story) =>
+      normalizeStoryFiles(story, workdir, fileExists, collectUpstreamProducedFiles(story, byId)),
+    ),
+  );
   if (!results.some((r) => r.changed)) return prd;
   return { ...prd, userStories: results.map((r) => r.story) };
 }
