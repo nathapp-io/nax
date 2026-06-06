@@ -22,7 +22,8 @@ export async function runSetupGate(workdir: string, config: NaxConfig): Promise<
   }
 
   logger.info("setup-verify", "Running verification gate", { storyId: "setup", cmd: testCmd });
-  const parts = testCmd.split(" ") as [string, ...string[]];
+  const parts = testCmd.trim().split(/\s+/).filter(Boolean) as [string, ...string[]];
+  if (parts.length === 0) return 0;
   const proc = _setupVerifyDeps.spawn(parts, { cwd: workdir });
   return await proc.exited;
 }
