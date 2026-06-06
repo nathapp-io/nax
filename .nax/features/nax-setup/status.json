@@ -1,36 +1,35 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-06-06T09-19-13-606Z",
+    "id": null,
     "feature": "nax-setup",
-    "startedAt": "2026-06-06T09:19:13.606Z",
-    "status": "failed",
+    "startedAt": null,
+    "status": null,
     "dryRun": false,
-    "pid": 2545
+    "pid": null
   },
   "progress": {
     "total": 4,
     "passed": 1,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 3
   },
   "cost": {
     "spent": 2.925976388,
     "limit": 50
   },
   "current": null,
-  "iterations": 2,
-  "updatedAt": "2026-06-06T09:58:02.191Z",
+  "iterations": 0,
+  "updatedAt": null,
   "durationMs": 2328585,
   "postRun": {
     "acceptance": {
       "status": "not-run"
     },
     "regression": {
-      "status": "passed",
-      "lastRunAt": "2026-06-06T09:58:01.442Z"
+      "status": "not-run"
     }
   }
 }

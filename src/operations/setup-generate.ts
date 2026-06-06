@@ -2,6 +2,7 @@ import { ParseValidationError, makeParseRetryStrategy } from "../agents/retry";
 import type { RepoAnalysis } from "../cli/setup-types";
 import type { NaxConfig } from "../config";
 import { NaxConfigSchema } from "../config/schemas";
+import { NaxError } from "../errors";
 import { SetupPromptBuilder } from "../prompts/builders/setup-builder";
 import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation } from "./types";
@@ -25,6 +26,10 @@ export interface RawSetupPlan {
 
 class SetupPlanError extends ParseValidationError {
   readonly code = "SETUP_PLAN_INVALID" as const;
+}
+
+function throwSetupPlanError(message: string): never {
+  throw new NaxError(`[setup-generate] ${message}`, "SETUP_PLAN_INVALID");
 }
 
 function validateSetupOutput(parsed: unknown): boolean {
@@ -68,7 +73,7 @@ const setupRetryStrategy = makeParseRetryStrategy({
     truncated: () => "The response was truncated. Please provide the complete JSON config.",
   },
   exhaustedFallback: () => {
-    throw new SetupPlanError("LLM failed to generate a valid setup plan after exhausting retries");
+    throwSetupPlanError("LLM failed to generate a valid setup plan after exhausting retries");
   },
 });
 

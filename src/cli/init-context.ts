@@ -302,9 +302,9 @@ async function generateContextWithLLM(scan: ProjectScan, projectRoot: string): P
   try {
     const { setupGenerateOp } = await import("../operations/setup-generate");
     const analysis = projectScanToRepoAnalysis(scan);
-    await _initContextDeps.callOp(projectRoot, setupGenerateOp, analysis);
+    const setupPlan = await _initContextDeps.callOp(projectRoot, setupGenerateOp, analysis);
     logger.info("init", "Generated context.md via setupGenerateOp");
-    return generateContextTemplate(scan);
+    return JSON.stringify(setupPlan);
   } catch {
     // Fall through to callLLM
   }
