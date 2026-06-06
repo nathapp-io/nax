@@ -1,0 +1,2 @@
+[2026-06-06T07:43:29.241Z] US-001 — PASSED — Build deterministic repo analysis for setup — Cost: $3.1211
+[2026-06-06T09:10:16.260Z] US-002 — FAILED — Generate and validate setup plans through the shared LLM path — Execution failed

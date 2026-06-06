@@ -3,7 +3,7 @@
   "feature": "nax-setup",
   "branchName": "feat/nax-setup",
   "createdAt": "2026-06-06T06:32:05Z",
-  "updatedAt": "2026-06-06T07:31:11.733Z",
+  "updatedAt": "2026-06-06T09:10:16.260Z",
   "userStories": [
     {
       "id": "US-001",
@@ -27,8 +27,8 @@
         "monorepo"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [
         {
@@ -100,14 +100,23 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
-      "escalations": [],
+      "attempts": 1,
+      "escalations": [
+        {
+          "fromTier": "balanced",
+          "toTier": "powerful",
+          "reason": "Rectification exhausted with unfixed findings",
+          "timestamp": "2026-06-06T08:50:45.415Z"
+        }
+      ],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/cli/init-context.ts",
@@ -126,9 +135,21 @@
         "Given LLM output with extra narration around the JSON body, when `setupGenerateOp.parse` runs, then it still parses through `parseLLMJson()` and validates the extracted JSON payload.",
         "Given a mono plan whose `monoConfigs` contain package dirs not present in `RepoAnalysis`, when `buildMonoConfigs` runs, then it excludes those entries from the returned `SetupPlan`."
       ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Tier balanced: Rectification exhausted with unfixed findings",
+          "cost": 8.810029449999996,
+          "timestamp": "2026-06-06T08:50:45.415Z"
+        }
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "60bca8226e4ec34ad229333577bd2963fcee3900"
     },
     {
       "id": "US-003",
