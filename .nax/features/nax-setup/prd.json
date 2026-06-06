@@ -3,7 +3,7 @@
   "feature": "nax-setup",
   "branchName": "feat/nax-setup",
   "createdAt": "2026-06-06T06:32:05Z",
-  "updatedAt": "2026-06-06T11:34:14.802Z",
+  "updatedAt": "2026-06-06T12:32:45.579Z",
   "userStories": [
     {
       "id": "US-001",
@@ -18,7 +18,9 @@
         "Given a root `turbo.json`, when `analyzeRepo` runs, then it returns `orchestrator` equal to `\"turbo\"`.",
         "Given a single-package fixture with no `turbo.json` or `nx.json`, when `analyzeRepo` runs, then it returns `orchestrator` equal to `\"none\"`.",
         "Given a package fixture using a Jest config, when `analyzeRepo` runs, then the matching `PackageFacts.testFramework` equals `\"jest\"` and `PackageFacts.testFilePatterns` comes from `detectTestFilePatternsForWorkspace`.",
-        "Given a member package at `packages/foo`, when `analyzeRepo` runs, then the matching `PackageFacts.relativeDir` equals `\"packages/foo\"` and is never an absolute path."
+        "Given a member package at `packages/foo`, when `analyzeRepo` runs, then the matching `PackageFacts.relativeDir` equals `\"packages/foo\"` and is never an absolute path.",
+        "Given a repo where `discoverWorkspacePackages()` returns an empty array, when `analyzeRepo` runs, then it still emits one root package entry rather than an empty `packages` list.",
+        "Given a package without `package.json`, when `analyzeRepo` inspects it, then it reports no executable scripts for that package and still preserves the package's `relativeDir` in the analysis output."
       ],
       "tags": [
         "feature",
@@ -56,10 +58,6 @@
         "src/cli/setup-analyze.ts",
         "src/cli/setup-types.ts"
       ],
-      "suggestedCriteria": [
-        "Given a repo where `discoverWorkspacePackages()` returns an empty array, when `analyzeRepo` runs, then it still emits one root package entry rather than an empty `packages` list.",
-        "Given a package without `package.json`, when `analyzeRepo` inspects it, then it reports no executable scripts for that package and still preserves the package's `relativeDir` in the analysis output."
-      ],
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced: Rectification exhausted with unfixed findings"
       ],
@@ -89,7 +87,9 @@
         "Given a `RepoAnalysis` with `shape` equal to `\"mono\"` and N packages, when `setupGenerateOp.parse` runs, then it returns N `monoConfigs` entries.",
         "When `setupGenerateOp.build(analysis)` runs, then it returns the string produced by `new SetupPromptBuilder().build(analysis)`.",
         "Given an injected session that returns a schema-invalid config on every turn, when `callOp` is invoked with `setupGenerateOp`, then it rejects with a `NaxError` whose `code` equals `\"SETUP_PLAN_INVALID\"` after `MAX_SETUP_LLM_ATTEMPTS` attempts.",
-        "Given a stubbed `callOp`, when the rewired `callLLM` in `init-context.ts` is invoked, then it calls `callOp` with `setupGenerateOp` and resolves to that result instead of throwing `\"callLLM not implemented\"`."
+        "Given a stubbed `callOp`, when the rewired `callLLM` in `init-context.ts` is invoked, then it calls `callOp` with `setupGenerateOp` and resolves to that result instead of throwing `\"callLLM not implemented\"`.",
+        "Given LLM output with extra narration around the JSON body, when `setupGenerateOp.parse` runs, then it still parses through `parseLLMJson()` and validates the extracted JSON payload.",
+        "Given a mono plan whose `monoConfigs` contain package dirs not present in `RepoAnalysis`, when `buildMonoConfigs` runs, then it excludes those entries from the returned `SetupPlan`."
       ],
       "tags": [
         "feature",
@@ -124,10 +124,6 @@
         "src/cli/setup-llm.ts",
         "src/prompts/builders/setup-builder.ts"
       ],
-      "suggestedCriteria": [
-        "Given LLM output with extra narration around the JSON body, when `setupGenerateOp.parse` runs, then it still parses through `parseLLMJson()` and validates the extracted JSON payload.",
-        "Given a mono plan whose `monoConfigs` contain package dirs not present in `RepoAnalysis`, when `buildMonoConfigs` runs, then it excludes those entries from the returned `SetupPlan`."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -149,7 +145,9 @@
         "Given a leaf package fixture and a stubbed gate runner, when `setupCommand` runs, then it invokes the configured verification gate exactly once.",
         "Given a gate runner that reports a non-zero result, when `setupCommand` runs, then it exits non-zero.",
         "Given a stubbed `analyzeRepo`, when `setupCommand` runs, then `analyzeRepo` is invoked once with the resolved workdir and `generateSetupPlan` is invoked with the `RepoAnalysis` that `analyzeRepo` returned.",
-        "Given the CLI registration in `bin/nax.ts`, when `nax setup` is invoked, then it dispatches to `setupCommand`."
+        "Given the CLI registration in `bin/nax.ts`, when `nax setup` is invoked, then it dispatches to `setupCommand`.",
+        "Given a `SetupPlan` whose root config has no surviving verification-capable command after cross-checking, when `setupCommand` runs, then it reports that no gate could be verified and exits non-zero without writing a misleading success summary.",
+        "Given a dry run on a monorepo plan, when `setupCommand` prints its summary, then it includes both the root config and the planned mono-config relative directories."
       ],
       "tags": [
         "feature",
@@ -185,10 +183,6 @@
         "src/cli/setup-write.ts",
         "src/cli/setup-verify.ts"
       ],
-      "suggestedCriteria": [
-        "Given a `SetupPlan` whose root config has no surviving verification-capable command after cross-checking, when `setupCommand` runs, then it reports that no gate could be verified and exits non-zero without writing a misleading success summary.",
-        "Given a dry run on a monorepo plan, when `setupCommand` prints its summary, then it includes both the root config and the planned mono-config relative directories."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -205,7 +199,9 @@
         "Given `shape` equal to `\"single\"`, when `fillScripts` runs, then it adds the `type-check` script to the root `package.json` only and writes no orchestrator task.",
         "Given a fixture where `fillScripts` has run for the filled gates, when `analyzeRepo` runs again over the same fixture, then the resulting `PackageFacts.missingScripts` no longer lists those gates.",
         "Given `setupCommand --fill-scripts`, when `setupCommand` runs, then it invokes `fillScripts` before the write step.",
-        "Given `setupCommand` without `--fill-scripts`, when it runs, then it does not invoke `fillScripts`."
+        "Given `setupCommand` without `--fill-scripts`, when it runs, then it does not invoke `fillScripts`.",
+        "Given a package that already defines `lint:fix`, when `fillScripts` runs, then it preserves the existing command text rather than replacing it with a generated value.",
+        "Given a monorepo root without `turbo.json`, when `fillScripts` runs, then it updates only package/root `package.json` files and does not create a new orchestrator manifest."
       ],
       "tags": [
         "feature",
@@ -216,8 +212,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -235,10 +231,6 @@
       ],
       "expectedFiles": [
         "src/cli/setup-fill.ts"
-      ],
-      "suggestedCriteria": [
-        "Given a package that already defines `lint:fix`, when `fillScripts` runs, then it preserves the existing command text rather than replacing it with a generated value.",
-        "Given a monorepo root without `turbo.json`, when `fillScripts` runs, then it updates only package/root `package.json` files and does not create a new orchestrator manifest."
       ],
       "priorErrors": [],
       "priorFailures": [],

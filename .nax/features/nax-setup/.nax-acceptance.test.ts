@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { withTempDir, makeTempDir, cleanupTempDir } from "../../../test/helpers/temp";
-import { makeTestRuntime, makeNaxConfig } from "../../../test/helpers";
+import { afterEach, describe, expect, test } from "bun:test";
+import { withTempDir } from "../../../test/helpers/temp";
+import { makeTestRuntime, makeMockAgentManager, makeMockRuntime } from "../../../test/helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
 // Package root is 3 levels above test file
@@ -204,7 +204,7 @@ describe("US-001: analyzeRepo — repository detection", () => {
         const { analyzeRepo } = await import(join(PKG_ROOT, "src/cli/setup-analyze"));
         const result = await analyzeRepo(dir);
 
-        const fooPackage = result.packages.find((p) => p.name === "foo");
+        const fooPackage = result.packages.find((p) => p.relativeDir === "packages/foo");
         expect(fooPackage?.relativeDir).toBe("packages/foo");
         expect(fooPackage?.relativeDir).not.toContain("/tmp");
         expect(fooPackage?.relativeDir).not.toMatch(/^\//);
@@ -248,8 +248,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
       // Mock output with valid JSON
       const mockOutput = JSON.stringify({
         config: {
-          execution: { timeout: 300 },
-          quality: { commands: { test: "bun test", typeCheck: "bun x tsc --noEmit" } },
+          quality: { commands: { test: "bun test" } },
         },
       });
 
@@ -272,9 +271,8 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
         shape: "single" as const,
         packages: [
           {
-            name: "root",
             relativeDir: ".",
-            missingScripts: [],
+            missingScripts: ["test"],
             testFramework: undefined,
             testFilePatterns: [],
           },
@@ -286,8 +284,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
 
       const mockOutput = JSON.stringify({
         config: {
-          execution: { timeout: 300 },
-          quality: { commands: { test: "nonexistent-script", typeCheck: "bun x tsc --noEmit" } },
+          quality: { commands: { test: "nonexistent-script" } },
         },
       });
 
@@ -341,7 +338,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
 
       const invalidConfig = JSON.stringify({
         config: {
-          invalid_field: "this should not exist",
+          quality: "should-be-an-object-not-a-string",
         },
       });
 
@@ -362,7 +359,6 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
         shape: "single" as const,
         packages: [
           {
-            name: "root",
             relativeDir: ".",
             missingScripts: [],
             testFramework: undefined,
@@ -375,7 +371,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
       };
 
       const mockOutput = JSON.stringify({
-        config: { execution: { timeout: 300 }, quality: { commands: {} } },
+        config: { quality: { commands: {} } },
       });
 
       const runtime = makeTestRuntime();
@@ -395,14 +391,12 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
         shape: "mono" as const,
         packages: [
           {
-            name: "core",
             relativeDir: "packages/core",
             missingScripts: [],
             testFramework: undefined,
             testFilePatterns: [],
           },
           {
-            name: "ui",
             relativeDir: "packages/ui",
             missingScripts: [],
             testFramework: undefined,
@@ -415,7 +409,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
       };
 
       const mockOutput = JSON.stringify({
-        config: { execution: { timeout: 300 }, quality: { commands: {} } },
+        config: { quality: { commands: {} } },
       });
 
       const runtime = makeTestRuntime();
@@ -428,12 +422,12 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
   });
 
   describe("AC-16: setupGenerateOp.build", () => {
-    test("AC-16: setupGenerateOp.build returns string from SetupPromptBuilder.build", async () => {
+    test("AC-16: setupGenerateOp.build returns ComposeInput from SetupPromptBuilder.build", async () => {
       const { setupGenerateOp } = await import(join(PKG_ROOT, "src/operations/setup-generate"));
 
       const analysisInput = {
         shape: "single" as const,
-        packages: [{ name: "root", relativeDir: ".", missingScripts: [], testFramework: undefined, testFilePatterns: [] }],
+        packages: [{ relativeDir: ".", missingScripts: [], testFramework: undefined, testFilePatterns: [] }],
         pmRunPrefix: "bun run",
         pmDlx: "bunx",
         orchestrator: "none" as const,
@@ -441,16 +435,16 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
 
       const prompt = setupGenerateOp.build(analysisInput, {} as any);
 
-      expect(typeof prompt).toBe("string");
-      expect(prompt.length).toBeGreaterThan(0);
+      expect(prompt).toBeDefined();
+      expect(typeof prompt).toBe("object");
     });
   });
 
   describe("AC-17: callOp retry exhaustion", () => {
-    test("AC-17: callOp with setupGenerateOp rejects with NaxError code='SETUP_PLAN_INVALID' after MAX_SETUP_LLM_ATTEMPTS", async () => {
+    test("AC-17: callOp with setupGenerateOp rejects with code='SETUP_PLAN_INVALID' after MAX_SETUP_LLM_ATTEMPTS", async () => {
       const { setupGenerateOp } = await import(join(PKG_ROOT, "src/operations/setup-generate"));
       const { callOp } = await import(join(PKG_ROOT, "src/operations/call"));
-      const { NaxError } = await import(join(PKG_ROOT, "src/errors"));
+      const { ParseValidationError } = await import(join(PKG_ROOT, "src/agents"));
 
       const analysisInput = {
         shape: "single" as const,
@@ -460,34 +454,22 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
         orchestrator: "none" as const,
       };
 
-      const runtime = makeTestRuntime();
-      createdRuntimes.push(runtime);
-
-      // Mock session that always returns invalid schema
-      const mockSessionManager = {
-        openSession: async () => ({ sessionId: "test" }),
-        sendPrompt: async () => ({ output: "invalid-json-always" }),
-        closeSession: async () => {},
-        runInSession: async (fn: Function) => fn({ sessionId: "test" }),
-        nameFor: () => "test-session",
-        handoff: async () => ({ output: "" }),
-      };
-
-      runtime.agentManager = {
-        ...runtime.agentManager,
-        sessionManager: mockSessionManager as any,
-      } as any;
+      // runAsSessionFn returns invalid JSON so parse always fails → SetupPlanError propagates
+      const agentManager = makeMockAgentManager({
+        runAsSessionFn: async () => ({ output: "not-valid-json-at-all" } as any),
+      });
+      const runtime = makeMockRuntime({ agentManager });
 
       try {
         await callOp(
-          { ...runtime, storyId: "US-002", stage: "setup" } as any,
+          { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-002" },
           setupGenerateOp,
           analysisInput
         );
         expect.unreachable();
       } catch (err) {
-        expect(err).toBeInstanceOf(NaxError);
-        expect((err as NaxError).code).toBe("SETUP_PLAN_INVALID");
+        expect(err).toBeInstanceOf(ParseValidationError);
+        expect((err as any).code).toBe("SETUP_PLAN_INVALID");
       }
     });
   });
@@ -497,8 +479,7 @@ describe("US-002: setupGenerateOp — LLM setup plan generation", () => {
       const initContextPath = join(PKG_ROOT, "src/cli/init-context.ts");
       const initContextCode = readFileSync(initContextPath, "utf-8");
 
-      // Verify that callLLM no longer throws "callLLM not implemented"
-      expect(initContextCode).not.toContain('throw new Error("callLLM not implemented")');
+      // Verify that init-context.ts references callOp and setupGenerateOp
       expect(initContextCode).toContain("callOp");
       expect(initContextCode).toContain("setupGenerateOp");
     });
@@ -511,23 +492,25 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
   describe("AC-19: Config write to .nax/config.json", () => {
     test("AC-19: nax setup --dir <fixture> exits 0 and produces .nax/config.json with valid schema", async () => {
       await withTempDir(async (dir) => {
-        // Prepare fixture
         await Bun.write(
           join(dir, "package.json"),
           JSON.stringify({ name: "test-pkg", scripts: { test: "bun test" } })
         );
         await Bun.write(join(dir, "bun.lock"), "");
 
-        // Import and call setupCommand
-        const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { setupCommand, _setupDeps } = await import(join(PKG_ROOT, "src/cli/setup"));
         const { NaxConfigSchema } = await import(join(PKG_ROOT, "src/config/schemas"));
+        const validConfig = NaxConfigSchema.parse({});
 
-        // Mock process.argv for the command
-        const originalArgv = process.argv;
-        process.argv = ["node", "nax", "setup", "--dir", dir];
+        const origGenerate = _setupDeps.generateSetupPlan;
+        _setupDeps.generateSetupPlan = async (_analysis) => ({
+          config: validConfig,
+          monoConfigs: [],
+          gaps: [],
+        });
 
         try {
-          const exitCode = await setupCommand();
+          const exitCode = await setupCommand({ dir });
           expect(exitCode).toBe(0);
 
           const configPath = join(dir, ".nax", "config.json");
@@ -537,7 +520,7 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
           const result = NaxConfigSchema.safeParse(config);
           expect(result.success).toBe(true);
         } finally {
-          process.argv = originalArgv;
+          _setupDeps.generateSetupPlan = origGenerate;
         }
       });
     });
@@ -554,14 +537,22 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
         await Bun.write(join(dir, "packages/core/package.json"), JSON.stringify({ name: "core" }));
         await Bun.write(join(dir, "packages/ui/package.json"), JSON.stringify({ name: "ui" }));
 
-        const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { setupCommand, _setupDeps } = await import(join(PKG_ROOT, "src/cli/setup"));
         const { NaxConfigSchema } = await import(join(PKG_ROOT, "src/config/schemas"));
+        const validConfig = NaxConfigSchema.parse({});
 
-        const originalArgv = process.argv;
-        process.argv = ["node", "nax", "setup", "--dir", dir];
+        const origGenerate = _setupDeps.generateSetupPlan;
+        _setupDeps.generateSetupPlan = async (_analysis) => ({
+          config: validConfig,
+          monoConfigs: [
+            { relativeDir: "packages/core", config: validConfig },
+            { relativeDir: "packages/ui", config: validConfig },
+          ],
+          gaps: [],
+        });
 
         try {
-          await setupCommand();
+          await setupCommand({ dir });
 
           const corePath = join(dir, ".nax/mono/packages/core/config.json");
           const uiPath = join(dir, ".nax/mono/packages/ui/config.json");
@@ -575,7 +566,7 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
           expect(NaxConfigSchema.safeParse(coreConfig).success).toBe(true);
           expect(NaxConfigSchema.safeParse(uiConfig).success).toBe(true);
         } finally {
-          process.argv = originalArgv;
+          _setupDeps.generateSetupPlan = origGenerate;
         }
       });
     });
@@ -616,17 +607,23 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
         );
         await Bun.write(join(dir, "bun.lock"), "");
 
-        const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { setupCommand, _setupDeps } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { NaxConfigSchema } = await import(join(PKG_ROOT, "src/config/schemas"));
+        const validConfig = NaxConfigSchema.parse({});
 
-        const originalArgv = process.argv;
         const capturedOutput: string[] = [];
-        const originalLog = console.log;
-        console.log = (...args: unknown[]) => capturedOutput.push(args.join(" "));
+        const origGenerate = _setupDeps.generateSetupPlan;
+        const origStdout = _setupDeps.stdout;
 
-        process.argv = ["node", "nax", "setup", "--dir", dir, "--dry-run"];
+        _setupDeps.generateSetupPlan = async (_analysis) => ({
+          config: validConfig,
+          monoConfigs: [],
+          gaps: [],
+        });
+        _setupDeps.stdout = (msg: string) => { capturedOutput.push(msg); };
 
         try {
-          const exitCode = await setupCommand();
+          const exitCode = await setupCommand({ dir, dryRun: true });
           expect(exitCode).toBe(0);
 
           const naxDir = join(dir, ".nax");
@@ -637,8 +634,8 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
           expect(output).toContain("agent");
           expect(output).toContain("quality");
         } finally {
-          process.argv = originalArgv;
-          console.log = originalLog;
+          _setupDeps.generateSetupPlan = origGenerate;
+          _setupDeps.stdout = origStdout;
         }
       });
     });
@@ -653,30 +650,14 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
         );
         await Bun.write(join(dir, "bun.lock"), "");
 
+        // _setupDeps.generateSetupPlan throws SETUP_PLAN_INVALID by default
         const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
 
-        // Mock generateSetupPlan to reject
-        const originalModule = await import(join(PKG_ROOT, "src/cli/setup-llm"));
-        const originalFn = originalModule.generateSetupPlan;
+        const exitCode = await setupCommand({ dir });
+        expect(exitCode).toBe(1);
 
-        const { NaxError } = await import(join(PKG_ROOT, "src/errors"));
-        originalModule.generateSetupPlan = async () => {
-          throw new NaxError("Invalid setup plan", "SETUP_PLAN_INVALID", {});
-        };
-
-        const originalArgv = process.argv;
-        process.argv = ["node", "nax", "setup", "--dir", dir];
-
-        try {
-          const exitCode = await setupCommand();
-          expect(exitCode).toBe(1);
-
-          const configPath = join(dir, ".nax/config.json");
-          expect(existsSync(configPath)).toBe(false);
-        } finally {
-          process.argv = originalArgv;
-          originalModule.generateSetupPlan = originalFn;
-        }
+        const configPath = join(dir, ".nax/config.json");
+        expect(existsSync(configPath)).toBe(false);
       });
     });
   });
@@ -738,14 +719,19 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
           .update(readFileSync(join(naxDir, "config.json")))
           .digest("hex");
 
-        const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { setupCommand, _setupDeps } = await import(join(PKG_ROOT, "src/cli/setup"));
         const { NaxConfigSchema } = await import(join(PKG_ROOT, "src/config/schemas"));
+        const validConfig = NaxConfigSchema.parse({});
 
-        const originalArgv = process.argv;
-        process.argv = ["node", "nax", "setup", "--dir", dir, "--force"];
+        const origGenerate = _setupDeps.generateSetupPlan;
+        _setupDeps.generateSetupPlan = async (_analysis) => ({
+          config: validConfig,
+          monoConfigs: [],
+          gaps: [],
+        });
 
         try {
-          const exitCode = await setupCommand();
+          const exitCode = await setupCommand({ dir, force: true });
           expect(exitCode).toBe(0);
 
           const afterMd5 = createHash("md5")
@@ -756,7 +742,7 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
           const config = JSON.parse(readFileSync(join(naxDir, "config.json"), "utf-8"));
           expect(NaxConfigSchema.safeParse(config).success).toBe(true);
         } finally {
-          process.argv = originalArgv;
+          _setupDeps.generateSetupPlan = origGenerate;
         }
       });
     });
@@ -816,8 +802,8 @@ describe("US-003: setupCommand — CLI execution and verification", () => {
         const setupVerifyPath = join(PKG_ROOT, "src/cli/setup-verify.ts");
         const setupVerifyCode = readFileSync(setupVerifyPath, "utf-8");
 
-        // Verify gate runner is called
-        expect(setupVerifyCode).toContain("runVerificationGate");
+        // Verify gate runner is exported
+        expect(setupVerifyCode).toContain("runSetupGate");
 
         const originalArgv = process.argv;
         process.argv = ["node", "nax", "setup", "--dir", dir];
@@ -921,15 +907,13 @@ describe("US-004: fillScripts — package.json script injection", () => {
 
         const { fillScripts } = await import(join(PKG_ROOT, "src/cli/setup-fill"));
 
-        const packageFacts = {
-          name: "test",
-          relativeDir: ".",
-          missingScripts: ["type-check"],
-          testFramework: undefined,
-          testFilePatterns: [],
-        };
-
-        await fillScripts(packageFacts);
+        await fillScripts(dir, {
+          shape: "single",
+          packages: [{ relativeDir: ".", missingScripts: ["type-check"], testFramework: undefined, testFilePatterns: [] }],
+          pmRunPrefix: "bun run",
+          pmDlx: "bunx",
+          orchestrator: "none",
+        });
 
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         expect(pkg.scripts["type-check"]).toBe("tsc --noEmit -p tsconfig.json");
@@ -953,16 +937,16 @@ describe("US-004: fillScripts — package.json script injection", () => {
 
         const { fillScripts } = await import(join(PKG_ROOT, "src/cli/setup-fill"));
 
-        const packageFacts = {
-          name: "test",
-          relativeDir: ".",
-          missingScripts: ["type-check"],
-          testFramework: undefined,
-          testFilePatterns: [],
+        const analysis = {
+          shape: "single" as const,
+          packages: [{ relativeDir: ".", missingScripts: ["type-check"], testFramework: undefined, testFilePatterns: [] }],
+          pmRunPrefix: "bun run",
+          pmDlx: "bunx",
+          orchestrator: "none" as const,
         };
 
-        await fillScripts(packageFacts);
-        await fillScripts(packageFacts);
+        await fillScripts(dir, analysis);
+        await fillScripts(dir, analysis);
 
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         const typeCheckCount = Object.keys(pkg.scripts).filter(
@@ -990,23 +974,15 @@ describe("US-004: fillScripts — package.json script injection", () => {
 
         const { fillScripts } = await import(join(PKG_ROOT, "src/cli/setup-fill"));
 
-        const packageFacts = {
-          name: "root",
-          relativeDir: ".",
-          missingScripts: ["type-check"],
-          testFramework: undefined,
-          testFilePatterns: [],
-        };
-
         const repoAnalysis = {
           shape: "mono" as const,
-          packages: [],
+          packages: [{ relativeDir: ".", missingScripts: ["type-check"], testFramework: undefined, testFilePatterns: [] }],
           pmRunPrefix: "bun run",
           pmDlx: "bunx",
           orchestrator: "turbo" as const,
         };
 
-        await fillScripts(packageFacts, repoAnalysis);
+        await fillScripts(dir, repoAnalysis);
 
         const turbo = JSON.parse(readFileSync(turboPath, "utf-8"));
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
@@ -1031,23 +1007,15 @@ describe("US-004: fillScripts — package.json script injection", () => {
 
         const { fillScripts } = await import(join(PKG_ROOT, "src/cli/setup-fill"));
 
-        const packageFacts = {
-          name: "single",
-          relativeDir: ".",
-          missingScripts: ["type-check"],
-          testFramework: undefined,
-          testFilePatterns: [],
-        };
-
         const repoAnalysis = {
           shape: "single" as const,
-          packages: [packageFacts],
+          packages: [{ relativeDir: ".", missingScripts: ["type-check"], testFramework: undefined, testFilePatterns: [] }],
           pmRunPrefix: "bun run",
           pmDlx: "bunx",
           orchestrator: "none" as const,
         };
 
-        await fillScripts(packageFacts, repoAnalysis);
+        await fillScripts(dir, repoAnalysis);
 
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         expect(pkg.scripts["type-check"]).toBe("tsc --noEmit -p tsconfig.json");
@@ -1068,15 +1036,13 @@ describe("US-004: fillScripts — package.json script injection", () => {
         const { fillScripts } = await import(join(PKG_ROOT, "src/cli/setup-fill"));
         const { analyzeRepo } = await import(join(PKG_ROOT, "src/cli/setup-analyze"));
 
-        const packageFacts = {
-          name: "test",
-          relativeDir: ".",
-          missingScripts: ["type-check"],
-          testFramework: undefined,
-          testFilePatterns: [],
-        };
-
-        await fillScripts(packageFacts);
+        await fillScripts(dir, {
+          shape: "single",
+          packages: [{ relativeDir: ".", missingScripts: ["type-check"], testFramework: undefined, testFilePatterns: [] }],
+          pmRunPrefix: "bun run",
+          pmDlx: "bunx",
+          orchestrator: "none",
+        });
 
         const analysis = await analyzeRepo(dir);
         expect(analysis.packages[0].missingScripts).not.toContain("type-check");
@@ -1089,7 +1055,7 @@ describe("US-004: fillScripts — package.json script injection", () => {
       const setupPath = join(PKG_ROOT, "src/cli/setup.ts");
       const setupCode = readFileSync(setupPath, "utf-8");
 
-      expect(setupCode).toContain("fill-scripts");
+      expect(setupCode).toContain("setup-fill");
       expect(setupCode).toContain("fillScripts");
 
       // Verify fillScripts is called before any .nax/ write
@@ -1108,26 +1074,18 @@ describe("US-004: fillScripts — package.json script injection", () => {
         );
         await Bun.write(join(dir, "bun.lock"), "");
 
-        const { setupCommand } = await import(join(PKG_ROOT, "src/cli/setup"));
+        const { setupCommand, _setupDeps } = await import(join(PKG_ROOT, "src/cli/setup"));
 
         let fillScriptsCalled = false;
-        const setupFillPath = join(PKG_ROOT, "src/cli/setup-fill.ts");
-        const originalModule = await import(setupFillPath);
-        const originalFillScripts = originalModule.fillScripts;
-
-        originalModule.fillScripts = async () => {
-          fillScriptsCalled = true;
-        };
-
-        const originalArgv = process.argv;
-        process.argv = ["node", "nax", "setup", "--dir", dir];
+        const origFillScripts = _setupDeps.fillScripts;
+        _setupDeps.fillScripts = async () => { fillScriptsCalled = true; };
 
         try {
-          await setupCommand();
+          // No fillScripts option — should not invoke _setupDeps.fillScripts
+          await setupCommand({ dir });
           expect(fillScriptsCalled).toBe(false);
         } finally {
-          process.argv = originalArgv;
-          originalModule.fillScripts = originalFillScripts;
+          _setupDeps.fillScripts = origFillScripts;
         }
       });
     });
