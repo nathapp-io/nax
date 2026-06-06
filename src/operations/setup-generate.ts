@@ -3,6 +3,7 @@ import type { RepoAnalysis } from "../cli/setup-types";
 import type { NaxConfig } from "../config";
 import { NaxConfigSchema } from "../config/schemas";
 import { NaxError } from "../errors";
+import { getLogger } from "../logger";
 import { SetupPromptBuilder } from "../prompts/builders/setup-builder";
 import { parseLLMJson } from "../utils/llm-json";
 import type { BuildContext, RunOperation } from "./types";
@@ -68,6 +69,12 @@ export function buildMonoConfigs(parsed: RawSetupPlan, analysis: RepoAnalysis): 
   return analysis.packages.map((pkg) => {
     const rawMono = rawMonoConfigs.find((m) => m.relativeDir === pkg.relativeDir);
     const validated = rawMono ? NaxConfigSchema.safeParse(rawMono.config) : undefined;
+    if (rawMono && !validated?.success) {
+      getLogger().warn("setup-generate", "Per-package config failed schema validation — using empty config", {
+        storyId: "setup",
+        relativeDir: pkg.relativeDir,
+      });
+    }
     const config = (validated?.success ? validated.data : undefined) ?? {};
     return { relativeDir: pkg.relativeDir, config: config as Partial<NaxConfig> };
   });
