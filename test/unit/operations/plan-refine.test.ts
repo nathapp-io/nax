@@ -734,6 +734,55 @@ describe("normalizeCreatedContextFiles — move absent reads to expectedFiles", 
     });
   });
 
+  test("keeps an absent contextFile produced by an upstream dependency (cross-story read, not a create)", async () => {
+    await withWarnSpy(async () => {
+      const base = makeValidPrd("f", "feat/f");
+      const producer = { ...base.userStories[0], id: "US-001", contextFiles: [], expectedFiles: ["src/Card.tsx"] };
+      const consumer = {
+        ...base.userStories[0],
+        id: "US-002",
+        dependencies: ["US-001"],
+        contextFiles: ["src/Card.tsx"], // created by US-001 — absent on disk at plan time
+        expectedFiles: ["src/Badge.tsx"],
+      };
+      const prd = { ...base, userStories: [producer, consumer] };
+      const fileExists = mock(async () => false); // nothing on disk yet
+
+      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
+        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
+      };
+
+      const b = out.userStories.find((s) => s.id === "US-002")!;
+      // Kept as a read hint — NOT moved to expectedFiles (US-002 reads it but does not author it).
+      expect(b.contextFiles).toEqual(["src/Card.tsx"]);
+      expect(b.expectedFiles).toEqual(["src/Badge.tsx"]);
+    });
+  });
+
+  test("moves an absent contextFile to expectedFiles when NO upstream dependency produces it", async () => {
+    await withWarnSpy(async () => {
+      const base = makeValidPrd("f", "feat/f");
+      // US-002 depends on US-001, but US-001 does not create src/own.tsx → US-002 creates it.
+      const producer = { ...base.userStories[0], id: "US-001", contextFiles: [], expectedFiles: ["src/Card.tsx"] };
+      const consumer = {
+        ...base.userStories[0],
+        id: "US-002",
+        dependencies: ["US-001"],
+        contextFiles: ["src/own.tsx"],
+      };
+      const prd = { ...base, userStories: [producer, consumer] };
+      const fileExists = mock(async () => false);
+
+      const out = (await normalizeCreatedContextFiles(prd as never, WORKDIR, fileExists)) as never as {
+        userStories: Array<{ id: string; contextFiles?: unknown[]; expectedFiles?: string[] }>;
+      };
+
+      const b = out.userStories.find((s) => s.id === "US-002")!;
+      expect(b.contextFiles ?? []).toEqual([]);
+      expect(b.expectedFiles).toEqual(["src/own.tsx"]);
+    });
+  });
+
   test("is a no-op (returns input) when workdir is undefined", async () => {
     const fileExists = mock(async () => false);
     const prd = prdWith(["src/ghost.ts"]);

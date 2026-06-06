@@ -52,9 +52,9 @@ ${TEST_STRATEGY_GUIDE}`;
  * split stays identical across plan modes. Created files route to
  * `expectedFiles` (a post-run asset gate), never to `contextFiles`.
  */
-const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — existing files only.** Only list paths that already exist in the repo today. The pipeline verifies every \`contextFiles\` entry against the filesystem; a path that does not exist is treated as a missing-context warning.
+const CONTEXT_VS_EXPECTED_FILES_RULE = `**\`contextFiles\` rule — files readable when this story runs.** List paths that already exist in the repo today, PLUS any file an UPSTREAM dependency story creates (it does not exist now but will exist by the time this story runs, because dependencies execute first). The pipeline verifies every \`contextFiles\` entry against the filesystem; a path that exists neither on disk nor in an upstream dependency's outputs is treated as a missing-context warning.
 
-**\`expectedFiles\` rule — files this story CREATES.** List every NEW file the story authors (relative paths). A file the story will create belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both.`;
+**\`expectedFiles\` rule — files THIS story CREATES.** List every NEW file this story authors (relative paths). A file this story creates belongs here, NEVER in \`contextFiles\` — these are the story's outputs, not files to read first. A file created by an upstream dependency and only read/modified here belongs in \`contextFiles\`, NOT here (this story does not author it). A single path may appear in \`contextFiles\` (an existing sibling to mirror) AND \`expectedFiles\` (the new file itself), but the same path must never be in both.`;
 
 /** Output-schema line for the `expectedFiles` field, shared by both prompts. */
 const EXPECTED_FILES_SCHEMA_FIELD = `"expectedFiles": ["string — NEW files this story creates (relative paths, omit if none)"],`;
