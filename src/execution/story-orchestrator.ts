@@ -930,6 +930,24 @@ interface RectificationResult {
 }
 
 /**
+ * ADR-024 — overrides that repurpose the rectification harness for the
+ * non-blocking best-effort pass. All optional; omitting them preserves the
+ * blocking-cycle behavior exactly.
+ */
+export interface RectificationOverrides {
+  /** Seed findings instead of gatherRectificationFindings(...). */
+  initialFindings?: readonly Finding[];
+  /** Strategy set instead of state.rectification.strategies (scope filtering). */
+  strategies?: FixStrategy<Finding, unknown, unknown, unknown>[];
+  /** Phase kinds removed from validationPhases (e.g. the LLM reviews). */
+  excludePhaseKinds?: readonly PhaseKind[];
+  /** Phase kinds force-added to each revalidation sweep (e.g. verifier for test edits). */
+  extraRevalidationKinds?: readonly PhaseKind[];
+  /** maxAttemptsTotal override (1 + regressionAttempts for best-effort). */
+  maxAttempts?: number;
+}
+
+/**
  * @internal
  * Run the rectification loop and return a structured result describing the exit.
  * Returns `{ liteScopeIncomplete: true }` when the cycle exited with
@@ -943,9 +961,13 @@ export async function runRectification(
   state: InternalBuildState,
   phaseCosts: Record<string, number>,
   phaseOutputs: Record<string, unknown>,
+  overrides?: RectificationOverrides,
 ): Promise<RectificationResult> {
   const rectification = state.rectification;
-  const validationPhases = collectRectificationPhases(state);
+  const baseValidationPhases = collectRectificationPhases(state);
+  const validationPhases = overrides?.excludePhaseKinds
+    ? baseValidationPhases.filter((p) => !overrides.excludePhaseKinds?.includes(p.kind))
+    : baseValidationPhases;
   if (!rectification || validationPhases.length === 0) {
     return {};
   }
@@ -953,7 +975,9 @@ export async function runRectification(
     return {};
   }
 
-  const initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases, state);
+  const initialFindings = overrides?.initialFindings
+    ? [...overrides.initialFindings]
+    : gatherRectificationFindings(phaseOutputs, validationPhases, state);
   if (initialFindings.length === 0) {
     return {};
   }
@@ -977,17 +1001,23 @@ export async function runRectification(
     findings: [...initialFindings],
     iterations: [],
     strategies: withIncreasingFailuresBail(
-      rectification.strategies as FixStrategy<Finding, unknown, unknown, unknown>[],
+      (overrides?.strategies ?? rectification.strategies) as FixStrategy<Finding, unknown, unknown, unknown>[],
       rectification.abortOnIncreasingFailures,
       rectification.consecutiveIncreasesToBail ?? 1,
     ),
-    config: { maxAttemptsTotal: rectification.maxAttempts, validatorRetries: 1 },
+    config: { maxAttemptsTotal: overrides?.maxAttempts ?? rectification.maxAttempts, validatorRetries: 1 },
     validate: async (_validateCtx, opts) => {
       if (ctx.runtime.signal?.aborted) return { findings: [], shortCircuited: false };
       // opts is required by the FixCycle.validate contract but guard defensively for
       // plugin-supplied cycles that may call validate without opts (legacy shape).
       const lite = (opts?.mode ?? "full") === "lite";
       const selected = phasesToRevalidate(opts?.strategiesRun, validationPhases);
+      const extra = overrides?.extraRevalidationKinds
+        ? validationPhases.filter(
+            (p) => overrides.extraRevalidationKinds?.includes(p.kind) && !selected.some((s) => s.kind === p.kind),
+          )
+        : [];
+      const selectedWithExtra = [...selected, ...extra];
       // Terminal lite-validate: the full-suite gate is the most expensive phase
       // AND, for gate-seeded cycles (full-suite-rectify), the actual arbiter of
       // "resolved". It used to be SKIPPED entirely in lite mode, which let the
@@ -1006,7 +1036,7 @@ export async function runRectification(
       // verifier overrides it (single-session, or a failed/absent verifier).
       // Session-agnostic — also covers a single-session per-story
       // full-suite-gate; verify-scoped was never skipped and is unaffected.
-      const phases = lite ? orderGateLast(selected) : selected;
+      const phases = lite ? orderGateLast(selectedWithExtra) : selectedWithExtra;
       getSafeLogger()?.debug("story-orchestrator", "rectification validate scope", {
         storyId: ctx.storyId,
         mode: opts?.mode ?? "full",
