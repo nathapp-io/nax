@@ -11,10 +11,10 @@ import type { NonBlockingFixConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
+import type { PhaseKind } from "./story-orchestrator";
 
 /** Phase kinds to strip from revalidation — always the LLM reviews. */
-const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const;
-type ReviewPhaseKind = (typeof REVIEW_PHASE_KINDS)[number];
+const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const satisfies readonly PhaseKind[];
 
 /** Run the pass only when enabled and there is at least one advisory finding. */
 export function shouldRunNonBlockingFix(
@@ -25,13 +25,13 @@ export function shouldRunNonBlockingFix(
 }
 
 /** Phases to strip from revalidation (always the LLM reviews). */
-export function nonBlockingExcludePhases(): readonly ReviewPhaseKind[] {
+export function nonBlockingExcludePhases(): readonly PhaseKind[] {
   return REVIEW_PHASE_KINDS;
 }
 
 /** Extra revalidation phases: verifier when test edits are possible and guarded. */
-export function nonBlockingExtraPhases(cfg: NonBlockingFixConfig): readonly string[] {
-  return cfg.scope === "both" && cfg.verifierGuard ? (["verifier"] as const) : [];
+export function nonBlockingExtraPhases(cfg: NonBlockingFixConfig): readonly PhaseKind[] {
+  return cfg.scope === "both" && cfg.verifierGuard ? ["verifier"] : [];
 }
 
 export interface NonBlockingFixDeps {
@@ -70,6 +70,8 @@ export async function runNonBlockingFix(
   if (!shouldRunNonBlockingFix(args.cfg, args.advisoryFindings.length)) {
     return { ran: false, kept: false, restored: false };
   }
+  // Shallow copy is sufficient: phase outputs are replaced wholesale by each stage,
+  // never mutated in place.
   const phaseOutputsSnapshot = { ...args.phaseOutputs };
   const restoreRef = await _deps.captureSnapshotRef(args.workdir, args.storyId);
   const maxAttempts = 1 + args.cfg.regressionAttempts;
@@ -92,8 +94,9 @@ export async function runNonBlockingFix(
   }
 
   await _deps.rollbackToRef(args.workdir, restoreRef);
-  // Restore phaseOutputs so a failed gate/verifier recorded during the pass does
-  // not pollute the story verdict.
+  // In-place restore required: ExecutionPlan.run holds a direct reference to phaseOutputs;
+  // returning a new object would leave the caller with stale gate/verifier results from
+  // the failed best-effort pass. Intentional exception to the immutability rule.
   for (const key of Object.keys(args.phaseOutputs)) delete args.phaseOutputs[key];
   Object.assign(args.phaseOutputs, phaseOutputsSnapshot);
   logger?.info("non-blocking-fix", "best-effort fix exhausted — restored to adversarial-passed", {

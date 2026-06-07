@@ -210,7 +210,7 @@ export interface StoryOrchestratorResult {
   readonly liteScopeIncomplete?: boolean;
 }
 
-type PhaseKind =
+export type PhaseKind =
   | "test-writer"
   | "greenfield-gate"
   | "implementer"
@@ -1291,10 +1291,10 @@ export class ExecutionPlan {
     const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
     const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
     const advisoryFindings = advisoryOut?.advisoryFindings ?? [];
-    if (advCfg && this.state.rectification && shouldRunNonBlockingFix(advCfg, advisoryFindings.length)) {
+    if (advCfg && this.state.rectification && this.ctx.storyId && shouldRunNonBlockingFix(advCfg, advisoryFindings.length)) {
       await runNonBlockingFix({
         workdir: this.ctx.packageDir,
-        storyId: this.ctx.storyId ?? "",
+        storyId: this.ctx.storyId,
         advisoryFindings,
         cfg: advCfg,
         phaseOutputs,
@@ -1303,7 +1303,7 @@ export class ExecutionPlan {
             initialFindings: advisoryFindings,
             strategies: this.state.nonBlockingFixStrategies ?? [],
             excludePhaseKinds: nonBlockingExcludePhases(),
-            extraRevalidationKinds: nonBlockingExtraPhases(advCfg) as readonly PhaseKind[],
+            extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
             maxAttempts,
           }),
       });

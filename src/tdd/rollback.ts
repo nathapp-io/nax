@@ -1,8 +1,10 @@
 import { getLogger } from "../logger";
+import { NaxError } from "../errors";
 import { autoCommitIfDirty } from "../utils/git";
 
 export const _rollbackDeps = {
   spawn: Bun.spawn as typeof Bun.spawn,
+  autoCommitIfDirty,
 };
 
 /**
@@ -48,16 +50,17 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
  * Restore via rollbackToRef(workdir, sha): `git reset --hard sha` + `git clean -fd`
  * discards only the best-effort changes, NOT the story's committed files.
  */
-export async function captureSnapshotRef(
-  workdir: string,
-  storyId: string,
-  _deps: { autoCommitIfDirty?: typeof autoCommitIfDirty; spawn?: typeof Bun.spawn } = {},
-): Promise<string> {
-  const commit = _deps.autoCommitIfDirty ?? autoCommitIfDirty;
-  const spawn = _deps.spawn ?? Bun.spawn;
-  await commit(workdir, "non-blocking-fix-snapshot", "snapshot", storyId);
-  const proc = spawn(["git", "rev-parse", "HEAD"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+export async function captureSnapshotRef(workdir: string, storyId: string): Promise<string> {
+  await _rollbackDeps.autoCommitIfDirty(workdir, "non-blocking-fix-snapshot", "snapshot", storyId);
+  const proc = _rollbackDeps.spawn(["git", "rev-parse", "HEAD"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
   const sha = (await new Response(proc.stdout).text()).trim();
-  await proc.exited;
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new NaxError(
+      `git rev-parse HEAD failed in non-blocking-fix snapshot`,
+      "SNAPSHOT_REF_FAILED",
+      { storyId, workdir, stage: "non-blocking-fix-snapshot" },
+    );
+  }
   return sha;
 }

@@ -47,6 +47,8 @@ export {
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   type OrchestratorSlot,
+  type PhaseKind,
+  type RectificationOverrides,
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,
 } from "./story-orchestrator";

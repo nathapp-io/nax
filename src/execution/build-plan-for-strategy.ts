@@ -20,7 +20,6 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { isThreeSessionStrategy } from "../config";
 import type { TestStrategy } from "../config/schema-types";
-import type { NonBlockingFixConfig } from "../config/selectors";
 import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
@@ -218,7 +217,7 @@ export async function buildPlanForStrategy(
 
   // ADR-024 — non-blocking best-effort fix: config + scope-aware strategy set.
   // Only built when the adversarial review slot is present and the feature is enabled.
-  const nbf = config.review?.adversarial?.nonBlockingFix as NonBlockingFixConfig | undefined;
+  const nbf = config.review?.adversarial?.nonBlockingFix;
   const nbStrategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
   if (nbf?.enabled && inputs.adversarialReview) {
     const nbSink = makeDeclarationSink();
