@@ -1,5 +1,5 @@
-import { getLogger } from "../logger";
 import { NaxError } from "../errors";
+import { getLogger } from "../logger";
 import { autoCommitIfDirty } from "../utils/git";
 
 export const _rollbackDeps = {
@@ -56,11 +56,11 @@ export async function captureSnapshotRef(workdir: string, storyId: string): Prom
   const sha = (await new Response(proc.stdout).text()).trim();
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    throw new NaxError(
-      `git rev-parse HEAD failed in non-blocking-fix snapshot`,
-      "SNAPSHOT_REF_FAILED",
-      { storyId, workdir, stage: "non-blocking-fix-snapshot" },
-    );
+    throw new NaxError("git rev-parse HEAD failed in non-blocking-fix snapshot", "SNAPSHOT_REF_FAILED", {
+      storyId,
+      workdir,
+      stage: "non-blocking-fix-snapshot",
+    });
   }
   return sha;
 }

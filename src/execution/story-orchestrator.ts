@@ -1291,7 +1291,12 @@ export class ExecutionPlan {
     const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
     const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
     const advisoryFindings = advisoryOut?.advisoryFindings ?? [];
-    if (advCfg && this.state.rectification && this.ctx.storyId && shouldRunNonBlockingFix(advCfg, advisoryFindings.length)) {
+    if (
+      advCfg &&
+      this.state.rectification &&
+      this.ctx.storyId &&
+      shouldRunNonBlockingFix(advCfg, advisoryFindings.length)
+    ) {
       await runNonBlockingFix({
         workdir: this.ctx.packageDir,
         storyId: this.ctx.storyId,

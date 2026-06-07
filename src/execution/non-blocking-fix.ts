@@ -17,10 +17,7 @@ import type { PhaseKind } from "./story-orchestrator";
 const REVIEW_PHASE_KINDS = ["semantic-review", "adversarial-review"] as const satisfies readonly PhaseKind[];
 
 /** Run the pass only when enabled and there is at least one advisory finding. */
-export function shouldRunNonBlockingFix(
-  cfg: NonBlockingFixConfig | undefined,
-  advisoryCount: number,
-): boolean {
+export function shouldRunNonBlockingFix(cfg: NonBlockingFixConfig | undefined, advisoryCount: number): boolean {
   return cfg?.enabled === true && advisoryCount > 0;
 }
 
