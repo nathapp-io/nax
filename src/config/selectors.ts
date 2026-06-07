@@ -8,6 +8,8 @@
  * without duplicating projection logic or creating orphan hardcoded key lists.
  */
 
+import type { z } from "zod";
+import type { AdversarialReviewConfigSchema } from "./schemas-review";
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -138,3 +140,4 @@ export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.se
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
 export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
+export type NonBlockingFixConfig = NonNullable<z.infer<typeof AdversarialReviewConfigSchema>["nonBlockingFix"]>;

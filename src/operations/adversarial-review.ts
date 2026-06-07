@@ -110,6 +110,8 @@ export interface AdversarialReviewOutput {
    * when verify() short-circuits (failOpen / looksLikeFail / no findings).
    */
   acDropped: AcDroppedEntry<AdversarialLLMFinding, AcQuoteRejectionCode>[];
+  /** ADR-024 — non-blocking (sub-threshold) findings, surfaced for the best-effort fix pass. */
+  advisoryFindings?: Finding[];
   failOpen?: boolean;
   /**
    * True when the raw output could not be parsed but contained `"passed": false`.
@@ -480,6 +482,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
 
     const blocking = accepted.filter((f) => isBlockingSeverity(f.severity, threshold));
+    const advisory = accepted.filter((f) => !isBlockingSeverity(f.severity, threshold));
     const passed = parsed.passed && blocking.length === 0;
 
     return {
@@ -487,6 +490,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
       passed,
       findings: accepted,
       normalizedFindings: toAdversarialReviewFindings(blocking),
+      advisoryFindings: toAdversarialReviewFindings(advisory),
       acDropped: dropped,
     };
   },

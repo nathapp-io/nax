@@ -113,6 +113,30 @@ export const AdversarialReviewConfigSchema = z.object({
       maxRequotes: z.number().int().min(0).default(5),
     })
     .optional(),
+  /**
+   * ADR-024 — Non-blocking best-effort auto-fix over sub-threshold (warning/info)
+   * adversarial findings, run after adversarial review passes. Never blocks the
+   * story; restores to the adversarial-passed state on exhaustion.
+   */
+  nonBlockingFix: z
+    .object({
+      /** Master switch. Opt-in; ramp to true after validating signal quality. */
+      enabled: z.boolean().default(false),
+      /**
+       * "source": autofix-implementer only.
+       * "both":    + autofix-test-writer (test edits allowed).
+       */
+      scope: z.enum(["source", "both"]).default("both"),
+      /** Fix attempts to clear a regression the best-effort fix introduced. */
+      regressionAttempts: z.number().int().min(0).default(1),
+      /**
+       * When true (default) and a test edit occurs (scope "both"), add the verifier
+       * to deterministic revalidation as the replacement for the stripped adversarial
+       * re-run. No-op when no verifier exists (single-session).
+       */
+      verifierGuard: z.boolean().default(true),
+    })
+    .optional(),
 });
 
 export const ReviewConfigSchema = z.object({

@@ -218,6 +218,8 @@ export interface AdversarialReviewConfig {
    * reviewer actually open the code before passing (#3A inspection-trail guard).
    */
   demandInspectionTrail?: boolean;
+  /** ADR-024 — Non-blocking best-effort auto-fix over sub-threshold adversarial findings. */
+  nonBlockingFix?: import("../config/selectors").NonBlockingFixConfig;
 }
 
 /** Review configuration */
