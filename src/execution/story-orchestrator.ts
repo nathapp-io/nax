@@ -1,3 +1,4 @@
+import type { NonBlockingFixConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import type { Finding, FixCycle, FixCycleContext, FixStrategy, Iteration } from "../findings";
 import { runFixCycle } from "../findings";
@@ -35,6 +36,12 @@ import { pipelineEventBus } from "../pipeline/event-bus";
 import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review/prepare-inputs";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
+import {
+  nonBlockingExcludePhases,
+  nonBlockingExtraPhases,
+  runNonBlockingFix,
+  shouldRunNonBlockingFix,
+} from "./non-blocking-fix";
 
 export const _storyOrchestratorDeps = {
   callOp,
@@ -260,6 +267,10 @@ interface InternalBuildState {
   semanticReview?: InternalPhase;
   adversarialReview?: InternalPhase;
   rectification?: RectificationPhaseOptions;
+  /** ADR-024 — non-blocking best-effort fix config, resolved at build time. */
+  nonBlockingFix?: NonBlockingFixConfig;
+  /** ADR-024 — scope-aware best-effort strategy set, built at plan time. */
+  nonBlockingFixStrategies?: FixStrategy<Finding, unknown, unknown, unknown>[];
 }
 
 const CANONICAL_ORDER: readonly PhaseKind[] = [
@@ -1275,6 +1286,29 @@ export class ExecutionPlan {
       }
     }
 
+    // ADR-024 — non-blocking best-effort fix over advisory adversarial findings.
+    // Only when the story is currently green (adversarial passed, nothing pending).
+    const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
+    const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
+    const advisoryFindings = advisoryOut?.advisoryFindings ?? [];
+    if (advCfg && this.state.rectification && shouldRunNonBlockingFix(advCfg, advisoryFindings.length)) {
+      await runNonBlockingFix({
+        workdir: this.ctx.packageDir,
+        storyId: this.ctx.storyId ?? "",
+        advisoryFindings,
+        cfg: advCfg,
+        phaseOutputs,
+        runRectify: (maxAttempts) =>
+          runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
+            initialFindings: advisoryFindings,
+            strategies: this.state.nonBlockingFixStrategies ?? [],
+            excludePhaseKinds: nonBlockingExcludePhases(),
+            extraRevalidationKinds: nonBlockingExtraPhases(advCfg) as readonly PhaseKind[],
+            maxAttempts,
+          }),
+      });
+    }
+
     // Aggregate success across every op that produced output, including fix-ops
     // dispatched during rectification (spec §2C / AC: "success === false when
     // any op returns { success: false }").
@@ -1417,6 +1451,13 @@ export class StoryOrchestratorBuilder {
 
   addRectification(opts: RectificationPhaseOptions): this {
     this.state.rectification = opts;
+    return this;
+  }
+
+  /** ADR-024 — set the non-blocking best-effort fix config + scope-aware strategy set. */
+  addNonBlockingFix(cfg: NonBlockingFixConfig, strategies: FixStrategy<Finding, unknown, unknown, unknown>[]): this {
+    this.state.nonBlockingFix = cfg;
+    this.state.nonBlockingFixStrategies = strategies;
     return this;
   }
 

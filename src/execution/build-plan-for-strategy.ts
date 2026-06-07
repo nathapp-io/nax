@@ -20,6 +20,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { isThreeSessionStrategy } from "../config";
 import type { TestStrategy } from "../config/schema-types";
+import type { NonBlockingFixConfig } from "../config/selectors";
 import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
 import type { Finding } from "../findings/types";
@@ -213,6 +214,33 @@ export async function buildPlanForStrategy(
       postValidate,
     };
     builder.addRectification(rectOpts);
+  }
+
+  // ADR-024 — non-blocking best-effort fix: config + scope-aware strategy set.
+  // Only built when the adversarial review slot is present and the feature is enabled.
+  const nbf = config.review?.adversarial?.nonBlockingFix as NonBlockingFixConfig | undefined;
+  const nbStrategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
+  if (nbf?.enabled && inputs.adversarialReview) {
+    const nbSink = makeDeclarationSink();
+    if (nbf.scope === "source") {
+      // implementer claims adversarial findings in SOURCE scope (both session modes)
+      nbStrategies.push(
+        makeAutofixImplementerStrategy(story, config, nbSink, {
+          includeAdversarialReview: true,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
+    } else {
+      // "both" scope: implementer handles regression/source findings; test-writer owns adversarial
+      nbStrategies.push(
+        makeAutofixImplementerStrategy(story, config, nbSink, {
+          includeAdversarialReview: false,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
+        makeAutofixTestWriterStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
+    }
+    // Always: recover from a test regression that the best-effort fix introduces
+    nbStrategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
+    builder.addNonBlockingFix(nbf, nbStrategies);
   }
 
   return builder.build(ctx, { isThreeSession });
