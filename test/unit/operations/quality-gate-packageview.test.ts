@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { typecheckCheckOp } from "@/operations";
+import { typecheckCheckOp, verifyScopedOp, _verifyScopedDeps } from "@/operations";
 
 function ctxWithQuality(quality?: Record<string, unknown>) {
   const config = { quality, execution: {} } as any;
@@ -33,5 +33,28 @@ describe("typecheckCheckOp via packageView", () => {
     const out = await typecheckCheckOp.execute({ workdir: "/w", storyId: "US-003" }, ctxWithQuality({ commands: {} }), deps);
     expect(called).toBe(false);
     expect(out.success).toBe(true);
+  });
+});
+
+describe("verifyScopedOp via packageView", () => {
+  test("reads quality.commands.test from packageView (not phantom ctx.config)", async () => {
+    let sawTestCommand: string | undefined;
+    const deps = {
+      ..._verifyScopedDeps,
+      selectScopedTests: async (o: any) => {
+        sawTestCommand = o.testCommand;
+        return { isFullSuite: true, isMonorepoOrchestrator: false, thresholdFallback: false, files: [], command: o.testCommand, effectiveCommand: o.testCommand, scopeTestFallback: false };
+      },
+      regression: async () => ({ success: true, status: "PASS" as any, output: "", exitCode: 0, durationMs: 0 }),
+      parseTestOutput: () => ({ passed: 1, failed: 0, failures: [] }),
+      testSummaryToFindings: () => [],
+    } as any;
+
+    await verifyScopedOp.execute(
+      { workdir: "/w", storyId: "US-003", regressionMode: "per-story" } as any,
+      ctxWithQuality({ commands: { test: "pytest packages/agent/tests" } }),
+      deps,
+    );
+    expect(sawTestCommand).toBe("pytest packages/agent/tests");
   });
 });
