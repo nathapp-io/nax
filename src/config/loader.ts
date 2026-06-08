@@ -438,6 +438,23 @@ export function _clearRootConfigCache(): void {
 }
 
 /**
+ * Read (but do NOT merge) the per-package override at
+ * <repoRoot>/.nax/mono/<packageDir>/config.json. Returns null when absent.
+ * The `profile` key (if present) is stripped — package profiles are resolved by
+ * loadConfigForWorkdir, not by the runtime registry.
+ */
+export async function loadPackageOverride(
+  repoRoot: string,
+  packageDir: string,
+): Promise<Partial<NaxConfig> | null> {
+  const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
+  const override = await loadJsonFile<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
+  if (!override) return null;
+  const { profile: _profile, ...fields } = override;
+  return fields;
+}
+
+/**
  * Load config for a specific working directory (monorepo package).
  *
  * Resolution order:
