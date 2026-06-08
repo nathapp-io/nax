@@ -291,7 +291,10 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     routing: {
       complexity,
       testStrategy,
-      reasoning: "validated from LLM output",
+      reasoning:
+        typeof routing.reasoning === "string" && routing.reasoning.trim().length > 0
+          ? routing.reasoning.trim()
+          : "validated from LLM output",
       ...(noTestJustification !== undefined ? { noTestJustification } : {}),
     },
     ...(workdir !== undefined ? { workdir } : {}),
