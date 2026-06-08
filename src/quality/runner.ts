@@ -82,6 +82,19 @@ function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; ca
  */
 export async function runQualityCommand(opts: QualityCommandOptions): Promise<QualityCommandResult> {
   const { commandName, command, workdir, storyId, timeoutMs = DEFAULT_TIMEOUT_MS, env, stripEnvVars } = opts;
+
+  if (!command || command.trim() === "") {
+    return {
+      commandName,
+      command,
+      success: false,
+      exitCode: -1,
+      output: `[nax] ${commandName} skipped: empty command`,
+      durationMs: 0,
+      timedOut: false,
+    };
+  }
+
   const startTime = Date.now();
   const logger = getSafeLogger();
 
