@@ -34,3 +34,29 @@ describe("implementerOp.model — routing-driven", () => {
     expect(resolver({ story: storyWithTier(undefined) }, buildCtx)).toBeUndefined();
   });
 });
+
+import { testWriterOp } from "@/operations";
+
+function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
+  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+}
+
+describe("testWriterOp.model — tdd.sessionTiers.testWriter", () => {
+  test("returns the configured testWriter tier", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ testWriter: "fast" }))).toBe("fast");
+  });
+
+  test("passes a ConfiguredModel object through unchanged", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ testWriter: { agent: "claude", model: "haiku" } }))).toEqual({
+      agent: "claude",
+      model: "haiku",
+    });
+  });
+
+  test("returns undefined when sessionTiers is absent (callOp then defaults)", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
+  });
+});
