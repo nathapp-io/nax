@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { ModelTierSchema, TierConfigSchema } from "./schemas-model";
+import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
@@ -250,11 +250,15 @@ export const TddConfigSchema = z.object({
   strategy: z.enum(["auto", "strict", "lite", "off"]).default("auto"),
   sessionTiers: z
     .object({
-      testWriter: z.string().optional(),
-      implementer: z.string().optional(),
-      verifier: z.string().optional(),
+      // ConfiguredModel = tier string ("fast") OR { agent, model } cross-agent pin.
+      testWriter: ConfiguredModelSchema.default("fast"),
+      verifier: ConfiguredModelSchema.default("fast"),
+      // implementer is routing-driven (story.routing.modelTier + escalation); this
+      // field is intentionally NOT consumed. Kept optional so legacy configs parse.
+      implementer: ConfiguredModelSchema.optional(),
     })
-    .optional(),
+    // Explicit default avoids Zod v4 behavior where .default({}) bypasses inner defaults.
+    .default({ testWriter: "fast", verifier: "fast" }),
   testWriterAllowedPaths: z.array(z.string()).optional(),
   rollbackOnFailure: z.boolean().optional(),
   greenfieldDetection: z.boolean().optional(),
