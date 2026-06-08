@@ -108,7 +108,7 @@ export interface FullSuiteGateDeps {
 export const _fullSuiteGateDeps: FullSuiteGateDeps = {
   resolveGateContext: async (input, ctx) => {
     const { resolveQualityTestCommands } = await import("../quality/command-resolver");
-    const config = ctx.runtime.configLoader.current();
+    const config = ctx.packageView.config; // package-merged config (2b), not root
     // Prefer regressionGate.timeoutSeconds (matches legacy RegressionStrategy / issue #1116)
     // and fall back to rectification.fullSuiteTimeoutSeconds for backwards compatibility with
     // callers that still set the older key.
@@ -195,7 +195,7 @@ export const fullSuiteGateOp: DeterministicOperation<
     deps: FullSuiteGateDeps = _fullSuiteGateDeps,
   ): Promise<FullSuiteGateOutput> {
     const logger = getLogger();
-    const ctxConfig = (ctx as unknown as { config?: NaxConfig }).config;
+    const ctxConfig = ctx.packageView.config;
 
     // issue #1116: regressionGate.enabled=false → short-circuit as skipped.
     const enabled = ctxConfig?.execution?.regressionGate?.enabled ?? true;

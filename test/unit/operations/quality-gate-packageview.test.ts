@@ -58,3 +58,22 @@ describe("verifyScopedOp via packageView", () => {
     expect(sawTestCommand).toBe("pytest packages/agent/tests");
   });
 });
+
+import { _fullSuiteGateDeps } from "@/operations";
+
+describe("fullSuiteGateOp uses package config", () => {
+  test("resolveGateContext resolves the PACKAGE test command, not root", async () => {
+    const packageConfig = { quality: { commands: { test: "pytest packages/agent/tests" } }, execution: {} } as any;
+    const rootConfig = { quality: { commands: { test: "pytest" } }, execution: {} } as any;
+    const ctx = {
+      runtime: { configLoader: { current: () => rootConfig } },
+      storyId: "US-003",
+      packageView: { packageDir: "packages/agent", config: packageConfig, select: (s: any) => s.select(packageConfig) },
+    } as any;
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w", story: { id: "US-003", workdir: "packages/agent" } } as any,
+      ctx,
+    );
+    expect(gateCtx.testCmd).toBe("pytest packages/agent/tests");
+  });
+});
