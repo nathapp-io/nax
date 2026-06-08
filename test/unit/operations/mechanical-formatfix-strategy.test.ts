@@ -4,8 +4,6 @@ import { _mechanicalFormatFixDeps, makeMechanicalFormatFixStrategy } from "@/ope
 import type { MechanicalFormatFixDeps } from "@/operations";
 import type { QualityCommandOptions } from "@/quality";
 
-const mockCtx = { runtime: {}, storyId: "US-004" } as any;
-
 function ctxWithQuality(quality?: Record<string, unknown>) {
   const config = { quality, execution: {} } as any;
   return {

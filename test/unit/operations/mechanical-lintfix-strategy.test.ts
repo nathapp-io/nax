@@ -4,8 +4,6 @@ import { _mechanicalLintFixDeps, makeMechanicalLintFixStrategy } from "@/operati
 import type { MechanicalLintFixDeps } from "@/operations";
 import type { QualityCommandOptions } from "@/quality";
 
-const mockCtx = { runtime: {}, storyId: "US-004" } as any;
-
 function ctxWithQuality(quality?: Record<string, unknown>) {
   const config = { quality, execution: {} } as any;
   return {
