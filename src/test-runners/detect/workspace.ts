@@ -14,6 +14,7 @@
  * Returns empty array when not a monorepo or detection fails.
  */
 
+import { join } from "node:path";
 import { getSafeLogger } from "../../logger";
 
 /** Injectable deps for testability */
@@ -25,6 +26,7 @@ export const _workspaceDeps = {
   },
   spawn: Bun.spawn as typeof Bun.spawn,
   glob: (pattern: string, cwd: string) => new Bun.Glob(pattern).scan({ cwd, onlyFiles: false }),
+  stat: (path: string) => Bun.file(path).stat(),
 };
 
 /** Expand workspace globs (e.g. "packages/*") to concrete directories */
@@ -122,17 +124,36 @@ async function detectTurboOrNx(workdir: string): Promise<string[]> {
 /** Detect packages from existing .nax/mono/ layout */
 async function detectNaxMonoLayout(workdir: string): Promise<string[]> {
   const dirs: string[] = [];
-  try {
-    const glob = new Bun.Glob(".nax/mono/*/config.json");
-    for await (const entry of glob.scan({ cwd: workdir })) {
-      // entry = ".nax/mono/packages/api/config.json" → extract "packages/api"
-      const parts = entry.split("/");
-      // Remove ".nax", "mono", and "config.json" → middle is the packageDir
-      if (parts.length >= 4) {
-        const pkgDir = parts.slice(2, -1).join("/");
-        dirs.push(pkgDir);
+  const monoRoot = join(workdir, ".nax", "mono");
+
+  async function walk(currentDir: string, relativeParts: string[]): Promise<void> {
+    const entries: string[] = [];
+    for await (const entry of _workspaceDeps.glob("*", currentDir)) {
+      entries.push(entry);
+    }
+    let hasConfig = false;
+
+    for (const entry of entries) {
+      const entryPath = join(currentDir, entry);
+      const stat = await _workspaceDeps.stat(entryPath);
+      const isDirectory = (stat.mode & 0o170000) === 0o040000;
+
+      if (!isDirectory && entry === "config.json") {
+        hasConfig = true;
+        continue;
+      }
+      if (isDirectory) {
+        await walk(entryPath, [...relativeParts, entry]);
       }
     }
+
+    if (hasConfig && relativeParts.length > 0) {
+      dirs.push(relativeParts.join("/"));
+    }
+  }
+
+  try {
+    await walk(monoRoot, []);
   } catch {
     // No .nax/mono layout
   }

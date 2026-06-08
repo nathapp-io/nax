@@ -10,6 +10,10 @@ describe("formatPhaseResultMessage — stage-aware messaging", () => {
     expect(formatPhaseResultMessage("verifier", false)).toBe("Phase failed: verifier");
   });
 
+  test("returns 'Phase skipped' when a deterministic phase reports status=skipped", () => {
+    expect(formatPhaseResultMessage("lint-check", true, undefined, "skipped")).toBe("Phase skipped: lint-check");
+  });
+
   test("returns 'Rectification strategy completed' for a rectification-stage op regardless of success flag", () => {
     expect(formatPhaseResultMessage("autofix-implementer", false, "rectification")).toBe(
       "Rectification strategy completed: autofix-implementer",
@@ -72,5 +76,11 @@ describe("buildPhaseOutcomeLogData — verdict detail surfacing", () => {
   test("storyId is the first key (parallel-log correlation)", () => {
     const built = buildPhaseOutcomeLogData("US-001", "verifier", { success: false, normalizedFindings: [] }, 10);
     expect(Object.keys(built!.data)[0]).toBe("storyId");
+  });
+
+  test("preserves status=skipped so log formatting can avoid false 'passed' wording", () => {
+    const built = buildPhaseOutcomeLogData("US-001", "lint-check", { success: true, status: "skipped", findings: [] }, 10);
+    expect(built?.success).toBe(true);
+    expect(built?.data.status).toBe("skipped");
   });
 });

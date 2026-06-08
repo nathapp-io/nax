@@ -81,4 +81,13 @@ describe("discoverWorkspacePackages memoization", () => {
       }
     });
   });
+
+  test("detects nested package dirs from .nax/mono/<pkg>/config.json layout", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.spawn(["mkdir", "-p", `${dir}/.nax/mono/packages/agent`]).exited;
+      await Bun.write(`${dir}/.nax/mono/packages/agent/config.json`, JSON.stringify({ quality: { commands: {} } }));
+      const packages = await discoverWorkspacePackages(dir);
+      expect(packages).toContain("packages/agent");
+    });
+  });
 });

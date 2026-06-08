@@ -42,8 +42,6 @@ export {
   EXHAUSTED_EXIT_REASONS,
   phasesToRevalidate,
   orderGateLast,
-  formatPhaseResultMessage,
-  buildPhaseOutcomeLogData,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   type OrchestratorSlot,
@@ -52,6 +50,11 @@ export {
   type RectificationPhaseOptions,
   type StoryOrchestratorResult,
 } from "./story-orchestrator";
+export {
+  buildPhaseOutcomeLogData,
+  formatPhaseResultMessage,
+  logDeterministicPhaseOutcome,
+} from "./story-orchestrator-logging";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { buildPlanForStrategy } from "./build-plan-for-strategy";
 export type { StoryRunResult } from "./types";

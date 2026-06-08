@@ -121,6 +121,7 @@ describe("lintCheckOp — AC6: skip-with-warning when no lint command configured
     );
     expect(called).toBe(false);
     expect(out.success).toBe(true);
+    expect(out.status).toBe("skipped");
     expect(out.findings).toEqual([]);
   });
 });

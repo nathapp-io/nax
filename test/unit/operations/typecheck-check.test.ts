@@ -126,6 +126,7 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
       deps,
     );
     expect(out.success).toBe(true);
+    expect(out.status).toBe("skipped");
     expect(out.findings).toEqual([]);
     expect(out.durationMs).toBe(0);
     expect(runQualityCalled).toBe(false);

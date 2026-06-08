@@ -15,6 +15,7 @@ export interface TypecheckCheckInput {
 
 export interface TypecheckCheckOutput {
   readonly success: boolean;
+  readonly status?: "passed" | "skipped";
   readonly findings: Finding[];
   readonly durationMs: number;
 }
@@ -51,7 +52,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
         storyId: input.storyId,
         packageDir: ctx.packageView.packageDir,
       });
-      return { success: true, findings: [], durationMs: 0 };
+      return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
     const start = Date.now();
@@ -64,7 +65,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     });
 
     if (result.exitCode === 0) {
-      return { success: true, findings: [], durationMs: Date.now() - start };
+      return { success: true, status: "passed", findings: [], durationMs: Date.now() - start };
     }
 
     const parsed = deps.parseTypecheckOutput(result.output, "auto", { workdir: input.workdir });

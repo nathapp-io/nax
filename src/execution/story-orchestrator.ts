@@ -42,6 +42,7 @@ import {
   runNonBlockingFix,
   shouldRunNonBlockingFix,
 } from "./non-blocking-fix";
+import { logDeterministicPhaseOutcome } from "./story-orchestrator-logging";
 
 export const _storyOrchestratorDeps = {
   callOp,
@@ -143,33 +144,6 @@ export async function refreshReviewInputForDispatch(opName: string, input: unkno
     };
     return fallback;
   }
-}
-
-/**
- * Greenfield-gate has inverse semantics: it "passes" when pre-existing tests
- * are found (= NOT greenfield, proceed normally) and "fails" when no tests are
- * found (= greenfield, pause TDD). The generic "Phase passed/failed: X" wording
- * reads as the opposite of what greenfield-gate actually decided, so we override
- * the message text for that phase only.
- *
- * For rectification-stage ops (autofix-implementer, autofix-test-writer,
- * mechanical-*), the op completing successfully is the entire success
- * contract — whether the fix worked is judged by subsequent validation phases.
- * Emitting "Phase failed: <name>" here is misleading because the op did run
- * to completion. Return a rectification-specific message when stage="rectification".
- *
- * Exported for unit testing — pure function over (opName, success, stage?).
- */
-export function formatPhaseResultMessage(opName: string, success: boolean, stage?: string): string {
-  if (opName === "greenfield-gate") {
-    return success
-      ? "Greenfield-gate: pre-existing tests detected (not greenfield) — proceeding with normal TDD"
-      : "Greenfield-gate: no pre-existing tests — greenfield run, pausing TDD test-writer";
-  }
-  if (stage === "rectification") {
-    return `Rectification strategy completed: ${opName}`;
-  }
-  return success ? `Phase passed: ${opName}` : `Phase failed: ${opName}`;
 }
 
 const TDD_OP_NAMES = new Set<string>(["test-writer", "implementer", "verifier"]);
@@ -626,91 +600,6 @@ function logUnifiedReviewPhaseStart(storyId: string | undefined, opName: string)
     logger?.info("review", "Running semantic check", { storyId });
   } else if (opName === "adversarial-review") {
     logger?.info("review", "Running adversarial check", { storyId });
-  }
-}
-
-/**
- * Generic phase outcome log for deterministic / verify / mechanical ops
- * (verify-scoped, full-suite-gate, lint-check, typecheck-check, etc.).
- *
- * TDD phases and review phases have their own dedicated loggers — skip those here
- * so a single phase doesn't produce duplicate outcome lines.
- */
-/**
- * Build the structured log fields for a deterministic phase outcome from the op
- * output. Pure over `(storyId, opName, output, durationMs)` — exported for unit
- * testing. Returns `null` when the output is not a loggable object.
- *
- * `findingsCount` prefers `normalizedFindings` (the verifier's envelope) and
- * falls back to the legacy `findings` array. Reading only `findings` left the
- * verifier's "Phase failed" line bare even when it emitted a tdd-verifier
- * finding. Among ops that reach this function the two fields are mutually
- * exclusive — verifier carries only `normalizedFindings`; verify-scoped /
- * lint-check / typecheck-check / full-suite-gate carry only `findings`; the
- * dual-field review ops (semantic / adversarial) are filtered out by the caller
- * before this runs — so the simple precedence below never diverges from
- * extractPhaseFindings in practice. `failureCategory` / `reviewReason` carry the
- * verifier verdict's rejection detail so the line explains *why* without a
- * prompt-audit cross-reference.
- */
-export function buildPhaseOutcomeLogData(
-  storyId: string | undefined,
-  opName: string,
-  output: unknown,
-  durationMs: number,
-): { success: boolean; data: Record<string, unknown> } | null {
-  if (output === null || output === undefined || typeof output !== "object") return null;
-
-  const r = output as Record<string, unknown>;
-  const success = r.success === true || r.passed === true;
-  const findingsCount = Array.isArray(r.normalizedFindings)
-    ? r.normalizedFindings.length
-    : Array.isArray(r.findings)
-      ? r.findings.length
-      : undefined;
-  const status = typeof r.status === "string" ? r.status : undefined;
-
-  const data: Record<string, unknown> = { storyId, phase: opName, durationMs };
-  if (findingsCount !== undefined) data.findingsCount = findingsCount;
-  if (status !== undefined) data.status = status;
-  if (typeof r.failureCategory === "string") data.failureCategory = r.failureCategory;
-  if (typeof r.reviewReason === "string") data.reviewReason = r.reviewReason;
-
-  return { success, data };
-}
-
-function logDeterministicPhaseOutcome(
-  storyId: string | undefined,
-  opName: string,
-  output: unknown,
-  durationMs: number,
-  isTddPhase: boolean,
-  stage?: string,
-  progressData: Record<string, unknown> = {},
-): void {
-  if (isTddPhase) return;
-  if (opName === "semantic-review" || opName === "adversarial-review") return;
-
-  const built = buildPhaseOutcomeLogData(storyId, opName, output, durationMs);
-  if (!built) return;
-  const { success } = built;
-  const data = { ...built.data, ...progressData };
-
-  const logger = getSafeLogger();
-  const message = formatPhaseResultMessage(opName, success, stage);
-
-  // Rectification ops complete successfully whenever the prompt finishes — the
-  // "did the fix work?" question is answered by subsequent validation phases.
-  // Always log at info for these; never emit a misleading "Phase failed" warn.
-  if (stage === "rectification") {
-    logger?.info("story-orchestrator", message, data);
-    return;
-  }
-
-  if (success) {
-    logger?.info("story-orchestrator", message, data);
-  } else {
-    logger?.warn("story-orchestrator", message, data);
   }
 }
 

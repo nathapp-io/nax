@@ -15,6 +15,7 @@ export interface LintCheckInput {
 
 export interface LintCheckOutput {
   readonly success: boolean;
+  readonly status?: "passed" | "skipped";
   readonly findings: Finding[];
   readonly durationMs: number;
 }
@@ -49,7 +50,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
         storyId: input.storyId,
         packageDir: ctx.packageView.packageDir,
       });
-      return { success: true, findings: [], durationMs: 0 };
+      return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
     const start = Date.now();
@@ -62,7 +63,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     });
 
     if (result.exitCode === 0) {
-      return { success: true, findings: [], durationMs: Date.now() - start };
+      return { success: true, status: "passed", findings: [], durationMs: Date.now() - start };
     }
 
     const parsed = deps.parseLintOutput(result.output, "auto", { workdir: input.workdir });
