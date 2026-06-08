@@ -74,3 +74,24 @@ describe("verifierOp.model — tdd.sessionTiers.verifier", () => {
     expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
   });
 });
+
+import { resolveConfiguredModel } from "@/config";
+
+describe("per-role tier reaches effectiveTier (callOp contract)", () => {
+  const models = {
+    opencode: { fast: "minimax/MiniMax-M2.7", balanced: "opencode-go/deepseek-v4-pro", powerful: "minimax/MiniMax-M3" },
+  };
+
+  test("fast story → implementer resolves to the fast model, NOT balanced", () => {
+    const opModel = (implementerOp.model as any)({ story: storyWithTier("fast") }, buildCtx) ?? "balanced";
+    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    expect(resolved.modelTier).toBe("fast");
+  });
+
+  test("unconfigured test-writer still defaults to fast via schema, not balanced", () => {
+    // Simulate schema-defaulted config: sessionTiers.testWriter === "fast"
+    const opModel = (testWriterOp.model as any)({}, tddBuildCtx({ testWriter: "fast" })) ?? "balanced";
+    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    expect(resolved.modelTier).toBe("fast");
+  });
+});
