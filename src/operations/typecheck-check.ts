@@ -1,6 +1,7 @@
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
+import { getSafeLogger } from "../logger";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import { parseTypecheckOutput } from "../review/typecheck-parsing";
@@ -42,21 +43,24 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     ctx: CallContext,
     deps: TypecheckCheckDeps = _typecheckCheckDeps,
   ): Promise<TypecheckCheckOutput> {
-    // ctx.config is injected by tests; in production resolved via callOp's config slice
-    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const command = ctxConfig?.quality?.commands?.typecheck;
+    const quality = ctx.packageView.select(qualityConfigSelector).quality;
+    const command = quality?.commands?.typecheck;
 
-    if (ctxConfig !== undefined && !command) {
+    if (!command) {
+      getSafeLogger()?.warn("quality", "No typecheck command configured — skipping typecheck gate", {
+        storyId: input.storyId,
+        packageDir: ctx.packageView.packageDir,
+      });
       return { success: true, findings: [], durationMs: 0 };
     }
 
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "typecheck",
-      command: command ?? "",
+      command,
       workdir: input.workdir,
       storyId: input.storyId,
-      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
+      stripEnvVars: quality?.stripEnvVars ?? [],
     });
 
     if (result.exitCode === 0) {
