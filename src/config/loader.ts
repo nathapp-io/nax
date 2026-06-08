@@ -443,10 +443,7 @@ export function _clearRootConfigCache(): void {
  * The `profile` key (if present) is stripped — package profiles are resolved by
  * loadConfigForWorkdir, not by the runtime registry.
  */
-export async function loadPackageOverride(
-  repoRoot: string,
-  packageDir: string,
-): Promise<Partial<NaxConfig> | null> {
+export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
   const override = await loadJsonFile<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;

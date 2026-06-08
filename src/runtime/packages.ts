@@ -1,10 +1,7 @@
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig } from "../config";
 
-export type PackageOverrideLoader = (
-  repoRoot: string,
-  packageDir: string,
-) => Promise<Partial<NaxConfig> | null>;
+export type PackageOverrideLoader = (repoRoot: string, packageDir: string) => Promise<Partial<NaxConfig> | null>;
 
 export interface PackageView {
   readonly packageDir: string;
@@ -60,13 +57,8 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     return view;
   }
 
-  async function hydrate(
-    packageDirs: readonly string[],
-    loadOverride?: PackageOverrideLoader,
-  ): Promise<void> {
-    const load =
-      loadOverride ??
-      (await import("../config")).loadPackageOverride;
+  async function hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void> {
+    const load = loadOverride ?? (await import("../config")).loadPackageOverride;
 
     for (const dir of packageDirs) {
       if (!dir) {
