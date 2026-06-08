@@ -202,6 +202,19 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
   });
 
   test.each([
+    ["substantive reasoning is preserved", "Single module with clear interfaces and low risk.", "Single module with clear interfaces and low risk."],
+    ["whitespace is trimmed", "  Single module with clear interfaces.  ", "Single module with clear interfaces."],
+    ["empty string falls back to placeholder", "", "validated from LLM output"],
+    ["missing reasoning falls back to placeholder", undefined, "validated from LLM output"],
+  ] as const)("routing.reasoning: %s", (_label, input, expected) => {
+    const overrides: Record<string, unknown> = input !== undefined
+      ? { routing: { complexity: "simple", testStrategy: "tdd-simple", reasoning: input } }
+      : {};
+    const prd = validatePlanOutput(makeInput([makeStory(overrides)]), "feat", "branch");
+    expect(prd.userStories[0]!.routing?.reasoning).toBe(expected);
+  });
+
+  test.each([
     ["\\xNN escape (LLM quirk)", "\\x41", "A"],
     ["\\u0041 (covers \\uXXX/\\uXX/\\uX short-unicode variants)", "\\u0041", "A"],
   ] as const)("fixes %s to correct unicode char", (_label, escaped, expected) => {
