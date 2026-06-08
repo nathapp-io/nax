@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
 
-const mockCtx = { runtime: {}, storyId: "US-001" } as any;
+function ctxWithConfig(config: any = {}) {
+  return {
+    runtime: {},
+    storyId: "US-001",
+    packageView: { packageDir: "", config, select: (s: any) => s.select(config) },
+  } as any;
+}
+const mockCtx = ctxWithConfig({});
 
 function makeDeps(overrides = {}) {
   return {
@@ -139,12 +146,10 @@ describe("fullSuiteGateOp — test execution logic (US-006)", () => {
 
 describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)", () => {
   test("regressionGate.enabled=false → status=skipped, success=true", async () => {
-    const ctx = {
-      config: {
-        execution: { regressionGate: { enabled: false } },
-        quality: { commands: { test: "bun test" } },
-      },
-    } as any;
+    const ctx = ctxWithConfig({
+      execution: { regressionGate: { enabled: false } },
+      quality: { commands: { test: "bun test" } },
+    });
     const result = await fullSuiteGateOp.execute(
       { story: { id: "S-1" } as any, workdir: "/r" },
       ctx,
@@ -157,12 +162,10 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
   });
 
   test("TIMEOUT + acceptOnTimeout=true → status=passed-on-timeout, success=true", async () => {
-    const ctx = {
-      config: {
-        execution: { regressionGate: { acceptOnTimeout: true } },
-        quality: { commands: { test: "bun test" } },
-      },
-    } as any;
+    const ctx = ctxWithConfig({
+      execution: { regressionGate: { acceptOnTimeout: true } },
+      quality: { commands: { test: "bun test" } },
+    });
     const result = await fullSuiteGateOp.execute(
       { story: { id: "S-1" } as any, workdir: "/r" },
       ctx,
@@ -182,12 +185,10 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
   });
 
   test("TIMEOUT + acceptOnTimeout=false → status=timeout, success=false", async () => {
-    const ctx = {
-      config: {
-        execution: { regressionGate: { acceptOnTimeout: false } },
-        quality: { commands: { test: "bun test" } },
-      },
-    } as any;
+    const ctx = ctxWithConfig({
+      execution: { regressionGate: { acceptOnTimeout: false } },
+      quality: { commands: { test: "bun test" } },
+    });
     const result = await fullSuiteGateOp.execute(
       { story: { id: "S-1" } as any, workdir: "/r" },
       ctx,
@@ -208,9 +209,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
 
   test("TIMEOUT with no acceptOnTimeout config → defaults to true (BUG-026 default preserved)", async () => {
     // Default is acceptOnTimeout=true when not configured
-    const ctx = {
-      config: { execution: {}, quality: { commands: { test: "bun test" } } },
-    } as any;
+    const ctx = ctxWithConfig({ execution: {}, quality: { commands: { test: "bun test" } } });
     const result = await fullSuiteGateOp.execute(
       { story: { id: "S-1" } as any, workdir: "/r" },
       ctx,
