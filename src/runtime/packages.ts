@@ -44,8 +44,19 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
 
+  // Normalize to relative so cache and mergedConfigs keys are consistent with
+  // what hydrate() stores (discoverWorkspacePackages returns relative paths).
+  // Pipeline stages pass absolute workdirs; without this, mergedConfigs.get() always misses.
+  function toRelativeKey(packageDir: string | undefined): string {
+    if (!packageDir) return "";
+    const prefix = repoRoot.endsWith("/") ? repoRoot : repoRoot + "/";
+    if (packageDir.startsWith(prefix)) return packageDir.slice(prefix.length);
+    if (packageDir === repoRoot) return "";
+    return packageDir;
+  }
+
   function resolve(packageDir?: string): PackageView {
-    const key = packageDir ?? "";
+    const key = toRelativeKey(packageDir);
     const cached = cache.get(key);
     if (cached !== undefined) {
       return cached;

@@ -63,4 +63,17 @@ describe("PackageRegistry.hydrate — per-package merge", () => {
     const registry = createPackageRegistry(loader, "/repo");
     expect(registry.resolve("packages/other").config.quality?.commands?.lint).toBe("root-lint");
   });
+
+  test("resolve(absolute path) hits the same merged config as resolve(relative)", async () => {
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } } as any));
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate(["packages/agent"], async (_root, dir) =>
+      dir === "packages/agent" ? ({ quality: { commands: { lint: "pkg-lint" } } } as any) : null,
+    );
+    // Pipeline stages call resolve() with an absolute path like /repo/packages/agent.
+    const viewAbsolute = registry.resolve("/repo/packages/agent");
+    expect(viewAbsolute.config.quality?.commands?.lint).toBe("pkg-lint");
+    // Same instance — the cache key is normalized.
+    expect(viewAbsolute).toBe(registry.resolve("packages/agent"));
+  });
 });

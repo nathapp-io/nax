@@ -18,7 +18,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import { isThreeSessionStrategy } from "../config";
+import { isThreeSessionStrategy, qualityConfigSelector } from "../config";
 import type { TestStrategy } from "../config/schema-types";
 import type { FixCycleContext } from "../findings/cycle-types";
 import type { FixStrategy } from "../findings/cycle-types";
@@ -150,10 +150,12 @@ export async function buildPlanForStrategy(
 
     const strategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
 
-    if (config.quality.commands.lintFix || config.quality.commands.lintFixScoped) {
+    // Use package-merged quality config so per-package lintFix/formatFix overrides are respected.
+    const pkgQuality = ctx.packageView.select(qualityConfigSelector).quality;
+    if (pkgQuality?.commands?.lintFix || pkgQuality?.commands?.lintFixScoped) {
       strategies.push(makeMechanicalLintFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
     }
-    if (config.quality.commands.formatFix || config.quality.commands.formatFixScoped) {
+    if (pkgQuality?.commands?.formatFix || pkgQuality?.commands?.formatFixScoped) {
       strategies.push(makeMechanicalFormatFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
     }
     // Mirror the primary gate condition: TDD always, non-TDD when mode=per-story.
