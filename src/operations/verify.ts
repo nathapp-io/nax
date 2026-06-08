@@ -152,6 +152,8 @@ export const verifierOp: RunOperation<VerifierInput, VerifierOutput, TddConfig> 
   stage: "verify",
   session: { role: "verifier", lifetime: "fresh" },
   config: tddConfigSelector,
+  // Verification is a cheap scoped task — follows the configured per-role tier.
+  model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.verifier,
   // Mirror semantic-review: maxAttempts=2, in-session re-prompt on parse failure.
   retry: makeParseRetryStrategy({
     validate: (parsed) => {

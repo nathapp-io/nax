@@ -45,6 +45,7 @@ export {
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema } from "./schemas-model";
 export { DebateConfigSchema } from "./schemas-debate";
+export { TddConfigSchema } from "./schemas-execution";
 export { loadConfig, loadConfigForWorkdir, findProjectDir, globalConfigPath } from "./loader";
 export { validateConfig, type ValidationResult } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead
 export { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "./path-security";

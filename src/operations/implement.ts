@@ -39,6 +39,10 @@ export const implementerOp: RunOperation<ImplementerInput, ImplementerOutput, Td
   stage: "run",
   session: { role: "implementer", lifetime: "warm" },
   config: tddConfigSelector,
+  // Routing-driven: escalation mutates story.routing.modelTier in the PRD before
+  // re-dispatch, so reading it here is escalation-aware. Returns undefined for
+  // ad-hoc callers without routing — callOp then falls back to its default tier.
+  model: (input) => input.story.routing?.modelTier,
   keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "implementer"),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {

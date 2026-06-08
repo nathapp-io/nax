@@ -245,14 +245,14 @@ export interface TddConfig {
   strategy: TddStrategy;
   /** Session 3 verifier: auto-approve legitimate fixes */
   autoApproveVerifier: boolean;
-  /** Per-session model tier overrides. Defaults: test-writer=balanced, implementer=story tier, verifier=fast */
+  /** Per-session model tier overrides. Defaults: test-writer=fast, implementer=story tier, verifier=fast */
   sessionTiers?: {
-    /** Model tier for test-writer session (default: "balanced") */
-    testWriter?: ModelTier;
-    /** Model tier for implementer session (default: uses story's routed tier) */
-    implementer?: ModelTier;
-    /** Model tier for verifier session (default: "fast") */
-    verifier?: ModelTier;
+    /** ConfiguredModel for test-writer session (default: "fast") */
+    testWriter?: ConfiguredModel;
+    /** ConfiguredModel for implementer session (intentionally unused — routing-driven via story.routing.modelTier) */
+    implementer?: ConfiguredModel;
+    /** ConfiguredModel for verifier session (default: "fast") */
+    verifier?: ConfiguredModel;
   };
   /** Glob patterns for files test-writer can modify (soft violations, logged as warnings) */
   testWriterAllowedPaths?: string[];

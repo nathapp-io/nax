@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { testWriterOp } from "@/operations";
 import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
 
@@ -319,5 +320,29 @@ describe("testWriterOp input/output types", () => {
     expect("estimatedCostUsd" in output).toBe(true);
     expect("durationMs" in output).toBe(true);
     expect("output" in output).toBe(true);
+  });
+});
+
+function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
+  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+}
+
+describe("testWriterOp.model — tdd.sessionTiers.testWriter", () => {
+  test("returns the configured testWriter tier", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ testWriter: "fast" }))).toBe("fast");
+  });
+
+  test("passes a ConfiguredModel object through unchanged", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ testWriter: { agent: "claude", model: "haiku" } }))).toEqual({
+      agent: "claude",
+      model: "haiku",
+    });
+  });
+
+  test("returns undefined when sessionTiers is absent (callOp then defaults)", () => {
+    const resolver = testWriterOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
   });
 });

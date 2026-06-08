@@ -49,6 +49,9 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   // acpx `sessions ensure` only resumes a still-open session. Mirrors implement.ts.
   session: { role: "test-writer", lifetime: "warm" },
   config: tddConfigSelector,
+  // Test-writing is a cheap scoped task — follows the configured per-role tier.
+  // Defaults to "fast" via the schema; undefined only for partial test configs.
+  model: (_input, ctx) => ctx.config.tdd?.sessionTiers?.testWriter,
   keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "test-writer"),
   build(input, _ctx) {
     if (input.promptMarkdown?.trim()) {

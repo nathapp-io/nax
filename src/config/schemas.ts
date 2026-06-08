@@ -197,7 +197,7 @@ export const NaxConfigSchema = z
       autoApproveVerifier: true,
       strategy: "auto",
       sessionTiers: {
-        testWriter: "balanced",
+        testWriter: "fast",
         verifier: "fast",
       },
       testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
