@@ -429,7 +429,7 @@ describe("single-session adversarial-review routing", () => {
 describe("AC6: mechanical fix fixOp.execute returns early when both commands undefined", () => {
   test("makeMechanicalLintFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = { config } as unknown as CallContext;
+    const mockCtx = { packageView: { packageDir: "", config, select: (s: any) => s.select(config) } } as unknown as CallContext;
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {
@@ -449,7 +449,7 @@ describe("AC6: mechanical fix fixOp.execute returns early when both commands und
 
   test("makeMechanicalFormatFixStrategy: returns {applied:true, exitCode:0} without calling runQualityCommand", async () => {
     const config = makeNaxConfig({ quality: { commands: {} } });
-    const mockCtx = { config } as unknown as CallContext;
+    const mockCtx = { packageView: { packageDir: "", config, select: (s: any) => s.select(config) } } as unknown as CallContext;
     let called = false;
     const mockDeps = {
       runQualityCommand: async () => {
