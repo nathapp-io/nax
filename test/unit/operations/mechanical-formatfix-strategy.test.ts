@@ -6,6 +6,15 @@ import type { QualityCommandOptions } from "@/quality";
 
 const mockCtx = { runtime: {}, storyId: "US-004" } as any;
 
+function ctxWithQuality(quality?: Record<string, unknown>) {
+  const config = { quality, execution: {} } as any;
+  return {
+    runtime: {},
+    storyId: "US-004",
+    packageView: { packageDir: "packages/agent", config, select: (s: any) => s.select(config) },
+  } as any;
+}
+
 const passedResult = {
   commandName: "formatFix",
   command: "bun run format:fix",
@@ -75,10 +84,7 @@ describe("makeMechanicalFormatFixStrategy — appliesTo predicate", () => {
 describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand", () => {
   test("calls runQualityCommand with commandName=formatFix when formatFix is configured", async () => {
     const strategy = makeMechanicalFormatFixStrategy();
-    const ctxWithFormatFix = {
-      ...mockCtx,
-      config: { quality: { commands: { formatFix: "bun run format:fix" } } },
-    };
+    const ctxWithFormatFix = ctxWithQuality({ commands: { formatFix: "bun run format:fix" } });
 
     let capturedCommandName: string | undefined;
     let capturedCommand: string | undefined;
@@ -98,10 +104,7 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
 
   test("uses scoped template with substituted files when formatFixScoped is configured", async () => {
     const strategy = makeMechanicalFormatFixStrategy();
-    const ctxWithScopedFormatFix = {
-      ...mockCtx,
-      config: { quality: { commands: { formatFixScoped: "biome format --write {{files}}" } } },
-    };
+    const ctxWithScopedFormatFix = ctxWithQuality({ commands: { formatFixScoped: "biome format --write {{files}}" } });
 
     let capturedCommand: string | undefined;
     const deps = makeDeps({
@@ -124,10 +127,7 @@ describe("makeMechanicalFormatFixStrategy — execute invokes runQualityCommand"
 describe("makeMechanicalFormatFixStrategy — AC6: no-command early return", () => {
   test("AC6: returns { applied: true, exitCode: 0 } without calling runQualityCommand when formatFix is undefined", async () => {
     const strategy = makeMechanicalFormatFixStrategy();
-    const ctxWithNoFormatFix = {
-      ...mockCtx,
-      config: { quality: { commands: { formatFix: undefined } } },
-    };
+    const ctxWithNoFormatFix = ctxWithQuality({ commands: { formatFix: undefined } });
 
     let runQualityCalled = false;
     const deps = makeDeps({
@@ -150,10 +150,7 @@ describe("makeMechanicalFormatFixStrategy — AC6: no-command early return", () 
 
   test("AC6: returns { applied: true, exitCode: 0 } without calling runQualityCommand when config has no formatFix key", async () => {
     const strategy = makeMechanicalFormatFixStrategy();
-    const ctxWithNoCommands = {
-      ...mockCtx,
-      config: { quality: { commands: {} } },
-    };
+    const ctxWithNoCommands = ctxWithQuality({ commands: {} });
 
     let runQualityCalled = false;
     const deps = makeDeps({

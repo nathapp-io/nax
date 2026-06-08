@@ -53,9 +53,9 @@ const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, Mechan
     ctx: CallContext,
     deps: MechanicalLintFixDeps = _mechanicalLintFixDeps,
   ): Promise<MechanicalLintFixOutput> {
-    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const broad = ctxConfig?.quality?.commands?.lintFix;
-    const scoped = ctxConfig?.quality?.commands?.lintFixScoped;
+    const quality = ctx.packageView.select(qualityConfigSelector).quality;
+    const broad = quality?.commands?.lintFix;
+    const scoped = quality?.commands?.lintFixScoped;
     const command = buildCommand(broad, scoped, input.scopeFiles);
     if (!command) return { applied: true, exitCode: 0 };
     const result = await deps.runQualityCommand({
@@ -63,7 +63,7 @@ const mechanicalLintFixOp: DeterministicOperation<MechanicalLintFixInput, Mechan
       command,
       workdir: input.workdir,
       storyId: input.storyId,
-      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
+      stripEnvVars: quality?.stripEnvVars ?? [],
     });
     return { applied: true, exitCode: result.exitCode };
   },
