@@ -3,7 +3,14 @@ import { lintCheckOp } from "@/operations";
 import type { LintCheckDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-const mockCtx = { runtime: {}, storyId: "US-003" } as any;
+function ctxWithQuality(quality?: Record<string, unknown>) {
+  const config = { quality, execution: {} } as any;
+  return {
+    runtime: {},
+    storyId: "US-003",
+    packageView: { packageDir: "packages/agent", config, select: (sel: any) => sel.select(config) },
+  } as any;
+}
 
 const passedResult = {
   commandName: "lint",
@@ -62,7 +69,7 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
   test("AC3: returns success=true and findings=[] when lint command exits 0", async () => {
     const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
       makeDeps({ runQualityCommand: async () => passedResult }),
     );
     expect(out.success).toBe(true);
@@ -72,7 +79,7 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
   test("AC3: returns success=false and non-empty findings when lint command exits non-zero", async () => {
     const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseLintOutput: () => ({
@@ -89,7 +96,7 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
   test("AC3: every finding has source='lint' when command exits non-zero", async () => {
     const out = await lintCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseLintOutput: () => ({
@@ -103,53 +110,30 @@ describe("lintCheckOp — AC3: execute returns success=true when command exits 0
   });
 });
 
-describe("lintCheckOp — AC6: no-command early return", () => {
-  test("AC6: returns success=true, findings=[], durationMs=0 when lint command is undefined", async () => {
-    let runQualityCalled = false;
-    const deps = makeDeps({
-      runQualityCommand: async () => {
-        runQualityCalled = true;
-        return passedResult;
-      },
-    });
-
-    const ctxWithNoLintCommand = {
-      ...mockCtx,
-      config: { quality: { commands: { lint: undefined } } },
-    };
-
+describe("lintCheckOp — AC6: skip-with-warning when no lint command configured", () => {
+  test("skips with success+warning when no lint command is configured (no false command)", async () => {
+    let called = false;
+    const deps = makeDeps({ runQualityCommand: async () => { called = true; return passedResult; } });
     const out = await lintCheckOp.execute(
-      { workdir: "/tmp", storyId: "US-003" },
-      ctxWithNoLintCommand,
+      { workdir: "/w", storyId: "US-003" },
+      ctxWithQuality({ commands: {} }),
       deps,
     );
+    expect(called).toBe(false);
     expect(out.success).toBe(true);
     expect(out.findings).toEqual([]);
-    expect(out.durationMs).toBe(0);
-    expect(runQualityCalled).toBe(false);
   });
 });
 
 describe("lintCheckOp — AC10: per-package config override", () => {
-  test("AC10: uses the command from the config slice (not hardcoded)", async () => {
-    let capturedCommand: string | undefined;
-    const deps = makeDeps({
-      runQualityCommand: async (opts) => {
-        capturedCommand = opts.command;
-        return passedResult;
-      },
-    });
-
-    const ctxWithOverride = {
-      ...mockCtx,
-      config: { quality: { commands: { lint: "custom-lint-command" } } },
-    };
-
+  test("runs the lint command resolved from packageView", async () => {
+    let seen = "";
+    const deps = makeDeps({ runQualityCommand: async (o) => { seen = o.command; return passedResult; } });
     await lintCheckOp.execute(
-      { workdir: "/tmp", storyId: "US-003" },
-      ctxWithOverride,
+      { workdir: "/w", storyId: "US-003" },
+      ctxWithQuality({ commands: { lint: "ruff check packages/agent" } }),
       deps,
     );
-    expect(capturedCommand).toBe("custom-lint-command");
+    expect(seen).toBe("ruff check packages/agent");
   });
 });
