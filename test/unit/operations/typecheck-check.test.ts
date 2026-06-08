@@ -3,7 +3,14 @@ import { typecheckCheckOp } from "@/operations";
 import type { TypecheckCheckDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-const mockCtx = { runtime: {}, storyId: "US-003" } as any;
+function ctxWithQuality(quality?: Record<string, unknown>) {
+  const config = { quality, execution: {} } as any;
+  return {
+    runtime: {},
+    storyId: "US-003",
+    packageView: { packageDir: "packages/agent", config, select: (sel: any) => sel.select(config) },
+  } as any;
+}
 
 const passedResult = {
   commandName: "typecheck",
@@ -62,7 +69,7 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
   test("AC4: returns success=true and findings=[] when typecheck command exits 0", async () => {
     const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       makeDeps({ runQualityCommand: async () => passedResult }),
     );
     expect(out.success).toBe(true);
@@ -72,7 +79,7 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
   test("AC4: returns success=false and non-empty findings when typecheck command exits non-zero", async () => {
     const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseTypecheckOutput: () => ({
@@ -89,7 +96,7 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
   test("AC4: every finding has source='typecheck' when command exits non-zero", async () => {
     const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      mockCtx,
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
       makeDeps({
         runQualityCommand: async () => failedResult,
         parseTypecheckOutput: () => ({
@@ -113,14 +120,9 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
       },
     });
 
-    const ctxWithNoCommand = {
-      ...mockCtx,
-      config: { quality: { commands: { typecheck: undefined } } },
-    };
-
     const out = await typecheckCheckOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      ctxWithNoCommand,
+      ctxWithQuality({ commands: {} }),
       deps,
     );
     expect(out.success).toBe(true);

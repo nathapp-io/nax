@@ -4,7 +4,14 @@ import { _mechanicalLintFixDeps, makeMechanicalLintFixStrategy } from "@/operati
 import type { MechanicalLintFixDeps } from "@/operations";
 import type { QualityCommandOptions } from "@/quality";
 
-const mockCtx = { runtime: {}, storyId: "US-004" } as any;
+function ctxWithQuality(quality?: Record<string, unknown>) {
+  const config = { quality, execution: {} } as any;
+  return {
+    runtime: {},
+    storyId: "US-004",
+    packageView: { packageDir: "packages/agent", config, select: (s: any) => s.select(config) },
+  } as any;
+}
 
 const passedResult = {
   commandName: "lintFix",
@@ -80,10 +87,7 @@ describe("makeMechanicalLintFixStrategy — AC7: appliesTo predicate", () => {
 describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityCommand", () => {
   test("AC5: calls runQualityCommand with commandName=lintFix when lintFix is configured", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithLintFix = {
-      ...mockCtx,
-      config: { quality: { commands: { lintFix: "bun run lint:fix" } } },
-    };
+    const ctxWithLintFix = ctxWithQuality({ commands: { lintFix: "bun run lint:fix" } });
 
     let capturedCommandName: string | undefined;
     let capturedCommand: string | undefined;
@@ -103,10 +107,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
 
   test("AC5: returns { applied: true, exitCode } from the quality command result", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithLintFix = {
-      ...mockCtx,
-      config: { quality: { commands: { lintFix: "bun run lint:fix" } } },
-    };
+    const ctxWithLintFix = ctxWithQuality({ commands: { lintFix: "bun run lint:fix" } });
     const deps = makeDeps({
       runQualityCommand: async () => ({ ...passedResult, exitCode: 0 }),
     });
@@ -122,10 +123,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
 
   test("AC5: scoped template uses {{files}} substitution when scopeFiles are present", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithScopedLintFix = {
-      ...mockCtx,
-      config: { quality: { commands: { lintFixScoped: "biome check --write {{files}}" } } },
-    };
+    const ctxWithScopedLintFix = ctxWithQuality({ commands: { lintFixScoped: "biome check --write {{files}}" } });
 
     let capturedCommand: string | undefined;
     const deps = makeDeps({
@@ -146,10 +144,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
 
   test("AC5: scoped-only config without scopeFiles returns early instead of executing raw template", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithScopedLintFix = {
-      ...mockCtx,
-      config: { quality: { commands: { lintFixScoped: "biome check --write {{files}}" } } },
-    };
+    const ctxWithScopedLintFix = ctxWithQuality({ commands: { lintFixScoped: "biome check --write {{files}}" } });
 
     let runQualityCalled = false;
     const deps = makeDeps({
@@ -173,10 +168,7 @@ describe("makeMechanicalLintFixStrategy — AC5: execute invokes runQualityComma
 describe("makeMechanicalLintFixStrategy — AC6: no-command early return", () => {
   test("AC6: returns { applied: true, exitCode: 0 } without calling runQualityCommand when lintFix is undefined", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithNoLintFix = {
-      ...mockCtx,
-      config: { quality: { commands: { lintFix: undefined } } },
-    };
+    const ctxWithNoLintFix = ctxWithQuality({ commands: { lintFix: undefined } });
 
     let runQualityCalled = false;
     const deps = makeDeps({
@@ -199,10 +191,7 @@ describe("makeMechanicalLintFixStrategy — AC6: no-command early return", () =>
 
   test("AC6: returns { applied: true, exitCode: 0 } without calling runQualityCommand when config has no lintFix key", async () => {
     const strategy = makeMechanicalLintFixStrategy();
-    const ctxWithNoCommands = {
-      ...mockCtx,
-      config: { quality: { commands: {} } },
-    };
+    const ctxWithNoCommands = ctxWithQuality({ commands: {} });
 
     let runQualityCalled = false;
     const deps = makeDeps({

@@ -1,6 +1,7 @@
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
+import { getSafeLogger } from "../logger";
 import type { QualityCommandOptions, QualityCommandResult } from "../quality/runner";
 import { runQualityCommand } from "../quality/runner";
 import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
@@ -38,21 +39,26 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     ctx: CallContext,
     deps: LintCheckDeps = _lintCheckDeps,
   ): Promise<LintCheckOutput> {
-    // ctx.config is injected by tests; in production resolved via callOp's config slice
-    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const command = ctxConfig?.quality?.commands?.lint;
+    const quality = ctx.packageView.select(qualityConfigSelector).quality;
+    const command = quality?.commands?.lint;
 
-    if (ctxConfig !== undefined && !command) {
+    // No command configured → skip (success, non-blocking) with a warning.
+    // Never spawn an empty command (that would exit 0 and read as a false pass).
+    if (!command) {
+      getSafeLogger()?.warn("quality", "No lint command configured — skipping lint gate", {
+        storyId: input.storyId,
+        packageDir: ctx.packageView.packageDir,
+      });
       return { success: true, findings: [], durationMs: 0 };
     }
 
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "lint",
-      command: command ?? "",
+      command,
       workdir: input.workdir,
       storyId: input.storyId,
-      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
+      stripEnvVars: quality?.stripEnvVars ?? [],
     });
 
     if (result.exitCode === 0) {

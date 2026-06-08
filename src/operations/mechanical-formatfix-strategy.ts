@@ -57,9 +57,9 @@ const mechanicalFormatFixOp: DeterministicOperation<
     ctx: CallContext,
     deps: MechanicalFormatFixDeps = _mechanicalFormatFixDeps,
   ): Promise<MechanicalFormatFixOutput> {
-    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const broad = ctxConfig?.quality?.commands?.formatFix;
-    const scoped = ctxConfig?.quality?.commands?.formatFixScoped;
+    const quality = ctx.packageView.select(qualityConfigSelector).quality;
+    const broad = quality?.commands?.formatFix;
+    const scoped = quality?.commands?.formatFixScoped;
     const command = buildCommand(broad, scoped, input.scopeFiles);
     if (!command) return { applied: true, exitCode: 0 };
     const result = await deps.runQualityCommand({
@@ -67,7 +67,7 @@ const mechanicalFormatFixOp: DeterministicOperation<
       command,
       workdir: input.workdir,
       storyId: input.storyId,
-      stripEnvVars: ctxConfig?.quality?.stripEnvVars ?? [],
+      stripEnvVars: quality?.stripEnvVars ?? [],
     });
     return { applied: true, exitCode: result.exitCode };
   },

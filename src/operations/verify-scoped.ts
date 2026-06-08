@@ -59,14 +59,18 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     deps: VerifyScopedDeps = _verifyScopedDeps,
   ): Promise<VerifyScopedOutput> {
     const logger = getLogger();
-    const ctxConfig = (ctx as unknown as { config?: QualityConfig }).config;
-    const baseCommand = ctxConfig?.quality?.commands?.test;
+    const quality = ctx.packageView.select(qualityConfigSelector);
+    const baseCommand = quality.quality?.commands?.test;
 
-    // Guard: no config at all, or config present but no test command → no-op.
-    if (!ctxConfig || !baseCommand) {
+    // No test command configured → skip (deferred run-end gate still covers regressions).
+    if (!baseCommand) {
+      logger.warn("quality", "No test command configured — skipping scoped verify", {
+        storyId: input.storyId,
+        packageDir: ctx.packageView.packageDir,
+      });
       return {
         success: true,
-        status: "passed",
+        status: "skipped",
         findings: [],
         durationMs: 0,
         passCount: 0,
@@ -81,13 +85,13 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       workdir: input.workdir,
       storyId: input.storyId,
       storyGitRef: input.storyGitRef,
-      testCommand: baseCommand ?? "",
-      testScopedTemplate: ctxConfig.quality?.commands?.testScoped,
+      testCommand: baseCommand,
+      testScopedTemplate: quality.quality?.commands?.testScoped,
       // smartTestRunner lives at execution.smartTestRunner; QualityConfig includes execution
       // via qualityConfigSelector = pickSelector("quality", "quality", "execution").
-      smartRunnerConfig: ctxConfig.execution?.smartTestRunner,
-      scopeTestThreshold: ctxConfig.quality?.scopeTestThreshold,
-      fallbackFullSuiteCommand: ctxConfig.quality?.commands?.test,
+      smartRunnerConfig: quality.execution?.smartTestRunner,
+      scopeTestThreshold: quality.quality?.scopeTestThreshold,
+      fallbackFullSuiteCommand: quality.quality?.commands?.test,
       naxIgnoreIndex: input.naxIgnoreIndex,
     });
 
@@ -126,7 +130,7 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // NOTE: regression() includes a 2s sleep before running tests (src/verification/runners.ts:142-145)
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
-    const scopedTimeout = ctxConfig.execution?.regressionGate?.timeoutSeconds ?? 600;
+    const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
     logger.info("verify[scoped]", "Running scoped tests", {
       storyId: input.storyId,
       packageDir: input.packageDir,
@@ -140,17 +144,17 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       workdir: input.workdir,
       command: selection.effectiveCommand,
       // regressionGate.timeoutSeconds lives in execution; QualityConfig includes execution.
-      timeoutSeconds: ctxConfig.execution?.regressionGate?.timeoutSeconds ?? 600,
+      timeoutSeconds: quality.execution?.regressionGate?.timeoutSeconds ?? 600,
       // acceptOnTimeout is not consumed by runVerificationCore — the runner returns status="TIMEOUT"
       // and the caller (this op) decides accept-on-timeout policy. The op currently does not accept
       // scoped-test timeouts as pass; full-suite gate is the only place that does.
-      forceExit: ctxConfig.quality?.forceExit,
-      detectOpenHandles: ctxConfig.quality?.detectOpenHandles,
-      detectOpenHandlesRetries: ctxConfig.quality?.detectOpenHandlesRetries,
-      gracePeriodMs: ctxConfig.quality?.gracePeriodMs,
-      drainTimeoutMs: ctxConfig.quality?.drainTimeoutMs,
-      shell: ctxConfig.quality?.shell,
-      stripEnvVars: ctxConfig.quality?.stripEnvVars,
+      forceExit: quality.quality?.forceExit,
+      detectOpenHandles: quality.quality?.detectOpenHandles,
+      detectOpenHandlesRetries: quality.quality?.detectOpenHandlesRetries,
+      gracePeriodMs: quality.quality?.gracePeriodMs,
+      drainTimeoutMs: quality.quality?.drainTimeoutMs,
+      shell: quality.quality?.shell,
+      stripEnvVars: quality.quality?.stripEnvVars,
     });
     const durationMs = Date.now() - start;
     const parsed = result.output ? deps.parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };

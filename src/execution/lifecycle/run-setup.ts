@@ -15,6 +15,8 @@
 import * as os from "node:os";
 import path from "node:path";
 import { pipelineEventBus } from "@/pipeline";
+import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
+import { errorMessage } from "@/utils/errors";
 import type { NaxConfig } from "../../config";
 import { globalConfigDir } from "../../config/paths";
 import { LockAcquisitionError, NaxError } from "../../errors";
@@ -30,7 +32,6 @@ import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
 import { type NaxRuntime, createRuntime } from "../../runtime";
 import { SessionManager } from "../../session";
-import { resolveTestFilePatterns } from "../../test-runners/resolver";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, releaseLock } from "../helpers";
@@ -186,6 +187,21 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     featureName: options.feature,
     agentStreamEvents: options.agentStreamEvents,
   });
+
+  // 2b: merge per-package .nax/mono/<pkg>/config.json into the runtime registry so
+  // every packageView consumer (quality gates, smart-runner, context) sees the
+  // package's own commands — not just root config. Failure is non-fatal (root fallback).
+  try {
+    const workspacePackages = await discoverWorkspacePackages(workdir);
+    if (workspacePackages.length > 0) {
+      await runtime.packages.hydrate(workspacePackages);
+    }
+  } catch (err) {
+    getSafeLogger()?.warn("run-setup", "Per-package config hydration failed — using root config", {
+      storyId: "_setup",
+      error: errorMessage(err),
+    });
+  }
 
   // Cleanup stale PIDs from previous crashed runs
   await runtime.pidRegistry.cleanupStale();

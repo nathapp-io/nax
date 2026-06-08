@@ -1,4 +1,7 @@
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
+import { mergePackageConfig } from "../config";
+
+export type PackageOverrideLoader = (repoRoot: string, packageDir: string) => Promise<Partial<NaxConfig> | null>;
 
 export interface PackageView {
   readonly packageDir: string;
@@ -11,6 +14,7 @@ export interface PackageRegistry {
   all(): readonly PackageView[];
   resolve(packageDir?: string): PackageView;
   repo(): PackageView;
+  hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void>;
 }
 
 function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string): PackageView {
@@ -38,19 +42,49 @@ function createPackageView(config: NaxConfig, packageDir: string, repoRoot: stri
 
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
+  const mergedConfigs = new Map<string, NaxConfig>();
+
+  // Normalize to relative so cache and mergedConfigs keys are consistent with
+  // what hydrate() stores (discoverWorkspacePackages returns relative paths).
+  // Pipeline stages pass absolute workdirs; without this, mergedConfigs.get() always misses.
+  function toRelativeKey(packageDir: string | undefined): string {
+    if (!packageDir) return "";
+    const prefix = repoRoot.endsWith("/") ? repoRoot : `${repoRoot}/`;
+    if (packageDir.startsWith(prefix)) return packageDir.slice(prefix.length);
+    if (packageDir === repoRoot) return "";
+    return packageDir;
+  }
 
   function resolve(packageDir?: string): PackageView {
-    const key = packageDir ?? "";
+    const key = toRelativeKey(packageDir);
     const cached = cache.get(key);
     if (cached !== undefined) {
       return cached;
     }
-    // Wave 1: no per-package config merging — root config only.
-    // Wave 3 will call mergePackageConfig(root, loadPackageOverride(packageDir)).
-    const config = loader.current();
+    // Use merged config if hydration pre-loaded one for this package; otherwise root config.
+    const config = mergedConfigs.get(key) ?? loader.current();
     const view = createPackageView(config, key, repoRoot);
     cache.set(key, view);
     return view;
+  }
+
+  async function hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void> {
+    const load = loadOverride ?? (await import("../config")).loadPackageOverride;
+
+    for (const dir of packageDirs) {
+      if (!dir) {
+        continue;
+      }
+      if (mergedConfigs.has(dir)) {
+        continue;
+      }
+      const override = await load(repoRoot, dir);
+      if (override !== null) {
+        mergedConfigs.set(dir, mergePackageConfig(loader.current(), override));
+        // Invalidate any stale root-config view so the next resolve() picks up the merge.
+        cache.delete(dir);
+      }
+    }
   }
 
   return {
@@ -61,5 +95,6 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     repo() {
       return resolve(undefined);
     },
+    hydrate,
   };
 }

@@ -3,7 +3,14 @@ import { verifyScopedOp, _verifyScopedDeps } from "@/operations";
 import type { VerifyScopedDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-const mockCtx = { runtime: {}, storyId: "US-003" } as any;
+function ctxWithQuality(quality?: Record<string, unknown>) {
+  const config = { quality, execution: {} } as any;
+  return {
+    runtime: {},
+    storyId: "US-003",
+    packageView: { packageDir: "packages/agent", config, select: (s: any) => s.select(config) },
+  } as any;
+}
 
 const mockFinding: Finding = {
   source: "test-runner",
@@ -58,7 +65,7 @@ describe("verifyScopedOp — AC5: execute returns success=true when test command
   test("AC5: returns success=true and findings=[] when test command exits 0", async () => {
     const out = await verifyScopedOp.execute(
       { workdir: "/tmp", storyId: "US-003", regressionMode: "per-story" },
-      { ...mockCtx, config: { quality: { commands: { test: "bun test" } } } },
+      ctxWithQuality({ commands: { test: "bun test" } }),
       fakeDeps(),
     );
     expect(out.success).toBe(true);
@@ -71,7 +78,7 @@ describe("verifyScopedOp — AC5: execute returns success=true when test command
   test("AC5: returns success=false and non-empty findings when test command exits non-zero", async () => {
     const out = await verifyScopedOp.execute(
       { workdir: "/tmp", storyId: "US-003", regressionMode: "per-story" },
-      { ...mockCtx, config: { quality: { commands: { test: "bun test" } } } },
+      ctxWithQuality({ commands: { test: "bun test" } }),
       fakeDeps({
         regression: async () => ({
           status: "TEST_FAILURE" as const,
@@ -95,7 +102,7 @@ describe("verifyScopedOp — AC5: execute returns success=true when test command
   test("AC5: every finding has source='test-runner' when test command exits non-zero", async () => {
     const out = await verifyScopedOp.execute(
       { workdir: "/tmp", storyId: "US-003", regressionMode: "per-story" },
-      { ...mockCtx, config: { quality: { commands: { test: "bun test" } } } },
+      ctxWithQuality({ commands: { test: "bun test" } }),
       fakeDeps({
         regression: async () => ({
           status: "TEST_FAILURE" as const,
@@ -125,14 +132,9 @@ describe("verifyScopedOp — AC6: no-command early return", () => {
       },
     });
 
-    const ctxWithNoCommand = {
-      ...mockCtx,
-      config: { quality: { commands: { test: undefined } } },
-    };
-
     const out = await verifyScopedOp.execute(
       { workdir: "/tmp", storyId: "US-003" },
-      ctxWithNoCommand,
+      ctxWithQuality({ commands: {} }),
       deps,
     );
     expect(out.success).toBe(true);
@@ -145,7 +147,7 @@ describe("verifyScopedOp — AC6: no-command early return", () => {
 describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
   test("deferred mode + no mapped tests + not monorepo → skipped", async () => {
     const deps = fakeDeps();
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "deferred" },
       ctx,
@@ -157,7 +159,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
 
   test("per-story mode + no mapped tests → runs full suite (not skipped)", async () => {
     const deps = fakeDeps();
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "per-story" },
       ctx,
@@ -176,7 +178,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         isMonorepoOrchestrator: true,
       }),
     });
-    const ctx = { config: { quality: { commands: { test: "turbo run test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "turbo run test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "deferred" },
       ctx,
@@ -195,7 +197,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         isMonorepoOrchestrator: false,
       }),
     });
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "deferred" },
       ctx,
@@ -214,7 +216,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
         isMonorepoOrchestrator: false,
       }),
     });
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
       ctx,
@@ -238,7 +240,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
       }),
       testSummaryToFindings: () => [{ kind: "test", id: "f1" } as any],
     });
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "per-story" },
       ctx,
@@ -259,7 +261,7 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
       }),
       parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
     });
-    const ctx = { config: { quality: { commands: { test: "bun test" } } } } as any;
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
     const result = await verifyScopedOp.execute(
       { workdir: "/r", storyId: "S-1", regressionMode: "per-story" },
       ctx,
