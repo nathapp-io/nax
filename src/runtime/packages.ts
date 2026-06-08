@@ -49,7 +49,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
   // Pipeline stages pass absolute workdirs; without this, mergedConfigs.get() always misses.
   function toRelativeKey(packageDir: string | undefined): string {
     if (!packageDir) return "";
-    const prefix = repoRoot.endsWith("/") ? repoRoot : repoRoot + "/";
+    const prefix = repoRoot.endsWith("/") ? repoRoot : `${repoRoot}/`;
     if (packageDir.startsWith(prefix)) return packageDir.slice(prefix.length);
     if (packageDir === repoRoot) return "";
     return packageDir;

@@ -554,7 +554,16 @@ describe("AC7: full-path regression scenarios under unified path", () => {
     const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
     const origCallOp = _storyOrchestratorDeps.callOp;
     const origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
-    const runtime = makeTestRuntime();
+    // Build config first so the runtime's packageView reflects lintFix —
+    // buildPlanForStrategy now reads ctx.packageView instead of the config param.
+    const config = makeNaxConfig({
+      quality: {
+        commands: { lintFix: "bun run lint:fix" },
+        autofix: { enabled: false },
+      },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const runtime = makeTestRuntime({ config });
 
     try {
       _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
@@ -562,13 +571,6 @@ describe("AC7: full-path regression scenarios under unified path", () => {
       _storyOrchestratorDeps.runFixCycle = makeRunFixCycleMock(capturedNames);
 
       const story = makeStory({ attempts: 1 });
-      const config = makeNaxConfig({
-        quality: {
-          commands: { lintFix: "bun run lint:fix" },
-          autofix: { enabled: false },
-        },
-        execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
-      });
       const ctx = makeMockCallContext({ runtime });
       const inputs = makeMockPlanInputs({
         story,
