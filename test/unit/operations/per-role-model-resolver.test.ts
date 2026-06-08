@@ -60,3 +60,17 @@ describe("testWriterOp.model — tdd.sessionTiers.testWriter", () => {
     expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
   });
 });
+
+import { verifierOp } from "@/operations";
+
+describe("verifierOp.model — tdd.sessionTiers.verifier", () => {
+  test("returns the configured verifier tier", () => {
+    const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ verifier: "fast" }))).toBe("fast");
+  });
+
+  test("returns undefined when sessionTiers is absent", () => {
+    const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
+  });
+});
