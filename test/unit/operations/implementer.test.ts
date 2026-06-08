@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { implementerOp, testWriterOp } from "@/operations";
+import { resolveConfiguredModel } from "@/config";
 import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
+import type { UserStory } from "@/prd";
 
 /**
  * Tests for implementerOp — the full RunOperation shape for the implementer role.
@@ -307,5 +310,60 @@ describe("implementerOp.verify — isolation", () => {
 
     const result = await implementerOp.verify!(parsed, input, ctx as any);
     expect(result).toEqual(parsed);
+  });
+});
+
+function storyWithTier(tier: string | undefined): UserStory {
+  return {
+    id: "US-001",
+    title: "t",
+    description: "d",
+    acceptanceCriteria: [],
+    dependencies: [],
+    status: "pending",
+    passes: false,
+    attempts: 0,
+    routing: tier ? { complexity: "medium", modelTier: tier, testStrategy: "tdd-simple", reasoning: "" } : undefined,
+  } as unknown as UserStory;
+}
+
+const buildCtx = { config: {} as any, packageView: {} as any };
+
+function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
+  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+}
+
+describe("implementerOp.model — routing-driven", () => {
+  test("returns the story's initial modelTier", () => {
+    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({ story: storyWithTier("fast") }, buildCtx)).toBe("fast");
+  });
+
+  test("follows the escalated tier (escalation mutates story.routing.modelTier)", () => {
+    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({ story: storyWithTier("powerful") }, buildCtx)).toBe("powerful");
+  });
+
+  test("returns undefined when routing is absent (callOp then defaults)", () => {
+    const resolver = implementerOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({ story: storyWithTier(undefined) }, buildCtx)).toBeUndefined();
+  });
+});
+
+describe("per-role tier reaches effectiveTier (callOp contract)", () => {
+  const models = {
+    opencode: { fast: "minimax/MiniMax-M2.7", balanced: "opencode-go/deepseek-v4-pro", powerful: "minimax/MiniMax-M3" },
+  };
+
+  test("fast story → implementer resolves to the fast model, NOT balanced", () => {
+    const opModel = (implementerOp.model as any)({ story: storyWithTier("fast") }, buildCtx) ?? "balanced";
+    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    expect(resolved.modelTier).toBe("fast");
+  });
+
+  test("unconfigured test-writer still defaults to fast via schema, not balanced", () => {
+    const opModel = (testWriterOp.model as any)({}, tddBuildCtx({ testWriter: "fast" })) ?? "balanced";
+    const resolved = resolveConfiguredModel(models as any, "opencode", opModel, "opencode");
+    expect(resolved.modelTier).toBe("fast");
   });
 });

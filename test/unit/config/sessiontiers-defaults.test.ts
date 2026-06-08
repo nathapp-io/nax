@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TddConfigSchema } from "@/config";
+import { DEFAULT_CONFIG, TddConfigSchema } from "@/config";
 
 describe("tdd.sessionTiers defaults", () => {
   test("materializes testWriter/verifier defaults when sessionTiers is absent", () => {
@@ -31,5 +31,10 @@ describe("tdd.sessionTiers defaults", () => {
       sessionTiers: { verifier: { agent: "claude", model: "haiku" } },
     });
     expect(parsed.sessionTiers?.verifier).toEqual({ agent: "claude", model: "haiku" });
+  });
+
+  test("DEFAULT_CONFIG.tdd.sessionTiers reflects fast defaults (outer NaxConfigSchema path)", () => {
+    expect(DEFAULT_CONFIG.tdd.sessionTiers?.testWriter).toBe("fast");
+    expect(DEFAULT_CONFIG.tdd.sessionTiers?.verifier).toBe("fast");
   });
 });

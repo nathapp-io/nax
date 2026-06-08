@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { verifierOp } from "@/operations";
 import type { RunOperation } from "@/operations";
 import type { NaxConfig } from "@/config";
 
@@ -283,5 +284,21 @@ describe("verifierOp.verify — isolation", () => {
     const result = await verifierOp.verify!(parsed, input, ctx as any);
     expect(result).not.toBeNull();
     expect(result!.success).toBe(false);
+  });
+});
+
+function tddBuildCtx(sessionTiers?: Record<string, unknown>) {
+  return { config: { tdd: { sessionTiers } }, packageView: {} as any };
+}
+
+describe("verifierOp.model — tdd.sessionTiers.verifier", () => {
+  test("returns the configured verifier tier", () => {
+    const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx({ verifier: "fast" }))).toBe("fast");
+  });
+
+  test("returns undefined when sessionTiers is absent", () => {
+    const resolver = verifierOp.model as (i: unknown, c: unknown) => unknown;
+    expect(resolver({}, tddBuildCtx(undefined))).toBeUndefined();
   });
 });
