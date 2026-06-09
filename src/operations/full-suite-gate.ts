@@ -221,7 +221,7 @@ export const fullSuiteGateOp: DeterministicOperation<
     logger.info("verify[regression]", "Running full-suite gate", {
       storyId: input.story.id,
       packageDir: input.story.workdir,
-      cwd: input.workdir,
+      cwd: gateCtx.cmdWorkdir,
       command: gateCtx.testCmd,
       timeoutSeconds: gateCtx.fullSuiteTimeout,
     });
