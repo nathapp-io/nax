@@ -4,6 +4,7 @@ import { selectScopedTests, _scopedSelectionDeps } from "@/test-runners";
 function makeFakeDeps(overrides: Partial<typeof _scopedSelectionDeps> = {}) {
   return {
     getChangedNonTestFiles: async () => ["src/a.ts"],
+    getChangedTestFiles: async () => [] as string[],
     mapSourceToTests: async () => [] as string[],
     importGrepFallback: async () => [] as string[],
     buildSmartTestCommand: (files: string[], base: string) => `${base} ${files.join(" ")}`,
@@ -35,6 +36,58 @@ describe("selectScopedTests", () => {
     expect(result.isMonorepoOrchestrator).toBe(true);
     expect(result.isFullSuite).toBe(true);
     expect(result.effectiveCommand).toBe("turbo run test");
+  });
+
+  test("Pass 0: changed test files detected directly → scoped, no source→test mapping", async () => {
+    // Restores pre-#1084 behavior: a test file that changed in the story diff is
+    // already a test — run it directly, language-agnostically (e.g. Python test_*.py).
+    Object.assign(
+      _scopedSelectionDeps,
+      makeFakeDeps({
+        getChangedTestFiles: async () => ["/repo/pkg/tests/unit/test_fmp_client.py"],
+        getChangedNonTestFiles: async () => {
+          throw new Error("Pass 0 hit — source classification should not run");
+        },
+        mapSourceToTests: async () => {
+          throw new Error("Pass 0 hit — path-convention mapping should not run");
+        },
+      }),
+    );
+    const result = await selectScopedTests({
+      ...baseInput,
+      testScopedTemplate: "uv run pytest {{files}}",
+      scopeTestThreshold: 10,
+    });
+    expect(result.isFullSuite).toBe(false);
+    expect(result.effectiveCommand).toBe("uv run pytest '/repo/pkg/tests/unit/test_fmp_client.py'");
+    expect(result.scopeTestFallback).toBeUndefined();
+  });
+
+  test("Pass 0 above threshold → fallback to full suite", async () => {
+    const manyTests = Array.from({ length: 15 }, (_, i) => `/repo/pkg/tests/test_${i}.py`);
+    Object.assign(_scopedSelectionDeps, makeFakeDeps({ getChangedTestFiles: async () => manyTests }));
+    const result = await selectScopedTests({
+      ...baseInput,
+      scopeTestThreshold: 10,
+      fallbackFullSuiteCommand: "uv run pytest",
+    });
+    expect(result.isFullSuite).toBe(true);
+    expect(result.thresholdFallback).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    expect(result.effectiveCommand).toBe("uv run pytest");
+  });
+
+  test("Pass 0 empty → falls through to Pass 1 (source→test mapping)", async () => {
+    Object.assign(
+      _scopedSelectionDeps,
+      makeFakeDeps({
+        getChangedTestFiles: async () => [],
+        mapSourceToTests: async () => ["test/a.test.ts"],
+      }),
+    );
+    const result = await selectScopedTests({ ...baseInput, scopeTestThreshold: 10 });
+    expect(result.isFullSuite).toBe(false);
+    expect(result.effectiveCommand).toBe("bun test test/a.test.ts");
   });
 
   test("Pass 1 match below threshold → scoped command", async () => {
