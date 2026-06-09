@@ -274,6 +274,14 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         // "disabled" mode means the regression gate is fully off; treat as "deferred" for
         // verifyScopedOp (scope-level behavior unchanged — fullSuiteGateOp handles enabled=false).
         regressionMode: toVerifyScopedMode(ctx.config.execution?.regressionGate?.mode),
+        // Anchors for changed-test detection + path-convention mapping (restored Pass 0,
+        // language-agnostic + monorepo-correct). projectDir is the repo root; packageDirRelative
+        // scopes the git diff to the story's package (it equals story.workdir in monorepo mode,
+        // undefined for single-package — see PipelineContext.workdir invariant); resolvedTestPatterns
+        // is the ADR-009 SSOT. Use the same anchor as resolveTestFilePatterns above for consistency.
+        repoRoot: ctx.projectDir,
+        packagePrefix: packageDirRelative,
+        resolvedTestPatterns,
       }
     : undefined;
 

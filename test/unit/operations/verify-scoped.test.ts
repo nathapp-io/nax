@@ -283,6 +283,33 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(seenWorkdir).toBe("/repo/packages/lib");
   });
 
+  test("forwards repoRoot/packagePrefix/resolvedTestPatterns to selectScopedTests (Pass 0 anchors)", async () => {
+    let seen: Record<string, unknown> | undefined;
+    const resolvedTestPatterns = { globs: ["tests/**/*.py"], pathspec: [], regex: [/test_.*\.py$/], testDirs: ["tests"] } as any;
+    const deps = fakeDeps({
+      selectScopedTests: async (input) => {
+        seen = input as unknown as Record<string, unknown>;
+        return { effectiveCommand: "uv run pytest", isFullSuite: true, thresholdFallback: false, isMonorepoOrchestrator: false };
+      },
+    });
+    await verifyScopedOp.execute(
+      {
+        workdir: "/repo/packages/core",
+        storyId: "S-1",
+        storyGitRef: "abc",
+        regressionMode: "per-story",
+        repoRoot: "/repo",
+        packagePrefix: "packages/core",
+        resolvedTestPatterns,
+      },
+      ctxWithQuality({ commands: { test: "uv run pytest" } }, { hasOverride: true, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seen?.repoRoot).toBe("/repo");
+    expect(seen?.packagePrefix).toBe("packages/core");
+    expect(seen?.resolvedTestPatterns).toBe(resolvedTestPatterns);
+  });
+
   test("timeout → status=timeout, success=false", async () => {
     const deps = fakeDeps({
       regression: async () => ({

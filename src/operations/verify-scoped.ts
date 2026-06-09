@@ -4,7 +4,7 @@ import { testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import { _scopedSelectionDeps, parseTestOutput, selectScopedTests } from "../test-runners";
-import type { SelectScopedTestsResult, TestSummary } from "../test-runners";
+import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
@@ -20,6 +20,12 @@ export interface VerifyScopedInput {
   readonly naxIgnoreIndex?: NaxIgnoreIndex;
   /** Regression-gate mode — controls SKIPPED behavior when no tests are mapped. */
   readonly regressionMode?: "deferred" | "per-story";
+  /** Absolute repo root — anchor for changed-test detection / mapping in monorepos. */
+  readonly repoRoot?: string;
+  /** Story workdir relative to repoRoot (e.g. "packages/core") — scopes the git diff. */
+  readonly packagePrefix?: string;
+  /** ADR-009 resolved test patterns (language-agnostic, per-package override-aware). */
+  readonly resolvedTestPatterns?: ResolvedTestPatterns;
 }
 
 export type VerifyScopedStatus = "passed" | "failed" | "skipped" | "timeout";
@@ -93,6 +99,9 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       scopeTestThreshold: quality.quality?.scopeTestThreshold,
       fallbackFullSuiteCommand: quality.quality?.commands?.test,
       naxIgnoreIndex: input.naxIgnoreIndex,
+      repoRoot: input.repoRoot,
+      packagePrefix: input.packagePrefix,
+      resolvedTestPatterns: input.resolvedTestPatterns,
     });
 
     // Deferred mode + no mapped tests + not a monorepo orchestrator → SKIP.
