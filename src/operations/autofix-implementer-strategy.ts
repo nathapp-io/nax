@@ -34,7 +34,10 @@ export function makeAutofixImplementerStrategy(
   return {
     name: "autofix-implementer",
     appliesTo: (f) =>
-      (f.fixTarget === "source" && IMPLEMENTER_SOURCES.has(f.source)) ||
+      // lint and typecheck adapters leave fixTarget unset — assume source fix.
+      // Edge case: lint/typecheck error on a test file routes here instead of
+      // autofix-test-writer, but style fixes don't require test-writer context.
+      ((f.fixTarget === "source" || f.fixTarget == null) && IMPLEMENTER_SOURCES.has(f.source)) ||
       (claimsAdversarial && f.source === "adversarial-review"),
     fixOp: implementerRectifyOp,
     buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
