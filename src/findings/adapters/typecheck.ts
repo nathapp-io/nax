@@ -2,10 +2,10 @@ import type { TypecheckDiagnostic } from "../../review/typecheck-parsing/types";
 import { rebaseToWorkdir } from "../path-utils";
 import type { Finding } from "../types";
 
-export function tscDiagnosticToFinding(d: TypecheckDiagnostic, workdir: string): Finding {
+export function genericTypecheckDiagnosticToFinding(d: TypecheckDiagnostic, workdir: string, tool?: string): Finding {
   return {
     source: "typecheck",
-    tool: "tsc",
+    tool,
     severity: "error",
     category: "type-error",
     rule: d.code ? `TS${d.code}` : undefined,
@@ -13,5 +13,6 @@ export function tscDiagnosticToFinding(d: TypecheckDiagnostic, workdir: string):
     line: d.line,
     column: d.column,
     message: d.message,
+    fixTarget: "source",
   };
 }

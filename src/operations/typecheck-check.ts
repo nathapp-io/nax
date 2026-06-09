@@ -71,6 +71,18 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     }
 
     const parsed = deps.parseTypecheckOutput(result.output, "auto", { workdir: input.workdir });
-    return { success: false, findings: parsed?.findings ?? [], durationMs: Date.now() - start };
+    const parsedFindings = parsed?.findings ?? [];
+    // Sentinel ensures autofix-implementer strategy fires even when the typecheck
+    // output format is unrecognised. fixTarget="source" is required — autofix-implementer
+    // gates on it, and typecheck errors always land in source code.
+    const sentinel: Finding = {
+      source: "typecheck",
+      severity: "error",
+      category: "typecheck-failure",
+      fixTarget: "source",
+      message: "typecheck failed (no structured findings parsed)",
+    };
+    const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
+    return { success: false, findings, durationMs: Date.now() - start };
   },
 };

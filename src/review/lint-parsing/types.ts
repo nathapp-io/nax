@@ -2,7 +2,7 @@ import type { Finding } from "../../findings";
 
 export type LintOutputFormat = "auto" | "eslint-json" | "biome-json" | "text" | "none";
 
-export type LintParserFormat = "eslint-json" | "biome-json" | "text-block";
+export type LintParserFormat = "eslint-json" | "biome-json" | "text-block" | "ruff-annotated";
 
 export interface LintDiagnostic {
   file: string;

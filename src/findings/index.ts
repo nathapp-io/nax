@@ -31,7 +31,7 @@ export {
   reviewFindingToFinding,
   testFailureToFinding,
   testSummaryToFindings,
-  tscDiagnosticToFinding,
+  genericTypecheckDiagnosticToFinding,
 } from "./adapters";
 export { rebaseToWorkdir } from "./path-utils";
 

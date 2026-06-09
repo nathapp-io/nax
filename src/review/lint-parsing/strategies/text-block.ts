@@ -1,6 +1,6 @@
 import type { LintDiagnostic, LintParseResult, LintParseStrategy } from "../types";
 
-const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|go|py|rs|rb|java|cs|cpp|c|h|swift|kt)$/;
+export const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|go|py|rs|rb|java|cs|cpp|c|h|swift|kt)$/;
 const PATH_RE = /^[ \t]*((?:\/[\w./-]+|\.\.?\/[\w./-]+|[\w][\w-]*(?:\/[\w./-]+)+))(?::\d+)?(?::\d+)?(?:\s|:|$)/;
 const LOCATION_RE = /:(\d+)(?::(\d+))?/;
 const SUMMARY_LINE_RE = /^(Found \d+ .+|Checked \d+ .+|[\d\s]+problems?\b.+|[\d\s]+errors?\b.*)$/i;

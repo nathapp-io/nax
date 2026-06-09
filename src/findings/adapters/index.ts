@@ -6,5 +6,5 @@ export { lintDiagnosticToFinding } from "./lint";
 export { pluginToFinding } from "./plugin";
 export { reviewFindingToFinding } from "./semantic-review";
 export { acFailureToFinding, acSentinelToFinding, executionFailureToFinding } from "./test-runner";
-export { tscDiagnosticToFinding } from "./typecheck";
+export { genericTypecheckDiagnosticToFinding } from "./typecheck";
 export { testFailureToFinding, testSummaryToFindings } from "./test-failure";

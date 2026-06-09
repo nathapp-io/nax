@@ -69,6 +69,16 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     }
 
     const parsed = deps.parseLintOutput(result.output, "auto", { workdir: input.workdir });
-    return { success: false, findings: parsed?.findings ?? [], durationMs: Date.now() - start };
+    const parsedFindings = parsed?.findings ?? [];
+    // Sentinel ensures mechanical-lintfix strategy fires even when the linter's
+    // output format is unrecognised (parsedFindings empty).
+    const sentinel: Finding = {
+      source: "lint",
+      severity: "error",
+      category: "lint-failure",
+      message: "lint failed (no structured findings parsed)",
+    };
+    const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
+    return { success: false, findings, durationMs: Date.now() - start };
   },
 };

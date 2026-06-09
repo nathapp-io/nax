@@ -1,15 +1,16 @@
 import { lintDiagnosticToFinding } from "../../findings";
 import { biomeJsonStrategy } from "./strategies/biome-json";
 import { eslintJsonStrategy } from "./strategies/eslint-json";
+import { ruffAnnotatedStrategy } from "./strategies/ruff-annotated";
 import { textBlockStrategy } from "./strategies/text-block";
 import type { LintDiagnostic, LintOutputFormat, LintParseResult, LintParseStrategy, LintParserFormat } from "./types";
 
 function strategiesFor(format: LintOutputFormat): ReadonlyArray<LintParseStrategy> {
   if (format === "eslint-json") return [eslintJsonStrategy];
   if (format === "biome-json") return [biomeJsonStrategy];
-  if (format === "text") return [textBlockStrategy];
+  if (format === "text") return [ruffAnnotatedStrategy, textBlockStrategy];
   if (format === "none") return [];
-  return [eslintJsonStrategy, biomeJsonStrategy, textBlockStrategy];
+  return [eslintJsonStrategy, biomeJsonStrategy, ruffAnnotatedStrategy, textBlockStrategy];
 }
 
 function toolForFormat(format: LintParserFormat): "biome" | "eslint" | "text" {
