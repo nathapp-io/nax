@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { tscDiagnosticToFinding } from "../../../../src/findings";
+import { genericTypecheckDiagnosticToFinding } from "../../../../src/findings";
 import type { TypecheckDiagnostic } from "../../../../src/review/typecheck-parsing";
 
 const WORKDIR = "/repo";
@@ -13,9 +13,9 @@ const baseDiagnostic: TypecheckDiagnostic = {
   raw: "src/foo.ts(42,10): error TS2304: Cannot find name 'Foo'.",
 };
 
-describe("tscDiagnosticToFinding", () => {
-  test("maps required fields", () => {
-    const finding = tscDiagnosticToFinding(baseDiagnostic, WORKDIR);
+describe("genericTypecheckDiagnosticToFinding", () => {
+  test("maps required fields with tsc tool", () => {
+    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "tsc");
 
     expect(finding.source).toBe("typecheck");
     expect(finding.tool).toBe("tsc");
@@ -28,43 +28,53 @@ describe("tscDiagnosticToFinding", () => {
     expect(finding.message).toBe("Cannot find name 'Foo'.");
   });
 
+  test("tool is undefined when not passed", () => {
+    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR);
+    expect(finding.tool).toBeUndefined();
+  });
+
+  test("maps tool for non-tsc checkers (e.g. mypy)", () => {
+    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "mypy");
+    expect(finding.tool).toBe("mypy");
+  });
+
   test("omits rule when code is undefined", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, code: undefined };
-    const finding = tscDiagnosticToFinding(d, WORKDIR);
+    const finding = genericTypecheckDiagnosticToFinding(d, WORKDIR, "tsc");
     expect(finding.rule).toBeUndefined();
   });
 
   test("omits column when absent", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, column: undefined };
-    const finding = tscDiagnosticToFinding(d, WORKDIR);
+    const finding = genericTypecheckDiagnosticToFinding(d, WORKDIR, "tsc");
     expect(finding.column).toBeUndefined();
   });
 
   test("omits line when absent", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, line: undefined };
-    const finding = tscDiagnosticToFinding(d, WORKDIR);
+    const finding = genericTypecheckDiagnosticToFinding(d, WORKDIR, "tsc");
     expect(finding.line).toBeUndefined();
   });
 
   test("preserves workdir-relative file path unchanged", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, file: "src/nested/bar.ts" };
-    const finding = tscDiagnosticToFinding(d, "/repo");
+    const finding = genericTypecheckDiagnosticToFinding(d, "/repo");
     expect(finding.file).toBe("src/nested/bar.ts");
   });
 
   test("rebases absolute file path to workdir-relative", () => {
     const d: TypecheckDiagnostic = { ...baseDiagnostic, file: "/repo/src/absolute.ts" };
-    const finding = tscDiagnosticToFinding(d, "/repo");
+    const finding = genericTypecheckDiagnosticToFinding(d, "/repo");
     expect(finding.file).toBe("src/absolute.ts");
   });
 
-  test("fixTarget is always undefined — derived by cycle layer", () => {
-    const finding = tscDiagnosticToFinding(baseDiagnostic, WORKDIR);
-    expect(finding.fixTarget).toBeUndefined();
+  test("fixTarget is always source — autofix-implementer routes on it", () => {
+    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "tsc");
+    expect(finding.fixTarget).toBe("source");
   });
 
   test("suggestion is always undefined — TypecheckDiagnostic has no fix field", () => {
-    const finding = tscDiagnosticToFinding(baseDiagnostic, WORKDIR);
+    const finding = genericTypecheckDiagnosticToFinding(baseDiagnostic, WORKDIR, "tsc");
     expect(finding.suggestion).toBeUndefined();
   });
 });
