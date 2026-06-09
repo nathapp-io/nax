@@ -76,7 +76,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       source: "lint",
       severity: "error",
       category: "lint-failure",
-      message: "lint failed (no structured findings parsed)",
+      message: `lint failed (no structured findings parsed), please run the lint check command: ${command}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };

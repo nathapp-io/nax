@@ -80,7 +80,7 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
       severity: "error",
       category: "typecheck-failure",
       fixTarget: "source",
-      message: "typecheck failed (no structured findings parsed)",
+      message: `typecheck failed (no structured findings parsed), please run the typecheck command: ${command}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };
