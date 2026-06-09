@@ -139,9 +139,11 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       timeoutSeconds: scopedTimeout,
       isFullSuite: selection.isFullSuite,
     });
+    // Root-config fallback: command was not defined per-package, so run from repo root.
+    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
     const start = Date.now();
     const result = await deps.regression({
-      workdir: input.workdir,
+      workdir: cmdWorkdir,
       command: selection.effectiveCommand,
       // regressionGate.timeoutSeconds lives in execution; QualityConfig includes execution.
       timeoutSeconds: quality.execution?.regressionGate?.timeoutSeconds ?? 600,

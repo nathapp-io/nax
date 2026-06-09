@@ -53,11 +53,13 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
+    // Root-config fallback: command was not defined per-package, so run from repo root.
+    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "lint",
       command,
-      workdir: input.workdir,
+      workdir: cmdWorkdir,
       storyId: input.storyId,
       stripEnvVars: quality?.stripEnvVars ?? [],
     });

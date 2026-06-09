@@ -3,12 +3,18 @@ import { verifyScopedOp, _verifyScopedDeps } from "@/operations";
 import type { VerifyScopedDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-function ctxWithQuality(quality?: Record<string, unknown>) {
+function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
   return {
     runtime: {},
     storyId: "US-003",
-    packageView: { packageDir: "packages/agent", config, select: (s: any) => s.select(config) },
+    packageView: {
+      packageDir: "packages/agent",
+      repoRoot: opts.repoRoot ?? "/repo",
+      hasOverride: opts.hasOverride ?? false,
+      config,
+      select: (s: any) => s.select(config),
+    },
   } as any;
 }
 
@@ -249,6 +255,32 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(result.status).toBe("failed");
     expect(result.success).toBe(false);
     expect(result.findings.length).toBe(1);
+  });
+
+  test("workdir routing — uses repoRoot when no per-package override", async () => {
+    let seenWorkdir = "";
+    const deps = fakeDeps({
+      regression: async (opts) => { seenWorkdir = opts.workdir; return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" }; },
+    });
+    await verifyScopedOp.execute(
+      { workdir: "/repo/packages/app", storyId: "S-1", regressionMode: "per-story" },
+      ctxWithQuality({ commands: { test: "bun run test" } }, { hasOverride: false, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo");
+  });
+
+  test("workdir routing — uses input.workdir (packageDir) when per-package override exists", async () => {
+    let seenWorkdir = "";
+    const deps = fakeDeps({
+      regression: async (opts) => { seenWorkdir = opts.workdir; return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "" }; },
+    });
+    await verifyScopedOp.execute(
+      { workdir: "/repo/packages/lib", storyId: "S-1", regressionMode: "per-story" },
+      ctxWithQuality({ commands: { test: "bun test" } }, { hasOverride: true, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo/packages/lib");
   });
 
   test("timeout → status=timeout, success=false", async () => {
