@@ -98,6 +98,8 @@ export interface FullSuiteGateContext {
   readonly config: NaxConfig;
   readonly testCmd: string;
   readonly fullSuiteTimeout: number;
+  /** cwd for the test subprocess — packageDir when per-package override exists, repoRoot otherwise. */
+  readonly cmdWorkdir: string;
 }
 
 export interface FullSuiteGateDeps {
@@ -134,13 +136,15 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
         },
       );
     }
-    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout };
+    // Root-config fallback: command was not defined per-package, so run from repo root.
+    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
+    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout, cmdWorkdir };
   },
-  runTests: async (input, gateCtx) => {
+  runTests: async (_input, gateCtx) => {
     const { regression } = await import("../verification/runners");
     const { parseTestOutput } = await import("../test-runners");
     const result = await regression({
-      workdir: input.workdir,
+      workdir: gateCtx.cmdWorkdir,
       command: gateCtx.testCmd,
       timeoutSeconds: gateCtx.fullSuiteTimeout,
       // Op decides accept-on-timeout itself; runner stays neutral.
@@ -217,7 +221,7 @@ export const fullSuiteGateOp: DeterministicOperation<
     logger.info("verify[regression]", "Running full-suite gate", {
       storyId: input.story.id,
       packageDir: input.story.workdir,
-      cwd: input.workdir,
+      cwd: gateCtx.cmdWorkdir,
       command: gateCtx.testCmd,
       timeoutSeconds: gateCtx.fullSuiteTimeout,
     });

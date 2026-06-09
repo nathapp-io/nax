@@ -77,3 +77,31 @@ describe("PackageRegistry.hydrate — per-package merge", () => {
     expect(viewAbsolute).toBe(registry.resolve("packages/agent"));
   });
 });
+
+describe("PackageView.hasOverride and repoRoot", () => {
+  test("hasOverride=false and repoRoot exposed for unhydrated package (root-config fallback)", () => {
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+    const view = registry.resolve("packages/app");
+    expect(view.hasOverride).toBe(false);
+    expect(view.repoRoot).toBe("/repo");
+  });
+
+  test("hasOverride=true for hydrated package with per-package override", async () => {
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate(["packages/lib"], async (_root, dir) =>
+      dir === "packages/lib" ? ({ quality: { commands: { lint: "echo ok" } } } as any) : null,
+    );
+    const view = registry.resolve("packages/lib");
+    expect(view.hasOverride).toBe(true);
+    expect(view.repoRoot).toBe("/repo");
+  });
+
+  test("hasOverride=false for repo() (root view)", () => {
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+    expect(registry.repo().hasOverride).toBe(false);
+    expect(registry.repo().repoRoot).toBe("/repo");
+  });
+});

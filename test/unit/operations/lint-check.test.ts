@@ -3,12 +3,18 @@ import { lintCheckOp } from "@/operations";
 import type { LintCheckDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-function ctxWithQuality(quality?: Record<string, unknown>) {
+function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
   return {
     runtime: {},
     storyId: "US-003",
-    packageView: { packageDir: "packages/agent", config, select: (sel: any) => sel.select(config) },
+    packageView: {
+      packageDir: "packages/agent",
+      repoRoot: opts.repoRoot ?? "/repo",
+      hasOverride: opts.hasOverride ?? false,
+      config,
+      select: (sel: any) => sel.select(config),
+    },
   } as any;
 }
 
@@ -136,5 +142,29 @@ describe("lintCheckOp — AC10: per-package config override", () => {
       deps,
     );
     expect(seen).toBe("ruff check packages/agent");
+  });
+});
+
+describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
+  test("uses repoRoot as cwd when no per-package override (root config fallback)", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    await lintCheckOp.execute(
+      { workdir: "/repo/packages/app", storyId: "US-003" },
+      ctxWithQuality({ commands: { lint: "bun run lint" } }, { hasOverride: false, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo");
+  });
+
+  test("uses input.workdir (packageDir) as cwd when per-package override exists", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    await lintCheckOp.execute(
+      { workdir: "/repo/packages/lib", storyId: "US-003" },
+      ctxWithQuality({ commands: { lint: "echo ok" } }, { hasOverride: true, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo/packages/lib");
   });
 });

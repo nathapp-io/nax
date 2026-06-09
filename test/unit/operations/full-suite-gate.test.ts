@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
 
-function ctxWithConfig(config: any = {}) {
+function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   return {
     runtime: {},
     storyId: "US-001",
-    packageView: { packageDir: "", config, select: (s: any) => s.select(config) },
+    packageView: {
+      packageDir: "",
+      repoRoot: opts.repoRoot ?? "/repo",
+      hasOverride: opts.hasOverride ?? false,
+      config,
+      select: (s: any) => s.select(config),
+    },
   } as any;
 }
 const mockCtx = ctxWithConfig({});
@@ -16,6 +22,7 @@ function makeDeps(overrides = {}) {
       config: {} as any,
       testCmd: "bun test",
       fullSuiteTimeout: 60,
+      cmdWorkdir: "/repo",
     }),
     runTests: async () => ({
       passed: true,
@@ -238,6 +245,7 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
         config: {} as any,
         testCmd: "bun test",
         fullSuiteTimeout: 999,
+        cmdWorkdir: "/repo",
       }),
       runTests: async (_input: any, gateCtx: any) => {
         capturedTimeout = gateCtx.fullSuiteTimeout;
@@ -250,5 +258,27 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       deps,
     );
     expect(capturedTimeout).toBe(999);
+  });
+
+  test("cmdWorkdir from gateCtx is threaded into runTests (root-config fallback uses repoRoot)", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({
+      resolveGateContext: async () => ({
+        config: {} as any,
+        testCmd: "bun run test",
+        fullSuiteTimeout: 60,
+        cmdWorkdir: "/repo",
+      }),
+      runTests: async (_input: any, gateCtx: any) => {
+        seenWorkdir = gateCtx.cmdWorkdir;
+        return { passed: true, failed: 0, output: "", parsedSummary: { passed: 1, failed: 0, failures: [] }, timedOut: false };
+      },
+    });
+    await fullSuiteGateOp.execute(
+      { story: { id: "S-1" } as any, workdir: "/repo/packages/app" },
+      mockCtx,
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo");
   });
 });

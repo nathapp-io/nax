@@ -3,12 +3,18 @@ import { typecheckCheckOp } from "@/operations";
 import type { TypecheckCheckDeps } from "@/operations";
 import type { Finding } from "@/findings";
 
-function ctxWithQuality(quality?: Record<string, unknown>) {
+function ctxWithQuality(quality?: Record<string, unknown>, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   const config = { quality, execution: {} } as any;
   return {
     runtime: {},
     storyId: "US-003",
-    packageView: { packageDir: "packages/agent", config, select: (sel: any) => sel.select(config) },
+    packageView: {
+      packageDir: "packages/agent",
+      repoRoot: opts.repoRoot ?? "/repo",
+      hasOverride: opts.hasOverride ?? false,
+      config,
+      select: (sel: any) => sel.select(config),
+    },
   } as any;
 }
 
@@ -107,6 +113,30 @@ describe("typecheckCheckOp — AC4: execute returns success=true when command ex
       }),
     );
     expect(out.findings.every((f) => f.source === "typecheck")).toBe(true);
+  });
+});
+
+describe("typecheckCheckOp — workdir routing: repoRoot vs packageDir", () => {
+  test("uses repoRoot as cwd when no per-package override (root config fallback)", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    await typecheckCheckOp.execute(
+      { workdir: "/repo/packages/app", storyId: "US-003" },
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }, { hasOverride: false, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo");
+  });
+
+  test("uses input.workdir (packageDir) as cwd when per-package override exists", async () => {
+    let seenWorkdir = "";
+    const deps = makeDeps({ runQualityCommand: async (o) => { seenWorkdir = o.workdir; return passedResult; } });
+    await typecheckCheckOp.execute(
+      { workdir: "/repo/packages/lib", storyId: "US-003" },
+      ctxWithQuality({ commands: { typecheck: "tsc --noEmit" } }, { hasOverride: true, repoRoot: "/repo" }),
+      deps,
+    );
+    expect(seenWorkdir).toBe("/repo/packages/lib");
   });
 });
 

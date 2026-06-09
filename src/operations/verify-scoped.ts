@@ -131,17 +131,19 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
     const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
+    // Root-config fallback: command was not defined per-package, so run from repo root.
+    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
     logger.info("verify[scoped]", "Running scoped tests", {
       storyId: input.storyId,
       packageDir: input.packageDir,
-      cwd: input.workdir,
+      cwd: cmdWorkdir,
       command: selection.effectiveCommand,
       timeoutSeconds: scopedTimeout,
       isFullSuite: selection.isFullSuite,
     });
     const start = Date.now();
     const result = await deps.regression({
-      workdir: input.workdir,
+      workdir: cmdWorkdir,
       command: selection.effectiveCommand,
       // regressionGate.timeoutSeconds lives in execution; QualityConfig includes execution.
       timeoutSeconds: quality.execution?.regressionGate?.timeoutSeconds ?? 600,

@@ -6,6 +6,10 @@ export type PackageOverrideLoader = (repoRoot: string, packageDir: string) => Pr
 export interface PackageView {
   readonly packageDir: string;
   readonly relativeFromRoot: string;
+  /** Absolute path to the repo root (.nax/ anchor). Use as cwd when running root-config commands. */
+  readonly repoRoot: string;
+  /** True when a per-package config override was hydrated for this package. */
+  readonly hasOverride: boolean;
   readonly config: NaxConfig;
   select<C>(selector: ConfigSelector<C>): C;
 }
@@ -17,7 +21,7 @@ export interface PackageRegistry {
   hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void>;
 }
 
-function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string): PackageView {
+function createPackageView(config: NaxConfig, packageDir: string, repoRoot: string, hasOverride: boolean): PackageView {
   const memo = new Map<string, unknown>();
   const relativeFromRoot = packageDir
     ? packageDir.startsWith(repoRoot)
@@ -28,6 +32,8 @@ function createPackageView(config: NaxConfig, packageDir: string, repoRoot: stri
   return {
     packageDir,
     relativeFromRoot,
+    repoRoot,
+    hasOverride,
     config,
     select<C>(selector: ConfigSelector<C>): C {
       if (memo.has(selector.name)) {
@@ -62,8 +68,10 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       return cached;
     }
     // Use merged config if hydration pre-loaded one for this package; otherwise root config.
-    const config = mergedConfigs.get(key) ?? loader.current();
-    const view = createPackageView(config, key, repoRoot);
+    const overrideConfig = mergedConfigs.get(key);
+    const hasOverride = overrideConfig !== undefined;
+    const config = overrideConfig ?? loader.current();
+    const view = createPackageView(config, key, repoRoot, hasOverride);
     cache.set(key, view);
     return view;
   }
