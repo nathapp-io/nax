@@ -32,4 +32,18 @@ describe("redactSecrets", () => {
     expect(out.message).toBe("hello world");
     expect(out.count).toBe(42);
   });
+
+  test("does not redact plural metric keys: tokens, inputTokens, totalTokens", () => {
+    const out = redactSecrets({ tokens: 1234, inputTokens: 500, totalTokens: 1000 }) as any;
+    expect(out.tokens).toBe(1234);
+    expect(out.inputTokens).toBe(500);
+    expect(out.totalTokens).toBe(1000);
+  });
+
+  test("still redacts singular token credential keys: token, GITHUB_TOKEN, accessToken", () => {
+    const out = redactSecrets({ token: "abc123", GITHUB_TOKEN: "ghp_xxxx", accessToken: "bearer_xyz" }) as any;
+    expect(out.token).toBe("[REDACTED]");
+    expect(out.GITHUB_TOKEN).toBe("[REDACTED]");
+    expect(out.accessToken).toBe("[REDACTED]");
+  });
 });
