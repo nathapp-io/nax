@@ -545,6 +545,75 @@ callOp: callOpMock as unknown as CallOpFn, logger: mockLogger as unknown as impo
   });
 });
 
+// ─── runFixCycle — exclusive exhausted, co-run companion continues ───────────
+
+describe("runFixCycle — exclusive strategy exhausted with uncapped companion", () => {
+  test("co-run companion runs after exclusive strategy exhausts and validate short-circuits", async () => {
+    // Reproduces the mechanical-lintfix (exclusive, maxAttempts=1) +
+    // autofix-implementer (co-run-sequential) scenario: exclusive exhausts and
+    // can't fix E501, but the companion LLM strategy should still get a turn.
+    // Give each strategy a distinct fixOp name so callOrder can tell them apart.
+    const exclusiveStrategy = makeStrategy({
+      name: "mechanical-fix",
+      coRun: "exclusive",
+      maxAttempts: 1,
+      fixOp: { ...noopOp, name: "mechanical-fix-op" } as typeof noopOp,
+      appliesTo: (f) => f.source === "lint",
+    });
+    const companionStrategy = makeStrategy({
+      name: "llm-fix",
+      coRun: "co-run-sequential",
+      maxAttempts: 2,
+      fixOp: { ...noopOp, name: "llm-fix-op" } as typeof noopOp,
+      appliesTo: (f) => f.source === "lint",
+    });
+
+    const callOrder: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const callOpMock = (async (_ctx: any, op: any) => {
+      callOrder.push(op.name as string);
+      return {};
+    }) as unknown as CallOpFn;
+
+    let validateCall = 0;
+    const cycle = makeCycle(
+      [lintA],
+      [exclusiveStrategy, companionStrategy],
+      async () => {
+        validateCall++;
+        // Short-circuit on first lite-validate (mechanical fix ran but couldn't fix);
+        // resolve on second full-validate (LLM fix succeeded).
+        if (validateCall === 1) return { findings: [lintA], shortCircuited: true } as unknown as Finding[];
+        return [];
+      },
+    );
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { callOp: callOpMock });
+
+    expect(result.exitReason).toBe("resolved");
+    // Distinct op names prove: mechanical-fix ran first (exclusive), then llm-fix (companion).
+    expect(callOrder).toEqual(["mechanical-fix-op", "llm-fix-op"]);
+    expect(result.finalFindings).toHaveLength(0);
+  });
+
+  test("validate-short-circuit exits when exclusive exhausts AND no uncapped companions exist", async () => {
+    const exclusiveOnly = makeStrategy({
+      name: "mechanical-fix",
+      coRun: "exclusive",
+      maxAttempts: 1,
+      appliesTo: (f) => f.source === "lint",
+    });
+    const validateResult: ValidateResult<Finding> = { findings: [lintA], shortCircuited: true };
+    const cycle = makeCycle([lintA], [exclusiveOnly], async () => validateResult as unknown as Finding[]);
+
+    const result = await runFixCycle(cycle, makeCtx(), "test-cycle", { // eslint-disable-next-line @typescript-eslint/no-explicit-any
+callOp: makeCallOpMock() as unknown as CallOpFn });
+
+    expect(result.exitReason).toBe("validate-short-circuit");
+    expect(result.finalFindings).toEqual([lintA]);
+  });
+});
+
 // ─── runFixCycle — AC3/AC4: ValidateResult short-circuit flag ────────────────
 
 describe("runFixCycle — ValidateResult short-circuit flag", () => {

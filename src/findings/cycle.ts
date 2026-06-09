@@ -182,27 +182,27 @@ export async function runFixCycle<F extends Finding>(
       };
     }
 
-    // ── Per-strategy attempt cap ──────────────────────────────────────────────
-    for (const strategy of active) {
-      const attempts = countStrategyAttempts(cycle.iterations, strategy.name);
-      if (attempts >= strategy.maxAttempts) {
-        logger?.info("findings.cycle", "cycle exited — strategy attempt cap reached", {
-          storyId,
-          packageDir,
-          cycleName,
-          reason: "max-attempts-per-strategy",
-          exhaustedStrategy: strategy.name,
-          attempts,
-          maxAttempts: strategy.maxAttempts,
-        });
-        return {
-          iterations: cycle.iterations,
-          finalFindings: cycle.findings,
-          exitReason: "max-attempts-per-strategy",
-          exhaustedStrategy: strategy.name,
-          costUsd: totalCostUsd,
-        };
-      }
+    // ── Filter exhausted strategies ───────────────────────────────────────────
+    // An exclusive strategy that exhausts its cap should not block uncapped
+    // companions from running in subsequent iterations. Only exit when ALL
+    // active strategies are exhausted (no uncapped companion can take over).
+    const uncappedActive = active.filter((s) => countStrategyAttempts(cycle.iterations, s.name) < s.maxAttempts);
+    if (uncappedActive.length === 0) {
+      const exhaustedStrategy = active.find((s) => countStrategyAttempts(cycle.iterations, s.name) >= s.maxAttempts);
+      logger?.info("findings.cycle", "cycle exited — all active strategies exhausted", {
+        storyId,
+        packageDir,
+        cycleName,
+        reason: "max-attempts-per-strategy",
+        exhaustedStrategy: exhaustedStrategy?.name,
+      });
+      return {
+        iterations: cycle.iterations,
+        finalFindings: cycle.findings,
+        exitReason: "max-attempts-per-strategy",
+        exhaustedStrategy: exhaustedStrategy?.name,
+        costUsd: totalCostUsd,
+      };
     }
 
     // ── Total attempt cap ─────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ export async function runFixCycle<F extends Finding>(
     }
 
     // ── bailWhen predicates ───────────────────────────────────────────────────
-    for (const strategy of active) {
+    for (const strategy of uncappedActive) {
       const bailReason = strategy.bailWhen?.(cycle.iterations) ?? null;
       if (bailReason !== null) {
         logger?.info("findings.cycle", "cycle exited — bail predicate fired", {
@@ -247,7 +247,7 @@ export async function runFixCycle<F extends Finding>(
     }
 
     // ── Execute strategies ────────────────────────────────────────────────────
-    const group = selectExecutionGroup(active);
+    const group = selectExecutionGroup(uncappedActive);
     const startedAt = now();
     const findingsBefore = [...cycle.findings];
     const fixesApplied: FixApplied[] = [];
@@ -371,6 +371,23 @@ export async function runFixCycle<F extends Finding>(
       }
 
       if (liteShortCircuited) {
+        // If uncapped companion strategies exist outside this group, let them
+        // run in the next iteration rather than exiting. The exclusive strategy
+        // exhausted but a co-run companion (e.g. autofix-implementer after
+        // mechanical-lintfix) may still be able to resolve the findings.
+        const companions = uncappedActive.filter((s) => !group.includes(s));
+        if (companions.length > 0) {
+          const iterCostUsd = fixesApplied.reduce((sum, fa) => sum + (fa.costUsd ?? 0), 0);
+          totalCostUsd += iterCostUsd;
+          logger?.info("findings.cycle", "exclusive strategy exhausted — continuing to companion strategies", {
+            storyId,
+            packageDir,
+            cycleName,
+            exhaustedStrategies: group.map((s) => s.name),
+            remainingStrategies: companions.map((s) => s.name),
+          });
+          continue;
+        }
         logger?.info("findings.cycle", "cycle exited — validate short-circuited", {
           storyId,
           packageDir,
