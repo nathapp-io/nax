@@ -415,12 +415,15 @@ export async function decideStageAction(
   }
 
   // Mechanical-only failure: if rectification exhausted but all unfixed findings are from
-  // mechanical sources (lint/typecheck), LLM review passed — proceed rather than escalating.
+  // mechanical sources (lint/typecheck), and any configured LLM reviews ran and passed
+  // (the resume block in the orchestrator runs reviews even when mechanical findings are
+  // unfixed — see story-orchestrator.ts mechanicalOnlyExhausted), proceed rather than
+  // escalating. Reviews absent from phaseOutputs means they were not configured (OK).
   if (planResult.rectificationExhausted && planResult.unfixedFindings && planResult.unfixedFindings.length > 0) {
     const sources = new Set(planResult.unfixedFindings.map((f) => (f as { source?: string }).source));
     const allMechanical = [...sources].every((s) => s === "lint" || s === "typecheck");
     if (allMechanical) {
-      logger.warn("execution", "Mechanical-only failure unfixable — proceeding (LLM review passed)", {
+      logger.warn("execution", "Mechanical-only failure unfixable — proceeding (style-only errors remain)", {
         storyId: ctx.story.id,
       });
       return { action: "continue" };

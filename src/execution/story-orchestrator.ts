@@ -1175,6 +1175,42 @@ export class ExecutionPlan {
       }
     }
 
+    // Mechanical-only resume: when rectification exhausted with only lint/typecheck
+    // findings, phases that never executed (e.g. semantic-review, adversarial-review)
+    // still need to run. Lint-style errors (E501 line-too-long in docstrings) do not
+    // invalidate LLM analysis — skipping reviews would mean the story passes without
+    // semantic/adversarial judgment, which is unsound. Unlike the normal resume above,
+    // this loop skips phases already in phaseOutputs (pass or fail) rather than
+    // re-running failed phases — the gate will not green since the style error remains.
+    if (this.state.rectification && rectResult.rectificationExhausted) {
+      const mechanicalOnly =
+        !!rectResult.unfixedFindings?.length &&
+        rectResult.unfixedFindings.every((f) => f.source === "lint" || f.source === "typecheck");
+      if (mechanicalOnly) {
+        for (const phase of collectOrderedPhases(this.state)) {
+          const name = phase.slot.op.name;
+          if (name in phaseOutputs) continue; // already ran (passed or failed)
+          try {
+            await runPhase(this.ctx, phase.slot, phaseCosts, phaseOutputs, this.isThreeSession);
+          } catch (error) {
+            logger?.error("story-orchestrator", "Phase threw unexpected error (mechanical-only resume)", {
+              storyId: this.ctx.storyId,
+              phase: name,
+              error: errorMessage(error),
+            });
+            throw error;
+          }
+          if (!phasePassed(name, phaseOutputs[name], this.ctx.storyId)) {
+            logger?.warn("story-orchestrator", "Phase failed in mechanical-only resume", {
+              storyId: this.ctx.storyId,
+              phase: name,
+            });
+            break;
+          }
+        }
+      }
+    }
+
     // ADR-024 — non-blocking best-effort fix over advisory adversarial findings.
     // Only when the story is currently green (adversarial passed, nothing pending).
     const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
