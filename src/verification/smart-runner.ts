@@ -65,41 +65,6 @@ async function getGitRootMemo(workdir: string): Promise<string | null> {
 }
 
 /**
- * Map source files to their corresponding test files.
- *
- * Checks four candidate locations per source file (in order):
- *
- * 1. Separated test directory — `<testBase>/test/unit/<relative>.test.ts`
- * 2. Separated test directory — `<testBase>/test/integration/<relative>.test.ts`
- * 3. Co-located spec file    — `<workdir>/<sourceFile>.spec.ts`  (NestJS convention)
- * 4. Co-located test file    — `<workdir>/<sourceFile>.test.ts`  (Vitest/Jest convention)
- *
- * `<testBase>` is `workdir` for single-package repos and `workdir/<packagePrefix>`
- * for monorepo packages. Co-located candidates always resolve relative to the git root.
- *
- * Only returns paths that actually exist on disk.
- *
- * @param sourceFiles   - Source file paths relative to the git root (e.g. `["src/foo/bar.ts"]`)
- * @param workdir       - Absolute path to the repository root
- * @param packagePrefix - Monorepo package directory relative to repo root (e.g. `"apps/api"`)
- * @returns Existing test file paths (absolute)
- *
- * @example
- * ```typescript
- * // Single-package, separated
- * await mapSourceToTests(["src/foo/bar.ts"], "/repo");
- * // => ["/repo/test/unit/foo/bar.test.ts"]
- *
- * // Monorepo, separated
- * await mapSourceToTests(["apps/api/src/foo/bar.ts"], "/repo", "apps/api");
- * // => ["/repo/apps/api/test/unit/foo/bar.test.ts"]
- *
- * // Monorepo, co-located .spec.ts (NestJS)
- * await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api");
- * // => ["/repo/apps/api/src/agents/agents.service.spec.ts"]
- * ```
- */
-/**
  * Test-file basename shape implied by a glob pattern: `<prefix>*<suffix>`.
  *
  * Derived from the glob's basename segment so both suffix conventions
@@ -203,6 +168,39 @@ export async function importGrepFallback(
   return results.filter((p): p is string => p !== null);
 }
 
+/**
+ * Map source files to their corresponding test files (Pass 1 — path convention).
+ *
+ * Per source file, probes candidates built from the configured patterns'
+ * basename shapes (see {@link buildTestCandidates}): mirrored under separated
+ * test dirs (SSOT defaults + dirs declared by the patterns), flat for prefix
+ * shapes, and co-located next to the source. The source file itself is never
+ * a candidate. Only returns paths that actually exist on disk.
+ *
+ * `<testBase>` is `workdir` for single-package repos and `workdir/<packagePrefix>`
+ * for monorepo packages. Co-located candidates always resolve relative to the git root.
+ *
+ * @param sourceFiles      - Source file paths relative to the git root (e.g. `["src/foo/bar.ts"]`)
+ * @param workdir          - Absolute path to the repository root
+ * @param packagePrefix    - Monorepo package directory relative to repo root (e.g. `"apps/api"`)
+ * @param testFilePatterns - Glob patterns classifying test files (config-driven)
+ * @returns Existing test file paths (absolute)
+ *
+ * @example
+ * ```typescript
+ * // Single-package, separated (suffix convention)
+ * await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+ * // => ["/repo/test/unit/foo/bar.test.ts"]
+ *
+ * // Monorepo, co-located .spec.ts (NestJS)
+ * await mapSourceToTests(["apps/api/src/agents/agents.service.ts"], "/repo", "apps/api");
+ * // => ["/repo/apps/api/src/agents/agents.service.spec.ts"]
+ *
+ * // Monorepo, pytest prefix convention
+ * await mapSourceToTests(["apps/api/src/pkg/sizing.py"], "/repo", "apps/api", ["tests/**\/test_*.py"]);
+ * // => ["/repo/apps/api/tests/pkg/test_sizing.py"]
+ * ```
+ */
 export async function mapSourceToTests(
   sourceFiles: string[],
   workdir: string,
