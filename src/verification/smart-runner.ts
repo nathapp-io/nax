@@ -12,7 +12,7 @@
  */
 import { join, relative } from "node:path";
 import { getSafeLogger } from "../logger";
-import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS } from "../test-runners/conventions";
+import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS, extractTestDirs } from "../test-runners/conventions";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { type NaxIgnoreIndex, filterNaxInternalPaths, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
@@ -100,24 +100,40 @@ async function getGitRootMemo(workdir: string): Promise<string | null> {
  * ```
  */
 /**
- * Extract the test-file suffix implied by a glob pattern.
+ * Test-file basename shape implied by a glob pattern: `<prefix>*<suffix>`.
  *
- * The suffix is everything that follows the last `*` wildcard, making this
- * language-agnostic: the caller's `testFilePatterns` configuration drives which
- * suffixes are probed rather than hardcoding TypeScript-specific extensions.
- *
- * @example
- * extractPatternSuffix("test/**\/*.test.ts")  // ".test.ts"
- * extractPatternSuffix("src/**\/*.spec.ts")   // ".spec.ts"
- * extractPatternSuffix("**\/*_test.go")       // "_test.go"
+ * Derived from the glob's basename segment so both suffix conventions
+ * (`*.test.ts`, `*_test.go`) and prefix conventions (pytest's `test_*.py`)
+ * are representable. Language-agnostic: the caller's `testFilePatterns`
+ * configuration drives which shapes are probed.
  *
  * @internal
  */
-function extractPatternSuffix(pattern: string): string | null {
-  const lastStar = pattern.lastIndexOf("*");
-  if (lastStar === -1) return null;
-  const suffix = pattern.slice(lastStar + 1);
-  return suffix.length > 0 ? suffix : null;
+interface BasenamePattern {
+  prefix: string;
+  suffix: string;
+}
+
+/**
+ * Extract the test-file basename shape implied by a glob pattern.
+ *
+ * Looks only at the basename segment (after the last `/`) and requires exactly
+ * one `*` wildcard in it, splitting into prefix + suffix.
+ *
+ * @example
+ * extractBasenamePattern("test/**\/*.test.ts")   // { prefix: "",      suffix: ".test.ts" }
+ * extractBasenamePattern("tests/**\/test_*.py")  // { prefix: "test_", suffix: ".py" }
+ * extractBasenamePattern("**\/*_test.go")        // { prefix: "",      suffix: "_test.go" }
+ *
+ * @internal
+ */
+function extractBasenamePattern(pattern: string): BasenamePattern | null {
+  const basename = pattern.slice(pattern.lastIndexOf("/") + 1);
+  const parts = basename.split("*");
+  if (parts.length !== 2) return null;
+  const [prefix, suffix] = parts;
+  if (!prefix && !suffix) return null;
+  return { prefix, suffix };
 }
 
 /**
@@ -193,45 +209,18 @@ export async function mapSourceToTests(
   packagePrefix?: string,
   testFilePatterns: string[] = [...DEFAULT_TEST_FILE_PATTERNS],
 ): Promise<string[]> {
-  // Derive unique test-file suffixes from configured patterns — language-agnostic.
-  // e.g. ["test/**/*.test.ts", "src/**/*.spec.ts"] → [".test.ts", ".spec.ts"]
-  // e.g. ["**/*_test.go"] → ["_test.go"]
-  const testSuffixes = [...new Set(testFilePatterns.map(extractPatternSuffix).filter((s): s is string => s !== null))];
+  // Derive unique basename shapes from configured patterns — language-agnostic.
+  // e.g. ["test/**/*.test.ts"] → [{prefix:"", suffix:".test.ts"}]
+  // e.g. ["tests/**/test_*.py"] → [{prefix:"test_", suffix:".py"}]
+  const shapes = dedupeBasenamePatterns(testFilePatterns);
+  // Probe separated dirs from the SSOT default PLUS any static leading dir the
+  // patterns themselves declare (e.g. "tests/**/*.py" → "tests").
+  const testDirs = [...new Set([...DEFAULT_SEPARATED_TEST_DIRS, ...extractTestDirs(testFilePatterns)])];
 
   const result: string[] = [];
 
   for (const sourceFile of sourceFiles) {
-    // Strip source extension for co-located candidate generation
-    const sourceWithoutExt = sourceFile.replace(/\.[^.]+$/, "");
-
-    let innerRelative: string;
-    let testBase: string;
-
-    if (packagePrefix) {
-      // Monorepo: source path is "<prefix>/src/foo.ts" — strip "<prefix>/src/" to get "foo"
-      const srcRoot = `${packagePrefix}/src/`;
-      const inner = sourceFile.startsWith(srcRoot)
-        ? sourceFile.slice(srcRoot.length)
-        : sourceFile.replace(/^.*\/src\//, "");
-      innerRelative = inner.replace(/\.[^.]+$/, "");
-      testBase = `${workdir}/${packagePrefix}`;
-    } else {
-      // Single-package: source path is "src/foo.ts" — strip "src/" and extension
-      innerRelative = sourceFile.replace(/^src\//, "").replace(/\.[^.]+$/, "");
-      testBase = workdir;
-    }
-
-    const candidates: string[] = [];
-
-    for (const suffix of testSuffixes) {
-      // Separated test directories (driven by SSOT — see conventions.ts)
-      for (const testDir of DEFAULT_SEPARATED_TEST_DIRS) {
-        candidates.push(`${testBase}/${testDir}/${innerRelative}${suffix}`);
-      }
-      // Co-located: next to the source file (e.g. NestJS .spec.ts, Vitest .test.ts, Go _test.go)
-      candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
-    }
-
+    const candidates = buildTestCandidates(sourceFile, workdir, packagePrefix, shapes, testDirs);
     const existsFlags = await Promise.all(candidates.map((c) => _bunDeps.file(c).exists()));
     candidates.forEach((c, i) => {
       if (existsFlags[i]) result.push(c);
@@ -239,6 +228,93 @@ export async function mapSourceToTests(
   }
 
   return result;
+}
+
+/** @internal Dedupe basename shapes by prefix+suffix identity. */
+function dedupeBasenamePatterns(testFilePatterns: readonly string[]): BasenamePattern[] {
+  const seen = new Set<string>();
+  const shapes: BasenamePattern[] = [];
+  for (const pattern of testFilePatterns) {
+    const shape = extractBasenamePattern(pattern);
+    if (!shape) continue;
+    const key = `${shape.prefix} ${shape.suffix}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    shapes.push(shape);
+  }
+  return shapes;
+}
+
+/**
+ * Build candidate test-file paths for one source file.
+ *
+ * Suffix shapes (prefix === "") probe the historical layout: mirrored under
+ * each test dir + co-located next to the source. Prefix shapes (pytest's
+ * `test_*.py`) probe mirrored, flat, and co-located with the prefixed basename.
+ *
+ * Identity guard (#1207): a suffix shape whose suffix equals the source
+ * extension (e.g. ".py" from "tests/**\/*.py") reconstructs the source file
+ * itself as its co-located candidate — pytest would then "run" a non-test
+ * source file. The source path is always excluded.
+ *
+ * @internal
+ */
+function buildTestCandidates(
+  sourceFile: string,
+  workdir: string,
+  packagePrefix: string | undefined,
+  shapes: readonly BasenamePattern[],
+  testDirs: readonly string[],
+): string[] {
+  // Strip source extension for co-located candidate generation
+  const sourceWithoutExt = sourceFile.replace(/\.[^.]+$/, "");
+
+  let innerRelative: string;
+  let testBase: string;
+
+  if (packagePrefix) {
+    // Monorepo: source path is "<prefix>/src/foo.ts" — strip "<prefix>/src/" to get "foo"
+    const srcRoot = `${packagePrefix}/src/`;
+    const inner = sourceFile.startsWith(srcRoot)
+      ? sourceFile.slice(srcRoot.length)
+      : sourceFile.replace(/^.*\/src\//, "");
+    innerRelative = inner.replace(/\.[^.]+$/, "");
+    testBase = `${workdir}/${packagePrefix}`;
+  } else {
+    // Single-package: source path is "src/foo.ts" — strip "src/" and extension
+    innerRelative = sourceFile.replace(/^src\//, "").replace(/\.[^.]+$/, "");
+    testBase = workdir;
+  }
+
+  const lastSlash = innerRelative.lastIndexOf("/");
+  const innerDir = lastSlash === -1 ? "" : innerRelative.slice(0, lastSlash);
+  const baseName = lastSlash === -1 ? innerRelative : innerRelative.slice(lastSlash + 1);
+  const sourceDirAbs = sourceWithoutExt.includes("/")
+    ? `${workdir}/${sourceWithoutExt.slice(0, sourceWithoutExt.lastIndexOf("/"))}`
+    : workdir;
+
+  const candidates: string[] = [];
+  for (const { prefix, suffix } of shapes) {
+    if (prefix === "") {
+      // Suffix convention — mirrored under each test dir (driven by SSOT — see conventions.ts)
+      for (const testDir of testDirs) {
+        candidates.push(`${testBase}/${testDir}/${innerRelative}${suffix}`);
+      }
+      // Co-located: next to the source file (e.g. NestJS .spec.ts, Vitest .test.ts, Go _test.go)
+      candidates.push(`${workdir}/${sourceWithoutExt}${suffix}`);
+    } else {
+      // Prefix convention (pytest test_*.py) — prefixed basename, mirrored + flat + co-located
+      const named = `${prefix}${baseName}${suffix}`;
+      for (const testDir of testDirs) {
+        candidates.push(`${testBase}/${testDir}/${innerDir ? `${innerDir}/` : ""}${named}`);
+        if (innerDir) candidates.push(`${testBase}/${testDir}/${named}`);
+      }
+      candidates.push(`${sourceDirAbs}/${named}`);
+    }
+  }
+
+  const sourceAbs = `${workdir}/${sourceFile}`;
+  return [...new Set(candidates)].filter((c) => c !== sourceAbs);
 }
 
 /**
