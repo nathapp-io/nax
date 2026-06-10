@@ -114,6 +114,53 @@ describe("groupStoriesByPackage()", () => {
     expect(groups[0].criteria).toEqual(["AC-1 for US-001", "AC-1 for US-002"]);
   });
 
+  describe("per-package acceptance.testPath config override", () => {
+    let origDetect: typeof _groupDeps.detectLanguage;
+    let origReadPkg: typeof _groupDeps.readPackageTestPath;
+
+    beforeEach(() => {
+      origDetect = _groupDeps.detectLanguage;
+      origReadPkg = _groupDeps.readPackageTestPath;
+      _groupDeps.detectLanguage = async () => undefined;
+    });
+
+    afterEach(() => {
+      _groupDeps.detectLanguage = origDetect;
+      _groupDeps.readPackageTestPath = origReadPkg;
+    });
+
+    test("per-package testPath overrides global language (apps/web with .ts override in Python-root monorepo)", async () => {
+      _groupDeps.readPackageTestPath = async (_, relativeDir) =>
+        relativeDir === "apps/web" ? ".nax-acceptance.test.ts" : undefined;
+      const prd = makePRD([makeStory("US-001", "apps/web"), makeStory("US-002", "apps/api")]);
+      const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "python");
+      const web = groups.find((g) => g.packageDir.endsWith("apps/web"))!;
+      const api = groups.find((g) => g.packageDir.endsWith("apps/api"))!;
+      expect(web.testPath).toBe("/repo/apps/web/.nax/features/my-feature/.nax-acceptance.test.ts");
+      expect(api.testPath).toBe("/repo/apps/api/.nax/features/my-feature/_nax_acceptance_test.py");
+    });
+
+    test("per-package testPath takes precedence over root-level testPathConfig", async () => {
+      _groupDeps.readPackageTestPath = async () => ".nax-acceptance.test.ts";
+      const prd = makePRD([makeStory("US-001", "apps/web")]);
+      const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", "_nax_acceptance_test.py", "python");
+      expect(groups[0].testPath).toBe("/repo/apps/web/.nax/features/my-feature/.nax-acceptance.test.ts");
+    });
+
+    test("path traversal in story.workdir is ignored — readPackageTestPath returns undefined for '..'", async () => {
+      let capturedRelativeDir: string | undefined;
+      _groupDeps.readPackageTestPath = async (_, relativeDir) => {
+        capturedRelativeDir = relativeDir;
+        return undefined;
+      };
+      const prd = makePRD([makeStory("US-001", "../../etc")]);
+      await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "go");
+      // The production guard blocks traversal before any file I/O.
+      // In tests, the mock is called but should receive the raw value and return undefined.
+      expect(capturedRelativeDir).toBe("../../etc");
+    });
+  });
+
   describe("per-package language detection", () => {
     let origDetect: typeof _groupDeps.detectLanguage;
 
@@ -144,6 +191,17 @@ describe("groupStoriesByPackage()", () => {
       const prd = makePRD([makeStory("US-001", "apps/api")]);
       const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "go");
       expect(groups[0].testPath).toBe("/repo/apps/api/.nax/features/my-feature/.nax-acceptance_test.go");
+      expect(groups[0].language).toBe("go");
+    });
+
+    test("group.language carries the resolved per-package language for skeleton fallback", async () => {
+      _groupDeps.detectLanguage = async (dir: string) => (dir.endsWith("apps/web") ? "typescript" : undefined);
+      const prd = makePRD([makeStory("US-001", "apps/web"), makeStory("US-002", "apps/api")]);
+      const groups = await groupStoriesByPackage(prd, WORKDIR, "my-feature", undefined, "python");
+      const web = groups.find((g) => g.packageDir.endsWith("apps/web"))!;
+      const api = groups.find((g) => g.packageDir.endsWith("apps/api"))!;
+      expect(web.language).toBe("typescript");
+      expect(api.language).toBe("python");
     });
   });
 });

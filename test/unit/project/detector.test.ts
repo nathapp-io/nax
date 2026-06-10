@@ -6,8 +6,8 @@
  */
 
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
-import { detectProjectProfile } from "../../../src/project";
+import { afterEach, describe, expect, test } from "bun:test";
+import { clearLanguageCache, detectProjectProfile } from "../../../src/project";
 import { withTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,10 @@ describe("detectProjectProfile — language: rust", () => {
 // ---------------------------------------------------------------------------
 
 describe("detectProjectProfile — language: typescript/javascript", () => {
+  afterEach(() => {
+    clearLanguageCache();
+  });
+
   test.each(["devDependencies", "dependencies"] as const)("returns language: 'typescript' when typescript in %s", async (depKey) => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", [depKey]: { typescript: "^5.0.0" } }));
@@ -92,6 +96,23 @@ describe("detectProjectProfile — language: typescript/javascript", () => {
       );
       const profile = await detectProjectProfile(dir, {});
       expect(profile.language).toBe("javascript");
+    });
+  });
+
+  test("returns language: 'typescript' when tsconfig.json exists alongside package.json (no typescript dep)", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "myapp", dependencies: { next: "^14.0.0" } }));
+      await Bun.write(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022" } }));
+      const profile = await detectProjectProfile(dir, {});
+      expect(profile.language).toBe("typescript");
+    });
+  });
+
+  test("returns language: 'typescript' when only tsconfig.json exists (no package.json)", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022" } }));
+      const profile = await detectProjectProfile(dir, {});
+      expect(profile.language).toBe("typescript");
     });
   });
 });

@@ -51,8 +51,13 @@ async function _detectLanguageImpl(
       ...(pkg.devDependencies as Record<string, unknown> | undefined),
     };
     if ("typescript" in allDeps) return "typescript";
+    // tsconfig.json indicates TypeScript even when typescript is not an explicit dep
+    if (await deps.fileExists(join(workdir, "tsconfig.json"))) return "typescript";
     return "javascript";
   }
+
+  // No package.json — check for tsconfig.json as a standalone TypeScript indicator
+  if (await deps.fileExists(join(workdir, "tsconfig.json"))) return "typescript";
 
   return undefined;
 }
