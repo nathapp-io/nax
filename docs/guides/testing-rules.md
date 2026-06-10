@@ -57,7 +57,7 @@ Each test file must be independently runnable. Never assume another file ran fir
 const proc = Bun.spawn(["bun", "run", "bin/nax.ts", "logs", "--feature", "foo"]);
 
 // ✅ CORRECT — direct call, instant
-import { logsCommand } from "../../../src/cli/logs";
+import { logsCommand } from "../../../src/commands/logs";
 await logsCommand({ feature: "foo" });
 ```
 

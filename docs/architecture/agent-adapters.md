@@ -65,16 +65,18 @@ Resolution order:
 
 Every call to `resolvePermissions()` includes the pipeline stage:
 
-| Stage | Used by | Typical profile |
+The stage rides on each `Operation.stage` (or `pipelineStage` on a direct manager call) and is resolved once at the resource opener:
+
+| Stage | Carried by | Typical profile |
 |:------|:--------|:----------------|
-| `plan` | `plan.ts` | Same as config (plan writes prd.json) |
-| `run` | `execution.ts`, `session-runner.ts` | Primary execution — most permissive |
-| `verify` | Verification strategies | Read-heavy — could be restricted in Phase 2 |
-| `rectification` | `rectification-loop.ts`, `rectification-gate.ts` | Needs write access for fixes |
-| `complete` | `acp/adapter.ts` | One-shot LLM calls — varies by caller |
-| `acceptance` | Acceptance generator | Write access for test files |
+| `plan` | `planOp` / `planInteractiveOp` | Same as config (plan writes prd.json) |
+| `run` | run-kind ops (write-test, implementer, etc.) | Primary execution — most permissive |
+| `verify` | `verifyScopedOp`, `fullSuiteGateOp` | Read-heavy — could be restricted in Phase 2 |
+| `rectification` | autofix / full-suite-rectify ops | Needs write access for fixes |
+| `complete` | `completeAs` one-shots (`decomposeOp`, etc.) | One-shot LLM calls — varies by caller |
+| `acceptance` | Acceptance generator ops | Write access for test files |
 | `regression` | Regression gate | Read + test execution |
-| `review` | Code review | Read-only in Phase 2 |
+| `review` | semantic / adversarial review ops | Read-only in Phase 2 |
 
 In Phase 1, all stages resolve to the same profile. Phase 2 (`scoped`) will enable per-stage overrides.
 
@@ -142,7 +144,7 @@ middleware, and ops never call `resolvePermissions` themselves.
 - **Resolver:** `src/config/permissions.ts` — `resolvePermissions()`, types, profiles
 - **Schema:** `src/config/schemas.ts` — `permissionProfile` field definition
 - **ACP adapter:** `src/agents/acp/adapter.ts`
-- **Call sites:** `execution.ts`, `session-runner.ts`, `rectification-loop.ts`, `rectification-gate.ts`, `plan.ts`
+- **Resource openers (only resolvers):** `src/session/manager.ts` (`openSession`), `src/agents/manager.ts` (`completeAs`)
 - **Spec:** `docs/specs/scoped-permissions.md` — PERM-001 + PERM-002 design
 
 ---
@@ -169,14 +171,14 @@ strategy values, descriptions, and classification rules are defined.
 1. **resolveTestStrategy()** normalizes unknown/legacy values to valid strategies
 2. **Security override**: Security-critical stories → minimum "medium" / "tdd-simple"
 3. **No standalone test stories**: Testing is handled per-story via testStrategy
-4. Both `plan.ts` and `claude-decompose.ts` import shared prompt fragments — never inline strategy definitions
+4. Both `plan.ts` and `decompose-prompt.ts` import shared prompt fragments — never inline strategy definitions
 
 ### Consumers
 
 | File | Uses |
 |:-----|:-----|
 | `src/cli/plan.ts` | `COMPLEXITY_GUIDE`, `TEST_STRATEGY_GUIDE`, `GROUPING_RULES` |
-| `src/agents/shared/decompose.ts` | Same prompt fragments |
+| `src/agents/shared/decompose-prompt.ts` | Same prompt fragments |
 | `src/pipeline/stages/routing.ts` | `resolveTestStrategy()` (via prd/schema.ts normalization) |
 | `src/prd/schema.ts` | `resolveTestStrategy()` for PRD validation |
 
@@ -229,8 +231,8 @@ Each agent adapter lives in its own subfolder under `src/agents/`. The depth mat
 
 | Adapter | Folder | Files |
 |:--------|:-------|:------|
-| ACP protocol (all agents) | `acp/` | adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error, types, index |
-| Centralized cost | `cost/` | calculate, parse, pricing, types, index |
+| ACP protocol (all agents) | `acp/` | adapter, adapter-lifecycle, adapter-output, spawn-client, parser, interaction-bridge, parse-agent-error, token-mapper, wire-types, types, index |
+| Centralized cost | `cost/` | calculate, pricing, token-mapper, types, index |
 
 All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible agent) are driven through `AcpAgentAdapter`. There are no per-agent CLI adapter folders. The CLI protocol mode was removed before ADR-019 — the schema declares `agent.protocol: z.literal("acp").default("acp")`.
 
@@ -239,7 +241,7 @@ All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible 
 1. **One subfolder per adapter** — never flat files at `src/agents/` root (only `index.ts`, `types.ts`, `registry.ts` live at root)
 2. **Each multi-file adapter needs `index.ts`** — re-exports everything external callers need; internal modules import directly without going through the barrel
 3. **Cross-adapter code goes in `shared/`** — if two different adapters import the same module, that module belongs in `shared/`, not inside either adapter's folder
-4. **Adapter-specific cost stays with the adapter** — `claude/cost.ts` (tier-based) and `acp/cost.ts` (model-name-based) are separate; they have different pricing strategies and callers
+4. **Cost is centralized** — all cost calculation lives in `src/agents/cost/` (model-name-based pricing in `pricing.ts`, computed in `calculate.ts`). The ACP adapter is cost-blind; recording flows through the cost middleware (`DispatchEvent` → `CostAggregator`), per `.claude/rules/adapter-wiring.md`
 
 ### `shared/` Contents
 
@@ -253,26 +255,19 @@ All agents (Claude Code, OpenCode, Codex, Gemini, Aider, and any ACP-compatible 
 | `shared/version-detection.ts` | Binary version detection | `cli/agents.ts`, `precheck/checks-agents.ts` |
 | `shared/types-extended.ts` | Plan/decompose/interactive types | `acp/adapter.ts`, `types.ts` |
 
-### ACP Session Error Retry Tiers
+### Session Error Retries
 
-The ACP adapter uses tiered retry logic for session errors, configurable via `execution` config:
+Session-error retry logic is expressed through the `RetryStrategy` interface in `src/agents/retry/` (issue #856 SSOT — see `.claude/rules/retry-strategy.md`). The adapter classifies failures (e.g. a `retryable?: boolean` flag on the ACP response, `SessionTurnError.retryable`); the manager-tier `defaultRetryStrategy` retries `fail-rate-limit` outcomes, and op-tier `op.retry` declarations handle parse/transient failures. There are no longer standalone `sessionErrorMaxRetries` / `sessionErrorRetryableMaxRetries` config keys — retry policy is a `RetryStrategy`, not a flat config count.
 
-| Error type | Config key | Default | Example |
-|:-----------|:-----------|:--------|:--------|
-| Non-retryable (stale/locked session) | `sessionErrorMaxRetries` | 1 | Session state corruption |
-| Retryable (queue disconnect) | `sessionErrorRetryableMaxRetries` | 3 | `QUEUE_DISCONNECTED_BEFORE_COMPLETION` |
-
-The adapter detects retryable errors via the `retryable?: boolean` flag in the ACP response. Error logs include the first 500 chars of output for diagnostics.
-
-### Layered Retry Semantics (acpx 0.4.0+)
+### Layered Retry Semantics
 
 nax has three independent retry layers, each targeting a different failure class:
 
 | Layer | Config | Triggers on | Behaviour |
 |:------|:-------|:------------|:----------|
 | `agent.acp.promptRetries` (acpx) | `agent.acp.promptRetries` (default `0`) | Transient ACP-layer errors before side effects | acpx retries the same prompt with exponential backoff; JSON output stays stable; skipped if side effects already occurred |
-| Rectification loop (nax) | `execution.rectificationMaxAttempts` | Review or test failures after a complete turn | New prompt synthesised from failure details |
-| Tier escalation (nax) | `execution.escalation.*` | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
+| Op / manager retry (nax) | `op.retry` per `Operation` + `defaultRetryStrategy` (`src/agents/retry/`) | Parse failures, rate limits, transient adapter errors | `RetryStrategy.shouldRetry()` decides; bounded by `MAX_COMPLETE_RETRY_ATTEMPTS` |
+| Tier escalation (nax) | `autoMode.escalation.*` (`tierOrder`, `escalateEntireBatch`) | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
 
 **Key rule:** `promptRetries` is the cheapest layer — it fires inside acpx before nax even sees the result. Set it to `2` for transient-rate-limit tolerance without overlapping the escalation logic. The failure classes are disjoint: prompt-level transients vs. quality failures vs. repeated quality failures.
 
@@ -285,18 +280,17 @@ nax has three independent retry layers, each targeting a different failure class
 
 ### ACP Cost Alignment
 
-ACP sessions emit exact USD cost via `usage_update` (`cost.amount`). The adapter prefers this over token-based estimation:
+ACP sessions emit exact USD cost over the wire. The adapter records token-based `estimatedCostUsd` and the wire-reported `exactCostUsd` as independent fields (`exactCostUsd` is `undefined` when the wire never reported one):
 
 ```ts
-// Prefer exact cost from acpx usage_update; fall back to token-based estimation
-const estimatedCost =
-  totalExactCostUsd ??
-  (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
-    ? estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model)
-    : 0);
+const estimatedCostUsd =
+  totalTokenUsage.inputTokens > 0 || totalTokenUsage.outputTokens > 0
+    ? estimateCostFromTokenUsage(totalTokenUsage, modelDef.model)
+    : 0;
+const exactCostUsd = totalExactCostUsd; // undefined if wire never reported
 ```
 
-Token fields from acpx are **camelCase** in the final JSON-RPC `result.usage`:
-- `inputTokens`, `outputTokens`, `cachedReadTokens`, `cachedWriteTokens`
+Wire token fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) are mapped to the nax-internal **camelCase** `TokenUsage` by `AcpTokenUsageMapper` (`acp/token-mapper.ts`):
+- `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens`
 
 The parser (`acp/parser.ts`) handles both the JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON for backward compatibility.

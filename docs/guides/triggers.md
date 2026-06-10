@@ -5,7 +5,7 @@ description: Interactive pause-and-prompt configuration
 
 ## Interaction Triggers
 
-nax can pause execution and prompt you for decisions at critical points. Configure triggers in `nax/config.json` (or `~/.nax/config.json` globally):
+nax can pause execution and prompt you for decisions at critical points. Configure triggers in `.nax/config.json` (or `~/.nax/config.json` globally):
 
 ```json
 {
@@ -21,7 +21,6 @@ nax can pause execution and prompt you for decisions at critical points. Configu
       "cost-warning": true,
       "max-retries": true,
       "human-review": true,
-      "story-ambiguity": true,
       "story-oversized": true,
       "review-gate": true,
       "pre-merge": false,
@@ -43,7 +42,6 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 | `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
 | `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
 | `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? |
-| `story-ambiguity` | 🟢 Green | `continue` | Story requirements unclear — continue with best effort? |
 | `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
 
 **Safety tiers:**

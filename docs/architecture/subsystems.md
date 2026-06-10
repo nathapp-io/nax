@@ -1,7 +1,10 @@
 # Subsystems — nax
 
-> §17–§33: Pipeline, execution, TDD, acceptance, verification, routing, plugins, and more.
+> §17–§38: Pipeline, execution, TDD, acceptance, verification, routing, plugins,
+> runtime, managers, operations, and the post-run curator.
 > Part of the [Architecture Documentation](ARCHITECTURE.md).
+>
+> _Last updated: 2026-06-10._
 
 ---
 
@@ -16,16 +19,18 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
   → runExecutionPhase() [runner-execution.ts]
     → for each story (sequential or parallel):
       → UnifiedExecutor.execute()  [unified-executor.ts]
-        → Pipeline stages 1–13 (defaultPipeline)
+        → Pipeline stages 1–8 (defaultPipeline)
+        → executionStage delegates per-story work to
+          StoryOrchestratorBuilder.CANONICAL_ORDER (story-orchestrator.ts)
         → Escalation on failure (fast → balanced → powerful)
   → runCompletionPhase() [lifecycle/run-completion.ts]
     → postRunPipeline (acceptance)
     → hooks, metrics, cleanup
 ```
 
-### Pipeline Stages (15 total)
+### Pipeline Stages (8 default + 1 pre-run + 1 post-run = 10 total)
 
-**Default pipeline** (13 stages, per-story):
+**Default pipeline** (8 stages, per-story — `src/pipeline/stages/index.ts` `defaultPipeline`; ADR-023 / issue #1116 removed the standalone verify/rectify/review/autofix/regression stages — those now run inside `executionStage`):
 
 | # | Stage | File | Purpose |
 |:--|:------|:-----|:--------|
@@ -35,13 +40,10 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | 4 | `context` | `context.ts` | Auto-detect + gather relevant code/docs within token budget |
 | 5 | `prompt` | `prompt.ts` | Assemble story + context + constitution into prompt |
 | 6 | `optimizer` | `optimizer.ts` | Reduce token usage while preserving semantics |
-| 7 | `execution` | `execution.ts` | Run agent (TDD or test-after based on routing) |
-| 8 | `verify` | `verify.ts` | Test verification (scoped via smart-runner) |
-| 9 | `rectify` | `rectify.ts` | Auto-fix test failures (inline retry loop) |
-| 10 | `review` | `review.ts` | Quality checks (lint, typecheck, format, plugin checks) |
-| 11 | `autofix` | `autofix.ts` | Auto-fix quality failures: mechanical (lintFix/formatFix) then agent rectification; partial-progress retry before escalating |
-| 12 | `regression` | `regression.ts` | Full-suite gate (inline mode only) |
-| 13 | `completion` | `completion.ts` | Mark complete, fire hooks, save metrics |
+| 7 | `execution` | `execution.ts` | Run the per-story orchestrator: test-writer → greenfield-gate → implementer → full-suite-gate → verifier → verify-scoped → lint-check → typecheck-check → semantic/adversarial review, plus `runFixCycle` fix strategies. See §19 / story-orchestrator `CANONICAL_ORDER`. |
+| 8 | `completion` | `completion.ts` | Mark complete, fire hooks, save metrics |
+
+> **Per-story phases live in `src/execution/story-orchestrator.ts`, not in standalone pipeline stages.** `executionStage` builds a `StoryOrchestratorBuilder` whose `CANONICAL_ORDER` sequences the phases above. Verification flows via Operations (`verifyScopedOp` / `fullSuiteGateOp`); fixes flow via `runFixCycle` (`src/findings/`). Formatting is reactive (the `mechanical-formatfix` fix strategy), not a dedicated stage.
 
 **Pre-run pipeline** (before story loop):
 
@@ -93,17 +95,17 @@ The shared mutable state passed through all stages. Acts as the single source of
 | Field | Description |
 |:------|:------------|
 | `config` | Always the effective merged config for this story (global → project → per-package). Use for execution decisions, feature flags, timeouts. |
-| `rootConfig` | The global project config — use only for `autoMode.defaultAgent`, `models`, and `autoMode.escalation`. Never use for per-package overrides. |
+| `rootConfig` | The global project config — use only for `agent.default` (ADR-012), `models`, and `autoMode.escalation`. Never use for per-package overrides. |
 
 **Stage inputs:** `prd`, `story`, `stories`, `routing`, `hooks`, `plugins`
 
-**Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `verifyResult`, `reviewResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`
+**Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`, `reviewFindings` (canonical `Finding[]` — there is no `verifyResult` / `reviewResult` field)
 
 For three-session TDD, the full-suite gate runs after implementer and before verifier. If rectification exhausts for attributable failures, the orchestrator stops before verifier and sets `tddFailureCategory: "full-suite-gate-exhausted"` with `fullSuiteGatePassed: false`.
 
 **Autofix state:** `retrySkipChecks` — set of check names (e.g. `"lint"`, `"semantic"`) that passed during a prior autofix cycle and should be skipped on the next review retry. Accumulated across partial-progress cycles; cleared implicitly when the story completes.
 
-**Metadata:** `storyStartTime`, `rectifyAttempt`, `autofixAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
+**Metadata:** `storyStartTime`, `rectifyAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
 
 ---
 
@@ -182,7 +184,11 @@ ParallelCoordinator
 
 ### Three-Session TDD Workflow
 
-`src/tdd/orchestrator.ts`:
+The three TDD sessions are typed Operations (`writeTddTestOp`, `implementTddOp`,
+`verifyTddOp` in `src/operations/`), sequenced by the per-story orchestrator
+(`src/execution/story-orchestrator.ts` — `CANONICAL_ORDER`). There is no
+`src/tdd/orchestrator.ts`; `src/tdd/` holds isolation, verdict, rollback, and
+cleanup helpers only.
 
 ```
 Session 1: test-writer  → writes tests only (no src/ changes)
@@ -211,6 +217,7 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 | `isolation-violation` | Session modified files outside its allowed scope |
 | `session-failure` | Agent session crashed or timed out |
 | `tests-failing` | Tests still fail after all sessions |
+| `full-suite-gate-exhausted` | Full-suite gate failed for attributable failures and rectification exhausted before verifier |
 | `verifier-rejected` | Verifier found issues in implementation |
 | `greenfield-no-tests` | Test-writer produced no tests |
 | `runtime-crash` | Unrecoverable runtime error |
@@ -233,7 +240,7 @@ Skips strict file isolation for performance. Test-writer may add src/ stubs; imp
 - **Refinement** (`refinement.ts`): LLM enhances AC text for testability
 - **Fix generator** (`fix-generator.ts`): Auto-generate fix stories from failed ACs
 - **Fix diagnosis** (`fix-diagnosis.ts`): Diagnose why acceptance tests fail
-- **Fix executor** (`fix-executor.ts`): Execute acceptance fixes
+- **Fix execution** (`acceptanceFixSourceOp` / `acceptanceFixTestOp` in `src/operations/`): Execute acceptance fixes (source or test scope)
 
 ### Templates
 
@@ -255,15 +262,21 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 
 ## §21 Verification & Test Runners
 
-### Orchestrator
+### Module layout
 
-`src/verification/orchestrator.ts` selects and executes verification strategies:
+`src/verification/` is a flat utility module (no `orchestrator.ts`, no
+`strategies/` directory). Per-story verification is now driven by Operations —
+`verifyScopedOp` (`src/operations/verify-scoped.ts`) and `fullSuiteGateOp`
+(`src/operations/full-suite-gate.ts`) — sequenced by the story orchestrator (§17/§19).
 
-| Strategy | File | Purpose |
-|:---------|:-----|:--------|
-| `scoped` | `strategies/scoped.ts` | Smart-runner selects relevant test files |
-| `regression` | `strategies/regression.ts` | Full-suite gate |
-| `acceptance` | `strategies/acceptance.ts` | Feature-level AC tests |
+| File | Purpose |
+|:-----|:--------|
+| `executor.ts` | `executeWithTimeout()`, `buildTestCommand()`, environment normalization |
+| `runners.ts` | Verification gates: `fullSuite()`, `scoped()`, `regression()`, `verifyAssets()` |
+| `smart-runner.ts` | Scoped test selection (`mapSourceToTests`, `buildSmartTestCommand`, changed-file detection) |
+| `rectification.ts` | `shouldRetryRectification()` retry-decision helper |
+| `crash-detector.ts` | Detect runtime crashes in test output |
+| `failure-records.ts` | Failure record persistence |
 
 ### Smart Runner
 
@@ -280,35 +293,45 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 |:-----|:--------|
 | `types.ts` | `TestFailure`, `TestSummary`, `TestOutputAnalysis` types |
 | `detector.ts` | `detectFramework()` — identifies test runner (Bun, Jest, Vitest, etc.) |
-| `parser.ts` | `parseTestOutput()`, `analyzeBunTestOutput()`, `formatFailureSummary()`, `analyzeTestExitCode()` |
+| `parser.ts` | `parseTestOutput()`, `formatFailureSummary()`, `analyzeTestExitCode()` |
 | `ac-parser.ts` | `parseTestFailures()` — AC-ID extraction for the acceptance loop |
 
 All verification strategies and the rectification loop import from `test-runners` instead of maintaining their own parsing logic.
 
-### Rectification Loop
+### Rectification / Fix Cycle
 
-`src/verification/rectification-loop.ts`:
-- Auto-fixes failing tests inline (fixture, mock, implementation errors)
-- Crash detection and recovery
-- Configurable max attempts
+The standalone `rectification-loop.ts` is gone. Auto-fix of failing tests and
+review findings now runs through the three-layer fix cycle (`runFixCycle` in
+`src/findings/cycle.ts`, ADR-021/022), driven by the story orchestrator via
+fix strategies (mechanical lint/format fix, autofix implementer, autofix
+test-writer). Failures are carried as canonical `Finding[]` (see below), not a
+bespoke `VerifyResult`.
 
-`src/verification/rectification.ts` — shared rectification utilities:
-- `shouldRetryRectification()` — retry decision logic (attempt count, failure count, regression spiral detection)
-- `buildEscalationPreamble()` — progressive prompt escalation (rethink phase, urgency phase)
-- Deduplication of `TestFailure[]` by (file, testName)
+`src/verification/rectification.ts` — shared retry helper:
+- `shouldRetryRectification(state, config)` — retry decision logic (attempt count,
+  failure count, spiral detection); re-exports `RectificationState`.
 
-### VerifyResult
+### Findings (canonical result type)
+
+Verification and review results flow as `Finding[]` from `src/findings/` (there
+is no `VerifyResult` type). Each `Finding` carries a `fixTarget` (`"source"` /
+`"test"`) that tells the fix cycle where the fix should land:
 
 ```typescript
-interface VerifyResult {
-  status: "passed" | "failed" | "skipped" | "timeout";
-  failures: TestFailure[];   // Parsed test failure context (from test-runners)
-  duration: number;
-  coverage?: CoverageMetrics;
+// src/findings/types.ts
+export interface Finding {
+  // …id, severity, message, file, source (verify | lint | typecheck | semantic | adversarial)…
+  fixTarget?: FixTarget;   // where the fix LANDS, not what produced the finding
 }
 ```
 
 ### Strategy → Op envelope mapping (issue #1116)
+
+> Historical migration mapping. The `ScopedStrategy` / `RegressionStrategy`
+> classes have been removed; only the right-hand op outputs
+> (`VerifyScopedOutput` in `src/operations/verify-scoped.ts`,
+> `FullSuiteGateOutput` in `src/operations/full-suite-gate.ts`) exist today. The
+> table records how the old strategy fields were folded into the op envelopes.
 
 `ScopedStrategy.VerifyResult` → `VerifyScopedOutput`:
 
@@ -337,19 +360,19 @@ interface VerifyResult {
 
 ### Router
 
-`src/routing/router.ts`:
+`src/routing/classify.ts` (classification) + `src/routing/router.ts` (tier mapping):
 
-1. **`classifyComplexity()`** — Keyword-based heuristic
+1. **`classifyComplexity()`** (`classify.ts`) — Keyword-based heuristic
    - Examines: story title, AC count, tags
    - Keywords: `COMPLEX_KEYWORDS`, `EXPERT_KEYWORDS`, `SECURITY_KEYWORDS`, `PUBLIC_API_KEYWORDS`
    - Output: `"simple"` | `"medium"` | `"complex"` | `"expert"`
 
-2. **`determineTestStrategy()`** — Decision tree
+2. **`determineTestStrategy()`** (`classify.ts`) — Decision tree
    - Inputs: complexity, title, AC, tags, `tddStrategy` config
    - tddStrategy: `"strict"`, `"lite"`, `"off"`, `"auto"`
    - Output: `test-after`, `tdd-simple`, `three-session-tdd`, `three-session-tdd-lite`, `no-test`
 
-3. **`complexityToModelTier()`** — Maps complexity → tier
+3. **`complexityToModelTier()`** (`router.ts`) — Maps complexity → tier
    - simple → fast, medium → balanced, complex/expert → powerful
 
 ### Routing Strategies (Pluggable)
@@ -506,19 +529,28 @@ consumed by `StaticRulesProvider`.
 - Project-level governance document (coding standards, patterns, rules)
 - `loader.ts` — loads from `.nax/constitution.md` or generates
 - `generator.ts` — generates constitution from project analysis
-- `generators/` — per-agent constitution formatting (6 agent types)
+- `generators/` — per-agent constitution formatting (aider, claude, cursor, opencode, windsurf)
 
 ---
 
 ## §25 Review & Quality System
 
-### Review Orchestrator
+### Review Execution
 
-`src/review/orchestrator.ts`:
-- Orchestrates semantic + adversarial review execution
-- Built-in checks: typecheck, lint, test, format, semantic, adversarial
-- Plugin reviewers: custom quality checks (semgrep, security, etc.)
-- Supports concurrent review execution (configurable via `adversarial.maxConcurrentSessions`)
+There is no `src/review/orchestrator.ts`. Semantic and adversarial review run as
+Operations — `semanticReviewOp` (`src/operations/semantic-review.ts`) and
+`adversarialReviewOp` (`src/operations/adversarial-review.ts`) — sequenced by the
+story orchestrator (§17/§19). `src/review/runner.ts` (`runReview()`) is the
+shared review entry used outside the per-story op path; `src/review/semantic.ts`
+and `src/review/adversarial.ts` hold the review logic/helpers.
+
+- Mechanical checks (lint, typecheck) run as their own ops (`lintCheckOp`,
+  `typecheckCheckOp`); test/build run via the verification gates (§21).
+- Plugin reviewers: deferred end-of-run review (`src/execution/deferred-review.ts`),
+  observational by default — set `review.pluginMode: "gating"` to fail the run
+  (per-story plugin gating removed, ADR-023 / #1146).
+- Adversarial review supports concurrent sessions (configurable via
+  `adversarial.maxConcurrentSessions`).
 
 ### Semantic Review
 
@@ -529,7 +561,7 @@ consumed by `StaticRulesProvider`.
 
 ### Mechanical vs LLM Check Classification
 
-The orchestrator splits checks into **mechanical** (typecheck, lint, build, format) and **LLM** (semantic, adversarial). When mechanical checks fail but LLM checks pass, `mechanicalFailedOnly: true` is set on the result — autofix uses this to suppress tier escalation for unfixable mechanical issues (e.g., lint errors in test files the implementer cannot modify).
+Checks split into **mechanical** (typecheck, lint, build, format) and **LLM** (semantic, adversarial). When mechanical checks fail but LLM checks pass, `mechanicalFailedOnly: true` is set on the result — the fix cycle uses this to suppress tier escalation for unfixable mechanical issues (e.g., lint errors in test files the implementer cannot modify).
 
 ### Adversarial Review (REVIEW-003)
 
@@ -540,23 +572,31 @@ The orchestrator splits checks into **mechanical** (typecheck, lint, build, form
 - Default diffMode: `"ref"` (reviewer self-serves via git tools)
 - Finding categories: `input`, `error-path`, `abandonment`, `test-gap`, `convention`, `assumption`
 - Configurable parallel/sequential execution
-- **Scope-aware routing:** adversarial findings in test files are routed to a test-writer session via `autofix-adversarial.ts`, not the implementer (TDD isolation constraint)
+- **Scope-aware routing:** adversarial findings carry `fixTarget` (`"test"` / `"source"`); test-targeted findings are routed to the test-writer fix strategy (`src/operations/autofix-test-writer-strategy.ts`), source findings to the implementer fix strategy — never crossing the TDD isolation boundary
 
-### Autofix Stage
+### Fix Cycle (ADR-021/022)
 
-`src/pipeline/stages/autofix.ts`:
+The standalone `src/pipeline/stages/autofix.ts` is gone. Fixing review/verify
+findings now runs through `runFixCycle` (`src/findings/cycle.ts`), invoked by the
+story orchestrator. It iterates a set of **fix strategies** against the current
+`Finding[]` until they resolve or a budget/bail condition fires:
 
-Two-phase approach when review fails:
+| Strategy | File (`src/operations/`) | Targets |
+|:---|:---|:---|
+| Mechanical lint fix | `mechanical-lintfix-strategy.ts` | lint findings via `lintFix` command |
+| Mechanical format fix | `mechanical-formatfix-strategy.ts` | format findings via `formatFix` command |
+| Autofix implementer | `autofix-implementer-strategy.ts` | source-targeted findings (implementer session) |
+| Autofix test-writer | `autofix-test-writer-strategy.ts` | test-targeted findings (test-writer session) |
 
-1. **Mechanical fix** (lint/format only) — runs `lintFix`/`formatFix` commands, rechecks. Returns `retry fromStage:"review"` immediately if resolved.
-2. **Agent rectification** — spawns the implementer session with failed-check context. Runs up to `quality.autofix.maxAttempts` (default 3) per cycle, bounded by `quality.autofix.maxTotalAttempts` (default 12) across all cycles.
+**Dual budgets** (`FixCycleConfig` in `src/findings/cycle-types.ts`): each strategy
+has a per-strategy `maxAttempts`; the cycle is bounded globally by
+`maxAttemptsTotal`. `classifyOutcome(before, after)` compares findings across
+iterations to detect progress (`improved` / `unchanged` / `regressed`).
 
-**Partial-progress retry:** when a cycle fails (not all checks fixed) but at least one check was newly cleared, the cleared checks are added to `retrySkipChecks` and the stage returns `retry fromStage:"review"` rather than escalating. The next review run skips cleared checks; the next autofix cycle targets only remaining failures. This allows the 12-attempt global budget to be consumed across multiple focused cycles (e.g. lint cleared in cycle 1 → only typecheck+semantic in cycle 2).
-
-**Escalation conditions:**
-- Zero progress in a cycle (no checks cleared) — budget remaining but stuck → escalate
-- Global budget exhausted (`autofixAttempt >= maxTotalAttempts`) → escalate
-- `UNRESOLVED` signal from implementer (reviewer contradiction) → escalate
+**Bail / escalation conditions:**
+- A strategy hits its per-strategy `maxAttempts` cap → drops from the active set
+- Global `maxAttemptsTotal` exhausted → cycle exits, story escalates
+- No active strategy can make progress → cycle exits
 
 ### Implementer→test-writer feedback loop
 
@@ -575,8 +615,7 @@ do not re-tag.
 The test-writer strategy's `maxAttempts` is set to `2` to allow exactly one
 re-fire after the initial source-bug-error attempt.
 
-This wiring is internal to the V2 autofix cycle — the rectification gate
-(`src/tdd/rectification-gate.ts`) is unaffected.
+This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 
 ### Review Audit Trail
 
@@ -845,7 +884,6 @@ DebateSession.run()
 | `AgentNotFoundError` | Agent name not in registry |
 | `AgentNotInstalledError` | Agent binary not installed on system |
 | `StoryLimitExceededError` | Too many stories for current plan |
-| `AllAgentsUnavailableError` | All configured agents failed or missing |
 | `LockAcquisitionError` | Another nax instance holds the lock |
 
 ---
@@ -1179,7 +1217,10 @@ dispatches through the appropriate manager, and parses the output.
 ### `Operation<I, O, C>` shape
 
 ```typescript
-type Operation<I, O, C> = RunOperation<I, O, C> | CompleteOperation<I, O, C>;
+type Operation<I, O, C> =
+  | RunOperation<I, O, C>
+  | CompleteOperation<I, O, C>
+  | DeterministicOperation<I, O, C>;   // pure fn / FS call, no LLM session
 
 interface OperationBase<I, O, C> {
   readonly name: string;
@@ -1191,7 +1232,7 @@ interface OperationBase<I, O, C> {
 
 interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly kind: "run";
-  readonly model?: ConfiguredModel;
+  readonly model?: OperationModel<I, C>;
   readonly session: { role: SessionRole; lifetime: "fresh" | "warm" };
   readonly noFallback?: boolean;     // TDD ops opt out of cross-agent fallback
 }
@@ -1201,6 +1242,10 @@ interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly jsonMode?: boolean;
 }
 ```
+
+`DeterministicOperation` (kind `"deterministic"`) runs a pure function or
+filesystem call with no agent session — `verifyScopedOp` and `fullSuiteGateOp`
+use it.
 
 ### `callOp` — the dispatcher
 
@@ -1263,7 +1308,8 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
 
 | Op | Kind | Used by |
 |:---|:---|:---|
-| `planOp` / `decomposeOp` | complete | Plan stage / decomposition |
+| `planDraftOp` / `planRefineOp` / `planInteractiveOp` | run | Plan stage (`src/operations/plan*.ts`) |
+| `decomposeOp` | complete | Story decomposition |
 | `classifyRouteOp` | complete | Routing stage |
 | `acceptanceGenerateOp` / `acceptanceRefineOp` / `acceptanceDiagnoseOp` | varies | Acceptance subsystem |
 | `acceptanceFixSourceOp` / `acceptanceFixTestOp` | run | Acceptance fix stories |
@@ -1426,7 +1472,7 @@ Cross-run (append-only):
 
 ### CLI Integration
 
-Three subcommands in `src/commands/curator.ts`:
+Four subcommands in `src/commands/curator.ts`:
 
 | Command | Purpose |
 |:---|:---|

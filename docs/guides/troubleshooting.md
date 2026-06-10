@@ -18,7 +18,11 @@ rm nax.lock
 **Story keeps failing**
 
 ```bash
-nax diagnose -f my-feature
+# Inspect run logs to see where the story is failing
+nax logs --story US-003
+
+# Check current run status
+nax status -f my-feature
 ```
 
 **Precheck fails**
@@ -30,7 +34,7 @@ nax precheck -f my-feature
 
 **Run stopped mid-way**
 
-nax saves progress in `nax/features/<name>/prd.json`. Re-run with the same command — completed stories are skipped automatically.
+nax saves progress in `.nax/features/<name>/prd.json`. Re-run with the same command — completed stories are skipped automatically.
 
 ---
 

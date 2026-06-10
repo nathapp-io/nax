@@ -49,7 +49,7 @@ How agents are configured, permissioned, and organized.
 
 Deep reference for each subsystem — consult when working on a specific module.
 
-- **§17 Pipeline Architecture** — 15 stages, stage contract, `PipelineContext`, `StageResult` actions
+- **§17 Pipeline Architecture** — 8 default stages (+1 pre-run, +1 post-run); per-story phases run inside `executionStage` via `StoryOrchestratorBuilder` `CANONICAL_ORDER`; stage contract, `PipelineContext`, `StageResult` actions
 - **§18 Execution Modes & Batching** — Parallel/batch, sequential worktree isolation, escalation, crash recovery, lifecycle phases
 - **§19 TDD Orchestration** — Three-session workflow, session roles, isolation, failure categories, verdict
 - **§20 Acceptance Test System** — Generator, refinement, fix stories, templates, RED gate
@@ -77,9 +77,9 @@ Deep reference for each subsystem — consult when working on a specific module.
 
 | Rule | Limit |
 |:-----|:------|
-| Source file size | ≤400 lines |
-| Test file size | ≤800 lines (split if >3 unrelated concerns) |
-| Type-only file size | ≤600 lines |
+| Source file size | ≤600 lines hard (400 soft) |
+| Test file size | ≤800 lines hard (500 soft; split if >3 unrelated concerns) |
+| Type-only file size | ≤600 lines hard (500 soft) |
 | Function size | ≤30 lines (50 hard max) |
 | Positional params | ≤3 (use options object beyond) |
 | `any` in public API | Forbidden |
@@ -114,4 +114,4 @@ Deep reference for each subsystem — consult when working on a specific module.
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-04-27 (ADR-018 + ADR-019). Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-06-10 (codebase audit). Maintained by nax-dev.*

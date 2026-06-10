@@ -23,15 +23,7 @@ nax run -f my-feature --parallel 3
 4. Once a batch completes, changes are merged back in dependency order
 5. Merge conflicts are automatically rectified by re-running the conflicted story on the updated base
 
-**Config:**
-
-```json
-{
-  "execution": {
-    "maxParallelSessions": 4
-  }
-}
-```
+**Concurrency** is controlled by the `--parallel <n>` flag (`0` = auto from CPU cores, omit = sequential). There is no `execution.maxParallelSessions` config key — concurrency is a per-run CLI choice.
 
 > Sequential mode (no `--parallel`) is the safe default. Use parallel for large feature sets with independent stories.
 

@@ -43,10 +43,10 @@ Initialize templates in your project:
 nax prompts --init
 ```
 
-This creates `nax/templates/` with 5 default template files:
+This creates `.nax/templates/` with 5 default template files:
 
 ```
-nax/templates/
+.nax/templates/
 ├── test-writer.md
 ├── implementer.md
 ├── verifier.md
@@ -62,30 +62,30 @@ Edit any template to customize the instructions. For example, to enforce a speci
 
 ```bash
 # Edit implementer instructions
-nano nax/templates/implementer.md
+nano .nax/templates/implementer.md
 ```
 
 Modify the content under the comment block. The header (non-overridable sections list) must remain at the top for reference.
 
 ### Step 3: Activate Overrides
 
-Add the override paths to your `nax/config.json`:
+Add the override paths to your `.nax/config.json`:
 
 ```json
 {
   "prompts": {
     "overrides": {
-      "test-writer": "nax/templates/test-writer.md",
-      "implementer": "nax/templates/implementer.md",
-      "verifier": "nax/templates/verifier.md",
-      "single-session": "nax/templates/single-session.md",
-      "tdd-simple": "nax/templates/tdd-simple.md"
+      "test-writer": ".nax/templates/test-writer.md",
+      "implementer": ".nax/templates/implementer.md",
+      "verifier": ".nax/templates/verifier.md",
+      "single-session": ".nax/templates/single-session.md",
+      "tdd-simple": ".nax/templates/tdd-simple.md"
     }
   }
 }
 ```
 
-If you ran `nax prompts --init` with an existing `nax/config.json`, this is done automatically.
+If you ran `nax prompts --init` with an existing `.nax/config.json`, this is done automatically.
 
 ### Step 4: Test & Run
 
@@ -132,7 +132,7 @@ nax prompts --export implementer
 nax prompts --export test-writer --out /tmp/test-writer-default.md
 
 # Compare your override with the default
-diff nax/templates/implementer.md <(nax prompts --export implementer)
+diff .nax/templates/implementer.md <(nax prompts --export implementer)
 ```
 
 ---
@@ -182,8 +182,8 @@ These sections are **always injected by nax** and cannot be changed in templates
     - Story context (acceptance criteria, description, dependencies)
     - Conventions (project coding standards)
 
-  To activate overrides, add to your nax/config.json:
-    { "prompts": { "overrides": { "<role>": "nax/templates/<role>.md" } } }
+  To activate overrides, add to your .nax/config.json:
+    { "prompts": { "overrides": { "<role>": ".nax/templates/<role>.md" } } }
 -->
 
 # Role: Custom Implementer
@@ -204,7 +204,7 @@ Instructions:
 
 Define custom prompt paths in your project config:
 
-**Location:** `nax/config.json` (project-level) or `~/.nax/config.json` (global)
+**Location:** `.nax/config.json` (project-level) or `~/.nax/config.json` (global)
 
 **Schema:**
 
@@ -212,11 +212,11 @@ Define custom prompt paths in your project config:
 {
   "prompts": {
     "overrides": {
-      "test-writer": "nax/templates/test-writer.md",
-      "implementer": "nax/templates/implementer.md",
-      "verifier": "nax/templates/verifier.md",
-      "single-session": "nax/templates/single-session.md",
-      "tdd-simple": "nax/templates/tdd-simple.md"
+      "test-writer": ".nax/templates/test-writer.md",
+      "implementer": ".nax/templates/implementer.md",
+      "verifier": ".nax/templates/verifier.md",
+      "single-session": ".nax/templates/single-session.md",
+      "tdd-simple": ".nax/templates/tdd-simple.md"
     }
   }
 }
@@ -236,7 +236,7 @@ If you only want to customize the `implementer` role:
 {
   "prompts": {
     "overrides": {
-      "implementer": "nax/templates/implementer-custom.md"
+      "implementer": ".nax/templates/implementer-custom.md"
     }
   }
 }
@@ -287,7 +287,7 @@ If a customization doesn't help, revert it:
 ```bash
 # Remove overrides from config
 # nax will fall back to defaults
-rm nax/templates/<role>.md
+rm .nax/templates/<role>.md
 ```
 
 Or reset all templates:
@@ -327,9 +327,9 @@ Project-level overrides take precedence.
 - Check the file exists and path is relative to your project root (or absolute)
 
 **"Prompts look the same despite override"**
-- Ensure `nax/config.json` has the override path configured
+- Ensure `.nax/config.json` has the override path configured
 - Run `nax config --explain` to see the effective merged config
-- Templates must be in `nax/templates/` or a custom path, not in `src/` or `docs/`
+- Templates must be in `.nax/templates/` or a custom path, not in `src/` or `docs/`
 
 ---
 
@@ -337,7 +337,7 @@ Project-level overrides take precedence.
 
 The prompt system is built on **domain-specific prompt builders** (`src/prompts/builders/`). Each builder is a composable class that wraps a `SectionAccumulator` from `src/prompts/core/`. Template overrides are loaded per-role via `src/prompts/loader.ts` and injected as the role-body section.
 
-**8 builders** handle all prompt construction:
+Domain-specific builders handle all prompt construction. The primary builders:
 
 | Builder | Roles |
 |:--------|:------|

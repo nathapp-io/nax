@@ -12,7 +12,7 @@ The provider that loads them is `StaticRulesProvider` ([src/context/engine/provi
 
 ```
 <repoRoot>/.nax/rules/<name>.md            ← repo-level rules
-<repoRoot>/.nax/mono/<package>/.nax/rules/ ← per-package overlay (monorepo only)
+<packageDir>/.nax/rules/<name>.md          ← per-package overlay (monorepo only, e.g. apps/api/.nax/rules/)
 ```
 
 Subdirectories one level deep are allowed (e.g. `.nax/rules/api/auth.md`); deeper nesting is ignored with a warning.
@@ -222,7 +222,7 @@ Steps:
 Inspect what actually shipped to a story:
 
 ```
-<projectDir>/.nax/<feature>/contexts/<storyId>-<stage>.json
+<projectDir>/.nax/features/<featureId>/stories/<storyId>/context-manifest-<stage>.json
 ```
 
 The `manifest` lists every chunk; rule chunks have `kind: "static"` and `id: "static-rules:<ruleId>:<hash>"`.

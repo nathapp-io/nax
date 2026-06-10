@@ -39,7 +39,7 @@ The engine is **off by default**. Opt in per-project:
 }
 ```
 
-That's the minimum. With just `enabled: true`, you get the five built-in providers active on every pipeline stage that has a default provider set (execution, tdd-*, rectify, review, review-semantic, etc.).
+That's the minimum. With just `enabled: true`, you get the six built-in providers (`static-rules`, `feature-context`, `session-scratch`, `git-history`, `code-neighbor`, `test-coverage`) active on every pipeline stage that has a default provider set (execution, tdd-*, rectify, review, review-semantic, etc.).
 
 Verify it's on:
 
