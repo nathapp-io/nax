@@ -1,8 +1,10 @@
 # ADR-005: Pipeline Re-Architecture
 
-**Status:** Proposed  
+**Status:** Superseded by ADR-023 (Execution Unification)
 **Date:** 2026-03-06  
-**Author:** William Khoo, Nax Dev  
+**Author:** William Khoo, Nax Dev
+
+> **Tombstone (2026-06-10):** The 12-stage pipeline sequence proposed here was collapsed to 8 stages by ADR-023. The event-bus invariant (§6) remains honored. File references (`src/verification/orchestrator.ts`, `post-verify.ts`, `rectification.ts`, `VerifyResult`) no longer exist — see `src/findings/`, `src/operations/`, ADR-021/022 for the current truth. This document is archived for historical context only.
 
 ---
 

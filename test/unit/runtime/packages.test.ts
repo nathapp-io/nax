@@ -1,7 +1,7 @@
-import { describe, test, expect } from "bun:test";
-import { createPackageRegistry } from "../../../src/runtime/packages";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _packagesDeps, createPackageRegistry } from "../../../src/runtime/packages";
 import { createConfigLoader, pickSelector } from "../../../src/config";
-import { makeNaxConfig } from "../../helpers";
+import { makeLogger, makeNaxConfig } from "../../helpers";
 
 const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
 const routingSel = pickSelector("routing-pkg-test", "routing");
@@ -103,5 +103,80 @@ describe("PackageView.hasOverride and repoRoot", () => {
     const registry = createPackageRegistry(loader, "/repo");
     expect(registry.repo().hasOverride).toBe(false);
     expect(registry.repo().repoRoot).toBe("/repo");
+  });
+});
+
+describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
+  let origGetSafeLogger: typeof _packagesDeps.getSafeLogger;
+
+  beforeEach(() => {
+    origGetSafeLogger = _packagesDeps.getSafeLogger;
+  });
+
+  afterEach(() => {
+    _packagesDeps.getSafeLogger = origGetSafeLogger;
+  });
+
+  test("warns when resolve(nonRootPkg) is called before hydrate()", () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    registry.resolve("packages/app");
+
+    const warnCalls = mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages");
+    expect(warnCalls.length).toBe(1);
+    expect(warnCalls[0].data?.packageDir).toBe("packages/app");
+  });
+
+  test("does not warn for repo() (root-equivalent, no per-package override expected)", () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    registry.repo();
+
+    expect(mockLogger.calls.filter((c) => c.level === "warn")).toHaveLength(0);
+  });
+
+  test("does not warn after hydrate() has run", async () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    // hydrate with an empty list — sufficient to set the hydrated flag
+    await registry.hydrate([], async () => null);
+    registry.resolve("packages/app");
+
+    expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(0);
+  });
+
+  test("does not warn for a package that was hydrated with an override", async () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    await registry.hydrate(["packages/app"], async (_root, dir) =>
+      dir === "packages/app" ? ({ quality: { commands: { lint: "pkg-lint" } } } as any) : null,
+    );
+    registry.resolve("packages/app");
+
+    expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(0);
+  });
+
+  test("warns only once per package (cached view suppresses repeat)", () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger as unknown as ReturnType<typeof _packagesDeps.getSafeLogger>);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    registry.resolve("packages/app");
+    registry.resolve("packages/app"); // second call hits cache — no second warn
+
+    expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(1);
   });
 });

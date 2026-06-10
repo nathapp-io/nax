@@ -1,11 +1,13 @@
-# ADR-014: RunScope Composition, Operation Standardization, and Prompt Middleware
+# ADR-014 (alt): RunScope Composition, Operation Standardization, and Prompt Middleware
 
-**Status:** Reject
+**Status:** Reject — see ADR-018 (Runtime Layering) for the accepted design
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership); ADR-010 (Context Engine)
 **Related:** #523 (fallback state divergence across orphan AgentManagers — unblocked by this ADR)
-**Supersedeed-by:** ADR-014 (RunScope and Middleware), ADR-015 (Operation Contract), ADR-016 (Prompt Composition and PackageView)
+**Superseded-by:** ADR-018 (Runtime Layering with Session Runners)
+
+> **Tombstone (2026-06-10):** This is the *second* ADR-014 draft filed on 2026-04-23 (the parallel proposal). Both share the ADR-014 number and were filed as Reject on the same day. This file covers RunScope Composition + Prompt Middleware; the sibling `ADR-014-runscope-and-middleware.md` covers Agent Middleware + Orphan Consolidation. Both were superseded by ADR-017 → ADR-018. The `Superseded-by` field in the original header incorrectly pointed to "ADR-014 (RunScope and Middleware)" — corrected here to ADR-018.
 ---
 
 ## Context
