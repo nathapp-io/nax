@@ -310,6 +310,175 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(seen?.resolvedTestPatterns).toBe(resolvedTestPatterns);
   });
 
+  test("scoped failure with zero executed tests → falls back to full suite (#1207)", async () => {
+    const commands: string[] = [];
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "uv run pytest 'src/stock_api/_agent.py'",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async (opts) => {
+        commands.push(opts.command);
+        // First (scoped) run: pytest collected no tests → exit 5, 0/0.
+        if (commands.length === 1) {
+          return {
+            status: "TEST_FAILURE" as const,
+            success: false,
+            countsTowardEscalation: true,
+            output: "collected 0 items",
+            exitCode: 5,
+          };
+        }
+        // Full-suite rerun passes.
+        return { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "8 passed" };
+      },
+      parseTestOutput: (output) =>
+        output === "8 passed" ? { passed: 8, failed: 0, failures: [] } : { passed: 0, failed: 0, failures: [] },
+    });
+    const ctx = ctxWithQuality({ commands: { test: "uv run pytest" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(commands).toEqual(["uv run pytest 'src/stock_api/_agent.py'", "uv run pytest"]);
+    expect(result.success).toBe(true);
+    expect(result.status).toBe("passed");
+    expect(result.isFullSuite).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    expect(result.passCount).toBe(8);
+  });
+
+  test("scoped failure with real test failures → no full-suite rerun", async () => {
+    let regressionCalls = 0;
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "bun test test/a.test.ts",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => {
+        regressionCalls++;
+        return { status: "TEST_FAILURE" as const, success: false, countsTowardEscalation: true, output: "1 fail" };
+      },
+      parseTestOutput: () => ({
+        passed: 3,
+        failed: 1,
+        failures: [{ testName: "t1", file: "a.test.ts", error: "boom", stackTrace: [] }],
+      }),
+      testSummaryToFindings: () => [mockFinding],
+    });
+    const ctx = ctxWithQuality({ commands: { test: "bun test" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(regressionCalls).toBe(1);
+    expect(result.status).toBe("failed");
+    expect(result.isFullSuite).toBe(false);
+  });
+
+  test("failure with zero parsed findings → emits synth execution-failed finding (#1207)", async () => {
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "uv run pytest",
+        isFullSuite: true,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => ({
+        status: "TEST_FAILURE" as const,
+        success: false,
+        countsTowardEscalation: true,
+        output: "ImportError: cannot import name 'foo'",
+        exitCode: 2,
+      }),
+      parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+      testSummaryToFindings: () => [],
+    });
+    const ctx = ctxWithQuality({ commands: { test: "uv run pytest" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.status).toBe("failed");
+    expect(result.findings.length).toBe(1);
+    expect(result.findings[0].source).toBe("test-runner");
+    expect(result.findings[0].category).toBe("execution-failed");
+    expect(result.findings[0].message).toContain("uv run pytest");
+    expect(result.findings[0].message).toContain("ImportError");
+  });
+
+  test("scoped 0/0 failure → full-suite rerun also 0/0 → synth finding for the full-suite command", async () => {
+    let regressionCalls = 0;
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "uv run pytest 'src/_agent.py'",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => {
+        regressionCalls++;
+        return {
+          status: "TEST_FAILURE" as const,
+          success: false,
+          countsTowardEscalation: true,
+          output: "conftest.py crash",
+          exitCode: 4,
+        };
+      },
+      parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+      testSummaryToFindings: () => [],
+    });
+    const ctx = ctxWithQuality({ commands: { test: "uv run pytest" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(regressionCalls).toBe(2);
+    expect(result.status).toBe("failed");
+    expect(result.isFullSuite).toBe(true);
+    expect(result.scopeTestFallback).toBe(true);
+    expect(result.findings.length).toBe(1);
+    expect(result.findings[0].category).toBe("execution-failed");
+    expect(result.findings[0].message).toContain("uv run pytest");
+  });
+
+  test("scoped TIMEOUT with zero executed tests → no full-suite rerun, status=timeout", async () => {
+    let regressionCalls = 0;
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "uv run pytest 'src/_agent.py'",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => {
+        regressionCalls++;
+        return { status: "TIMEOUT" as const, success: false, countsTowardEscalation: false, output: "" };
+      },
+      parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+    });
+    const ctx = ctxWithQuality({ commands: { test: "uv run pytest" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(regressionCalls).toBe(1);
+    expect(result.status).toBe("timeout");
+    expect(result.success).toBe(false);
+    expect(result.isFullSuite).toBe(false);
+  });
+
   test("timeout → status=timeout, success=false", async () => {
     const deps = fakeDeps({
       regression: async () => ({

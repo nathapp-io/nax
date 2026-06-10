@@ -54,6 +54,61 @@ describe("Pass 1: mapSourceToTests (path convention)", () => {
     const result = await mapSourceToTests([], "/repo");
     expect(result).toEqual([]);
   });
+
+  // ── Identity guard (#1207): a suffix-only pattern like "tests/**/*.py"
+  // degrades to suffix ".py", whose co-located candidate reconstructs the
+  // source file itself. The source file must never be returned as its own test.
+  test("never maps a source file to itself (Python suffix degeneration)", async () => {
+    mockFileExists(["/repo/src/stock_api/_agent.py"]);
+    const result = await mapSourceToTests(["src/stock_api/_agent.py"], "/repo", undefined, ["tests/**/*.py"]);
+    expect(result).toEqual([]);
+  });
+
+  test("never maps a source file to itself with packagePrefix (monorepo)", async () => {
+    mockFileExists(["/repo/apps/api/src/stock_api/_agent.py"]);
+    const result = await mapSourceToTests(["apps/api/src/stock_api/_agent.py"], "/repo", "apps/api", [
+      "tests/**/*.py",
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  // ── Prefix patterns (#1207): pytest's test_*.py convention is prefix-based;
+  // candidates must carry the basename prefix, not just a suffix.
+  test("prefix pattern maps to mirrored test under derived test dir", async () => {
+    mockFileExists(["/repo/tests/stock_api/_tools/test_sizing.py"]);
+    const result = await mapSourceToTests(["src/stock_api/_tools/sizing.py"], "/repo", undefined, [
+      "tests/**/test_*.py",
+    ]);
+    expect(result).toEqual(["/repo/tests/stock_api/_tools/test_sizing.py"]);
+  });
+
+  test("prefix pattern maps to flat test under derived test dir", async () => {
+    mockFileExists(["/repo/tests/test_sizing.py"]);
+    const result = await mapSourceToTests(["src/stock_api/_tools/sizing.py"], "/repo", undefined, [
+      "tests/**/test_*.py",
+    ]);
+    expect(result).toEqual(["/repo/tests/test_sizing.py"]);
+  });
+
+  test("prefix pattern maps to co-located test next to the source", async () => {
+    mockFileExists(["/repo/src/stock_api/_tools/test_sizing.py"]);
+    const result = await mapSourceToTests(["src/stock_api/_tools/sizing.py"], "/repo", undefined, ["test_*.py"]);
+    expect(result).toEqual(["/repo/src/stock_api/_tools/test_sizing.py"]);
+  });
+
+  test("prefix pattern maps under packagePrefix (monorepo)", async () => {
+    mockFileExists(["/repo/apps/api/tests/stock_api/_tools/test_sizing.py"]);
+    const result = await mapSourceToTests(["apps/api/src/stock_api/_tools/sizing.py"], "/repo", "apps/api", [
+      "tests/**/test_*.py",
+    ]);
+    expect(result).toEqual(["/repo/apps/api/tests/stock_api/_tools/test_sizing.py"]);
+  });
+
+  test("suffix pattern also probes test dirs derived from the glob (tests/ mirror)", async () => {
+    mockFileExists(["/repo/tests/foo/bar_test.py"]);
+    const result = await mapSourceToTests(["src/foo/bar.py"], "/repo", undefined, ["tests/**/*_test.py"]);
+    expect(result).toEqual(["/repo/tests/foo/bar_test.py"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
