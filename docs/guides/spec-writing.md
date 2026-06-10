@@ -33,8 +33,7 @@ Therefore:
 
 Earlier revisions of this guide introduced `[verbatim]` ACs (preserving grep /
 file-existence / architectural-invariant assertions character-for-character through
-`nax plan`) to fix the spec→PRD drift documented in
-[`docs/findings/nax-plan-prd-fidelity.md`](../findings/nax-plan-prd-fidelity.md).
+`nax plan`) to fix the spec→PRD drift documented in earlier findings.
 That approach is **superseded**: behavioural ACs plus the build/static gate solve
 the same drift more robustly (a real stub-and-assert seam test cannot be paraphrased
 into a no-op, and removals are caught by the compiler). Do not write `[verbatim]`,

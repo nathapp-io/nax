@@ -37,7 +37,7 @@ repo-root/
 │               └── context.md        # agent context for apps/api
 ```
 
-**Overridable fields per package:** `execution`, `review`, `acceptance`, `quality`, `context`
+**Overridable fields per package:** `agent`, `models`, `routing`, `execution`, `review`, `acceptance`, `quality`, `context`, `project` (root-only sections such as `autoMode`, `generate`, `tdd`, `plan`, `constitution`, and `interaction` are never overridden per-package)
 
 ```json
 // .nax/mono/packages/api/config.json

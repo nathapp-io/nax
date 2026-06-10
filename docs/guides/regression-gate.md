@@ -13,7 +13,7 @@ After all stories pass their individual verification, nax can run a deferred ful
     "regressionGate": {
       "mode": "deferred",
       "acceptOnTimeout": true,
-      "maxRectificationAttempts": 2
+      "timeoutSeconds": 120
     }
   }
 }

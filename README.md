@@ -83,7 +83,6 @@ See [docs/](docs/) for full guides on configuration, test strategies, monorepo s
 | [`nax precheck`](docs/guides/cli-reference.md#nax-precheck) | Validate project readiness |
 | [`nax status`](docs/guides/cli-reference.md#nax-status) | Show live run progress |
 | [`nax logs`](docs/guides/cli-reference.md#nax-logs) | Stream or query run logs |
-| [`nax diagnose`](docs/guides/cli-reference.md#nax-diagnose) | Analyze failures, suggest fixes |
 | [`nax generate`](docs/guides/cli-reference.md#nax-generate) | Generate `.nax/` files for all packages in a monorepo |
 | [`nax prompts`](docs/guides/cli-reference.md#nax-prompts) | Print prompt snapshots for debugging |
 | [`nax runs`](docs/guides/cli-reference.md#nax-runs) | List recorded run metadata |
@@ -100,10 +99,15 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 ```json
 {
   "execution": {
-    "testStrategy": "three-session-tdd",  // How to write tests (see Test Strategies)
     "maxIterations": 5,
-    "modelTier": "balanced",               // "fast" | "balanced" | "powerful"
-    "permissionProfile": "unrestricted"    // "unrestricted" | "safe" | "scoped"
+    "permissionProfile": "unrestricted",   // "unrestricted" | "safe" | "scoped"
+    "storyIsolation": "shared"             // "shared" | "worktree"
+  },
+  "tdd": {
+    "strategy": "auto"                     // How to write tests (see Test Strategies)
+  },
+  "routing": {
+    "strategy": "keyword"                  // "keyword" | "llm"
   },
   "quality": {
     "commands": {
@@ -113,7 +117,9 @@ For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
     }
   },
   "hooks": {
-    "onComplete": "npm run build"          // Fire after a feature completes
+    "hooks": {
+      "on-all-stories-complete": { "command": "npm run build" }  // Fire after all stories pass
+    }
   }
 }
 ```
@@ -166,7 +172,7 @@ See [Monorepo Guide](docs/guides/monorepo.md).
 
 ### Hooks
 
-Lifecycle hooks fire at key points (onFeatureStart, onAllStoriesComplete, onComplete, onFinalRegressionFail). Use them to trigger deployments, send notifications, or integrate with external systems.
+Lifecycle hooks fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
 
 See [Hooks Guide](docs/guides/hooks.md).
 

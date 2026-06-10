@@ -17,13 +17,12 @@
 
 ```typescript
 // ✅ Small, focused functions
-async function resolveAdapter(config: NaxConfig): Promise<AgentAdapter> {
-  const agentName = config.execution?.agent ?? "claude";
-  const adapter = getAgent(agentName);
-  if (!adapter) {
-    throw new Error(`[routing] Unknown agent: ${agentName}`);
+function resolveAgentName(config: NaxConfig): string {
+  const agentName = resolveDefaultAgent(config);
+  if (!KNOWN_AGENT_NAMES.includes(agentName)) {
+    throw new NaxError(`Unknown agent: ${agentName}`, "AGENT_NOT_FOUND", { stage: "routing", agentName });
   }
-  return adapter;
+  return agentName;
 }
 
 // ❌ God function doing everything

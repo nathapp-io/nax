@@ -105,7 +105,7 @@ When `quality.testing.hermetic: true` (default), nax generates language-specific
 |:---------|:---------------------------|
 | TypeScript | `vi.mock()`, `vi.spyOn()` (Vitest); `jest.mock()`, `jest.spyOn()` (Jest) |
 | Go | `gomock`, `testify/mock`, `fakehttp` |
-| Rust | `mockall`, `乾` crates |
+| Rust | `mockall` crate; `#[cfg(test)]` modules; trait objects / generics for external deps |
 | Python | `unittest.mock.patch`, `pytest-mock` |
 
 If you set `quality.testing.mockGuidance` explicitly, it overrides auto-detection.

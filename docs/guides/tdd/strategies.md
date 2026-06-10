@@ -1,6 +1,6 @@
 # TDD Strategies
 
-nax supports three test strategies, selectable via `config.tdd.strategy` or per-story override.
+nax resolves each story to one of five test strategies (`no-test`, `test-after`, `tdd-simple`, `three-session-tdd`, `three-session-tdd-lite`) — driven by `config.tdd.strategy` or a per-story override. The three multi-session/single-session TDD modes below are the most common.
 
 ## Strategy Comparison
 
@@ -22,11 +22,12 @@ Controlled by `config.tdd.strategy`:
 
 | Config value | Behaviour |
 |---|---|
+| `"auto"` | LLM/keyword router decides (see routing rules below) |
 | `"strict"` | Always `three-session-tdd` |
 | `"lite"` | Always `three-session-tdd-lite` |
-| `"simple"` | Always `tdd-simple` (single-session TDD for all stories) |
 | `"off"` | Always `test-after` |
-| `"auto"` | LLM/keyword router decides (see routing rules below) |
+
+> The `config.tdd.strategy` schema enum accepts `"auto"`, `"strict"`, `"lite"`, and `"off"` (default `"auto"`). The router (`src/routing/classify.ts`) additionally recognises `"simple"` → `tdd-simple`, but that value is not yet in the config schema enum — use a per-story `testStrategy: "tdd-simple"` override to pin single-session TDD for a specific story.
 
 ### Auto-Routing Rules (FEAT-013)
 
@@ -96,10 +97,10 @@ Add `testStrategy` to a story in `prd.json` to override routing:
 }
 ```
 
-Supported values: `"test-after"`, `"three-session-tdd"`, `"three-session-tdd-lite"`.
+Supported values (`VALID_TEST_STRATEGIES` in `src/config/test-strategy.ts`): `"no-test"`, `"test-after"`, `"tdd-simple"`, `"three-session-tdd"`, `"three-session-tdd-lite"`.
 
 ---
 
 ---
 
-*Last updated: 2026-03-24*
+*Last updated: 2026-06-10*

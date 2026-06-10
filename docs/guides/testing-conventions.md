@@ -156,7 +156,7 @@ The check-test-sizes script is automatically run as part of the build pipeline. 
 bun run check:test-sizes
 
 # Run with precheck skipped (useful during development)
-NAX_SKIP_PRECHECK=1 bun test test/
+NAX_SKIP_PRECHECK=1 bun run test
 
 # View files that need attention
 bun run check:test-sizes | grep "✗\|⚠"

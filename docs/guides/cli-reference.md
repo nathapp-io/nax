@@ -63,20 +63,18 @@ nax plan -f my-feature --from spec.md
 | Flag | Description |
 |:-----|:------------|
 | `-f, --feature <name>` | Feature name (required) |
-| `--from <spec-path>` | Path to spec file (required) |
+| `--from <spec-path>` | Path to spec file (required unless `--decompose` is used) |
 | `--auto` / `--one-shot` | Skip interactive Q&A — single LLM call, no back-and-forth |
 | `-b, --branch <branch>` | Override default branch name |
+| `--decompose <storyId>` | Decompose an existing story into sub-stories |
+| `--profile <name>` | Profile to use (overrides `config.json` profile) |
 | `-d, --dir <path>` | Project directory |
 
 **Interactive vs one-shot:**
 - Default (no flag): interactive planning session — nax asks clarifying questions, refines the plan iteratively
 - `--auto` / `--one-shot`: single LLM call, faster but less precise
 
----
-
-### `nax analyze` *(deprecated)*
-
-> ⚠️ **Deprecated.** Use `nax plan` instead. `nax analyze` remains available for backward compatibility but will be removed in a future version.
+> **Note:** `nax analyze` was removed — use `nax plan` instead.
 
 ---
 
@@ -108,6 +106,8 @@ nax run -f my-feature
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
+| `-m, --max-iterations <n>` | Max iterations (default: `20`) |
+| `--profile <name>` | Profile to use (overrides `config.json` profile) |
 | `-d, --dir <path>` | Working directory |
 
 **Examples:**
@@ -165,6 +165,15 @@ Show live run progress — stories passed, failed, current story, cost so far.
 
 ```bash
 nax status -f my-feature
+
+# Cost metrics across all runs
+nax status --cost
+
+# Last run metrics (requires --cost)
+nax status --cost --last
+
+# Per-model efficiency (requires --cost)
+nax status --cost --model
 ```
 
 ---
@@ -192,39 +201,6 @@ nax logs --run <runId>
 # Raw JSONL output (for scripting)
 nax logs --json
 ```
-
----
-
-### `nax diagnose -f <name>`
-
-Analyze a failed run and suggest fixes. No LLM — pure pattern matching on PRD state, git log, and events.
-
-```bash
-nax diagnose -f my-feature
-
-# JSON output for scripting
-nax diagnose -f my-feature --json
-
-# Verbose (per-story tier/strategy detail)
-nax diagnose -f my-feature --verbose
-```
-
-Output sections:
-- **Run Summary** — status, stories passed/failed/pending, total cost
-- **Story Breakdown** — per-story pattern classification
-- **Failure Analysis** — pattern name, symptom, recommended fix
-- **Lock Check** — detects stale `nax.lock`
-- **Recommendations** — ordered next actions
-
-**Common failure patterns:**
-
-| Pattern | Symptom | Fix |
-|:--------|:--------|:----|
-| `GREENFIELD_TDD` | No source files exist yet | Use `test-after` or bootstrap files first |
-| `MAX_TIERS_EXHAUSTED` | All model tiers tried | Split story into smaller sub-stories |
-| `ENVIRONMENTAL` | Build/dep errors | Fix precheck issues before re-running |
-| `LOCK_STALE` | `nax.lock` blocking | Shown automatically with `rm nax.lock` |
-| `AUTO_RECOVERED` | nax self-healed | No action needed |
 
 ---
 
@@ -292,8 +268,12 @@ nax prompts -f my-feature
 
 | Flag | Description |
 |:-----|:------------|
-| `--init` | Export default role templates to `.nax/templates/` for customization |
-| `--role <role>` | Show prompt for a specific role (`implementer`, `test-writer`, `verifier`, `tdd-simple`) |
+| `-f, --feature <name>` | Feature name (required unless using `--init` or `--export`) |
+| `--init` | Initialize default prompt templates for customization |
+| `--export <role>` | Export the default prompt for a role to stdout (or `--out` file) |
+| `--story <id>` | Filter to a single story ID (e.g., `US-003`) |
+| `--out <path>` | Output file for `--export`, or directory for regular prompts (default: stdout) |
+| `--force` | Overwrite existing template files |
 
 After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
 
@@ -315,6 +295,15 @@ Show all registered runs from the central registry (`~/.nax/runs/`).
 
 ```bash
 nax runs
+
+# Filter by project
+nax runs --project my-project
+
+# Limit to N most recent (default: 20)
+nax runs --last 50
+
+# Filter by status (running|completed|failed|crashed)
+nax runs --status failed
 ```
 
 ---

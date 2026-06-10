@@ -14,11 +14,13 @@ src/
 ├── acceptance/       # Acceptance test generation, refinement, fix stories, templates
 │   └── templates/    # Test templates (unit, component, e2e, CLI, snapshot)
 ├── agents/           # Agent adapters — all agents run via ACP protocol
-│   ├── acp/          # ACP adapter (adapter, spawn-client, parser, cost, interaction-bridge, parse-agent-error)
-│   ├── cost/         # Centralized cost calculation (calculate, parse, pricing, types)
+│   ├── acp/          # ACP adapter (adapter, adapter-lifecycle/-output, spawn-client, parser, interaction-bridge, parse-agent-error, token-mapper)
+│   ├── cost/         # Centralized cost calculation (calculate, pricing, token-mapper, types)
+│   ├── retry/        # Retry strategy SSOT (default-strategy, presets, parse-retry, compose)
 │   ├── shared/       # Cross-adapter utilities (decompose, decompose-prompt, env, model-resolution, validation, version-detection, types-extended)
+│   ├── manager.ts    # AgentManager (completeAs, runWithFallback)
 │   ├── registry.ts   # Agent registry (KNOWN_AGENT_NAMES, createAgentRegistry, _registryTestAdapters)
-│   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
+│   └── types.ts      # AgentAdapter interface (4 primitives), AgentResult, AgentRunOptions
 ├── analyze/          # Codebase scanning and LLM-enhanced story classification
 ├── cli/              # CLI command handlers (init, run, plan, analyze, accept, status, config, etc.)
 ├── commands/         # Subcommand implementations (diagnose, logs, precheck, runs, unlock)
@@ -74,12 +76,12 @@ src/
 
   | File type | Soft limit | Hard limit | When to split |
   |:----------|:-----------|:-----------|:--------------|
-  | Source files (`src/`) | 300 lines | **400 lines** | Logic/control flow too complex for one file |
+  | Source files (`src/`) | 400 lines | **600 lines** | Logic/control flow too complex for one file |
   | Test files (`test/`) | 500 lines | **800 lines** | >3 unrelated concerns in one file |
   | Type-only files (interfaces, no logic) | 500 lines | **600 lines** | Only if mixing types with logic |
   | Docs / generated reports | — | **No limit** | N/A |
 
-  The goal is **cognitive fit** — can you understand the file in one reading? Type declarations and test assertions are low-complexity per line; business logic is high-complexity.
+  The 600-line hard limit for source and test files is the canonical rule (`.claude/rules/project-conventions.md`). The goal is **cognitive fit** — can you understand the file in one reading? Type declarations and test assertions are low-complexity per line; business logic is high-complexity.
 
 - **Barrel exports:** every directory with 2+ files gets an `index.ts`
 - **File naming:** `kebab-case.ts` for files, `PascalCase` for classes/interfaces
@@ -175,20 +177,12 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 |:---|:---|:---|:---|
 | **TDD** | `src/tdd/isolation.ts` | `_isolationDeps` | `git diff` → `getChangedFiles` |
 | | `src/tdd/cleanup.ts` | `_cleanupDeps` | `ps`, `Bun.sleep`, `process.kill` |
-| | `src/tdd/session-runner.ts` | `_sessionRunnerDeps` | isolation, git, cleanup, prompt deps |
-| | `src/tdd/rectification-gate.ts` | `_rectificationGateDeps` | `executeWithTimeout`, test output parsing |
 | **Verification** | `src/verification/executor.ts` | `_executorDeps` | Shell test command execution |
-| | `src/verification/strategies/acceptance.ts` | `_acceptanceDeps` | Acceptance test runner |
-| | `src/verification/strategies/scoped.ts` | `_scopedDeps` | Scoped verification strategy |
 | | `src/verification/smart-runner.ts` | `_smartRunnerDeps` | Smart test file selection |
-| | `src/verification/rectification-loop.ts` | `_rectificationDeps` | Rectification loop |
 | **Agents** | `src/agents/acp/adapter.ts` | `_acpAdapterDeps`, `_fallbackDeps` | ACP session management |
 | | `src/agents/acp/spawn-client.ts` | `_spawnClientDeps` | acpx process spawning |
 | **Pipeline** | `src/pipeline/stages/routing.ts` | `_routingDeps` | Routing stage |
 | | `src/pipeline/stages/execution.ts` | `_executionDeps` | Execution stage |
-| | `src/pipeline/stages/verify.ts` | `_verifyDeps` | Verify stage |
-| | `src/pipeline/stages/review.ts` | `_reviewDeps` | Review stage |
-| | `src/pipeline/stages/autofix.ts` | `_autofixDeps` | Autofix stage |
 | | `src/pipeline/stages/completion.ts` | `_completionDeps` | Completion stage |
 | | `src/pipeline/stages/acceptance-setup.ts` | `_acceptanceSetupDeps` | Acceptance setup |
 | **Execution** | `src/execution/runner.ts` | `_runnerDeps` | Main run orchestrator |
@@ -196,15 +190,14 @@ The `_deps` pattern is used extensively (70+ modules). Key examples by subsystem
 | | `src/execution/parallel-batch.ts` | `_parallelBatchDeps` | Parallel batch execution |
 | | `src/execution/escalation/tier-escalation.ts` | `_tierEscalationDeps` | Tier escalation logic |
 | | `src/execution/lifecycle/run-setup.ts` | `_runSetupDeps` | Run setup phase |
-| **Review** | `src/review/orchestrator.ts` | `_orchestratorDeps` | Review orchestrator |
+| **Review** | `src/context/engine/orchestrator.ts` | `_orchestratorDeps` | Context-engine orchestrator |
 | | `src/review/semantic.ts` | `_semanticDeps` | Semantic review |
 | | `src/review/runner.ts` | `_reviewRunnerDeps`, `_reviewGitDeps` | Review runner |
 | **Other** | `src/utils/git.ts` | `_gitDeps` | All git commands |
 | | `src/routing/router.ts` | `_tryLlmBatchRouteDeps` | LLM batch routing |
 | | `src/worktree/manager.ts` | `_managerDeps` | Worktree management |
 | | `src/worktree/merge.ts` | `_mergeDeps` | Worktree merge |
-| | `src/debate/session.ts` | `_debateSessionDeps` | Debate sessions |
-| | `src/acceptance/generator.ts` | `_generatorPRDDeps` | Acceptance test generation |
+| | `src/debate/session-helpers.ts` | `_debateSessionDeps` | Debate sessions |
 | | `src/project/detector.ts` | `_detectorDeps` | Project detection |
 | | `src/quality/runner.ts` | `_qualityRunnerDeps` | Quality command execution |
 
@@ -302,7 +295,7 @@ const MAX_CONTEXT_TOKENS = 1000000;
 
 ### Rules
 
-Agent-selection state is owned by `AgentManager` (`src/agents/manager.ts`), constructed once per run in `src/execution/runner.ts`. All default-agent reads go through one of two canonical accessors — never reach into `config.autoMode` (removed in ADR-012 Phase 6):
+Agent-selection state is owned by `AgentManager` (`src/agents/manager.ts`), constructed once per run via `createRuntime(config, workdir)` (ADR-018 — read it from `runtime.agentManager`). All default-agent reads go through one of two canonical accessors — never reach into `config.autoMode` (removed in ADR-012 Phase 6):
 
 | Caller context | Accessor | Source |
 |:---|:---|:---|
@@ -324,7 +317,7 @@ const defaultAgent = config.autoMode.defaultAgent;  // TS error + CONFIG_LEGACY_
 
 ### Per-story reset
 
-`AgentManager.reset()` runs once per story at `src/execution/iteration-runner.ts:196`, before each pipeline run. It is the SSOT for clearing per-story availability state — there is no separate adapter-level or registry-level reset hook.
+`AgentManager.reset()` (`src/agents/manager.ts`) clears per-story availability state. It is the SSOT for that reset — there is no separate adapter-level or registry-level reset hook.
 
 ### Config shape
 

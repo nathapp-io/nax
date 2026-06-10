@@ -99,7 +99,7 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
 {
   "review": {
     "semantic": {
-      "modelTier": "fast",
+      "model": "fast",
       "diffMode": "ref",
       "resetRefOnRerun": false,
       "rules": []
@@ -108,9 +108,9 @@ Add `"semantic"` to `review.checks` in `.nax/config.json`:
 }
 ```
 
-### `modelTier`
+### `model`
 
-Controls which model runs the semantic review. Options: `"fast"` (haiku), `"balanced"` (sonnet), `"powerful"` (opus). Default: `"balanced"`.
+Controls which model runs the semantic review. Accepts a tier string — `"fast"` (haiku), `"balanced"` (sonnet), `"powerful"` (opus) — or a `{ agent, model }` cross-agent pin. Default: `"balanced"`.
 
 **Recommendation:** Use `"fast"` (haiku) for most projects — semantic review is a lightweight behavioral check, not a deep reasoning task.
 
@@ -137,7 +137,7 @@ Append project-specific rules to the default set:
 {
   "review": {
     "semantic": {
-      "modelTier": "fast",
+      "model": "fast",
       "rules": [
         "All public APIs must have JSDoc comments",
         "Error responses must use the project's standard error shape"
@@ -153,20 +153,22 @@ Rules are passed verbatim to the LLM prompt as additional evaluation criteria.
 
 ## Plugin Mode
 
-Semantic review runs per-story by default (`review.pluginMode: "per-story"`). Set to `"deferred"` to run once after all stories:
+Built-in semantic and adversarial review run **per story** as ops in the story orchestrator's `CANONICAL_ORDER` (`semantic-review` / `adversarial-review` phases). They are not affected by `review.pluginMode`.
+
+`review.pluginMode` controls only `IReviewPlugin` reviewers, which run as a **deferred end-of-run** pass (per-story plugin gating was removed — ADR-023 / #1146):
 
 ```json
 {
   "review": {
-    "pluginMode": "deferred"
+    "pluginMode": "observational"
   }
 }
 ```
 
-| Mode | When it runs | Benefit |
-|:-----|:-------------|:--------|
-| `per-story` (default) | After each story passes | Catches semantic issues immediately |
-| `deferred` | After all stories complete | Faster per-story, single LLM call |
+| Mode | Behaviour |
+|:-----|:----------|
+| `observational` (default) | Plugin reviewer failures are logged + surfaced in run status but do NOT fail the run |
+| `gating` | Any failing plugin reviewer marks the run failed (`RunResult.success = false`) |
 
 ---
 
@@ -220,17 +222,17 @@ Semantic review failed:
 
 ## Mechanical vs LLM Check Splitting
 
-The review orchestrator classifies checks into two categories:
+The review runner classifies checks into two categories:
 
 | Category | Checks | Runs when |
 |:---------|:-------|:----------|
 | **Mechanical** | `typecheck`, `lint`, `build`, `format` | Always (command-based, deterministic) |
-| **LLM** | `semantic`, `adversarial` | After mechanical checks complete |
+| **LLM** | `semantic`, `adversarial` | After mechanical checks complete (gated by `review.gateLLMChecksOnMechanicalPass`, default `true`) |
 
-When mechanical checks fail but all LLM checks pass, the orchestrator sets `mechanicalFailedOnly: true` on the review result. This signals to the **autofix stage** that the code is functionally correct — the agent satisfied the acceptance criteria — but has fixable style or build issues. Autofix uses this to:
+When mechanical checks fail but all LLM checks pass, `mechanicalFailedOnly: true` is set on the review result (`src/pipeline/types.ts`). This signals to the **fix cycle** that the code is functionally correct — the agent satisfied the acceptance criteria — but has fixable style or build issues. The cycle uses this to:
 
-1. **Run `lintFix` first** — attempt automated lint fixes before spawning an agent
-2. **Suppress tier escalation** — if the agent reports `UNRESOLVED:` for a mechanical-only failure (e.g., lint errors in test files it cannot modify), the stage proceeds instead of escalating to a higher model tier
+1. **Run the mechanical lint-fix strategy first** — attempt automated lint fixes before spawning an agent
+2. **Suppress tier escalation** — if the agent reports `UNRESOLVED:` for a mechanical-only failure (e.g., lint errors in test files it cannot modify), it proceeds instead of escalating to a higher model tier
 
 When `mechanicalFailedOnly` is `false` or `undefined`, normal escalation behavior applies.
 
@@ -284,8 +286,8 @@ Adversarial review is a separate LLM-based review that complements semantic revi
 | Aspect | Semantic | Adversarial |
 |:-------|:---------|:------------|
 | Question | Does this implement the ACs? | Where could this fail? |
-| Session | Implementer session or ReviewerSession | Own session (`reviewer-adversarial`) |
-| Default diffMode | `"embedded"` (50KB cap) | `"ref"` (no cap) |
+| Session | Stateless reviewer (`reviewer-semantic`) | Own session (`reviewer-adversarial`) |
+| Default diffMode | `"ref"` (no cap) | `"ref"` (no cap) |
 | Findings | AC coverage, correctness | input handling, error paths, abandonment, test gaps, conventions, assumptions |
 
 ### Enabling
@@ -297,7 +299,7 @@ Add `"adversarial"` to `review.checks`:
   "review": {
     "checks": ["typecheck", "lint", "semantic", "adversarial"],
     "adversarial": {
-      "modelTier": "balanced",
+      "model": "balanced",
       "diffMode": "ref",
       "rules": [],
       "timeoutMs": 120000,
@@ -322,26 +324,22 @@ Adversarial findings are categorized by the type of issue:
 | `convention` | Violations of project coding conventions |
 | `assumption` | Load-bearing assumptions that could break under change |
 
-### Scope-Aware Adversarial Routing
+### Scope-Aware Fix Routing
 
-When adversarial review flags issues in test files, the **implementer session cannot fix them** — TDD isolation prevents the implementer from modifying tests. To handle this, the autofix stage splits adversarial findings by file scope:
+When adversarial review flags issues in test files, the **implementer session cannot fix them** — TDD isolation prevents the implementer from modifying tests. The fix cycle (`runFixCycle` in `src/findings/cycle.ts`, ADR-021/022) routes each canonical `Finding` to the right session role via its `fixTarget` field:
 
 ```
-adversarial findings
-  ├── source-file findings → implementer session (normal rectification)
-  └── test-file findings   → test-writer session (separate rectification)
+adversarial Finding[]
+  ├── fixTarget: "source" → implementer/source fix strategy
+  └── fixTarget: "test"   → test-writer fix strategy
 ```
 
 **How it works:**
 
-1. `splitAdversarialFindingsByScope()` in `src/pipeline/stages/autofix-adversarial.ts` classifies each finding using `isTestFile()` from `src/test-runners/`
-2. Source-file findings are sent to the implementer via the normal `RectifierPromptBuilder` path
-3. Test-file findings are routed to `runTestWriterRectification()`, which:
-   - Spawns a **test-writer session** (session name: `nax-<hash8>-<feature>-<storyId>-test-writer`)
-   - Uses the TDD test-writer model tier from `config.tdd.sessionTiers.testWriter` (default: `"balanced"`)
-   - Builds the prompt via `RectifierPromptBuilder.testWriterRectification()`
-   - Keeps the session open (`keepOpen: true`) so subsequent autofix cycles can resume it
-4. If the test-writer agent is unavailable or fails, rectification logs a warning and falls back to the implementer
+1. Each `Finding` carries `fixTarget` (`"source"` or `"test"`) reflecting where the fix lands, not what produced the finding (`src/findings/types.ts`). A finding on a `*.test.ts` file has `fixTarget: "test"`.
+2. `runFixCycle` dispatches findings to the matching `FixStrategy`; each strategy's predicate selects its findings (by source, category, `fixTarget`, or file pattern).
+3. Test-targeted fixes use a test-writer session role; source-targeted fixes use the implementer session role — so each fix runs under the role permitted to modify the affected files.
+4. Strategies run under dual budgets and the cycle exits when all active strategies are exhausted.
 
 This ensures adversarial findings are routed to the session role that has permission to modify the affected files.
 
@@ -351,31 +349,19 @@ This ensures adversarial findings are routed to the session role that has permis
 
 Semantic review requires a git history — it compares `${storyGitRef}..HEAD`. If no git ref exists for the story (e.g., first run on a new branch), the check is skipped.
 
-The LLM model must be configured in `models` for the chosen `modelTier`.
+The LLM model must be configured in `models` for the chosen `model` tier.
 
 ---
 
-## Behavior Matrix — Review Stage
+## Behavior Matrix — Semantic Review
 
-The review stage behavior depends on three flags: `debate.enabled` + `debate.stages.review.enabled` (shown as **debate**), `review.dialogue.enabled` (shown as **dialogue**), and the debate `sessionMode`.
+Semantic review has two paths, selected by `debate.enabled` + `debate.stages.review.enabled` (shown as **debate**). The dialogue / `ReviewerSession` path was removed (2026-05-29) — `review.dialogue.enabled` is a rejected legacy config key.
 
-| debate | dialogue | sessionMode | Reviewer | Resolver | Tools | Clarify | Re-review ctx |
-|:---:|:---:|:---:|:---|:---|:---:|:---:|:---:|
-| off | off | — | `agent.run()` resumes implementer session | N/A (single reviewer) | No | No | No |
-| off | on | — | `ReviewerSession.review()` | N/A (single reviewer) | Yes | Yes | Yes |
-| on | off | one-shot | N debaters via `agent.complete()` | Stateless (`majorityResolver` / `synthesisResolver` / `judgeResolver`) | No | No | No |
-| on | off | stateful | N debaters via `agent.run()` + rebuttal loop | Stateless (resolver resumes implementer session) | No | No | No |
-| on | **on** | one-shot | N debaters via `agent.complete()` | **`reviewerSession.resolveDebate()`** — all resolver types | **Yes** | **Yes** | **Yes** |
-| on | **on** | stateful | N debaters via `agent.run()` + rebuttal loop | **`reviewerSession.resolveDebate()`** — all resolver types | **Yes** | **Yes** | **Yes** |
+| debate | Reviewer | Resolver |
+|:---:|:---|:---|
+| off (default) | single reviewer via `agent.run()` or `agent.complete()` | N/A |
+| on | N debaters (panel one-shot) via `agent.complete()` | resolver-derived base selector + `review-grounding-filter` post-debate verifier |
 
-**Key:** Tools = READ/GREP tool access for the resolver. Clarify = `CLARIFY:` relay from autofix implementer. Re-review ctx = session continuity across autofix re-review rounds.
-
-When both `debate` and `dialogue` are enabled, a `ReviewerSession` is created and stored on `ctx.reviewerSession`. Individual debaters remain stateless — only the resolver gains session continuity and tool access. All three resolver types (`majority`, `synthesis`, `custom`) go through `reviewerSession.resolveDebate()`:
-
-- **majority** — raw vote tally is computed first, then passed as context to `resolveDebate()` so the reviewer can verify disputed findings with tools before giving the authoritative verdict.
-- **synthesis** — reviewer synthesises N proposals into a single coherent, tool-verified verdict.
-- **custom** — reviewer acts as an independent judge, evaluating proposals and verifying claims with tools.
-
-If `resolveDebate()` throws, the review stage falls back to the stateless resolver path (current behavior pre-dialogue). `ctx.reviewerSession` remains set so the `CLARIFY:` channel is still available.
+When debate is enabled, debaters remain stateless and `runSemanticDebate` (`src/review/semantic-debate.ts`) always composes the review stage as a one-shot panel. The resolver type comes from `debate.stages.review.resolverType` (e.g. `synthesis`, `majority`). The verdict is re-derived from the deduplicated debater proposals.
 
 See also: [Debate Resolver Reference](./debate.md#resolver-types).

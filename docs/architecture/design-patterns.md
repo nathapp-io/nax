@@ -78,38 +78,40 @@ const prompt = builder.build();
 For multi-step object construction with optional configuration:
 
 ```typescript
-const result = await DecomposeBuilder.for(story)
-  .prd(prd)
-  .config(builderConfig)
-  .decompose(adapter);
+const prompt = TddPromptBuilder.for(role, options)
+  .addConstitution(constitution)
+  .addContext(contextMd)
+  .build();
 ```
 
 **Rules:**
 - Entry point: `static for(...)` — returns new instance
 - Each setter returns `this` for chaining
-- Terminal method (`.build()`, `.decompose()`) produces the result
+- Terminal method (`.build()`) produces the result
 - Setters are optional — builder has sensible defaults
 
-**Reference:** `src/decompose/builder.ts`
+**Reference:** `src/prompts/builders/tdd-builder.ts`, `src/prompts/builders/one-shot-builder.ts`
 
 ### Adapter (Interface + Implementations)
 
 For extensible subsystems where multiple backends share a common contract:
 
 ```typescript
-// ✅ Interface defines the contract
+// ✅ Interface defines the contract — 4 primitives only (ADR-019)
 export interface AgentAdapter {
   name: string;
   capabilities: AgentCapabilities;
-  run(options: AgentRunOptions): Promise<AgentResult>;
-  complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
-  plan(options: PlanOptions): Promise<PlanResult>;
-  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
+  openSession(name: string, opts: OpenSessionOpts): Promise<SessionHandle>;
+  sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult>;
+  closeSession(handle: SessionHandle): Promise<void>;
+  complete(prompt: string, opts: ResolvedCompleteOptions): Promise<CompleteResult>;
 }
 
 // ✅ One production implementation: ACP adapter (all agents)
 export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over stdio via acpx
 ```
+
+`adapter.run` / `plan` / `decompose` were deleted in ADR-019 — `run` is now `SessionManager.runInSession` (composes the three session primitives), and `plan`/`decompose` are `kind:"complete"` Operations dispatched via `callOp` (§37, `.claude/rules/adapter-wiring.md`).
 
 **Rules:**
 - Interface in `types.ts`, implementation in `src/agents/acp/adapter.ts`
@@ -122,27 +124,27 @@ export class AcpAgentAdapter implements AgentAdapter { ... }    // JSON-RPC over
 
 nax communicates with all agents via **ACP** (Agent Client Protocol) — JSON-RPC over stdio via [acpx](https://github.com/openclaw/acpx). `AcpAgentAdapter` is the only adapter; there is no CLI protocol mode.
 
-All pipeline stages, routing, TDD, and acceptance generators call the same `AgentAdapter` interface methods. The agent binary is set by `autoMode.defaultAgent` in config.
+All pipeline stages, routing, TDD, and acceptance generators dispatch through the manager/session/operation layers (never the adapter directly — see `.claude/rules/adapter-wiring.md`). The agent binary is set by `agent.default` in config, read via `resolveDefaultAgent(config)`.
 
 #### LLM Fallback Rule
 
 **Any code that needs LLM capabilities MUST resolve the default agent adapter — never use inline stubs.**
 
 ```typescript
-// ✅ Correct: resolve the default agent adapter
-import { createAgentRegistry } from "../agents/registry";
+// ✅ Correct: dispatch a one-shot through the manager (resolves the default agent)
+const agentName = ctx.agentManager?.getDefault() ?? "claude"; // or resolveDefaultAgent(config) in standalone modules
+const result = await ctx.runtime.agentManager.completeAs(agentName, prompt, {
+  pipelineStage: "decompose",
+  jsonMode: true,
+  config,
+});
 
-const registry = createAgentRegistry(config);
-const agent = registry.getAgent(config.autoMode.defaultAgent);
-if (!agent) {
-  throw new Error(`[stage] Agent "${config.autoMode.defaultAgent}" not found`);
-}
-// Use agent.complete() for one-shot LLM calls
-const result = await agent.complete(prompt, { jsonMode: true, config });
+// ✅ Better still — wrap it as an Operation and dispatch via callOp
+await callOp(ctx, decomposeOp, input);
 
 // ❌ Wrong: inline stub that throws
 const adapter = {
-  async decompose(_prompt: string): Promise<string> {
+  async complete(_prompt: string): Promise<string> {
     throw new Error("No LLM adapter configured");
   },
 };
@@ -162,18 +164,19 @@ For collecting and retrieving instances by name or capability:
 // ✅ Registry wraps a collection with typed accessors
 export class PluginRegistry {
   getReviewers(): IReviewPlugin[] { ... }
-  getReporters(): IReporterPlugin[] { ... }
+  getReporters(): IReporter[] { ... }
   getOptimizers(): IPromptOptimizer[] { ... }
 }
 
-// ✅ Function-based registry for simpler cases
-export function getAgent(name: string): AgentAdapter | undefined { ... }
-export function listAgents(): AgentAdapter[] { ... }
+// ✅ Factory-based registry for the agent collection
+export function createAgentRegistry(config: AgentManagerConfig): AgentRegistry { ... }
+const registry = createAgentRegistry(config);
+const agent = registry.getAgent(name); // AgentAdapter | undefined
 ```
 
 **Rules:**
 - Class registry when it needs lifecycle (setup/teardown) — `PluginRegistry`
-- Function registry when it's pure lookup — agent registry
+- Factory registry when it's pure lookup with per-instance caching — agent registry (`createAgentRegistry`)
 - Never use Map/object directly in consumer code — wrap in typed accessor
 
 **Reference:** `src/plugins/registry.ts`, `src/agents/registry.ts`
@@ -184,22 +187,23 @@ For subsystems with multiple interchangeable algorithms:
 
 ```typescript
 // ✅ Interface defines the strategy contract
-export interface IVerificationStrategy {
-  verify(workdir: string, options: VerifyOptions): Promise<VerifyResult>;
+export interface RoutingStrategy {
+  readonly name: string;
+  route(story: UserStory, context: RoutingContext): RoutingDecision | null | Promise<RoutingDecision | null>;
 }
 
-// ✅ Each strategy is a class implementing the interface
-export class ScopedStrategy implements IVerificationStrategy { ... }
-export class RegressionStrategy implements IVerificationStrategy { ... }
-export class AcceptanceStrategy implements IVerificationStrategy { ... }
+// ✅ Each strategy implements the interface; the Router walks them in order
+// (keyword, LLM, plugin-provided), first non-null decision wins.
 ```
 
 **Rules:**
-- Strategy interface in `types.ts`
-- Selection logic outside the strategies (orchestrator or config-driven)
+- Strategy interface lives with the subsystem (`src/routing/router.ts`); plugin-provided strategies arrive via `IRoutingStrategy`
+- Selection logic outside the strategies (the Router walks them, or config-driven)
 - Strategies are stateless when possible — receive all context via method params
 
-**Reference:** `src/verification/strategies/`, `src/routing/strategies/`
+**Reference:** `src/routing/router.ts`, `src/routing/strategies/`
+
+> Verification no longer uses a strategy-class hierarchy — scoped/regression/acceptance verification are now `callOp` Operations (`verifyScopedOp`, `fullSuiteGateOp`, acceptance ops). See §37 and `.claude/rules/adapter-wiring.md`.
 
 ### Chain (Priority-Ordered Pipeline)
 
@@ -208,17 +212,17 @@ For processing requests through prioritized handlers:
 ```typescript
 // ✅ Register handlers with priority, first response wins
 const chain = new InteractionChain({ defaultTimeout: 30_000, defaultFallback: "abort" });
-chain.register(telegramPlugin, 10);  // highest priority
-chain.register(autoPlugin, 50);      // fallback
+chain.register(telegramPlugin, 50);  // higher number = earlier in chain
+chain.register(autoPlugin, 10);      // fallback
 const response = await chain.prompt(request);
 ```
 
 **Rules:**
-- Lower priority number = higher precedence
+- Higher priority number = higher precedence (chain sorts descending)
 - Chain handles timeout and fallback — consumers don't
-- Used for interaction (human-in-the-loop) and routing (strategy selection)
+- Used for interaction (human-in-the-loop). Routing uses the analogous "first non-null wins" walk inside `Router` (plugin routers → LLM → keyword), not a separate chain class.
 
-**Reference:** `src/interaction/chain.ts`, `src/routing/chain.ts`
+**Reference:** `src/interaction/chain.ts`, `src/routing/router.ts`
 
 ### Singleton (Module-Level Instance)
 
@@ -402,7 +406,7 @@ _sessionRunnerDeps.autoCommitIfDirty = async (dir, msg) => {
 _gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path */ };
 ```
 
-**Applied in:** `session-runner.ts` (CI-flaky mock → reliable injectable, commit `e41e076`)
+**Applied in:** the TDD session runner (CI-flaky mock → reliable injectable, commit `e41e076`; the module has since been folded into the Operations layer)
 
 ### 13.6 Security & Regression Test Patterns
 
