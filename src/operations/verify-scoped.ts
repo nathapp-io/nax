@@ -1,6 +1,6 @@
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
-import { testSummaryToFindings } from "../findings";
+import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import { _scopedSelectionDeps, parseTestOutput, selectScopedTests } from "../test-runners";
@@ -150,33 +150,57 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       timeoutSeconds: scopedTimeout,
       isFullSuite: selection.isFullSuite,
     });
+    const runTests = async (command: string) => {
+      const result = await deps.regression({
+        workdir: cmdWorkdir,
+        command,
+        // regressionGate.timeoutSeconds lives in execution; QualityConfig includes execution.
+        timeoutSeconds: scopedTimeout,
+        // acceptOnTimeout is not consumed by runVerificationCore — the runner returns status="TIMEOUT"
+        // and the caller (this op) decides accept-on-timeout policy. The op currently does not accept
+        // scoped-test timeouts as pass; full-suite gate is the only place that does.
+        forceExit: quality.quality?.forceExit,
+        detectOpenHandles: quality.quality?.detectOpenHandles,
+        detectOpenHandlesRetries: quality.quality?.detectOpenHandlesRetries,
+        gracePeriodMs: quality.quality?.gracePeriodMs,
+        drainTimeoutMs: quality.quality?.drainTimeoutMs,
+        shell: quality.quality?.shell,
+        stripEnvVars: quality.quality?.stripEnvVars,
+      });
+      const parsed = result.output ? deps.parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      return { result, parsed };
+    };
+
     const start = Date.now();
-    const result = await deps.regression({
-      workdir: cmdWorkdir,
-      command: selection.effectiveCommand,
-      // regressionGate.timeoutSeconds lives in execution; QualityConfig includes execution.
-      timeoutSeconds: quality.execution?.regressionGate?.timeoutSeconds ?? 600,
-      // acceptOnTimeout is not consumed by runVerificationCore — the runner returns status="TIMEOUT"
-      // and the caller (this op) decides accept-on-timeout policy. The op currently does not accept
-      // scoped-test timeouts as pass; full-suite gate is the only place that does.
-      forceExit: quality.quality?.forceExit,
-      detectOpenHandles: quality.quality?.detectOpenHandles,
-      detectOpenHandlesRetries: quality.quality?.detectOpenHandlesRetries,
-      gracePeriodMs: quality.quality?.gracePeriodMs,
-      drainTimeoutMs: quality.quality?.drainTimeoutMs,
-      shell: quality.quality?.shell,
-      stripEnvVars: quality.quality?.stripEnvVars,
-    });
+    let effectiveCommand = selection.effectiveCommand;
+    let isFullSuite = selection.isFullSuite;
+    let scopeTestFallback = selection.scopeTestFallback;
+    let { result, parsed } = await runTests(effectiveCommand);
+
+    // Scoped run failed without executing a single test (e.g. pytest exit 5
+    // "no tests collected" when the scope probed a non-test file, or a
+    // collection error confined to the scoped file). The scope is unusable as
+    // a verdict — rerun the full suite, which is the actual arbiter (#1207).
+    if (!result.success && result.status !== "TIMEOUT" && !isFullSuite && parsed.passed === 0 && parsed.failed === 0) {
+      logger.warn("verify[scoped]", "Scoped run executed no tests — falling back to full suite", {
+        storyId: input.storyId,
+        command: effectiveCommand,
+        exitCode: result.exitCode,
+      });
+      effectiveCommand = baseCommand;
+      isFullSuite = true;
+      scopeTestFallback = true;
+      ({ result, parsed } = await runTests(effectiveCommand));
+    }
     const durationMs = Date.now() - start;
-    const parsed = result.output ? deps.parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
 
     if (result.success) {
       logger.info("verify[scoped]", "Scoped tests passed", {
         storyId: input.storyId,
         passCount: parsed.passed,
         durationMs,
-        scopeTestFallback: selection.scopeTestFallback ?? false,
-        isFullSuite: selection.isFullSuite,
+        scopeTestFallback: scopeTestFallback ?? false,
+        isFullSuite,
       });
       return {
         success: true,
@@ -184,8 +208,8 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
         findings: [],
         durationMs,
         passCount: parsed.passed,
-        isFullSuite: selection.isFullSuite,
-        scopeTestFallback: selection.scopeTestFallback,
+        isFullSuite,
+        scopeTestFallback,
       };
     }
 
@@ -193,8 +217,8 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       logger.warn("verify[scoped]", "Scoped tests timed out", {
         storyId: input.storyId,
         durationMs,
-        scopeTestFallback: selection.scopeTestFallback ?? false,
-        isFullSuite: selection.isFullSuite,
+        scopeTestFallback: scopeTestFallback ?? false,
+        isFullSuite,
       });
       return {
         success: false,
@@ -202,8 +226,8 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
         findings: [],
         durationMs,
         passCount: parsed.passed,
-        isFullSuite: selection.isFullSuite,
-        scopeTestFallback: selection.scopeTestFallback,
+        isFullSuite,
+        scopeTestFallback,
       };
     }
 
@@ -212,17 +236,40 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       passCount: parsed.passed,
       failCount: parsed.failed,
       durationMs,
-      scopeTestFallback: selection.scopeTestFallback ?? false,
-      isFullSuite: selection.isFullSuite,
+      scopeTestFallback: scopeTestFallback ?? false,
+      isFullSuite,
     });
+    let findings = deps.testSummaryToFindings(parsed);
+    if (findings.length === 0) {
+      // Runner exited non-zero but the parser found 0 structured failures
+      // (environmental failure: config crash, missing dep, import error).
+      // Without a finding, rectification no-ops on 0 findings and the story
+      // fails terminally without ever dispatching a fix — mirror the
+      // full-suite gate's synth finding (#1207, see full-suite-gate.ts).
+      logger.warn("verify[scoped]", "Scoped verify execution-failed — emitting synth finding", {
+        storyId: input.storyId,
+        command: effectiveCommand,
+        exitCode: result.exitCode,
+        cwd: cmdWorkdir,
+      });
+      findings = [
+        executionFailureToFinding({
+          command: effectiveCommand,
+          exitCode: result.exitCode,
+          output: result.output ?? "",
+          packageDir: input.packagePrefix,
+          cwd: cmdWorkdir,
+        }),
+      ];
+    }
     return {
       success: false,
       status: "failed",
-      findings: deps.testSummaryToFindings(parsed),
+      findings,
       durationMs,
       passCount: parsed.passed,
-      isFullSuite: selection.isFullSuite,
-      scopeTestFallback: selection.scopeTestFallback,
+      isFullSuite,
+      scopeTestFallback,
     };
   },
 };
