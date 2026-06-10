@@ -2,8 +2,23 @@ import path from "node:path";
 import type { PRD, UserStory } from "../prd/types";
 import { detectLanguage as _detectLanguage } from "../project/detector";
 
+async function _readPackageTestPath(workdir: string, relativeDir: string): Promise<string | undefined> {
+  if (!relativeDir) return undefined;
+  if (path.isAbsolute(relativeDir) || relativeDir.split(path.sep).includes("..")) return undefined;
+  const cfgPath = path.join(workdir, ".nax", "mono", relativeDir, "config.json");
+  const file = Bun.file(cfgPath);
+  if (!(await file.exists())) return undefined;
+  try {
+    const cfg = JSON.parse(await file.text()) as { acceptance?: { testPath?: string } };
+    return cfg?.acceptance?.testPath;
+  } catch {
+    return undefined;
+  }
+}
+
 export const _groupDeps = {
   detectLanguage: _detectLanguage as (dir: string) => Promise<string | undefined>,
+  readPackageTestPath: _readPackageTestPath,
 };
 
 export interface AcceptanceTestPathEntry {
@@ -92,6 +107,8 @@ export interface AcceptanceTestGroup {
   packageDir: string;
   stories: UserStory[];
   criteria: string[];
+  /** Per-package detected language (used for skeleton fallback). */
+  language: string | undefined;
 }
 
 /**
@@ -141,10 +158,18 @@ export async function groupStoriesByPackage(
   return Promise.all(
     Array.from(groupMap.entries()).map(async ([wd, { stories, criteria }]) => {
       const packageDir = wd ? path.join(workdir, wd) : workdir;
+      // Per-package config acceptance.testPath takes precedence over root config and language detection.
+      const pkgTestPath = await _groupDeps.readPackageTestPath(workdir, wd);
       const detectedLang = await _groupDeps.detectLanguage(packageDir);
       const resolvedLang = detectedLang ?? language;
-      const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, resolvedLang);
-      return { testPath, packageDir, stories, criteria };
+      const resolvedTestPathConfig = pkgTestPath ?? testPathConfig;
+      const testPath = resolveAcceptancePackageFeatureTestPath(
+        packageDir,
+        featureName,
+        resolvedTestPathConfig,
+        resolvedLang,
+      );
+      return { testPath, packageDir, stories, criteria, language: resolvedLang };
     }),
   );
 }

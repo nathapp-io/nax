@@ -350,7 +350,7 @@ export const acceptanceSetupStage: PipelineStage = {
             featureName,
             skeletonCriteria,
             ctx.config.acceptance.testFramework,
-            language,
+            group.language,
           );
           await _acceptanceSetupDeps.writeFile(testPath, skeletonCode);
           getSafeLogger()?.warn("acceptance-setup", "agent did not produce test content; using skeleton", {
