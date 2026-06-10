@@ -33,6 +33,7 @@ export type { AcceptanceEntry } from "./content-loader";
 export { loadAcceptanceTestContent } from "./content-loader";
 export { loadSemanticVerdicts } from "./semantic-verdict";
 export {
+  _groupDeps,
   findExistingAcceptanceTestPath,
   groupStoriesByPackage,
   resolveAcceptanceFeatureTestPath,

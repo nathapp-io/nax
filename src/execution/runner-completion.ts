@@ -135,12 +135,14 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       // complete at run start (re-run). groupStoriesByPackage is the SSOT.
       const acceptanceTestPaths = options.featureDir
         ? await Promise.all(
-            groupStoriesByPackage(
-              options.prd,
-              options.workdir,
-              options.feature,
-              options.config.acceptance.testPath,
-              options.config.project?.language,
+            (
+              await groupStoriesByPackage(
+                options.prd,
+                options.workdir,
+                options.feature,
+                options.config.acceptance.testPath,
+                options.config.project?.language,
+              )
             ).map(async (g) => {
               const relativeWorkdir = path.relative(options.workdir, g.packageDir);
               let groupConfig = options.config;

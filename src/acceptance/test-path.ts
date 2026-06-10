@@ -1,5 +1,10 @@
 import path from "node:path";
 import type { PRD, UserStory } from "../prd/types";
+import { detectLanguage as _detectLanguage } from "../project/detector";
+
+export const _groupDeps = {
+  detectLanguage: _detectLanguage as (dir: string) => Promise<string | undefined>,
+};
 
 export interface AcceptanceTestPathEntry {
   testPath: string;
@@ -103,13 +108,13 @@ export interface AcceptanceTestGroup {
  * @param testPathConfig - Optional override filename from config.acceptance.testPath
  * @param language    - Optional language from config.project.language
  */
-export function groupStoriesByPackage(
+export async function groupStoriesByPackage(
   prd: PRD,
   workdir: string,
   featureName: string,
   testPathConfig?: string,
   language?: string,
-): AcceptanceTestGroup[] {
+): Promise<AcceptanceTestGroup[]> {
   const nonFixStories = prd.userStories.filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed");
 
   const groupMap = new Map<string, { stories: UserStory[]; criteria: string[] }>();
@@ -130,13 +135,18 @@ export function groupStoriesByPackage(
     groupMap.set("", { stories: [], criteria: [] });
   }
 
-  const groups: AcceptanceTestGroup[] = [];
-  for (const [wd, { stories, criteria }] of groupMap) {
-    const packageDir = wd ? path.join(workdir, wd) : workdir;
-    const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
-    groups.push({ testPath, packageDir, stories, criteria });
-  }
-  return groups;
+  // Detect language per package in parallel so polyglot monorepos (e.g. Python API + TS web)
+  // get the correct test file extension. Falls back to the global language when detection
+  // returns undefined (e.g. no package markers, temp dirs in tests).
+  return Promise.all(
+    Array.from(groupMap.entries()).map(async ([wd, { stories, criteria }]) => {
+      const packageDir = wd ? path.join(workdir, wd) : workdir;
+      const detectedLang = await _groupDeps.detectLanguage(packageDir);
+      const resolvedLang = detectedLang ?? language;
+      const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, resolvedLang);
+      return { testPath, packageDir, stories, criteria };
+    }),
+  );
 }
 
 // ─── Suggested test path helpers (hardening pass) ───────────────────────────
