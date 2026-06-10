@@ -3,6 +3,7 @@ import type { TddConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
 import { _isolationDeps, verifyTestWriterIsolation } from "../tdd/isolation";
 import type { IsolationCheck } from "../tdd/types";
+import type { ResolvedTestPatterns } from "../test-runners";
 import { parseSessionJsonOutput } from "./_session-output";
 import { shouldKeepSessionOpen } from "./execution-gates";
 import type { RunOperation } from "./types";
@@ -28,6 +29,14 @@ export interface TestWriterInput {
    * src/ write outside `tdd.testWriterAllowedPaths`.
    */
   readonly lite?: boolean;
+  /**
+   * Test-file patterns resolved once per plan via the ADR-009 SSOT
+   * (`resolveTestFilePatterns`). The `verify` hook passes `.globs` to
+   * `verifyTestWriterIsolation` so isolation classifies test files identically
+   * to `greenfieldGateOp` (which receives the SAME resolved object). Absent in
+   * legacy / ad-hoc callers — isolation then falls back to DEFAULT_TEST_FILE_PATTERNS.
+   */
+  readonly resolvedTestPatterns?: ResolvedTestPatterns;
 }
 
 export interface TestWriterOutput {
@@ -93,11 +102,11 @@ export const testWriterOp: RunOperation<TestWriterInput, TestWriterOutput, TddCo
   async verify(parsed, input, ctx): Promise<TestWriterOutput | null> {
     if (!input.beforeRef) return parsed;
     const allowedPaths = ctx.config.tdd?.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
-    const testFilePatterns =
-      typeof ctx.packageView.config.execution?.smartTestRunner === "object" &&
-      ctx.packageView.config.execution.smartTestRunner !== null
-        ? ctx.packageView.config.execution.smartTestRunner.testFilePatterns
-        : undefined;
+    // ADR-009 SSOT: use the patterns resolved once at plan-build time (the SAME
+    // object the greenfield gate received) so isolation and greenfield detection
+    // classify test files identically. Falls back to verifyTestWriterIsolation's
+    // own DEFAULT_TEST_FILE_PATTERNS default when absent (legacy / ad-hoc callers).
+    const testFilePatterns = input.resolvedTestPatterns?.globs;
     const isolation = await verifyTestWriterIsolation(
       ctx.packageView.packageDir,
       input.beforeRef,

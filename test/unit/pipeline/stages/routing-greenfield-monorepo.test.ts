@@ -93,6 +93,16 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
       reasoning: "mock classification",
     }));
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
+    // Stub the ADR-009 SSOT resolver to broad globs so this test exercises the
+    // greenfield filesystem SCOPING (which package dir is scanned) via the real
+    // isGreenfieldStory — independent of detection-tier fs/git behaviour.
+    _routingDeps.resolveTestFilePatterns = mock(async () => ({
+      globs: ["**/*.test.ts", "**/*.spec.ts"],
+      pathspec: [],
+      regex: [],
+      testDirs: [],
+      resolution: "detected" as const,
+    }));
     _routingDeps.savePRD = mock(async () => {});
     _routingDeps.computeStoryContentHash = mock(() => "hash1");
     _routingDeps.routeBatch = undefined /* routeBatch deleted ROUTE-001 */;

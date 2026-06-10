@@ -6,95 +6,93 @@
  * from producing empty test files (BUG-010).
  */
 
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
 import type { UserStory } from "../prd/types";
-import { globsToTestRegex } from "../test-runners/conventions";
+import { DEFAULT_TEST_FILE_PATTERNS, isTestFileByPatterns } from "../test-runners";
 
-/**
- * Broad fallback patterns for the greenfield scan — covers any test file
- * across all common languages without restricting to a single directory.
- * Patterns are expanded (no brace alternatives) so globsToTestRegex can build
- * correct suffix regexes. Used when the caller doesn't supply resolved patterns.
- */
-const GREENFIELD_FALLBACK_PATTERNS: readonly string[] = Object.freeze([
-  "**/*.test.ts",
-  "**/*.test.js",
-  "**/*.test.tsx",
-  "**/*.test.jsx",
-  "**/*.spec.ts",
-  "**/*.spec.js",
-  "**/*.spec.tsx",
-  "**/*.spec.jsx",
-  "**/*_test.go",
-  "test_*.py",
-  "*_test.py",
+/** Injectable deps for testability. */
+export const _greenfieldDeps = {
+  spawn: Bun.spawn as typeof Bun.spawn,
+};
+
+/** Directories excluded from the Bun.Glob fallback scan (non-git workdirs only). */
+const IGNORE_DIRS = new Set([
+  "node_modules",
+  "dist",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "coverage",
+  "vendor",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".eggs",
+  "target",
+  ".gradle",
+  "out",
+  "tmp",
+  "temp",
+  ".git",
 ]);
 
 /**
- * Recursively scan directory for test files.
- * Ignores node_modules, dist, build, .next directories.
- * Throws error if root directory is unreadable.
+ * List files in workdir via `git ls-files`.
+ * Returns null when git is unavailable or the directory is not a repo.
  */
-async function scanForTestFiles(dir: string, testPatterns: RegExp[], isRootCall = true): Promise<string[]> {
-  const results: string[] = [];
-  const ignoreDirs = new Set(["node_modules", "dist", "build", ".next", ".git"]);
-
+async function gitLsFiles(workdir: string): Promise<string[] | null> {
   try {
-    const entries = await readdir(dir, { withFileTypes: true });
+    const proc = _greenfieldDeps.spawn(["git", "ls-files"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) return null;
+    const output = await new Response(proc.stdout).text();
+    return output.split("\n").filter(Boolean);
+  } catch {
+    return null;
+  }
+}
 
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
+/**
+ * Return true if at least one test file exists in `workdir` matching `patterns`.
+ * Uses `git ls-files` as primary; falls back to Bun.Glob for non-git workdirs.
+ */
+async function hasTestFiles(workdir: string, patterns: readonly string[]): Promise<boolean> {
+  const files = await gitLsFiles(workdir);
 
-      if (entry.isDirectory()) {
-        // Skip ignored directories
-        if (ignoreDirs.has(entry.name)) continue;
-
-        // Recursively scan subdirectories (not root call)
-        const subResults = await scanForTestFiles(fullPath, testPatterns, false);
-        results.push(...subResults);
-      } else if (entry.isFile()) {
-        // Check if file matches any test pattern
-        if (testPatterns.some((re) => re.test(entry.name))) {
-          results.push(fullPath);
-        }
-      }
-    }
-  } catch (error) {
-    // If this is the root call and we can't read it, propagate the error
-    if (isRootCall) {
-      throw error;
-    }
-    // Otherwise, ignore errors from unreadable subdirectories
+  if (files !== null) {
+    return files.some((f) => isTestFileByPatterns(f, patterns));
   }
 
-  return results;
+  // Fallback: Bun.Glob scan for non-git workdirs (e.g. temp fixtures in tests).
+  for (const pattern of patterns) {
+    const g = new Bun.Glob(pattern);
+    for await (const path of g.scan({ cwd: workdir, onlyFiles: true })) {
+      if (!path.split("/").some((seg) => IGNORE_DIRS.has(seg))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
  * Detect if a story is greenfield based on test file presence in workdir.
  *
- * A story is greenfield if:
- * - No test files exist matching any of the given patterns in the working directory
+ * A story is greenfield if no test files matching the given patterns exist
+ * in the working directory.
  *
- * This prevents the TDD test-writer from struggling to create tests when there are
- * no existing test examples to follow.
+ * Production callers (the routing pre-check and `greenfieldGateOp`) always pass
+ * patterns resolved through `resolveTestFilePatterns()` — the ADR-009 SSOT,
+ * whose detection tier finds pre-existing tests across languages. The `patterns`
+ * argument is therefore the single source of truth. When omitted (ad-hoc / test
+ * callers only), it falls back to `DEFAULT_TEST_FILE_PATTERNS` — the SAME default
+ * `verifyTestWriterIsolation` uses, so greenfield detection and test-writer
+ * isolation classify test files identically.
  *
- * @param story - User story to check
- * @param workdir - Working directory to scan for test files
- * @param patterns - Glob patterns for test files (default: DEFAULT_TEST_FILE_PATTERNS)
  * @returns true if no test files exist (greenfield), false otherwise
- *
- * @example
- * ```ts
- * // Empty project with no tests
- * const isGreenfield = await isGreenfieldStory(story, "/path/to/project");
- * // => true
- *
- * // Project with existing test files
- * const isGreenfield = await isGreenfieldStory(story, "/path/to/project");
- * // => false
- * ```
  */
 export async function isGreenfieldStory(
   _story: UserStory,
@@ -102,12 +100,9 @@ export async function isGreenfieldStory(
   patterns?: readonly string[],
 ): Promise<boolean> {
   try {
-    const regexes = globsToTestRegex(patterns ?? GREENFIELD_FALLBACK_PATTERNS);
-    const testFiles = await scanForTestFiles(workdir, regexes);
-    return testFiles.length === 0;
-  } catch (error) {
-    // If scan fails completely (e.g., workdir doesn't exist), assume not greenfield (safe fallback)
-    // This prevents skipping TDD when we can't determine the actual state
+    return !(await hasTestFiles(workdir, patterns ?? DEFAULT_TEST_FILE_PATTERNS));
+  } catch {
+    // Scan failed (e.g. workdir doesn't exist) — assume not greenfield so TDD is not skipped.
     return false;
   }
 }

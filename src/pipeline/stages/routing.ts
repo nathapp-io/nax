@@ -11,11 +11,14 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
+import { resolveTestFilePatterns } from "@/test-runners";
+import { packageDirRelative } from "@/utils/paths";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
 import { complexityToModelTier, resolveRouting } from "../../routing";
 import { clearCache } from "../../routing/strategies/llm";
+import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {
@@ -78,7 +81,25 @@ export const routingStage: PipelineStage = {
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
       const greenfieldScanDir = ctx.workdir;
-      const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir);
+      // Resolve test-file patterns through the ADR-009 SSOT — the SAME resolver
+      // greenfieldGateOp and test-writer isolation use — so the routing pre-check,
+      // the orchestrator gate, and isolation all classify test files identically.
+      // Its detection tier discovers pre-existing tests across languages; falls
+      // back to DEFAULT_TEST_FILE_PATTERNS only when nothing is found/configured.
+      const root = ctx.projectDir ?? ctx.workdir;
+      const packageDir = packageDirRelative(root, ctx.workdir);
+      const resolved = await _routingDeps
+        .resolveTestFilePatterns(ctx.config, root, packageDir, { storyId: ctx.story.id })
+        .catch((err) => {
+          // Misconfigured per-package config etc. — degrade to the DEFAULT greenfield
+          // patterns (isGreenfieldStory handles undefined), but leave a diagnostic trail.
+          logger.debug("routing", "Test-pattern resolution failed; using default greenfield patterns", {
+            storyId: ctx.story.id,
+            error: errorMessage(err),
+          });
+          return undefined;
+        });
+      const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir, resolved?.globs);
       if (isGreenfield) {
         logger.info("routing", "Greenfield detected — forcing test-after strategy", {
           storyId: ctx.story.id,
@@ -114,6 +135,7 @@ export const _routingDeps = {
   resolveRouting,
   complexityToModelTier,
   isGreenfieldStory,
+  resolveTestFilePatterns,
   clearCache,
   savePRD,
 };
