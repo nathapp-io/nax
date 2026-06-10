@@ -181,7 +181,11 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // "no tests collected" when the scope probed a non-test file, or a
     // collection error confined to the scoped file). The scope is unusable as
     // a verdict — rerun the full suite, which is the actual arbiter (#1207).
-    if (!result.success && result.status !== "TIMEOUT" && !isFullSuite && parsed.passed === 0 && parsed.failed === 0) {
+    // TIMEOUT is excluded: a hung scoped run must not escalate into a second
+    // long run. Cost note: the rerun pays regression()'s 2s cleanup sleep a
+    // second time — accepted, the story genuinely needs the full-suite verdict.
+    const ranNoTests = parsed.passed === 0 && parsed.failed === 0 && parsed.failures.length === 0;
+    if (!result.success && result.status !== "TIMEOUT" && !isFullSuite && ranNoTests) {
       logger.warn("verify[scoped]", "Scoped run executed no tests — falling back to full suite", {
         storyId: input.storyId,
         command: effectiveCommand,
@@ -254,7 +258,9 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       });
       findings = [
         executionFailureToFinding({
-          command: effectiveCommand,
+          // Prefer the post-wrap shell command actually executed (parity with
+          // full-suite-gate.ts) — falls back to the pre-wrap effective command.
+          command: result.command ?? effectiveCommand,
           exitCode: result.exitCode,
           output: result.output ?? "",
           packageDir: input.packagePrefix,

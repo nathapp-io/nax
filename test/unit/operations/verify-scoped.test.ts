@@ -452,6 +452,33 @@ describe("verifyScopedOp — ported ScopedStrategy behavior", () => {
     expect(result.findings[0].message).toContain("uv run pytest");
   });
 
+  test("scoped TIMEOUT with zero executed tests → no full-suite rerun, status=timeout", async () => {
+    let regressionCalls = 0;
+    const deps = fakeDeps({
+      selectScopedTests: async () => ({
+        effectiveCommand: "uv run pytest 'src/_agent.py'",
+        isFullSuite: false,
+        thresholdFallback: false,
+        isMonorepoOrchestrator: false,
+      }),
+      regression: async () => {
+        regressionCalls++;
+        return { status: "TIMEOUT" as const, success: false, countsTowardEscalation: false, output: "" };
+      },
+      parseTestOutput: () => ({ passed: 0, failed: 0, failures: [] }),
+    });
+    const ctx = ctxWithQuality({ commands: { test: "uv run pytest" } });
+    const result = await verifyScopedOp.execute(
+      { workdir: "/r", storyId: "S-1", storyGitRef: "abc", regressionMode: "per-story" },
+      ctx,
+      deps,
+    );
+    expect(regressionCalls).toBe(1);
+    expect(result.status).toBe("timeout");
+    expect(result.success).toBe(false);
+    expect(result.isFullSuite).toBe(false);
+  });
+
   test("timeout → status=timeout, success=false", async () => {
     const deps = fakeDeps({
       regression: async () => ({

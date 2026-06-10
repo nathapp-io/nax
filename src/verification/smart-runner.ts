@@ -85,6 +85,10 @@ interface BasenamePattern {
  * Looks only at the basename segment (after the last `/`) and requires exactly
  * one `*` wildcard in it, splitting into prefix + suffix.
  *
+ * @remarks Only single-wildcard basenames are representable — patterns like
+ * `*spec*.ts` return null and contribute no Pass-1 candidate (Pass 2
+ * import-grep still covers files matching them).
+ *
  * @example
  * extractBasenamePattern("test/**\/*.test.ts")   // { prefix: "",      suffix: ".test.ts" }
  * extractBasenamePattern("tests/**\/test_*.py")  // { prefix: "test_", suffix: ".py" }
