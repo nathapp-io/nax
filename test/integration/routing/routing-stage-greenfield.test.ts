@@ -99,6 +99,23 @@ function createTestContext(
         abortOnIncreasingFailures: true,
       },
       contextProviderTokenBudget: 2000,
+      // Explicit co-located test patterns (resolver tier-2, ADR-009 SSOT) so
+      // greenfield detection matches src-co-located tests without needing a git
+      // fixture for the detection tier. Mirrors a project using co-located tests.
+      smartTestRunner: {
+        enabled: true,
+        fallback: "import-grep",
+        testFilePatterns: [
+          "**/*.test.ts",
+          "**/*.test.tsx",
+          "**/*.test.js",
+          "**/*.test.jsx",
+          "**/*.spec.ts",
+          "**/*.spec.js",
+          "**/*.spec.tsx",
+          "**/*.spec.jsx",
+        ],
+      },
     },
     quality: {
       requireTypecheck: false,

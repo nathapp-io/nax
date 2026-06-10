@@ -6,7 +6,6 @@
  * plan construction.
  */
 
-import { relative, sep } from "node:path";
 import { isThreeSessionStrategy } from "../config";
 import type { NaxConfig } from "../config/schema";
 import { filterContextByRole } from "../context";
@@ -28,6 +27,7 @@ import { TddPromptBuilder } from "../prompts";
 import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../review";
 import type { ResolvedTestPatterns } from "../test-runners";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
+import { packageDirRelative } from "../utils/paths";
 import type { RectificationPhaseOptions } from "./story-orchestrator";
 
 /**
@@ -210,14 +210,9 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
 
   // AC#4 (#1120) + ADR-009: resolve once per plan — shared by TDD gates AND review helpers.
   // Always resolves (not gated on _isTdd) so review helpers get patterns even on non-TDD plans.
-  // Using projectDir as root (with packageDirRelative for monorepos) is the SSOT per ADR-009.
-  const packageDirRelative = (() => {
-    if (ctx.workdir === ctx.projectDir) return undefined;
-    const rel = relative(ctx.projectDir, ctx.workdir);
-    if (rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
-    return rel && rel !== "." ? rel : undefined;
-  })();
-  const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRelative);
+  // Using projectDir as root (with packageDirRel for monorepos) is the SSOT per ADR-009.
+  const packageDirRel = packageDirRelative(ctx.projectDir, ctx.workdir);
+  const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRel);
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([
         _isFreshRun ? buildThreeSessionPrompt("test-writer", ctx, isLite) : Promise.resolve(""),
@@ -234,6 +229,9 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
           featureContextMarkdown: ctx.featureContextMarkdown,
           constitution: ctx.constitution?.content,
           lite: isLite,
+          // Same resolved object the greenfield gate receives — so test-writer
+          // isolation classifies test files identically to the gate (ADR-009 SSOT).
+          resolvedTestPatterns,
         }
       : undefined;
 
@@ -280,7 +278,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
         // undefined for single-package — see PipelineContext.workdir invariant); resolvedTestPatterns
         // is the ADR-009 SSOT. Use the same anchor as resolveTestFilePatterns above for consistency.
         repoRoot: ctx.projectDir,
-        packagePrefix: packageDirRelative,
+        packagePrefix: packageDirRel,
         resolvedTestPatterns,
       }
     : undefined;
