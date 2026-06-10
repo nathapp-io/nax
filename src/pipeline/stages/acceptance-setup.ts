@@ -201,7 +201,7 @@ export const acceptanceSetupStage: PipelineStage = {
     // US-001: Group non-fix, non-decomposed stories by story.workdir — one test file per package.
     // groupStoriesByPackage handles workdir grouping, path computation, and root fallback.
     const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
-    const groups = groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
+    const groups = await groupStoriesByPackage(ctx.prd, ctx.workdir, featureName, testPathConfig, language);
     const nonFixStories = groups.flatMap((g) => g.stories);
 
     let totalCriteria = 0;
