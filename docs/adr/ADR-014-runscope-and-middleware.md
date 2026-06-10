@@ -1,11 +1,14 @@
 # ADR-014: RunScope, Agent Middleware, and Orphan Consolidation
 
-**Status:** Reject
+**Status:** Reject — see ADR-018 (Runtime Layering) for the accepted design
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-013 (SessionManager → AgentManager Hierarchy); ADR-012 (AgentManager Ownership); ADR-011 (SessionManager Ownership)
-**Superseded-by / Followed-by:** ADR-015 (Operation Contract), ADR-016 (Prompt Composition & PackageView)
+**Superseded-by:** ADR-018 (Runtime Layering with Session Runners) — the `Operation<I,O,C>` contract and `PackageView`/`PackageRegistry` carried forward; `RunScope`, agent-middleware chain, and `src/control/` were not built
+**Also-superseded-by:** ADR-014-runscope-and-operation-standardization (the parallel draft filed the same day — see that file)
 **Related:** #523 (fallback state divergence across orphan AgentManagers — unblocked by this ADR)
+
+> **Tombstone (2026-06-10):** Two files share the ADR-014 number; this file (`runscope-and-middleware`) and `ADR-014-runscope-and-operation-standardization.md` were both filed on 2026-04-23 as Reject drafts. Both were superseded by ADR-017 → ADR-018. Survivors: `Operation<I,O,C>`, `PackageView`, and the observer middleware (in simplified form) — all live in `src/operations/` and `src/runtime/`. `RunScope`, `src/control/`, and the agent-middleware chain were not built.
 
 ---
 

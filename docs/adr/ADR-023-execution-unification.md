@@ -21,8 +21,8 @@ The core decision is **implemented**. Verified against the live tree:
 
 **Residual gaps** (see `docs/reports/2026-05-29-execution-unification-gap-audit.md`):
 
-- ⚠️ **`IReviewPlugin` per-story `plugin-reviews` phase (§1) was never wired**, and the retained deferred-only path is inert (`anyFailed` never consumed). Tracked in #1146.
-- ⚠️ **`format-check` phase (§1) never built** — formatting is only fixed reactively via `mechanical-formatfix` off lint findings. Divergence from the illustrative order; lint typically covers it.
+- **`IReviewPlugin` per-story `plugin-reviews` phase (§1) was never wired.** Per ADR-023/#1146, the accepted design is **deferred-only**: plugin reviewers run as a post-run step in `run-completion.ts`, not as a per-story builder phase. The `anyFailed` flag from `runDeferredReview()` is intentionally not gate-wired today; the CANONICAL_ORDER listing in §1 is aspirational. No action is needed unless per-story plugin-review gating is explicitly adopted in a future ADR.
+- **`format-check` phase (§1) was never built.** The accepted design is **reactive-only formatting**: `mechanical-formatfix` fires as a FixStrategy when lint findings trigger rectification (`src/execution/build-plan-for-strategy.ts:156-159`). A standalone proactive `format-check` gate was descoped after audit (2026-06-10 ADR behavior review). Impact is low because lint usually catches format errors; projects that need a hard format gate should add a lint rule. The CANONICAL_ORDER listing in §1 is updated accordingly — see below.
 - ✅ **D4 (`ReviewerSession` dialogue removal) completed (2026-05-29).** A verification pass found that no production code ever constructed a `ReviewerSession` — the debate subsystem referenced the type but never produced one, so D4's original premise ("debate consumers genuinely use it") was incorrect. The interface, factory, the `dialogue-verdict` selector, and all `resolverSession`/`reviewerSession` plumbing were removed in full. The `config.review.dialogue` deprecation shim in `src/config/loader.ts` is retained as the migration guard.
 
 > **SPEC reconciliation:** [SPEC-execution-unification.md](../specs/SPEC-execution-unification.md) Decision D1 ("retain `regressionStage`") and its AC-005c.3 were **overridden by issue #1116**, which deleted `regressionStage` (8-stage pipeline, not 9). The SPEC's D1/AC-005c.3 are superseded by #1116; this ADR's §5 + Open Question 3 reflect the as-built state.
@@ -65,16 +65,21 @@ The `inlineReview` findings doc ([docs/findings/2026-05-23-inlinereview-legacy-s
 `StoryOrchestratorBuilder` becomes the sole sequencer for per-story work:
 
 ```
-CANONICAL_ORDER (post-unification):
+CANONICAL_ORDER (as-built, 2026-06-10):
 
 [TDD fresh]   test-writer → greenfield-gate
 [always]      implementer
 [TDD]         full-suite-gate → verifier
 [non-TDD]     verify-scoped
-[always]      lint-check → typecheck-check → format-check → plugin-reviews
+[always]      lint-check → typecheck-check
 [always]      semantic-review → adversarial-review
 [always]      rectification
 ```
+
+> **Design note — `format-check` and `plugin-reviews`:** The illustrative order above originally listed `format-check` and `plugin-reviews` between `typecheck-check` and `semantic-review`. Neither phase was built:
+>
+> - *Formatting* is handled **reactively** — `mechanical-formatfix` fires as a FixStrategy when any lint finding triggers rectification. A standalone proactive gate was descoped (2026-06-10 audit). If a project needs a hard format gate, add a lint rule.
+> - *Plugin reviews* run **deferred** as a post-run step in `run-completion.ts` (per #1146), not per-story. The deferred path is intentional; per-story plugin-review gating is deferred to a future ADR.
 
 Every phase produces `Finding[]` in its parsed output (ADR-021 contract). The rectification phase consumes the union of unfixed findings and dispatches to `FixStrategy[]` via `runFixCycle` (ADR-022).
 

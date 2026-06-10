@@ -1,10 +1,13 @@
 # ADR-016: Prompt Composition (Immutable Sections) and PackageView
 
-**Status:** Reject
+**Status:** Reject — see ADR-018 (Runtime Layering) for the accepted design
 **Date:** 2026-04-23
 **Author:** William Khoo, Claude
 **Extends:** ADR-015 (Operation Contract); ADR-014 (RunScope & Middleware); ADR-010 (Context Engine)
+**Superseded-by:** ADR-018 (Runtime Layering with Session Runners)
 **Depends-on:** ADR-014 and ADR-015 must land first.
+
+> **Tombstone (2026-06-10):** `PackageView` / `PackageRegistry` survived into the accepted design and are implemented in `src/runtime/packages.ts`. The prompt-middleware chain (§1.1–1.3) was not built — prompt composition uses `composeSections()` (ADR-018 §7) and builder classes in `src/prompts/builders/` instead. The builder section-migration described here is incomplete; see `forbidden-patterns.md` § Prompt Builder Convention for the current SSOT.
 
 ---
 

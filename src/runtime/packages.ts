@@ -1,5 +1,8 @@
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig } from "../config";
+import { getSafeLogger } from "../logger";
+
+export const _packagesDeps = { getSafeLogger };
 
 export type PackageOverrideLoader = (repoRoot: string, packageDir: string) => Promise<Partial<NaxConfig> | null>;
 
@@ -49,6 +52,7 @@ function createPackageView(config: NaxConfig, packageDir: string, repoRoot: stri
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
+  let hydrated = false;
 
   // Normalize to relative so cache and mergedConfigs keys are consistent with
   // what hydrate() stores (discoverWorkspacePackages returns relative paths).
@@ -70,6 +74,18 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     // Use merged config if hydration pre-loaded one for this package; otherwise root config.
     const overrideConfig = mergedConfigs.get(key);
     const hasOverride = overrideConfig !== undefined;
+    // Warn when a caller resolves a non-root package before hydrate() has run — the
+    // returned view silently uses root config instead of per-package overrides.  This
+    // catches entry points (CLI one-off commands, plugins) that skip runSetupPhase.
+    if (!hasOverride && key && !hydrated) {
+      _packagesDeps
+        .getSafeLogger()
+        ?.warn(
+          "packages",
+          "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
+          { packageDir: key },
+        );
+    }
     const config = overrideConfig ?? loader.current();
     const view = createPackageView(config, key, repoRoot, hasOverride);
     cache.set(key, view);
@@ -93,6 +109,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
         cache.delete(dir);
       }
     }
+    hydrated = true;
   }
 
   return {

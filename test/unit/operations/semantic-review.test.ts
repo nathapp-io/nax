@@ -56,6 +56,16 @@ describe("semanticReviewOp shape", () => {
   });
 });
 
+// ADR-008 anti-oscillation invariant: each review round opens a fresh session.
+// If lifetime were "reuse", the reviewer would carry state from a previous pass
+// and could flip its verdict based on stale prior-round context — the root cause
+// of oscillating pass/fail verdicts investigated in ADR-008.
+describe("ADR-008 anti-oscillation invariant — reviewer opens a fresh session each round", () => {
+  test("semanticReviewOp declares lifetime:fresh (no cross-round session state)", () => {
+    expect(semanticReviewOp.session.lifetime).toBe("fresh");
+  });
+});
+
 describe("semanticReviewOp.build()", () => {
   test("returns ComposeInput with task section", () => {
     const ctx = makeBuildCtx();
