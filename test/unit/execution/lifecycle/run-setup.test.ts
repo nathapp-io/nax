@@ -307,4 +307,57 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
 
     expect(warns).toHaveLength(0);
   });
+
+  test("emits PRD-level warn when prd.routingProfile differs from config.routing.agents.default", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({ userStories: [], routingProfile: "old-default" });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off" as const,
+          default: "new-default",
+          profiles: [],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(1);
+    const [stage, msg, ctx] = warns[0]!;
+    expect(stage).toBe("prd");
+    expect(msg).toContain("old-default");
+    expect(msg).toContain("new-default");
+    expect(ctx.storyId).toBe("prd");
+    expect(ctx.routingProfile).toBe("old-default");
+    expect(ctx.currentDefault).toBe("new-default");
+  });
+
+  test("does not emit PRD-level warn when prd.routingProfile matches config.routing.agents.default", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({ userStories: [], routingProfile: "shared-default" });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off" as const,
+          default: "shared-default",
+          profiles: [],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
 });

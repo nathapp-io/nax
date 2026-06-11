@@ -103,11 +103,19 @@ export class OneShotPromptBuilder {
       "|---|---|---|---|---|",
     ];
 
-    const rows = profiles.map(
-      (p) =>
-        `| ${p.id} | ${p.target.agent} | ${p.target.model} | ${p.strengths.join(", ")} | ${p.costTier ?? "—"} |`,
-    );
+    const rows = profiles.map((p) => {
+      const id = OneShotPromptBuilder.escapeCell(p.id);
+      const agent = OneShotPromptBuilder.escapeCell(p.target.agent);
+      const model = OneShotPromptBuilder.escapeCell(p.target.model);
+      const strengths = p.strengths.map((s) => OneShotPromptBuilder.escapeCell(s)).join(", ");
+      const cost = OneShotPromptBuilder.escapeCell(p.costTier ?? "—");
+      return `| ${id} | ${agent} | ${model} | ${strengths} | ${cost} |`;
+    });
 
     return [...header, ...rows].join("\n");
+  }
+
+  private static escapeCell(value: string): string {
+    return value.replace(/\|/g, "\\|");
   }
 }

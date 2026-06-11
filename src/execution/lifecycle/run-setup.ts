@@ -58,6 +58,18 @@ export function warnProfileMismatch(
   const profiles = config.routing?.agents?.profiles ?? [];
   const profileIds = new Set(profiles.map((p) => p.id));
 
+  // PRD-level check: warn if the overall routing profile config changed since plan time.
+  if (prd.routingProfile !== undefined) {
+    const current = config.routing?.agents?.default;
+    if (prd.routingProfile !== current) {
+      logger?.warn(
+        "prd",
+        `PRD was planned with default routing profile "${prd.routingProfile}" but current config.routing.agents.default is "${current}" — per-story agent assignments may not reflect current profile config`,
+        { storyId: "prd", routingProfile: prd.routingProfile, currentDefault: current },
+      );
+    }
+  }
+
   for (const story of prd.userStories) {
     const profileId = story.routing?.agentProfileId;
     if (!profileId) continue;

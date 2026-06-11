@@ -71,4 +71,29 @@ describe("agentCapabilityCards", () => {
     expect(result).toContain("| alpha | claude | fast | speed | low |");
     expect(result).toContain("| beta | claude | powerful | reasoning, accuracy | high |");
   });
+
+  it("escapes pipe characters in cell values to preserve markdown table structure", () => {
+    const profiles: AgentRoutingProfile[] = [
+      {
+        id: "pipe|profile",
+        target: { agent: "claude|2", model: "fast|balanced" },
+        strengths: ["strength|a", "strength|b"],
+        costTier: "low|med",
+      },
+    ];
+
+    const result = OneShotPromptBuilder.agentCapabilityCards(profiles);
+
+    expect(result).toContain("pipe\\|profile");
+    expect(result).toContain("claude\\|2");
+    expect(result).toContain("fast\\|balanced");
+    expect(result).toContain("strength\\|a, strength\\|b");
+    expect(result).toContain("low\\|med");
+    // The row must not contain unescaped pipes beyond the column delimiters
+    const rows = result.split("\n").filter((l) => l.startsWith("| pipe"));
+    expect(rows).toHaveLength(1);
+    // A well-formed row has exactly 6 unescaped pipe chars (column delimiters)
+    const unescapedPipes = (rows[0]!.match(/(?<!\\)\|/g) ?? []).length;
+    expect(unescapedPipes).toBe(6);
+  });
 });

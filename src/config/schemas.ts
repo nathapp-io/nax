@@ -18,6 +18,7 @@ import {
 import {
   AcceptanceConfigSchema,
   AgentConfigSchema,
+  type AgentRoutingConfigSchema,
   CuratorConfigSchema,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   GenerateConfigSchema,
@@ -429,7 +430,9 @@ export const NaxConfigSchema = z
       }
     }
     // Profile↔ladder binding: every profile's target must map to a rung in tierOrder
-    const profiles = (data.routing as { agents?: { profiles?: Array<{ id: string; target: { agent: string; model: string } }> } })?.agents?.profiles ?? [];
+    type AgentConfig = z.infer<typeof AgentRoutingConfigSchema>;
+    type AgentProfile = AgentConfig["profiles"][number];
+    const profiles = (data.routing as { agents?: AgentConfig })?.agents?.profiles ?? [] as AgentProfile[];
     for (const [pi, profile] of profiles.entries()) {
       const { agent: pAgent, model: pModel } = profile.target;
       const hasMatchingRung = tierOrder.some(
