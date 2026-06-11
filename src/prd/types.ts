@@ -85,6 +85,10 @@ export interface StoryRouting {
   llmModel?: string;
   /** Agent to use for this story (overrides default agent from config) */
   agent?: string;
+  /** Profile ID that produced the starting rung — written once, not overwritten by escalation */
+  initialProfileId?: string;
+  /** Agent at first route — written once, not overwritten by escalation */
+  initialAgent?: string;
 }
 
 /** Escalation attempt tracking */

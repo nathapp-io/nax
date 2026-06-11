@@ -403,4 +403,28 @@ export const NaxConfigSchema = z
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
     path: ["version"],
+  })
+  .superRefine((data, ctx) => {
+    // Cross-section: each tierOrder rung's agent (when set) must exist in config.models
+    const tierOrder = data.autoMode?.escalation?.tierOrder ?? [];
+    const knownAgents = Object.keys(data.models ?? {});
+    for (const [i, rung] of tierOrder.entries()) {
+      if (rung.agent !== undefined && !knownAgents.includes(rung.agent)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["autoMode", "escalation", "tierOrder", i, "agent"],
+          message: `Agent "${rung.agent}" is not defined in config.models (known: ${knownAgents.join(", ")})`,
+        });
+      }
+      if (rung.agent !== undefined) {
+        const agentTiers = data.models?.[rung.agent] ?? {};
+        if (!(rung.tier in agentTiers)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["autoMode", "escalation", "tierOrder", i, "tier"],
+            message: `Tier "${rung.tier}" is not defined for agent "${rung.agent}" in config.models`,
+          });
+        }
+      }
+    }
   });
