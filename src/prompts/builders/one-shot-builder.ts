@@ -82,6 +82,14 @@ export class OneShotPromptBuilder {
   }
 
   /**
+   * Returns the instruction telling the LLM to assign `agentProfileId` per story.
+   * Append to the decompose prompt when agent profiles are listed and routing is enabled.
+   */
+  static agentProfileInstruction(): string {
+    return "When agent profiles are listed above, assign the best-matching profile id to the `agentProfileId` field for each story. If no profile fits well or profiles are not listed, omit `agentProfileId`.";
+  }
+
+  /**
    * Formats agent routing profiles as a markdown capability card table for LLM consumption.
    * Returns an empty string when profiles is empty — caller decides whether to include the section.
    */

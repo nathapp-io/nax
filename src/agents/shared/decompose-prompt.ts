@@ -30,6 +30,8 @@ const DECOMPOSE_SPEC_SCHEMA: SchemaDescriptor = {
       estimatedLOC: 150,
       risks: ["Risk 1"],
       testStrategy: "test-after",
+      // Optional: set to a profile id from the Agent Profiles table above, or omit if no profiles are listed
+      agentProfileId: "",
     },
   ],
 };
@@ -51,6 +53,8 @@ const DECOMPOSE_PLAN_SCHEMA: SchemaDescriptor = {
       estimatedLOC: 0,
       risks: [],
       testStrategy: "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+      // Optional: set to a profile id from the Agent Profiles table above, or omit if no profiles are listed
+      agentProfileId: "",
     },
   ],
 };
@@ -71,6 +75,7 @@ For each story, provide:
 11. risks: Array of implementation risks
 12. testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite"
 13. noTestJustification: string (REQUIRED when testStrategy is "no-test" — explain why tests are unnecessary)
+14. agentProfileId: (optional) profile id from the Agent Profiles table — assign the best-matching profile for each story; omit if no profiles are listed or none fits well
 
 ${COMPLEXITY_GUIDE}
 

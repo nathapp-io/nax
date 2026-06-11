@@ -39,7 +39,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
       const profiles = agentRouting.profiles ?? [];
       const cards = OneShotPromptBuilder.agentCapabilityCards(profiles);
       if (cards.length > 0) {
-        prompt = `${prompt}\n\n${cards}`;
+        prompt = `${prompt}\n\n${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}`;
       }
     }
 
@@ -61,23 +61,39 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
       return stories;
     }
 
+    const defaultProfile = agentRouting.default
+      ? profiles.find((p) => p.id === agentRouting.default)
+      : undefined;
+
     return stories.map((story) => {
-      if (!story.agentProfileId) {
-        return story;
+      if (story.agentProfileId) {
+        const profile = profiles.find((p) => p.id === story.agentProfileId);
+        if (profile) {
+          return {
+            ...story,
+            routing: {
+              ...story.routing,
+              agent: profile.target.agent,
+              agentProfileId: profile.id,
+            },
+          };
+        }
+        // LLM emitted an unknown/hallucinated profile id — fall through to default
       }
-      const profile = profiles.find((p) => p.id === story.agentProfileId);
-      if (!profile) {
-        // LLM hallucinated an unknown profile id — leave routing unchanged
-        return story;
+
+      // No valid per-story selection — apply default profile if configured
+      if (defaultProfile) {
+        return {
+          ...story,
+          routing: {
+            ...story.routing,
+            agent: defaultProfile.target.agent,
+            agentProfileId: defaultProfile.id,
+          },
+        };
       }
-      return {
-        ...story,
-        routing: {
-          ...story.routing,
-          agent: profile.target.agent,
-          agentProfileId: profile.id,
-        },
-      };
+
+      return story;
     });
   },
 };

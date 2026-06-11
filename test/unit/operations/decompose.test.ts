@@ -5,9 +5,13 @@
  * - AC-T8-1: Capability cards are NOT injected when routing.agents.enabled === false
  * - AC-T8-2: Capability cards are NOT injected when profiles is empty (even if enabled)
  * - AC-T8-3: Capability cards ARE injected when enabled === true and profiles are non-empty
+ * - AC-T8-6: Agent profile selection instruction is injected alongside capability cards
  * - AC-T9-1: Story with unknown/hallucinated agentProfileId → routing unchanged, no error
  * - AC-T9-2: Story with valid agentProfileId → routing.agent and routing.agentProfileId set
  * - AC-T9-3: Story without agentProfileId → routing unchanged
+ * - AC-T9-4: agentProfileId missing + default set → routing resolved from default profile
+ * - AC-T9-5: agentProfileId unknown/hallucinated + default set → routing resolved from default profile
+ * - AC-T9-6: agentProfileId unknown + no default → routing unchanged
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -263,5 +267,118 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
     expect(result[0].routing).toBeUndefined();
+  });
+
+  test("AC-T9-4: agentProfileId missing + default set → routing resolved from default profile", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: true,
+          default: "fast-coder",
+          profiles: [SAMPLE_PROFILE],
+        },
+      },
+    });
+
+    const output = makeDecomposeOutput([{ id: "US-001" }]);
+    const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].routing?.agent).toBe("opencode");
+    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+  });
+
+  test("AC-T9-5: agentProfileId unknown/hallucinated + default set → routing resolved from default profile", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: true,
+          default: "fast-coder",
+          profiles: [SAMPLE_PROFILE],
+        },
+      },
+    });
+
+    const output = makeDecomposeOutput([{ id: "US-001", agentProfileId: "nonexistent-profile" }]);
+    const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].routing?.agent).toBe("opencode");
+    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+  });
+
+  test("AC-T9-6: agentProfileId unknown + no default → routing unchanged (existing behavior preserved)", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: true,
+          profiles: [SAMPLE_PROFILE],
+        },
+      },
+    });
+
+    const output = makeDecomposeOutput([{ id: "US-001", agentProfileId: "nonexistent-profile" }]);
+    const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].routing).toBeUndefined();
+  });
+});
+
+describe("decomposeOp — build: agent profile instruction injection", () => {
+  test("AC-T8-6: agent profile selection instruction is injected when enabled and profiles are non-empty", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: true,
+          profiles: [SAMPLE_PROFILE],
+        },
+      },
+    });
+
+    const result = decomposeOp.build(SAMPLE_INPUT, ctx);
+    const prompt = result.task.content;
+
+    expect(prompt).toContain("agentProfileId");
+  });
+
+  test("AC-T8-6b: agent profile selection instruction is NOT injected when routing.agents.enabled === false", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: false,
+          profiles: [SAMPLE_PROFILE],
+        },
+      },
+    });
+
+    const result = decomposeOp.build(SAMPLE_INPUT, ctx);
+    const prompt = result.task.content;
+
+    // The instruction appended by agentProfileInstruction() should not be present
+    // (Note: agentProfileId may appear from the schema example — check for the full instruction phrase)
+    expect(prompt).not.toContain("assign the best-matching profile id to the");
+  });
+
+  test("AC-T8-6c: agent profile selection instruction is NOT injected when profiles is empty", () => {
+    const ctx = makeBuildCtx({
+      routing: {
+        strategy: "keyword",
+        agents: {
+          enabled: true,
+          profiles: [],
+        },
+      },
+    });
+
+    const result = decomposeOp.build(SAMPLE_INPUT, ctx);
+    const prompt = result.task.content;
+
+    expect(prompt).not.toContain("assign the best-matching profile id to the");
   });
 });

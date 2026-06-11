@@ -2,6 +2,18 @@ import { describe, expect, it } from "bun:test";
 import type { AgentRoutingProfile } from "@/config";
 import { OneShotPromptBuilder } from "@/prompts";
 
+describe("agentProfileInstruction", () => {
+  it("returns a non-empty string", () => {
+    const result = OneShotPromptBuilder.agentProfileInstruction();
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("contains 'agentProfileId' so the LLM knows the field name", () => {
+    const result = OneShotPromptBuilder.agentProfileInstruction();
+    expect(result).toContain("agentProfileId");
+  });
+});
+
 describe("agentCapabilityCards", () => {
   it("returns empty string for empty profiles array", () => {
     expect(OneShotPromptBuilder.agentCapabilityCards([])).toBe("");
