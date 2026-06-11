@@ -9,6 +9,7 @@
  * here, promote the prompt to its own dedicated builder instead.
  */
 
+import type { AgentRoutingProfile } from "@/config";
 import {
   SectionAccumulator,
   instructionsSection,
@@ -78,5 +79,27 @@ export class OneShotPromptBuilder {
 
   build(): string {
     return this.acc.join();
+  }
+
+  /**
+   * Formats agent routing profiles as a markdown capability card table for LLM consumption.
+   * Returns an empty string when profiles is empty — caller decides whether to include the section.
+   */
+  static agentCapabilityCards(profiles: AgentRoutingProfile[]): string {
+    if (profiles.length === 0) return "";
+
+    const header = [
+      "## Agent Profiles",
+      "",
+      "| ID | Agent | Tier | Strengths | Cost |",
+      "|---|---|---|---|---|",
+    ];
+
+    const rows = profiles.map(
+      (p) =>
+        `| ${p.id} | ${p.target.agent} | ${p.target.model} | ${p.strengths.join(", ")} | ${p.costTier ?? "—"} |`,
+    );
+
+    return [...header, ...rows].join("\n");
   }
 }
