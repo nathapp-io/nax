@@ -198,7 +198,14 @@ export async function runPlanPipeline(
     });
 
     if (verdict.outcome === "passed") {
-      await _planDeps.writeFile(outputPath, JSON.stringify({ ...verdict.prd, project: projectName }, null, 2));
+      const routingProfile =
+        config.routing?.agents?.enabled === true ? (config.routing.agents.default ?? undefined) : undefined;
+      const prdToWrite = {
+        ...verdict.prd,
+        project: projectName,
+        ...(routingProfile !== undefined && { routingProfile }),
+      };
+      await _planDeps.writeFile(outputPath, JSON.stringify(prdToWrite, null, 2));
       logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
       return outputPath;
     }

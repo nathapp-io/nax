@@ -263,22 +263,16 @@ describe("planDecomposeCommand — mapper wiring (US-003 AC-5)", () => {
     ).rejects.toThrow(/index 1/);
   });
 
-  test("throws DECOMPOSE_VALIDATION_FAILED with entry index when DecomposedStory has empty contextFiles", async () => {
+  test("succeeds and writes PRD when DecomposedStory has empty contextFiles (warns, does not throw)", async () => {
     const prd = makePrd();
     const decomposed = [
-      makeDecomposedStory({ id: "US-001-A", contextFiles: [] }), // invalid — empty contextFiles
+      makeDecomposedStory({ id: "US-001-A", contextFiles: [] }), // empty contextFiles — warns and continues
     ];
     setupDepsWithDecompose(prd, decomposed);
 
-    let caught: unknown;
-    try {
-      await planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" });
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
-    // biome-ignore lint: test accesses dynamic property
-    expect((caught as any)?.context?.entryIndex).toBeDefined();
+    // Should complete without throwing
+    await expect(
+      planDecomposeCommand(tmpDir, makeNaxConfig(), { feature: FEATURE, storyId: "US-001" }),
+    ).resolves.not.toThrow();
   });
 });

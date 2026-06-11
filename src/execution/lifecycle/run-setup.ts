@@ -62,10 +62,11 @@ export function warnProfileMismatch(
   if (prd.routingProfile !== undefined) {
     const current = config.routing?.agents?.default;
     if (prd.routingProfile !== current) {
+      const currentDisplay = current ?? "(none)";
       logger?.warn(
         "prd",
-        `PRD was planned with default routing profile "${prd.routingProfile}" but current config.routing.agents.default is "${current}" — per-story agent assignments may not reflect current profile config`,
-        { storyId: "prd", routingProfile: prd.routingProfile, currentDefault: current },
+        `PRD was planned with default routing profile "${prd.routingProfile}" but current config.routing.agents.default is "${currentDisplay}" — per-story agent assignments may not reflect current profile config`,
+        { storyId: "prd", routingProfile: prd.routingProfile, currentDefault: currentDisplay },
       );
     }
   }

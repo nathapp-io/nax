@@ -129,7 +129,11 @@ export async function preIterationTierCheck(
   const logger = getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
   const tierOrder = config.autoMode.escalation?.tierOrder || [];
-  const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
+  const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
+  const currentRungForBudget = hasAgentRungs
+    ? { tier: currentTier, agent: story.routing?.agent }
+    : { tier: currentTier };
+  const tierCfg = tierOrder.length > 0 ? getTierConfig(currentRungForBudget, tierOrder) : undefined;
 
   if (!tierCfg || (story.attempts ?? 0) < tierCfg.attempts) {
     // Story still has budget in current tier
@@ -137,11 +141,6 @@ export async function preIterationTierCheck(
   }
 
   // Exceeded current tier budget — try to escalate.
-  // Only match by (tier, agent) tuple when the tierOrder actually contains
-  // agent-qualified rungs (cross-agent ladder). For standard tier orders with
-  // no agent fields, fall back to tier-name-only matching so escalation still
-  // works for stories that carry a routing.agent (Task 9 agent-profile routing).
-  const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
   const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
   const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;

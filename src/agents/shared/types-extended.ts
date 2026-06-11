@@ -107,6 +107,8 @@ export interface DecomposeOptions {
   targetStory?: import("@/prd").UserStory;
   /** Sibling stories for context (plan-mode decompose) */
   siblings?: import("@/prd").UserStory[];
+  /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
+  profiles?: import("@/config").AgentRoutingProfile[];
 }
 
 /** A single classified user story from decompose result. */

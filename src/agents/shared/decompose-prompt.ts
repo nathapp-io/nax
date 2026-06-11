@@ -9,6 +9,7 @@
  *   - plan mode: splits a single targetStory into sub-stories
  */
 
+import type { AgentRoutingProfile } from "@/config";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../../config/test-strategy";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
 import type { DecomposeOptions } from "../types";
@@ -111,6 +112,8 @@ export interface DecomposePromptInput {
   targetStory?: import("../../prd/types").UserStory;
   siblings?: import("../../prd/types").UserStory[];
   maxAcCount?: number | null;
+  /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
+  profiles?: AgentRoutingProfile[];
 }
 
 /**
@@ -154,7 +157,7 @@ function buildPlanModePromptSync(input: DecomposePromptInput): string {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder.agentProfiles(input.profiles ?? []).jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
 }
 
 function buildSpecModePromptSync(input: DecomposePromptInput): string {
@@ -162,6 +165,7 @@ function buildSpecModePromptSync(input: DecomposePromptInput): string {
     .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
     .inputData("Codebase Context", input.codebaseContext)
     .inputData("Feature Specification", input.specContent)
+    .agentProfiles(input.profiles ?? [])
     .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
     .build();
 }
@@ -185,7 +189,7 @@ async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder.agentProfiles(options.profiles ?? []).jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
 }
 
 async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {
@@ -193,6 +197,7 @@ async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {
     .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
     .inputData("Codebase Context", options.codebaseContext)
     .inputData("Feature Specification", options.specContent)
+    .agentProfiles(options.profiles ?? [])
     .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
     .build();
 }

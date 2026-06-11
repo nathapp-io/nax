@@ -153,27 +153,52 @@ describe("escalateTier", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("getTierConfig", () => {
-  it("returns tier config when tier exists", () => {
-    const config = getTierConfig("balanced", defaultTierOrder);
+  it("returns tier config when tier exists (tier-name-only)", () => {
+    const config = getTierConfig({ tier: "balanced" }, defaultTierOrder);
     expect(config).toEqual({ tier: "balanced", attempts: 3 });
   });
 
   it("returns undefined when tier not found", () => {
-    expect(getTierConfig("unknown", defaultTierOrder)).toBeUndefined();
+    expect(getTierConfig({ tier: "unknown" }, defaultTierOrder)).toBeUndefined();
   });
 
   it("handles first tier", () => {
-    const config = getTierConfig("fast", defaultTierOrder);
+    const config = getTierConfig({ tier: "fast" }, defaultTierOrder);
     expect(config).toEqual({ tier: "fast", attempts: 5 });
   });
 
   it("handles last tier", () => {
-    const config = getTierConfig("powerful", defaultTierOrder);
+    const config = getTierConfig({ tier: "powerful" }, defaultTierOrder);
     expect(config).toEqual({ tier: "powerful", attempts: 2 });
   });
 
   it("returns undefined for empty tier order", () => {
-    expect(getTierConfig("fast", [])).toBeUndefined();
+    expect(getTierConfig({ tier: "fast" }, [])).toBeUndefined();
+  });
+
+  it("matches by (tier, agent) tuple on cross-agent ladder", () => {
+    const crossAgentOrder: TierConfig[] = [
+      { tier: "balanced", agent: "opencode", attempts: 3 },
+      { tier: "balanced", agent: "claude", attempts: 2 },
+      { tier: "powerful", agent: "claude", attempts: 2 },
+    ];
+    expect(getTierConfig({ tier: "balanced", agent: "opencode" }, crossAgentOrder)).toEqual({
+      tier: "balanced",
+      agent: "opencode",
+      attempts: 3,
+    });
+    expect(getTierConfig({ tier: "balanced", agent: "claude" }, crossAgentOrder)).toEqual({
+      tier: "balanced",
+      agent: "claude",
+      attempts: 2,
+    });
+  });
+
+  it("returns undefined when (tier, agent) tuple not found", () => {
+    const crossAgentOrder: TierConfig[] = [
+      { tier: "balanced", agent: "opencode", attempts: 3 },
+    ];
+    expect(getTierConfig({ tier: "balanced", agent: "unknown" }, crossAgentOrder)).toBeUndefined();
   });
 });
 

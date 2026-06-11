@@ -48,10 +48,19 @@ export function escalateTier(
 }
 
 /**
- * Get the tier config for a given tier name.
+ * Get the tier config for a given rung.
+ *
+ * When agent is provided, matches by (tier, agent) tuple so cross-agent ladders
+ * with repeated tier names return the correct rung's attempt budget.
+ * When agent is omitted, falls back to tier-name-only matching (first match).
  */
-export function getTierConfig(tierName: string, tierOrder: TierConfig[]): TierConfig | undefined {
-  return tierOrder.find((t) => t.tier === tierName);
+export function getTierConfig(
+  rung: { tier: string; agent?: string },
+  tierOrder: TierConfig[],
+): TierConfig | undefined {
+  return rung.agent !== undefined
+    ? tierOrder.find((t) => t.tier === rung.tier && t.agent === rung.agent)
+    : tierOrder.find((t) => t.tier === rung.tier);
 }
 
 /**

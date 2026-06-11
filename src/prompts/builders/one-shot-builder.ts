@@ -77,13 +77,29 @@ export class OneShotPromptBuilder {
     return this;
   }
 
+  /**
+   * Injects agent capability cards + selection instruction into the prompt.
+   * No-op when profiles is empty — safe to call unconditionally.
+   * Must be called before jsonSchema() so cards appear before the output schema.
+   */
+  agentProfiles(profiles: AgentRoutingProfile[]): this {
+    const cards = OneShotPromptBuilder.agentCapabilityCards(profiles);
+    if (cards.length === 0) return this;
+    this.acc.add({
+      id: "agent-profiles",
+      overridable: false,
+      content: `${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}`,
+    });
+    return this;
+  }
+
   build(): string {
     return this.acc.join();
   }
 
   /**
    * Returns the instruction telling the LLM to assign `agentProfileId` per story.
-   * Append to the decompose prompt when agent profiles are listed and routing is enabled.
+   * Used internally by agentProfiles().
    */
   static agentProfileInstruction(): string {
     return "When agent profiles are listed above, assign the best-matching profile id to the `agentProfileId` field for each story. If no profile fits well or profiles are not listed, omit `agentProfileId`.";
