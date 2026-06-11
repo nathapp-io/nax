@@ -74,7 +74,7 @@ const LlmRoutingConfigSchema = z.object({
   retryDelayMs: z.number().int().min(0, { message: "llm.retryDelayMs must be >= 0" }).optional(),
 });
 
-export const AgentProfileSchema = z.object({
+export const AgentRoutingProfileSchema = z.object({
   id: z.string().min(1),
   target: z.object({
     agent: z.string().min(1),
@@ -91,7 +91,7 @@ export const AgentProfileSchema = z.object({
     .optional(),
 });
 
-export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+export type AgentRoutingProfile = z.infer<typeof AgentRoutingProfileSchema>;
 
 export const AgentRoutingConfigSchema = z
   .object({
@@ -101,7 +101,7 @@ export const AgentRoutingConfigSchema = z
     strategy: z.enum(["off", "llm"]).default("off"),
     /** Default profile id used when the plan agent emits an unknown or missing agentProfileId */
     default: z.string().optional(),
-    profiles: z.array(AgentProfileSchema).default([]),
+    profiles: z.array(AgentRoutingProfileSchema).default([]),
   })
   .superRefine((cfg, ctx) => {
     const ids = cfg.profiles.map((p) => p.id);
@@ -125,10 +125,12 @@ export const AgentRoutingConfigSchema = z
     }
   });
 
+export type AgentRoutingConfig = z.infer<typeof AgentRoutingConfigSchema>;
+
 export const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm"]),
   llm: LlmRoutingConfigSchema.optional(),
-  agents: AgentRoutingConfigSchema.optional().default({ enabled: true, strategy: "off", profiles: [] }),
+  agents: AgentRoutingConfigSchema.default({ enabled: true, strategy: "off", profiles: [] }),
 });
 
 export const OptimizerConfigSchema = z.object({

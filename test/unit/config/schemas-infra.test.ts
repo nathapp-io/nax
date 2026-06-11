@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { AgentProfileSchema, AgentRoutingConfigSchema } from "@/config";
+import { AgentRoutingProfileSchema, AgentRoutingConfigSchema } from "@/config";
 
-describe("AgentProfileSchema", () => {
+describe("AgentRoutingProfileSchema", () => {
   test("parses a minimal valid profile", () => {
-    const result = AgentProfileSchema.parse({
+    const result = AgentRoutingProfileSchema.parse({
       id: "claude-powerful",
       target: { agent: "claude", model: "powerful" },
       strengths: ["architecture"],
@@ -14,7 +14,7 @@ describe("AgentProfileSchema", () => {
   });
 
   test("parses a full profile", () => {
-    const result = AgentProfileSchema.parse({
+    const result = AgentRoutingProfileSchema.parse({
       id: "opencode-balanced",
       target: { agent: "opencode", model: "balanced" },
       strengths: ["general implementation", "frontend"],
@@ -28,7 +28,7 @@ describe("AgentProfileSchema", () => {
 
   test("rejects empty id", () => {
     expect(() =>
-      AgentProfileSchema.parse({
+      AgentRoutingProfileSchema.parse({
         id: "",
         target: { agent: "claude", model: "balanced" },
         strengths: ["x"],
@@ -38,7 +38,7 @@ describe("AgentProfileSchema", () => {
 
   test("rejects empty strengths array", () => {
     expect(() =>
-      AgentProfileSchema.parse({
+      AgentRoutingProfileSchema.parse({
         id: "x",
         target: { agent: "claude", model: "balanced" },
         strengths: [],

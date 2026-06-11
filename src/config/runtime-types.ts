@@ -18,6 +18,7 @@ import type {
   RoutingStrategyName,
   TddStrategy,
 } from "./schema-types";
+import type { AgentRoutingConfig } from "./schemas-infra";
 
 export interface EscalationEntry {
   from: string;
@@ -472,6 +473,8 @@ export interface RoutingConfig {
   adaptive?: AdaptiveRoutingConfig;
   /** LLM routing settings (used when strategy = "llm") */
   llm?: LlmRoutingConfig;
+  /** Agent routing settings (plan-time agent selection) */
+  agents?: AgentRoutingConfig;
 }
 
 /** Prompt overrides config (PB-003) */
