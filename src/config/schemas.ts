@@ -98,6 +98,7 @@ export const NaxConfigSchema = z
         mode: "hybrid",
         timeoutMs: 30000,
       },
+      agents: { enabled: true, strategy: "off", profiles: [] },
     }),
     execution: ExecutionConfigSchema.default({
       maxIterations: 10,

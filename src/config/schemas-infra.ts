@@ -74,9 +74,61 @@ const LlmRoutingConfigSchema = z.object({
   retryDelayMs: z.number().int().min(0, { message: "llm.retryDelayMs must be >= 0" }).optional(),
 });
 
+export const AgentProfileSchema = z.object({
+  id: z.string().min(1),
+  target: z.object({
+    agent: z.string().min(1),
+    model: ModelTierSchema,
+  }),
+  strengths: z.array(z.string().min(1)).min(1),
+  weaknesses: z.array(z.string().min(1)).optional(),
+  costTier: z.enum(["low", "medium", "high"]).optional(),
+  affinity: z
+    .object({
+      taskTypes: z.array(z.string().min(1)).optional(),
+      domains: z.array(z.string().min(1)).optional(),
+    })
+    .optional(),
+});
+
+export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+
+export const AgentRoutingConfigSchema = z
+  .object({
+    /** Explicit toggle — set false to disable plan-time agent selection without removing profiles */
+    enabled: z.boolean().default(true),
+    /** "off" = plan-time only (v1 default). "llm" = run-time routing (Part A, deferred). */
+    strategy: z.enum(["off", "llm"]).default("off"),
+    /** Default profile id used when the plan agent emits an unknown or missing agentProfileId */
+    default: z.string().optional(),
+    profiles: z.array(AgentProfileSchema).default([]),
+  })
+  .superRefine((cfg, ctx) => {
+    const ids = cfg.profiles.map((p) => p.id);
+    const seen = new Set<string>();
+    for (const [i, id] of ids.entries()) {
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["profiles", i, "id"],
+          message: `Duplicate profile id "${id}"`,
+        });
+      }
+      seen.add(id);
+    }
+    if (cfg.default !== undefined && !ids.includes(cfg.default)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["default"],
+        message: `Default profile "${cfg.default}" is not in the profiles list`,
+      });
+    }
+  });
+
 export const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm"]),
   llm: LlmRoutingConfigSchema.optional(),
+  agents: AgentRoutingConfigSchema.optional().default({ enabled: true, strategy: "off", profiles: [] }),
 });
 
 export const OptimizerConfigSchema = z.object({

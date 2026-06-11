@@ -44,6 +44,8 @@ export {
   PlanConfigSchema,
 } from "./schema";
 export { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+export type { AgentProfile } from "./schemas-infra";
+export { AgentProfileSchema, AgentRoutingConfigSchema } from "./schemas-infra";
 export { DebateConfigSchema } from "./schemas-debate";
 export { TddConfigSchema } from "./schemas-execution";
 export { loadConfig, loadConfigForWorkdir, loadPackageOverride, findProjectDir, globalConfigPath } from "./loader";
