@@ -200,7 +200,13 @@ export async function planDecomposeCommand(
     ...updatedStories.slice(originalIndex + 1),
   ];
 
-  const updatedPrd: PRD = { ...prd, userStories: finalStories };
+  const routingProfile =
+    config.routing?.agents?.enabled === true ? (config.routing?.agents?.default ?? undefined) : undefined;
+  const updatedPrd: PRD = {
+    ...prd,
+    userStories: finalStories,
+    ...(routingProfile !== undefined && { routingProfile }),
+  };
   await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
   return () => {};
 }
