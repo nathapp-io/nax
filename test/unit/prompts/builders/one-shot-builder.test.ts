@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentRoutingProfile } from "@/config";
-import { OneShotPromptBuilder } from "@/prompts/builders/one-shot-builder";
+import { OneShotPromptBuilder } from "@/prompts";
 
 describe("agentCapabilityCards", () => {
   it("returns empty string for empty profiles array", () => {
