@@ -210,6 +210,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "existing-profile",
               target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
             },
           ],
         },
@@ -252,6 +253,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "existing-profile",
               target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
             },
           ],
         },
@@ -287,6 +289,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "some-profile",
               target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
             },
           ],
         },
