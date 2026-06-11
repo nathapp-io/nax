@@ -89,6 +89,8 @@ export interface StoryRouting {
   initialProfileId?: string;
   /** Agent at first route — written once, not overwritten by escalation */
   initialAgent?: string;
+  /** Profile id that produced the current agent assignment */
+  agentProfileId?: string;
 }
 
 /** Escalation attempt tracking */
@@ -319,4 +321,6 @@ export interface PRD {
   };
   /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
   acceptanceOverrides?: Record<string, string>;
+  /** Config profile resolved at plan time — used to warn when nax run uses a different profile */
+  routingProfile?: string;
 }
