@@ -409,14 +409,14 @@ export const NaxConfigSchema = z
     const tierOrder = data.autoMode?.escalation?.tierOrder ?? [];
     const knownAgents = Object.keys(data.models ?? {});
     for (const [i, rung] of tierOrder.entries()) {
-      if (rung.agent !== undefined && !knownAgents.includes(rung.agent)) {
+      if (rung.agent === undefined) continue;
+      if (!knownAgents.includes(rung.agent)) {
         ctx.addIssue({
           code: "custom",
           path: ["autoMode", "escalation", "tierOrder", i, "agent"],
           message: `Agent "${rung.agent}" is not defined in config.models (known: ${knownAgents.join(", ")})`,
         });
-      }
-      if (rung.agent !== undefined) {
+      } else {
         const agentTiers = data.models?.[rung.agent] ?? {};
         if (!(rung.tier in agentTiers)) {
           ctx.addIssue({
