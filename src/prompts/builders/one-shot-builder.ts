@@ -127,6 +127,6 @@ export class OneShotPromptBuilder {
   }
 
   private static escapeCell(value: string): string {
-    return value.replace(/\|/g, "\\|");
+    return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
   }
 }

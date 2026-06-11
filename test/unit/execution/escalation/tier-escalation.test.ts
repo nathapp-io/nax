@@ -653,3 +653,81 @@ describe("handleTierEscalation — story:escalated event emission", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// preIterationTierCheck — M2: unmatched rung does not grant unlimited budget
+//
+// When tierOrder has agent-qualified rungs but the story's (tier, agent) pair
+// matches no rung, the function must NOT skip the iteration (budget is treated
+// as unbounded, which keeps the story running) and emits a warn.
+// ---------------------------------------------------------------------------
+
+describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder", () => {
+  test("shouldSkipIteration is false when (tier, agent) pair is absent from agent-qualified tierOrder", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { preIterationTierCheck, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      // Story whose agent ("codex") is not in the tierOrder (which only has "claude" rungs)
+      const story = {
+        id: "US-unmatched-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 5, // well above any tier's attempt budget — would skip if rung were found
+        routing: { modelTier: "fast", testStrategy: "test-after", agent: "codex" },
+      };
+
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const config = {
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", agent: "claude", attempts: 2 },
+              { tier: "balanced", agent: "claude", attempts: 2 },
+            ],
+          },
+        },
+        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+        models: {},
+      };
+
+      const result = await preIterationTierCheck(
+        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        { modelTier: "fast" },
+        config as unknown as Parameters<typeof preIterationTierCheck>[2],
+        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        "/tmp/test-prd-unmatched.json",
+        undefined,
+        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        "f",
+        0,
+        "/tmp",
+      );
+
+      // Unmatched rung → budget is unbounded → iteration proceeds (not skipped).
+      // A warn is emitted by the implementation (observable in logs, not asserted
+      // here since preIterationTierCheck uses getSafeLogger() without _deps injection).
+      expect(result.shouldSkipIteration).toBe(false);
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});

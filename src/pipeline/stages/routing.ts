@@ -37,31 +37,44 @@ export const routingStage: PipelineStage = {
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, ctx);
 
     // @design: BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
-    // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers
+    // (i.e., a higher tier than the candidate baseline). This prevents stale tiers
     // from sticking when complexity changes between runs, while still honoring explicit
     // escalations set by handleTierEscalation.
     const TIER_RANK: Record<string, number> = { fast: 0, balanced: 1, powerful: 2 };
     const derivedTier = decision.modelTier;
+
+    // Open Item B: a selected profile's target tier seeds the STARTING rung and
+    // overrides the complexity-derived tier. Genuine escalation still wins below.
+    const profileTier = ctx.story.routing?.profileModelTier;
+    const candidateTier = profileTier ?? derivedTier;
+    const candidateRank = TIER_RANK[candidateTier];
+
     const previousTier = ctx.story.routing?.modelTier;
     const previousRank = previousTier !== undefined ? TIER_RANK[previousTier] : undefined;
-    const derivedRank = TIER_RANK[derivedTier];
     if (previousTier !== undefined && previousRank === undefined) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
         storyId: ctx.story.id,
         previousTier,
-        derivedTier,
+        candidateTier,
       });
     }
+    // Preserve a previously-stored tier only when it is a strictly higher escalation
+    // than the candidate (profile-or-derived) baseline.
     const isEscalated =
       previousTier !== undefined &&
       previousRank !== undefined &&
-      derivedRank !== undefined &&
-      previousRank > derivedRank;
-    const modelTier = isEscalated ? previousTier : derivedTier;
+      candidateRank !== undefined &&
+      previousRank > candidateRank;
+    const modelTier = isEscalated ? previousTier : candidateTier;
 
     const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
 
-    // Write routing back to story (for escalation tracking)
+    // Write routing back to story (for escalation tracking).
+    // initialAgent / initialProfileId use the first-write idiom: captured once and
+    // never overwritten by subsequent routing passes or escalation.
+    const initialAgent = ctx.story.routing?.initialAgent ?? routing.agent;
+    const initialProfileId = ctx.story.routing?.initialProfileId ?? ctx.story.routing?.agentProfileId;
+
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),
       complexity: routing.complexity,
@@ -69,6 +82,8 @@ export const routingStage: PipelineStage = {
       testStrategy: routing.testStrategy,
       reasoning: routing.reasoning ?? "",
       modelTier: routing.modelTier,
+      ...(initialAgent !== undefined && { initialAgent }),
+      ...(initialProfileId !== undefined && { initialProfileId }),
     };
     if (ctx.prdPath) {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
@@ -113,14 +128,14 @@ export const routingStage: PipelineStage = {
     ctx.routing = routing as RoutingResult;
 
     logger.debug("routing", "Task classified", {
+      storyId: ctx.story.id,
       complexity: ctx.routing.complexity,
       modelTier: ctx.routing.modelTier,
       testStrategy: ctx.routing.testStrategy,
-      storyId: ctx.story.id,
     });
 
     if (ctx.stories.length === 1) {
-      logger.debug("routing", "Routing reasoning", { reasoning: ctx.routing.reasoning, storyId: ctx.story.id });
+      logger.debug("routing", "Routing reasoning", { storyId: ctx.story.id, reasoning: ctx.routing.reasoning });
     }
 
     return { action: "continue" };

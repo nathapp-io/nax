@@ -135,6 +135,15 @@ export async function preIterationTierCheck(
     : { tier: currentTier };
   const tierCfg = tierOrder.length > 0 ? getTierConfig(currentRungForBudget, tierOrder) : undefined;
 
+  if (tierOrder.length > 0 && !tierCfg) {
+    logger?.warn("escalation", "Current rung not found in tierOrder — escalation budget is unbounded for this story", {
+      storyId: story.id,
+      currentTier,
+      agent: story.routing?.agent,
+      hasAgentRungs,
+    });
+  }
+
   if (!tierCfg || (story.attempts ?? 0) < tierCfg.attempts) {
     // Story still has budget in current tier
     return { shouldSkipIteration: false, prdDirty: false, prd };

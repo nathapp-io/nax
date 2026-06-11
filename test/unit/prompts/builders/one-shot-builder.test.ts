@@ -96,4 +96,26 @@ describe("agentCapabilityCards", () => {
     const unescapedPipes = (rows[0]!.match(/(?<!\\)\|/g) ?? []).length;
     expect(unescapedPipes).toBe(6);
   });
+
+  it("neutralizes newlines in cell values to prevent broken table rows", () => {
+    const profiles: AgentRoutingProfile[] = [
+      {
+        id: "newline-profile",
+        target: { agent: "claude", model: "fast" },
+        strengths: ["handles\nmulti-line\nstrengths", "also\r\nwindows"],
+        costTier: "low",
+      },
+    ];
+
+    const result = OneShotPromptBuilder.agentCapabilityCards(profiles);
+
+    // Each row must be a single line — no embedded newlines
+    const rows = result.split("\n").filter((l: string) => l.startsWith("| newline-profile"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toContain("\n");
+    expect(rows[0]).not.toContain("\r");
+    // Newlines replaced with spaces
+    expect(rows[0]).toContain("handles multi-line strengths");
+    expect(rows[0]).toContain("also windows");
+  });
 });
