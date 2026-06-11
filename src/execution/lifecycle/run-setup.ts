@@ -12,7 +12,6 @@
  * - Run initialization
  */
 
-import * as os from "node:os";
 import path from "node:path";
 import { pipelineEventBus } from "@/pipeline";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";

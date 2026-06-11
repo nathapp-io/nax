@@ -194,7 +194,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       id: "US-001",
       routing: {
         complexity: "medium",
-        testStrategy: "tdd",
+        testStrategy: "tdd-simple",
         reasoning: "test",
         agent: "opencode",
         agentProfileId: "removed-profile",
@@ -210,7 +210,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "existing-profile",
               description: "Another profile",
-              target: { agent: "claude" },
+              target: { agent: "claude", model: "fast" },
             },
           ],
         },
@@ -237,7 +237,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       id: "US-002",
       routing: {
         complexity: "simple",
-        testStrategy: "tdd",
+        testStrategy: "tdd-simple",
         reasoning: "test",
         agent: "claude",
         agentProfileId: "existing-profile",
@@ -253,7 +253,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "existing-profile",
               description: "A profile",
-              target: { agent: "claude" },
+              target: { agent: "claude", model: "fast" },
             },
           ],
         },
@@ -275,7 +275,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       id: "US-003",
       routing: {
         complexity: "simple",
-        testStrategy: "tdd",
+        testStrategy: "tdd-simple",
         reasoning: "test",
       },
     });
@@ -289,7 +289,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
             {
               id: "some-profile",
               description: "A profile",
-              target: { agent: "claude" },
+              target: { agent: "claude", model: "fast" },
             },
           ],
         },
