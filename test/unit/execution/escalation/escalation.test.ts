@@ -135,6 +135,17 @@ describe("escalateTier", () => {
     const result = escalateTier({ tier: "fast", agent: "claude" }, tierOrder);
     expect(result).toBeNull();
   });
+
+  test("returns null when caller has agent set but ladder rungs have no agent (mixed config)", () => {
+    // Story has routing.agent = "claude" but tier-only ladder — tuple match finds no rung, escalation blocked.
+    // Intentional: user must add agent fields to tierOrder to use cross-agent escalation.
+    const tierOrder: TierConfig[] = [
+      { tier: "fast", attempts: 3 },
+      { tier: "balanced", attempts: 2 },
+    ];
+    const result = escalateTier({ tier: "fast", agent: "claude" }, tierOrder);
+    expect(result).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

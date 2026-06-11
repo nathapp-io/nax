@@ -41,7 +41,7 @@ export function escalateTier(
   const i =
     currentRung.agent !== undefined
       ? tierOrder.findIndex(
-          (t) => t.tier === currentRung.tier && (t.agent ?? undefined) === currentRung.agent,
+          (t) => t.tier === currentRung.tier && t.agent === currentRung.agent,
         )
       : tierOrder.findIndex((t) => t.tier === currentRung.tier);
   if (i === -1 || i === tierOrder.length - 1) return null;
