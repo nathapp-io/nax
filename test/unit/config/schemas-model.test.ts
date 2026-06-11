@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TierConfigSchema } from "@/config/schemas-model";
+import { TierConfigSchema } from "@/config";
 
 describe("TierConfigSchema", () => {
   test("parses valid tier without agent", () => {
