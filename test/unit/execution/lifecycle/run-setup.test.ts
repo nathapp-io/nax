@@ -205,6 +205,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       routing: {
         agents: {
           enabled: true,
+          strategy: "off" as const,
           default: "default-profile",
           profiles: [
             {
@@ -248,6 +249,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       routing: {
         agents: {
           enabled: true,
+          strategy: "off" as const,
           default: "existing-profile",
           profiles: [
             {
@@ -284,6 +286,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
       routing: {
         agents: {
           enabled: true,
+          strategy: "off" as const,
           default: "some-profile",
           profiles: [
             {
