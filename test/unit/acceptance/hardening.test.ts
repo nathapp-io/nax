@@ -1,22 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { type HardeningContext, _hardeningDeps, runHardeningPass } from "../../../src/acceptance/hardening";
 import type { NaxConfig } from "../../../src/config";
-import type { PRD } from "../../../src/prd/types";
-import { makeMockAgentManager } from "../../helpers";
+import { makeMockAgentManager, makePRD, makeStory } from "../../helpers";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
-
-function makePRD(overrides: Partial<PRD> = {}): PRD {
-  return {
-    project: "test",
-    feature: "test-feature",
-    branchName: "feat/test",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    userStories: [],
-    ...overrides,
-  };
-}
 
 const TEST_CONFIG = {
   autoMode: { defaultAgent: "claude" },
@@ -49,9 +36,7 @@ function makeCtx(overrides: Partial<HardeningContext> = {}): HardeningContext {
     runtime: {
       configLoader: { current: () => TEST_CONFIG },
       packages: {
-        resolve: () => ({
-          select: () => TEST_CONFIG,
-        }),
+        resolve: () => ({ select: () => TEST_CONFIG }),
         repo: () => ({ select: () => TEST_CONFIG }),
       },
       agentManager: runtimeAgentManager,
@@ -74,12 +59,16 @@ let origCallOp: typeof _hardeningDeps.callOp;
 let origSavePRD: typeof _hardeningDeps.savePRD;
 let origSpawn: typeof _hardeningDeps.spawn;
 let origWriteFile: typeof _hardeningDeps.writeFile;
+let origDetectLanguage: typeof _hardeningDeps.detectLanguage;
 
 beforeEach(() => {
   origCallOp = _hardeningDeps.callOp;
   origSavePRD = _hardeningDeps.savePRD;
   origSpawn = _hardeningDeps.spawn;
   origWriteFile = _hardeningDeps.writeFile;
+  origDetectLanguage = _hardeningDeps.detectLanguage;
+  // Stub out language detection so tests don't hit the filesystem
+  _hardeningDeps.detectLanguage = mock(async () => undefined);
 });
 
 afterEach(() => {
@@ -87,29 +76,46 @@ afterEach(() => {
   _hardeningDeps.savePRD = origSavePRD;
   _hardeningDeps.spawn = origSpawn;
   _hardeningDeps.writeFile = origWriteFile;
+  _hardeningDeps.detectLanguage = origDetectLanguage;
 });
+
+// ─── Spawn helpers ───────────────────────────────────────────────────────────
+
+function passingSpawn() {
+  return mock(() => ({
+    exited: Promise.resolve(0),
+    stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+    stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+  } as ReturnType<typeof Bun.spawn>));
+}
+
+function failingSpawn(output: string) {
+  return mock(() => ({
+    exited: Promise.resolve(1),
+    stdout: new ReadableStream({
+      start(ctrl) {
+        ctrl.enqueue(new TextEncoder().encode(output));
+        ctrl.close();
+      },
+    }),
+    stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+  } as ReturnType<typeof Bun.spawn>));
+}
+
+function mockCallOp(refineReturn: object[], generateReturn: object) {
+  return mock(async (_ctx: any, op: any, _input: any) => {
+    if (op.name === "acceptance-refine") return refineReturn;
+    if (op.name === "acceptance-generate") return generateReturn;
+    throw new Error(`Unexpected op: ${op.name}`);
+  });
+}
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("runHardeningPass()", () => {
   test("returns empty result when no stories have suggestedCriteria", async () => {
     const ctx = makeCtx({
-      prd: makePRD({
-        userStories: [
-          {
-            id: "US-001",
-            title: "Story",
-            description: "Desc",
-            acceptanceCriteria: ["AC-1"],
-            tags: [],
-            dependencies: [],
-            status: "passed",
-            passes: true,
-            escalations: [],
-            attempts: 1,
-          },
-        ],
-      }),
+      prd: makePRD({ userStories: [makeStory({ status: "passed", passes: true, attempts: 1 })] }),
     });
 
     const result = await runHardeningPass(ctx);
@@ -119,45 +125,31 @@ describe("runHardeningPass()", () => {
   });
 
   test("promotes passing suggested criteria to acceptanceCriteria", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["suggested edge case"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [{ original: "suggested edge case", refined: "suggested edge case", testable: true, storyId: "US-001" }];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => {})' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "suggested edge case", refined: "suggested edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => {
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({
-          start(ctrl) {
-            ctrl.enqueue(new TextEncoder().encode("(pass) AC-1: suggested edge case\n"));
-            ctrl.close();
-          },
-        }),
-        stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      } as ReturnType<typeof Bun.spawn>;
-    });
+    _hardeningDeps.spawn = mock(() => ({
+      exited: Promise.resolve(0),
+      stdout: new ReadableStream({
+        start(ctrl) {
+          ctrl.enqueue(new TextEncoder().encode("(pass) AC-1: suggested edge case\n"));
+          ctrl.close();
+        },
+      }),
+      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+    } as ReturnType<typeof Bun.spawn>));
 
     const result = await runHardeningPass(ctx);
 
@@ -169,45 +161,22 @@ describe("runHardeningPass()", () => {
   });
 
   test("discards failing suggested criteria", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["failing edge case"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [{ original: "failing edge case", refined: "failing edge case", testable: true, storyId: "US-001" }];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => {})' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "failing edge case", refined: "failing edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => {
-      return {
-        exited: Promise.resolve(1),
-        stdout: new ReadableStream({
-          start(ctrl) {
-            ctrl.enqueue(new TextEncoder().encode("(fail) AC-1: failing edge case\n"));
-            ctrl.close();
-          },
-        }),
-        stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      } as ReturnType<typeof Bun.spawn>;
-    });
+    _hardeningDeps.spawn = failingSpawn("(fail) AC-1: failing edge case\n");
 
     const result = await runHardeningPass(ctx);
 
@@ -219,40 +188,22 @@ describe("runHardeningPass()", () => {
   });
 
   test("discards testable:false criteria even when the stub test passes", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["cli.ts contains an import of writeFileSync"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [{ original: "cli.ts contains an import of writeFileSync", refined: "cli.ts contains an import of writeFileSync", testable: false, storyId: "US-001" }];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => { expect(true).toBe(true); })' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "cli.ts contains an import of writeFileSync", refined: "cli.ts contains an import of writeFileSync", testable: false, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => { expect(true).toBe(true); })' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => {
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-        stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      } as ReturnType<typeof Bun.spawn>;
-    });
+    _hardeningDeps.spawn = passingSpawn();
 
     const result = await runHardeningPass(ctx);
 
@@ -264,43 +215,25 @@ describe("runHardeningPass()", () => {
   });
 
   test("promotes testable:true criterion while discarding testable:false in same story", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["behavioral edge case", "cli.ts contains an import"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [
-          { original: "behavioral edge case", refined: "behavioral edge case", testable: true, storyId: "US-001" },
-          { original: "cli.ts contains an import", refined: "cli.ts contains an import", testable: false, storyId: "US-001" },
-        ];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => { expect(true).toBe(true); })' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [
+        { original: "behavioral edge case", refined: "behavioral edge case", testable: true, storyId: "US-001" },
+        { original: "cli.ts contains an import", refined: "cli.ts contains an import", testable: false, storyId: "US-001" },
+      ],
+      { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => { expect(true).toBe(true); })' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => {
-      return {
-        exited: Promise.resolve(0),
-        stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-        stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      } as ReturnType<typeof Bun.spawn>;
-    });
+    _hardeningDeps.spawn = passingSpawn();
 
     const result = await runHardeningPass(ctx);
 
@@ -312,19 +245,13 @@ describe("runHardeningPass()", () => {
   });
 
   test("does not throw on error — returns partial result", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["edge case"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
+    });
     const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
 
     _hardeningDeps.callOp = mock(async () => {
@@ -339,42 +266,26 @@ describe("runHardeningPass()", () => {
   });
 
   test("mapping loop driven from allRefined prevents AC index drift when refine count changes (#336 gap 4)", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       // 3 suggested criteria, but refine deduplicates to 2
       suggestedCriteria: ["dup criterion A", "dup criterion A", "passing criterion"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [
-          { original: "dup criterion A", refined: "dup criterion A", testable: true, storyId: "US-001" },
-          { original: "passing criterion", refined: "passing criterion", testable: true, storyId: "US-001" },
-        ];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [
+        { original: "dup criterion A", refined: "dup criterion A", testable: true, storyId: "US-001" },
+        { original: "passing criterion", refined: "passing criterion", testable: true, storyId: "US-001" },
+      ],
+      { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    } as ReturnType<typeof Bun.spawn>));
+    _hardeningDeps.spawn = passingSpawn();
 
     const result = await runHardeningPass(ctx);
 
@@ -384,41 +295,25 @@ describe("runHardeningPass()", () => {
   });
 
   test("deduplicates against existing acceptanceCriteria when promoting (#336 gap 5)", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC", "already promoted criterion"],
       suggestedCriteria: ["already promoted criterion", "new criterion"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [
-          { original: "already promoted criterion", refined: "already promoted criterion", testable: true, storyId: "US-001" },
-          { original: "new criterion", refined: "new criterion", testable: true, storyId: "US-001" },
-        ];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})' };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [
+        { original: "already promoted criterion", refined: "already promoted criterion", testable: true, storyId: "US-001" },
+        { original: "new criterion", refined: "new criterion", testable: true, storyId: "US-001" },
+      ],
+      { testCode: 'test("AC-1", () => {})\ntest("AC-2", () => {})' },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    } as ReturnType<typeof Bun.spawn>));
+    _hardeningDeps.spawn = passingSpawn();
 
     await runHardeningPass(ctx);
 
@@ -429,38 +324,22 @@ describe("runHardeningPass()", () => {
   });
 
   test("falls back to skeleton tests when acceptanceGenerateOp returns null testCode", async () => {
-    const story = {
-      id: "US-001",
-      title: "Story",
-      description: "Desc",
+    const story = makeStory({
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["edge case"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
-
-    _hardeningDeps.callOp = mock(async (_ctx, op, _input) => {
-      if (op.name === "acceptance-refine") {
-        return [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }];
-      }
-      if (op.name === "acceptance-generate") {
-        return { testCode: null };
-      }
-      throw new Error(`Unexpected op: ${op.name}`);
     });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+      { testCode: null },
+    );
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    } as ReturnType<typeof Bun.spawn>));
+    _hardeningDeps.spawn = passingSpawn();
 
     const result = await runHardeningPass(ctx);
 
@@ -472,24 +351,19 @@ describe("runHardeningPass()", () => {
   });
 
   test("calls acceptanceRefineOp with story context fields", async () => {
-    const story = {
-      id: "US-001",
+    const story = makeStory({
       title: "Story Title",
       description: "Story Description",
       acceptanceCriteria: ["spec AC"],
       suggestedCriteria: ["edge case"],
-      tags: [],
-      dependencies: [],
-      status: "passed" as const,
+      status: "passed",
       passes: true,
-      escalations: [],
       attempts: 1,
-    };
-    const prd = makePRD({ userStories: [story] });
-    const ctx = makeCtx({ prd });
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
 
     let capturedRefineInput: unknown;
-    _hardeningDeps.callOp = mock(async (_ctx, op, input) => {
+    _hardeningDeps.callOp = mock(async (_ctx: any, op: any, input: any) => {
       if (op.name === "acceptance-refine") {
         capturedRefineInput = input;
         return [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }];
@@ -501,11 +375,7 @@ describe("runHardeningPass()", () => {
     });
     _hardeningDeps.writeFile = mock(async () => {});
     _hardeningDeps.savePRD = mock(async () => {});
-    _hardeningDeps.spawn = mock(() => ({
-      exited: Promise.resolve(0),
-      stdout: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-      stderr: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
-    } as ReturnType<typeof Bun.spawn>));
+    _hardeningDeps.spawn = passingSpawn();
 
     await runHardeningPass(ctx);
 
@@ -514,5 +384,33 @@ describe("runHardeningPass()", () => {
     expect(refineInput.storyId).toBe("US-001");
     expect(refineInput.storyTitle).toBe("Story Title");
     expect(refineInput.storyDescription).toBe("Story Description");
+  });
+
+  test("uses packageDir (not workdir) for suggested test path in monorepo", async () => {
+    const story = makeStory({
+      acceptanceCriteria: ["spec AC"],
+      suggestedCriteria: ["edge case"],
+      workdir: "packages/api",
+      status: "passed",
+      passes: true,
+      attempts: 1,
+    });
+    const ctx = makeCtx({ prd: makePRD({ userStories: [story] }) });
+
+    const writtenPaths: string[] = [];
+    _hardeningDeps.callOp = mockCallOp(
+      [{ original: "edge case", refined: "edge case", testable: true, storyId: "US-001" }],
+      { testCode: 'test("AC-1", () => {})' },
+    );
+    _hardeningDeps.writeFile = mock(async (p: string) => { writtenPaths.push(p); });
+    _hardeningDeps.savePRD = mock(async () => {});
+    _hardeningDeps.spawn = passingSpawn();
+
+    await runHardeningPass(ctx);
+
+    expect(writtenPaths).toHaveLength(1);
+    // Must be under <packageDir>/.nax, not <workdir>/.nax
+    expect(writtenPaths[0]).toContain("/tmp/workdir/packages/api/.nax/");
+    expect(writtenPaths[0]).not.toMatch(/^\/tmp\/workdir\/\.nax\//);
   });
 });
