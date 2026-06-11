@@ -90,7 +90,7 @@ describe("agentCapabilityCards", () => {
     expect(result).toContain("strength\\|a, strength\\|b");
     expect(result).toContain("low\\|med");
     // The row must not contain unescaped pipes beyond the column delimiters
-    const rows = result.split("\n").filter((l) => l.startsWith("| pipe"));
+    const rows = result.split("\n").filter((l: string) => l.startsWith("| pipe"));
     expect(rows).toHaveLength(1);
     // A well-formed row has exactly 6 unescaped pipe chars (column delimiters)
     const unescapedPipes = (rows[0]!.match(/(?<!\\)\|/g) ?? []).length;
