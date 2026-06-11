@@ -127,12 +127,7 @@ async function processPackageGroup(
       text: c.refined,
       lineNumber: i + 1,
     }));
-    testCode = generateSkeletonTests(
-      ctx.prd.feature,
-      skeletonCriteria,
-      ctx.config.acceptance?.testFramework,
-      language,
-    );
+    testCode = generateSkeletonTests(ctx.prd.feature, skeletonCriteria, ctx.config.acceptance?.testFramework, language);
     logger?.warn("acceptance", "Hardening generate op returned no test code — using skeleton", {
       storyIds: groupStories.map((s) => s.id),
       storiesProcessed: groupStories.length,
@@ -216,7 +211,7 @@ export async function runHardeningPass(ctx: HardeningContext): Promise<Hardening
     for (const story of storiesWithSuggested) {
       const wd = story.workdir ?? "";
       if (!packageGroups.has(wd)) packageGroups.set(wd, []);
-      packageGroups.get(wd)!.push(story);
+      packageGroups.get(wd)?.push(story);
     }
 
     for (const [wd, groupStories] of packageGroups.entries()) {
