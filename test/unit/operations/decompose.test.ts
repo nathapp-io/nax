@@ -192,7 +192,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-2: story with valid agentProfileId sets routing.agent and routing.agentProfileId", () => {
+  test("AC-T9-2: story with valid agentProfileId sets routing.agent, routing.agentProfileId, and routing.profileModelTier", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -206,6 +206,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result).toHaveLength(1);
     expect(result[0].routing?.agent).toBe("opencode");
     expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+    expect(result[0].routing?.profileModelTier).toBe("fast");
   });
 
   test("AC-T9-2b: routing.agent and routing.agentProfileId are set per-story independently", () => {
@@ -269,7 +270,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-4: agentProfileId missing + default set → routing resolved from default profile", () => {
+  test("AC-T9-4: agentProfileId missing + default set → routing resolved from default profile, including profileModelTier", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -287,9 +288,10 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result).toHaveLength(1);
     expect(result[0].routing?.agent).toBe("opencode");
     expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+    expect(result[0].routing?.profileModelTier).toBe("fast");
   });
 
-  test("AC-T9-5: agentProfileId unknown/hallucinated + default set → routing resolved from default profile", () => {
+  test("AC-T9-5: agentProfileId unknown/hallucinated + default set → routing resolved from default profile, including profileModelTier", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -307,6 +309,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result).toHaveLength(1);
     expect(result[0].routing?.agent).toBe("opencode");
     expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+    expect(result[0].routing?.profileModelTier).toBe("fast");
   });
 
   test("AC-T9-6: agentProfileId unknown + no default → routing unchanged (existing behavior preserved)", () => {

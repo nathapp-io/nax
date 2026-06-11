@@ -67,6 +67,7 @@ export function mapDecomposedStoriesToUserStories(
         modelTier: "balanced" as const,
         ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
         ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
+        ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),
       },
     };
   });

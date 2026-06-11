@@ -75,6 +75,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
               ...story.routing,
               agent: profile.target.agent,
               agentProfileId: profile.id,
+              profileModelTier: profile.target.model,
             },
           };
         }
@@ -89,6 +90,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
             ...story.routing,
             agent: defaultProfile.target.agent,
             agentProfileId: defaultProfile.id,
+            profileModelTier: defaultProfile.target.model,
           },
         };
       }

@@ -179,6 +179,48 @@ describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent routing propagation — routing.agent, agentProfileId, profileModelTier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mapDecomposedStoriesToUserStories — agent routing propagation", () => {
+  test("propagates routing.agent when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.agent).toBe("opencode");
+  });
+
+  test("propagates routing.agentProfileId when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.agentProfileId).toBe("fast-coder");
+  });
+
+  test("propagates routing.profileModelTier when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("fast");
+  });
+
+  test("profileModelTier is absent when routing is not set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: undefined });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBeUndefined();
+  });
+
+  test("propagates 'balanced' profileModelTier correctly", () => {
+    const story = makeDecomposedStory({ routing: { agent: "claude", agentProfileId: "quality-agent", profileModelTier: "balanced" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("balanced");
+  });
+
+  test("propagates 'powerful' profileModelTier correctly", () => {
+    const story = makeDecomposedStory({ routing: { agent: "claude", agentProfileId: "expert-agent", profileModelTier: "powerful" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("powerful");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC3: validation — missing id
 // ─────────────────────────────────────────────────────────────────────────────
 

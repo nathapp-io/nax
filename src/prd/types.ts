@@ -91,6 +91,8 @@ export interface StoryRouting {
   initialAgent?: string;
   /** Profile id that produced the current agent assignment */
   agentProfileId?: string;
+  /** Model tier from the matched agent profile's target — set at plan time, used to bias routing tier selection */
+  profileModelTier?: ModelTier;
 }
 
 /** Escalation attempt tracking */

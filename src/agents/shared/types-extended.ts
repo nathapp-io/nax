@@ -146,7 +146,7 @@ export interface DecomposedStory {
    * Routing metadata resolved from agentProfileId during decomposeOp.parse().
    * Populated only when a matching profile is found in config.routing.agents.profiles.
    */
-  routing?: Pick<import("../../prd/types").StoryRouting, "agent" | "agentProfileId">;
+  routing?: Pick<import("../../prd/types").StoryRouting, "agent" | "agentProfileId" | "profileModelTier">;
 }
 
 /**
