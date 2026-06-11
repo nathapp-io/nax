@@ -138,8 +138,8 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
             escalation: {
               enabled: true,
               tierOrder: [
-                { name: "fast", attempts: 1 },
-                { name: "balanced", attempts: 2 },
+                { tier: "fast", attempts: 1 },
+                { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
             },
@@ -458,8 +458,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
           escalation: {
             enabled: true,
             tierOrder: [
-              { name: "fast", attempts: 1 },
-              { name: "balanced", attempts: 2 },
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 2 },
             ],
           },
         },
@@ -530,8 +530,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
           escalation: {
             enabled: true,
             tierOrder: [
-              { name: "fast", attempts: 1 },
-              { name: "balanced", attempts: 2 },
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 2 },
             ],
           },
         },
@@ -613,8 +613,8 @@ describe("handleTierEscalation — story:escalated event emission", () => {
             escalation: {
               enabled: true,
               tierOrder: [
-                { name: "fast", attempts: 1 },
-                { name: "balanced", attempts: 2 },
+                { tier: "fast", attempts: 1 },
+                { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
             },

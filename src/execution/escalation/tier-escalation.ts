@@ -136,9 +136,16 @@ export async function preIterationTierCheck(
     return { shouldSkipIteration: false, prdDirty: false, prd };
   }
 
-  // Exceeded current tier budget — try to escalate
-  const currentAgent = story.routing?.agent;
-  const escalationResult = escalateTier({ tier: currentTier, agent: currentAgent }, tierOrder);
+  // Exceeded current tier budget — try to escalate.
+  // Only match by (tier, agent) tuple when the tierOrder actually contains
+  // agent-qualified rungs (cross-agent ladder). For standard tier orders with
+  // no agent fields, fall back to tier-name-only matching so escalation still
+  // works for stories that carry a routing.agent (Task 9 agent-profile routing).
+  const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
+  const currentRung = hasAgentRungs
+    ? { tier: currentTier, agent: story.routing?.agent }
+    : { tier: currentTier };
+  const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
@@ -311,10 +318,16 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
-  const escalationResult = escalateTier(
-    { tier: ctx.routing.modelTier, agent: ctx.story.routing?.agent },
-    ctx.config.autoMode.escalation.tierOrder,
-  );
+  // Only match by (tier, agent) tuple when the tierOrder contains agent-qualified
+  // rungs (cross-agent ladder). Standard tier orders with no agent fields fall back
+  // to tier-name-only matching so escalation still works for stories that carry a
+  // routing.agent (Task 9 agent-profile routing).
+  const escalationTierOrder = ctx.config.autoMode.escalation.tierOrder;
+  const hasAgentRungs = escalationTierOrder.some((r) => r.agent !== undefined);
+  const currentRung = hasAgentRungs
+    ? { tier: ctx.routing.modelTier, agent: ctx.story.routing?.agent }
+    : { tier: ctx.routing.modelTier };
+  const escalationResult = escalateTier(currentRung, escalationTierOrder);
   const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
