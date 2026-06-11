@@ -16,35 +16,44 @@ export interface EscalateTierResult {
 /**
  * Escalate to the next tier in the configured order.
  *
- * @param currentTier - Current tier name
+ * Matches the current rung by (tier, agent) tuple so that cross-agent ladders
+ * with repeated tier names (e.g. opencode@balanced → claude@balanced → claude@powerful)
+ * advance correctly instead of always anchoring on the first matching tier name.
+ *
+ * @param currentRung - Current rung as { tier, agent? }
  * @param tierOrder - Ordered tier config array from config (e.g., [{tier:"fast",attempts:5}, ...])
  * @returns Next tier and agent, or null if at max tier
  *
  * @example
  * ```typescript
  * const tiers = [{tier:"fast",agent:"claude",attempts:3}, {tier:"balanced",agent:"claude",attempts:2}];
- * escalateTier("fast", tiers);    // => { tier: "balanced", agent: "claude" }
- * escalateTier("balanced", tiers); // => null
+ * escalateTier({ tier: "fast", agent: "claude" }, tiers);    // => { tier: "balanced", agent: "claude" }
+ * escalateTier({ tier: "balanced", agent: "claude" }, tiers); // => null
  * ```
  */
-export function escalateTier(currentTier: string, tierOrder: TierConfig[]): EscalateTierResult | null {
-  const getName = (t: TierConfig) => t.tier ?? (t as unknown as { name?: string }).name ?? null;
-  const currentIndex = tierOrder.findIndex((t) => getName(t) === currentTier);
-  if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
-    return null;
-  }
-  const next = tierOrder[currentIndex + 1];
-  const nextName = getName(next);
-  if (!nextName) return null;
-  return { tier: nextName, agent: next.agent };
+export function escalateTier(
+  currentRung: { tier: string; agent?: string },
+  tierOrder: TierConfig[],
+): EscalateTierResult | null {
+  // When agent is specified, match by (tier, agent) tuple to correctly navigate
+  // cross-agent ladders where the same tier name appears for multiple agents.
+  // When agent is omitted, fall back to tier-name-only matching (first match).
+  const i =
+    currentRung.agent !== undefined
+      ? tierOrder.findIndex(
+          (t) => t.tier === currentRung.tier && (t.agent ?? undefined) === currentRung.agent,
+        )
+      : tierOrder.findIndex((t) => t.tier === currentRung.tier);
+  if (i === -1 || i === tierOrder.length - 1) return null;
+  const next = tierOrder[i + 1];
+  return { tier: next.tier, agent: next.agent };
 }
 
 /**
  * Get the tier config for a given tier name.
  */
 export function getTierConfig(tierName: string, tierOrder: TierConfig[]): TierConfig | undefined {
-  const getName = (t: TierConfig) => t.tier ?? (t as unknown as { name?: string }).name ?? null;
-  return tierOrder.find((t) => getName(t) === tierName);
+  return tierOrder.find((t) => t.tier === tierName);
 }
 
 /**

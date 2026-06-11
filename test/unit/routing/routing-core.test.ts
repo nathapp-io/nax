@@ -177,17 +177,17 @@ describe("escalateTier", () => {
     ["balanced → powerful", "balanced", { tier: "powerful", agent: undefined }],
     ["powerful → null (max reached)", "powerful", null],
   ] as const)("escalates %s", (_label, from, expected) => {
-    expect(escalateTier(from, defaultTiers)).toEqual(expected);
+    expect(escalateTier({ tier: from }, defaultTiers)).toEqual(expected);
   });
 
   test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
-    let result = escalateTier("fast", defaultTiers);
+    let result = escalateTier({ tier: "fast" }, defaultTiers);
     expect(result?.tier).toBe("balanced");
 
-    result = escalateTier(result!.tier, defaultTiers);
+    result = escalateTier({ tier: result!.tier }, defaultTiers);
     expect(result?.tier).toBe("powerful");
 
-    result = escalateTier(result!.tier, defaultTiers);
+    result = escalateTier({ tier: result!.tier }, defaultTiers);
     expect(result).toBeNull();
   });
 });

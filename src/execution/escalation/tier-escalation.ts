@@ -137,7 +137,8 @@ export async function preIterationTierCheck(
   }
 
   // Exceeded current tier budget — try to escalate
-  const escalationResult = escalateTier(currentTier, tierOrder);
+  const currentAgent = story.routing?.agent;
+  const escalationResult = escalateTier({ tier: currentTier, agent: currentAgent }, tierOrder);
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
@@ -310,7 +311,10 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
-  const escalationResult = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
+  const escalationResult = escalateTier(
+    { tier: ctx.routing.modelTier, agent: ctx.story.routing?.agent },
+    ctx.config.autoMode.escalation.tierOrder,
+  );
   const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
