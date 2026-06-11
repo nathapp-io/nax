@@ -39,11 +39,15 @@ export function mapDecomposedStoriesToUserStories(
     }
 
     if (!story.contextFiles || story.contextFiles.length === 0) {
-      getSafeLogger()?.warn("decompose-mapper", `Entry ${entryIndex} (${story.id}) has empty contextFiles — continuing`, {
-        storyId: story.id,
-        entryIndex,
-        parentStoryId,
-      });
+      getSafeLogger()?.warn(
+        "decompose-mapper",
+        `Entry ${entryIndex} (${story.id}) has empty contextFiles — continuing`,
+        {
+          storyId: story.id,
+          entryIndex,
+          parentStoryId,
+        },
+      );
     }
 
     return {

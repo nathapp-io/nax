@@ -9,12 +9,12 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { _routingDeps as RoutingDeps } from "../../../../src/pipeline/stages/routing";
-import type { PipelineContext } from "../../../../src/pipeline/types";
-import type { StoryRouting } from "../../../../src/prd/types";
-import { makeNaxConfig, makeStory } from "../../../helpers";
+import { DEFAULT_CONFIG } from "@/config";
+import type { PRD, UserStory } from "@/prd";
+import type { _routingDeps as RoutingDeps } from "@/pipeline/stages/routing";
+import type { PipelineContext } from "@/pipeline/types";
+import type { StoryRouting } from "@/prd/types";
+import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const WORKDIR = `/tmp/nax-routing-profile-tier-test-${randomUUID()}`;
 

@@ -5,9 +5,9 @@
  * parseDecomposeOutput(), validateComplexity()
  */
 
-import { NaxError } from "../../errors";
-import { parseLLMJson } from "../../utils/llm-json";
-import { resolveTestStrategy } from "../../config/test-strategy";
+import { resolveTestStrategy } from "@/config";
+import { NaxError } from "@/errors";
+import { parseLLMJson } from "@/utils/llm-json";
 import type { DecomposedStory } from "../types";
 
 /**

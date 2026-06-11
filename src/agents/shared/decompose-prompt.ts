@@ -157,7 +157,10 @@ function buildPlanModePromptSync(input: DecomposePromptInput): string {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.agentProfiles(input.profiles ?? []).jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder
+    .agentProfiles(input.profiles ?? [])
+    .jsonSchema(DECOMPOSE_PLAN_SCHEMA)
+    .build();
 }
 
 function buildSpecModePromptSync(input: DecomposePromptInput): string {
@@ -189,7 +192,10 @@ async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.agentProfiles(options.profiles ?? []).jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder
+    .agentProfiles(options.profiles ?? [])
+    .jsonSchema(DECOMPOSE_PLAN_SCHEMA)
+    .build();
 }
 
 async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {

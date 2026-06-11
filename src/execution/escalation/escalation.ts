@@ -54,10 +54,7 @@ export function escalateTier(
  * with repeated tier names return the correct rung's attempt budget.
  * When agent is omitted, falls back to tier-name-only matching (first match).
  */
-export function getTierConfig(
-  rung: { tier: string; agent?: string },
-  tierOrder: TierConfig[],
-): TierConfig | undefined {
+export function getTierConfig(rung: { tier: string; agent?: string }, tierOrder: TierConfig[]): TierConfig | undefined {
   return rung.agent !== undefined
     ? tierOrder.find((t) => t.tier === rung.tier && t.agent === rung.agent)
     : tierOrder.find((t) => t.tier === rung.tier);

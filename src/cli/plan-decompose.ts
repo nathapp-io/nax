@@ -93,8 +93,7 @@ export async function planDecomposeCommand(
       if (attempt === 0 && debateDecompEnabled) {
         const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
         const agentRoutingForDebate = config.routing?.agents;
-        const profilesForDebate =
-          agentRoutingForDebate?.enabled === true ? (agentRoutingForDebate.profiles ?? []) : [];
+        const profilesForDebate = agentRoutingForDebate?.enabled === true ? (agentRoutingForDebate.profiles ?? []) : [];
         const prompt = await buildDecomposePromptAsync({
           specContent: "",
           codebaseContext,
