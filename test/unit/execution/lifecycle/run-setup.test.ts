@@ -8,8 +8,12 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { _runSetupDeps, warnFallbackMisconfiguration } from "../../../../src/execution/lifecycle/run-setup";
-import { makeNaxConfig } from "../../../helpers";
+import {
+  _runSetupDeps,
+  warnFallbackMisconfiguration,
+  warnProfileMismatch,
+} from "../../../../src/execution/lifecycle/run-setup";
+import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -165,5 +169,139 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
 
     const geminiWarns = warns.filter((w) => (w[2] as Record<string, unknown>).candidate === "gemini");
     expect(geminiWarns).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 10 Part B: profile-mismatch warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("warnProfileMismatch — Task 10 Part B", () => {
+  function makeLogger() {
+    const warns: Array<[string, string, Record<string, unknown>]> = [];
+    const logger = {
+      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warns.push([stage, msg, ctx]),
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    };
+    return { logger, warns };
+  }
+
+  test("emits warn when story has agentProfileId that no longer exists in config", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-001",
+      routing: {
+        complexity: "medium",
+        testStrategy: "tdd",
+        reasoning: "test",
+        agent: "opencode",
+        agentProfileId: "removed-profile",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          default: "default-profile",
+          profiles: [
+            {
+              id: "existing-profile",
+              description: "Another profile",
+              target: { agent: "claude" },
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(1);
+    const [stage, msg, ctx] = warns[0]!;
+    expect(stage).toBe("setup");
+    expect(msg).toContain("removed-profile");
+    expect(msg).toContain("no longer exists");
+    expect(ctx.storyId).toBe("US-001");
+  });
+
+  test("does not emit warn when story's agentProfileId still exists in config", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-002",
+      routing: {
+        complexity: "simple",
+        testStrategy: "tdd",
+        reasoning: "test",
+        agent: "claude",
+        agentProfileId: "existing-profile",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          default: "existing-profile",
+          profiles: [
+            {
+              id: "existing-profile",
+              description: "A profile",
+              target: { agent: "claude" },
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("does not emit warn when story has no agentProfileId (control case)", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-003",
+      routing: {
+        complexity: "simple",
+        testStrategy: "tdd",
+        reasoning: "test",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          default: "some-profile",
+          profiles: [
+            {
+              id: "some-profile",
+              description: "A profile",
+              target: { agent: "claude" },
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
   });
 });

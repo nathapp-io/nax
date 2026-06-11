@@ -44,6 +44,35 @@ export const _runSetupDeps = {
 };
 
 /**
+ * Emit a warning for each story whose agentProfileId no longer exists in
+ * config.routing.agents.profiles (Task 10 Part B — profile-mismatch check).
+ *
+ * This handles the case where a user runs an old PRD after removing a profile
+ * from config. The existing routing.agent assignment is retained — warn only,
+ * no throw.
+ */
+export function warnProfileMismatch(
+  prd: import("../../prd").PRD,
+  config: NaxConfig,
+  logger: ReturnType<typeof getSafeLogger>,
+): void {
+  const profiles = config.routing?.agents?.profiles ?? [];
+  const profileIds = new Set(profiles.map((p) => p.id));
+
+  for (const story of prd.userStories) {
+    const profileId = story.routing?.agentProfileId;
+    if (!profileId) continue;
+    if (!profileIds.has(profileId)) {
+      logger?.warn(
+        "setup",
+        `Story ${story.id} was planned with profile ${profileId} which no longer exists in config — routing.agent assignment retained`,
+        { storyId: story.id, agentProfileId: profileId },
+      );
+    }
+  }
+}
+
+/**
  * Emit a warning for each fallback candidate in config.agent.fallback.map
  * that cannot be resolved by agentGetFn (AC-35 pre-flight check).
  *
@@ -402,6 +431,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // initializeRun calls loadPRD() internally, producing a new object.
     // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
     statusWriter.setPrd(prd);
+
+    // Warn when any story was planned with an agent profile that has since been removed.
+    warnProfileMismatch(prd, config, logger);
+
     let counts = initResult.storyCounts;
 
     // Prompt user for each paused story — skip in headless mode
