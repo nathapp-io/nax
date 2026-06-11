@@ -48,7 +48,36 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(output, _input, _ctx) {
-    return parseDecomposeOutput(output);
+  parse(output, _input, ctx) {
+    const stories = parseDecomposeOutput(output);
+
+    const agentRouting = ctx.config.routing?.agents;
+    if (agentRouting?.enabled !== true) {
+      return stories;
+    }
+
+    const profiles = agentRouting.profiles ?? [];
+    if (profiles.length === 0) {
+      return stories;
+    }
+
+    return stories.map((story) => {
+      if (!story.agentProfileId) {
+        return story;
+      }
+      const profile = profiles.find((p) => p.id === story.agentProfileId);
+      if (!profile) {
+        // LLM hallucinated an unknown profile id — leave routing unchanged
+        return story;
+      }
+      return {
+        ...story,
+        routing: {
+          ...story.routing,
+          agent: profile.target.agent,
+          agentProfileId: profile.id,
+        },
+      };
+    });
   },
 };
