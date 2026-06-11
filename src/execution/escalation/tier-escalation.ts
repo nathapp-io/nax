@@ -142,9 +142,7 @@ export async function preIterationTierCheck(
   // no agent fields, fall back to tier-name-only matching so escalation still
   // works for stories that carry a routing.agent (Task 9 agent-profile routing).
   const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
-  const currentRung = hasAgentRungs
-    ? { tier: currentTier, agent: story.routing?.agent }
-    : { tier: currentTier };
+  const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
   const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";

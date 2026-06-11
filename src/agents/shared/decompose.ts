@@ -77,9 +77,10 @@ export function parseDecomposeOutput(output: string): DecomposedStory[] {
       estimatedLOC: Number(record.estimatedLOC) || 0,
       risks: Array.isArray(record.risks) ? record.risks : [],
       testStrategy: resolveTestStrategy(typeof record.testStrategy === "string" ? record.testStrategy : undefined),
-      agentProfileId: typeof record.agentProfileId === "string" && record.agentProfileId.length > 0
-        ? record.agentProfileId
-        : undefined,
+      agentProfileId:
+        typeof record.agentProfileId === "string" && record.agentProfileId.length > 0
+          ? record.agentProfileId
+          : undefined,
     };
   });
 

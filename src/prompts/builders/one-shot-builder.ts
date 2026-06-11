@@ -96,12 +96,7 @@ export class OneShotPromptBuilder {
   static agentCapabilityCards(profiles: AgentRoutingProfile[]): string {
     if (profiles.length === 0) return "";
 
-    const header = [
-      "## Agent Profiles",
-      "",
-      "| ID | Agent | Tier | Strengths | Cost |",
-      "|---|---|---|---|---|",
-    ];
+    const header = ["## Agent Profiles", "", "| ID | Agent | Tier | Strengths | Cost |", "|---|---|---|---|---|"];
 
     const rows = profiles.map((p) => {
       const id = OneShotPromptBuilder.escapeCell(p.id);

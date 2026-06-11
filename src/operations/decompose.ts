@@ -61,9 +61,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
       return stories;
     }
 
-    const defaultProfile = agentRouting.default
-      ? profiles.find((p) => p.id === agentRouting.default)
-      : undefined;
+    const defaultProfile = agentRouting.default ? profiles.find((p) => p.id === agentRouting.default) : undefined;
 
     return stories.map((story) => {
       if (story.agentProfileId) {

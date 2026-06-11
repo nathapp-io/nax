@@ -40,9 +40,7 @@ export function escalateTier(
   // When agent is omitted, fall back to tier-name-only matching (first match).
   const i =
     currentRung.agent !== undefined
-      ? tierOrder.findIndex(
-          (t) => t.tier === currentRung.tier && t.agent === currentRung.agent,
-        )
+      ? tierOrder.findIndex((t) => t.tier === currentRung.tier && t.agent === currentRung.agent)
       : tierOrder.findIndex((t) => t.tier === currentRung.tier);
   if (i === -1 || i === tierOrder.length - 1) return null;
   const next = tierOrder[i + 1];

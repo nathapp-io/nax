@@ -11,14 +11,13 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
+import { isGreenfieldStory } from "@/context";
+import { getLogger } from "@/logger";
+import { savePRD } from "@/prd";
+import { clearCache, complexityToModelTier, resolveRouting } from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
+import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
-import { isGreenfieldStory } from "../../context/greenfield";
-import { getLogger } from "../../logger";
-import { savePRD } from "../../prd";
-import { complexityToModelTier, resolveRouting } from "../../routing";
-import { clearCache } from "../../routing/strategies/llm";
-import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {

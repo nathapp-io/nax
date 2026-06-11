@@ -5,8 +5,8 @@
  * Separated from core types to keep each file under 400 lines.
  */
 
-import type { ResolvedPermissions } from "../../config/permissions";
-import type { ModelDef, ModelTier, NaxConfig } from "../../config/schema";
+import type { ResolvedPermissions } from "@/config/permissions";
+import type { ModelDef, ModelTier, NaxConfig } from "@/config/schema";
 
 /**
  * Configuration options for running an agent in plan mode.
@@ -104,9 +104,9 @@ export interface DecomposeOptions {
   /** Session role for TDD isolation (e.g. "decompose") */
   sessionRole?: string;
   /** Target story to decompose (plan-mode decompose) */
-  targetStory?: import("../../prd/types").UserStory;
+  targetStory?: import("@/prd").UserStory;
   /** Sibling stories for context (plan-mode decompose) */
-  siblings?: import("../../prd/types").UserStory[];
+  siblings?: import("@/prd").UserStory[];
 }
 
 /** A single classified user story from decompose result. */

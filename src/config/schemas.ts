@@ -432,12 +432,10 @@ export const NaxConfigSchema = z
     // Profile↔ladder binding: every profile's target must map to a rung in tierOrder
     type AgentConfig = z.infer<typeof AgentRoutingConfigSchema>;
     type AgentProfile = AgentConfig["profiles"][number];
-    const profiles = (data.routing as { agents?: AgentConfig })?.agents?.profiles ?? [] as AgentProfile[];
+    const profiles = (data.routing as { agents?: AgentConfig })?.agents?.profiles ?? ([] as AgentProfile[]);
     for (const [pi, profile] of profiles.entries()) {
       const { agent: pAgent, model: pModel } = profile.target;
-      const hasMatchingRung = tierOrder.some(
-        (r) => r.tier === pModel && r.agent === pAgent,
-      );
+      const hasMatchingRung = tierOrder.some((r) => r.tier === pModel && r.agent === pAgent);
       if (!hasMatchingRung) {
         ctx.addIssue({
           code: "custom",
