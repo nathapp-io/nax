@@ -1,0 +1,135 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a `test-runner` failed-test finding whose `rule` is `should reject expired token` and `message` is `Expected 1 received 0`, when `RectifierPromptBuilder.failingTestContext([finding])` is called, then the returned string contains `should reject expired token`, `Expected 1 received 0`, and `Fix the implementation (not the tests)`.",
+    "refined": "When RectifierPromptBuilder.failingTestContext([{rule: 'should reject expired token', message: 'Expected 1 received 0'}]) is called, the returned string includes all three substrings: 'should reject expired token', 'Expected 1 received 0', 'Fix the implementation (not the tests)'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given a three-session story with `routing.testStrategy = \"tdd\"`, when `RectifierPromptBuilder.failingTestRectification([finding], story)` is called, then the returned string contains the finding error message, `TEST_EDIT_REASON`, and `mock_structure`.",
+    "refined": "When RectifierPromptBuilder.failingTestRectification([finding], {sessions: {length: 3}, routing: {testStrategy: 'tdd'}}) is called, the returned string includes: (1) the finding's message field, (2) the literal string 'TEST_EDIT_REASON', (3) the literal string 'mock_structure'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given a three-session story, when `RectifierPromptBuilder.failingTestRectification([finding], story)` is called, then the returned string contains `loosen assertion`.",
+    "refined": "When RectifierPromptBuilder.failingTestRectification([finding], {sessions: {length: 3}}) is called, the returned string includes the literal string 'loosen assertion'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given a single-session story with `routing.testStrategy = \"test-after\"`, when `RectifierPromptBuilder.failingTestRectification([finding], story)` is called, then the returned string contains the single-session direct-edit permit and does not contain `mock_structure`.",
+    "refined": "When RectifierPromptBuilder.failingTestRectification([finding], {sessions: {length: 1}, routing: {testStrategy: 'test-after'}}) is called, the returned string: (1) includes a test-edit authorization phrase permitting direct test modification without mock_structure handoff, (2) does NOT include the literal string 'mock_structure'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When `fullSuiteRectifyOp` is imported from `src/operations`, then `kind === \"run\"`, `name === \"full-suite-rectify\"`, and `stage === \"rectification\"`.",
+    "refined": "Import fullSuiteRectifyOp from src/operations and verify it is a RunOperation where kind==='run', name==='full-suite-rectify', stage==='rectification'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a three-session story and one failed-test finding, when `fullSuiteRectifyOp.build({ story, findings: [finding] })` is called, then the returned prompt task content equals `RectifierPromptBuilder.failingTestRectification([finding], story)` and contains `TEST_EDIT_REASON`.",
+    "refined": "Call fullSuiteRectifyOp.build({ story, findings: [finding] }) with three-session story and one test finding; verify returned prompt's task property equals RectifierPromptBuilder.failingTestRectification([finding], story) and contains substring 'TEST_EDIT_REASON'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given output containing a `TEST_EDIT_REASON: mock_structure` block naming a test file, when `fullSuiteRectifyOp.parse(output, { story, findings })` is called, then it returns an object where `applied === true` and `testEditDeclarations[0].reason === \"mock_structure\"` and `testEditDeclarations[0].files` includes the named file.",
+    "refined": "Call fullSuiteRectifyOp.parse(output, { story, findings }) where output contains 'TEST_EDIT_REASON: mock_structure' block referencing a test file path; verify returned object has applied===true, testEditDeclarations is non-empty array, testEditDeclarations[0].reason==='mock_structure', and testEditDeclarations[0].files array includes the referenced file path",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given output with no `TEST_EDIT_REASON` block, when `fullSuiteRectifyOp.parse(output, { story, findings })` is called, then it returns an object where `applied === true` and `testEditDeclarations` equals `[]`.",
+    "refined": "Call fullSuiteRectifyOp.parse(output, { story, findings }) where output contains no TEST_EDIT_REASON block; verify returned object has applied===true and testEditDeclarations property is an empty array with length 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given `makeDeclarationSink()`, when `makeFullSuiteRectifyStrategy(story, config, sink)` is called, then the returned strategy has `fixOp === fullSuiteRectifyOp`.",
+    "refined": "makeFullSuiteRectifyStrategy returns a strategy object where strategy.fixOp is strictly equal to the fullSuiteRectifyOp function reference.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `makeDeclarationSink()`, when `makeFullSuiteRectifyStrategy(story, config, sink)` is called, then `appliesTo({ source: \"test-runner\", category: \"failed-test\" }) === true`.",
+    "refined": "The returned strategy's appliesTo method, when invoked with { source: \"test-runner\", category: \"failed-test\" }, returns boolean true.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `makeDeclarationSink()`, when `makeFullSuiteRectifyStrategy(story, config, sink)` is called, then `appliesTo({ source: \"semantic-review\", category: \"x\" }) === false`.",
+    "refined": "The returned strategy's appliesTo method, when invoked with { source: \"semantic-review\", category: \"x\" }, returns boolean false.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given a `test-runner` failed-test finding for file `F` with no `fixTarget` and a valid `prd_contract` declaration for file `F` whose `prdQuote` appears verbatim in `story`, when `applyTestEditDeclarations([finding], [declaration], story)` is called, then the returned finding for `F` has `fixTarget === \"test\"`.",
+    "refined": "applyTestEditDeclarations([test-runner finding with source=\"test-runner\", fixTarget=null, file=F], [prd_contract declaration where prdQuote matches story.content substring], story) returns array with entry for file F having fixTarget=\"test\".",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given a `lint` finding for file `F` with no `fixTarget` and a valid `prd_contract` declaration for file `F`, when `applyTestEditDeclarations([finding], [declaration], story)` is called, then the returned finding for `F` still has `fixTarget` unset.",
+    "refined": "applyTestEditDeclarations([lint finding with source=\"lint\", fixTarget=null, file=F], [prd_contract declaration], story) returns array with entry for file F having fixTarget remaining null or undefined.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a strategy built with a fresh sink, when `extractApplied` receives an op output containing one `mock_structure` declaration with `files` and `reasonDetail`, then `sink.mockHandoffs` contains one matching entry.",
+    "refined": "strategy.extractApplied(opOutput) where opOutput contains { type: \"mock_structure\", files: [...], reasonDetail: \"...\" } causes sink.mockHandoffs array length to increase by 1 with entry containing matching files and reasonDetail properties.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a strategy built with a fresh sink, when `extractApplied` receives an op output containing one `prd_contract` declaration, then `sink.testEdits` contains that declaration.",
+    "refined": "strategy.extractApplied(opOutput) where opOutput contains { type: \"prd_contract\", ... } causes sink.testEdits array length to increase by 1 with the declaration appended.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a three-session story, a rectification cycle seeded with a `test-runner` failed-test finding, the shared sink wired via `buildPlanForStrategy`, and a stub implementer adapter whose output declares `TEST_EDIT_REASON: mock_structure` naming an existing test file that matches the resolved test-file patterns, when the cycle runs, then the `autofix-test-writer` fix op is dispatched with that file present in its mock-restructure handoff input.",
+    "refined": "When rectification cycle executes with three-session story, test-runner failed-test finding, implementer output containing TEST_EDIT_REASON: mock_structure with valid test file matching resolvedTestPatterns, the autofix-test-writer operation is queued with handoff input.mockHandoffs array containing entry for that test file.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given an invalid `mock_structure` declaration whose files do not exist or do not match the resolved test-file patterns, when the main-cycle `postValidate` path applies declarations, then it appends an advisory finding with `category === \"mock_structure_invalid_files\"` and does not enqueue a test-writer handoff for that declaration.",
+    "refined": "postValidate processes mock_structure declaration with non-existent or non-matching files; returned findings array includes advisory entry with category=\"mock_structure_invalid_files\"; that declaration is not added to handoff queue.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a `test-runner` failed-test finding with no `fixTarget` and a `prd_contract` declaration whose `prdQuote` does not appear verbatim in `story`, when `applyTestEditDeclarations([finding], [declaration], story)` is called, then the returned findings append one advisory with `category === \"prd_quote_mismatch\"` and the original finding still has no `fixTarget`.",
+    "refined": "applyTestEditDeclarations([test-runner finding with fixTarget=null], [prd_contract declaration where prdQuote not in story.content], story) appends advisory with category=\"prd_quote_mismatch\" to returned findings; original finding retains fixTarget=null.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a single-session story where agent output still includes `TEST_EDIT_REASON: mock_structure`, when the rectification cycle runs without an `autofix-test-writer` strategy, then the cycle completes without throwing and no test-writer strategy is dispatched for that declaration.",
+    "refined": "When rectification cycle executes with single-session story and implementer output containing TEST_EDIT_REASON: mock_structure but autofix-test-writer strategy not in config, cycle completion does not throw error and no test-writer operation is dispatched.",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
