@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { acceptanceGenerateOp } from "@/operations";
-import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
-import type { BuildContext, VerifyContext } from "@/operations/types";
-import { acceptanceGenConfigSelector } from "@/config";
-import type { AcceptanceGenConfig } from "@/config/selectors";
+import { acceptanceGenerateOp } from "../../../src/operations";
+import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
+import type { BuildContext, VerifyContext } from "../../../src/operations/types";
+import { acceptanceGenConfigSelector } from "../../../src/config";
+import type { AcceptanceGenConfig } from "../../../src/config/selectors";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
-import type { NaxRuntime } from "@/runtime";
+import type { NaxRuntime } from "../../../src/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {

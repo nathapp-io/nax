@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DiagnosisResult } from "@/acceptance/types";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
-import type { AcceptanceFixConfig } from "@/config/runtime-types";
+import type { DiagnosisResult } from "../../../src/acceptance/types";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
+import type { AcceptanceFixConfig } from "../../../src/config/runtime-types";
 
 describe("AcceptanceFixConfig type (US-001)", () => {
   test("NaxConfig.acceptance.fix has correct fields", () => {
