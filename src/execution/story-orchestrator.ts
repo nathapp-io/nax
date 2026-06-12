@@ -245,6 +245,8 @@ interface InternalBuildState {
   nonBlockingFix?: NonBlockingFixConfig;
   /** ADR-024 — scope-aware best-effort strategy set, built at plan time. */
   nonBlockingFixStrategies?: FixStrategy<Finding, unknown, unknown, unknown>[];
+  /** ADR-024 — postValidate bound to nbSink; drains declarations from the nbf cycle (#1227). */
+  nonBlockingFixPostValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
 }
 
 const CANONICAL_ORDER: readonly PhaseKind[] = [
@@ -845,6 +847,8 @@ export interface RectificationOverrides {
   extraRevalidationKinds?: readonly PhaseKind[];
   /** maxAttemptsTotal override (1 + regressionAttempts for best-effort). */
   maxAttempts?: number;
+  /** Override postValidate — nbf path uses a closure bound to nbSink instead of the main sink. */
+  postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
 }
 
 /**
@@ -963,9 +967,8 @@ export async function runRectification(
           break;
         }
       }
-      const validated = rectification.postValidate
-        ? await rectification.postValidate(findings, _validateCtx)
-        : findings;
+      const postValidateFn = overrides?.postValidate ?? rectification.postValidate;
+      const validated = postValidateFn ? await postValidateFn(findings, _validateCtx) : findings;
       return { findings: validated, shortCircuited };
     },
   };
@@ -1235,6 +1238,7 @@ export class ExecutionPlan {
             excludePhaseKinds: nonBlockingExcludePhases(),
             extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
             maxAttempts,
+            postValidate: this.state.nonBlockingFixPostValidate,
           }),
       });
     }
@@ -1385,9 +1389,14 @@ export class StoryOrchestratorBuilder {
   }
 
   /** ADR-024 — set the non-blocking best-effort fix config + scope-aware strategy set. */
-  addNonBlockingFix(cfg: NonBlockingFixConfig, strategies: FixStrategy<Finding, unknown, unknown, unknown>[]): this {
+  addNonBlockingFix(
+    cfg: NonBlockingFixConfig,
+    strategies: FixStrategy<Finding, unknown, unknown, unknown>[],
+    postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>,
+  ): this {
     this.state.nonBlockingFix = cfg;
     this.state.nonBlockingFixStrategies = strategies;
+    this.state.nonBlockingFixPostValidate = postValidate;
     return this;
   }
 
