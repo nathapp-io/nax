@@ -53,9 +53,10 @@ describe("acceptanceRefineOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(acceptanceRefineOp.config) };
+    const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
+    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
 
-    expect(acceptanceRefineOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/minimax-m2.7",
     });
