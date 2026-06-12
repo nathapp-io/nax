@@ -69,6 +69,41 @@ describe("acceptanceGenerateOp shape", () => {
       model: "opencode-go/minimax-m2.7",
     });
   });
+
+  test("model resolves from acceptance.generateModel when set (overrides acceptance.model)", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+        generateModel: { agent: "claude", model: "balanced" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+
+    expect(acceptanceGenerateOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "claude",
+      model: "balanced",
+    });
+  });
+
+  test("model falls back to acceptance.model when generateModel is not set", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx = { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+
+    expect(acceptanceGenerateOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
+  });
 });
 
 describe("acceptanceGenerateOp.build()", () => {
