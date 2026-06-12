@@ -68,7 +68,7 @@ export function mapDecomposedStoriesToUserStories(
         complexity: story.complexity,
         testStrategy: story.testStrategy ?? ("test-after" as const),
         reasoning: story.reasoning,
-        modelTier: "balanced" as const,
+        modelTier: story.routing?.profileModelTier ?? ("balanced" as const),
         ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
         ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
         ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),

@@ -257,6 +257,43 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// modelTier seeding from profileModelTier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("modelTier seeding from profileModelTier", () => {
+  const baseStory = {
+    id: "US-001-A",
+    title: "Sub-story",
+    description: "Desc",
+    acceptanceCriteria: ["AC1"],
+    tags: [],
+    dependencies: [],
+    contextFiles: ["src/a.ts"],
+    complexity: "medium" as const,
+    testStrategy: "test-after" as const,
+    reasoning: "r",
+  };
+
+  test("seeds modelTier from profileModelTier when a profile was resolved", () => {
+    const result = mapDecomposedStoriesToUserStories(
+      [
+        {
+          ...baseStory,
+          routing: { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" as const },
+        },
+      ],
+      "US-001",
+    );
+    expect(result[0].routing?.modelTier).toBe("fast");
+  });
+
+  test("defaults modelTier to balanced when no profileModelTier", () => {
+    const result = mapDecomposedStoriesToUserStories([{ ...baseStory }], "US-001");
+    expect(result[0].routing?.modelTier).toBe("balanced");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC4: validation — empty contextFiles (warn, not throw)
 // ─────────────────────────────────────────────────────────────────────────────
 

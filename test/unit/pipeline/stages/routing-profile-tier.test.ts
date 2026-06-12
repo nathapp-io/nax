@@ -182,6 +182,45 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
     expect(ctx.story.routing?.modelTier).toBe("custom-tier");
   });
 
+  test("mapper-produced story with profileModelTier=fast routes to fast, not the mapper default", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+    const { mapDecomposedStoriesToUserStories } = await import(
+      "../../../../src/prd/decompose-mapper"
+    );
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({ complexity: "medium" as const, modelTier: "balanced" as const, testStrategy: "test-after" as const, reasoning: "x" });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const [story] = mapDecomposedStoriesToUserStories(
+      [
+        {
+          id: "US-001-A",
+          title: "t",
+          description: "d",
+          acceptanceCriteria: ["a"],
+          tags: [],
+          dependencies: [],
+          contextFiles: ["f.ts"],
+          complexity: "medium" as const,
+          testStrategy: "test-after" as const,
+          reasoning: "r",
+          routing: { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" as const },
+        },
+      ],
+      "US-001",
+    );
+    const ctx = makeCtx(makeStory({ ...story }));
+
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    expect(ctx.story.routing?.modelTier).toBe("fast");
+  });
+
   test("idempotence — running routingStage twice on a profile-seeded story yields stable modelTier", async () => {
     const { routingStage, _routingDeps } = await import(
       "../../../../src/pipeline/stages/routing"
