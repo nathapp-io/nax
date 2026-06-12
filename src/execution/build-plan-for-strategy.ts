@@ -160,7 +160,9 @@ export async function buildPlanForStrategy(
     }
     // Mirror the primary gate condition: TDD always, non-TDD when mode=per-story.
     if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {
-      strategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
+      strategies.push(
+        makeFullSuiteRectifyStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
     }
     if (config.quality.autofix?.enabled !== false) {
       // Single-session strategies (tdd-simple / test-after / no-test) have no
@@ -239,8 +241,13 @@ export async function buildPlanForStrategy(
         makeAutofixTestWriterStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
     }
-    // Always: recover from a test regression that the best-effort fix introduces
-    nbStrategies.push(makeFullSuiteRectifyStrategy(story, config) as FixStrategy<Finding, unknown, unknown, unknown>);
+    // Always: recover from a test regression that the best-effort fix introduces.
+    // nbSink is wired here so declarations from the non-blocking recovery pass are
+    // captured, but the end-to-end path (postValidate → test-writer handoff) is not
+    // yet connected for ADR-024 (#1227).
+    nbStrategies.push(
+      makeFullSuiteRectifyStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
+    );
     builder.addNonBlockingFix(nbf, nbStrategies);
   }
 
