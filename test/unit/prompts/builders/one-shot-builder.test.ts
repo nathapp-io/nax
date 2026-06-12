@@ -149,7 +149,7 @@ describe("agentCapabilityCards — weaknesses and affinity", () => {
       strengths: ["arch"],
     };
     const cards = OneShotPromptBuilder.agentCapabilityCards([bare]);
-    const row = cards.split("\n").find((l) => l.startsWith("| p1 |"));
+    const row = cards.split("\n").find((l: string) => l.startsWith("| p1 |"));
     expect(row).toBeDefined();
     expect(row).toContain("| — | — |");
   });
