@@ -8,7 +8,7 @@ describe("resolveExecutionAgent", () => {
     const result = resolveExecutionAgent({
       routedAgent: "opencode",
       defaultAgent: "claude",
-      getAgent: (n) => (n === "opencode" ? fakeAdapter("opencode") : undefined),
+      getAgent: (n: string) => (n === "opencode" ? fakeAdapter("opencode") : undefined),
     });
     expect(result.agentName).toBe("opencode");
     expect(result.degraded).toBe(false);
@@ -19,7 +19,7 @@ describe("resolveExecutionAgent", () => {
     const result = resolveExecutionAgent({
       routedAgent: "ghost",
       defaultAgent: "claude",
-      getAgent: (n) => (n === "claude" ? fakeAdapter("claude") : undefined),
+      getAgent: (n: string) => (n === "claude" ? fakeAdapter("claude") : undefined),
     });
     expect(result.agentName).toBe("claude");
     expect(result.degraded).toBe(true);
@@ -30,7 +30,7 @@ describe("resolveExecutionAgent", () => {
     const result = resolveExecutionAgent({
       routedAgent: undefined,
       defaultAgent: "claude",
-      getAgent: (n) => (n === "claude" ? fakeAdapter("claude") : undefined),
+      getAgent: (n: string) => (n === "claude" ? fakeAdapter("claude") : undefined),
     });
     expect(result.agentName).toBe("claude");
     expect(result.degraded).toBe(false);
