@@ -296,6 +296,9 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
           ? routing.reasoning.trim()
           : "validated from LLM output",
       ...(noTestJustification !== undefined ? { noTestJustification } : {}),
+      ...(typeof routing.agentProfileId === "string" && routing.agentProfileId.trim().length > 0
+        ? { agentProfileId: routing.agentProfileId.trim() }
+        : {}),
     },
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),
