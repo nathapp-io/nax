@@ -27,7 +27,7 @@ export const acceptanceGenerateOp: RunOperation<
   stage: "acceptance",
   session: { role: "acceptance-gen", lifetime: "fresh" },
   config: acceptanceGenConfigSelector,
-  model: (_input, ctx) => ctx.config.acceptance.model,
+  model: (_input, ctx) => ctx.config.acceptance.generateModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.execution.sessionTimeoutSeconds * 1000,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildGeneratorFromPRDPrompt({

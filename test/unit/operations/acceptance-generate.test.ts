@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { acceptanceGenerateOp } from "../../../src/operations/acceptance-generate";
-import type { AcceptanceGenerateInput } from "../../../src/operations/acceptance-generate";
-import type { VerifyContext } from "../../../src/operations/types";
+import { acceptanceGenerateOp } from "@/operations";
+import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
+import type { BuildContext, VerifyContext } from "@/operations/types";
+import { acceptanceGenConfigSelector } from "@/config";
+import type { AcceptanceGenConfig } from "@/config/selectors";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import { withTempDir } from "../../helpers/temp";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
@@ -24,19 +26,19 @@ function makeBuildCtx() {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
-  return { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+  return { packageView: view, config: view.select(acceptanceGenConfigSelector) };
 }
 
 function makeVerifyCtx(overrides: {
   readFile?: (path: string) => Promise<string | null>;
   fileExists?: (path: string) => Promise<boolean>;
-} = {}): VerifyContext<ReturnType<typeof acceptanceGenerateOp.config.select>> {
+} = {}): VerifyContext<AcceptanceGenConfig> {
   const runtime = makeTestRuntime();
   createdRuntimes.push(runtime);
   const view = runtime.packages.repo();
   return {
     packageView: view,
-    config: view.select(acceptanceGenerateOp.config),
+    config: view.select(acceptanceGenConfigSelector),
     readFile: overrides.readFile ?? (async () => null),
     fileExists: overrides.fileExists ?? (async () => false),
   };
@@ -62,9 +64,47 @@ describe("acceptanceGenerateOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(acceptanceGenerateOp.config) };
+    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
+    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
 
-    expect(acceptanceGenerateOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
+  });
+
+  test("model resolves from acceptance.generateModel when set (overrides acceptance.model)", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+        generateModel: { agent: "claude", model: "balanced" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
+    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
+
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "claude",
+      model: "balanced",
+    });
+  });
+
+  test("model falls back to acceptance.model when generateModel is not set", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx: BuildContext<AcceptanceGenConfig> = { packageView: view, config: view.select(acceptanceGenConfigSelector) };
+    const modelResolver = acceptanceGenerateOp.model as (input: AcceptanceGenerateInput, ctx: BuildContext<AcceptanceGenConfig>) => unknown;
+
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/minimax-m2.7",
     });

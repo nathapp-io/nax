@@ -5,10 +5,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { DiagnosisResult } from "../../../src/acceptance/types";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import type { AcceptanceFixConfig } from "../../../src/config/runtime-types";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import type { DiagnosisResult } from "@/acceptance/types";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
+import type { AcceptanceFixConfig } from "@/config/runtime-types";
 
 describe("AcceptanceFixConfig type (US-001)", () => {
   test("NaxConfig.acceptance.fix has correct fields", () => {
@@ -109,7 +108,7 @@ describe("DiagnosisResult interface (US-001)", () => {
 describe("AcceptanceConfigSchema fix strategy validation (US-001)", () => {
   function baseAcceptanceFixConfig(fix: Record<string, unknown>): Record<string, unknown> {
     return {
-      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...(DEFAULT_CONFIG as unknown as Record<string, unknown>),
       acceptance: {
         ...DEFAULT_CONFIG.acceptance,
         fix,
@@ -138,5 +137,59 @@ describe("AcceptanceConfigSchema fix strategy validation (US-001)", () => {
     delete (config.acceptance as Record<string, unknown>).fix;
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("AcceptanceConfigSchema generateModel field", () => {
+  test("generateModel is absent from DEFAULT_CONFIG (optional)", () => {
+    expect(DEFAULT_CONFIG.acceptance.generateModel).toBeUndefined();
+  });
+
+  test("generateModel accepts a tier string", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: { ...DEFAULT_CONFIG.acceptance, generateModel: "balanced" },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toBe("balanced");
+    }
+  });
+
+  test("generateModel accepts an explicit agent/model object", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: {
+        ...DEFAULT_CONFIG.acceptance,
+        generateModel: { agent: "opencode", model: "opencode-go/deepseek-v4-flash" },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toEqual({
+        agent: "opencode",
+        model: "opencode-go/deepseek-v4-flash",
+      });
+    }
+  });
+
+  test("generateModel rejects an invalid value", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: { ...DEFAULT_CONFIG.acceptance, generateModel: 123 },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("config without generateModel still parses successfully (backwards compat)", () => {
+    const config = { ...DEFAULT_CONFIG };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toBeUndefined();
+    }
   });
 });

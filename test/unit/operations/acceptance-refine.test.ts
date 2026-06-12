@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
+import type { BuildContext } from "@/operations/types";
+import { acceptanceConfigSelector } from "@/config";
+import type { AcceptanceConfig } from "@/config/selectors";
+import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -8,8 +11,8 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance/refinement";
-import { acceptanceRefineOp } from "../../../src/operations/acceptance-refine";
+import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance";
+import { acceptanceRefineOp } from "@/operations";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
   criteria: ["User can log in", "User can log out"],
@@ -50,9 +53,47 @@ describe("acceptanceRefineOp shape", () => {
     const runtime = makeTestRuntime({ config });
     createdRuntimes.push(runtime);
     const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(acceptanceRefineOp.config) };
+    const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
+    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
 
-    expect(acceptanceRefineOp.model?.(SAMPLE_INPUT, ctx)).toEqual({
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
+    });
+  });
+
+  test("model resolves from acceptance.generateModel when set (overrides acceptance.model)", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+        generateModel: { agent: "claude", model: "balanced" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
+    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
+
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
+      agent: "claude",
+      model: "balanced",
+    });
+  });
+
+  test("model falls back to acceptance.model when generateModel is not set", () => {
+    const config = makeNaxConfig({
+      acceptance: {
+        model: { agent: "opencode", model: "opencode-go/minimax-m2.7" },
+      },
+    });
+    const runtime = makeTestRuntime({ config });
+    createdRuntimes.push(runtime);
+    const view = runtime.packages.repo();
+    const ctx: BuildContext<AcceptanceConfig> = { packageView: view, config: view.select(acceptanceConfigSelector) };
+    const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
+
+    expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
       agent: "opencode",
       model: "opencode-go/minimax-m2.7",
     });
