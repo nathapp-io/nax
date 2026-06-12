@@ -324,7 +324,9 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
       },
     }),
   fileOutput: (input) => input.outputPath,
-  build(input, _ctx) {
+  build(input, ctx) {
+    const agentRouting = ctx.config.routing?.agents;
+    const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       input.specContent,
       input.codebaseContext,
@@ -332,6 +334,8 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
       input.packages,
       input.packageDetails,
       input.projectProfile,
+      undefined,
+      profiles,
     );
     return {
       role: { id: "role", content: "", overridable: false },

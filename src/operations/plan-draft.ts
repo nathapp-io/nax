@@ -181,8 +181,10 @@ export const planDraftOp: RunOperation<PlanDraftInput, PlanDraftOutput, PlanConf
   model: (_input, ctx) => ctx.config.plan?.model ?? "fast",
   timeoutMs: (_input, ctx) => (ctx.config.plan?.timeoutSeconds ?? 600) * 1000,
   retry: (input: PlanDraftInput) => createDraftRetryStrategy(input.citationThreshold),
-  build(input, _ctx) {
-    return new PlanPromptBuilder().buildDraft(input);
+  build(input, ctx) {
+    const agentRouting = ctx.config.routing?.agents;
+    const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
+    return new PlanPromptBuilder().buildDraft({ ...input, profiles });
   },
   parse(output, input, _ctx) {
     return parsePlanDraft(output, input);
