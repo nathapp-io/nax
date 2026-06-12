@@ -3,8 +3,16 @@ import { buildDecomposePromptSync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import { decomposeConfigSelector } from "../config";
 import type { DecomposeConfig } from "../config/selectors";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import type { CompleteOperation } from "./types";
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _decomposeOpDeps = {
+  getSafeLogger,
+};
 
 export interface DecomposeOpInput {
   specContent: string;
@@ -70,7 +78,14 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
             },
           };
         }
-        // LLM emitted an unknown/hallucinated profile id — fall through to default
+        // Delta C3: never invent an agent — warn and fall through to the default profile.
+        _decomposeOpDeps
+          .getSafeLogger()
+          ?.warn(
+            "decompose",
+            `Story ${story.id} selected unknown agent profile "${story.agentProfileId}" — falling back to ${defaultProfile ? `default profile "${defaultProfile.id}"` : "no profile"}`,
+            { storyId: story.id, agentProfileId: story.agentProfileId },
+          );
       }
 
       // No valid per-story selection — apply default profile if configured

@@ -16,7 +16,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { decomposeConfigSelector } from "../../../src/config";
-import { decomposeOp } from "../../../src/operations/decompose";
+import { _decomposeOpDeps, decomposeOp } from "../../../src/operations/decompose";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 import type { NaxRuntime } from "../../../src/runtime";
 
@@ -328,6 +328,42 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].routing).toBeUndefined();
+  });
+
+  test("Delta C3: warns with storyId when the LLM emits an unknown agentProfileId", () => {
+    const orig = _decomposeOpDeps.getSafeLogger;
+    const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    _decomposeOpDeps.getSafeLogger = () =>
+      ({
+        warn: (_stage: string, message: string, data?: Record<string, unknown>) => {
+          warnings.push({ message, data });
+        },
+        info: () => {},
+        debug: () => {},
+        error: () => {},
+      }) as never;
+    try {
+      const ctx = makeBuildCtx({
+        routing: {
+          strategy: "keyword",
+          agents: {
+            enabled: true,
+            profiles: [SAMPLE_PROFILE],
+          },
+        },
+      });
+
+      const output = makeDecomposeOutput([{ id: "US-001", agentProfileId: "hallucinated-id" }]);
+      const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
+
+      const warn = warnings.find(
+        (w) => w.message.includes("hallucinated-id") || w.message.includes("unknown"),
+      );
+      expect(warn).toBeDefined();
+      expect(warn?.data?.storyId).toBe(result[0].id);
+    } finally {
+      _decomposeOpDeps.getSafeLogger = orig;
+    }
   });
 });
 
