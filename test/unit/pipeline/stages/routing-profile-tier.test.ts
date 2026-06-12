@@ -223,6 +223,39 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
     expect(ctx.story.routing?.modelTier).toBe("fast");
   });
 
+  test("custom-named escalated tier (from a custom tierOrder rung) is preserved over a canonical candidate", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+    origRoutingDeps = { ..._routingDeps };
+
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({ complexity: "medium" as const, modelTier: "balanced" as const, testStrategy: "test-after" as const, reasoning: "x" });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // TierConfigSchema.tier is free-form z.string() — a ladder may define a rung
+    // named "ultra". Escalation wrote it onto the story (with a record). The next
+    // routingStage pass must not drop it just because "ultra" has no TIER_RANK.
+    const story = makeStory({
+      escalations: [
+        { fromTier: "balanced", toTier: "ultra" as never, reason: "budget", timestamp: new Date().toISOString() },
+      ],
+      routing: {
+        complexity: "medium",
+        testStrategy: "test-after",
+        reasoning: "",
+        modelTier: "ultra" as never, // custom escalated tier — previousRank undefined
+      },
+    });
+    const ctx = makeCtx(story);
+
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    // Escalation records prove "ultra" was a real escalation — preserve it.
+    expect(ctx.story.routing?.modelTier).toBe("ultra");
+  });
+
   test("idempotence — running routingStage twice on a profile-seeded story yields stable modelTier", async () => {
     const { routingStage, _routingDeps } = await import(
       "../../../../src/pipeline/stages/routing"

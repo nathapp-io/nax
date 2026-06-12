@@ -51,20 +51,23 @@ export const routingStage: PipelineStage = {
 
     const previousTier = ctx.story.routing?.modelTier;
     const previousRank = previousTier !== undefined ? TIER_RANK[previousTier] : undefined;
-    if (previousTier !== undefined && previousRank === undefined) {
+    const hasEscalationRecords = (ctx.story.escalations?.length ?? 0) > 0;
+    if (previousTier !== undefined && previousRank === undefined && !hasEscalationRecords) {
       logger?.warn("routing", "Ignoring unknown previousTier — not escalating", {
         storyId: ctx.story.id,
         previousTier,
         candidateTier,
       });
     }
-    // Preserve a previously-stored tier only when it is a strictly higher escalation
-    // than the candidate (profile-or-derived) baseline.
+    // Preserve a previously-stored tier only when it is a genuine escalation:
+    // - both tiers rankable -> strictly-higher rank wins (canonical behavior)
+    // - either tier custom/unrankable -> fall back to escalation-record evidence,
+    //   since rank comparison is meaningless for names outside TIER_RANK
     const isEscalated =
       previousTier !== undefined &&
-      previousRank !== undefined &&
-      candidateRank !== undefined &&
-      previousRank > candidateRank;
+      (previousRank !== undefined && candidateRank !== undefined
+        ? previousRank > candidateRank
+        : hasEscalationRecords);
     const modelTier = isEscalated ? previousTier : candidateTier;
 
     const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
