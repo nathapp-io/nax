@@ -9,6 +9,7 @@
  *   - plan mode: splits a single targetStory into sub-stories
  */
 
+import type { AgentRoutingProfile } from "@/config";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../../config/test-strategy";
 import { OneShotPromptBuilder, type SchemaDescriptor } from "../../prompts";
 import type { DecomposeOptions } from "../types";
@@ -30,6 +31,8 @@ const DECOMPOSE_SPEC_SCHEMA: SchemaDescriptor = {
       estimatedLOC: 150,
       risks: ["Risk 1"],
       testStrategy: "test-after",
+      // Optional: set to a profile id from the Agent Profiles table above, or omit if no profiles are listed
+      agentProfileId: "",
     },
   ],
 };
@@ -51,6 +54,8 @@ const DECOMPOSE_PLAN_SCHEMA: SchemaDescriptor = {
       estimatedLOC: 0,
       risks: [],
       testStrategy: "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+      // Optional: set to a profile id from the Agent Profiles table above, or omit if no profiles are listed
+      agentProfileId: "",
     },
   ],
 };
@@ -71,6 +76,7 @@ For each story, provide:
 11. risks: Array of implementation risks
 12. testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite"
 13. noTestJustification: string (REQUIRED when testStrategy is "no-test" — explain why tests are unnecessary)
+14. agentProfileId: (optional) profile id from the Agent Profiles table — assign the best-matching profile for each story; omit if no profiles are listed or none fits well
 
 ${COMPLEXITY_GUIDE}
 
@@ -106,6 +112,8 @@ export interface DecomposePromptInput {
   targetStory?: import("../../prd/types").UserStory;
   siblings?: import("../../prd/types").UserStory[];
   maxAcCount?: number | null;
+  /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
+  profiles?: AgentRoutingProfile[];
 }
 
 /**
@@ -149,7 +157,10 @@ function buildPlanModePromptSync(input: DecomposePromptInput): string {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder
+    .agentProfiles(input.profiles ?? [])
+    .jsonSchema(DECOMPOSE_PLAN_SCHEMA)
+    .build();
 }
 
 function buildSpecModePromptSync(input: DecomposePromptInput): string {
@@ -157,6 +168,7 @@ function buildSpecModePromptSync(input: DecomposePromptInput): string {
     .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
     .inputData("Codebase Context", input.codebaseContext)
     .inputData("Feature Specification", input.specContent)
+    .agentProfiles(input.profiles ?? [])
     .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
     .build();
 }
@@ -180,7 +192,10 @@ async function buildPlanModePrompt(options: DecomposeOptions): Promise<string> {
     builder = builder.inputData("Sibling Stories", siblingsSummary);
   }
 
-  return builder.jsonSchema(DECOMPOSE_PLAN_SCHEMA).build();
+  return builder
+    .agentProfiles(options.profiles ?? [])
+    .jsonSchema(DECOMPOSE_PLAN_SCHEMA)
+    .build();
 }
 
 async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {
@@ -188,6 +203,7 @@ async function buildSpecModePrompt(options: DecomposeOptions): Promise<string> {
     .instructions(SPEC_DECOMPOSE_INSTRUCTIONS)
     .inputData("Codebase Context", options.codebaseContext)
     .inputData("Feature Specification", options.specContent)
+    .agentProfiles(options.profiles ?? [])
     .jsonSchema(DECOMPOSE_SPEC_SCHEMA)
     .build();
 }

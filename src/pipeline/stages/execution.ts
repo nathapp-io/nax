@@ -26,6 +26,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 // Re-export helpers so existing importers continue to work.
 export { resolveStoryWorkdir, routeTddFailure } from "./execution-helpers";
+import { resolveExecutionAgent } from "./execution-helpers";
 
 /**
  * NaxError codes that indicate agent/infrastructure failure rather than user intent.
@@ -41,10 +42,23 @@ export const executionStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // HARD FAILURE: No agent available — cannot proceed without an agent
+    // Resolve the ROUTED agent's adapter (availability seam): a planned agent
+    // that cannot be resolved degrades to the default agent with a warning.
     const defaultAgent = ctx.agentManager?.getDefault() ?? "claude";
-    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(defaultAgent);
-    if (!agent) return { action: "fail", reason: `Agent "${defaultAgent}" not found` };
+    const resolved = resolveExecutionAgent({
+      routedAgent: ctx.routing.agent,
+      defaultAgent,
+      getAgent: ctx.agentGetFn ?? _executionDeps.getAgent,
+    });
+    if (resolved.degraded) {
+      logger.warn("execution", "Routed agent unavailable — degrading to default agent", {
+        storyId: ctx.story.id,
+        routedAgent: ctx.routing.agent,
+        defaultAgent,
+      });
+    }
+    const agent = resolved.agent;
+    if (!agent) return { action: "fail", reason: `Agent "${resolved.agentName}" not found` };
 
     // Prompt presence is validated inside assemblePlanInputsFromCtx — it knows
     // which strategies depend on ctx.prompt vs. build per-role prompts internally.
@@ -76,7 +90,7 @@ export const executionStage: PipelineStage = {
       runtime: ctx.runtime,
       packageView,
       packageDir: ctx.workdir,
-      agentName: ctx.routing.agent ?? defaultAgent,
+      agentName: resolved.agentName,
       storyId: ctx.story.id,
       featureName: ctx.prd.feature,
       story: ctx.story,

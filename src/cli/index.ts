@@ -53,3 +53,4 @@ export {
   type RulesLintOptions,
   type RulesMigrateOptions,
 } from "./rules";
+export { resolveRunProfileOverride } from "./resolve-run-profile";

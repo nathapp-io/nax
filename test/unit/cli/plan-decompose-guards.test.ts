@@ -275,22 +275,22 @@ describe("planDecomposeCommand — guards (AC-1 to AC-8)", () => {
     expect(capturedDecomposeOpts[0]).toMatchObject({ workdir: tmpDir, storyId: "US-001" });
   });
 
-  test("AC-6: throws DECOMPOSE_VALIDATION_FAILED when sub-story has empty contextFiles array", async () => {
+  test("AC-6: succeeds when sub-story has empty contextFiles array (warns, does not throw)", async () => {
     const prd = makePrd();
     setupDeps(prd, [makeSubStory("US-001-A", { contextFiles: [] }), makeSubStory("US-001-B")]);
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
-  test("AC-6: throws DECOMPOSE_VALIDATION_FAILED when sub-story has no contextFiles field", async () => {
+  test("AC-6: succeeds when sub-story has no contextFiles field (warns, does not throw)", async () => {
     const prd = makePrd();
     const noCtxStory = makeSubStory("US-001-A");
     delete (noCtxStory as Partial<UserStory>).contextFiles;
     setupDeps(prd, [noCtxStory, makeSubStory("US-001-B")]);
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
   test("AC-7: missing routing.complexity in legacy input is tolerated (adapter coercion)", async () => {

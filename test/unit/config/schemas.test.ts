@@ -366,3 +366,99 @@ describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
     expect(result.quality.scopeTestThreshold).toBe(value);
   });
 });
+
+describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validation", () => {
+  const MODELS = {
+    opencode: { balanced: "oc-model", fast: "oc-fast" },
+    claude: { balanced: "sonnet", powerful: "opus" },
+  };
+
+  function withTierOrder(
+    tierOrder: Array<{ tier: string; agent?: string; attempts: number }>,
+    models?: unknown,
+  ) {
+    return NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      ...(models !== undefined ? { models } : {}),
+      autoMode: {
+        ...(DEFAULT_CONFIG.autoMode as Record<string, unknown>),
+        escalation: {
+          ...((DEFAULT_CONFIG.autoMode as Record<string, unknown>).escalation as Record<string, unknown>),
+          tierOrder,
+        },
+      },
+    });
+  }
+
+  test("valid cross-agent ladder passes", () => {
+    const result = withTierOrder(
+      [
+        { tier: "balanced", agent: "opencode", attempts: 3 },
+        { tier: "balanced", agent: "claude", attempts: 2 },
+        { tier: "powerful", agent: "claude", attempts: 2 },
+      ],
+      MODELS,
+    );
+    expect(result.success).toBe(true);
+  });
+
+  test("unknown agent in tierOrder produces exactly one issue (not two)", () => {
+    const result = withTierOrder(
+      [{ tier: "balanced", agent: "nonexistent", attempts: 3 }],
+      MODELS,
+    );
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const agentIssues = result.error.issues.filter((e) =>
+      e.message.includes("nonexistent"),
+    );
+    expect(agentIssues).toHaveLength(1);
+    expect(agentIssues[0].message).toMatch(/not defined in config\.models/);
+  });
+
+  test("valid agent but unknown tier produces one issue on the tier path", () => {
+    const result = withTierOrder(
+      [{ tier: "powerful", agent: "opencode", attempts: 2 }],
+      MODELS,
+    );
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const tierIssues = result.error.issues.filter((e) =>
+      e.message.includes('"powerful"') && e.message.includes('"opencode"'),
+    );
+    expect(tierIssues).toHaveLength(1);
+    expect(tierIssues[0].message).toMatch(/not defined for agent/);
+  });
+
+  test("tier-only rungs (no agent field) are ignored by superRefine", () => {
+    const result = withTierOrder([
+      { tier: "fast", attempts: 3 },
+      { tier: "balanced", attempts: 2 },
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  test("profile with the default tier-only ladder fails with an actionable agent-qualify message", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      models: MODELS,
+      routing: {
+        ...(DEFAULT_CONFIG.routing as Record<string, unknown>),
+        agents: {
+          enabled: true,
+          strategy: "off",
+          profiles: [
+            { id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] },
+          ],
+        },
+      },
+      // DEFAULT_CONFIG tierOrder is tier-only: fast/balanced/powerful with no agent fields
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.message.includes("no matching rung"));
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain("agent-qualify");
+    expect(issue?.message).toContain('"tier": "balanced", "agent": "opencode"');
+  });
+});

@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 
 // ---------------------------------------------------------------------------
@@ -138,8 +139,8 @@ describe("handleTierEscalation — tier escalation regression guard", () => {
             escalation: {
               enabled: true,
               tierOrder: [
-                { name: "fast", attempts: 1 },
-                { name: "balanced", attempts: 2 },
+                { tier: "fast", attempts: 1 },
+                { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
             },
@@ -458,8 +459,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
           escalation: {
             enabled: true,
             tierOrder: [
-              { name: "fast", attempts: 1 },
-              { name: "balanced", attempts: 2 },
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 2 },
             ],
           },
         },
@@ -530,8 +531,8 @@ describe("preIterationTierCheck — story:escalated event emission", () => {
           escalation: {
             enabled: true,
             tierOrder: [
-              { name: "fast", attempts: 1 },
-              { name: "balanced", attempts: 2 },
+              { tier: "fast", attempts: 1 },
+              { tier: "balanced", attempts: 2 },
             ],
           },
         },
@@ -613,8 +614,8 @@ describe("handleTierEscalation — story:escalated event emission", () => {
             escalation: {
               enabled: true,
               tierOrder: [
-                { name: "fast", attempts: 1 },
-                { name: "balanced", attempts: 2 },
+                { tier: "fast", attempts: 1 },
+                { tier: "balanced", attempts: 2 },
               ],
               escalateEntireBatch: false,
             },
@@ -650,6 +651,97 @@ describe("handleTierEscalation — story:escalated event emission", () => {
       });
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// preIterationTierCheck — M2: unmatched rung does not grant unlimited budget
+//
+// When tierOrder has agent-qualified rungs but the story's (tier, agent) pair
+// matches no rung, the function must NOT skip the iteration (budget is treated
+// as unbounded, which keeps the story running) and emits a warn.
+// ---------------------------------------------------------------------------
+
+describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder", () => {
+  test("shouldSkipIteration is false when (tier, agent) pair is absent from agent-qualified tierOrder", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { preIterationTierCheck, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    const origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
+    const mockLogger = makeLogger();
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+    _tierEscalationDeps.getSafeLogger = () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>;
+
+    try {
+      // Story whose agent ("codex") is not in the tierOrder (which only has "claude" rungs)
+      const story = {
+        id: "US-unmatched-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 5, // well above any tier's attempt budget — would skip if rung were found
+        routing: { modelTier: "fast", testStrategy: "test-after", agent: "codex" },
+      };
+
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const config = {
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", agent: "claude", attempts: 2 },
+              { tier: "balanced", agent: "claude", attempts: 2 },
+            ],
+          },
+        },
+        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+        models: {},
+      };
+
+      const result = await preIterationTierCheck(
+        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        { modelTier: "fast" },
+        config as unknown as Parameters<typeof preIterationTierCheck>[2],
+        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        "/tmp/test-prd-unmatched.json",
+        undefined,
+        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        "f",
+        0,
+        "/tmp",
+      );
+
+      // Unmatched rung → budget is unbounded → iteration proceeds (not skipped).
+      expect(result.shouldSkipIteration).toBe(false);
+
+      // A warn must be emitted so the silent-unlimited-budget path is observable.
+      const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
+      expect(warnCalls.length).toBeGreaterThan(0);
+      const unmatchedWarn = warnCalls.find((c) =>
+        c.message.includes("Current rung not found in tierOrder"),
+      );
+      expect(unmatchedWarn).toBeDefined();
+      expect(unmatchedWarn?.data?.storyId).toBe("US-unmatched-001");
+      expect(unmatchedWarn?.data?.agent).toBe("codex");
+      expect(unmatchedWarn?.data?.hasAgentRungs).toBe(true);
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
     }
   });
 });

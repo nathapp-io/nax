@@ -5,7 +5,7 @@
  * - AC1: routing.complexity and routing.testStrategy mapped from DecomposedStory
  * - AC2: lifecycle defaults (status, passes, escalations, attempts)
  * - AC3: NaxError DECOMPOSE_VALIDATION_FAILED with entry index for missing id
- * - AC4: NaxError DECOMPOSE_VALIDATION_FAILED with entry index for empty contextFiles
+ * - AC4: empty contextFiles warns and continues (does not throw)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -179,6 +179,48 @@ describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent routing propagation — routing.agent, agentProfileId, profileModelTier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mapDecomposedStoriesToUserStories — agent routing propagation", () => {
+  test("propagates routing.agent when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.agent).toBe("opencode");
+  });
+
+  test("propagates routing.agentProfileId when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.agentProfileId).toBe("fast-coder");
+  });
+
+  test("propagates routing.profileModelTier when set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("fast");
+  });
+
+  test("profileModelTier is absent when routing is not set on DecomposedStory", () => {
+    const story = makeDecomposedStory({ routing: undefined });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBeUndefined();
+  });
+
+  test("propagates 'balanced' profileModelTier correctly", () => {
+    const story = makeDecomposedStory({ routing: { agent: "claude", agentProfileId: "quality-agent", profileModelTier: "balanced" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("balanced");
+  });
+
+  test("propagates 'powerful' profileModelTier correctly", () => {
+    const story = makeDecomposedStory({ routing: { agent: "claude", agentProfileId: "expert-agent", profileModelTier: "powerful" } });
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result.routing?.profileModelTier).toBe("powerful");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC3: validation — missing id
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -215,37 +257,69 @@ describe("mapDecomposedStoriesToUserStories — validation: missing id", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC4: validation — empty contextFiles
+// modelTier seeding from profileModelTier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("modelTier seeding from profileModelTier", () => {
+  const baseStory = {
+    id: "US-001-A",
+    title: "Sub-story",
+    description: "Desc",
+    acceptanceCriteria: ["AC1"],
+    tags: [],
+    dependencies: [],
+    contextFiles: ["src/a.ts"],
+    complexity: "medium" as const,
+    testStrategy: "test-after" as const,
+    reasoning: "r",
+    estimatedLOC: 50,
+    risks: [],
+  };
+
+  test("seeds modelTier from profileModelTier when a profile was resolved", () => {
+    const result = mapDecomposedStoriesToUserStories(
+      [
+        {
+          ...baseStory,
+          routing: { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" as const },
+        },
+      ],
+      "US-001",
+    );
+    expect(result[0].routing?.modelTier).toBe("fast");
+  });
+
+  test("defaults modelTier to balanced when no profileModelTier", () => {
+    const result = mapDecomposedStoriesToUserStories([{ ...baseStory }], "US-001");
+    expect(result[0].routing?.modelTier).toBe("balanced");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC4: validation — empty contextFiles (warn, not throw)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mapDecomposedStoriesToUserStories — validation: empty contextFiles", () => {
-  test("throws NaxError when contextFiles is empty array", () => {
+  test("does not throw when contextFiles is empty — warns and continues", () => {
     const story = makeDecomposedStory({ contextFiles: [] });
-    expect(() => mapDecomposedStoriesToUserStories([story], "US-001")).toThrow(NaxError);
+    expect(() => mapDecomposedStoriesToUserStories([story], "US-001")).not.toThrow();
   });
 
-  test("throws with code DECOMPOSE_VALIDATION_FAILED when contextFiles is empty", () => {
+  test("returns story with empty contextFiles when LLM omitted them", () => {
     const story = makeDecomposedStory({ contextFiles: [] });
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories([story], "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.code).toBe("DECOMPOSE_VALIDATION_FAILED");
+    const result = mapDecomposedStoriesToUserStories([story], "US-001");
+    expect(result).toHaveLength(1);
+    expect(result[0]?.contextFiles).toEqual([]);
   });
 
-  test.each<[string, DecomposedStory[], number]>([
-    ["first", [makeDecomposedStory({ contextFiles: [] })], 0],
-    ["second", [makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/x.ts"] }), makeDecomposedStory({ id: "US-001-B", contextFiles: [] })], 1],
-    ["third", [makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/a.ts"] }), makeDecomposedStory({ id: "US-001-B", contextFiles: ["src/b.ts"] }), makeDecomposedStory({ id: "US-001-C", contextFiles: [] })], 2],
-  ])("includes entry index in error context for %s entry with empty contextFiles", (_pos, stories, expectedIndex) => {
-    let caught: NaxError | undefined;
-    try {
-      mapDecomposedStoriesToUserStories(stories, "US-001");
-    } catch (err) {
-      caught = err as NaxError;
-    }
-    expect(caught?.context?.entryIndex).toBe(expectedIndex);
+  test("processes all stories even when some have empty contextFiles", () => {
+    const stories = [
+      makeDecomposedStory({ id: "US-001-A", contextFiles: ["src/a.ts"] }),
+      makeDecomposedStory({ id: "US-001-B", contextFiles: [] }),
+      makeDecomposedStory({ id: "US-001-C", contextFiles: ["src/c.ts"] }),
+    ];
+    const result = mapDecomposedStoriesToUserStories(stories, "US-001");
+    expect(result).toHaveLength(3);
+    expect(result.map((s) => s.id)).toEqual(["US-001-A", "US-001-B", "US-001-C"]);
   });
 });

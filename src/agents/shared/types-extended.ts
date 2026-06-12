@@ -5,8 +5,8 @@
  * Separated from core types to keep each file under 400 lines.
  */
 
-import type { ResolvedPermissions } from "../../config/permissions";
-import type { ModelDef, ModelTier, NaxConfig } from "../../config/schema";
+import type { ResolvedPermissions } from "@/config/permissions";
+import type { ModelDef, ModelTier, NaxConfig } from "@/config/schema";
 
 /**
  * Configuration options for running an agent in plan mode.
@@ -104,9 +104,11 @@ export interface DecomposeOptions {
   /** Session role for TDD isolation (e.g. "decompose") */
   sessionRole?: string;
   /** Target story to decompose (plan-mode decompose) */
-  targetStory?: import("../../prd/types").UserStory;
+  targetStory?: import("@/prd").UserStory;
   /** Sibling stories for context (plan-mode decompose) */
-  siblings?: import("../../prd/types").UserStory[];
+  siblings?: import("@/prd").UserStory[];
+  /** Agent routing profiles to inject as capability cards. Empty array = no cards. */
+  profiles?: import("@/config").AgentRoutingProfile[];
 }
 
 /** A single classified user story from decompose result. */
@@ -135,6 +137,18 @@ export interface DecomposedStory {
   risks: string[];
   /** Test strategy recommendation from LLM */
   testStrategy?: import("../../config/test-strategy").TestStrategy;
+  /**
+   * Agent profile ID selected by the plan LLM from the capability cards.
+   * Present only when routing.agents.enabled === true and the LLM emitted a
+   * valid profile id in the decompose JSON. Resolved to routing.agent in
+   * decomposeOp.parse().
+   */
+  agentProfileId?: string;
+  /**
+   * Routing metadata resolved from agentProfileId during decomposeOp.parse().
+   * Populated only when a matching profile is found in config.routing.agents.profiles.
+   */
+  routing?: Pick<import("../../prd/types").StoryRouting, "agent" | "agentProfileId" | "profileModelTier">;
 }
 
 /**

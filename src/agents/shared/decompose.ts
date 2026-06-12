@@ -5,55 +5,54 @@
  * parseDecomposeOutput(), validateComplexity()
  */
 
-import { resolveTestStrategy } from "../../config/test-strategy";
+import { resolveTestStrategy } from "@/config";
+import { NaxError } from "@/errors";
+import { parseLLMJson } from "@/utils/llm-json";
 import type { DecomposedStory } from "../types";
 
 /**
  * Parse decompose output from agent stdout.
  *
- * Extracts JSON array from output, handles markdown code fences,
- * and validates structure.
+ * Extracts JSON array from output via parseLLMJson (handles markdown fences,
+ * preamble, trailing commas) and validates structure.
  */
 export function parseDecomposeOutput(output: string): DecomposedStory[] {
-  // Extract JSON from output (handles markdown code fences)
-  const jsonMatch = output.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
-  let jsonText = jsonMatch ? jsonMatch[1] : output;
-
-  // Try to find JSON array directly if no code fence
-  if (!jsonMatch) {
-    const arrayMatch = output.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      jsonText = arrayMatch[0];
-    }
-  }
-
-  // Parse JSON
   let parsed: unknown;
   try {
-    parsed = JSON.parse(jsonText.trim());
+    parsed = parseLLMJson<unknown>(output);
   } catch (error) {
-    throw new Error(
-      `Failed to parse decompose output as JSON: ${(error as Error).message}\n\nOutput:\n${output.slice(0, 500)}`,
-    );
+    throw new NaxError("Failed to parse decompose output as JSON", "DECOMPOSE_PARSE_FAILED", {
+      stage: "decompose",
+      outputSnippet: output.slice(0, 500),
+      cause: error,
+    });
   }
 
-  // Validate structure
   if (!Array.isArray(parsed)) {
-    throw new Error("Decompose output is not an array");
+    throw new NaxError("Decompose output is not an array", "DECOMPOSE_PARSE_FAILED", {
+      stage: "decompose",
+    });
   }
 
-  // Map to DecomposedStory[] with validation
   const stories: DecomposedStory[] = parsed.map((item: unknown, index: number) => {
-    // Type guard: ensure item is an object
     if (typeof item !== "object" || item === null) {
-      throw new Error(`Story at index ${index} is not an object`);
+      throw new NaxError(`Story at index ${index} is not an object`, "DECOMPOSE_PARSE_FAILED", {
+        stage: "decompose",
+        index,
+      });
     }
     const record = item as Record<string, unknown>;
     if (!record.id || typeof record.id !== "string") {
-      throw new Error(`Story at index ${index} missing valid 'id' field`);
+      throw new NaxError(`Story at index ${index} missing valid 'id' field`, "DECOMPOSE_PARSE_FAILED", {
+        stage: "decompose",
+        index,
+      });
     }
     if (!record.title || typeof record.title !== "string") {
-      throw new Error(`Story ${record.id} missing valid 'title' field`);
+      throw new NaxError(`Story ${record.id} missing valid 'title' field`, "DECOMPOSE_PARSE_FAILED", {
+        stage: "decompose",
+        storyId: record.id,
+      });
     }
 
     return {
@@ -77,11 +76,17 @@ export function parseDecomposeOutput(output: string): DecomposedStory[] {
       estimatedLOC: Number(record.estimatedLOC) || 0,
       risks: Array.isArray(record.risks) ? record.risks : [],
       testStrategy: resolveTestStrategy(typeof record.testStrategy === "string" ? record.testStrategy : undefined),
+      agentProfileId:
+        typeof record.agentProfileId === "string" && record.agentProfileId.length > 0
+          ? record.agentProfileId
+          : undefined,
     };
   });
 
   if (stories.length === 0) {
-    throw new Error("Decompose returned empty story array");
+    throw new NaxError("Decompose returned empty story array", "DECOMPOSE_PARSE_FAILED", {
+      stage: "decompose",
+    });
   }
 
   return stories;

@@ -9,6 +9,7 @@
  * here, promote the prompt to its own dedicated builder instead.
  */
 
+import type { AgentRoutingProfile } from "@/config";
 import {
   SectionAccumulator,
   instructionsSection,
@@ -76,7 +77,73 @@ export class OneShotPromptBuilder {
     return this;
   }
 
+  /**
+   * Injects agent capability cards + selection instruction into the prompt.
+   * No-op when profiles is empty — safe to call unconditionally.
+   * Must be called before jsonSchema() so cards appear before the output schema.
+   */
+  agentProfiles(profiles: AgentRoutingProfile[]): this {
+    const cards = OneShotPromptBuilder.agentCapabilityCards(profiles);
+    if (cards.length === 0) return this;
+    this.acc.add({
+      id: "agent-profiles",
+      overridable: false,
+      content: `${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}`,
+    });
+    return this;
+  }
+
   build(): string {
     return this.acc.join();
+  }
+
+  /**
+   * Returns the ordered selection rubric telling the LLM how to assign
+   * `agentProfileId` per story. The procedure (not free-form judgment) is
+   * load-bearing: decompose may run on a cheap model that cannot be trusted
+   * with open-ended "pick the best agent" questions.
+   */
+  static agentProfileInstruction(): string {
+    return [
+      "When agent profiles are listed above, pick exactly ONE profile id per story and set it on the `agentProfileId` field. Apply these steps in order:",
+      "1. Eliminate any profile whose weaknesses conflict with the story.",
+      "2. Keep profiles whose strengths or affinity cover the story's main job (task type + primary domain).",
+      "3. If more than one remains, choose the LOWEST cost profile.",
+      "4. If none clearly fit, omit `agentProfileId` entirely — never invent a profile id.",
+    ].join("\n");
+  }
+
+  /**
+   * Formats agent routing profiles as a markdown capability card table for LLM consumption.
+   * Returns an empty string when profiles is empty — caller decides whether to include the section.
+   */
+  static agentCapabilityCards(profiles: AgentRoutingProfile[]): string {
+    if (profiles.length === 0) return "";
+
+    const header = [
+      "## Agent Profiles",
+      "",
+      "| ID | Agent | Tier | Strengths | Weaknesses | Affinity | Cost |",
+      "|---|---|---|---|---|---|---|",
+    ];
+
+    const rows = profiles.map((p) => {
+      const esc = OneShotPromptBuilder.escapeCell;
+      const id = esc(p.id);
+      const agent = esc(p.target.agent);
+      const model = esc(p.target.model);
+      const strengths = p.strengths.map(esc).join(", ");
+      const weaknesses = p.weaknesses?.length ? p.weaknesses.map(esc).join("; ") : "—";
+      const affinityParts = [...(p.affinity?.taskTypes ?? []), ...(p.affinity?.domains ?? [])];
+      const affinity = affinityParts.length ? affinityParts.map(esc).join(", ") : "—";
+      const cost = esc(p.costTier ?? "—");
+      return `| ${id} | ${agent} | ${model} | ${strengths} | ${weaknesses} | ${affinity} | ${cost} |`;
+    });
+
+    return [...header, ...rows].join("\n");
+  }
+
+  private static escapeCell(value: string): string {
+    return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
   }
 }

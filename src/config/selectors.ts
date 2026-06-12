@@ -24,7 +24,7 @@ export const reviewConfigSelector = pickSelector(
   "agent",
 );
 export const planConfigSelector = pickSelector("plan", "plan", "debate", "agent", "project");
-export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent");
+export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
 // acceptance fix take more time to fix the code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs

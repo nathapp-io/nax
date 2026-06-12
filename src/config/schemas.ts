@@ -98,6 +98,7 @@ export const NaxConfigSchema = z
         mode: "hybrid",
         timeoutMs: 30000,
       },
+      agents: { enabled: true, strategy: "off", profiles: [] },
     }),
     execution: ExecutionConfigSchema.default({
       maxIterations: 10,
@@ -403,4 +404,49 @@ export const NaxConfigSchema = z
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
     path: ["version"],
+  })
+  .superRefine((data, ctx) => {
+    // Cross-section: each tierOrder rung's agent (when set) must exist in config.models
+    const tierOrder = data.autoMode?.escalation?.tierOrder ?? [];
+    const knownAgents = Object.keys(data.models ?? {});
+    for (const [i, rung] of tierOrder.entries()) {
+      if (rung.agent === undefined) continue;
+      if (!knownAgents.includes(rung.agent)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["autoMode", "escalation", "tierOrder", i, "agent"],
+          message: `Agent "${rung.agent}" is not defined in config.models (known: ${knownAgents.join(", ")})`,
+        });
+      } else {
+        const agentTiers = data.models?.[rung.agent] ?? {};
+        if (!(rung.tier in agentTiers)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["autoMode", "escalation", "tierOrder", i, "tier"],
+            message: `Tier "${rung.tier}" is not defined for agent "${rung.agent}" in config.models`,
+          });
+        }
+      }
+    }
+    // Profile↔ladder binding: every profile's target must map to a rung in tierOrder
+    const profiles = data.routing.agents?.profiles ?? [];
+    for (const [pi, profile] of profiles.entries()) {
+      const { agent: pAgent, model: pModel } = profile.target;
+      const hasMatchingRung = tierOrder.some((r) => r.tier === pModel && r.agent === pAgent);
+      if (!hasMatchingRung) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["routing", "agents", "profiles", pi, "target"],
+          message: `Profile "${profile.id}" target (${pAgent}@${pModel}) has no matching rung in autoMode.escalation.tierOrder — escalation from this profile has no defined path. To fix: agent-qualify the ladder by adding a rung { "tier": "${pModel}", "agent": "${pAgent}", "attempts": <n> } (and an agent on every other rung) to autoMode.escalation.tierOrder.`,
+        });
+      }
+      // Cross-section: profile target agent must exist in config.models
+      if (!knownAgents.includes(pAgent)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["routing", "agents", "profiles", pi, "target", "agent"],
+          message: `Profile "${profile.id}" target agent "${pAgent}" is not defined in config.models`,
+        });
+      }
+    }
   });

@@ -71,7 +71,12 @@ export async function planDecomposeCommand(
   const rt = createPlanRuntime(config, workdir, options.feature);
   const agentManager = rt.agentManager;
   const adapterForCapCheck = agentManager.getAgent(agentName);
-  if (!adapterForCapCheck) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
+  if (!adapterForCapCheck) {
+    throw new NaxError(`No agent adapter found for '${agentName}'`, "AGENT_NOT_FOUND", {
+      stage: "decompose",
+      agentName,
+    });
+  }
 
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
@@ -87,6 +92,8 @@ export async function planDecomposeCommand(
     for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
       if (attempt === 0 && debateDecompEnabled) {
         const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
+        const agentRoutingForDebate = config.routing?.agents;
+        const profilesForDebate = agentRoutingForDebate?.enabled === true ? (agentRoutingForDebate.profiles ?? []) : [];
         const prompt = await buildDecomposePromptAsync({
           specContent: "",
           codebaseContext,
@@ -96,6 +103,7 @@ export async function planDecomposeCommand(
           featureName: options.feature,
           storyId: options.storyId,
           maxAcCount: config?.precheck?.storySizeGate?.maxAcCount,
+          profiles: profilesForDebate,
         });
         const decompCallCtx = {
           runtime: rt,
@@ -200,7 +208,13 @@ export async function planDecomposeCommand(
     ...updatedStories.slice(originalIndex + 1),
   ];
 
-  const updatedPrd: PRD = { ...prd, userStories: finalStories };
+  // Delta C4: record the loader-resolved config profile name (AC 6 sets
+  // config.profile after all merges) so nax run can detect ladder drift.
+  const updatedPrd: PRD = {
+    ...prd,
+    userStories: finalStories,
+    routingProfile: config.profile ?? "default",
+  };
   await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
   return () => {};
 }

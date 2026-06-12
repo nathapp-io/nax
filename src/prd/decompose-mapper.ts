@@ -7,6 +7,7 @@
 
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import { NaxError } from "../errors";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "./types";
 
 /**
@@ -14,7 +15,7 @@ import type { UserStory } from "./types";
  *
  * - Moves complexity, testStrategy, and reasoning into routing sub-object
  * - Sets lifecycle defaults: status='pending', passes=false, escalations=[], attempts=0
- * - Validates required fields (id, contextFiles) and throws with entry index on failure
+ * - Validates required field id and throws on failure; warns (does not throw) for empty contextFiles
  * - Inherits workdir from parent story so per-package config is applied to sub-stories
  *
  * @param stories - Flat decompose output from adapter
@@ -38,12 +39,15 @@ export function mapDecomposedStoriesToUserStories(
     }
 
     if (!story.contextFiles || story.contextFiles.length === 0) {
-      throw new NaxError(`Entry ${entryIndex} (${story.id}) has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose-mapper",
-        entryIndex,
-        storyId: story.id,
-        parentStoryId,
-      });
+      getSafeLogger()?.warn(
+        "decompose-mapper",
+        `Entry ${entryIndex} (${story.id}) has empty contextFiles — continuing`,
+        {
+          storyId: story.id,
+          entryIndex,
+          parentStoryId,
+        },
+      );
     }
 
     return {
@@ -64,7 +68,10 @@ export function mapDecomposedStoriesToUserStories(
         complexity: story.complexity,
         testStrategy: story.testStrategy ?? ("test-after" as const),
         reasoning: story.reasoning,
-        modelTier: "balanced" as const,
+        modelTier: story.routing?.profileModelTier ?? ("balanced" as const),
+        ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
+        ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
+        ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),
       },
     };
   });

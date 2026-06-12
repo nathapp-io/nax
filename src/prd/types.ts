@@ -85,6 +85,14 @@ export interface StoryRouting {
   llmModel?: string;
   /** Agent to use for this story (overrides default agent from config) */
   agent?: string;
+  /** Profile ID that produced the starting rung — written once, not overwritten by escalation */
+  initialProfileId?: string;
+  /** Agent at first route — written once, not overwritten by escalation */
+  initialAgent?: string;
+  /** Profile id that produced the current agent assignment */
+  agentProfileId?: string;
+  /** Model tier from the matched agent profile's target — set at plan time, used to bias routing tier selection */
+  profileModelTier?: ModelTier;
 }
 
 /** Escalation attempt tracking */
@@ -315,4 +323,6 @@ export interface PRD {
   };
   /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
   acceptanceOverrides?: Record<string, string>;
+  /** Config profile name resolved at plan time (loader AC 6) — nax run adopts it by default and warns on mismatch */
+  routingProfile?: string;
 }

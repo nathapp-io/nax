@@ -8,8 +8,12 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { _runSetupDeps, warnFallbackMisconfiguration } from "../../../../src/execution/lifecycle/run-setup";
-import { makeNaxConfig } from "../../../helpers";
+import {
+  _runSetupDeps,
+  warnFallbackMisconfiguration,
+  warnProfileMismatch,
+} from "../../../../src/execution/lifecycle/run-setup";
+import { makeNaxConfig, makePRD, makeStory } from "../../../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -165,5 +169,209 @@ describe("warnFallbackMisconfiguration — #508-M4 AC-35 pre-flight warning", ()
 
     const geminiWarns = warns.filter((w) => (w[2] as Record<string, unknown>).candidate === "gemini");
     expect(geminiWarns).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 10 Part B: profile-mismatch warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("warnProfileMismatch — Task 10 Part B", () => {
+  function makeLogger() {
+    const warns: Array<[string, string, Record<string, unknown>]> = [];
+    const logger = {
+      warn: (stage: string, msg: string, ctx: Record<string, unknown>) => warns.push([stage, msg, ctx]),
+      info: () => {},
+      debug: () => {},
+      error: () => {},
+    };
+    return { logger, warns };
+  }
+
+  test("emits warn when story has agentProfileId that no longer exists in config", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-001",
+      routing: {
+        complexity: "medium",
+        testStrategy: "tdd-simple",
+        reasoning: "test",
+        agent: "opencode",
+        agentProfileId: "removed-profile",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      // Include "opencode" in models so only the profile-mismatch warn fires, not the agent warn.
+      models: { claude: { fast: "haiku" }, opencode: { fast: "opencode-fast" } },
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off" as const,
+          default: "default-profile",
+          profiles: [
+            {
+              id: "existing-profile",
+              target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(1);
+    const [stage, msg, ctx] = warns[0]!;
+    expect(stage).toBe("setup");
+    expect(msg).toContain("removed-profile");
+    expect(msg).toContain("no longer exists");
+    expect(ctx.storyId).toBe("US-001");
+  });
+
+  test("does not emit warn when story's agentProfileId still exists in config", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-002",
+      routing: {
+        complexity: "simple",
+        testStrategy: "tdd-simple",
+        reasoning: "test",
+        agent: "claude",
+        agentProfileId: "existing-profile",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off" as const,
+          default: "existing-profile",
+          profiles: [
+            {
+              id: "existing-profile",
+              target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("does not emit warn when story has no agentProfileId (control case)", () => {
+    const { logger, warns } = makeLogger();
+    const story = makeStory({
+      id: "US-003",
+      routing: {
+        complexity: "simple",
+        testStrategy: "tdd-simple",
+        reasoning: "test",
+      },
+    });
+    const prd = makePRD({ userStories: [story] });
+    const config = makeNaxConfig({
+      routing: {
+        agents: {
+          enabled: true,
+          strategy: "off" as const,
+          default: "some-profile",
+          profiles: [
+            {
+              id: "some-profile",
+              target: { agent: "claude", model: "fast" },
+              strengths: ["general"],
+            },
+          ],
+        },
+      },
+    });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("emits PRD-level warn when prd.routingProfile differs from the resolved config profile", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({ userStories: [], routingProfile: "aggressive" });
+    const config = makeNaxConfig({ profile: "cheap" });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(1);
+    const [stage, msg, ctx] = warns[0]!;
+    expect(stage).toBe("prd");
+    expect(msg).toContain('planned with config profile "aggressive"');
+    expect(ctx.storyId).toBe("prd");
+    expect(ctx.plannedProfile).toBe("aggressive");
+    expect(ctx.currentProfile).toBe("cheap");
+  });
+
+  test("does not emit PRD-level warn when prd.routingProfile matches the resolved config profile", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({ userStories: [], routingProfile: "shared" });
+    const config = { ...makeNaxConfig(), profile: "shared" };
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    expect(warns).toHaveLength(0);
+  });
+
+  test("warns per story when routing.agent is not defined in config.models", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-1",
+          routing: {
+            complexity: "simple",
+            testStrategy: "test-after",
+            reasoning: "",
+            modelTier: "fast",
+            agent: "ghost",
+          },
+        }),
+      ],
+    });
+    const config = makeNaxConfig({ models: { claude: { fast: "m" } } });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    const agentWarns = warns.filter(
+      ([, msg, ctx]) => /agent "ghost".*not defined in config\.models/i.test(msg) && ctx.storyId === "US-1",
+    );
+    expect(agentWarns).toHaveLength(1);
+    expect(agentWarns[0]?.[2]).toMatchObject({ storyId: "US-1", agent: "ghost" });
   });
 });

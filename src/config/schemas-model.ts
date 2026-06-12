@@ -50,4 +50,5 @@ export const ConfiguredModelSchema = z.union([ModelTierSchema, ConfiguredModelOb
 export const TierConfigSchema = z.object({
   tier: z.string().min(1, "Tier name must be non-empty"),
   attempts: z.number().int().min(1).max(20, { message: "attempts must be 1-20" }),
+  agent: z.string().min(1, { message: "agent must be non-empty" }).optional(),
 });

@@ -44,3 +44,5 @@ export {
 } from "./test-scanner";
 
 export { autoDetectContextFiles, extractKeywords, type AutoDetectOptions } from "./auto-detect";
+
+export { isGreenfieldStory } from "./greenfield";

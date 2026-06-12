@@ -126,18 +126,32 @@ export async function preIterationTierCheck(
   totalCost: number,
   workdir: string,
 ): Promise<PreIterationCheckResult> {
-  const logger = getSafeLogger();
+  const logger = _tierEscalationDeps.getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
   const tierOrder = config.autoMode.escalation?.tierOrder || [];
-  const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
+  const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
+  const currentRungForBudget = hasAgentRungs
+    ? { tier: currentTier, agent: story.routing?.agent }
+    : { tier: currentTier };
+  const tierCfg = tierOrder.length > 0 ? getTierConfig(currentRungForBudget, tierOrder) : undefined;
+
+  if (tierOrder.length > 0 && !tierCfg) {
+    logger?.warn("escalation", "Current rung not found in tierOrder — escalation budget is unbounded for this story", {
+      storyId: story.id,
+      currentTier,
+      agent: story.routing?.agent,
+      hasAgentRungs,
+    });
+  }
 
   if (!tierCfg || (story.attempts ?? 0) < tierCfg.attempts) {
     // Story still has budget in current tier
     return { shouldSkipIteration: false, prdDirty: false, prd };
   }
 
-  // Exceeded current tier budget — try to escalate
-  const escalationResult = escalateTier(currentTier, tierOrder);
+  // Exceeded current tier budget — try to escalate.
+  const currentRung = hasAgentRungs ? { tier: currentTier, agent: story.routing?.agent } : { tier: currentTier };
+  const escalationResult = escalateTier(currentRung, tierOrder);
   const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
@@ -292,6 +306,7 @@ export function shouldRetrySameTier(runtimeCrashResult: { status: string; succes
  */
 export const _tierEscalationDeps = {
   savePRD,
+  getSafeLogger,
 };
 
 /**
@@ -310,7 +325,16 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
-  const escalationResult = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
+  // Only match by (tier, agent) tuple when the tierOrder contains agent-qualified
+  // rungs (cross-agent ladder). Standard tier orders with no agent fields fall back
+  // to tier-name-only matching so escalation still works for stories that carry a
+  // routing.agent (Task 9 agent-profile routing).
+  const escalationTierOrder = ctx.config.autoMode.escalation.tierOrder;
+  const hasAgentRungs = escalationTierOrder.some((r) => r.agent !== undefined);
+  const currentRung = hasAgentRungs
+    ? { tier: ctx.routing.modelTier, agent: ctx.story.routing?.agent }
+    : { tier: ctx.routing.modelTier };
+  const escalationResult = escalateTier(currentRung, escalationTierOrder);
   const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];

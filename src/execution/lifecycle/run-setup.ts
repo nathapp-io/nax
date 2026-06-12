@@ -12,7 +12,6 @@
  * - Run initialization
  */
 
-import * as os from "node:os";
 import path from "node:path";
 import { pipelineEventBus } from "@/pipeline";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
@@ -44,6 +43,58 @@ export const _runSetupDeps = {
 };
 
 /**
+ * Emit a warning for each story whose agentProfileId no longer exists in
+ * config.routing.agents.profiles (Task 10 Part B — profile-mismatch check).
+ *
+ * This handles the case where a user runs an old PRD after removing a profile
+ * from config. The existing routing.agent assignment is retained — warn only,
+ * no throw.
+ */
+export function warnProfileMismatch(
+  prd: import("../../prd").PRD,
+  config: NaxConfig,
+  logger: ReturnType<typeof getSafeLogger>,
+): void {
+  const profiles = config.routing?.agents?.profiles ?? [];
+  const profileIds = new Set(profiles.map((p) => p.id));
+
+  // PRD-level check (Delta C4): warn when the run resolves a different config
+  // profile than the one the PRD was planned with — the escalation ladder and
+  // agent-profile registry may differ from what plan assumed.
+  if (prd.routingProfile !== undefined) {
+    const current = config.profile ?? "default";
+    if (prd.routingProfile !== current) {
+      logger?.warn(
+        "prd",
+        `PRD was planned with config profile "${prd.routingProfile}" but this run resolved profile "${current}" — the escalation ladder and agent profiles may differ from what plan assumed. Re-run with --profile ${prd.routingProfile} to match.`,
+        { storyId: "prd", plannedProfile: prd.routingProfile, currentProfile: current },
+      );
+    }
+  }
+
+  const knownAgents = new Set(Object.keys(config.models ?? {}));
+
+  for (const story of prd.userStories) {
+    const profileId = story.routing?.agentProfileId;
+    if (profileId && !profileIds.has(profileId)) {
+      logger?.warn(
+        "setup",
+        `Story ${story.id} was planned with profile ${profileId} which no longer exists in config — routing.agent assignment retained`,
+        { storyId: story.id, agentProfileId: profileId },
+      );
+    }
+    const storyAgent = story.routing?.agent;
+    if (storyAgent && !knownAgents.has(storyAgent)) {
+      logger?.warn(
+        "setup",
+        `Story ${story.id} routes to agent "${storyAgent}" which is not defined in config.models — execution will degrade to the default agent`,
+        { storyId: story.id, agent: storyAgent },
+      );
+    }
+  }
+}
+
+/**
  * Emit a warning for each fallback candidate in config.agent.fallback.map
  * that cannot be resolved by agentGetFn (AC-35 pre-flight check).
  *
@@ -65,6 +116,7 @@ export function warnFallbackMisconfiguration(
       if (warned.has(candidate)) continue;
       if (!agentGetFn(candidate)) {
         logger?.warn("fallback", "Fallback candidate not available — will be skipped if triggered", {
+          storyId: "_setup",
           primaryAgent,
           candidate,
         });
@@ -402,6 +454,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // initializeRun calls loadPRD() internally, producing a new object.
     // Re-prime statusWriter so crash handlers during the prompt window see current state (#356).
     statusWriter.setPrd(prd);
+
+    // Warn when any story was planned with an agent profile that has since been removed.
+    warnProfileMismatch(prd, config, logger);
+
     let counts = initResult.storyCounts;
 
     // Prompt user for each paused story — skip in headless mode
