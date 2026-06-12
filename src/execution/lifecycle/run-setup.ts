@@ -58,15 +58,16 @@ export function warnProfileMismatch(
   const profiles = config.routing?.agents?.profiles ?? [];
   const profileIds = new Set(profiles.map((p) => p.id));
 
-  // PRD-level check: warn if the overall routing profile config changed since plan time.
+  // PRD-level check (Delta C4): warn when the run resolves a different config
+  // profile than the one the PRD was planned with — the escalation ladder and
+  // agent-profile registry may differ from what plan assumed.
   if (prd.routingProfile !== undefined) {
-    const current = config.routing?.agents?.default;
+    const current = config.profile ?? "default";
     if (prd.routingProfile !== current) {
-      const currentDisplay = current ?? "(none)";
       logger?.warn(
         "prd",
-        `PRD was planned with default routing profile "${prd.routingProfile}" but current config.routing.agents.default is "${currentDisplay}" — per-story agent assignments may not reflect current profile config`,
-        { storyId: "prd", routingProfile: prd.routingProfile, currentDefault: currentDisplay },
+        `PRD was planned with config profile "${prd.routingProfile}" but this run resolved profile "${current}" — the escalation ladder and agent profiles may differ from what plan assumed. Re-run with --profile ${prd.routingProfile} to match.`,
+        { storyId: "prd", plannedProfile: prd.routingProfile, currentProfile: current },
       );
     }
   }

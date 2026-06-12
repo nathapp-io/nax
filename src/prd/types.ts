@@ -323,6 +323,6 @@ export interface PRD {
   };
   /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
   acceptanceOverrides?: Record<string, string>;
-  /** Config profile resolved at plan time — used to warn when nax run uses a different profile */
+  /** Config profile name resolved at plan time (loader AC 6) — nax run adopts it by default and warns on mismatch */
   routingProfile?: string;
 }

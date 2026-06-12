@@ -208,12 +208,12 @@ export async function planDecomposeCommand(
     ...updatedStories.slice(originalIndex + 1),
   ];
 
-  const routingProfile =
-    config.routing?.agents?.enabled === true ? (config.routing?.agents?.default ?? undefined) : undefined;
+  // Delta C4: record the loader-resolved config profile name (AC 6 sets
+  // config.profile after all merges) so nax run can detect ladder drift.
   const updatedPrd: PRD = {
     ...prd,
     userStories: finalStories,
-    ...(routingProfile !== undefined && { routingProfile }),
+    routingProfile: config.profile ?? "default",
   };
   await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
   return () => {};

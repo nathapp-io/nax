@@ -198,12 +198,12 @@ export async function runPlanPipeline(
     });
 
     if (verdict.outcome === "passed") {
-      const routingProfile =
-        config.routing?.agents?.enabled === true ? (config.routing.agents.default ?? undefined) : undefined;
+      // Delta C4: record the loader-resolved config profile name (AC 6 sets
+      // config.profile after all merges) so nax run can detect ladder drift.
       const prdToWrite = {
         ...verdict.prd,
         project: projectName,
-        ...(routingProfile !== undefined && { routingProfile }),
+        routingProfile: config.profile ?? "default",
       };
       await _planDeps.writeFile(outputPath, JSON.stringify(prdToWrite, null, 2));
       logger?.info("plan", "[OK] PRD written via pipeline", { outputPath });
