@@ -83,6 +83,8 @@ export type {
   FullSuiteGateDeps,
 } from "./full-suite-gate";
 export { makeFullSuiteRectifyStrategy } from "./full-suite-rectify";
+export { fullSuiteRectifyOp } from "./full-suite-rectify-op";
+export type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "./full-suite-rectify-op";
 export { makeAutofixImplementerStrategy } from "./autofix-implementer-strategy";
 export { makeAutofixTestWriterStrategy } from "./autofix-test-writer-strategy";
 export { applyTestEditDeclarations } from "./apply-test-edit-declarations";

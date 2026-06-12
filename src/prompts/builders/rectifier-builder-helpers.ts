@@ -6,6 +6,7 @@
  */
 
 import { isSingleSessionTestOwningStrategy, isThreeSessionStrategy } from "@/config";
+import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import { isBlockingSeverity } from "@/review";
 import type { ReviewCheckResult } from "@/review/types";
@@ -356,6 +357,24 @@ ${adversarialErrors}
 
 Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
+}
+
+/**
+ * Formats the failing-test bullet list shared by failingTestContext and
+ * failingTestRectification. Returns only the listing lines; callers append
+ * the closing directive and any escape-hatch sections.
+ */
+export function formatFailingTestsList(findings: Finding[]): string {
+  if (findings.length === 0) {
+    return "The full test suite has failing tests. Fix the implementation to make all tests pass.";
+  }
+  const lines: string[] = [`Fix the following ${findings.length} failing test${findings.length === 1 ? "" : "s"}:\n`];
+  for (const f of findings) {
+    const location = f.file ? `${f.file}` : "(unknown file)";
+    const rule = f.rule ? `  Test: ${f.rule}\n` : "";
+    lines.push(`- ${location}\n${rule}  Error: ${f.message}\n`);
+  }
+  return lines.join("\n");
 }
 
 export function mechanicalRectification(

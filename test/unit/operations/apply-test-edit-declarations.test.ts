@@ -255,6 +255,109 @@ describe("applyTestEditDeclarations", () => {
     });
   });
 
+  // ── AC4: test-runner finding with no fixTarget should be re-tagged on valid prd_contract ──
+
+  describe("prd_contract — test-runner source with no fixTarget (AC4/AC5/AC10)", () => {
+    test("AC4: re-tags test-runner failed-test finding with no fixTarget to test on valid prd_contract", () => {
+      const story = makeStory({ description: "Call getSomething() to fetch data" });
+      const findings: Finding[] = [
+        {
+          source: "test-runner",
+          severity: "error",
+          category: "failed-test",
+          message: "Expected mock to be called",
+          file: "test/unit/service.test.ts",
+          // fixTarget intentionally absent (test-runner findings carry no fixTarget)
+        },
+      ];
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/service.test.ts",
+        prdQuote: "getSomething()",
+        testBefore: "expect(mock).not.toBeCalled()",
+        testAfter: "expect(mock).toBeCalled()",
+      };
+
+      const result = applyTestEditDeclarations(findings, [decl], story);
+
+      expect(result[0]?.fixTarget).toBe("test");
+    });
+
+    test("AC5: lint finding with no fixTarget is NOT re-tagged on prd_contract (only test-runner source)", () => {
+      const story = makeStory({ description: "Call doWork() somewhere" });
+      const findings: Finding[] = [
+        {
+          source: "lint",
+          severity: "error",
+          category: "style",
+          message: "Unused import",
+          file: "test/unit/service.test.ts",
+          // fixTarget intentionally absent
+        },
+      ];
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/service.test.ts",
+        prdQuote: "doWork()",
+        testBefore: "old",
+        testAfter: "new",
+      };
+
+      const result = applyTestEditDeclarations(findings, [decl], story);
+
+      expect(result[0]?.fixTarget).toBeUndefined();
+    });
+
+    test("AC10: test-runner finding with no fixTarget + invalid prd_quote → advisory appended", () => {
+      const story = makeStory({ description: "A story that does not mention the function" });
+      const findings: Finding[] = [
+        {
+          source: "test-runner",
+          severity: "error",
+          category: "failed-test",
+          message: "Test failed",
+          file: "test/unit/service.test.ts",
+        },
+      ];
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/service.test.ts",
+        prdQuote: "nonExistentFunction()",
+        testBefore: "old",
+        testAfter: "new",
+      };
+
+      const result = applyTestEditDeclarations(findings, [decl], story);
+
+      expect(result).toHaveLength(2);
+      expect(result[1]?.category).toBe("prd_quote_mismatch");
+    });
+
+    test("AC10: original test-runner finding retains no fixTarget after invalid prd_quote", () => {
+      const story = makeStory({ description: "A story without the quote" });
+      const findings: Finding[] = [
+        {
+          source: "test-runner",
+          severity: "error",
+          category: "failed-test",
+          message: "Test failed",
+          file: "test/unit/service.test.ts",
+        },
+      ];
+      const decl: TestEditDeclaration = {
+        reason: "prd_contract",
+        file: "test/unit/service.test.ts",
+        prdQuote: "missingFunction()",
+        testBefore: "old",
+        testAfter: "new",
+      };
+
+      const result = applyTestEditDeclarations(findings, [decl], story);
+
+      expect(result[0]?.fixTarget).toBeUndefined();
+    });
+  });
+
   describe("immutability", () => {
     test("does not mutate input findings array", () => {
       const story = makeStory({ description: "Call doWork() somewhere" });

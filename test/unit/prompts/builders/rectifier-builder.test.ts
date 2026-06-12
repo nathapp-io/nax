@@ -578,4 +578,61 @@ describe("RectifierPromptBuilder.failingTestContext", () => {
     const emptyResult = RectifierPromptBuilder.failingTestContext([]);
     expect(typeof emptyResult).toBe("string");
   });
+
+  // AC-1
+  test("contains rule, message, and implementation-fix directive for test-runner finding", () => {
+    const finding: Finding = {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "should reject expired token",
+      file: "test/unit/auth.test.ts",
+      message: "Expected 1 received 0",
+    };
+    const result = RectifierPromptBuilder.failingTestContext([finding]);
+    expect(result).toContain("should reject expired token");
+    expect(result).toContain("Expected 1 received 0");
+    expect(result).toContain("Fix the implementation (not the tests)");
+  });
+});
+
+describe("RectifierPromptBuilder.failingTestRectification", () => {
+  const finding: Finding = {
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "should reject expired token",
+    file: "test/unit/auth.test.ts",
+    message: "Expected 1 received 0",
+  };
+
+  // AC-2
+  test("three-session TDD story: contains finding message, TEST_EDIT_REASON, and mock_structure", () => {
+    const story = makeStory({
+      routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
+    });
+    const result = RectifierPromptBuilder.failingTestRectification([finding], story);
+    expect(result).toContain("Expected 1 received 0");
+    expect(result).toContain("TEST_EDIT_REASON");
+    expect(result).toContain("mock_structure");
+  });
+
+  // AC-3
+  test("three-session story: contains loosen assertion guard", () => {
+    const story = makeStory({
+      routing: { testStrategy: "three-session-tdd", complexity: "medium", reasoning: "tdd" },
+    });
+    const result = RectifierPromptBuilder.failingTestRectification([finding], story);
+    expect(result).toContain("loosen assertion");
+  });
+
+  // AC-4
+  test("single-session test-after story: contains permit and does not contain mock_structure", () => {
+    const story = makeStory({
+      routing: { testStrategy: "test-after", complexity: "simple", reasoning: "test-after" },
+    });
+    const result = RectifierPromptBuilder.failingTestRectification([finding], story);
+    expect(result).toContain("you MAY edit test files");
+    expect(result).not.toContain("mock_structure");
+  });
 });

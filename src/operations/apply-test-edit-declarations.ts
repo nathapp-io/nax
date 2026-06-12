@@ -34,9 +34,13 @@ export function applyTestEditDeclarations(
       const valid = validatePrdQuote(prdQuote, story);
 
       if (valid) {
-        // Re-tag matching findings: same file, fixTarget was "source" → "test"
+        // Re-tag matching findings: same file, fixTarget was "source" OR finding
+        // is a test-runner failed-test with no fixTarget (AC4: failing-test findings
+        // carry no fixTarget but are re-tag-eligible when source === "test-runner").
         result = result.map((f) => {
-          if (f.file === d.file && f.fixTarget === "source") {
+          const eligible =
+            f.file === d.file && (f.fixTarget === "source" || (f.fixTarget == null && f.source === "test-runner"));
+          if (eligible) {
             return {
               ...f,
               fixTarget: "test" as const,
