@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { _singlePlanDeps, SinglePlanStrategy } from "@/plan";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, makeMockAgentManager } from "@test/helpers";
 import type { PlanModeContext } from "@/plan/strategies";
 import type { PRD } from "@/prd/types";
 import type { NaxRuntime } from "@/runtime";
@@ -59,7 +59,7 @@ function makeCtx(overrides: {
   }) as unknown as PlanModeContext["config"];
 
   const fakeRuntime = {
-    agentManager: { getDefault: () => "claude" },
+    agentManager: makeMockAgentManager(),
     packages: { resolve: () => ({}) },
     close: async () => {},
   } as unknown as NaxRuntime;
