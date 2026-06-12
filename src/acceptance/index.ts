@@ -11,7 +11,7 @@ export type {
   RefinementContext,
 } from "./types";
 
-export { parseRefinementResponse } from "./refinement";
+export { parseRefinementResponse, refinementWouldFallback } from "./refinement";
 
 export {
   acceptanceTestFilename,
