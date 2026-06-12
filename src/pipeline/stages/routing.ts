@@ -68,13 +68,19 @@ export const routingStage: PipelineStage = {
       (previousRank !== undefined && candidateRank !== undefined ? previousRank > candidateRank : hasEscalationRecords);
     const modelTier = isEscalated ? previousTier : candidateTier;
 
-    const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
+    // PRD-assigned agent wins (plan-time selection, Delta C3). decision.agent is
+    // the Part A run-time classifier's choice and applies only when the PRD
+    // leaves agent unset — do NOT clobber it unconditionally.
+    const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent ?? decision.agent };
 
     // Write routing back to story (for escalation tracking).
-    // initialAgent / initialProfileId use the first-write idiom: captured once and
-    // never overwritten by subsequent routing passes or escalation.
-    const initialAgent = ctx.story.routing?.initialAgent ?? routing.agent;
-    const initialProfileId = ctx.story.routing?.initialProfileId ?? ctx.story.routing?.agentProfileId;
+    // initialAgent / initialProfileId use the first-write idiom AND require that
+    // no escalation has happened yet: an agent first assigned by cross-agent
+    // escalation is not the story's origin (origin was "no agent").
+    const neverEscalated = !hasEscalationRecords;
+    const initialAgent = ctx.story.routing?.initialAgent ?? (neverEscalated ? routing.agent : undefined);
+    const initialProfileId =
+      ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),
@@ -83,6 +89,8 @@ export const routingStage: PipelineStage = {
       testStrategy: routing.testStrategy,
       reasoning: routing.reasoning ?? "",
       modelTier: routing.modelTier,
+      // Persist the resolved agent (PRD agent wins; decision.agent fills in when unset).
+      ...(routing.agent !== undefined && { agent: routing.agent }),
       ...(initialAgent !== undefined && { initialAgent }),
       ...(initialProfileId !== undefined && { initialProfileId }),
     };

@@ -380,4 +380,74 @@ describe("routingStage — H2: initialAgent / initialProfileId written once", ()
     expect("initialAgent" in (ctx.story.routing ?? {})).toBe(false);
     expect("initialProfileId" in (ctx.story.routing ?? {})).toBe(false);
   });
+
+  test("decision.agent applies when the PRD leaves agent unset (Part A forward-compat)", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+    origRoutingDeps = { ..._routingDeps };
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "llm",
+        agent: "opencode",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({ routing: { complexity: "simple", testStrategy: "test-after", reasoning: "" } });
+    const ctx = makeCtx(story);
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    expect(ctx.story.routing?.agent).toBe("opencode");
+  });
+
+  test("PRD agent still wins over decision.agent", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+    origRoutingDeps = { ..._routingDeps };
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "llm",
+        agent: "opencode",
+      });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    const story = makeStory({ routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", agent: "claude" } });
+    const ctx = makeCtx(story);
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    expect(ctx.story.routing?.agent).toBe("claude");
+  });
+
+  test("initialAgent is NOT captured from an agent first assigned by escalation", async () => {
+    const { routingStage, _routingDeps } = await import(
+      "../../../../src/pipeline/stages/routing"
+    );
+    origRoutingDeps = { ..._routingDeps };
+    _routingDeps.resolveRouting = () =>
+      Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "k" });
+    _routingDeps.isGreenfieldStory = () => Promise.resolve(false);
+    _routingDeps.savePRD = () => Promise.resolve();
+
+    // Story had NO plan-time agent; escalation later assigned one and left a record.
+    const story = makeStory({
+      escalations: [
+        { fromTier: "fast", toTier: "balanced", reason: "budget", timestamp: new Date().toISOString() },
+      ],
+      routing: { complexity: "simple", testStrategy: "test-after", reasoning: "", modelTier: "balanced", agent: "claude" },
+    });
+    const ctx = makeCtx(story);
+    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
+
+    // Origin was "no agent" — escalation's assignment must not be recorded as origin.
+    expect(ctx.story.routing?.initialAgent).toBeUndefined();
+  });
 });
