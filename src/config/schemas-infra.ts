@@ -42,6 +42,7 @@ export const AcceptanceConfigSchema = z.object({
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
   command: z.string().optional(),
   model: ConfiguredModelSchema.default("fast"),
+  generateModel: ConfiguredModelSchema.optional(),
   refinement: z.boolean().default(true),
   refinementConcurrency: z.number().int().min(1).max(10).default(3),
   redGate: z.boolean().default(true),

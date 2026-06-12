@@ -140,3 +140,57 @@ describe("AcceptanceConfigSchema fix strategy validation (US-001)", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("AcceptanceConfigSchema generateModel field", () => {
+  test("generateModel is absent from DEFAULT_CONFIG (optional)", () => {
+    expect(DEFAULT_CONFIG.acceptance.generateModel).toBeUndefined();
+  });
+
+  test("generateModel accepts a tier string", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: { ...DEFAULT_CONFIG.acceptance, generateModel: "balanced" },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toBe("balanced");
+    }
+  });
+
+  test("generateModel accepts an explicit agent/model object", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: {
+        ...DEFAULT_CONFIG.acceptance,
+        generateModel: { agent: "opencode", model: "opencode-go/deepseek-v4-flash" },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toEqual({
+        agent: "opencode",
+        model: "opencode-go/deepseek-v4-flash",
+      });
+    }
+  });
+
+  test("generateModel rejects an invalid value", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      acceptance: { ...DEFAULT_CONFIG.acceptance, generateModel: 123 },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("config without generateModel still parses successfully (backwards compat)", () => {
+    const config = { ...DEFAULT_CONFIG };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.acceptance.generateModel).toBeUndefined();
+    }
+  });
+});
