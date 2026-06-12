@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { makeFullSuiteRectifyStrategy } from "@/operations";
+import {
+  makeFullSuiteRectifyStrategy,
+  fullSuiteRectifyOp,
+  makeDeclarationSink,
+} from "@/operations";
+import type { FullSuiteRectifyInput, FullSuiteRectifyOutput } from "@/operations";
+import type { TestEditDeclaration } from "@/operations";
 import type { Finding } from "@/findings";
 import type { UserStory } from "@/prd";
 import { makeNaxConfig } from "@test/helpers";
@@ -84,5 +90,91 @@ describe("makeFullSuiteRectifyStrategy", () => {
     const input2 = s2.buildInput([], [], {} as any);
     expect(input1.story.id).toBe("US-001");
     expect(input2.story.id).toBe("US-002");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC1/2/3/6/7: DeclarationSink parameter wiring
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
+  test("AC1: fixOp is fullSuiteRectifyOp when sink provided", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    expect(strategy.fixOp.name).toBe(fullSuiteRectifyOp.name);
+  });
+
+  test("AC2: appliesTo returns true for test-runner failed-test when sink provided", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    expect(strategy.appliesTo(makeTestFinding({ source: "test-runner", category: "failed-test" }))).toBe(true);
+  });
+
+  test("AC3: appliesTo returns false for semantic-review when sink provided", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    expect(strategy.appliesTo(makeTestFinding({ source: "semantic-review", category: "x" }))).toBe(false);
+  });
+
+  test("AC6: extractApplied with mock_structure declaration pushes files to sink.mockHandoffs", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    const output: FullSuiteRectifyOutput = {
+      applied: true,
+      testEditDeclarations: [
+        {
+          reason: "mock_structure",
+          file: "test/unit/foo.test.ts",
+          files: ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
+          reasonDetail: "mock setup needs restructuring",
+        },
+      ],
+    };
+    const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
+    strategy.extractApplied!(output, input);
+    expect(sink.mockHandoffs).toHaveLength(1);
+    expect(sink.mockHandoffs[0]?.files).toEqual(["test/unit/foo.test.ts", "test/unit/bar.test.ts"]);
+    expect(sink.mockHandoffs[0]?.reasonDetail).toBe("mock setup needs restructuring");
+  });
+
+  test("AC6 boundary: extractApplied with mock_structure missing files does not push to sink.mockHandoffs", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    const declWithoutFiles: TestEditDeclaration = {
+      reason: "mock_structure",
+      file: "test/unit/foo.test.ts",
+      // no files, no reasonDetail
+    };
+    const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [declWithoutFiles] };
+    const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
+    strategy.extractApplied!(output, input);
+    expect(sink.mockHandoffs).toHaveLength(0);
+  });
+
+  test("AC7: extractApplied with prd_contract declaration pushes to sink.testEdits", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    const decl: TestEditDeclaration = {
+      reason: "prd_contract",
+      file: "test/unit/foo.test.ts",
+      prdQuote: "doSomething()",
+      testBefore: "old assertion",
+      testAfter: "new assertion",
+    };
+    const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [decl] };
+    const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
+    strategy.extractApplied!(output, input);
+    expect(sink.testEdits).toHaveLength(1);
+    expect(sink.testEdits[0]).toEqual(decl);
+  });
+
+  test("AC7 boundary: extractApplied with no declarations does not push to sink", () => {
+    const sink = makeDeclarationSink();
+    const strategy = makeFullSuiteRectifyStrategy(makeTestStory(), makeNaxConfig(), sink);
+    const output: FullSuiteRectifyOutput = { applied: true, testEditDeclarations: [] };
+    const input: FullSuiteRectifyInput = { story: makeTestStory(), findings: [] };
+    strategy.extractApplied!(output, input);
+    expect(sink.testEdits).toHaveLength(0);
+    expect(sink.mockHandoffs).toHaveLength(0);
   });
 });

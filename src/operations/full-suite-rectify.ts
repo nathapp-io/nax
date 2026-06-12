@@ -4,6 +4,7 @@ import type { FixStrategy } from "../findings";
 import type { Finding } from "../findings/types";
 import type { UserStory } from "../prd";
 import { RectifierPromptBuilder } from "../prompts";
+import type { DeclarationSink } from "./declaration-sink";
 import type { ImplementerInput, ImplementerOutput } from "./implement";
 import { implementerOp } from "./implement";
 
@@ -17,6 +18,7 @@ import { implementerOp } from "./implement";
 export function makeFullSuiteRectifyStrategy(
   story: UserStory,
   config: NaxConfig,
+  _sink?: DeclarationSink,
 ): FixStrategy<Finding, ImplementerInput, ImplementerOutput, TddConfig> {
   return {
     name: "full-suite-rectify",
