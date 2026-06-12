@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveExecutionAgent } from "@/pipeline/stages/execution-helpers";
+import { resolveExecutionAgent } from "@/pipeline";
 
 const fakeAdapter = (name: string) => ({ name }) as never;
 

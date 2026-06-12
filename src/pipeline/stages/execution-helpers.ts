@@ -5,10 +5,10 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { NaxError } from "../../errors";
-import type { FailureCategory } from "../../tdd";
-import type { PipelineContext, StageResult } from "../types";
-import type { AgentAdapter } from "../../agents/types";
+import type { AgentAdapter } from "@/agents/types";
+import { NaxError } from "@/errors";
+import type { PipelineContext, StageResult } from "@/pipeline/types";
+import type { FailureCategory } from "@/tdd";
 
 export interface ResolvedExecutionAgent {
   agentName: string;
