@@ -1,5 +1,6 @@
 import { parseRefinementResponse, refinementWouldFallback } from "../acceptance/refinement";
 import type { RefinedCriterion } from "../acceptance/types";
+import { ParseValidationError } from "../agents/retry";
 import { acceptanceConfigSelector } from "../config";
 import type { AcceptanceConfig } from "../config/selectors";
 import { getSafeLogger } from "../logger";
@@ -24,6 +25,12 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
   stage: "acceptance",
   jsonMode: true,
   config: acceptanceConfigSelector,
+  // Retry once on empty output. In practice empty output arrives as fail-unknown
+  // (ACP process crash) which completeWithFallback does NOT retry — making this
+  // the sole retry opportunity. For fail-stale (clean empty), completeWithFallback
+  // already runs 3 stale retries before reaching parse(); the op-tier retry then
+  // adds one more completeAs call (4 more adapter attempts). Bounded at 8 total.
+  retry: { preset: "transient-network" as const, maxAttempts: 2, baseDelayMs: 0 },
   model: (_input, ctx) => ctx.config.acceptance.generateModel ?? ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
   build(input, _ctx) {
@@ -39,11 +46,14 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
     };
   },
   parse(output, input, _ctx) {
+    if (!output || !output.trim()) {
+      throw new ParseValidationError("acceptance-refine: empty output");
+    }
     if (refinementWouldFallback(output)) {
       getSafeLogger()?.warn(
         "acceptance",
         "AC refinement returned no usable JSON — falling back to unrefined criteria",
-        { storyId: input.storyId, criteriaCount: input.criteria.length, responseBytes: output?.length ?? 0 },
+        { storyId: input.storyId, criteriaCount: input.criteria.length, responseBytes: output.length },
       );
     }
     const items = parseRefinementResponse(output, input.criteria);

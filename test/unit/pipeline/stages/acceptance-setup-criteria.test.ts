@@ -248,6 +248,34 @@ describe("acceptance-setup: calls refinement and generation", () => {
     await acceptanceSetupStage.execute(ctx);
     expect((ctx as any).acceptanceSetup).toBeDefined();
   });
+
+  test("falls back to unrefined criteria when refine op throws (e.g. after retry exhaustion)", async () => {
+    let capturedCriteriaList: string | null = null;
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.callOp = async (_ctx, _packageDir, op, input) => {
+      if (op.name === "acceptance-refine") {
+        throw new Error("acceptance-refine: empty output");
+      }
+      if (op.name === "acceptance-generate") {
+        capturedCriteriaList = (input as { criteriaList: string }).criteriaList;
+        return { testCode: 'test("AC-1", () => { throw new Error("red") })' };
+      }
+      throw new Error(`unexpected op: ${op.name}`);
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    // generate must still run — with the original (unrefined) AC text
+    expect(capturedCriteriaList).not.toBeNull();
+    expect(capturedCriteriaList!).toContain("AC-1: first criterion");
+    expect(capturedCriteriaList!).toContain("AC-2: second criterion");
+    expect(capturedCriteriaList!).toContain("AC-1: third criterion");
+  });
 });
 
 // ---------------------------------------------------------------------------

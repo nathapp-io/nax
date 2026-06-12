@@ -44,6 +44,9 @@ describe("acceptanceRefineOp shape", () => {
   test("stage is acceptance", () => {
     expect(acceptanceRefineOp.stage).toBe("acceptance");
   });
+  test("retry uses transient-network preset with maxAttempts 2", () => {
+    expect(acceptanceRefineOp.retry).toMatchObject({ preset: "transient-network", maxAttempts: 2 });
+  });
   test("model resolves from acceptance.model config", () => {
     const config = makeNaxConfig({
       acceptance: {
@@ -146,11 +149,10 @@ describe("acceptanceRefineOp.parse()", () => {
     expect(result[0].refined).toBe("User can log in");
     expect(result[0].testable).toBe(true);
   });
-  test("falls back on empty response", () => {
+  test("throws ParseValidationError on empty response to trigger retry", () => {
     const ctx = makeBuildCtx();
-    const result = acceptanceRefineOp.parse("", SAMPLE_INPUT, ctx);
-    expect(result).toHaveLength(2);
-    expect(result[0].original).toBe("User can log in");
+    expect(() => acceptanceRefineOp.parse("", SAMPLE_INPUT, ctx)).toThrow("acceptance-refine: empty output");
+    expect(() => acceptanceRefineOp.parse("   \n  ", SAMPLE_INPUT, ctx)).toThrow("acceptance-refine: empty output");
   });
 });
 

@@ -78,15 +78,28 @@ async function processPackageGroup(
       featureName: ctx.prd.feature,
       agentName: ctx.agentManager.getDefault(),
     };
-    const refined = await _hardeningDeps.callOp(callCtx, acceptanceRefineOp, {
-      criteria: story.suggestedCriteria ?? [],
-      codebaseContext: "",
-      storyId: story.id,
-      testStrategy: ctx.config.acceptance?.testStrategy,
-      testFramework: ctx.config.acceptance?.testFramework,
-      storyTitle: story.title,
-      storyDescription: story.description,
-    });
+    let refined: RefinedCriterion[];
+    try {
+      refined = await _hardeningDeps.callOp(callCtx, acceptanceRefineOp, {
+        criteria: story.suggestedCriteria ?? [],
+        codebaseContext: "",
+        storyId: story.id,
+        testStrategy: ctx.config.acceptance?.testStrategy,
+        testFramework: ctx.config.acceptance?.testFramework,
+        storyTitle: story.title,
+        storyDescription: story.description,
+      });
+    } catch {
+      logger?.warn("acceptance", "AC refinement failed after retries — using unrefined criteria", {
+        storyId: story.id,
+      });
+      refined = (story.suggestedCriteria ?? []).map((c) => ({
+        original: c,
+        refined: c,
+        testable: true,
+        storyId: story.id,
+      }));
+    }
     groupRefined.push(...refined);
   }
 

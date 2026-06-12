@@ -280,6 +280,21 @@ export const acceptanceSetupStage: PipelineStage = {
             .then((refined) => {
               results[i] = refined;
             })
+            .catch(() => {
+              getSafeLogger()?.warn(
+                "acceptance-setup",
+                "AC refinement failed after retries — using unrefined criteria",
+                {
+                  storyId: story.id,
+                },
+              );
+              results[i] = story.acceptanceCriteria.map((c) => ({
+                original: c,
+                refined: c,
+                testable: true,
+                storyId: story.id,
+              }));
+            })
             .finally(() => {
               executing.delete(task);
             });
