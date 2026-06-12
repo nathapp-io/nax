@@ -11,6 +11,7 @@ export {
   buildPlanComposition,
   buildPlanModeContext,
   createPlanStrategy,
+  finalizePrdRouting,
   writeOrRecoverPrd,
 } from "./strategies";
 export { runPlanCritic } from "./critic";
