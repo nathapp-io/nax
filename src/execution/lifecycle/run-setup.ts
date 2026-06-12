@@ -116,6 +116,7 @@ export function warnFallbackMisconfiguration(
       if (warned.has(candidate)) continue;
       if (!agentGetFn(candidate)) {
         logger?.warn("fallback", "Fallback candidate not available — will be skipped if triggered", {
+          storyId: "_setup",
           primaryAgent,
           candidate,
         });

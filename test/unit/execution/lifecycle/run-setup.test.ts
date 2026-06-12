@@ -313,7 +313,7 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
   test("emits PRD-level warn when prd.routingProfile differs from the resolved config profile", () => {
     const { logger, warns } = makeLogger();
     const prd = makePRD({ userStories: [], routingProfile: "aggressive" });
-    const config = { ...makeNaxConfig(), profile: "cheap" };
+    const config = makeNaxConfig({ profile: "cheap" });
 
     warnProfileMismatch(
       prd,
