@@ -98,11 +98,19 @@ export class OneShotPromptBuilder {
   }
 
   /**
-   * Returns the instruction telling the LLM to assign `agentProfileId` per story.
-   * Used internally by agentProfiles().
+   * Returns the ordered selection rubric telling the LLM how to assign
+   * `agentProfileId` per story. The procedure (not free-form judgment) is
+   * load-bearing: decompose may run on a cheap model that cannot be trusted
+   * with open-ended "pick the best agent" questions.
    */
   static agentProfileInstruction(): string {
-    return "When agent profiles are listed above, assign the best-matching profile id to the `agentProfileId` field for each story. If no profile fits well or profiles are not listed, omit `agentProfileId`.";
+    return [
+      "When agent profiles are listed above, pick exactly ONE profile id per story and set it on the `agentProfileId` field. Apply these steps in order:",
+      "1. Eliminate any profile whose weaknesses conflict with the story.",
+      "2. Keep profiles whose strengths or affinity cover the story's main job (task type + primary domain).",
+      "3. If more than one remains, choose the LOWEST cost profile.",
+      "4. If none clearly fit, omit `agentProfileId` entirely — never invent a profile id.",
+    ].join("\n");
   }
 
   /**
@@ -112,15 +120,24 @@ export class OneShotPromptBuilder {
   static agentCapabilityCards(profiles: AgentRoutingProfile[]): string {
     if (profiles.length === 0) return "";
 
-    const header = ["## Agent Profiles", "", "| ID | Agent | Tier | Strengths | Cost |", "|---|---|---|---|---|"];
+    const header = [
+      "## Agent Profiles",
+      "",
+      "| ID | Agent | Tier | Strengths | Weaknesses | Affinity | Cost |",
+      "|---|---|---|---|---|---|---|",
+    ];
 
     const rows = profiles.map((p) => {
-      const id = OneShotPromptBuilder.escapeCell(p.id);
-      const agent = OneShotPromptBuilder.escapeCell(p.target.agent);
-      const model = OneShotPromptBuilder.escapeCell(p.target.model);
-      const strengths = p.strengths.map((s) => OneShotPromptBuilder.escapeCell(s)).join(", ");
-      const cost = OneShotPromptBuilder.escapeCell(p.costTier ?? "—");
-      return `| ${id} | ${agent} | ${model} | ${strengths} | ${cost} |`;
+      const esc = OneShotPromptBuilder.escapeCell;
+      const id = esc(p.id);
+      const agent = esc(p.target.agent);
+      const model = esc(p.target.model);
+      const strengths = p.strengths.map(esc).join(", ");
+      const weaknesses = p.weaknesses?.length ? p.weaknesses.map(esc).join("; ") : "—";
+      const affinityParts = [...(p.affinity?.taskTypes ?? []), ...(p.affinity?.domains ?? [])];
+      const affinity = affinityParts.length ? affinityParts.map(esc).join(", ") : "—";
+      const cost = esc(p.costTier ?? "—");
+      return `| ${id} | ${agent} | ${model} | ${strengths} | ${weaknesses} | ${affinity} | ${cost} |`;
     });
 
     return [...header, ...rows].join("\n");

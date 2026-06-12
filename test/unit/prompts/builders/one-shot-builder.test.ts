@@ -32,8 +32,8 @@ describe("agentCapabilityCards", () => {
     const result = OneShotPromptBuilder.agentCapabilityCards(profiles);
 
     expect(result).toContain("## Agent Profiles");
-    expect(result).toContain("| ID | Agent | Tier | Strengths | Cost |");
-    expect(result).toContain("| profile-a | claude | balanced | fast, reliable | low |");
+    expect(result).toContain("| ID | Agent | Tier | Strengths | Weaknesses | Affinity | Cost |");
+    expect(result).toContain("| profile-a | claude | balanced | fast, reliable | — | — | low |");
   });
 
   it("renders '—' in cost column when costTier is absent", () => {
@@ -47,7 +47,7 @@ describe("agentCapabilityCards", () => {
 
     const result = OneShotPromptBuilder.agentCapabilityCards(profiles);
 
-    expect(result).toContain("| profile-b | claude | fast | cheap | — |");
+    expect(result).toContain("| profile-b | claude | fast | cheap | — | — | — |");
   });
 
   it("renders all rows for multiple profiles", () => {
@@ -68,8 +68,8 @@ describe("agentCapabilityCards", () => {
 
     const result = OneShotPromptBuilder.agentCapabilityCards(profiles);
 
-    expect(result).toContain("| alpha | claude | fast | speed | low |");
-    expect(result).toContain("| beta | claude | powerful | reasoning, accuracy | high |");
+    expect(result).toContain("| alpha | claude | fast | speed | — | — | low |");
+    expect(result).toContain("| beta | claude | powerful | reasoning, accuracy | — | — | high |");
   });
 
   it("escapes pipe characters in cell values to preserve markdown table structure", () => {
@@ -92,9 +92,9 @@ describe("agentCapabilityCards", () => {
     // The row must not contain unescaped pipes beyond the column delimiters
     const rows = result.split("\n").filter((l: string) => l.startsWith("| pipe"));
     expect(rows).toHaveLength(1);
-    // A well-formed row has exactly 6 unescaped pipe chars (column delimiters)
+    // A well-formed row has exactly 8 unescaped pipe chars (column delimiters for 7 columns)
     const unescapedPipes = (rows[0]!.match(/(?<!\\)\|/g) ?? []).length;
-    expect(unescapedPipes).toBe(6);
+    expect(unescapedPipes).toBe(8);
   });
 
   it("neutralizes newlines in cell values to prevent broken table rows", () => {
@@ -117,5 +117,50 @@ describe("agentCapabilityCards", () => {
     // Newlines replaced with spaces
     expect(rows[0]).toContain("handles multi-line strengths");
     expect(rows[0]).toContain("also windows");
+  });
+});
+
+describe("agentCapabilityCards — weaknesses and affinity", () => {
+  const profile: AgentRoutingProfile = {
+    id: "oc-fast",
+    target: { agent: "opencode", model: "fast" as const },
+    strengths: ["general implementation"],
+    weaknesses: ["complex refactors", "TS generics"],
+    affinity: { taskTypes: ["crud"], domains: ["backend"] },
+    costTier: "low" as const,
+  };
+
+  it("renders weaknesses in the card row", () => {
+    const cards = OneShotPromptBuilder.agentCapabilityCards([profile]);
+    expect(cards).toContain("Weaknesses");
+    expect(cards).toContain("complex refactors; TS generics");
+  });
+
+  it("renders affinity taskTypes and domains in the card row", () => {
+    const cards = OneShotPromptBuilder.agentCapabilityCards([profile]);
+    expect(cards).toContain("Affinity");
+    expect(cards).toContain("crud, backend");
+  });
+
+  it("renders em-dash placeholders when weaknesses/affinity are absent", () => {
+    const bare: AgentRoutingProfile = {
+      id: "p1",
+      target: { agent: "claude", model: "powerful" as const },
+      strengths: ["arch"],
+    };
+    const cards = OneShotPromptBuilder.agentCapabilityCards([bare]);
+    const row = cards.split("\n").find((l) => l.startsWith("| p1 |"));
+    expect(row).toBeDefined();
+    expect(row).toContain("| — | — |");
+  });
+});
+
+describe("agentProfileInstruction — ordered rubric", () => {
+  it("carries the ordered elimination procedure", () => {
+    const text = OneShotPromptBuilder.agentProfileInstruction();
+    expect(text).toContain("1. Eliminate any profile whose weaknesses conflict");
+    expect(text).toContain("LOWEST cost");
+    expect(text).toContain("omit `agentProfileId`");
+    expect(text).toContain("never invent");
   });
 });
