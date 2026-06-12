@@ -53,6 +53,7 @@ import {
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  resolveRunProfileOverride,
   rulesExportCommand,
   rulesLintCommand,
   rulesMigrateCommand,
@@ -418,8 +419,18 @@ program
 
     const naxDir = findProjectDir(workdir);
     const cliOverrides: Record<string, unknown> = {};
-    if (options.profile) {
-      cliOverrides.profile = options.profile;
+    // Delta C4: nax run defaults to the profile the PRD was planned with,
+    // unless --profile or NAX_PROFILE overrides it.
+    const profileOverride = naxDir
+      ? await resolveRunProfileOverride({
+          prdPath: join(naxDir, "features", options.feature, "prd.json"),
+          projectRoot: workdir,
+          cliProfile: options.profile,
+          envProfile: process.env.NAX_PROFILE,
+        })
+      : options.profile;
+    if (profileOverride) {
+      cliOverrides.profile = profileOverride;
     }
     const config = await loadConfig(naxDir ?? undefined, cliOverrides);
 
