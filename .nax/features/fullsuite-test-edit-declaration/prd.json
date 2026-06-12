@@ -3,7 +3,7 @@
   "feature": "fullsuite-test-edit-declaration",
   "branchName": "feat/fullsuite-test-edit-declaration",
   "createdAt": "2026-06-12T20:17:22+08:00",
-  "updatedAt": "2026-06-12T12:30:48.476Z",
+  "updatedAt": "2026-06-12T12:40:47.896Z",
   "userStories": [
     {
       "id": "US-001",
@@ -21,8 +21,8 @@
         "rectification"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -67,7 +67,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This story adds one new run-op module plus a barrel export and unit tests, and it reuses the existing rectification parse/build conventions."
+        "reasoning": "This story adds one new run-op module plus a barrel export and unit tests, and it reuses the existing rectification parse/build conventions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/operations/autofix-implementer.ts",
@@ -81,7 +83,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9771ae5c32d1fd7d49f2faebecae7e860727ecf4"
     },
     {
       "id": "US-003",
