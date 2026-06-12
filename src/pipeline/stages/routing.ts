@@ -65,9 +65,7 @@ export const routingStage: PipelineStage = {
     //   since rank comparison is meaningless for names outside TIER_RANK
     const isEscalated =
       previousTier !== undefined &&
-      (previousRank !== undefined && candidateRank !== undefined
-        ? previousRank > candidateRank
-        : hasEscalationRecords);
+      (previousRank !== undefined && candidateRank !== undefined ? previousRank > candidateRank : hasEscalationRecords);
     const modelTier = isEscalated ? previousTier : candidateTier;
 
     const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
