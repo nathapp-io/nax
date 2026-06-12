@@ -1,1 +1,3 @@
 [2026-06-12T12:40:44.747Z] US-001 — PASSED — Add failing-test rectification prompt with escape hatch — Cost: $1.6330
+[2026-06-12T12:49:43.671Z] US-002 — PASSED — Add declaration-aware full-suite rectification op — Cost: $1.5122
+[2026-06-12T13:49:21.698Z] US-003 — PASSED — Wire full-suite declarations into the main rectification cycle — Cost: $9.3838

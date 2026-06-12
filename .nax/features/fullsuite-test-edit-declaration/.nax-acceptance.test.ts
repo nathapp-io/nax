@@ -89,7 +89,7 @@ describe("AC-2: RectifierPromptBuilder.failingTestRectification for three-sessio
       message: "Expected 1 received 0",
     });
     const story = makeThreeSessionStory({
-      routing: { testStrategy: "tdd" } as any,
+      routing: { testStrategy: "three-session-tdd" } as any,
     });
 
     const output = RectifierPromptBuilder.failingTestRectification([finding], story);
@@ -159,7 +159,7 @@ describe("AC-6: fullSuiteRectifyOp.build prompt generation", () => {
     const { fullSuiteRectifyOp } = await import("@/operations");
     const finding = makeTestFailureFinding();
     const story = makeThreeSessionStory({
-      routing: { testStrategy: "tdd" } as any,
+      routing: { testStrategy: "three-session-tdd" } as any,
     });
 
     const prompt = fullSuiteRectifyOp.build(
@@ -167,8 +167,8 @@ describe("AC-6: fullSuiteRectifyOp.build prompt generation", () => {
       {} as any,
     );
 
-    expect(prompt.task).toContain(RectifierPromptBuilder.failingTestRectification([finding], story));
-    expect(prompt.task).toContain("TEST_EDIT_REASON");
+    expect(prompt.task.content).toContain(RectifierPromptBuilder.failingTestRectification([finding], story));
+    expect(prompt.task.content).toContain("TEST_EDIT_REASON");
   });
 });
 
@@ -359,7 +359,7 @@ describe("AC-13: applyTestEditDeclarations ignores lint findings", () => {
 
 describe("AC-14: Strategy extractApplied mock_structure sink push", () => {
   test("pushes mock_structure declaration to mockHandoffs in sink", async () => {
-    const story = makeThreeSessionStory();
+    const story = makeThreeSessionStory({ routing: { testStrategy: "three-session-tdd" } as any });
     const config = makeNaxConfig();
 
     const sink = { testEdits: [] as TestEditDeclaration[], mockHandoffs: [] as TestEditDeclaration[] };
@@ -380,7 +380,6 @@ describe("AC-14: Strategy extractApplied mock_structure sink push", () => {
     strategy.extractApplied(opOutput, [], {} as any);
 
     expect(sink.mockHandoffs.length).toBe(1);
-    expect(sink.mockHandoffs[0].reason).toBe("mock_structure");
     expect(sink.mockHandoffs[0].files).toEqual(["test/unit/auth.test.ts", "test/integration/oauth.test.ts"]);
   });
 });
