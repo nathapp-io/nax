@@ -65,6 +65,7 @@ export async function buildPlanModeContext(
   const branchName = options.branch ?? `feat/${options.feature}`;
   const timeoutSeconds = fullConfig?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const config = planConfigSelector.select(fullConfig);
+  const profileName = typeof fullConfig?.profile === "string" && fullConfig.profile ? fullConfig.profile : undefined;
   const runtime = createPlanRuntime(fullConfig, workdir, options.feature);
   const interactionChain = fullConfig ? await deps.initInteractionChain(fullConfig, !process.stdin.isTTY) : null;
   let configuredBridge: ReturnType<typeof buildInteractionBridge> | undefined;
@@ -94,6 +95,7 @@ export async function buildPlanModeContext(
     branchName,
     timeoutSeconds,
     config,
+    profileName,
     options,
     runtime,
     interactionChain,

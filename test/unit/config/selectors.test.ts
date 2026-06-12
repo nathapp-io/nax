@@ -1,10 +1,12 @@
 import { describe, test, expect } from "bun:test";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import {
+  DEFAULT_CONFIG,
+  NaxConfigSchema,
   agentManagerConfigSelector,
   contextToolRuntimeConfigSelector,
   debateConfigSelector,
   interactionConfigSelector,
+  planConfigSelector,
   precheckConfigSelector,
   promptLoaderConfigSelector,
   qualityConfigSelector,
@@ -12,8 +14,8 @@ import {
   routingConfigSelector,
   tddConfigSelector,
   testPatternConfigSelector,
-} from "../../../src/config/selectors";
-import type { DebateConfig } from "../../../src/config/selectors";
+} from "@/config";
+import type { DebateConfig } from "@/config/selectors";
 
 describe("ConfigSelector — Phase 1 selectors", () => {
   describe("new selectors", () => {
@@ -198,6 +200,15 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(Object.keys(slice).sort()).toEqual(["context", "project", "prompts"]);
     });
 
+  });
+});
+
+describe("planConfigSelector — ADR-025 routing slice", () => {
+  test("includes routing so plan-time agent selection can read routing.agents", () => {
+    const full = NaxConfigSchema.parse({});
+    const slice = planConfigSelector.select(full);
+    expect(slice.routing).toBeDefined();
+    expect(slice.routing?.agents).toBeDefined();
   });
 });
 

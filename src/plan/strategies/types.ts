@@ -43,6 +43,8 @@ export interface PlanModeContext {
   readonly branchName: string;
   readonly timeoutSeconds: number;
   readonly config: PlanConfig;
+  /** Config-profile name recorded on the PRD root for run-side drift detection. */
+  readonly profileName: string | undefined;
   readonly options: PlanCommandOptions;
   readonly runtime: NaxRuntime;
   readonly interactionChain: InteractionChain | null;
