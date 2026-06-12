@@ -126,7 +126,7 @@ export async function preIterationTierCheck(
   totalCost: number,
   workdir: string,
 ): Promise<PreIterationCheckResult> {
-  const logger = getSafeLogger();
+  const logger = _tierEscalationDeps.getSafeLogger();
   const currentTier = story.routing?.modelTier ?? routing.modelTier;
   const tierOrder = config.autoMode.escalation?.tierOrder || [];
   const hasAgentRungs = tierOrder.some((r) => r.agent !== undefined);
@@ -306,6 +306,7 @@ export function shouldRetrySameTier(runtimeCrashResult: { status: string; succes
  */
 export const _tierEscalationDeps = {
   savePRD,
+  getSafeLogger,
 };
 
 /**

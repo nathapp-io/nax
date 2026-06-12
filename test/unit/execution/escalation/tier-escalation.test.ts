@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeLogger } from "@test/helpers";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 
 // ---------------------------------------------------------------------------
@@ -668,7 +669,10 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
+    const origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
+    const mockLogger = makeLogger();
     _tierEscalationDeps.savePRD = () => Promise.resolve();
+    _tierEscalationDeps.getSafeLogger = () => mockLogger as unknown as ReturnType<typeof origGetSafeLogger>;
 
     try {
       // Story whose agent ("codex") is not in the tierOrder (which only has "claude" rungs)
@@ -723,11 +727,21 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
       );
 
       // Unmatched rung → budget is unbounded → iteration proceeds (not skipped).
-      // A warn is emitted by the implementation (observable in logs, not asserted
-      // here since preIterationTierCheck uses getSafeLogger() without _deps injection).
       expect(result.shouldSkipIteration).toBe(false);
+
+      // A warn must be emitted so the silent-unlimited-budget path is observable.
+      const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
+      expect(warnCalls.length).toBeGreaterThan(0);
+      const unmatchedWarn = warnCalls.find((c) =>
+        c.message.includes("Current rung not found in tierOrder"),
+      );
+      expect(unmatchedWarn).toBeDefined();
+      expect(unmatchedWarn?.data?.storyId).toBe("US-unmatched-001");
+      expect(unmatchedWarn?.data?.agent).toBe("codex");
+      expect(unmatchedWarn?.data?.hasAgentRungs).toBe(true);
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;
+      _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
     }
   });
 });
