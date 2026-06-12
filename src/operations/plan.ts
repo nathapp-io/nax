@@ -51,7 +51,9 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
     // Disk recovery is handled by op.recover. See issue #993 and retry-strategy.md
     // "Strict-parser interaction".
   }),
-  build(input, _ctx) {
+  build(input, ctx) {
+    const agentRouting = ctx.config.routing?.agents;
+    const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       input.specContent,
       input.codebaseContext,
@@ -59,6 +61,8 @@ export const planInteractiveOp: RunOperation<PlanInteractiveInput, PRD, PlanConf
       input.packages,
       input.packageDetails,
       input.projectProfile,
+      undefined,
+      profiles,
     );
     return {
       role: { id: "role", content: "", overridable: false },

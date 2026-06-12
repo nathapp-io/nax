@@ -4,6 +4,7 @@ import { NaxError } from "@/errors";
 import { callOp, groundOp, planDraftOp } from "@/operations";
 import type { CallContext, PlanDraftInput } from "@/operations";
 import { runPlanCritic } from "../critic";
+import { finalizePrdRouting } from "./finalize-routing";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 
 export const _pipelinePlanDeps = {
@@ -84,7 +85,12 @@ export class PipelinePlanStrategy implements IPlanStrategy {
         );
       }
 
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...verdict.prd, project: ctx.projectName }, null, 2));
+      const prdToWrite = finalizePrdRouting(
+        { ...verdict.prd, project: ctx.projectName },
+        ctx.config.routing?.agents,
+        ctx.profileName,
+      );
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(prdToWrite, null, 2));
       return ctx.outputPath;
     } finally {
       await ctx.runtime.close().catch(() => {});

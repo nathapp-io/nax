@@ -92,8 +92,8 @@ export async function planDecomposeCommand(
     for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
       if (attempt === 0 && debateDecompEnabled) {
         const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-        const agentRoutingForDebate = config.routing?.agents;
-        const profilesForDebate = agentRoutingForDebate?.enabled === true ? (agentRoutingForDebate.profiles ?? []) : [];
+        // ADR-025: decompose inherits the parent's agent; it does not re-select.
+        const profilesForDebate: never[] = [];
         const prompt = await buildDecomposePromptAsync({
           specContent: "",
           codebaseContext,
@@ -195,6 +195,8 @@ export async function planDecomposeCommand(
     decompStories!,
     options.storyId,
     targetStory.workdir,
+    // ADR-025: sub-stories inherit the parent story's agent assignment, not re-selected
+    targetStory.routing,
   );
 
   const updatedStories = prd.userStories.map((s) =>

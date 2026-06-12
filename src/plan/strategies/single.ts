@@ -2,6 +2,7 @@ import { callOp, planInteractiveOp } from "@/operations";
 import type { PlanInteractiveInput } from "@/operations";
 import { validatePlanOutput } from "@/prd";
 import { assertIsValidPrd } from "./assert";
+import { finalizePrdRouting } from "./finalize-routing";
 import type { IPlanStrategy, PlanModeContext } from "./types";
 
 export const _singlePlanDeps = {
@@ -38,16 +39,23 @@ export class SinglePlanStrategy implements IPlanStrategy {
         } satisfies PlanInteractiveInput,
       );
       assertIsValidPrd(prd);
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
+      const finalized = finalizePrdRouting(
+        { ...prd, project: ctx.projectName },
+        ctx.config.routing?.agents,
+        ctx.profileName,
+      );
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
       return ctx.outputPath;
     } catch (err) {
       if (ctx.deps.existsSync(ctx.outputPath)) {
         const rawContent = await ctx.deps.readFile(ctx.outputPath);
         const recoveredPrd = validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-        await ctx.deps.writeFile(
-          ctx.outputPath,
-          JSON.stringify({ ...recoveredPrd, project: ctx.projectName }, null, 2),
+        const finalizedRecovered = finalizePrdRouting(
+          { ...recoveredPrd, project: ctx.projectName },
+          ctx.config.routing?.agents,
+          ctx.profileName,
         );
+        await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalizedRecovered, null, 2));
         return ctx.outputPath;
       }
       throw err;

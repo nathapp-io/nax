@@ -163,6 +163,8 @@ describe("DebatePlanStrategy", () => {
       ctx.relativePackages,
       ctx.packageDetails,
       ctx.config.project,
+      undefined,
+      [],
     );
     expect(_debatePlanDeps.buildPlanComposition).toHaveBeenCalledWith(ctx.config.debate.stages.plan);
     expect(createDebateRunnerMock).toHaveBeenCalledTimes(1);

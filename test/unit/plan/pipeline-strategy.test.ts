@@ -119,6 +119,86 @@ describe("PipelinePlanStrategy", () => {
     expect(strategy.mode).toBe("pipeline");
   });
 
+  test("ADR-025: finalizePrdRouting applied on write — resolves agentProfileId and stamps routingProfile", async () => {
+    const strategy = new PipelinePlanStrategy();
+    let writtenContent = "";
+    const ctx = makeCtx({
+      profileName: "team-a",
+      config: {
+        citationThreshold: 0.55,
+        plan: { citationThreshold: 0.55 },
+        project: { language: "ts" },
+        routing: {
+          agents: {
+            enabled: true,
+            profiles: [{ id: "senior", target: { agent: "claude", model: "powerful" } }],
+          },
+        },
+      } as never,
+      deps: {
+        readFile: async () => "",
+        writeFile: async (_path: string, content: string) => { writtenContent = content; },
+        mkdirp: async () => {},
+        existsSync: () => false,
+        readPackageJson: async () => null,
+        readPackageJsonAt: async () => null,
+        scanSourceRoots: async () => [],
+        spawnSync: () => ({ stdout: Buffer.from(""), exitCode: 0 }),
+        initInteractionChain: async () => null,
+        createInteractionBridge: () => ({ detectQuestion: async () => false, onQuestionDetected: async () => "" }),
+        createDebateRunner: () => ({}) as never,
+      },
+    });
+
+    const originalCallOp = _pipelinePlanDeps.callOp;
+    const originalRunPlanCritic = _pipelinePlanDeps.runPlanCritic;
+    _pipelinePlanDeps.callOp = mock(async (_callCtx, op) => {
+      if (op === _pipelinePlanDeps.groundOp) return { repoFacts: [], specClaims: [], gaps: [] };
+      return {
+        prd: {
+          userStories: [
+            {
+              id: "s1", title: "story 1", description: "", acceptanceCriteria: [],
+              status: "pending", passes: false, escalations: [], attempts: 0,
+              routing: {
+                complexity: "low", testStrategy: "test-after", reasoning: "",
+                agentProfileId: "senior",
+              },
+            },
+          ],
+        },
+      };
+    }) as typeof _pipelinePlanDeps.callOp;
+    _pipelinePlanDeps.runPlanCritic = mock(async () => ({
+      outcome: "passed",
+      prd: {
+        userStories: [
+          {
+            id: "s1", title: "story 1", description: "", acceptanceCriteria: [],
+            status: "pending", passes: false, escalations: [], attempts: 0,
+            routing: {
+              complexity: "low", testStrategy: "test-after", reasoning: "",
+              agentProfileId: "senior",
+            },
+          },
+        ],
+      },
+      findings: [],
+    })) as typeof _pipelinePlanDeps.runPlanCritic;
+
+    try {
+      await strategy.execute(ctx);
+      const prd = JSON.parse(writtenContent);
+      expect(prd.routingProfile).toBe("team-a");
+      expect(prd.userStories[0].routing.agent).toBe("claude");
+      expect(prd.userStories[0].routing.profileModelTier).toBe("powerful");
+      expect(prd.userStories[0].routing.initialAgent).toBe("claude");
+    } finally {
+      _pipelinePlanDeps.callOp = originalCallOp;
+      _pipelinePlanDeps.runPlanCritic = originalRunPlanCritic;
+    }
+  });
+
   test("AC6: runtime.close is called in finally on success and failure", async () => {
     const closeSuccess = mock(async () => {});
     const closeFailure = mock(async () => {});

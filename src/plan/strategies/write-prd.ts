@@ -1,6 +1,7 @@
 import { NaxError } from "@/errors";
 import { validatePlanOutput } from "@/prd";
 import type { PRD } from "@/prd/types";
+import { finalizePrdRouting } from "./finalize-routing";
 import type { PlanModeContext } from "./types";
 
 export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, err?: unknown): Promise<string> {
@@ -26,13 +27,23 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
 
   if (prd !== null) {
     if (Array.isArray((prd as { userStories?: unknown }).userStories)) {
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...prd, project: ctx.projectName }, null, 2));
+      const finalized = finalizePrdRouting(
+        { ...prd, project: ctx.projectName },
+        ctx.config.routing?.agents,
+        ctx.profileName,
+      );
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
       return ctx.outputPath;
     }
 
     const normalizedPrd = tryExtractPrd(prd);
     if (normalizedPrd !== null) {
-      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...normalizedPrd, project: ctx.projectName }, null, 2));
+      const finalized = finalizePrdRouting(
+        { ...normalizedPrd, project: ctx.projectName },
+        ctx.config.routing?.agents,
+        ctx.profileName,
+      );
+      await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
       return ctx.outputPath;
     }
   }
@@ -54,7 +65,12 @@ export async function writeOrRecoverPrd(ctx: PlanModeContext, prd: PRD | null, e
       }
     }
     recoveredPrd = recoveredPrd ?? validatePlanOutput(rawContent, ctx.options.feature, ctx.branchName);
-    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify({ ...recoveredPrd, project: ctx.projectName }, null, 2));
+    const finalized = finalizePrdRouting(
+      { ...recoveredPrd, project: ctx.projectName },
+      ctx.config.routing?.agents,
+      ctx.profileName,
+    );
+    await ctx.deps.writeFile(ctx.outputPath, JSON.stringify(finalized, null, 2));
     return ctx.outputPath;
   } catch {
     throw err;

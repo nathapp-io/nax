@@ -11,7 +11,7 @@
  * Instantiation cost is negligible; builders are short-lived call-and-discard.
  */
 
-import type { ProjectProfile } from "@/config";
+import type { AgentRoutingProfile, ProjectProfile } from "@/config";
 import {
   COMPLEXITY_GUIDE,
   DESCRIPTION_QUALITY_RULES,
@@ -21,6 +21,7 @@ import {
   getAcQualityRules,
 } from "@/config";
 import type { ComposeInput } from "../compose";
+import { OneShotPromptBuilder } from "./one-shot-builder";
 
 // ─── Shared rule injection ────────────────────────────────────────────────────
 
@@ -84,6 +85,8 @@ export interface PlanDraftBuildInput {
   readonly packageDetails?: readonly PackageSummary[];
   /** Optional project profile for language- and project-type-aware AC examples. */
   readonly projectProfile?: ProjectProfile;
+  /** Optional agent routing profiles — when present, injects capability cards and agentProfileId schema field. */
+  readonly profiles?: AgentRoutingProfile[];
 }
 
 /** Compact per-package summary for the planning prompt. */
@@ -285,7 +288,12 @@ Do not output the PRD in chat. After writing the file, reply with a brief text c
     packageDetails?: PackageSummary[],
     projectProfile?: ProjectProfile,
     proposers?: { fileReadAccess?: boolean; fileReadBudget?: number },
+    profiles?: AgentRoutingProfile[],
   ): PlanningPromptParts {
+    const cards = OneShotPromptBuilder.agentCapabilityCards(profiles ?? []);
+    const agentProfilesSection =
+      cards.length > 0 ? `\n\n${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}` : "";
+
     const isMonorepo = packages && packages.length > 0;
     const packageDetailsSection =
       packageDetails && packageDetails.length > 0 ? buildPackageDetailsSection(packageDetails) : "";
@@ -339,7 +347,7 @@ ${buildSharedQualityRules(specContent, projectProfile)}
 
 For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference. Set "expectedFiles" to the NEW files the story creates.
 
-${CONTEXT_VS_EXPECTED_FILES_RULE}`;
+${CONTEXT_VS_EXPECTED_FILES_RULE}${agentProfilesSection}`;
 
     const suggestedCriteriaField = specContent.trim()
       ? `\n      "suggestedCriteria": ["string — optional. Behavioral edge cases or negative paths you identified that are NOT in the spec. Plain assertions only — observable outputs, return values, state changes, or error conditions. No implementation details or vague descriptions. Omit this field if empty."],`
@@ -376,7 +384,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
         "complexity": "simple | medium | complex | expert",
         "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
         "noTestJustification": "string — REQUIRED when testStrategy is no-test, explains why tests are unnecessary",
-        "reasoning": "string — brief classification rationale"
+        "reasoning": "string — brief classification rationale"${cards.length > 0 ? `,\n        "agentProfileId": "string — optional, the id of the best-matching profile from the Agent Profiles table above; omit if none fits"` : ""}
       },
       "escalations": [],
       "attempts": 0
@@ -401,6 +409,10 @@ ${outputDirective}`;
         "You are a senior software architect generating a product requirements document (PRD) as JSON. Your intent is to produce a thorough, evidence-grounded plan.",
       overridable: false,
     };
+
+    const cards = OneShotPromptBuilder.agentCapabilityCards(input.profiles ?? []);
+    const agentProfilesSection =
+      cards.length > 0 ? `\n\n${cards}\n\n${OneShotPromptBuilder.agentProfileInstruction()}` : "";
 
     const revisionSection =
       input.revisionFindings && input.revisionFindings.length > 0
@@ -456,7 +468,7 @@ ${buildSharedQualityRules(input.specContent, input.projectProfile)}
 
 For each story, set "contextFiles" to the key source files the implementer should read before starting (max 5 per story). Cite manifest factIds where relevant. Set "expectedFiles" to the NEW files the story creates.
 
-${CONTEXT_VS_EXPECTED_FILES_RULE}
+${CONTEXT_VS_EXPECTED_FILES_RULE}${agentProfilesSection}
 
 ## Output Schema
 
@@ -479,7 +491,7 @@ Produce a JSON object with this exact structure. Field names are mandatory — d
       "routing": {
         "complexity": "simple | medium | complex | expert",
         "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
-        "reasoning": "string — brief classification rationale"
+        "reasoning": "string — brief classification rationale"${cards.length > 0 ? `,\n        "agentProfileId": "string — optional, the id of the best-matching profile from the Agent Profiles table above; omit if none fits"` : ""}
       }
     }
   ]

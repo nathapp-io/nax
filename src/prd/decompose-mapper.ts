@@ -8,7 +8,7 @@
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import type { UserStory } from "./types";
+import type { StoryRouting, UserStory } from "./types";
 
 /**
  * Maps an array of DecomposedStory objects to UserStory objects.
@@ -21,6 +21,7 @@ import type { UserStory } from "./types";
  * @param stories - Flat decompose output from adapter
  * @param parentStoryId - ID of the parent story being decomposed
  * @param parentWorkdir - workdir of the parent story (inherited by all sub-stories)
+ * @param parentRouting - Agent assignment from the parent story (ADR-025: decompose inherits, not re-selects)
  * @returns Mapped UserStory array ready for PRD insertion
  * @throws {NaxError} code=DECOMPOSE_VALIDATION_FAILED when required fields are missing
  */
@@ -28,6 +29,10 @@ export function mapDecomposedStoriesToUserStories(
   stories: DecomposedStory[],
   parentStoryId: string,
   parentWorkdir?: string,
+  parentRouting?: Pick<
+    StoryRouting,
+    "agent" | "agentProfileId" | "profileModelTier" | "initialAgent" | "initialProfileId"
+  >,
 ): UserStory[] {
   return stories.map((story, entryIndex) => {
     if (!story.id) {
@@ -68,10 +73,23 @@ export function mapDecomposedStoriesToUserStories(
         complexity: story.complexity,
         testStrategy: story.testStrategy ?? ("test-after" as const),
         reasoning: story.reasoning,
-        modelTier: story.routing?.profileModelTier ?? ("balanced" as const),
+        modelTier: parentRouting?.profileModelTier ?? story.routing?.profileModelTier ?? ("balanced" as const),
+        // Carry story.routing fields as baseline (preserves pre-ADR-025 behaviour for callers
+        // that still populate routing on the DecomposedStory, e.g. routing-profile-tier stage).
         ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
         ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
         ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),
+        // ADR-025: parentRouting overrides story.routing fields when the parent story has an
+        // assignment (decompose inherits, not re-selects).
+        ...(parentRouting?.agent !== undefined && { agent: parentRouting.agent }),
+        ...(parentRouting?.agentProfileId !== undefined && { agentProfileId: parentRouting.agentProfileId }),
+        ...(parentRouting?.profileModelTier !== undefined && { profileModelTier: parentRouting.profileModelTier }),
+        ...(parentRouting?.agent !== undefined && {
+          initialAgent: parentRouting.initialAgent ?? parentRouting.agent,
+        }),
+        ...(parentRouting?.agentProfileId !== undefined && {
+          initialProfileId: parentRouting.initialProfileId ?? parentRouting.agentProfileId,
+        }),
       },
     };
   });
