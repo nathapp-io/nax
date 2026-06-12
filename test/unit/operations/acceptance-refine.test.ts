@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AcceptanceRefineInput } from "../../../src/operations/acceptance-refine";
-import type { BuildContext } from "../../../src/operations/types";
-import { acceptanceConfigSelector } from "../../../src/config";
-import type { AcceptanceConfig } from "../../../src/config/selectors";
-import type { NaxRuntime } from "../../../src/runtime";
+import type { AcceptanceRefineInput } from "@/operations/acceptance-refine";
+import type { BuildContext } from "@/operations/types";
+import { acceptanceConfigSelector } from "@/config";
+import type { AcceptanceConfig } from "@/config/selectors";
+import type { NaxRuntime } from "@/runtime";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -11,8 +11,8 @@ afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
 });
-import { parseRefinementResponse, refinementWouldFallback } from "../../../src/acceptance";
-import { acceptanceRefineOp } from "../../../src/operations";
+import { parseRefinementResponse, refinementWouldFallback } from "@/acceptance";
+import { acceptanceRefineOp } from "@/operations";
 
 const SAMPLE_INPUT: AcceptanceRefineInput = {
   criteria: ["User can log in", "User can log out"],
