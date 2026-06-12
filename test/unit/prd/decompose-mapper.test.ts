@@ -272,6 +272,8 @@ describe("modelTier seeding from profileModelTier", () => {
     complexity: "medium" as const,
     testStrategy: "test-after" as const,
     reasoning: "r",
+    estimatedLOC: 50,
+    risks: [],
   };
 
   test("seeds modelTier from profileModelTier when a profile was resolved", () => {

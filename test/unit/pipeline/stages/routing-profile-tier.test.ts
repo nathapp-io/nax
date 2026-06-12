@@ -209,6 +209,8 @@ describe("routingStage — H1: profileModelTier seeds starting tier", () => {
           complexity: "medium" as const,
           testStrategy: "test-after" as const,
           reasoning: "r",
+          estimatedLOC: 50,
+          risks: [],
           routing: { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" as const },
         },
       ],
