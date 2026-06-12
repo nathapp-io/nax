@@ -183,24 +183,27 @@ describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("mapDecomposedStoriesToUserStories — agent routing (ADR-025 inheritance model)", () => {
-  test("story-level routing.agent on DecomposedStory is NOT propagated (parentRouting wins)", () => {
-    // ADR-025: decomposeOp no longer sets story.routing.agent — only parentRouting is used
+  test("story-level routing fields are preserved as baseline when no parentRouting", () => {
+    // story.routing is the fallback when parentRouting is not supplied (pre-ADR-025 behaviour,
+    // required by the routing-profile-tier pipeline stage which reads profileModelTier).
     const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
     const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    // No parentRouting passed → no agent on result
-    expect(result.routing?.agent).toBeUndefined();
+    expect(result.routing?.agent).toBe("opencode");
+    expect(result.routing?.agentProfileId).toBe("fast-coder");
+    expect(result.routing?.profileModelTier).toBe("fast");
   });
 
-  test("story-level routing.agentProfileId on DecomposedStory is NOT propagated", () => {
+  test("parentRouting overrides story-level routing fields when both are present", () => {
+    // ADR-025: parentRouting wins over story.routing.
     const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
-    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.agentProfileId).toBeUndefined();
-  });
-
-  test("story-level routing.profileModelTier on DecomposedStory is NOT propagated when no parentRouting", () => {
-    const story = makeDecomposedStory({ routing: { agent: "opencode", agentProfileId: "fast-coder", profileModelTier: "fast" } });
-    const [result] = mapDecomposedStoriesToUserStories([story], "US-001");
-    expect(result.routing?.profileModelTier).toBeUndefined();
+    const [result] = mapDecomposedStoriesToUserStories([story], "US-001", undefined, {
+      agent: "claude",
+      agentProfileId: "claude-final",
+      profileModelTier: "balanced",
+    });
+    expect(result.routing?.agent).toBe("claude");
+    expect(result.routing?.agentProfileId).toBe("claude-final");
+    expect(result.routing?.profileModelTier).toBe("balanced");
   });
 
   test("profileModelTier is absent when neither parentRouting nor story.routing is set", () => {

@@ -74,7 +74,13 @@ export function mapDecomposedStoriesToUserStories(
         testStrategy: story.testStrategy ?? ("test-after" as const),
         reasoning: story.reasoning,
         modelTier: parentRouting?.profileModelTier ?? story.routing?.profileModelTier ?? ("balanced" as const),
-        // ADR-025: decompose inherits the parent's agent assignment; it does not re-select.
+        // Carry story.routing fields as baseline (preserves pre-ADR-025 behaviour for callers
+        // that still populate routing on the DecomposedStory, e.g. routing-profile-tier stage).
+        ...(story.routing?.agent !== undefined && { agent: story.routing.agent }),
+        ...(story.routing?.agentProfileId !== undefined && { agentProfileId: story.routing.agentProfileId }),
+        ...(story.routing?.profileModelTier !== undefined && { profileModelTier: story.routing.profileModelTier }),
+        // ADR-025: parentRouting overrides story.routing fields when the parent story has an
+        // assignment (decompose inherits, not re-selects).
         ...(parentRouting?.agent !== undefined && { agent: parentRouting.agent }),
         ...(parentRouting?.agentProfileId !== undefined && { agentProfileId: parentRouting.agentProfileId }),
         ...(parentRouting?.profileModelTier !== undefined && { profileModelTier: parentRouting.profileModelTier }),
