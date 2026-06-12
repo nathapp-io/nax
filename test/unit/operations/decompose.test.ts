@@ -146,8 +146,8 @@ describe("decomposeOp — agent capability cards injection", () => {
   });
 });
 
-describe("decomposeOp — parse: agentProfileId resolution", () => {
-  test("AC-T9-3: story without agentProfileId leaves routing unchanged (undefined)", () => {
+describe("decomposeOp — parse: ADR-025 — no agent re-selection, raw output returned", () => {
+  test("AC-T9-3: story without agentProfileId leaves routing undefined (raw output pass-through)", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -162,7 +162,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-1: story with unknown/hallucinated agentProfileId leaves routing unchanged, no error", () => {
+  test("AC-T9-1: story with agentProfileId leaves routing unchanged — parse does not resolve profiles", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -192,7 +192,10 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-2: story with valid agentProfileId sets routing.agent, routing.agentProfileId, and routing.profileModelTier", () => {
+  // ADR-025: parse() is now a pure pass-through — it does NOT resolve agentProfileId → routing.agent.
+  // Agent assignment is inherited from the parent story via mapDecomposedStoriesToUserStories(parentRouting).
+
+  test("AC-T9-2: story with valid agentProfileId in LLM output → routing still undefined (no resolution in parse)", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -204,12 +207,11 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
     expect(result).toHaveLength(1);
-    expect(result[0].routing?.agent).toBe("opencode");
-    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
-    expect(result[0].routing?.profileModelTier).toBe("fast");
+    // parse() does NOT resolve profiles — routing remains undefined
+    expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-2b: routing.agent and routing.agentProfileId are set per-story independently", () => {
+  test("AC-T9-2b: multiple stories with agentProfileIds → routing is undefined for all (ADR-025)", () => {
     const secondProfile = {
       id: "quality-agent",
       target: { agent: "claude", model: "balanced" as const },
@@ -231,14 +233,13 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
     expect(result).toHaveLength(3);
-    expect(result[0].routing?.agent).toBe("opencode");
-    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
-    expect(result[1].routing?.agent).toBe("claude");
-    expect(result[1].routing?.agentProfileId).toBe("quality-agent");
+    // parse() no longer resolves any profile — all routing fields are absent
+    expect(result[0].routing).toBeUndefined();
+    expect(result[1].routing).toBeUndefined();
     expect(result[2].routing).toBeUndefined();
   });
 
-  test("AC-T9-2c: existing routing fields are preserved when profile is matched", () => {
+  test("AC-T9-2c: parse returns raw LLM output — no routing mutation", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -246,17 +247,14 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
       },
     });
 
-    // The LLM may emit extra routing-adjacent fields; parse should not destroy them.
-    // The decomposed story doesn't carry a full routing object — it only carries agentProfileId.
-    // After resolution, routing.agent and routing.agentProfileId are set; others remain absent.
     const output = makeDecomposeOutput([{ id: "US-001", agentProfileId: "fast-coder" }]);
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
-    expect(result[0].routing?.agent).toBe("opencode");
-    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
+    // ADR-025: parse is a pass-through; routing is set downstream via parentRouting
+    expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-1c: when agents.enabled === false, agentProfileId is ignored even if profile exists", () => {
+  test("AC-T9-1c: when agents.enabled === false, agentProfileId is still not resolved (ADR-025 — parse never resolves)", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -270,7 +268,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-4: agentProfileId missing + default set → routing resolved from default profile, including profileModelTier", () => {
+  test("AC-T9-4: default profile configured — parse still does not resolve (ADR-025)", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -286,12 +284,11 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
     expect(result).toHaveLength(1);
-    expect(result[0].routing?.agent).toBe("opencode");
-    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
-    expect(result[0].routing?.profileModelTier).toBe("fast");
+    // ADR-025: default profile resolution moved to mapper via parentRouting
+    expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-5: agentProfileId unknown/hallucinated + default set → routing resolved from default profile, including profileModelTier", () => {
+  test("AC-T9-5: unknown agentProfileId + default configured — parse is still a pass-through", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -307,12 +304,10 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
     expect(result).toHaveLength(1);
-    expect(result[0].routing?.agent).toBe("opencode");
-    expect(result[0].routing?.agentProfileId).toBe("fast-coder");
-    expect(result[0].routing?.profileModelTier).toBe("fast");
+    expect(result[0].routing).toBeUndefined();
   });
 
-  test("AC-T9-6: agentProfileId unknown + no default → routing unchanged (existing behavior preserved)", () => {
+  test("AC-T9-6: agentProfileId unknown + no default → routing undefined (unchanged)", () => {
     const ctx = makeBuildCtx({
       routing: {
         strategy: "keyword",
@@ -330,7 +325,7 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
     expect(result[0].routing).toBeUndefined();
   });
 
-  test("Delta C3: warns with storyId when the LLM emits an unknown agentProfileId", () => {
+  test("ADR-025: parse does not emit any logger warnings for unknown agentProfileId", () => {
     const orig = _decomposeOpDeps.getSafeLogger;
     const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
     _decomposeOpDeps.getSafeLogger = () =>
@@ -354,13 +349,10 @@ describe("decomposeOp — parse: agentProfileId resolution", () => {
       });
 
       const output = makeDecomposeOutput([{ id: "US-001", agentProfileId: "hallucinated-id" }]);
-      const result = decomposeOp.parse(output, SAMPLE_INPUT, ctx);
+      decomposeOp.parse(output, SAMPLE_INPUT, ctx);
 
-      const warn = warnings.find(
-        (w) => w.message.includes("hallucinated-id") || w.message.includes("unknown"),
-      );
-      expect(warn).toBeDefined();
-      expect(warn?.data?.storyId).toBe(result[0].id);
+      // parse() is a pass-through — no profile resolution, no warning
+      expect(warnings).toHaveLength(0);
     } finally {
       _decomposeOpDeps.getSafeLogger = orig;
     }

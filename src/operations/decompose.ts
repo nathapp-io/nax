@@ -33,6 +33,7 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
   model: (_input, ctx) => ctx.config.plan.model,
   timeoutMs: (_input, ctx) => (ctx.config.plan.decomposeTimeoutSeconds ?? ctx.config.plan.timeoutSeconds ?? 600) * 1000,
   build(input, ctx) {
+    // ADR-025: decompose inherits the parent's agent assignment; capability cards are not injected.
     const agentRouting = ctx.config.routing?.agents;
     const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
     const prompt = buildDecomposePromptSync({
@@ -49,59 +50,9 @@ export const decomposeOp: CompleteOperation<DecomposeOpInput, DecomposeOpOutput,
       task: { id: "task", content: prompt, overridable: false },
     };
   },
-  parse(output, _input, ctx) {
-    const stories = parseDecomposeOutput(output);
-
-    const agentRouting = ctx.config.routing?.agents;
-    if (agentRouting?.enabled !== true) {
-      return stories;
-    }
-
-    const profiles = agentRouting.profiles ?? [];
-    if (profiles.length === 0) {
-      return stories;
-    }
-
-    const defaultProfile = agentRouting.default ? profiles.find((p) => p.id === agentRouting.default) : undefined;
-
-    return stories.map((story) => {
-      if (story.agentProfileId) {
-        const profile = profiles.find((p) => p.id === story.agentProfileId);
-        if (profile) {
-          return {
-            ...story,
-            routing: {
-              ...story.routing,
-              agent: profile.target.agent,
-              agentProfileId: profile.id,
-              profileModelTier: profile.target.model,
-            },
-          };
-        }
-        // Delta C3: never invent an agent — warn and fall through to the default profile.
-        _decomposeOpDeps
-          .getSafeLogger()
-          ?.warn(
-            "decompose",
-            `Story ${story.id} selected unknown agent profile "${story.agentProfileId}" — falling back to ${defaultProfile ? `default profile "${defaultProfile.id}"` : "no profile"}`,
-            { storyId: story.id, agentProfileId: story.agentProfileId },
-          );
-      }
-
-      // No valid per-story selection — apply default profile if configured
-      if (defaultProfile) {
-        return {
-          ...story,
-          routing: {
-            ...story.routing,
-            agent: defaultProfile.target.agent,
-            agentProfileId: defaultProfile.id,
-            profileModelTier: defaultProfile.target.model,
-          },
-        };
-      }
-
-      return story;
-    });
+  parse(output, _input, _ctx) {
+    // ADR-025: agent assignment is not re-selected here — the decompose command
+    // passes parentRouting directly to mapDecomposedStoriesToUserStories for inheritance.
+    return parseDecomposeOutput(output);
   },
 };
