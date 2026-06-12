@@ -313,9 +313,8 @@ describe("AC11: single-session story with mock_structure output → no test-writ
       }) as typeof _storyOrchestratorDeps.runFixCycle;
 
       // Should not throw even with mock_structure output
-      await expect(
-        buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs).then((plan) => plan.run()),
-      ).resolves.not.toThrow();
+      const plan = await buildPlanForStrategy(ctx, story, config, "tdd-simple", inputs);
+      await plan.run();
 
       expect(capturedCycle).not.toBeNull();
 
