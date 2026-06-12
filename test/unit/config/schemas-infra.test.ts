@@ -87,4 +87,16 @@ describe("AgentRoutingConfigSchema", () => {
       }),
     ).toThrow(/default/i);
   });
+
+  test('strategy "llm" with zero profiles is rejected', () => {
+    const result = AgentRoutingConfigSchema.safeParse({ enabled: true, strategy: "llm", profiles: [] });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.message.includes("requires at least one profile"))).toBe(true);
+  });
+
+  test('strategy "off" with zero profiles still parses (v1 default)', () => {
+    const result = AgentRoutingConfigSchema.safeParse({ enabled: true, strategy: "off", profiles: [] });
+    expect(result.success).toBe(true);
+  });
 });

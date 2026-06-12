@@ -437,4 +437,28 @@ describe("NaxConfigSchema — superRefine: tierOrder agent cross-section validat
     ]);
     expect(result.success).toBe(true);
   });
+
+  test("profile with the default tier-only ladder fails with an actionable agent-qualify message", () => {
+    const result = NaxConfigSchema.safeParse({
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      models: MODELS,
+      routing: {
+        ...(DEFAULT_CONFIG.routing as Record<string, unknown>),
+        agents: {
+          enabled: true,
+          strategy: "off",
+          profiles: [
+            { id: "oc-bal", target: { agent: "opencode", model: "balanced" }, strengths: ["impl"] },
+          ],
+        },
+      },
+      // DEFAULT_CONFIG tierOrder is tier-only: fast/balanced/powerful with no agent fields
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.message.includes("no matching rung"));
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain("agent-qualify");
+    expect(issue?.message).toContain('"tier": "balanced", "agent": "opencode"');
+  });
 });

@@ -437,7 +437,10 @@ export const NaxConfigSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["routing", "agents", "profiles", pi, "target"],
-          message: `Profile "${profile.id}" target (${pAgent}@${pModel}) has no matching rung in autoMode.escalation.tierOrder — escalation from this profile has no defined path`,
+          message:
+            `Profile "${profile.id}" target (${pAgent}@${pModel}) has no matching rung in autoMode.escalation.tierOrder — ` +
+            `escalation from this profile has no defined path. To fix: agent-qualify the ladder by adding a rung ` +
+            `{ "tier": "${pModel}", "agent": "${pAgent}", "attempts": <n> } (and an agent on every other rung) to autoMode.escalation.tierOrder.`,
         });
       }
       // Cross-section: profile target agent must exist in config.models

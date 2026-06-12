@@ -123,6 +123,13 @@ export const AgentRoutingConfigSchema = z
         message: `Default profile "${cfg.default}" is not in the profiles list`,
       });
     }
+    if (cfg.strategy === "llm" && cfg.profiles.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["strategy"],
+        message: 'strategy "llm" requires at least one profile in routing.agents.profiles',
+      });
+    }
   });
 
 export type AgentRoutingConfig = z.infer<typeof AgentRoutingConfigSchema>;
