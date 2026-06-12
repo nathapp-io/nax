@@ -56,5 +56,7 @@ export type {
   RunAsSessionOpts,
 } from "./manager-types";
 export { resolveDefaultAgent } from "./utils";
+export { resolveAgentAssignment } from "./shared";
+export type { ResolvedAgentAssignment } from "./shared";
 export { ParseValidationError, makeParseRetryStrategy, makeTieredParseRetryStrategy } from "./retry";
 export type { RetryStrategy, RetryPreset, RetryContext, RetryDecision, TieredInspection } from "./retry";
