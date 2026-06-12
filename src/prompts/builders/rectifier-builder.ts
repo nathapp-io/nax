@@ -35,6 +35,7 @@ import {
   escapeHatchFor,
   exceptionCountWord,
   formatCheckErrors,
+  formatFailingTestsList,
   mechanicalRectification,
   semanticRectification,
   testEditHeadline,
@@ -881,18 +882,21 @@ Tests are failing. Fix the source so all tests pass — not just the ones listed
   }
 
   static failingTestContext(findings: Finding[]): string {
-    if (findings.length === 0) {
-      return "The full test suite has failing tests. Fix the implementation to make all tests pass.";
-    }
-    const lines: string[] = [`Fix the following ${findings.length} failing test${findings.length === 1 ? "" : "s"}:\n`];
-    for (const f of findings) {
-      const location = f.file ? `${f.file}` : "(unknown file)";
-      const rule = f.rule ? `  Test: ${f.rule}\n` : "";
-      lines.push(`- ${location}\n${rule}  Error: ${f.message}\n`);
-    }
-    lines.push(
-      "\nFix the implementation (not the tests) to make all failing tests pass. Run the test suite to verify after each change.",
+    const listing = formatFailingTestsList(findings);
+    if (findings.length === 0) return listing;
+    return `${listing}\nFix the implementation (not the tests) to make all failing tests pass. Run the test suite to verify after each change.`;
+  }
+
+  static failingTestRectification(findings: Finding[], story: UserStory): string {
+    const listing = formatFailingTestsList(findings);
+    const exCount = exceptionCountWord(story);
+    const prohibition = `Do NOT change test files or test behavior — see the ${exCount} narrow exceptions appended below.`;
+    const parts: string[] = [listing];
+    parts.push(
+      "\nFix the implementation (not the tests) to make all failing tests pass. Do not loosen assertions or weaken test expectations. Run the test suite to verify after each change.",
     );
-    return lines.join("\n");
+    parts.push(`\n${testEditHeadline(story, prohibition)}`);
+    parts.push(escapeHatchFor(story));
+    return parts.join("\n");
   }
 }
