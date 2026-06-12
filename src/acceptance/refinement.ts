@@ -51,8 +51,9 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
  *
  * Mirrors the fallback triggers in `parseRefinementResponse` above and lives
  * beside it so the two stay in sync. Used by the acceptance-refine op (#3B) to
- * log an accurate degradation warning — the log must only claim "fell back to
- * unrefined criteria" when that is what actually happened.
+ * log an accurate degradation warning for non-empty unparseable output. Note:
+ * empty/whitespace output is handled upstream by the op's parse() — it throws
+ * ParseValidationError to trigger a retry rather than falling back immediately.
  */
 export function refinementWouldFallback(response: string): boolean {
   if (!response || !response.trim()) return true;
