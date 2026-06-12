@@ -319,6 +319,8 @@ export interface AcceptanceConfig {
   testPath: string;
   /** Model selector for AC refinement/generation calls (tier string or explicit { agent, model }) */
   model: ConfiguredModel;
+  /** Model selector for acceptance test generation calls (overrides model for generate step) */
+  generateModel?: ConfiguredModel;
   /** Whether to LLM-refine acceptance criteria before generating tests (default: true) */
   refinement: boolean;
   /** Max concurrent refinement LLM calls (default: 3) */
