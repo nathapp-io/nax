@@ -202,6 +202,8 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     });
     const prd = makePRD({ userStories: [story] });
     const config = makeNaxConfig({
+      // Include "opencode" in models so only the profile-mismatch warn fires, not the agent warn.
+      models: { claude: { fast: "haiku" }, opencode: { fast: "opencode-fast" } },
       routing: {
         agents: {
           enabled: true,
@@ -340,5 +342,36 @@ describe("warnProfileMismatch — Task 10 Part B", () => {
     );
 
     expect(warns).toHaveLength(0);
+  });
+
+  test("warns per story when routing.agent is not defined in config.models", () => {
+    const { logger, warns } = makeLogger();
+    const prd = makePRD({
+      userStories: [
+        makeStory({
+          id: "US-1",
+          routing: {
+            complexity: "simple",
+            testStrategy: "test-after",
+            reasoning: "",
+            modelTier: "fast",
+            agent: "ghost",
+          },
+        }),
+      ],
+    });
+    const config = makeNaxConfig({ models: { claude: { fast: "m" } } });
+
+    warnProfileMismatch(
+      prd,
+      config,
+      logger as unknown as ReturnType<typeof import("../../../../src/logger").getSafeLogger>,
+    );
+
+    const agentWarns = warns.filter(
+      ([, msg, ctx]) => /agent "ghost".*not defined in config\.models/i.test(msg) && ctx.storyId === "US-1",
+    );
+    expect(agentWarns).toHaveLength(1);
+    expect(agentWarns[0]?.[2]).toMatchObject({ storyId: "US-1", agent: "ghost" });
   });
 });

@@ -72,14 +72,23 @@ export function warnProfileMismatch(
     }
   }
 
+  const knownAgents = new Set(Object.keys(config.models ?? {}));
+
   for (const story of prd.userStories) {
     const profileId = story.routing?.agentProfileId;
-    if (!profileId) continue;
-    if (!profileIds.has(profileId)) {
+    if (profileId && !profileIds.has(profileId)) {
       logger?.warn(
         "setup",
         `Story ${story.id} was planned with profile ${profileId} which no longer exists in config — routing.agent assignment retained`,
         { storyId: story.id, agentProfileId: profileId },
+      );
+    }
+    const storyAgent = story.routing?.agent;
+    if (storyAgent && !knownAgents.has(storyAgent)) {
+      logger?.warn(
+        "setup",
+        `Story ${story.id} routes to agent "${storyAgent}" which is not defined in config.models — execution will degrade to the default agent`,
+        { storyId: story.id, agent: storyAgent },
       );
     }
   }
