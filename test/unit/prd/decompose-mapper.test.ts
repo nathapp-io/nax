@@ -332,11 +332,12 @@ describe("mapDecomposedStoriesToUserStories — parent routing inheritance (ADR-
       "packages/api",
       { agent: "claude", agentProfileId: "claude-final", profileModelTier: "balanced" },
     );
-    expect(subs[0].routing.agent).toBe("claude");
-    expect(subs[0].routing.agentProfileId).toBe("claude-final");
-    expect(subs[0].routing.profileModelTier).toBe("balanced");
-    expect(subs[0].routing.initialAgent).toBe("claude");
-    expect(subs[0].routing.initialProfileId).toBe("claude-final");
+    const routing = (subs[0] as NonNullable<(typeof subs)[0]>).routing as NonNullable<(typeof subs)[0]["routing"]>;
+    expect(routing.agent).toBe("claude");
+    expect(routing.agentProfileId).toBe("claude-final");
+    expect(routing.profileModelTier).toBe("balanced");
+    expect(routing.initialAgent).toBe("claude");
+    expect(routing.initialProfileId).toBe("claude-final");
   });
 
   test("sub-stories carry no agent when the parent had none", () => {
@@ -361,7 +362,8 @@ describe("mapDecomposedStoriesToUserStories — parent routing inheritance (ADR-
       undefined,
       undefined,
     );
-    expect(subs[0].routing.agent).toBeUndefined();
+    const routing = (subs[0] as NonNullable<(typeof subs)[0]>).routing as NonNullable<(typeof subs)[0]["routing"]>;
+    expect(routing.agent).toBeUndefined();
   });
 
   test("initialAgent and initialProfileId fall through from parentRouting when not already set", () => {
@@ -371,8 +373,9 @@ describe("mapDecomposedStoriesToUserStories — parent routing inheritance (ADR-
       undefined,
       { agent: "opencode", agentProfileId: "oc-fast", profileModelTier: "fast" },
     );
-    expect(subs[0].routing.initialAgent).toBe("opencode");
-    expect(subs[0].routing.initialProfileId).toBe("oc-fast");
+    const routing = (subs[0] as NonNullable<(typeof subs)[0]>).routing as NonNullable<(typeof subs)[0]["routing"]>;
+    expect(routing.initialAgent).toBe("opencode");
+    expect(routing.initialProfileId).toBe("oc-fast");
   });
 });
 
