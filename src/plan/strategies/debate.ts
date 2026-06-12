@@ -22,6 +22,8 @@ export class DebatePlanStrategy implements IPlanStrategy {
   readonly mode = "debate" as const;
 
   async execute(ctx: PlanModeContext): Promise<string> {
+    const agentRouting = ctx.config.routing?.agents;
+    const profiles = agentRouting?.enabled === true ? (agentRouting.profiles ?? []) : [];
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(
       ctx.specContent,
       ctx.codebaseContext,
@@ -29,6 +31,8 @@ export class DebatePlanStrategy implements IPlanStrategy {
       ctx.relativePackages,
       ctx.packageDetails,
       ctx.config.project,
+      undefined,
+      profiles,
     );
     const planStage = ctx.config.debate?.stages?.plan;
     if (!planStage) {
