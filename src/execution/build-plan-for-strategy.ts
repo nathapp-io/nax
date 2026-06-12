@@ -135,18 +135,18 @@ export async function buildPlanForStrategy(
     builder.addAdversarialReview(inputs.adversarialReview);
   }
 
+  // Path anchors shared by both the main-rectification postValidate and the nbf postValidate.
+  // Computed once here; used in both closures below to avoid duplicate async FS reads.
+  // ctx.packageDir = repo root (absolute); story.workdir = relative sub-path to package.
+  const packageDir = join(ctx.packageDir, story.workdir ?? "");
+  const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.packageDir, story.workdir);
+
   // Rectification: requires both config gate and typed inputs.
   // Assemble strategies: mechanical fixes first, then full-suite (TDD), then autofix agents.
   if (shouldRunRectification(config) && inputs.rectification) {
     // One shared sink for the implementer and test-writer strategies so
     // declarations accumulate and mock handoffs are consumed by postValidate.
     const sink = makeDeclarationSink();
-
-    // Resolve test-file patterns once at plan-build time — postValidate uses
-    // them to validate mock-structure file paths during the rectification cycle.
-    // ctx.packageDir = repo root (absolute); story.workdir = relative sub-path to package.
-    const packageDir = join(ctx.packageDir, story.workdir ?? "");
-    const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.packageDir, story.workdir);
 
     const strategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
 
@@ -225,6 +225,7 @@ export async function buildPlanForStrategy(
   const nbStrategies: FixStrategy<Finding, unknown, unknown, unknown>[] = [];
   if (nbf?.enabled && inputs.adversarialReview) {
     const nbSink = makeDeclarationSink();
+
     if (nbf.scope === "source") {
       // implementer claims adversarial findings in SOURCE scope (both session modes)
       nbStrategies.push(
@@ -242,13 +243,32 @@ export async function buildPlanForStrategy(
       );
     }
     // Always: recover from a test regression that the best-effort fix introduces.
-    // nbSink is wired here so declarations from the non-blocking recovery pass are
-    // captured, but the end-to-end path (postValidate → test-writer handoff) is not
-    // yet connected for ADR-024 (#1227).
     nbStrategies.push(
       makeFullSuiteRectifyStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
     );
-    builder.addNonBlockingFix(nbf, nbStrategies);
+
+    // Mirror the main rectification postValidate but bound to nbSink (#1227).
+    const nbPostValidate = async (findings: Finding[], _validateCtx: FixCycleContext): Promise<Finding[]> => {
+      if (nbSink.testEdits.length === 0 && nbSink.mockHandoffs.length === 0) return findings;
+
+      const pendingMock: TestEditDeclaration[] = nbSink.mockHandoffs.map((h) => ({
+        reason: "mock_structure" as const,
+        file: h.files[0] ?? "",
+        files: h.files,
+        reasonDetail: h.reasonDetail,
+      }));
+
+      const { valid, invalid } = await validateMockStructureFiles(pendingMock, resolvedTestPatterns, packageDir);
+
+      nbSink.mockHandoffs = valid.map((d) => ({ files: d.files ?? [], reasonDetail: d.reasonDetail ?? "" }));
+
+      const allDeclarations = [...nbSink.testEdits, ...valid];
+      nbSink.testEdits = [];
+
+      return applyTestEditDeclarations(findings, allDeclarations, story, invalid);
+    };
+
+    builder.addNonBlockingFix(nbf, nbStrategies, nbPostValidate);
   }
 
   return builder.build(ctx, { isThreeSession });
