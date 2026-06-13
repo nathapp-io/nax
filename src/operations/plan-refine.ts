@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { makeParseRetryStrategy } from "../agents/retry";
+import type { TurnResult } from "../agents/types";
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
@@ -13,9 +14,8 @@ import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
+import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
-import type { TurnResult } from "../agents/types";
-import { makeSelfHealStep, runSelfHealChain, type SelfHealStep } from "./self-heal";
 import { warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
 
 /** Injectable I/O for the hopBody self-heal step (testable without disk). */
