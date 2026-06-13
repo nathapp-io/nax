@@ -12,7 +12,9 @@ import {
   listProfiles,
   loadProfile,
   loadProfileEnv,
+  parseProfileList,
   resolveProfileName,
+  resolveProfileNames,
 } from "../../../src/config/profile";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
@@ -229,6 +231,102 @@ describe("config/profile", () => {
     test('returns "default" when no profile is set anywhere', async () => {
       const result = await resolveProfileName({}, {}, projectDir);
       expect(result).toBe("default");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // parseProfileList
+  // ---------------------------------------------------------------------------
+
+  describe("parseProfileList", () => {
+    test("returns empty array for undefined/null/empty", () => {
+      expect(parseProfileList(undefined)).toEqual([]);
+      expect(parseProfileList(null)).toEqual([]);
+      expect(parseProfileList("")).toEqual([]);
+      expect(parseProfileList([])).toEqual([]);
+    });
+
+    test("splits a comma-separated string into an ordered chain", () => {
+      expect(parseProfileList("a,b,c")).toEqual(["a", "b", "c"]);
+    });
+
+    test("trims whitespace and drops empty segments", () => {
+      expect(parseProfileList(" a , b ,, c ,")).toEqual(["a", "b", "c"]);
+    });
+
+    test("flattens an array of values, splitting each on commas (repeated-flag form)", () => {
+      expect(parseProfileList(["a", "b,c"])).toEqual(["a", "b", "c"]);
+    });
+
+    test("preserves order and does not dedupe", () => {
+      expect(parseProfileList("a,b,a")).toEqual(["a", "b", "a"]);
+    });
+
+    test("ignores non-string array entries", () => {
+      expect(parseProfileList(["a", 42 as unknown as string, "b"])).toEqual(["a", "b"]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // resolveProfileNames (chain)
+  // ---------------------------------------------------------------------------
+
+  describe("resolveProfileNames", () => {
+    test("returns CLI chain (comma form) — CLI wins over env", async () => {
+      const result = await resolveProfileNames(
+        { profile: "a,b" },
+        { NAX_PROFILE: "env" },
+        projectDir,
+      );
+      expect(result).toEqual(["a", "b"]);
+    });
+
+    test("returns CLI chain (array form, repeated flags)", async () => {
+      const result = await resolveProfileNames({ profile: ["a", "b"] }, {}, projectDir);
+      expect(result).toEqual(["a", "b"]);
+    });
+
+    test("parses NAX_PROFILE comma form when no CLI override", async () => {
+      const result = await resolveProfileNames({}, { NAX_PROFILE: "x,y" }, projectDir);
+      expect(result).toEqual(["x", "y"]);
+    });
+
+    test("parses project config.json profile comma form", async () => {
+      const projectNaxDir = join(projectDir, ".nax");
+      mkdirSync(projectNaxDir, { recursive: true });
+      await Bun.write(join(projectNaxDir, "config.json"), JSON.stringify({ profile: "p,q" }));
+
+      const result = await resolveProfileNames({}, {}, projectDir);
+      expect(result).toEqual(["p", "q"]);
+    });
+
+    test("parses project config.json profile array form", async () => {
+      const projectNaxDir = join(projectDir, ".nax");
+      mkdirSync(projectNaxDir, { recursive: true });
+      await Bun.write(join(projectNaxDir, "config.json"), JSON.stringify({ profile: ["p", "q"] }));
+
+      const result = await resolveProfileNames({}, {}, projectDir);
+      expect(result).toEqual(["p", "q"]);
+    });
+
+    test('a single "default" in project config falls through to global then "default"', async () => {
+      const projectNaxDir = join(projectDir, ".nax");
+      mkdirSync(projectNaxDir, { recursive: true });
+      await Bun.write(join(projectNaxDir, "config.json"), JSON.stringify({ profile: "default" }));
+      await Bun.write(join(globalDir, "config.json"), JSON.stringify({ profile: "g1,g2" }));
+
+      const result = await resolveProfileNames({}, {}, projectDir);
+      expect(result).toEqual(["g1", "g2"]);
+    });
+
+    test('returns ["default"] when nothing is set anywhere', async () => {
+      const result = await resolveProfileNames({}, {}, projectDir);
+      expect(result).toEqual(["default"]);
+    });
+
+    test("resolveProfileName (singular) returns the last meaningful name for back-compat", async () => {
+      const result = await resolveProfileName({ profile: "a,b" }, {}, projectDir);
+      expect(result).toBe("b");
     });
   });
 

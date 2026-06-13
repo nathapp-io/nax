@@ -1,4 +1,4 @@
-import { listProfiles } from "../config";
+import { listProfiles, parseProfileList } from "../config";
 import { getSafeLogger } from "../logger";
 
 /**
@@ -7,24 +7,29 @@ import { getSafeLogger } from "../logger";
  * Precedence: CLI --profile > NAX_PROFILE env (handled inside loadConfig — we
  * return undefined so it applies) > PRD routingProfile > loadConfig defaults.
  *
- * GUARD: loadProfile THROWS on a missing profile file, so a PRD profile is
- * adopted only when it actually resolves (or is "default", which the loader
- * treats as no-overlay). Stale/legacy values warn and are skipped.
+ * Multi-profile: CLI and PRD values accept the comma form (and the CLI also the
+ * array form, from repeated flags); both resolve to an ordered chain where a
+ * later profile overrides an earlier one.
  *
- * Returns the profile name to pass as a CLI override into loadConfig, or
+ * GUARD: loadProfile THROWS on a missing profile file, so a PRD chain is adopted
+ * only when EVERY non-"default" name resolves. If any is missing, the whole PRD
+ * chain is skipped (warn) and config resolution falls through.
+ *
+ * Returns the profile chain to pass as a CLI override into loadConfig, or
  * undefined to let loadConfig's own resolution run.
  */
 export async function resolveRunProfileOverride(opts: {
   prdPath: string;
   projectRoot: string;
-  cliProfile: string | undefined;
+  cliProfile: string | string[] | undefined;
   envProfile: string | undefined;
   /** Test seam — defaults to reading prdPath via Bun.file */
   _readJson?: (path: string) => Promise<unknown>;
   /** Test seam — defaults to listProfiles(projectRoot) name extraction */
   _listProfileNames?: () => Promise<string[]>;
-}): Promise<string | undefined> {
-  if (opts.cliProfile) return opts.cliProfile;
+}): Promise<string[] | undefined> {
+  const cliChain = parseProfileList(opts.cliProfile);
+  if (cliChain.length > 0) return cliChain;
   if (opts.envProfile) return undefined;
 
   const readJson =
@@ -37,17 +42,21 @@ export async function resolveRunProfileOverride(opts: {
 
   try {
     const prd = (await readJson(opts.prdPath)) as { routingProfile?: unknown } | undefined;
-    if (prd && typeof prd.routingProfile === "string" && prd.routingProfile.length > 0) {
-      const name = prd.routingProfile;
-      if (name === "default") return name;
+    const rp = prd?.routingProfile;
+    const prdChain = parseProfileList(
+      typeof rp === "string" || Array.isArray(rp) ? (rp as string | string[]) : undefined,
+    );
+    if (prdChain.length > 0) {
       const listNames =
         opts._listProfileNames ?? (async () => (await listProfiles(opts.projectRoot)).map((p) => p.name));
       const available = await listNames();
-      if (available.includes(name)) return name;
+      // "default" never needs a profile file; everything else must resolve.
+      const missing = prdChain.filter((name) => name !== "default" && !available.includes(name));
+      if (missing.length === 0) return prdChain;
       getSafeLogger()?.warn(
         "run",
-        `PRD was planned with config profile "${name}" but no such profile exists — continuing with current config resolution`,
-        { storyId: "prd", plannedProfile: name },
+        `PRD was planned with config profile(s) "${prdChain.join(",")}" but ${missing.join(", ")} not found — continuing with current config resolution`,
+        { storyId: "prd", plannedProfile: prdChain.join(","), missing },
       );
     }
   } catch {

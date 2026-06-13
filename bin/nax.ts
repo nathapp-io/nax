@@ -93,6 +93,16 @@ program.name("nax").description("AI Coding Agent Orchestrator — loops until do
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Commander collector for repeatable `--profile` flags. Accumulates each
+ * occurrence into an array; comma-separated values within a single flag are
+ * split downstream by parseProfileList, so `--profile a,b` and
+ * `--profile a --profile b` both resolve to the chain ["a", "b"].
+ */
+function collectProfile(value: string, previous: string[]): string[] {
+  return previous.concat(value);
+}
+
+/**
  * Prompt user for a yes/no confirmation via stdin.
  * In tests or non-TTY environments, defaults to true.
  *
@@ -371,7 +381,12 @@ program
   .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .option("--skip-precheck", "Skip precheck validations (advanced users only)", false)
-  .option("--profile <name>", "Profile to use (overrides config.json profile)")
+  .option(
+    "--profile <name>",
+    "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
+    collectProfile,
+    [],
+  )
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -420,16 +435,18 @@ program
     const naxDir = findProjectDir(workdir);
     const cliOverrides: Record<string, unknown> = {};
     // Delta C4: nax run defaults to the profile the PRD was planned with,
-    // unless --profile or NAX_PROFILE overrides it.
+    // unless --profile or NAX_PROFILE overrides it. --profile accepts a chain
+    // (comma-separated or repeated flags) where a later profile overrides earlier.
+    const cliProfiles: string[] = options.profile ?? [];
     const profileOverride = naxDir
       ? await resolveRunProfileOverride({
           prdPath: join(naxDir, "features", options.feature, "prd.json"),
           projectRoot: workdir,
-          cliProfile: options.profile,
+          cliProfile: cliProfiles,
           envProfile: process.env.NAX_PROFILE,
         })
-      : options.profile;
-    if (profileOverride) {
+      : cliProfiles;
+    if (profileOverride && profileOverride.length > 0) {
       cliOverrides.profile = profileOverride;
     }
     const config = await loadConfig(naxDir ?? undefined, cliOverrides);
@@ -839,7 +856,12 @@ program
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
-  .option("--profile <name>", "Profile to use (overrides config.json profile)")
+  .option(
+    "--profile <name>",
+    "Profile(s) to overlay (comma-separated or repeated; later overrides earlier)",
+    collectProfile,
+    [],
+  )
   .action(async (description, options) => {
     // AC-3: Detect and reject old positional argument form
     if (description) {
@@ -863,10 +885,11 @@ program
       process.exit(1);
     }
 
-    // Load config
+    // Load config — --profile accepts a chain (comma-separated or repeated flags).
     const cliOverrides: Record<string, unknown> = {};
-    if (options.profile) {
-      cliOverrides.profile = options.profile;
+    const cliProfiles: string[] = options.profile ?? [];
+    if (cliProfiles.length > 0) {
+      cliOverrides.profile = cliProfiles;
     }
     const config = await loadConfig(workdir, cliOverrides);
 

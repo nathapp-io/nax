@@ -83,46 +83,86 @@ export async function loadProfileEnv(profileName: string, projectRoot: string): 
 }
 
 /**
- * Resolves the active profile name using priority:
- * CLI option > NAX_PROFILE env var > project config.json > global config.json > "default"
+ * Normalizes a profile override into an ordered chain of profile names.
  *
- * For the config.json fallback, project takes precedence over global — consistent
- * with the existing config merge order where project overrides global.
+ * Accepts the comma form (`"a,b"`) AND the array form (`["a", "b"]`, from
+ * repeated `--profile` flags); array entries may themselves contain commas and
+ * are flattened. Whitespace is trimmed and empty segments dropped. Order is
+ * preserved (later entries override earlier ones); duplicates are NOT removed.
+ *
+ * SSOT for "turn a profile override value into a chain" — used by the CLI,
+ * loader, and run-side resolver so the comma form behaves identically everywhere.
+ */
+export function parseProfileList(input: string | string[] | null | undefined): string[] {
+  if (input == null) return [];
+  const parts = Array.isArray(input) ? input : [input];
+  const out: string[] = [];
+  for (const part of parts) {
+    if (typeof part !== "string") continue;
+    for (const segment of part.split(",")) {
+      const trimmed = segment.trim();
+      if (trimmed) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+/** Reads and parses the `profile` field of a config.json in the given dir into a chain. */
+async function readProfileChainFromConfig(dir: string): Promise<string[]> {
+  const configFile = Bun.file(join(dir, "config.json"));
+  if (!(await configFile.exists())) return [];
+  const config = await configFile.json();
+  return parseProfileList(config.profile as string | string[] | undefined);
+}
+
+/** A chain that carries no meaningful overlay (empty, or only the implicit "default"). */
+function isDefaultOnlyChain(chain: string[]): boolean {
+  return chain.length === 0 || (chain.length === 1 && chain[0] === "default");
+}
+
+/**
+ * Resolves the active profile chain using priority:
+ * CLI option > NAX_PROFILE env var > project config.json > global config.json > ["default"]
+ *
+ * Every source accepts the comma form (and the CLI also the array form). The
+ * config.json fallback applies project before global — consistent with the
+ * config merge order where project overrides global. A source that resolves to
+ * only "default" is treated as unset and falls through to the next source.
+ */
+export async function resolveProfileNames(
+  cliOptions: { profile?: string | string[] },
+  env: Record<string, string | undefined>,
+  projectRoot: string,
+): Promise<string[]> {
+  const fromCli = parseProfileList(cliOptions.profile);
+  if (fromCli.length) return fromCli;
+
+  const fromEnv = parseProfileList(env.NAX_PROFILE);
+  if (fromEnv.length) return fromEnv;
+
+  // Project config.json takes precedence over global config.json
+  const projectChain = await readProfileChainFromConfig(projectConfigDir(projectRoot));
+  if (!isDefaultOnlyChain(projectChain)) return projectChain;
+
+  // Fall back to global config.json
+  const globalChain = await readProfileChainFromConfig(globalConfigDir());
+  if (!isDefaultOnlyChain(globalChain)) return globalChain;
+
+  return ["default"];
+}
+
+/**
+ * Resolves the single active profile name (back-compat wrapper around
+ * {@link resolveProfileNames}). Returns the last meaningful name in the chain,
+ * or "default" when nothing is set.
  */
 export async function resolveProfileName(
-  cliOptions: { profile?: string },
+  cliOptions: { profile?: string | string[] },
   env: Record<string, string | undefined>,
   projectRoot: string,
 ): Promise<string> {
-  if (cliOptions.profile) {
-    return cliOptions.profile;
-  }
-
-  if (env.NAX_PROFILE) {
-    return env.NAX_PROFILE;
-  }
-
-  // Project config.json takes precedence over global config.json
-  const projectConfigPath = join(projectConfigDir(projectRoot), "config.json");
-  const projectConfigFile = Bun.file(projectConfigPath);
-  if (await projectConfigFile.exists()) {
-    const config = await projectConfigFile.json();
-    if (typeof config.profile === "string" && config.profile && config.profile !== "default") {
-      return config.profile;
-    }
-  }
-
-  // Fall back to global config.json
-  const globalConfigPath = join(globalConfigDir(), "config.json");
-  const globalConfigFile = Bun.file(globalConfigPath);
-  if (await globalConfigFile.exists()) {
-    const config = await globalConfigFile.json();
-    if (typeof config.profile === "string" && config.profile && config.profile !== "default") {
-      return config.profile;
-    }
-  }
-
-  return "default";
+  const chain = await resolveProfileNames(cliOptions, env, projectRoot);
+  return chain[chain.length - 1] ?? "default";
 }
 
 /** Internal helper — returns deduplicated sorted profile names from both scopes. */

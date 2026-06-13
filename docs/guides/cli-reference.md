@@ -67,7 +67,7 @@ nax plan -f my-feature --from spec.md
 | `--auto` / `--one-shot` | Skip interactive Q&A — single LLM call, no back-and-forth |
 | `-b, --branch <branch>` | Override default branch name |
 | `--decompose <storyId>` | Decompose an existing story into sub-stories |
-| `--profile <name>` | Profile to use (overrides `config.json` profile) |
+| `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Project directory |
 
 **Interactive vs one-shot:**
@@ -107,7 +107,7 @@ nax run -f my-feature
 | `--no-context` | Disable context builder (skip file context in prompts) |
 | `--no-batch` | Execute all stories individually (disable batching) |
 | `-m, --max-iterations <n>` | Max iterations (default: `20`) |
-| `--profile <name>` | Profile to use (overrides `config.json` profile) |
+| `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 
 **Examples:**

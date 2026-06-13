@@ -14,7 +14,7 @@ import { deepMergeConfig } from "./merger";
 import { migrateLegacyReviewModelKey, migrateLegacyTestPattern } from "./migrations";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
-import { loadProfile, loadProfileEnv, resolveProfileName } from "./profile";
+import { loadProfile, loadProfileEnv, parseProfileList, resolveProfileNames } from "./profile";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
@@ -330,12 +330,15 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
       : startDir
     : process.cwd();
 
-  // Resolve profile name: CLI > NAX_PROFILE env > project config.json > "default"
-  const profileName = await resolveProfileName(
-    cliOverrides ?? {},
+  // Resolve profile chain: CLI > NAX_PROFILE env > project config.json > global > ["default"].
+  // Each source accepts the comma form; the chain overlays left-to-right (later wins).
+  const profileChain = await resolveProfileNames(
+    (cliOverrides ?? {}) as { profile?: string | string[] },
     process.env as Record<string, string | undefined>,
     projectRoot,
   );
+  // "default" entries carry no overlay — drop them so only meaningful profiles merge.
+  const overlayChain = profileChain.filter((name) => name && name !== "default");
 
   // Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7)
   const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
@@ -377,13 +380,14 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     }
   }
 
-  // Layer 3: Profile data (overrides global + project — it's a run-time mode selection)
-  // "default" profile applies no overlay (AC 10)
-  if (profileName !== "default") {
-    const profileData = await loadProfile(profileName, projectRoot);
+  // Layer 3: Profile chain (overrides global + project — it's a run-time mode selection).
+  // Profiles overlay in order; a later profile overrides an earlier one. A missing
+  // profile file throws fail-fast (loadProfile). "default"-only chains apply no overlay.
+  for (const name of overlayChain) {
+    const profileData = await loadProfile(name, projectRoot);
     rawConfig = deepMergeConfig(rawConfig, profileData);
     // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9)
-    await loadProfileEnv(profileName, projectRoot);
+    await loadProfileEnv(name, projectRoot);
   }
 
   // Layer 4: CLI overrides (highest priority)
@@ -391,11 +395,13 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     rawConfig = deepMergeConfig(rawConfig, cliOverrides);
   }
 
-  // Force-set profile to the resolved name after all merges (AC 6)
-  rawConfig.profile = profileName;
+  // Force-set profile + chain to the resolved values after all merges (AC 6).
+  // `profile` is the composite display string ("a+b"); "default" when no overlay applied.
+  rawConfig.profile = overlayChain.length > 0 ? overlayChain.join("+") : "default";
+  rawConfig.profileChain = overlayChain;
 
   // Track if any configs were merged (for optimization - skip safeParse when just using defaults)
-  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined || profileName !== "default";
+  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined || overlayChain.length > 0;
 
   // Parse and validate with Zod
   // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG)
@@ -476,7 +482,8 @@ export async function loadConfigForWorkdir(
 
   // Include the profile in the cache key so that --profile overrides are not
   // shadowed by a cached root config that was loaded without the profile flag.
-  const profileKey = (cliOverrides?.profile as string | undefined) ?? "";
+  // Normalize the chain to a stable string so comma and array forms key alike.
+  const profileKey = parseProfileList(cliOverrides?.profile as string | string[] | undefined).join(",");
   const cacheKey = profileKey ? `${resolvedRootConfigPath}:${profileKey}` : resolvedRootConfigPath;
 
   // Cache root config load — avoids repeated I/O for each package in a monorepo run.
@@ -514,15 +521,20 @@ export async function loadConfigForWorkdir(
   const { profile: packageProfile, ...packageFields } = packageOverride;
   let merged = mergePackageConfig(rootConfig, packageFields);
 
-  // Per-package profile: apply profile overlay on top of merged config
-  if (packageProfile && packageProfile !== "default") {
+  // Per-package profile: apply the profile chain overlay on top of merged config.
+  // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
+  const packageChain = parseProfileList(packageProfile as string | string[] | undefined).filter(
+    (name) => name && name !== "default",
+  );
+  if (packageChain.length > 0) {
     const packageRoot = join(repoRoot, packageDir);
-    const profileData = await loadProfile(packageProfile, packageRoot);
-    const rawMerged = deepMergeConfig<Record<string, unknown>>(
-      merged as unknown as Record<string, unknown>,
-      profileData,
-    );
-    rawMerged.profile = packageProfile;
+    let rawMerged = merged as unknown as Record<string, unknown>;
+    for (const name of packageChain) {
+      const profileData = await loadProfile(name, packageRoot);
+      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, profileData);
+    }
+    rawMerged.profile = packageChain.join("+");
+    rawMerged.profileChain = packageChain;
     // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
     rejectLegacyAgentKeys(rawMerged);
     rejectLegacyRectificationKeys(rawMerged);

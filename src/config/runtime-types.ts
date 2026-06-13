@@ -579,8 +579,13 @@ export interface NaxConfig {
   debate?: import("../debate/types").DebateConfig;
   /** Curator configuration */
   curator?: CuratorConfig;
-  /** Configuration profile name (default: "default") */
+  /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
+  /**
+   * Ordered chain of profile names actually overlaid (later overrides earlier),
+   * excluding implicit "default" entries. Empty when no profile overlay applied.
+   */
+  profileChain?: string[];
 }
 
 export interface CuratorThresholds {

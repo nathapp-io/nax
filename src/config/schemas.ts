@@ -400,6 +400,7 @@ export const NaxConfigSchema = z
     })),
     curator: CuratorConfigSchema.optional(),
     profile: z.string().default("default"),
+    profileChain: z.array(z.string()).default([]),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
