@@ -3,6 +3,7 @@ import { hasLikelyTestContent, isStubTestContent } from "../acceptance/heuristic
 import { acceptanceGenConfigSelector } from "../config";
 import type { AcceptanceGenConfig } from "../config/selectors";
 import { AcceptancePromptBuilder } from "../prompts";
+import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
 
 export interface AcceptanceGenerateInput {
@@ -15,6 +16,36 @@ export interface AcceptanceGenerateInput {
 
 export interface AcceptanceGenerateOutput {
   testCode: string | null;
+}
+
+/** Injectable I/O for the hopBody path-correction step (testable without disk). */
+export const _acceptanceGenerateDeps = {
+  fileExists: async (path: string): Promise<boolean> => {
+    try {
+      return await Bun.file(path).exists();
+    } catch {
+      return false;
+    }
+  },
+};
+
+/**
+ * Path-correction self-heal: if the generation turn did not leave a file at
+ * `targetTestFilePath` (agents often rename the dotfile/dashed name), issue one
+ * corrective turn telling the agent the exact path. `verify` then reads the file
+ * and only falls back to a skeleton if this still misses.
+ */
+function pathCorrectionStep(): SelfHealStep<AcceptanceGenerateInput> {
+  return makeSelfHealStep<AcceptanceGenerateInput, string>({
+    detect: async (input) =>
+      (await _acceptanceGenerateDeps.fileExists(input.targetTestFilePath)) ? [] : [input.targetTestFilePath],
+    buildRepair: (_deviations, input) => new AcceptancePromptBuilder().buildPathCorrection(input.targetTestFilePath),
+    log: {
+      kind: "acceptance",
+      message: "Acceptance test not found at target path — issuing one corrective turn",
+      meta: (input) => ({ targetTestFilePath: input.targetTestFilePath }),
+    },
+  });
 }
 
 export const acceptanceGenerateOp: RunOperation<
@@ -41,6 +72,10 @@ export const acceptanceGenerateOp: RunOperation<
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: prompt, overridable: false },
     };
+  },
+  async hopBody(initialPrompt, ctx) {
+    const turn1 = await ctx.sendWithParseRetry(initialPrompt);
+    return runSelfHealChain(ctx, turn1, [pathCorrectionStep()]);
   },
   parse(output, _input, _ctx) {
     return { testCode: extractTestCode(output) };

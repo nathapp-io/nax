@@ -153,6 +153,26 @@ ${STEP3_SHARED_RULES}
 - **Process cwd**: When spawning child processes to invoke a CLI or binary, set the working directory to the **package root** (\`join(import.meta.dir, "../../..")\`) as your default — unless your Step 2 exploration reveals the CLI uses a different working directory convention (e.g. reads config from \`~/.config/\`, or resolves paths relative to a flag value). Always check how the CLI resolves file paths before assuming.${implSection}`;
   }
 
+  /**
+   * Corrective re-prompt for acceptanceGenerateOp's hopBody. Fired when the test
+   * file is absent from `targetTestFilePath` after the generation turn (the agent
+   * commonly "sanitizes" the dotfile/dashed name). Issued once, same session;
+   * `verify` re-checks the path and falls back to a skeleton only if this misses.
+   */
+  buildPathCorrection(targetTestFilePath: string): string {
+    return `The acceptance test file was NOT found at the required path. You likely wrote it to a different filename or directory (for example, by renaming a dotfile or replacing dashes with underscores).
+
+Move (or re-write) the acceptance test you just created so it lives at EXACTLY this path:
+${targetTestFilePath}
+
+Requirements:
+- The file must be at that exact path — same directory and same filename, including any leading dot and dashes. Do NOT sanitize, rename, or relocate it.
+- Preserve the test content you already wrote. Do not regenerate, weaken, or stub the assertions.
+- If you wrote it somewhere else, delete the misplaced copy after moving it so only the canonical path remains.
+
+After writing the file to the exact path above, reply with a brief confirmation only.`;
+  }
+
   /** Prompt for generateAcceptanceTests() — agent returns raw test code. */
   buildGeneratorFromSpecPrompt(p: GeneratorFromSpecParams): string {
     return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${p.featureName}" feature.

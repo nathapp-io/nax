@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { makeParseRetryStrategy } from "../agents/retry";
+import type { TurnResult } from "../agents/types";
 import { planConfigSelector } from "../config";
 import type { ProjectProfile } from "../config/runtime-types";
 import type { PlanConfig } from "../config/selectors";
@@ -13,6 +14,7 @@ import type { UserStory } from "../prd/types";
 import { PlanPromptBuilder } from "../prompts";
 import type { PackageSummary } from "../prompts";
 import type { SessionRole } from "../session/types";
+import { type SelfHealStep, makeSelfHealStep, runSelfHealChain } from "./self-heal";
 import type { RunOperation } from "./types";
 import { warnOnDroppedVerbatimAcs, warnOnSpecDrift } from "./verbatim-warn";
 
@@ -299,6 +301,32 @@ export async function normalizeCreatedContextFiles(
   return { ...prd, userStories: results.map((r) => r.story) };
 }
 
+/** `[verbatim]` fidelity self-heal — restores spec ACs the refine turn dropped. */
+function verbatimSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefineInput> {
+  return makeSelfHealStep<PlanRefineInput, string>({
+    detect: (input) => readMissingVerbatimAcs(input),
+    buildRepair: (missing, input) => builder.buildVerbatimRepair(missing, input.outputPath),
+    log: {
+      kind: "plan",
+      message: "Refine dropped [verbatim] spec ACs — issuing one repair turn",
+      meta: (input, missing) => ({ featureName: input.featureName, missingCount: missing.length }),
+    },
+  });
+}
+
+/** Spec-drift self-heal (specGuard only) — rewrites ACs with deprecated tags / shell patterns. */
+function specDriftSelfHealStep(builder: PlanPromptBuilder): SelfHealStep<PlanRefineInput> {
+  return makeSelfHealStep<PlanRefineInput, SpecDriftViolation>({
+    detect: (input) => readSpecDriftViolations(input),
+    buildRepair: (drifted, input) => builder.buildSpecDriftRepair(drifted, input.outputPath),
+    log: {
+      kind: "plan",
+      message: "specGuard: spec-drift violations found — issuing one repair turn",
+      meta: (input, drifted) => ({ featureName: input.featureName, violationCount: drifted.length }),
+    },
+  });
+}
+
 export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
   kind: "run",
   name: "plan-refine",
@@ -352,43 +380,19 @@ export const planRefineOp: RunOperation<PlanRefineInput, PRD, PlanConfig> = {
     const turn1 = await ctx.sendWithParseRetry(initialPrompt);
     const turn2 = await ctx.send(builder.buildRefineContinuation(ctx.input.outputPath, specGuard));
 
-    let totalCost = (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0);
-    let last = turn2;
+    const seed: TurnResult = {
+      ...turn2,
+      estimatedCostUsd: (turn1.estimatedCostUsd ?? 0) + (turn2.estimatedCostUsd ?? 0),
+    };
 
-    // Deterministic [verbatim] self-heal: if the rewritten PRD dropped any
-    // verbatim spec AC, issue exactly one targeted repair turn in the same
-    // session. `verify` re-runs the same check and warns if this turn still
-    // misses, so the repair prompt and the warning must stay in sync — both
-    // route through findMissingVerbatimAcs (src/prd/verbatim-fidelity.ts).
-    const missing = await readMissingVerbatimAcs(ctx.input);
-    if (missing.length > 0) {
-      getSafeLogger()?.info("plan", "Refine dropped [verbatim] spec ACs — issuing one repair turn", {
-        featureName: ctx.input.featureName,
-        missingCount: missing.length,
-      });
-      const turn3 = await ctx.send(builder.buildVerbatimRepair(missing, ctx.input.outputPath));
-      totalCost += turn3.estimatedCostUsd ?? 0;
-      last = turn3;
-    }
-
-    // Deterministic spec-drift repair (specGuard only): if the PRD contains
-    // deprecated tags or shell-command patterns that signal behavioral
-    // regression, issue one targeted repair turn. `verify` re-runs the same
-    // check and warns if violations remain after this turn.
-    if (specGuard) {
-      const drifted = await readSpecDriftViolations(ctx.input);
-      if (drifted.length > 0) {
-        getSafeLogger()?.info("plan", "specGuard: spec-drift violations found — issuing one repair turn", {
-          featureName: ctx.input.featureName,
-          violationCount: drifted.length,
-        });
-        const turn4 = await ctx.send(builder.buildSpecDriftRepair(drifted, ctx.input.outputPath));
-        totalCost += turn4.estimatedCostUsd ?? 0;
-        last = turn4;
-      }
-    }
-
-    return { ...last, estimatedCostUsd: totalCost };
+    // Deterministic same-session self-heal: [verbatim] fidelity always; spec-drift
+    // only under specGuard. Each step issues at most one corrective turn; `verify`
+    // re-runs the same checks and warns if a repair still misses (the plan continues).
+    const steps: SelfHealStep<PlanRefineInput>[] = [
+      verbatimSelfHealStep(builder),
+      ...(specGuard ? [specDriftSelfHealStep(builder)] : []),
+    ];
+    return runSelfHealChain(ctx, seed, steps);
   },
   parse(output, input) {
     return validatePlanOutput(output, input.featureName, input.branchName);
