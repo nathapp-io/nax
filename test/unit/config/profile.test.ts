@@ -13,6 +13,7 @@ import {
   loadProfile,
   loadProfileEnv,
   parseProfileList,
+  profileOverrideFromConfig,
   resolveProfileName,
   resolveProfileNames,
 } from "../../../src/config/profile";
@@ -264,6 +265,28 @@ describe("config/profile", () => {
 
     test("ignores non-string array entries", () => {
       expect(parseProfileList(["a", 42 as unknown as string, "b"])).toEqual(["a", "b"]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // profileOverrideFromConfig
+  // ---------------------------------------------------------------------------
+
+  describe("profileOverrideFromConfig", () => {
+    test("returns the round-trippable chain array, not the composite string", () => {
+      expect(profileOverrideFromConfig({ profile: "a+b", profileChain: ["a", "b"] })).toEqual({
+        profile: ["a", "b"],
+      });
+    });
+
+    test("falls back to the single profile string when no chain is present", () => {
+      expect(profileOverrideFromConfig({ profile: "fast" })).toEqual({ profile: ["fast"] });
+    });
+
+    test('returns undefined for "default" / empty', () => {
+      expect(profileOverrideFromConfig({ profile: "default" })).toBeUndefined();
+      expect(profileOverrideFromConfig({ profile: "default", profileChain: [] })).toBeUndefined();
+      expect(profileOverrideFromConfig({})).toBeUndefined();
     });
   });
 

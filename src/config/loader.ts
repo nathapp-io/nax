@@ -404,7 +404,9 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined || overlayChain.length > 0;
 
   // Parse and validate with Zod
-  // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG)
+  // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG).
+  // DEFAULT_CONFIG already carries profile="default" and profileChain=[] (schema
+  // defaults), so this fast path stays consistent with the full path's chain fields.
   if (!hasMergedConfigs) {
     return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
   }

@@ -11,6 +11,7 @@
  */
 
 import path from "node:path";
+import { profileOverrideFromConfig } from "../config";
 import type { NaxConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
@@ -145,7 +146,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // Without this, all parallel stories use the root config regardless of story.workdir.
   // allSettled so a single malformed per-package config doesn't crash the whole batch.
   const rootConfigPath = path.join(workdir, ".nax", "config.json");
-  const profileOverride = config.profile && config.profile !== "default" ? { profile: config.profile } : undefined;
+  const profileOverride = profileOverrideFromConfig(config);
   const storyEffectiveConfigs = new Map<string, NaxConfig>();
   const configResults = await Promise.allSettled(
     stories

@@ -59,6 +59,7 @@ export {
   resolveProfileName,
   resolveProfileNames,
   parseProfileList,
+  profileOverrideFromConfig,
   loadProfile,
   loadProfileEnv,
   listProfiles,

@@ -107,6 +107,31 @@ export function parseProfileList(input: string | string[] | null | undefined): s
   return out;
 }
 
+/**
+ * Derives the profile override to re-feed into `loadConfigForWorkdir` when
+ * resolving a per-package / per-story effective config from an already-loaded
+ * root config.
+ *
+ * Returns the resolved chain as an array (which {@link parseProfileList}
+ * round-trips cleanly) — NEVER the composite display string (`"a+b"`), because
+ * that string is joined with `+` and parseProfileList only splits on `,`, so
+ * re-feeding it would resolve a bogus single profile named `"a+b"`.
+ */
+export function profileOverrideFromConfig(config: {
+  profile?: string;
+  profileChain?: string[];
+}): { profile: string[] } | undefined {
+  if (config.profileChain && config.profileChain.length > 0) {
+    return { profile: config.profileChain };
+  }
+  // Back-compat: a config carrying only the single `profile` string (e.g. a
+  // hand-built NaxConfig in tests, or a pre-chain serialized config).
+  if (config.profile && config.profile !== "default") {
+    return { profile: [config.profile] };
+  }
+  return undefined;
+}
+
 /** Reads and parses the `profile` field of a config.json in the given dir into a chain. */
 async function readProfileChainFromConfig(dir: string): Promise<string[]> {
   const configFile = Bun.file(join(dir, "config.json"));

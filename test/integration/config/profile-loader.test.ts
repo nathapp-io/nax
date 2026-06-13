@@ -420,4 +420,46 @@ describe("loadConfig — multi-profile chain override", () => {
     expect(config.profileChain).toEqual(["a"]);
     expect(config.execution.sessionTimeoutSeconds).toBe(9);
   });
+
+  // Regression: per-package / parallel executors re-feed an already-resolved root
+  // config back into loadConfigForWorkdir. The composite "a+b" profile string is
+  // NOT round-trippable — only the profileChain array is. profileOverrideFromConfig
+  // is the SSOT that picks the array; this test locks the round trip.
+  test("a resolved chain round-trips through loadConfigForWorkdir via profileOverrideFromConfig", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), {
+      execution: { sessionTimeoutSeconds: 1, maxIterations: 5 },
+    });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const { profileOverrideFromConfig } = await import("../../../src/config/profile");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    const rootConfig = await loadConfig(projectDir, { profile: "a,b" });
+    expect(rootConfig.profile).toBe("a+b");
+
+    // Mirror what iteration-runner / parallel executors do.
+    const override = profileOverrideFromConfig(rootConfig);
+    expect(override).toEqual({ profile: ["a", "b"] });
+
+    const effective = await loadConfigForWorkdir(rootConfigPath, undefined, override);
+    expect(effective.profileChain).toEqual(["a", "b"]);
+    expect(effective.execution.sessionTimeoutSeconds).toBe(2);
+    expect(effective.execution.maxIterations).toBe(5);
+  });
+
+  test("feeding the composite profile string back in would fail — proving the array form is required", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    // The old (buggy) behavior passed the composite string; "a+b" is not a profile.
+    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch(
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("a+b");
+  });
 });
