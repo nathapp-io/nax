@@ -12,7 +12,7 @@ export { buildHopCallback, _buildHopCallbackDeps } from "./build-hop-callback";
 export type { BuildHopCallbackContext } from "./build-hop-callback";
 export { classifyRouteOp, classifyRouteBatchOp } from "./classify-route";
 export type { ClassifyRouteInput, ClassifyRouteOutput } from "./classify-route";
-export { acceptanceGenerateOp } from "./acceptance-generate";
+export { acceptanceGenerateOp, _acceptanceGenerateDeps } from "./acceptance-generate";
 export type { AcceptanceGenerateInput, AcceptanceGenerateOutput } from "./acceptance-generate";
 export { acceptanceRefineOp } from "./acceptance-refine";
 export type { AcceptanceRefineInput, AcceptanceRefineOutput } from "./acceptance-refine";

@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { acceptanceGenerateOp } from "@/operations";
+import { acceptanceGenerateOp, _acceptanceGenerateDeps } from "@/operations";
 import type { AcceptanceGenerateInput } from "@/operations/acceptance-generate";
-import type { BuildContext, VerifyContext } from "@/operations/types";
+import type { BuildContext, HopBodyContext, VerifyContext } from "@/operations/types";
+import type { TurnResult } from "@/agents/types";
 import { acceptanceGenConfigSelector } from "@/config";
 import type { AcceptanceGenConfig } from "@/config/selectors";
 import { makeNaxConfig, makeTestRuntime } from "../../helpers";
@@ -202,5 +203,61 @@ describe("acceptanceGenerateOp.verify()", () => {
     const ctx = makeVerifyCtx({ readFile });
     const result = await acceptanceGenerateOp.verify!({ testCode: null }, SAMPLE_INPUT, ctx);
     expect(result).toBeNull();
+  });
+});
+
+function makeTurn(output: string, cost: number): TurnResult {
+  return { output, estimatedCostUsd: cost, internalRoundTrips: 1, tokenUsage: { inputTokens: 0, outputTokens: 0 } };
+}
+
+describe("_acceptanceGenerateDeps.fileExists", () => {
+  test("returns true for an existing file and false for a missing one", async () => {
+    await withTempDir(async (dir) => {
+      const present = join(dir, "present.test.ts");
+      await Bun.write(present, "ok");
+      expect(await _acceptanceGenerateDeps.fileExists(present)).toBe(true);
+      expect(await _acceptanceGenerateDeps.fileExists(join(dir, "absent.test.ts"))).toBe(false);
+    });
+  });
+});
+
+describe("acceptanceGenerateOp.hopBody", () => {
+  const origFileExists = _acceptanceGenerateDeps.fileExists;
+  afterEach(() => {
+    _acceptanceGenerateDeps.fileExists = origFileExists;
+  });
+
+  test("issues no corrective turn when the file is present at the target path", async () => {
+    _acceptanceGenerateDeps.fileExists = async () => true;
+    const send = mock(async (_p: string) => makeTurn("corrective", 2));
+    const sendWithParseRetry = mock(async (_p: string) => makeTurn("gen-confirmation", 3));
+    const ctx: HopBodyContext<AcceptanceGenerateInput> = {
+      input: { ...SAMPLE_INPUT, targetTestFilePath: "/tmp/x/.nax-acceptance.test.ts" },
+      send,
+      sendWithParseRetry,
+    };
+    const result = await acceptanceGenerateOp.hopBody!("gen prompt", ctx);
+    expect(sendWithParseRetry).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(result.output).toBe("gen-confirmation");
+    expect(result.estimatedCostUsd).toBe(3);
+  });
+
+  test("issues exactly one corrective turn carrying the target path when the file is missing", async () => {
+    _acceptanceGenerateDeps.fileExists = async () => false;
+    const target = "/tmp/x/.nax-acceptance.test.tsx";
+    const send = mock(async (_p: string) => makeTurn("moved-confirmation", 2));
+    const sendWithParseRetry = mock(async (_p: string) => makeTurn("gen-confirmation", 3));
+    const ctx: HopBodyContext<AcceptanceGenerateInput> = {
+      input: { ...SAMPLE_INPUT, targetTestFilePath: target },
+      send,
+      sendWithParseRetry,
+    };
+    const result = await acceptanceGenerateOp.hopBody!("gen prompt", ctx);
+    expect(sendWithParseRetry).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toContain(target);
+    expect(result.output).toBe("moved-confirmation");
+    expect(result.estimatedCostUsd).toBe(5); // 3 + 2
   });
 });
