@@ -259,27 +259,28 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
     allowedBasenames = new Set(patterns);
   }
 
+  // Cap is applied to *kept* files (post-filter) to match smart-runner.ts convention.
+  // Counting pre-filter scans would exhaust the budget on scope-skipped files and
+  // silently drop relevant test files when scoping is active.
   const MAX_SCAN_FILES = 200;
   const glob = new Glob(testPattern);
   const files: TestFileInfo[] = [];
-  let scanCount = 0;
 
   for await (const filePath of glob.scan({ cwd: scanDir, absolute: false })) {
-    if (scanCount >= MAX_SCAN_FILES) {
-      getLogger().debug("test-scanner", "Glob cap reached — results truncated", {
-        cap: MAX_SCAN_FILES,
-        scanDir,
-      });
-      break;
-    }
-    scanCount++;
-
     // Filter by derived patterns if scoping is enabled
     if (allowedBasenames !== null) {
       const basename = path.basename(filePath);
       if (!allowedBasenames.has(basename)) {
         continue; // Skip test files not matching context files
       }
+    }
+
+    if (files.length >= MAX_SCAN_FILES) {
+      getLogger().debug("test-scanner", "Glob cap reached — results truncated", {
+        cap: MAX_SCAN_FILES,
+        scanDir,
+      });
+      break;
     }
 
     const fullPath = path.join(scanDir, filePath);

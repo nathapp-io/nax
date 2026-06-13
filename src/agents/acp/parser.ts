@@ -178,6 +178,11 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
     }
 
     // ── Legacy flat NDJSON format ───────────────────────────────────────────
+    // Each event carries exactly one of: result (final full text), content
+    // (streaming chunk), or text (older streaming chunk name). They are
+    // mutually exclusive in the acpx protocol — no single event emits more
+    // than one. Using else-if is intentional: result wins and resets state.text;
+    // content and text are additive but never appear together.
     if (event.result && typeof event.result === "string") {
       state.text = event.result;
     } else if (event.content && typeof event.content === "string") {

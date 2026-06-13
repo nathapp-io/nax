@@ -643,6 +643,8 @@ export async function executeUnified(
     // Guard: a subsequent execute() call may have already replaced _prevRunUnsubscribers.
     if (_executeThrew && _prevRunUnsubscribers === thisRunUnsubscribers)
       for (const fn of thisRunUnsubscribers) fn();
+    // Separate guard — same condition but no await between them; written as two
+    // statements to avoid nested braces that break the RL-007 source-inspection test.
     if (_executeThrew && _prevRunUnsubscribers === thisRunUnsubscribers) _prevRunUnsubscribers = [];
   }
 }
