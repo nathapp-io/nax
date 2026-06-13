@@ -697,6 +697,7 @@ export class AgentManager implements IAgentManager {
           sessionId: handle.protocolIds?.sessionId ?? null,
           recordId: handle.protocolIds?.recordId ?? null,
         },
+        ...(result.interactions?.length ? { interactions: result.interactions } : {}),
         origin: "runAsSession",
         ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
         ...(opts.scopeId !== undefined ? { scopeId: opts.scopeId } : {}),

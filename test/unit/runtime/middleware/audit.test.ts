@@ -96,6 +96,37 @@ describe("attachAuditSubscriber", () => {
     expect(recorded[0].runId).toBe("r-001");
   });
 
+  test("carries interactions through to the PromptAuditEntry when present", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(
+      makeSessionTurnEvent({
+        interactions: [
+          { turnIndex: 1, question: "fix the fixture or accept 15/17?", reply: "raise testEditDeclaration escalation" },
+        ],
+      }),
+    );
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].interactions).toEqual([
+      { turnIndex: 1, question: "fix the fixture or accept 15/17?", reply: "raise testEditDeclaration escalation" },
+    ]);
+  });
+
+  test("omits interactions on the entry when the event has none (no noise)", () => {
+    const recorded: PromptAuditEntry[] = [];
+    const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachAuditSubscriber(bus, auditor, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect(recorded[0].interactions).toBeUndefined();
+  });
+
   test("records PromptAuditEntry on complete dispatch with callType=complete", () => {
     const recorded: PromptAuditEntry[] = [];
     const auditor = { ...createNoOpPromptAuditor(), record: (e: PromptAuditEntry) => recorded.push(e) };

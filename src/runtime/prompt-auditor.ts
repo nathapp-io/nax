@@ -47,6 +47,13 @@ export interface PromptAuditEntry {
   readonly recordId?: string | null;
   readonly sessionId?: string | null;
   readonly turn?: number;
+  /**
+   * Mid-turn human-in-the-loop Q&A exchanges for this turn (issue #1226).
+   * Present only when the agent asked the operator a question that was answered.
+   * Appended to the human-readable .txt as an `=== INTERACTIONS ===` section;
+   * absent on turns with no interaction, leaving existing .txt output unchanged.
+   */
+  readonly interactions?: readonly import("../agents/types").InteractionExchange[];
 }
 
 export interface PromptAuditErrorEntry {
@@ -154,8 +161,26 @@ function buildTxtContent(entry: PromptAuditEntry): string {
     "=== RESPONSE ===",
     "",
     entry.response,
+    ...buildInteractionLines(entry.interactions),
   ];
   return lines.join("\n");
+}
+
+/**
+ * Render mid-turn human Q&A exchanges (issue #1226) as a trailing
+ * `=== INTERACTIONS ===` section. Returns an empty array when there are no
+ * interactions, so turns without human-in-the-loop Q&A produce byte-identical
+ * output to the pre-#1226 format.
+ */
+function buildInteractionLines(interactions?: readonly import("../agents/types").InteractionExchange[]): string[] {
+  if (!interactions?.length) return [];
+  const lines = ["", "=== INTERACTIONS ===", ""];
+  for (const ix of interactions) {
+    lines.push(`[turn ${ix.turnIndex}] Q: ${ix.question}`, `         A: ${ix.reply}`, "");
+  }
+  // Drop the trailing blank separator for a clean ending.
+  lines.pop();
+  return lines;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

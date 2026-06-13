@@ -38,6 +38,12 @@ export interface SessionTurnDispatchEvent extends DispatchEventBase {
   readonly kind: "session-turn";
   readonly turn: number;
   readonly protocolIds: { sessionId?: string | null; recordId?: string | null; turnId?: string };
+  /**
+   * Mid-turn human-in-the-loop Q&A exchanges captured during the turn (issue #1226).
+   * Present only when the agent asked the operator a question that was answered.
+   * Surfaced to the prompt-audit trail by the audit middleware.
+   */
+  readonly interactions?: readonly import("../agents/types").InteractionExchange[];
   /** Diagnostic only — never branch subscriber logic on this. */
   readonly origin: "runAsSession" | "runTrackedSession";
 }
