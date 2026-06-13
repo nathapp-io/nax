@@ -3,6 +3,8 @@ export { planInteractiveOp } from "./plan";
 export type { PlanInteractiveInput } from "./plan";
 export { planRefineOp, _planRefineDeps, normalizeCreatedContextFiles } from "./plan-refine";
 export type { PlanRefineInput } from "./plan-refine";
+export { makeSelfHealStep, runSelfHealChain } from "./self-heal";
+export type { SelfHealStep, SelfHealSpec } from "./self-heal";
 export { warnOnDroppedVerbatimAcs } from "./verbatim-warn";
 export { decomposeOp } from "./decompose";
 export type { DecomposeOpInput, DecomposeOpOutput } from "./decompose";
