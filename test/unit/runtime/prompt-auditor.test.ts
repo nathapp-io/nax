@@ -160,6 +160,95 @@ describe("PromptAuditor", () => {
     });
   });
 
+  describe("interactions (issue #1226)", () => {
+    test("appends an === INTERACTIONS === section with question, reply, and turn index", async () => {
+      await withTempDir(async (dir) => {
+        const flushDir = join(dir, "audit");
+        let txtContent = "";
+        const orig = _promptAuditorDeps.write;
+        const origAppend = _promptAuditorDeps.appendLine;
+        _promptAuditorDeps.write = async (p, d) => {
+          if (p.endsWith(".txt")) txtContent = String(d);
+          return 0;
+        };
+        _promptAuditorDeps.appendLine = async () => {};
+        const aud = new PromptAuditor("my-run", flushDir, FEATURE);
+        aud.record(
+          makeEntry({
+            sessionName: "nax-abc-my-feature-us-004-implementer",
+            callType: "run",
+            stage: "run",
+            turn: 2,
+            prompt: "outer prompt",
+            response: "the user wants me to raise an escalation",
+            interactions: [
+              {
+                turnIndex: 2,
+                question: "fix the test fixture or accept 15/17?",
+                reply: "please raise the testEditDeclaration to escalation to test-writer",
+              },
+            ],
+          }),
+        );
+        await aud.flush();
+        expect(txtContent).toContain("=== INTERACTIONS ===");
+        expect(txtContent).toContain("fix the test fixture or accept 15/17?");
+        expect(txtContent).toContain("please raise the testEditDeclaration to escalation to test-writer");
+        // Correlatable to the enclosing round-trip index (AC3).
+        expect(txtContent).toContain("turn 2");
+        // Existing prompt/response content remains intact.
+        expect(txtContent).toContain("outer prompt");
+        expect(txtContent).toContain("=== RESPONSE ===");
+        _promptAuditorDeps.write = orig;
+        _promptAuditorDeps.appendLine = origAppend;
+      });
+    });
+
+    test("no === INTERACTIONS === section when entry has no interactions (existing output unchanged)", async () => {
+      await withTempDir(async (dir) => {
+        const flushDir = join(dir, "audit");
+        let txtContent = "";
+        const orig = _promptAuditorDeps.write;
+        const origAppend = _promptAuditorDeps.appendLine;
+        _promptAuditorDeps.write = async (p, d) => {
+          if (p.endsWith(".txt")) txtContent = String(d);
+          return 0;
+        };
+        _promptAuditorDeps.appendLine = async () => {};
+        const aud = new PromptAuditor("my-run", flushDir, FEATURE);
+        aud.record(makeEntry({ sessionName: "nax-abc-my-feature-us-004-implementer", prompt: "hello", response: "world" }));
+        await aud.flush();
+        expect(txtContent).not.toContain("=== INTERACTIONS ===");
+        _promptAuditorDeps.write = orig;
+        _promptAuditorDeps.appendLine = origAppend;
+      });
+    });
+
+    test("interactions are serialized into the JSONL line", async () => {
+      await withTempDir(async (dir) => {
+        const flushDir = join(dir, "audit");
+        const appended: string[] = [];
+        const origAppend = _promptAuditorDeps.appendLine;
+        const orig = _promptAuditorDeps.write;
+        _promptAuditorDeps.appendLine = async (_p: string, d: string) => { appended.push(d); };
+        _promptAuditorDeps.write = async () => 0;
+        const aud = new PromptAuditor("my-run", flushDir, FEATURE);
+        aud.record(
+          makeEntry({
+            sessionName: "nax-abc-my-feature-us-004-implementer",
+            interactions: [{ turnIndex: 1, question: "Q?", reply: "A." }],
+          }),
+        );
+        await aud.flush();
+        expect(appended).toHaveLength(1);
+        const parsed = JSON.parse(appended[0].trim());
+        expect(parsed.interactions).toEqual([{ turnIndex: 1, question: "Q?", reply: "A." }]);
+        _promptAuditorDeps.appendLine = origAppend;
+        _promptAuditorDeps.write = orig;
+      });
+    });
+  });
+
   describe("deriveTxtFilename fallback (no sessionName)", () => {
     test("uses <ts>-<callType>-<stage>-<storyId>.txt when all fields present", async () => {
       await withTempDir(async (dir) => {

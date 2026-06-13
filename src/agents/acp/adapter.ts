@@ -434,6 +434,9 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     let totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
     let totalExactCostUsd: number | undefined;
+    // Mid-turn human Q&A exchanges captured for the prompt-audit trail (issue #1226).
+    // Only human-question round-trips are recorded — context-tool pulls are excluded.
+    const interactions: import("../types").InteractionExchange[] = [];
     let turnCount = 0;
     let lastResponse: import("./adapter-session-types").AcpSessionResponse | null = null;
     let timedOut = false;
@@ -556,6 +559,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             }),
           ]);
           if (response) {
+            interactions.push({ turnIndex: turnCount, question, reply: response.answer });
             currentPrompt = response.answer;
             continue;
           }
@@ -610,6 +614,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       estimatedCostUsd,
       exactCostUsd,
       internalRoundTrips: turnCount,
+      ...(interactions.length > 0 ? { interactions } : {}),
     };
   }
 

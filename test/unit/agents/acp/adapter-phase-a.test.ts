@@ -328,6 +328,96 @@ describe("sendTurn()", () => {
     expect(result.internalRoundTrips).toBe(2);
   });
 
+  test("question interaction: captures exchange (question + verbatim reply + turnIndex) in result.interactions", async () => {
+    let turnIndex = 0;
+    const session = makeSession({
+      promptFn: async () => {
+        turnIndex++;
+        if (turnIndex === 1) {
+          return {
+            messages: [{ role: "assistant", content: "Should I proceed with approach A or B?" }],
+            stopReason: "end_turn",
+            cumulative_token_usage: { input_tokens: 60, output_tokens: 25 },
+          };
+        }
+        return {
+          messages: [{ role: "assistant", content: "OK, using approach A." }],
+          stopReason: "end_turn",
+          cumulative_token_usage: { input_tokens: 80, output_tokens: 15 },
+        };
+      },
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: {
+        async onInteraction(req) {
+          if (req.kind === "question") return { answer: "Use approach A." };
+          return null;
+        },
+      },
+    });
+
+    expect(result.interactions).toHaveLength(1);
+    expect(result.interactions?.[0]).toEqual({
+      turnIndex: 1,
+      question: "Should I proceed with approach A or B?",
+      reply: "Use approach A.",
+    });
+  });
+
+  test("context-tool interaction: produces no interactions (only human Q&A is captured)", async () => {
+    let turnIndex = 0;
+    const session = makeSession({
+      promptFn: async () => {
+        turnIndex++;
+        if (turnIndex === 1) {
+          return {
+            messages: [{ role: "assistant", content: '<nax_tool_call name="get_context">\n{}\n</nax_tool_call>' }],
+            stopReason: "end_turn",
+            cumulative_token_usage: { input_tokens: 50, output_tokens: 20 },
+          };
+        }
+        return {
+          messages: [{ role: "assistant", content: "Used context, done." }],
+          stopReason: "end_turn",
+          cumulative_token_usage: { input_tokens: 100, output_tokens: 30 },
+        };
+      },
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: {
+        async onInteraction() {
+          return {
+            answer:
+              '<nax_tool_result name="get_context" status="ok">\ncontext data\n</nax_tool_result>\n\nContinue the task.',
+          };
+        },
+      },
+    });
+
+    expect(result.interactions).toBeUndefined();
+  });
+
+  test("no-interaction single turn: interactions is undefined", async () => {
+    const session = makeSession({
+      promptFn: async () => ({
+        messages: [{ role: "assistant", content: "All done." }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+    const handle = await openHandle(session);
+
+    const result = await adapter.sendTurn(handle, "prompt", {
+      interactionHandler: NO_OP_INTERACTION_HANDLER,
+    });
+
+    expect(result.interactions).toBeUndefined();
+  });
+
   test("NO_OP_INTERACTION_HANDLER breaks loop on question", async () => {
     const session = makeSession({
       promptFn: async () => ({

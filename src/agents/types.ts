@@ -429,6 +429,20 @@ export interface SendTurnOpts {
 }
 
 /** Result returned by sendTurn(). */
+/**
+ * A single mid-turn interactive Q&A exchange between the agent and a human
+ * operator (routed via the interaction plugin), captured for the prompt-audit
+ * trail (issue #1226).
+ */
+export interface InteractionExchange {
+  /** Internal round-trip index (1-based) at which the question was asked. */
+  readonly turnIndex: number;
+  /** The agent's question text, as surfaced to the operator. */
+  readonly question: string;
+  /** The operator's verbatim reply (or the configured fallback on timeout). */
+  readonly reply: string;
+}
+
 export interface TurnResult {
   /** Final assistant output from the last ACP response. */
   output: string;
@@ -440,6 +454,14 @@ export interface TurnResult {
   exactCostUsd?: number;
   /** Number of session.prompt() calls made. */
   internalRoundTrips: number;
+  /**
+   * Mid-turn human-in-the-loop Q&A exchanges captured during the session turn
+   * (issue #1226). Each entry pairs the agent's question with the operator's
+   * verbatim reply and the internal round-trip index at which it occurred.
+   * Omitted when no interactive question was answered — context-tool round-trips
+   * are NOT recorded here. Surfaced onto DispatchEvent and the prompt audit trail.
+   */
+  interactions?: readonly InteractionExchange[];
   /** Protocol-specific IDs for prompt-audit correlation. */
   protocolIds?: ProtocolIds;
   /**

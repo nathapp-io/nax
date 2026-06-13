@@ -152,6 +152,53 @@ describe("runAsSession — dispatch emission", () => {
     expect(received[0]?.exactCostUsd).toBeUndefined();
   });
 
+  test("forwards TurnResult.interactions onto the session-turn event (issue #1226)", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => ({
+        ...makeTurnResult("final answer"),
+        internalRoundTrips: 2,
+        interactions: [
+          { turnIndex: 1, question: "fix fixture or accept 15/17?", reply: "raise testEditDeclaration escalation" },
+        ],
+      })),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    await manager.runAsSession("claude", makeHandle(), "test-prompt", {
+      pipelineStage: "run",
+      storyId: "US-004",
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.interactions).toEqual([
+      { turnIndex: 1, question: "fix fixture or accept 15/17?", reply: "raise testEditDeclaration escalation" },
+    ]);
+  });
+
+  test("omits interactions on the session-turn event when TurnResult has none", async () => {
+    const bus = new DispatchEventBus();
+    const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
+      sendPrompt: mock(async () => makeTurnResult("plain")),
+      dispatchEvents: bus,
+    });
+
+    const received: SessionTurnDispatchEvent[] = [];
+    bus.onDispatch((e) => {
+      if (e.kind === "session-turn") received.push(e);
+    });
+
+    await manager.runAsSession("claude", makeHandle(), "p", { pipelineStage: "run", storyId: "US-005" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.interactions).toBeUndefined();
+  });
+
   test("emits DispatchErrorEvent on sendPrompt throw, then re-throws", async () => {
     const bus = new DispatchEventBus();
     const manager = new AgentManager(DEFAULT_CONFIG, undefined, {
