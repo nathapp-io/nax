@@ -281,6 +281,8 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       if (opts?.parentSignal && parentAbortHandler) {
         opts.parentSignal.removeEventListener("abort", parentAbortHandler);
       }
+      agentManager.close();
+      if (sessionManager instanceof SessionManager) sessionManager.close();
       const results = await Promise.allSettled([promptAuditor.flush(), reviewAuditor.flush(), costAggregator.drain()]);
       for (const r of results) {
         if (r.status === "rejected") {

@@ -178,9 +178,13 @@ export function parseAcpxJsonLine(line: string, state: AcpxParseState): AcpxLine
     }
 
     // ── Legacy flat NDJSON format ───────────────────────────────────────────
-    if (event.content && typeof event.content === "string") state.text += event.content;
-    if (event.text && typeof event.text === "string") state.text += event.text;
-    if (event.result && typeof event.result === "string") state.text = event.result;
+    if (event.result && typeof event.result === "string") {
+      state.text = event.result;
+    } else if (event.content && typeof event.content === "string") {
+      state.text += event.content;
+    } else if (event.text && typeof event.text === "string") {
+      state.text += event.text;
+    }
 
     if (event.cumulative_token_usage) state.tokenUsage = event.cumulative_token_usage;
     if (event.usage) {

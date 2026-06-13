@@ -7,6 +7,8 @@
 
 import type { QueueCommand } from "../queue/types";
 
+const _writeChains = new Map<string, Promise<void>>();
+
 /**
  * Write a queue command to the queue file.
  *
@@ -45,10 +47,19 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
     }
   }
 
-  // Append command to queue file (create if doesn't exist)
-  const file = Bun.file(queueFilePath);
-  const existingContent = await file.text().catch(() => "");
-  const newContent = existingContent ? `${existingContent.trimEnd()}\n${commandLine}\n` : `${commandLine}\n`;
-
-  await Bun.write(queueFilePath, newContent);
+  // Serialize writes per file path to prevent read-modify-write races when
+  // multiple commands are issued concurrently (e.g. rapid PAUSE + SKIP from TUI).
+  const chain = _writeChains.get(queueFilePath) ?? Promise.resolve();
+  const next = chain.then(async () => {
+    const existing = await Bun.file(queueFilePath)
+      .text()
+      .catch(() => "");
+    const content = existing ? `${existing.trimEnd()}\n${commandLine}\n` : `${commandLine}\n`;
+    await Bun.write(queueFilePath, content);
+  });
+  _writeChains.set(
+    queueFilePath,
+    next.catch(() => {}),
+  );
+  await next;
 }

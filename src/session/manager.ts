@@ -532,6 +532,7 @@ export class SessionManager implements ISessionManager {
 
     this._busySessions.delete(handle.id);
     this._cancelledSessions.delete(handle.id);
+    this._clearWatchdogCancelledCalls(handle.id);
   }
 
   async sendPrompt(handle: SessionHandle, prompt: string, opts?: SendPromptOpts): Promise<TurnResult> {
@@ -697,5 +698,10 @@ export class SessionManager implements ISessionManager {
 
   sweepOrphans(ttlMs = DEFAULT_ORPHAN_TTL_MS): number {
     return sweepOrphansImpl(this._sessions, ttlMs);
+  }
+
+  close(): void {
+    this._agentStreamUnsubscribe?.();
+    this._agentStreamUnsubscribe = undefined;
   }
 }

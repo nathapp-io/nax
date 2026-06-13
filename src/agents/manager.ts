@@ -69,7 +69,11 @@ export class AgentManager implements IAgentManager {
   private _registry: AgentRegistry | undefined;
   private readonly _unavailable = new Map<string, AdapterFailure>();
   private readonly _prunedFallback = new Set<string>();
-  private readonly _emitter = new EventEmitter();
+  private readonly _emitter = (() => {
+    const ee = new EventEmitter();
+    ee.setMaxListeners(0);
+    return ee;
+  })();
   private readonly _logger: LoggerLike;
   private _middleware: MiddlewareChain;
   private _runId: string;
@@ -782,6 +786,10 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
     }
+  }
+
+  close(): void {
+    this._emitter.removeAllListeners();
   }
 
   private _resolveRegistry(): AgentRegistry {

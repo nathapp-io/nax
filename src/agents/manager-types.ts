@@ -137,6 +137,9 @@ export interface IAgentManager {
   /** Reset per-run state. Called at run boundary. */
   reset(): void;
 
+  /** Release internal resources (EventEmitter listeners). Called from NaxRuntime.close(). */
+  close(): void;
+
   /**
    * Validate credentials for the default agent and every agent referenced in
    * agent.fallback.map. Prunes fallback candidates with missing credentials;

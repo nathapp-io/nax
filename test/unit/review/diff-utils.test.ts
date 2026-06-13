@@ -144,12 +144,12 @@ describe("collectDiff()", () => {
     expect(captured.value).toContain(":!.nax-pids");
   });
 
-  test("returns stdout string on exit code 0; empty string on non-zero", async () => {
+  test("returns stdout string on exit code 0; null on non-zero", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("diff content");
     expect(await collectDiff("/repo", "abc123", [])).toBe("diff content");
 
     _diffUtilsDeps.spawn = makeSpawnMock("some output", 1);
-    expect(await collectDiff("/repo", "abc123", [])).toBe("");
+    expect(await collectDiff("/repo", "abc123", [])).toBeNull();
   });
 });
 

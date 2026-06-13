@@ -21,11 +21,10 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
     stderr: "pipe",
   });
 
-  const exitCode = await resetProc.exited;
+  const [exitCode, resetStderr] = await Promise.all([resetProc.exited, new Response(resetProc.stderr).text()]);
   if (exitCode !== 0) {
-    const stderr = await new Response(resetProc.stderr).text();
-    logger.error("tdd", "Failed to rollback git changes", { ref, stderr });
-    throw new Error(`Git rollback failed: ${stderr}`);
+    logger.error("tdd", "Failed to rollback git changes", { ref, stderr: resetStderr });
+    throw new Error(`Git rollback failed: ${resetStderr}`);
   }
 
   const cleanProc = _rollbackDeps.spawn(["git", "clean", "-fd"], {
@@ -34,10 +33,9 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
     stderr: "pipe",
   });
 
-  const cleanExitCode = await cleanProc.exited;
+  const [cleanExitCode, cleanStderr] = await Promise.all([cleanProc.exited, new Response(cleanProc.stderr).text()]);
   if (cleanExitCode !== 0) {
-    const stderr = await new Response(cleanProc.stderr).text();
-    logger.warn("tdd", "Failed to clean untracked files", { stderr });
+    logger.warn("tdd", "Failed to clean untracked files", { stderr: cleanStderr });
   }
 
   logger.info("tdd", "Successfully rolled back git changes", { ref });
@@ -53,8 +51,8 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
 export async function captureSnapshotRef(workdir: string, storyId: string): Promise<string> {
   await _rollbackDeps.autoCommitIfDirty(workdir, "non-blocking-fix-snapshot", "snapshot", storyId);
   const proc = _rollbackDeps.spawn(["git", "rev-parse", "HEAD"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-  const sha = (await new Response(proc.stdout).text()).trim();
-  const exitCode = await proc.exited;
+  const [exitCode, shaRaw] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+  const sha = shaRaw.trim();
   if (exitCode !== 0) {
     throw new NaxError("git rev-parse HEAD failed in non-blocking-fix snapshot", "SNAPSHOT_REF_FAILED", {
       storyId,

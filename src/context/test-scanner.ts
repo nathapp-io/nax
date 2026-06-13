@@ -259,10 +259,21 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
     allowedBasenames = new Set(patterns);
   }
 
+  const MAX_SCAN_FILES = 200;
   const glob = new Glob(testPattern);
   const files: TestFileInfo[] = [];
+  let scanCount = 0;
 
   for await (const filePath of glob.scan({ cwd: scanDir, absolute: false })) {
+    if (scanCount >= MAX_SCAN_FILES) {
+      getLogger().debug("test-scanner", "Glob cap reached — results truncated", {
+        cap: MAX_SCAN_FILES,
+        scanDir,
+      });
+      break;
+    }
+    scanCount++;
+
     // Filter by derived patterns if scoping is enabled
     if (allowedBasenames !== null) {
       const basename = path.basename(filePath);

@@ -42,9 +42,11 @@ export class MergeEngine {
         },
       );
 
-      const exitCode = await mergeProc.exited;
-      const stderr = await new Response(mergeProc.stderr).text();
-      const stdout = await new Response(mergeProc.stdout).text();
+      const [exitCode, stderr, stdout] = await Promise.all([
+        mergeProc.exited,
+        new Response(mergeProc.stderr).text(),
+        new Response(mergeProc.stdout).text(),
+      ]);
 
       if (exitCode === 0) {
         // Clean merge - cleanup worktree
@@ -227,12 +229,15 @@ export class MergeEngine {
         stderr: "pipe",
       });
 
-      const exitCode = await currentBranchProc.exited;
+      const [exitCode, currentBranchRaw] = await Promise.all([
+        currentBranchProc.exited,
+        new Response(currentBranchProc.stdout).text(),
+      ]);
       if (exitCode !== 0) {
         throw new Error("Failed to get current branch");
       }
 
-      const currentBranch = (await new Response(currentBranchProc.stdout).text()).trim();
+      const currentBranch = currentBranchRaw.trim();
 
       // Rebase worktree branch onto current branch
       const rebaseProc = _mergeDeps.spawn(["git", "rebase", currentBranch], {
@@ -241,9 +246,12 @@ export class MergeEngine {
         stderr: "pipe",
       });
 
-      const rebaseExitCode = await rebaseProc.exited;
+      const [rebaseExitCode, rebaseStderr] = await Promise.all([
+        rebaseProc.exited,
+        new Response(rebaseProc.stderr).text(),
+      ]);
       if (rebaseExitCode !== 0) {
-        const stderr = await new Response(rebaseProc.stderr).text();
+        const stderr = rebaseStderr;
 
         // Abort rebase on failure
         const abortProc = _mergeDeps.spawn(["git", "rebase", "--abort"], {
@@ -274,12 +282,10 @@ export class MergeEngine {
         stderr: "pipe",
       });
 
-      const exitCode = await proc.exited;
+      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
       if (exitCode !== 0) {
         return [];
       }
-
-      const stdout = await new Response(proc.stdout).text();
       return stdout
         .trim()
         .split("\n")

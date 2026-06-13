@@ -135,14 +135,19 @@ export class QueueManager {
    * Get queue statistics.
    */
   getStats(): QueueStats {
-    return {
-      total: this.items.length,
-      pending: this.items.filter((i) => i.status === "pending").length,
-      inProgress: this.items.filter((i) => i.status === "in-progress").length,
-      completed: this.items.filter((i) => i.status === "completed").length,
-      failed: this.items.filter((i) => i.status === "failed").length,
-      skipped: this.items.filter((i) => i.status === "skipped").length,
-    };
+    let pending = 0;
+    let inProgress = 0;
+    let completed = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const item of this.items) {
+      if (item.status === "pending") pending++;
+      else if (item.status === "in-progress") inProgress++;
+      else if (item.status === "completed") completed++;
+      else if (item.status === "failed") failed++;
+      else if (item.status === "skipped") skipped++;
+    }
+    return { total: this.items.length, pending, inProgress, completed, failed, skipped };
   }
 
   /**

@@ -147,7 +147,7 @@ export async function importGrepFallback(
   const testFilePaths: string[] = [];
   outer: for (const pattern of testFilePatterns) {
     const g = _bunDeps.glob(pattern);
-    for await (const file of g.scan(workdir)) {
+    for await (const file of g.scan({ cwd: workdir, absolute: false })) {
       testFilePaths.push(`${workdir}/${file}`);
       if (testFilePaths.length >= MAX_GREP_TEST_FILES) {
         getSafeLogger()?.debug("smart-runner", "import-grep glob cap reached — results truncated", {

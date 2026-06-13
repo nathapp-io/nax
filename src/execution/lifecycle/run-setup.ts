@@ -29,6 +29,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
+import { clearCache as clearRoutingCache } from "../../routing";
 import { type NaxRuntime, createRuntime } from "../../runtime";
 import { SessionManager } from "../../session";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
@@ -417,6 +418,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       config.disabledPlugins,
       isTestFileFn,
     );
+
+    // Clear LLM routing cache at run start — prevents cross-run pollution
+    // when story IDs repeat across features, and fixes the parallel-mode race
+    // where the per-story guard (ctx.story.id === stories[0]?.id) could miss
+    // stories that start routing before the first story clears the cache.
+    clearRoutingCache();
 
     // Log plugins loaded
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

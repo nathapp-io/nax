@@ -492,7 +492,11 @@ export async function loadConfigForWorkdir(
   // LRU eviction: evict oldest entry when cap is reached to bound memory in long-lived processes.
   let rootConfigPromise = _rootConfigCache.get(cacheKey);
   if (!rootConfigPromise) {
-    rootConfigPromise = loadConfig(rootNaxDir, cliOverrides);
+    rootConfigPromise = loadConfig(rootNaxDir, cliOverrides).catch((err) => {
+      // Remove rejected promise from cache so the next call retries the load.
+      _rootConfigCache.delete(cacheKey);
+      throw err;
+    });
     if (_rootConfigCache.size >= ROOT_CONFIG_CACHE_MAX) {
       const firstKey = _rootConfigCache.keys().next().value;
       if (firstKey !== undefined) _rootConfigCache.delete(firstKey);
