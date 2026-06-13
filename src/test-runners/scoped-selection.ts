@@ -14,19 +14,21 @@
 import { getLogger } from "@/logger";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "@/test-runners";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
-import { _smartRunnerDeps } from "../verification/smart-runner";
+import { MAX_GREP_TEST_FILES, _smartRunnerDeps } from "../verification/smart-runner";
 import type { ResolvedTestPatterns } from "./resolver";
 
 const DEFAULT_SMART_RUNNER_CONFIG = {
   enabled: true,
   testFilePatterns: [...DEFAULT_TEST_FILE_PATTERNS],
   fallback: "import-grep" as const,
+  maxScanFiles: MAX_GREP_TEST_FILES,
 };
 
 export interface SmartRunnerConfigRaw {
   enabled?: boolean;
   testFilePatterns?: string[];
   fallback?: "import-grep" | "full-suite";
+  maxScanFiles?: number;
 }
 
 export function coerceSmartRunner(val: unknown) {
@@ -192,7 +194,12 @@ export async function selectScopedTests(input: SelectScopedTestsInput): Promise<
     return fullSuite();
   }
 
-  const pass2Files = await _scopedSelectionDeps.importGrepFallback(nonTestFiles, input.workdir, mappingGlobs);
+  const pass2Files = await _scopedSelectionDeps.importGrepFallback(
+    nonTestFiles,
+    input.workdir,
+    mappingGlobs,
+    smartCfg.maxScanFiles,
+  );
   if (pass2Files.length > threshold) {
     logger.warn(
       "verify[scoped]",

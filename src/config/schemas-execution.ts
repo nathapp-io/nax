@@ -61,11 +61,18 @@ const SmartTestRunnerConfigSchema = z.object({
    */
   testFilePatterns: z.array(z.string()).optional(),
   fallback: z.enum(["import-grep", "full-suite"]).default("import-grep"),
+  /**
+   * Max test files scanned (post-filter) before truncating. Single source of
+   * truth for both the import-grep fallback scan (smart-runner) and the
+   * test-coverage context scan (test-scanner).
+   */
+  maxScanFiles: z.number().int().min(1).max(5000).default(200),
 });
 
 const SMART_TEST_RUNNER_DEFAULT = {
   enabled: true,
   fallback: "import-grep" as const,
+  maxScanFiles: 200,
 };
 
 /** Coerces boolean → SmartTestRunnerConfig for backward compat */

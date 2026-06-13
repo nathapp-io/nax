@@ -16,6 +16,14 @@ import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } f
 // Types
 // ============================================================================
 
+/**
+ * Fallback cap for direct callers that don't pass `maxScanFiles`. Production
+ * threads config.execution.smartTestRunner.maxScanFiles (SSOT) via the
+ * test-coverage provider; this only applies to unit tests calling scanTestFiles
+ * directly. Mirrors the schema default in schemas-execution.ts.
+ */
+const DEFAULT_MAX_SCAN_FILES = 200;
+
 /** Detail level for test summary */
 export type TestSummaryDetail = "names-only" | "names-and-counts" | "describe-blocks";
 
@@ -37,6 +45,12 @@ export interface TestScanOptions {
   contextFiles?: string[];
   /** Enable scoping to context files (default: true) */
   scopeToStory?: boolean;
+  /**
+   * Max test files scanned (post-filter) before truncating. Production threads
+   * config.execution.smartTestRunner.maxScanFiles via the test-coverage provider;
+   * defaults to DEFAULT_MAX_SCAN_FILES for direct callers (unit tests).
+   */
+  maxScanFiles?: number;
 }
 
 /** A single describe block extracted from a test file */
@@ -262,7 +276,7 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
   // Cap is applied to *kept* files (post-filter) to match smart-runner.ts convention.
   // Counting pre-filter scans would exhaust the budget on scope-skipped files and
   // silently drop relevant test files when scoping is active.
-  const MAX_SCAN_FILES = 200;
+  const maxScanFiles = options.maxScanFiles ?? DEFAULT_MAX_SCAN_FILES;
   const glob = new Glob(testPattern);
   const files: TestFileInfo[] = [];
 
@@ -275,9 +289,9 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
       }
     }
 
-    if (files.length >= MAX_SCAN_FILES) {
+    if (files.length >= maxScanFiles) {
       getLogger().debug("test-scanner", "Glob cap reached — results truncated", {
-        cap: MAX_SCAN_FILES,
+        cap: maxScanFiles,
         scanDir,
       });
       break;

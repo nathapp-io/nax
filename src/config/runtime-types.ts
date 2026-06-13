@@ -97,6 +97,8 @@ export interface SmartTestRunnerConfig {
   testFilePatterns?: string[];
   /** Fallback strategy when path-convention mapping yields no results */
   fallback: "import-grep" | "full-suite";
+  /** Max test files scanned (post-filter) before truncating (default: 200) */
+  maxScanFiles: number;
 }
 
 /** Worktree dependency preparation strategy (WT-DEPS-001) */

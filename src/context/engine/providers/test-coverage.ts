@@ -9,6 +9,7 @@
 
 import { createHash } from "node:crypto";
 import { relative } from "node:path";
+import { coerceSmartRunner } from "@/test-runners";
 import type { NaxConfig } from "../../../config/types";
 import { getLogger } from "../../../logger";
 import { getContextFiles } from "../../../prd";
@@ -81,12 +82,14 @@ export class TestCoverageProvider implements IContextProvider {
       const globs =
         (resolved as { globs?: readonly string[]; patterns?: readonly string[] }).patterns ?? resolved.globs;
 
+      const smartCfg = coerceSmartRunner(this.config.execution?.smartTestRunner);
       const scanOptions: TestScanOptions = {
         workdir: request.packageDir,
         testDir: tcConfig.testDir,
         maxTokens: tcConfig.maxTokens ?? 500,
         detail: tcConfig.detail ?? "names-and-counts",
         scopeToStory: tcConfig.scopeToStory ?? true,
+        maxScanFiles: smartCfg.maxScanFiles,
         contextFiles,
         resolvedTestGlobs: globs,
       };
