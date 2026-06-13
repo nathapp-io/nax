@@ -462,4 +462,24 @@ describe("loadConfig — multi-profile chain override", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain("a+b");
   });
+
+  // M2: a per-package profile that yields an invalid config fails fast rather than
+  // silently dropping the overlay and running with a config the user did not ask for.
+  test("per-package profile producing an invalid config throws fail-fast", async () => {
+    writeJson(join(projectDir, ".nax", "config.json"), { execution: { sessionTimeoutSeconds: 100 } });
+    // Profile sets a field to the wrong type so Zod validation fails after overlay.
+    writeJson(join(globalDir, "profiles", "broken.json"), {
+      execution: { sessionTimeoutSeconds: "not-a-number" },
+    });
+    // Package opts into the broken profile.
+    writeJson(join(projectDir, ".nax", "mono", "pkg", "config.json"), { profile: "broken" });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    const err = await loadConfigForWorkdir(rootConfigPath, "pkg").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as { code?: string }).code).toBe("PER_PACKAGE_PROFILE_INVALID");
+    expect((err as Error).message).toContain("pkg");
+  });
 });

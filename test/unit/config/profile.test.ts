@@ -94,6 +94,7 @@ describe("config/profile", () => {
 
       const err = await loadProfile("nonexistent", projectDir).catch((e: Error) => e);
       expect(err).toBeInstanceOf(Error);
+      expect((err as { code?: string }).code).toBe("PROFILE_NOT_FOUND");
       expect(err.message).toContain("nonexistent");
       expect(err.message).toContain("Available:");
       expect(err.message).toContain("fast");

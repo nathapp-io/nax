@@ -541,14 +541,21 @@ export async function loadConfigForWorkdir(
     rejectLegacyAgentKeys(rawMerged);
     rejectLegacyRectificationKeys(rawMerged);
     const result = NaxConfigSchema.safeParse(rawMerged);
-    if (result.success) {
-      merged = result.data as NaxConfig;
-    } else {
-      logger.warn("config", "Per-package profile failed validation — using merged config without profile", {
-        packageDir,
-        packageProfile,
+    if (!result.success) {
+      // Fail-fast — consistent with root-chain resolution (a missing profile file
+      // throws in loadProfile). Silently dropping the overlay would run the package
+      // with a config the user did not ask for, which is hard to debug.
+      const errors = result.error.issues.map((err) => {
+        const path = String(err.path.join("."));
+        return path ? `${path}: ${err.message}` : err.message;
       });
+      throw new NaxError(
+        `Per-package profile "${packageChain.join("+")}" produced an invalid config for package "${packageDir}":\n${errors.join("\n")}`,
+        "PER_PACKAGE_PROFILE_INVALID",
+        { stage: "config", packageDir, profileChain: packageChain },
+      );
     }
+    merged = result.data as NaxConfig;
   }
 
   return merged;

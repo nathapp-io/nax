@@ -6,6 +6,7 @@
 
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { NaxError } from "../errors";
 import { parseDotenv } from "./dotenv";
 import { deepMergeConfig } from "./merger";
 import { globalConfigDir, projectConfigDir } from "./paths";
@@ -32,7 +33,11 @@ export async function loadProfile(profileName: string, projectRoot: string): Pro
   if (!globalExists && !projectExists) {
     const available = await listAvailableProfileNames(projectRoot);
     const availableList = available.length > 0 ? available.join(", ") : "(none)";
-    throw new Error(`Profile "${profileName}" not found. Available: ${availableList}`);
+    throw new NaxError(`Profile "${profileName}" not found. Available: ${availableList}`, "PROFILE_NOT_FOUND", {
+      stage: "config",
+      profileName,
+      available,
+    });
   }
 
   let base: Record<string, unknown> = {};
