@@ -1,5 +1,6 @@
 import type { TurnResult } from "../agents/types";
 import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { HopBodyContext } from "./types";
 
 /**
@@ -62,10 +63,14 @@ export async function runSelfHealChain<I>(
   let last = seed;
   let totalCost = seed.estimatedCostUsd ?? 0;
   for (const step of steps) {
-    const turn = await step.run(ctx);
-    if (turn) {
-      totalCost += turn.estimatedCostUsd ?? 0;
-      last = turn;
+    try {
+      const turn = await step.run(ctx);
+      if (turn) {
+        totalCost += turn.estimatedCostUsd ?? 0;
+        last = turn;
+      }
+    } catch (err) {
+      getSafeLogger()?.warn("self-heal", "step threw — skipping", { error: errorMessage(err) });
     }
   }
   return { ...last, estimatedCostUsd: totalCost };
