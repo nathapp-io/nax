@@ -114,9 +114,8 @@ export class WorktreeManager {
         stderr: "pipe",
       });
 
-      const exitCode = await proc.exited;
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`Failed to create worktree: ${stderr || "unknown error"}`);
       }
     } catch (error) {
@@ -161,9 +160,8 @@ export class WorktreeManager {
         stderr: "pipe",
       });
 
-      const exitCode = await proc.exited;
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         if (
           stderr.includes("not found") ||
           stderr.includes("does not exist") ||
@@ -189,9 +187,8 @@ export class WorktreeManager {
         stderr: "pipe",
       });
 
-      const exitCode = await proc.exited;
+      const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         // Don't fail if branch doesn't exist
         if (!stderr.includes("not found")) {
           const logger = getSafeLogger();
@@ -218,13 +215,15 @@ export class WorktreeManager {
         stderr: "pipe",
       });
 
-      const exitCode = await proc.exited;
+      const [exitCode, stderr, stdout] = await Promise.all([
+        proc.exited,
+        new Response(proc.stderr).text(),
+        new Response(proc.stdout).text(),
+      ]);
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`Failed to list worktrees: ${stderr || "unknown error"}`);
       }
 
-      const stdout = await new Response(proc.stdout).text();
       return this.parseWorktreeList(stdout);
     } catch (error) {
       if (error instanceof Error) {

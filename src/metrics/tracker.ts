@@ -283,21 +283,24 @@ export async function saveRunMetrics(outputDir: string, runMetrics: RunMetrics):
   const hasTokenData =
     totalInputTokens > 0 || totalOutputTokens > 0 || totalCacheReadInputTokens > 0 || totalCacheCreationInputTokens > 0;
 
-  if (hasTokenData) {
-    runMetrics.totalTokens = new TokenUsage({
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-      cacheReadInputTokens: totalCacheReadInputTokens,
-      cacheCreationInputTokens: totalCacheCreationInputTokens,
-    });
-  }
+  const finalMetrics: RunMetrics = hasTokenData
+    ? {
+        ...runMetrics,
+        totalTokens: new TokenUsage({
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheReadInputTokens: totalCacheReadInputTokens,
+          cacheCreationInputTokens: totalCacheCreationInputTokens,
+        }),
+      }
+    : runMetrics;
 
   // Load existing metrics (returns empty array if file doesn't exist or is invalid)
   const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
   const allMetrics = Array.isArray(existing) ? existing : [];
 
   // Append new run
-  allMetrics.push(runMetrics);
+  allMetrics.push(finalMetrics);
 
   // Write back
   await saveJsonFile(metricsPath, allMetrics, "metrics");

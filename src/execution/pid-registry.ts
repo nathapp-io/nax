@@ -29,6 +29,8 @@ export class PidRegistry {
   private readonly pidsFilePath: string;
   private readonly pids: Set<number> = new Set();
   private frozen = false;
+  private _writing = false;
+  private _pendingWrite = false;
   private writeQueueTail: Promise<void> = Promise.resolve();
 
   constructor(workdir: string, _platform?: NodeJS.Platform) {
@@ -375,13 +377,25 @@ export class PidRegistry {
   }
 
   private enqueueWrite(): Promise<void> {
-    this.writeQueueTail = this.writeQueueTail.then(() =>
-      this.writePidsFile().catch((err) => {
+    if (this._writing) {
+      // A write is in-flight — coalesce: schedule exactly one follow-up write.
+      this._pendingWrite = true;
+      return this.writeQueueTail;
+    }
+    this._writing = true;
+    this.writeQueueTail = this.writePidsFile()
+      .catch((err) => {
         getSafeLogger()?.warn("pid-registry", "Failed to flush PID file — on-disk registry may be stale", {
           error: errorMessage(err),
         });
-      }),
-    );
+      })
+      .then(async () => {
+        this._writing = false;
+        if (this._pendingWrite) {
+          this._pendingWrite = false;
+          await this.enqueueWrite();
+        }
+      });
     return this.writeQueueTail;
   }
 }

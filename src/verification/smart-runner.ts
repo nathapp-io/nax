@@ -137,21 +137,23 @@ export async function importGrepFallback(
   sourceFiles: string[],
   workdir: string,
   testFilePatterns: string[],
+  maxScanFiles: number = MAX_GREP_TEST_FILES,
 ): Promise<string[]> {
   if (sourceFiles.length === 0 || testFilePatterns.length === 0) return [];
 
   // Collect search terms from all changed source files
   const searchTerms = sourceFiles.flatMap(extractSearchTerms);
 
-  // Scan all test files matching the configured patterns, capped at MAX_GREP_TEST_FILES
+  // Scan all test files matching the configured patterns, capped at maxScanFiles
+  // (config.execution.smartTestRunner.maxScanFiles; defaults to MAX_GREP_TEST_FILES).
   const testFilePaths: string[] = [];
   outer: for (const pattern of testFilePatterns) {
     const g = _bunDeps.glob(pattern);
-    for await (const file of g.scan(workdir)) {
+    for await (const file of g.scan({ cwd: workdir, absolute: false })) {
       testFilePaths.push(`${workdir}/${file}`);
-      if (testFilePaths.length >= MAX_GREP_TEST_FILES) {
+      if (testFilePaths.length >= maxScanFiles) {
         getSafeLogger()?.debug("smart-runner", "import-grep glob cap reached — results truncated", {
-          cap: MAX_GREP_TEST_FILES,
+          cap: maxScanFiles,
         });
         break outer;
       }

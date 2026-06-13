@@ -12,14 +12,19 @@ export const _heartbeatDeps = {
   getSafeLogger,
 };
 
-let heartbeatActive = false;
+// Generation counter: each startHeartbeat() increments this, invalidating any
+// in-flight loop on its next tick — prevents duplicate loops when startHeartbeat()
+// is called again while a prior loop is mid-sleep.
+let _heartbeatGen = 0;
+let _heartbeatActive = false;
 
 /**
- * Inner loop — runs while heartbeatActive is true.
+ * Inner loop — runs while both the generation token matches and active flag is set.
  * Uses Bun.sleep so each tick fully completes before the next begins,
  * avoiding the tick-overlap issue of setInterval with async callbacks.
  */
 async function heartbeatLoop(
+  gen: number,
   statusWriter: StatusWriter,
   getTotalCost: () => number,
   getIterations: () => number,
@@ -27,9 +32,9 @@ async function heartbeatLoop(
 ): Promise<void> {
   const logger = _heartbeatDeps.getSafeLogger();
 
-  while (heartbeatActive) {
+  while (gen === _heartbeatGen && _heartbeatActive) {
     await _heartbeatDeps.sleep(60_000);
-    if (!heartbeatActive) break;
+    if (gen !== _heartbeatGen || !_heartbeatActive) break;
 
     try {
       logger?.debug("crash-recovery", "Heartbeat");
@@ -71,10 +76,10 @@ export function startHeartbeat(
 ): void {
   const logger = _heartbeatDeps.getSafeLogger();
 
-  stopHeartbeat();
-
-  heartbeatActive = true;
-  heartbeatLoop(statusWriter, getTotalCost, getIterations, jsonlFilePath).catch((err: unknown) => {
+  // Increment generation to invalidate any in-flight loop, then launch a fresh one.
+  _heartbeatActive = true;
+  const gen = ++_heartbeatGen;
+  heartbeatLoop(gen, statusWriter, getTotalCost, getIterations, jsonlFilePath).catch((err: unknown) => {
     _heartbeatDeps.getSafeLogger()?.warn("crash-recovery", "Heartbeat loop crashed; status updates stopped", {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -87,8 +92,9 @@ export function startHeartbeat(
  * Stop heartbeat loop
  */
 export function stopHeartbeat(): void {
-  if (heartbeatActive) {
-    heartbeatActive = false;
+  if (_heartbeatActive) {
+    _heartbeatActive = false;
+    _heartbeatGen++; // invalidate the running loop on its next tick
     getSafeLogger()?.debug("crash-recovery", "Heartbeat stopped");
   }
 }
@@ -98,5 +104,5 @@ export function stopHeartbeat(): void {
  * @internal - test use only.
  */
 export function _isHeartbeatActive(): boolean {
-  return heartbeatActive;
+  return _heartbeatActive;
 }

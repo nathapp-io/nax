@@ -14,6 +14,7 @@
 
 import path from "node:path";
 import { pipelineEventBus } from "@/pipeline";
+import { clearCache as clearRoutingCache } from "@/routing";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import type { NaxConfig } from "../../config";
@@ -417,6 +418,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       config.disabledPlugins,
       isTestFileFn,
     );
+
+    // Clear LLM routing cache at run start — prevents cross-run pollution
+    // when story IDs repeat across features, and fixes the parallel-mode race
+    // where the per-story guard (ctx.story.id === stories[0]?.id) could miss
+    // stories that start routing before the first story clears the cache.
+    clearRoutingCache();
 
     // Log plugins loaded
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

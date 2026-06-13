@@ -171,6 +171,7 @@ export function makeMockAgentManager(opts: MockAgentManagerOptions = {}): IAgent
               internalRoundTrips: 0,
             } satisfies TurnResult),
         ),
+    close: () => {},
   } as IAgentManager;
 }
 

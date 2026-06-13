@@ -52,7 +52,7 @@ export async function collectDiff(
   storyGitRef: string,
   excludePatterns: string[],
   options?: DiffIgnoreOptions,
-): Promise<string> {
+): Promise<string | null> {
   const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
   const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
   const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged];
@@ -63,13 +63,17 @@ export async function collectDiff(
     stderr: "pipe",
   });
 
-  const [exitCode, stdout] = await Promise.all([
+  const [exitCode, stdout, stderr] = await Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
 
-  return exitCode === 0 ? stdout : "";
+  if (exitCode !== 0) {
+    getSafeLogger()?.warn("diff-utils", "git diff failed — skipping review diff", { storyGitRef, stderr });
+    return null;
+  }
+  return stdout;
 }
 
 /**

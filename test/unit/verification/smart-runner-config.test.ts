@@ -84,6 +84,7 @@ describe("SmartTestRunner config coercion", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -95,6 +96,7 @@ describe("SmartTestRunner config coercion", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: false,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -106,6 +108,7 @@ describe("SmartTestRunner config coercion", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -122,6 +125,7 @@ describe("SmartTestRunner config coercion", () => {
         enabled: true,
         testFilePatterns: ["test/custom/**/*.test.ts"],
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });

@@ -143,6 +143,9 @@ export async function prepareSemanticReviewInput(
   }
 
   const rawDiff = await collectDiff(workdir, effectiveRef, excludePatterns, { naxIgnoreIndex, packageDir });
+  if (rawDiff === null) {
+    return { effectiveRef, stat, diff: undefined, excludePatterns, skipReason: "git diff failed" };
+  }
   const diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
   if (!diff) {
     return { effectiveRef, stat, diff: undefined, excludePatterns, skipReason: "no production code changes" };

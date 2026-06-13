@@ -46,9 +46,10 @@ async function gitLsFiles(workdir: string): Promise<string[] | null> {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const exitCode = await proc.exited;
+    // Drain stdout concurrently with exited to avoid pipe-buffer deadlock on
+    // large repos (git blocks writing when the ~64KB OS buffer fills).
+    const [exitCode, output] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
     if (exitCode !== 0) return null;
-    const output = await new Response(proc.stdout).text();
     return output.split("\n").filter(Boolean);
   } catch {
     return null;

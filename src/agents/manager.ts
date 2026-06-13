@@ -48,6 +48,15 @@ type LoggerLike = {
   info: (scope: string, msg: string, data?: Record<string, unknown>) => void;
 };
 
+/**
+ * Upper bound on dispatch-event listeners before EventEmitter warns of a leak.
+ * A single run legitimately attaches several listeners per concurrent story
+ * (parallel mode), so the Node default of 10 is too low. We raise the ceiling
+ * but deliberately keep it finite — `setMaxListeners(0)` (unlimited) would
+ * disable the very warning that surfaces a genuine listener leak.
+ */
+const MAX_EMITTER_LISTENERS = 100;
+
 export type SendPromptFn = (
   handle: import("./types").SessionHandle,
   prompt: string,
@@ -69,7 +78,11 @@ export class AgentManager implements IAgentManager {
   private _registry: AgentRegistry | undefined;
   private readonly _unavailable = new Map<string, AdapterFailure>();
   private readonly _prunedFallback = new Set<string>();
-  private readonly _emitter = new EventEmitter();
+  private readonly _emitter = (() => {
+    const ee = new EventEmitter();
+    ee.setMaxListeners(MAX_EMITTER_LISTENERS);
+    return ee;
+  })();
   private readonly _logger: LoggerLike;
   private _middleware: MiddlewareChain;
   private _runId: string;
@@ -782,6 +795,10 @@ export class AgentManager implements IAgentManager {
       this._dispatchEvents.emitDispatchError(errEvent);
       throw err;
     }
+  }
+
+  close(): void {
+    this._emitter.removeAllListeners();
   }
 
   private _resolveRegistry(): AgentRegistry {

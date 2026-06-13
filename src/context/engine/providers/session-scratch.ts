@@ -171,7 +171,9 @@ export class SessionScratchProvider implements IContextProvider {
       return { chunks: [], pullTools: [] };
     }
 
-    const ignoreMatchers = await resolveNaxIgnorePatterns(request.repoRoot, request.packageDir);
+    const ignoreMatchers =
+      request.naxIgnoreIndex?.getMatchers(request.packageDir) ??
+      (await resolveNaxIgnorePatterns(request.repoRoot, request.packageDir));
     const chunks: RawChunk[] = [];
     for (const dir of dirs) {
       const chunk = await readScratchDir(dir, request.agentId, ignoreMatchers);

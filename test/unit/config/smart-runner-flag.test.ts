@@ -112,6 +112,7 @@ describe("execution.smartTestRunner config flag", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -126,6 +127,7 @@ describe("execution.smartTestRunner config flag", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: false,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -140,6 +142,7 @@ describe("execution.smartTestRunner config flag", () => {
       expect(result.data.execution.smartTestRunner).toEqual({
         enabled: true,
         fallback: "import-grep",
+        maxScanFiles: 200,
       });
     }
   });
@@ -152,6 +155,7 @@ describe("execution.smartTestRunner config flag", () => {
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
       fallback: "import-grep",
+      maxScanFiles: 200,
     });
   });
 
@@ -163,6 +167,7 @@ describe("execution.smartTestRunner config flag", () => {
     expect(config.execution.smartTestRunner).toEqual({
       enabled: false,
       fallback: "import-grep",
+      maxScanFiles: 200,
     });
   });
 
@@ -175,6 +180,7 @@ describe("execution.smartTestRunner config flag", () => {
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
       fallback: "import-grep",
+      maxScanFiles: 200,
     });
   });
 });

@@ -179,6 +179,7 @@ export function fakeAgentManager(
     runAsSession: async (_agentName, handle, prompt, _opts) => {
       return adapter.sendTurn(handle, prompt, { interactionHandler: NO_OP_INTERACTION_HANDLER });
     },
+    close: () => {},
   };
   return mgr;
 }

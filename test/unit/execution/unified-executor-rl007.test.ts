@@ -8,8 +8,8 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import {
   _isHeartbeatActive,
@@ -99,7 +99,14 @@ function makeMinimalContext(): SequentialExecutionContext {
     runtime: {
       outputDir: "/tmp/nax-test-rl007-output",
       costAggregator: {
-        snapshot: () => ({ totalCostUsd: 0, totalEstimatedCostUsd: 0, totalInputTokens: 0, totalOutputTokens: 0, callCount: 0, errorCount: 0 }),
+        snapshot: () => ({
+          totalCostUsd: 0,
+          totalEstimatedCostUsd: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          callCount: 0,
+          errorCount: 0,
+        }),
         byStage: () => ({}),
         byStory: () => ({}),
         byAgent: () => ({}),
@@ -123,11 +130,24 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function extractFinallyBlocks(src: string): string[] {
-  // Collect text inside all `finally { ... }` blocks (single-level braces only)
+  // Collect text inside all `finally { ... }` blocks. Brace-aware: walks the
+  // body tracking brace depth so nested if/for blocks don't truncate the match
+  // (a naive `[^{}]*` regex would stop at the first inner `{`, forcing the
+  // production code into an unnatural brace-free shape).
   const blocks: string[] = [];
-  const pattern = /finally\s*\{([^{}]*)\}/gs;
-  for (const m of src.matchAll(pattern)) {
-    blocks.push(m[1]);
+  const opener = /finally\s*\{/g;
+  let m: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+  while ((m = opener.exec(src)) !== null) {
+    const start = m.index + m[0].length;
+    let depth = 1;
+    let i = start;
+    for (; i < src.length && depth > 0; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") depth--;
+    }
+    // i points one past the closing brace; exclude it from the captured body.
+    blocks.push(src.slice(start, i - 1));
   }
   return blocks;
 }
@@ -173,7 +193,11 @@ describe("RL-007 AC#2: heartbeat remains active after executeUnified returns", (
   test("heartbeat is still running after executeUnified completes normally", async () => {
     const statusWriter = makeStatusWriter();
     // Simulate what runner.ts does: start heartbeat before delegating to executor
-    startHeartbeat(statusWriter as unknown as Parameters<typeof startHeartbeat>[0], () => 0, () => 0);
+    startHeartbeat(
+      statusWriter as unknown as Parameters<typeof startHeartbeat>[0],
+      () => 0,
+      () => 0,
+    );
 
     expect(_isHeartbeatActive()).toBe(true);
 
@@ -188,7 +212,11 @@ describe("RL-007 AC#2: heartbeat remains active after executeUnified returns", (
 
   test("heartbeat is still running when all stories are skipped", async () => {
     const statusWriter = makeStatusWriter();
-    startHeartbeat(statusWriter as unknown as Parameters<typeof startHeartbeat>[0], () => 0, () => 0);
+    startHeartbeat(
+      statusWriter as unknown as Parameters<typeof startHeartbeat>[0],
+      () => 0,
+      () => 0,
+    );
 
     const prd = makeCompletePRD([makeStory("US-001", "skipped"), makeStory("US-002", "skipped")]);
     const ctx = makeMinimalContext();

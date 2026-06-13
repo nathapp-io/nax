@@ -87,13 +87,16 @@ export async function executeUnified(
   // Calling stored unsubscribers instead of pipelineEventBus.clear() preserves
   // external subscribers (e.g. TUI's usePipelineBusEvents) across run boundaries.
   for (const fn of _prevRunUnsubscribers) fn();
-  _prevRunUnsubscribers = [
+  _prevRunUnsubscribers = [];
+  const thisRunUnsubscribers = [
     wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature),
     wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime),
     wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config),
     wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir),
     wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir),
   ];
+  // Store for next run's cleanup; also ensures teardown on throw via the finally block.
+  _prevRunUnsubscribers = thisRunUnsubscribers;
 
   // Emit run:started once — subscribers (hooks.ts, reporters.ts) own the fan-out.
   // Direct fireHook("on-start") and reporter.onRunStart() calls have been removed.
@@ -121,6 +124,7 @@ export async function executeUnified(
     ctx.logFilePath,
   );
 
+  let _executeThrew = false;
   try {
     if (isComplete(prd)) {
       logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
@@ -623,12 +627,24 @@ export async function executeUnified(
     }
 
     return buildResult("max-iterations");
+  } catch (err) {
+    _executeThrew = true;
+    throw err;
   } finally {
     // NOTE: stopHeartbeat() is intentionally NOT called here.
     // The heartbeat must stay alive until runner-completion.ts finishes the
     // regression gate and exit summary — those run AFTER executeUnified returns.
     // stopHeartbeat() is called by runner.ts:finally (catches all exit paths)
     // and by runner-completion.ts after handleRunCompletion().
+
+    // On throw only: tear down this run's subscribers immediately so they don't
+    // accumulate on pipelineEventBus across failed runs. On normal return, leave
+    // them active so runner.ts can emit run:ended with reporters still subscribed.
+    // Guard: a subsequent execute() call may have already replaced _prevRunUnsubscribers.
+    if (_executeThrew && _prevRunUnsubscribers === thisRunUnsubscribers) {
+      for (const fn of thisRunUnsubscribers) fn();
+      _prevRunUnsubscribers = [];
+    }
   }
 }
 
