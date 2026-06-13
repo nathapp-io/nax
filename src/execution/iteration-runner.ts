@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -105,8 +106,8 @@ export async function runIteration(
 
   // PKG-003: Resolve per-package effective config once per story (not per-stage)
   // Thread the CLI profile override through so --profile flags apply to per-package configs.
-  const profileOverride =
-    ctx.config.profile && ctx.config.profile !== "default" ? { profile: ctx.config.profile } : undefined;
+  // Use profileOverrideFromConfig (passes the round-trippable chain array, not the "a+b" composite).
+  const profileOverride = profileOverrideFromConfig(ctx.config);
   const effectiveConfig = story.workdir
     ? await _iterationRunnerDeps.loadConfigForWorkdir(
         join(ctx.workdir, ".nax", "config.json"),

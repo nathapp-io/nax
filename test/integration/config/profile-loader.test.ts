@@ -307,3 +307,179 @@ describe("loadConfig — profile activation (US-002)", () => {
     expect(typeof barrel.listProfiles).toBe("function");
   });
 });
+
+describe("loadConfig — multi-profile chain override", () => {
+  let globalDir: string;
+  let projectDir: string;
+  let origGlobalConfigDir: string | undefined;
+  let origNaxProfile: string | undefined;
+
+  beforeEach(() => {
+    globalDir = makeTempDir("nax-test-global-");
+    projectDir = makeTempDir("nax-test-project-");
+    mkdirSync(join(globalDir), { recursive: true });
+    mkdirSync(join(projectDir, ".nax"), { recursive: true });
+    origGlobalConfigDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+    origNaxProfile = process.env.NAX_PROFILE;
+    delete process.env.NAX_PROFILE;
+  });
+
+  afterEach(() => {
+    cleanupTempDir(globalDir);
+    cleanupTempDir(projectDir);
+    if (origGlobalConfigDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    else process.env.NAX_GLOBAL_CONFIG_DIR = origGlobalConfigDir;
+    if (origNaxProfile === undefined) delete process.env.NAX_PROFILE;
+    else process.env.NAX_PROFILE = origNaxProfile;
+  });
+
+  test("later profile in the chain overrides the earlier one (B overrides A)", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), {
+      execution: { sessionTimeoutSeconds: 100, maxIterations: 5 },
+    });
+    writeJson(join(globalDir, "profiles", "b.json"), {
+      execution: { sessionTimeoutSeconds: 200 },
+    });
+
+    const config = await loadConfig(projectDir, { profile: "a,b" });
+
+    // B wins on the shared key
+    expect(config.execution.sessionTimeoutSeconds).toBe(200);
+    // A's unique key survives (deep merge, not replace)
+    expect(config.execution.maxIterations).toBe(5);
+  });
+
+  test("records composite profile string and ordered profileChain", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const config = await loadConfig(projectDir, { profile: "a,b" });
+
+    expect(config.profile).toBe("a+b");
+    expect(config.profileChain).toEqual(["a", "b"]);
+  });
+
+  test("chain overrides project config, which overrides global", async () => {
+    writeJson(join(globalDir, "config.json"), { execution: { sessionTimeoutSeconds: 10 } });
+    writeJson(join(projectDir, ".nax", "config.json"), {
+      execution: { sessionTimeoutSeconds: 20 },
+    });
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 30 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 40 } });
+
+    const config = await loadConfig(projectDir, { profile: "a,b" });
+    expect(config.execution.sessionTimeoutSeconds).toBe(40);
+  });
+
+  test("array (repeated-flag) form produces an identical result to comma form", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const comma = await loadConfig(projectDir, { profile: "a,b" });
+    const array = await loadConfig(projectDir, { profile: ["a", "b"] });
+
+    expect(array.profile).toBe(comma.profile);
+    expect(array.profileChain).toEqual(comma.profileChain);
+    expect(array.execution.sessionTimeoutSeconds).toBe(comma.execution.sessionTimeoutSeconds);
+  });
+
+  test("NAX_PROFILE comma form applies the whole chain", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+    process.env.NAX_PROFILE = "a,b";
+
+    const config = await loadConfig(projectDir);
+    expect(config.profileChain).toEqual(["a", "b"]);
+    expect(config.execution.sessionTimeoutSeconds).toBe(2);
+  });
+
+  test("a missing name anywhere in the chain throws fail-fast with the available list", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+
+    const err = await loadConfig(projectDir, { profile: "a,nope" }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("nope");
+    expect((err as Error).message).toContain("Available:");
+  });
+
+  test('a single profile still works and yields a one-element chain', async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 7 } });
+
+    const config = await loadConfig(projectDir, { profile: "a" });
+    expect(config.profile).toBe("a");
+    expect(config.profileChain).toEqual(["a"]);
+    expect(config.execution.sessionTimeoutSeconds).toBe(7);
+  });
+
+  test('"default" entries in the chain are no-op overlays', async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 9 } });
+
+    const config = await loadConfig(projectDir, { profile: "default,a" });
+    expect(config.profile).toBe("a");
+    expect(config.profileChain).toEqual(["a"]);
+    expect(config.execution.sessionTimeoutSeconds).toBe(9);
+  });
+
+  // Regression: per-package / parallel executors re-feed an already-resolved root
+  // config back into loadConfigForWorkdir. The composite "a+b" profile string is
+  // NOT round-trippable — only the profileChain array is. profileOverrideFromConfig
+  // is the SSOT that picks the array; this test locks the round trip.
+  test("a resolved chain round-trips through loadConfigForWorkdir via profileOverrideFromConfig", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), {
+      execution: { sessionTimeoutSeconds: 1, maxIterations: 5 },
+    });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const { profileOverrideFromConfig } = await import("../../../src/config/profile");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    const rootConfig = await loadConfig(projectDir, { profile: "a,b" });
+    expect(rootConfig.profile).toBe("a+b");
+
+    // Mirror what iteration-runner / parallel executors do.
+    const override = profileOverrideFromConfig(rootConfig);
+    expect(override).toEqual({ profile: ["a", "b"] });
+
+    const effective = await loadConfigForWorkdir(rootConfigPath, undefined, override);
+    expect(effective.profileChain).toEqual(["a", "b"]);
+    expect(effective.execution.sessionTimeoutSeconds).toBe(2);
+    expect(effective.execution.maxIterations).toBe(5);
+  });
+
+  test("feeding the composite profile string back in would fail — proving the array form is required", async () => {
+    writeJson(join(globalDir, "profiles", "a.json"), { execution: { sessionTimeoutSeconds: 1 } });
+    writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    // The old (buggy) behavior passed the composite string; "a+b" is not a profile.
+    const err = await loadConfigForWorkdir(rootConfigPath, undefined, { profile: "a+b" }).catch(
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("a+b");
+  });
+
+  // M2: a per-package profile that yields an invalid config fails fast rather than
+  // silently dropping the overlay and running with a config the user did not ask for.
+  test("per-package profile producing an invalid config throws fail-fast", async () => {
+    writeJson(join(projectDir, ".nax", "config.json"), { execution: { sessionTimeoutSeconds: 100 } });
+    // Profile sets a field to the wrong type so Zod validation fails after overlay.
+    writeJson(join(globalDir, "profiles", "broken.json"), {
+      execution: { sessionTimeoutSeconds: "not-a-number" },
+    });
+    // Package opts into the broken profile.
+    writeJson(join(projectDir, ".nax", "mono", "pkg", "config.json"), { profile: "broken" });
+
+    const { loadConfigForWorkdir } = await import("../../../src/config/loader");
+    const rootConfigPath = join(projectDir, ".nax", "config.json");
+
+    const err = await loadConfigForWorkdir(rootConfigPath, "pkg").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as { code?: string }).code).toBe("PER_PACKAGE_PROFILE_INVALID");
+    expect((err as Error).message).toContain("pkg");
+  });
+});

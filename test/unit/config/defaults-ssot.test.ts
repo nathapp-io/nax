@@ -45,6 +45,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "curator",
   "debate",
   "profile",
+  "profileChain",
 ];
 
 describe("NaxConfigSchema.parse({}) does not throw (AC-4)", () => {

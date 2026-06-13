@@ -14,7 +14,7 @@ describe("resolveRunProfileOverride", () => {
       _readJson: readReturning({ routingProfile: "prd-prof" }),
       _listProfileNames: profilesAvailable("prd-prof"),
     });
-    expect(result).toBe("cli-prof");
+    expect(result).toEqual(["cli-prof"]);
   });
 
   test("NAX_PROFILE env defers to loadConfig (returns undefined, does not read PRD)", async () => {
@@ -43,7 +43,7 @@ describe("resolveRunProfileOverride", () => {
       _readJson: readReturning({ routingProfile: "aggressive" }),
       _listProfileNames: profilesAvailable("aggressive", "cheap"),
     });
-    expect(result).toBe("aggressive");
+    expect(result).toEqual(["aggressive"]);
   });
 
   test('adopts "default" without consulting the profile list (loader applies no overlay)', async () => {
@@ -55,7 +55,7 @@ describe("resolveRunProfileOverride", () => {
       _readJson: readReturning({ routingProfile: "default" }),
       _listProfileNames: profilesAvailable(), // empty — must not matter
     });
-    expect(result).toBe("default");
+    expect(result).toEqual(["default"]);
   });
 
   test("skips adoption (returns undefined) when the PRD profile has no profile file — stale/legacy value", async () => {
@@ -97,5 +97,77 @@ describe("resolveRunProfileOverride", () => {
       _listProfileNames: profilesAvailable("aggressive"),
     });
     expect(result).toBeUndefined();
+  });
+
+  test("CLI --profile comma form returns the full chain, winning over PRD", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: "a,b",
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: "prd-prof" }),
+      _listProfileNames: profilesAvailable("prd-prof"),
+    });
+    expect(result).toEqual(["a", "b"]);
+  });
+
+  test("CLI --profile array form (repeated flags) returns the full chain", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: ["a", "b"],
+      envProfile: undefined,
+      _readJson: readReturning(undefined),
+      _listProfileNames: profilesAvailable(),
+    });
+    expect(result).toEqual(["a", "b"]);
+  });
+
+  test("adopts a PRD routingProfile array when all names exist", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: ["aggressive", "cheap"] }),
+      _listProfileNames: profilesAvailable("aggressive", "cheap"),
+    });
+    expect(result).toEqual(["aggressive", "cheap"]);
+  });
+
+  test("adopts a PRD routingProfile comma string when all names exist", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: "aggressive,cheap" }),
+      _listProfileNames: profilesAvailable("aggressive", "cheap"),
+    });
+    expect(result).toEqual(["aggressive", "cheap"]);
+  });
+
+  test("skips PRD adoption when any name in the chain is missing", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: ["aggressive", "nope"] }),
+      _listProfileNames: profilesAvailable("aggressive"),
+    });
+    expect(result).toBeUndefined();
+  });
+
+  test('"default" entries in a PRD chain do not require a profile file', async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: ["default", "aggressive"] }),
+      _listProfileNames: profilesAvailable("aggressive"),
+    });
+    expect(result).toEqual(["default", "aggressive"]);
   });
 });

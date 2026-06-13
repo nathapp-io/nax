@@ -5,6 +5,7 @@
 import { existsSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
+import { profileOverrideFromConfig } from "../config";
 import type { NaxConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
@@ -190,7 +191,7 @@ export async function executeParallel(
     // Runs after all worktrees are created so git state is stable.
     // Only loads for stories whose worktrees were successfully created.
     const rootConfigPath = join(projectRoot, ".nax", "config.json");
-    const profileOverride = config.profile && config.profile !== "default" ? { profile: config.profile } : undefined;
+    const profileOverride = profileOverrideFromConfig(config);
     await Promise.all(
       batch
         .filter((story) => worktreePaths.has(story.id))
