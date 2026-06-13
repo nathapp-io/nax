@@ -158,8 +158,18 @@ export async function buildPlanForStrategy(
     if (pkgQuality?.commands?.formatFix || pkgQuality?.commands?.formatFixScoped) {
       strategies.push(makeMechanicalFormatFixStrategy() as FixStrategy<Finding, unknown, unknown, unknown>);
     }
-    // Mirror the primary gate condition: TDD always, non-TDD when mode=per-story.
-    if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {
+    // full-suite-rectify is the ONLY strategy whose appliesTo matches
+    // `source: "test-runner"` failing-test findings (category failed-test /
+    // execution-failed). Load it whenever a phase can emit such a finding:
+    //   - the full-suite gate (TDD always; non-TDD only when mode=per-story), OR
+    //   - the scoped verify phase (single-session: tdd-simple / test-after / no-test).
+    // Without the verify-scoped arm, a single-session scoped test failure had no
+    // matching strategy, so the rectification cycle exited "no-strategy" at
+    // iteration 0 and the story failed without a single fix attempt.
+    const fullSuiteGatePhasePresent =
+      Boolean(inputs.fullSuiteGate) && (isThreeSession || regressionMode === "per-story");
+    const verifyScopedPhasePresent = !isThreeSession && Boolean(inputs.verifyScoped);
+    if (fullSuiteGatePhasePresent || verifyScopedPhasePresent) {
       strategies.push(
         makeFullSuiteRectifyStrategy(story, config, sink) as FixStrategy<Finding, unknown, unknown, unknown>,
       );

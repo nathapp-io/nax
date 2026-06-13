@@ -9,18 +9,12 @@
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { TestStrategy } from "@/config/schema-types";
-import { buildPlanForStrategy, ExecutionPlan } from "@/execution";
+import { ExecutionPlan, buildPlanForStrategy } from "@/execution";
 import type { PlanInputs } from "@/execution";
 import { _storyOrchestratorDeps } from "@/execution";
 import type { UserStory } from "@/prd/types";
-import {
-  makeMockCallContext,
-  makeMockPlanInputs,
-  makeNaxConfig,
-  makeStory,
-  makeTestRuntime,
-} from "@test/helpers";
 import type { NaxRuntime } from "@/runtime";
+import { makeMockCallContext, makeMockPlanInputs, makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed input factories — populate the slot inputs each test needs
@@ -169,7 +163,15 @@ describe("buildPlanForStrategy — fresh vs retry detection", () => {
   test("story with priorFailures stage=review is treated as retry", async () => {
     const story = makeStory({
       attempts: 0,
-      priorFailures: [{ attempt: 0, modelTier: "fast", stage: "review", summary: "review failed", timestamp: new Date().toISOString() }],
+      priorFailures: [
+        {
+          attempt: 0,
+          modelTier: "fast",
+          stage: "review",
+          summary: "review failed",
+          timestamp: new Date().toISOString(),
+        },
+      ],
     });
     const config = makeNaxConfig();
     const ctx = makeMockCallContext();
@@ -255,10 +257,7 @@ describe("buildPlanForStrategy — non-TDD single-session", () => {
 describe("buildPlanForStrategy — three-session TDD strategy variants", () => {
   // tdd-simple is NOT included — it is a single-session strategy that does not
   // dispatch test-writer, full-suite-gate, or verifier slots.
-  const tddStrategies: TestStrategy[] = [
-    "three-session-tdd",
-    "three-session-tdd-lite",
-  ];
+  const tddStrategies: TestStrategy[] = ["three-session-tdd", "three-session-tdd-lite"];
 
   test.each(tddStrategies)("%s fresh includes full-suite-gate and verifier", async (strategy) => {
     const story = makeStory({ attempts: 0 });
@@ -624,6 +623,89 @@ describe("buildPlanForStrategy — AC4: fix strategy assembly (US-005)", () => {
     expect(capturedStrategyNames).not.toContain("autofix-implementer");
     expect(capturedStrategyNames).not.toContain("autofix-test-writer");
   });
+
+  // Regression: single-session (tdd-simple / test-after / no-test) scoped test
+  // failures emit `source: "test-runner"` findings. full-suite-rectify is the only
+  // strategy whose appliesTo matches that source. Before the fix it was gated behind
+  // TDD / per-story regression, so a single-session scoped failure had NO matching
+  // strategy and the cycle exited "no-strategy" at iteration 0 — the story failed
+  // without one fix attempt. With autofix disabled and no fix commands, the ONLY
+  // strategy that should remain is full-suite-rectify.
+  test("regression: single-session + verifyScoped phase → full-suite-rectify assembled (was no-strategy)", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "verify-scoped") {
+        return {
+          success: false,
+          findings: [
+            { source: "test-runner", severity: "error", category: "failed-test", message: "scoped test failed" },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: { commands: {}, autofix: { enabled: false } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeNonTddInputs(story, {
+      verifyScoped: { workdir: "/tmp/test", storyId: story.id },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    await plan.run();
+    // autofix disabled + no fix commands → full-suite-rectify is the ONLY
+    // assemblable strategy. Exact-set assertion guards against an accidental
+    // extra strategy slipping in.
+    expect(capturedStrategyNames).toEqual(["full-suite-rectify"]);
+  });
+
+  // Negative guard: a single-session plan with NO verify-scoped phase and deferred
+  // regression must NOT load full-suite-rectify — there is no phase that can emit
+  // test-runner findings, so the strategy would be dead weight. The cycle is driven
+  // by a lint-check failure (mechanical-lintfix matches) to ensure runFixCycle runs.
+  test("single-session without verifyScoped phase → full-suite-rectify NOT assembled", async () => {
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "lint-check") {
+        return { success: false, findings: [{ source: "lint", severity: "error", message: "lint failed" }] };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const story = makeStory();
+    const config = makeNaxConfig({
+      quality: { commands: { lintFix: "bun run lint:fix" }, autofix: { enabled: false } },
+      execution: { regressionGate: { mode: "deferred" }, rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeNonTddInputs(story, {
+      lintCheck: { workdir: "/tmp/test", storyId: story.id },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "no-test", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("mechanical-lintfix");
+    expect(capturedStrategyNames).not.toContain("full-suite-rectify");
+  });
+
+  // No-regression guard: three-session TDD must STILL load full-suite-rectify
+  // exactly as before (the fix only widens single-session, never narrows TDD).
+  test("no-regression: three-session TDD still assembles full-suite-rectify", async () => {
+    const story = makeStory({ attempts: 1 });
+    const config = makeNaxConfig({
+      quality: { commands: {}, autofix: { enabled: false } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+    });
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+    expect(capturedStrategyNames).toContain("full-suite-rectify");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -637,12 +719,6 @@ describe("buildPlanForStrategy — canonical phase ordering", () => {
     const ctx = makeMockCallContext();
     const inputs = makeTddFreshInputs(story);
     const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
-    expect(plan.phaseNames()).toEqual([
-      "test-writer",
-      "greenfield-gate",
-      "implementer",
-      "full-suite-gate",
-      "verifier",
-    ]);
+    expect(plan.phaseNames()).toEqual(["test-writer", "greenfield-gate", "implementer", "full-suite-gate", "verifier"]);
   });
 });
