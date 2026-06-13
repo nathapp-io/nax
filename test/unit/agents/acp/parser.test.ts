@@ -73,6 +73,34 @@ describe("parseAcpxJsonOutput — legacy flat NDJSON format", () => {
     expect(result.tokenUsage?.input_tokens).toBe(100);
     expect(result.tokenUsage?.output_tokens).toBe(50);
   });
+
+  // The legacy NDJSON branch treats result/content/text as mutually exclusive
+  // per event (see parser.ts comment). These tests pin that contract so a future
+  // refactor away from else-if is caught.
+  test("legacy content chunk accumulates", () => {
+    const result = parseAcpxJsonOutput('{"content":"foo"}\n{"content":"bar"}');
+    expect(result.text).toBe("foobar");
+  });
+
+  test("legacy text chunk accumulates (older field name)", () => {
+    const result = parseAcpxJsonOutput('{"text":"foo"}\n{"text":"bar"}');
+    expect(result.text).toBe("foobar");
+  });
+
+  test("legacy result resets accumulated text (final full text wins)", () => {
+    const result = parseAcpxJsonOutput('{"content":"partial"}\n{"result":"final"}');
+    expect(result.text).toBe("final");
+  });
+
+  test("within one event, result wins over content and text", () => {
+    const result = parseAcpxJsonOutput('{"result":"R","content":"C","text":"T"}');
+    expect(result.text).toBe("R");
+  });
+
+  test("within one event, content wins over text", () => {
+    const result = parseAcpxJsonOutput('{"content":"C","text":"T"}');
+    expect(result.text).toBe("C");
+  });
 });
 
 describe("incremental API — createParseState / parseAcpxJsonLine / finalizeParseState", () => {

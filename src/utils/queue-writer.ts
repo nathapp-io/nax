@@ -7,7 +7,8 @@
 
 import type { QueueCommand } from "../queue/types";
 
-const _writeChains = new Map<string, Promise<void>>();
+/** Per-file write chains. Exported underscore-prefixed for test introspection only. */
+export const _writeChains = new Map<string, Promise<void>>();
 
 /**
  * Write a queue command to the queue file.
@@ -57,9 +58,12 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
     const content = existing ? `${existing.trimEnd()}\n${commandLine}\n` : `${commandLine}\n`;
     await Bun.write(queueFilePath, content);
   });
-  _writeChains.set(
-    queueFilePath,
-    next.catch(() => {}),
-  );
+  const settled = next.catch(() => {});
+  _writeChains.set(queueFilePath, settled);
+  // Evict the entry once it settles, unless a newer write has already taken its
+  // place — keeps the map bounded instead of growing one entry per file path.
+  settled.then(() => {
+    if (_writeChains.get(queueFilePath) === settled) _writeChains.delete(queueFilePath);
+  });
   await next;
 }
