@@ -14,6 +14,7 @@
 
 import path from "node:path";
 import { pipelineEventBus } from "@/pipeline";
+import { clearCache as clearRoutingCache } from "@/routing";
 import { discoverWorkspacePackages, resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import type { NaxConfig } from "../../config";
@@ -29,7 +30,6 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { countStories, loadPRD, savePRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
-import { clearCache as clearRoutingCache } from "../../routing";
 import { type NaxRuntime, createRuntime } from "../../runtime";
 import { SessionManager } from "../../session";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";

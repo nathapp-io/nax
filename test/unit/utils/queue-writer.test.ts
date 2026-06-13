@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { parseQueueFile } from "../../../src/queue/manager";
-import { _writeChains, writeQueueCommand } from "../../../src/utils/queue-writer";
-import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+import { parseQueueFile } from "@/queue";
+import { _writeChains, writeQueueCommand } from "@/utils/queue-writer";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
 describe("writeQueueCommand", () => {
   let tempDir: string;
