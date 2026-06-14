@@ -31,7 +31,6 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     attempts: s.attempts || 0,
     routing: s.routing,
     priorErrors: s.priorErrors,
-    relevantFiles: s.relevantFiles,
     contextFiles: s.contextFiles,
     expectedFiles: s.expectedFiles,
   })),
