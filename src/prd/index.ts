@@ -233,32 +233,66 @@ export function markStoryFailed(
   }
 }
 
+/** Options for {@link resetFailedStoriesToPending}. */
+export interface ResetFailedOptions {
+  /**
+   * When true, also clears `storyGitRef` so it is re-captured at the next
+   * story start. Prevents cross-story diff pollution when multiple stories
+   * exhausted all tiers across a run and are now re-queued. Default: false.
+   */
+  resetRef?: boolean;
+  /**
+   * When `"worktree"`, also clears `storyGitRef` for all reset stories
+   * regardless of `resetRef` (each story will get a fresh ref in its new
+   * worktree). Callers are responsible for deleting the old `nax/<storyId>`
+   * branches after this returns.
+   */
+  storyIsolation?: "shared" | "worktree";
+  /**
+   * Controls tier/agent restoration on reset (ADR-025 gap #4).
+   *
+   * - `"initial"` (default): restore `modelTier`/`agent` to the origin rung
+   *   (`initialModelTier`/`initialAgent`) and clear `escalations`. This lets
+   *   the story climb the ladder fresh on the next run.
+   * - `"last"`: keep the final escalated rung and escalation history but reset
+   *   `attempts` to 0. Useful for investigating a persistent failure at the
+   *   highest tier without re-running cheaper tiers first.
+   */
+  resetMode?: "initial" | "last";
+}
+
 /**
  * Reset all failed stories to pending so they are eligible for re-execution
- * on a fresh run. Keeps `attempts` intact so the history is preserved.
+ * on a fresh run. Also resets `attempts` to 0 and, by default, restores the
+ * story's origin routing rung so it can re-climb the escalation ladder.
  *
- * @param resetRef - When true, also clears `storyGitRef` so it is re-captured at the
- *   next story start. Prevents cross-story diff pollution when multiple stories exhausted
- *   all tiers across a run and are now re-queued. Default: false (current behaviour).
- * @param storyIsolation - When `"worktree"`, also clears `storyGitRef` for all reset stories
- *   regardless of `resetRef` (each story will get a fresh ref in its new worktree). Callers
- *   are responsible for deleting the old `nax/<storyId>` branches after this returns.
  * @returns the list of stories that were reset (empty = no changes, PRD is clean)
  */
-export function resetFailedStoriesToPending(
-  prd: PRD,
-  resetRef = false,
-  storyIsolation?: "shared" | "worktree",
-): UserStory[] {
+export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions = {}): UserStory[] {
+  const { resetRef = false, storyIsolation, resetMode = "initial" } = opts;
   const reset: UserStory[] = [];
   for (const story of prd.userStories) {
-    if (story.status === "failed") {
-      story.status = "pending";
-      if (resetRef || storyIsolation === "worktree") {
-        story.storyGitRef = undefined;
+    if (story.status !== "failed") continue;
+
+    story.status = "pending";
+    story.attempts = 0;
+
+    if (resetMode === "initial" && story.routing) {
+      if (story.routing.initialModelTier !== undefined) {
+        story.routing.modelTier = story.routing.initialModelTier;
       }
-      reset.push(story);
+      if (story.routing.initialAgent !== undefined) {
+        story.routing.agent = story.routing.initialAgent;
+      } else {
+        story.routing.agent = undefined;
+      }
+      story.escalations = [];
     }
+
+    if (resetRef || storyIsolation === "worktree") {
+      story.storyGitRef = undefined;
+    }
+    reset.push(story);
   }
   return reset;
 }
