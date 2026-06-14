@@ -1,0 +1,153 @@
+import { describe, expect, test } from "bun:test";
+import { runOrchestratorE2E } from "@test/helpers";
+import type { QualityCommandResult } from "@/quality/runner";
+
+const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
+const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
+
+const PASS_TC: QualityCommandResult = {
+  commandName: "typecheck", command: "tc", success: true, exitCode: 0,
+  output: "", durationMs: 1, timedOut: false,
+};
+const FAIL_TC: QualityCommandResult = {
+  commandName: "typecheck", command: "tc", success: false, exitCode: 1,
+  output: "TS2304: Cannot find name 'x'", durationMs: 1, timedOut: false,
+};
+
+const PASSING_VERDICT = JSON.stringify({
+  version: 1,
+  approved: true,
+  tests: { allPassing: true, passCount: 3, failCount: 0 },
+  testModifications: { detected: false, files: [], legitimate: true, reasoning: "no modifications" },
+  acceptanceCriteria: { allMet: true, criteria: [] },
+  quality: { rating: "good", issues: [] },
+  fixes: [],
+  reasoning: "All tests pass",
+});
+
+describe("E2E: agent-fix", () => {
+  test("typecheck fail -> autofix-implementer -> revalidation chain", async () => {
+    let tcCall = 0;
+    const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
+      strategy: "test-after",
+      agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
+      gates: {
+        typecheck: () => tcCall++ === 0 ? FAIL_TC : PASS_TC,
+      },
+    });
+
+    // Observed 2026-06-14: autofix-implementer fires on typecheck failure in test-after
+    expect(result.success).toBe(true);
+    expect(strategiesFired).toContain("autofix-implementer");
+
+    // typecheck-check runs twice: once failing (triggers fix), once passing after
+    // autofix-implementer revalidation (STRATEGY_TO_REVALIDATION_PHASES includes
+    // lint-check, typecheck-check, full-suite-gate, semantic-review, adversarial-review).
+    // full-suite-gate is absent in test-after (no full-suite gate, only verify-scoped).
+    expect(phaseLog.filter((p) => p === "typecheck-check").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "lint-check").length).toBe(2);
+
+    // verify-scoped (the test gate in test-after) runs once in the main loop — NOT
+    // re-run after autofix-implementer (revalidation set excludes it).
+    expect(phaseLog.filter((p) => p === "verify-scoped").length).toBe(1);
+
+    // semantic-review and adversarial-review run once each (only after revalidation,
+    // as the first typecheck failure short-circuits before reviews in the main loop
+    // and revalidation runs them after the fix).
+    expect(phaseLog.filter((p) => p === "semantic-review").length).toBe(1);
+    expect(phaseLog.filter((p) => p === "adversarial-review").length).toBe(1);
+
+    // Full observed sequence (locked from 2026-06-14 run):
+    // implementer, verify-scoped, lint-check, typecheck-check [FAIL]
+    // → autofix-implementer fires
+    // → revalidation: lint-check, typecheck-check [PASS], semantic-review, adversarial-review
+    expect(phaseLog).toEqual([
+      "implementer",
+      "verify-scoped",
+      "lint-check",
+      "typecheck-check",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+    ]);
+  });
+
+  test("adversarial(test-gap) -> autofix-test-writer -> revalidation set", async () => {
+    const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
+    const verifier = () => ({ output: PASSING_VERDICT });
+    let advAttempt = 0;
+
+    const failingAdversarial = JSON.stringify({
+      passed: false,
+      findings: [{
+        severity: "warning",
+        category: "test-gap",
+        file: "test/a.test.ts",
+        line: 1,
+        issue: "missing edge-case test for null input",
+        suggestion: "add test for null handling",
+        // verifiedBy.observed makes checkFindingEvidence return "unreadable" (file
+        // doesn't exist in the temp workdir) rather than "missing-observed".
+        // "unreadable" is not downgraded in substantiateAdversarialFindings, so the
+        // "warning" finding stays blocking when blockingThreshold="warning".
+        verifiedBy: { file: "test/a.test.ts", observed: "expect(fn(null))" },
+      }],
+    });
+    const passingAdversarial = JSON.stringify({ passed: true, findings: [] });
+
+    const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      config: { review: { blockingThreshold: "warning" } } as never,
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        // attempt 0 → failing adversarial with test-gap finding; attempt 1+ → passing
+        "reviewer-adversarial": () => ({ output: advAttempt++ === 0 ? failingAdversarial : passingAdversarial }),
+      },
+    });
+
+    // Observed 2026-06-14: autofix-test-writer fires on test-gap adversarial finding
+    // in three-session-tdd (autofix-test-writer is only assembled for three-session-tdd).
+    expect(result.success).toBe(true);
+    expect(strategiesFired).toContain("autofix-test-writer");
+
+    // adversarial-review runs twice: once failing (triggers fix), once passing after
+    // autofix-test-writer revalidation
+    // (STRATEGY_TO_REVALIDATION_PHASES["autofix-test-writer"] =
+    //   ["lint-check", "typecheck-check", "full-suite-gate", "adversarial-review"]).
+    // phasesToRevalidate preserves canonical phase order, so full-suite-gate appears
+    // before lint-check/typecheck-check in revalidation (canonical pos 4 vs 6/7).
+    expect(phaseLog.filter((p) => p === "adversarial-review").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "lint-check").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "typecheck-check").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "full-suite-gate").length).toBe(2);
+
+    // verifier and semantic-review each run once (not re-run by autofix-test-writer).
+    expect(phaseLog.filter((p) => p === "verifier").length).toBe(1);
+    expect(phaseLog.filter((p) => p === "semantic-review").length).toBe(1);
+
+    // Full observed sequence (locked from 2026-06-14 run):
+    // test-writer, greenfield-gate, implementer, full-suite-gate, verifier,
+    // lint-check, typecheck-check, semantic-review, adversarial-review [FAIL]
+    // → autofix-test-writer fires
+    // → revalidation: full-suite-gate, lint-check, typecheck-check, adversarial-review [PASS]
+    expect(phaseLog).toEqual([
+      "test-writer",
+      "greenfield-gate",
+      "implementer",
+      "full-suite-gate",
+      "verifier",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+      "full-suite-gate",
+      "lint-check",
+      "typecheck-check",
+      "adversarial-review",
+    ]);
+  });
+});
