@@ -26,6 +26,7 @@ export function finalizePrdRouting(
       profileModelTier: assignment.profileModelTier,
       initialAgent: story.routing?.initialAgent ?? assignment.agent,
       initialProfileId: story.routing?.initialProfileId ?? assignment.agentProfileId,
+      initialModelTier: story.routing?.initialModelTier ?? assignment.profileModelTier,
     } as StoryRouting;
     return { ...story, routing };
   });

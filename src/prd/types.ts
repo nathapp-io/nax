@@ -97,6 +97,8 @@ export interface StoryRouting {
   agentProfileId?: string;
   /** Model tier from the matched agent profile's target — set at plan time, used to bias routing tier selection */
   profileModelTier?: ModelTier;
+  /** Model tier at first route — written once, never overwritten by escalation. Used by reset (ADR-025). */
+  initialModelTier?: ModelTier;
 }
 
 /** Escalation attempt tracking */
