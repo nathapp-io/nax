@@ -166,6 +166,17 @@ export async function preIterationTierCheck(
       nextTier: escalatedTier,
     });
 
+    const budgetReason = `Exceeded tier budget for ${currentTier} (${story.attempts}/${tierCfg.attempts})`;
+    const preIterationFailure = buildEscalationFailure(
+      story,
+      currentTier,
+      undefined, // no review findings — iteration never ran
+      undefined, // no attempt cost — iteration never ran
+      budgetReason,
+      undefined, // no TDD failure category — pre-iteration
+    );
+    const preIterationError = `Attempt ${story.attempts} exhausted budget on tier: ${currentTier}`;
+
     // Update story routing in PRD and reset attempts for new tier
     const updatedPrd = {
       ...prd,
@@ -179,7 +190,7 @@ export async function preIterationTierCheck(
                 buildEscalationRecord(
                   currentTier,
                   escalatedTier,
-                  `Exceeded tier budget for ${currentTier} (${story.attempts}/${tierCfg.attempts})`,
+                  budgetReason,
                 ),
               ],
               routing: s.routing
@@ -193,6 +204,8 @@ export async function preIterationTierCheck(
                     modelTier: escalatedTier,
                     ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
                   },
+              priorErrors: [...(s.priorErrors || []), preIterationError],
+              priorFailures: [...(s.priorFailures || []), preIterationFailure].slice(-3),
             }
           : s,
       ) as PRD["userStories"],

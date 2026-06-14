@@ -745,3 +745,101 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// preIterationTierCheck — ADR-025 gap #3: priorErrors / priorFailures captured
+//
+// When a story exhausts its per-rung attempt budget before an iteration spawns,
+// the saved PRD must carry priorErrors and priorFailures so the next tier's
+// agent prompt has context about why escalation happened.
+// ---------------------------------------------------------------------------
+
+describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on budget exhaustion", () => {
+  test("saves priorErrors and priorFailures when story budget is exhausted (AC)", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { preIterationTierCheck, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    let capturedPrd: import("../../../../src/prd").PRD | undefined;
+    _tierEscalationDeps.savePRD = async (prd) => {
+      capturedPrd = prd as import("../../../../src/prd").PRD;
+    };
+
+    try {
+      const story = {
+        id: "US-prior-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        // attempts === tierCfg.attempts (2) → budget exhausted
+        attempts: 2,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const config = {
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", attempts: 2 },
+              { tier: "balanced", attempts: 3 },
+            ],
+          },
+        },
+        // per-story mode bypasses LLM re-route
+        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+        models: {},
+      };
+
+      const result = await preIterationTierCheck(
+        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        { modelTier: "fast" },
+        config as unknown as Parameters<typeof preIterationTierCheck>[2],
+        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        "/tmp/test-prd-prior.json",
+        undefined,
+        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        "f",
+        0,
+        "/tmp",
+      );
+
+      // Escalation must have been triggered
+      expect(result.shouldSkipIteration).toBe(true);
+
+      // savePRD must have been called with a PRD capturing prior context
+      expect(capturedPrd).toBeDefined();
+
+      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-prior-001");
+      expect(savedStory).toBeDefined();
+
+      // priorErrors: at least one entry mentioning the tier "fast"
+      expect(savedStory!.priorErrors).toBeDefined();
+      expect((savedStory!.priorErrors ?? []).length).toBeGreaterThanOrEqual(1);
+      expect((savedStory!.priorErrors ?? []).some((e) => e.includes("fast"))).toBe(true);
+
+      // priorFailures: exactly 1 entry with modelTier "fast" and summary containing "budget"
+      expect(savedStory!.priorFailures).toBeDefined();
+      expect((savedStory!.priorFailures ?? []).length).toBe(1);
+      const failure = (savedStory!.priorFailures ?? [])[0];
+      expect(failure.modelTier).toBe("fast");
+      expect(failure.summary.toLowerCase()).toContain("budget");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});
