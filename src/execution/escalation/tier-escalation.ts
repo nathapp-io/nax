@@ -60,10 +60,13 @@ function buildEscalationRecord(
   currentTier: string,
   nextTier: string,
   reason: string,
+  agents?: { fromAgent?: string; toAgent?: string },
 ): UserStory["escalations"][number] {
   return {
     fromTier: currentTier,
     toTier: nextTier,
+    ...(agents?.fromAgent !== undefined ? { fromAgent: agents.fromAgent } : {}),
+    ...(agents?.toAgent !== undefined ? { toAgent: agents.toAgent } : {}),
     reason,
     timestamp: new Date().toISOString(),
   };
@@ -191,6 +194,7 @@ export async function preIterationTierCheck(
                   currentTier,
                   escalatedTier,
                   budgetReason,
+                  { fromAgent: s.routing?.agent, toAgent: nextAgent ?? s.routing?.agent },
                 ),
               ],
               routing: s.routing
@@ -439,6 +443,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
               currentStoryTier,
               shouldSwitchToTestAfter ? currentStoryTier : escalatedTier,
               ctx.pipelineResult.reason ?? "Escalated to next retry path",
+              { fromAgent: s.routing?.agent, toAgent: nextAgent ?? s.routing?.agent },
             )
           : undefined;
 

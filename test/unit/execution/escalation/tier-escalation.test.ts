@@ -843,3 +843,106 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// handleTierEscalation — ADR-025 gap #2: cross-agent escalation provenance
+//
+// When the tierOrder has agent-qualified rungs and a story escalates to a
+// different agent, the escalation record must capture fromAgent / toAgent
+// so the audit trail can distinguish a cross-agent jump from a same-agent
+// tier bump.
+// ---------------------------------------------------------------------------
+
+describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation provenance", () => {
+  test("escalation record includes fromAgent and toAgent on cross-agent escalation", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    let capturedPrd: import("../../../../src/prd").PRD | undefined;
+    _tierEscalationDeps.savePRD = async (prd) => {
+      capturedPrd = prd as import("../../../../src/prd").PRD;
+    };
+
+    try {
+      const story = {
+        id: "US-provenance-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: {
+          modelTier: "balanced",
+          testStrategy: "test-after" as const,
+          agent: "claude",
+          complexity: "medium" as const,
+          reasoning: "",
+        },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            defaultAgent: "claude",
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", agent: "claude", attempts: 3 },
+                { tier: "balanced", agent: "claude", attempts: 2 },
+                { tier: "fast", agent: "codex", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd-provenance.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+
+      // savePRD must have been called
+      expect(capturedPrd).toBeDefined();
+
+      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-provenance-001");
+      expect(savedStory).toBeDefined();
+
+      // At least one escalation record must exist
+      expect((savedStory!.escalations ?? []).length).toBeGreaterThanOrEqual(1);
+
+      // The most recent escalation record must carry cross-agent provenance
+      const record = savedStory!.escalations![savedStory!.escalations!.length - 1];
+      expect(record.fromAgent).toBe("claude");
+      expect(record.toAgent).toBe("codex");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});

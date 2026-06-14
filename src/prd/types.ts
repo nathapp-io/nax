@@ -99,6 +99,10 @@ export interface StoryRouting {
 export interface EscalationAttempt {
   fromTier: ModelTier;
   toTier: ModelTier;
+  /** Agent active before this escalation (cross-agent ladders) — undefined for single-agent ladders */
+  fromAgent?: string;
+  /** Agent the story escalated to (cross-agent ladders) — undefined for single-agent ladders */
+  toAgent?: string;
   reason: string;
   timestamp: string;
 }
