@@ -55,7 +55,7 @@ describe("E2E: exhaustion + edge", () => {
     expect(result.success).toBe(true);
   });
 
-  test("staleness guard: full-suite-gate regression during rectification yields success=false, gateRegressedDuringRect=false", async () => {
+  test("full-suite-gate regression during revalidation causes rectification failure (gateRegressedDuringRect stays false)", async () => {
     // Scenario: typecheck fails (call 0) → autofix-implementer fires → revalidation
     // runs full-suite-gate (call 1 → fails) and typecheck-check (call 1 → passes).
     // full-suite-gate failure in revalidation causes rectification to fail with

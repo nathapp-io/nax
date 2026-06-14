@@ -61,16 +61,23 @@ export interface E2EResult {
 }
 
 function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
+  // Spread overrides at the sub-key level so a partial `quality` or `review` override
+  // does not wipe out the harness-required keys (e.g. `lintFix: "lint --fix"` for
+  // mechanical-lintfix, or `enabled/checks` for review). Other top-level overrides
+  // pass through directly.
+  const { quality: qualityOverride, review: reviewOverride, ...topLevelRest } = overrides ?? {};
   return makeNaxConfig({
     quality: {
       commands: { lint: "lint", typecheck: "tc", test: "true", lintFix: "lint --fix" },
       autofix: { enabled: true },
+      ...(qualityOverride ?? {}),
     },
     review: {
       enabled: true,
       checks: ["lint", "typecheck"],
+      ...(reviewOverride ?? {}),
     },
-    ...(overrides ?? {}),
+    ...topLevelRest,
   } as Partial<NaxConfig>);
 }
 

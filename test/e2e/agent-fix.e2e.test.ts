@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runOrchestratorE2E } from "@test/helpers";
+import type { NaxConfig } from "@/config";
 import type { QualityCommandResult } from "@/quality/runner";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
@@ -98,7 +99,7 @@ describe("E2E: agent-fix", () => {
 
     const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      config: { review: { blockingThreshold: "warning" } } as never,
+      config: { review: { blockingThreshold: "warning" } } as unknown as Partial<NaxConfig>,
       agent: {
         "test-writer": tw,
         implementer: impl,
