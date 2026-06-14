@@ -203,7 +203,7 @@ describe("reconcileState", () => {
     expect(capturedWorkdir).toBe(join(tmpDir, "packages/api"));
   });
 
-  test("re-run: failed story is reset to pending and attempts count is preserved", async () => {
+  test("re-run: failed story is reset to pending and attempts are reset to 0", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
@@ -211,7 +211,7 @@ describe("reconcileState", () => {
     const result = await runReconcile(prd, "-10");
 
     expect(result.userStories[0].status).toBe("pending");
-    expect(result.userStories[0].attempts).toBe(2);
+    expect(result.userStories[0].attempts).toBe(0);
   });
 
   test("re-run: already-passed story is not touched", async () => {
@@ -289,5 +289,90 @@ describe("reconcileState", () => {
       (a) => a.includes("branch") && a.includes("-D"),
     );
     expect(branchDeleteCalls.length).toBe(0);
+  });
+
+  test("resetMode=initial: escalated story routing is restored to initialModelTier on re-run", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({
+      status: "failed",
+      failureStage: "execution",
+      attempts: 5,
+      escalations: [{ fromTier: "fast", toTier: "balanced", atAttempt: 3, timestamp: new Date().toISOString() }],
+      routing: {
+        modelTier: "powerful",
+        initialModelTier: "fast",
+      },
+    });
+
+    const prdPath = join(tmpDir, "prd-resetmode-initial.json");
+    await Bun.write(prdPath, JSON.stringify(prd));
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        escalation: {
+          ...DEFAULT_CONFIG.autoMode.escalation,
+          resetMode: "initial" as const,
+        },
+      },
+    };
+
+    const { prd: result } = await initializeRun({
+      config,
+      prdPath,
+      workdir: tmpDir,
+      dryRun: true,
+    });
+
+    const story = result.userStories[0];
+    expect(story.status).toBe("pending");
+    expect(story.attempts).toBe(0);
+    expect(story.routing?.modelTier).toBe("fast");
+  });
+
+  test("resetMode=last: escalated story routing is NOT restored — modelTier stays at escalated value", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({
+      status: "failed",
+      failureStage: "execution",
+      attempts: 5,
+      escalations: [{ fromTier: "fast", toTier: "balanced", atAttempt: 3, timestamp: new Date().toISOString() }],
+      routing: {
+        modelTier: "powerful",
+        initialModelTier: "fast",
+      },
+    });
+
+    const prdPath = join(tmpDir, "prd-resetmode-last.json");
+    await Bun.write(prdPath, JSON.stringify(prd));
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        escalation: {
+          ...DEFAULT_CONFIG.autoMode.escalation,
+          resetMode: "last" as const,
+        },
+      },
+    };
+
+    const { prd: result } = await initializeRun({
+      config,
+      prdPath,
+      workdir: tmpDir,
+      dryRun: true,
+    });
+
+    const story = result.userStories[0];
+    expect(story.status).toBe("pending");
+    expect(story.attempts).toBe(0);
+    // resetMode=last: modelTier should remain at escalated value "powerful"
+    expect(story.routing?.modelTier).toBe("powerful");
   });
 });
