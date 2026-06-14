@@ -53,6 +53,8 @@ function buildEscalationFailure(
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     cost: cost ?? 0,
     timestamp: new Date().toISOString(),
+    ...(story.routing?.agent !== undefined ? { agent: story.routing.agent } : {}),
+    ...(story.routing?.agentProfileId !== undefined ? { agentProfileId: story.routing.agentProfileId } : {}),
   };
 }
 

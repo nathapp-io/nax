@@ -84,6 +84,10 @@ export function formatPriorFailures(failures: StructuredFailure[]): string {
 
   for (const failure of failures) {
     parts.push(`### Attempt ${failure.attempt} — ${failure.modelTier}`);
+    if (failure.agent) {
+      const profilePart = failure.agentProfileId ? ` (profile: ${failure.agentProfileId})` : "";
+      parts.push(`**Agent:** ${failure.agent}${profilePart}`);
+    }
     parts.push(`**Stage:** ${failure.stage}`);
     parts.push(`**Summary:** ${failure.summary}`);
 

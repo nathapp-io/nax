@@ -59,6 +59,10 @@ export interface StructuredFailure {
   cost?: number;
   /** ISO timestamp when failure was recorded */
   timestamp: string;
+  /** Agent that produced this failure — undefined for single-agent ladders */
+  agent?: string;
+  /** Profile id active when this failure occurred — undefined when no profile assigned */
+  agentProfileId?: string;
 }
 
 /** Routing metadata per story */
