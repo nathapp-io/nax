@@ -229,10 +229,19 @@ export async function applyPostRunInspection(
   ctx.agentResult = agentResult;
 
   // Propagate full-suite gate result so verify stage can skip redundant run (BUG-054)
-  const fullSuiteGateOutput = planResult.phaseOutputs[fullSuiteGateOp.name] as { passed?: boolean } | undefined;
+  const fullSuiteGateOutput = planResult.phaseOutputs[fullSuiteGateOp.name] as
+    | { passed?: boolean; findings?: readonly Finding[] }
+    | undefined;
   if (fullSuiteGateOutput?.passed) {
     ctx.fullSuiteGatePassed = true;
   }
+  // Snapshot failing test files from the (post-rectification) gate findings so
+  // deferred-regression blame can attribute a regression to the introducing
+  // story (three-session + deferred). See findResponsibleStoryByTransition.
+  const gateFailingFiles = [
+    ...new Set((fullSuiteGateOutput?.findings ?? []).map((f) => f.file).filter((f): f is string => !!f)),
+  ];
+  if (gateFailingFiles.length > 0) ctx.fullSuiteGateFailingFiles = gateFailingFiles;
 
   // Self-verification from implementer output
   ctx.selfVerification = parseSelfVerificationMarker(agentResult.output ?? "", ctx.workdir);

@@ -225,6 +225,13 @@ export interface PipelineContext extends DispatchContext {
   tddIsolations?: Record<string, import("../execution/types").IsolationCheck>;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
   fullSuiteGatePassed?: boolean;
+  /**
+   * Test files failing at this story's full-suite gate (post-rectification).
+   * Captured by applyPostRunInspection from the gate output findings; surfaced
+   * in StoryMetrics.failingTestFiles for deferred-regression blame attribution.
+   * Absent when no gate ran or the gate passed cleanly.
+   */
+  fullSuiteGateFailingFiles?: string[];
   /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
   storyRuntimeCrashes?: number;
   /** Structured review findings — passed to escalation for retry context */
