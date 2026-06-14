@@ -81,7 +81,13 @@ export interface RegressionGateConfig {
   timeoutSeconds: number;
   /** Accept timeout as pass instead of failing (BUG-026, default: true) */
   acceptOnTimeout?: boolean;
-  /** Mode of regression gate: 'deferred' (run once after all stories), 'per-story' (run after each story), 'disabled' (default: 'deferred') */
+  /**
+   * Mode of regression gate (default: 'deferred'):
+   * - 'deferred': run the full-suite regression once after all stories complete.
+   * - 'per-story': run the full-suite gate after each story AND the deferred
+   *   regression once after all stories complete (per-story is a superset of deferred).
+   * - 'disabled': run neither.
+   */
   mode?: "deferred" | "per-story" | "disabled";
 }
 
