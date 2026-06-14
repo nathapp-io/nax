@@ -412,8 +412,17 @@ describe("handleRunCompletion - deferred regression gate", () => {
     expect((mockRunDeferredRegression.mock.calls[0][0] as { workdir: string }).workdir).toBe("/custom/workdir");
   });
 
+  test("calls runDeferredRegression when mode is 'per-story' (superset of deferred)", async () => {
+    const story = makeStory("US-001", "passed");
+    const prd = makePRD([{ id: story.id, status: story.status }]);
+    const config = makeConfig("per-story", "bun test");
+
+    try { await handleRunCompletion(makeOpts(config, prd)); } catch { /* ignore */ }
+
+    expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
+  });
+
   test.each([
-    ["mode is 'per-story'", makeConfig("per-story", "bun test")],
     ["mode is 'disabled'", makeConfig("disabled", "bun test")],
     ["no test command is configured", makeConfig("deferred", undefined)],
   ])("does NOT call runDeferredRegression when %s", async (_label, config) => {
