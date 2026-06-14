@@ -95,7 +95,7 @@ const WorktreeDependenciesConfigSchema = z
   .superRefine((value, ctx) => {
     if (value.mode !== "provision" && value.setupCommand !== null) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["setupCommand"],
         message: "execution.worktreeDependencies.setupCommand requires mode 'provision'",
       });
