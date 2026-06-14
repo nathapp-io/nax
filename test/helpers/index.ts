@@ -34,3 +34,5 @@ export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
 export { makeMockPlanInputs } from "./plan-inputs";
 export { verbatimWarn, withWarnSpy } from "./verbatim-warn-spy";
+export { makeScriptedAgent } from "./e2e";
+export type { ScriptedAgentSpec, ScriptedTurn } from "./e2e";
