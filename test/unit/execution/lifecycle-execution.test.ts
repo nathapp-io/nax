@@ -107,21 +107,37 @@ describe("runDeferredRegression", () => {
     expect(result.affectedStories).toEqual([]);
   });
 
-  test("returns success immediately when mode is 'per-story' (deferred not applicable)", async () => {
+  test("runs the deferred suite when mode is 'per-story' (superset of deferred)", async () => {
     const { runDeferredRegression } = await import(
       "../../../src/execution/lifecycle/run-regression"
     );
 
-    const result = await runDeferredRegression({
-      config: makeConfig("per-story", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: WORKDIR_PER_STORY,
-      runtime: makeRuntime(),
-    });
+    // per-story no longer short-circuits — it runs the full suite. Mock it so we
+    // don't spawn a real `bun test` in a nonexistent temp dir.
+    const saved = { ..._regressionDeps };
+    _regressionDeps.runVerification = mock(async () => ({
+      success: true,
+      status: "SUCCESS" as const,
+      countsTowardEscalation: false,
+      output: "5 pass | 0 fail",
+      passCount: 5,
+      failCount: 0,
+    }));
+    try {
+      const result = await runDeferredRegression({
+        config: makeConfig("per-story", "bun test"),
+        prd: makePRD([{ id: "US-001", status: "passed" }]),
+        workdir: WORKDIR_PER_STORY,
+        runtime: makeRuntime(),
+      });
 
-    expect(result.success).toBe(true);
-    expect(result.rectificationAttempts).toBe(0);
-    expect(result.affectedStories).toEqual([]);
+      expect(result.success).toBe(true);
+      expect(result.rectificationAttempts).toBe(0);
+      expect(result.affectedStories).toEqual([]);
+      expect(_regressionDeps.runVerification).toHaveBeenCalled();
+    } finally {
+      Object.assign(_regressionDeps, saved);
+    }
   });
 
   test("returns success when no passed stories exist (partial completion)", async () => {
