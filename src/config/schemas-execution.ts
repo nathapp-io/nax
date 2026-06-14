@@ -18,6 +18,8 @@ const AutoModeConfigSchema = z.object({
     enabled: z.boolean(),
     tierOrder: z.array(TierConfigSchema).min(1, { message: "tierOrder must have at least one tier" }),
     escalateEntireBatch: z.boolean().optional(),
+    /** Reset behaviour for failed stories on re-run (ADR-025). */
+    resetMode: z.enum(["initial", "last"]).default("initial"),
   }),
 });
 
