@@ -71,6 +71,10 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `reviewAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
 - **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
 
+### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow
+
+How a single story executes inside `executionStage`: the `CANONICAL_ORDER` phase list, three-session vs single-session mode selection (`routing.testStrategy`), the phase taxonomy (agent sessions / gates / mechanical checks / LLM reviews), and the review → fix → revalidation cycle (`STRATEGY_TO_REVALIDATION_PHASES`). Includes the `mechanical-lintfix` soundness note — why `full-suite-gate` is not re-run after a lint-fix, and why Biome safe-fix mode keeps that sound.
+
 ---
 
 ## Quick Reference Card
