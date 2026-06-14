@@ -65,23 +65,21 @@ describe("findResponsibleStoryByTransition", () => {
 // Integration: transition attribution beats the git-recency heuristic
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeConfig() {
-  return makeNaxConfig({
-    quality: {
-      commands: { test: "bun test" },
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      drainTimeoutMs: 0,
-      shell: false,
-      stripEnvVars: [],
-    },
-    execution: {
-      regressionGate: { mode: "deferred", timeoutSeconds: 60, acceptOnTimeout: true },
-    },
-  });
-}
+const deferredConfig = makeNaxConfig({
+  quality: {
+    commands: { test: "bun test" },
+    forceExit: false,
+    detectOpenHandles: false,
+    detectOpenHandlesRetries: 0,
+    gracePeriodMs: 0,
+    drainTimeoutMs: 0,
+    shell: false,
+    stripEnvVars: [],
+  },
+  execution: {
+    regressionGate: { mode: "deferred", timeoutSeconds: 60, acceptOnTimeout: true },
+  },
+});
 
 function makePrd(storyIds: string[]): PRD {
   return {
@@ -138,7 +136,7 @@ describe("runDeferredRegression — transition attribution", () => {
     });
 
     const options = {
-      config: makeConfig(),
+      config: deferredConfig,
       prd: makePrd(["US-001", "US-002", "US-003"]),
       workdir: "/tmp/test-workdir",
       runtime: makeMockRuntime(),
@@ -200,7 +198,7 @@ describe("runDeferredRegression — transition attribution", () => {
 
     try {
       const result = await runDeferredRegression({
-        config: makeConfig(),
+        config: deferredConfig,
         prd: makePrd(["US-001", "US-002"]),
         workdir: "/tmp/test-workdir",
         runtime: makeMockRuntime(),
@@ -242,7 +240,7 @@ describe("runDeferredRegression — transition attribution", () => {
     }));
 
     const result = await runDeferredRegression({
-      config: makeConfig(),
+      config: deferredConfig,
       prd: makePrd(["US-001", "US-002"]),
       workdir: "/tmp/test-workdir",
       runtime: makeMockRuntime(),
