@@ -9,8 +9,7 @@
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _reconcileDeps, initializeRun } from "../../../../src/execution/lifecycle/run-initialization";
@@ -299,8 +298,11 @@ describe("reconcileState", () => {
       status: "failed",
       failureStage: "execution",
       attempts: 5,
-      escalations: [{ fromTier: "fast", toTier: "balanced", atAttempt: 3, timestamp: new Date().toISOString() }],
+      escalations: [{ fromTier: "fast", toTier: "balanced", reason: "budget", timestamp: new Date().toISOString() }],
       routing: {
+        complexity: "complex",
+        testStrategy: "test-after",
+        reasoning: "x",
         modelTier: "powerful",
         initialModelTier: "fast",
       },
@@ -341,8 +343,11 @@ describe("reconcileState", () => {
       status: "failed",
       failureStage: "execution",
       attempts: 5,
-      escalations: [{ fromTier: "fast", toTier: "balanced", atAttempt: 3, timestamp: new Date().toISOString() }],
+      escalations: [{ fromTier: "fast", toTier: "balanced", reason: "budget", timestamp: new Date().toISOString() }],
       routing: {
+        complexity: "complex",
+        testStrategy: "test-after",
+        reasoning: "x",
         modelTier: "powerful",
         initialModelTier: "fast",
       },
