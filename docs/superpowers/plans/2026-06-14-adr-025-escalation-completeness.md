@@ -39,6 +39,31 @@ There is no persisted "initial tier" today (`StoryRouting` has `initialComplexit
 - **600-line file limit**, functions ≤30 lines / ≤3 positional params (use an options object beyond that).
 - Conventional commits: `feat:`, `fix:`, `test:`, `docs:`.
 
+### Test fixture conventions (READ — the skeletons use shorthand)
+
+This repo has a **hard rule** (`.claude/rules/test-helpers.md`): new/modified test files **must** use the shared factories from the test helpers barrel — inline mock objects are forbidden. The test skeletons in this plan use shorthand names (`makeStory`, `makePRD`, `makeConfig`) — map them to the **real** helpers:
+
+| Skeleton shorthand | Real helper (import from the `helpers` barrel, e.g. `@test/helpers` or `../../helpers`) | Signature note |
+|:--|:--|:--|
+| `makeStory({...})` | `makeStory(overrides?)` | `test/helpers/mock-story.ts` |
+| `makePRD([story])` | `makePRD({ userStories: [story] })` | **takes an overrides object, NOT a positional array** |
+| `makeConfig({...})` / `makeNaxConfig({...})` | `makeNaxConfig(overrides?)` | deep-merges into `DEFAULT_CONFIG` |
+| agentManager `{} as never` | `makeMockAgentManager()` | `test/helpers/mock-agent-manager.ts` |
+
+Additional must-dos for escalation tests (learned from the existing tests in `tier-escalation.test.ts`):
+
+- **Skip the hybrid LLM re-route.** Both `handleTierEscalation` and `preIterationTierCheck` call `tryLlmBatchRoute` when `config.routing.llm.mode === "hybrid"` (the schema default may be hybrid). That path needs a live agent and will break a unit test. In every config override set `routing: { llm: { mode: "per-story" }, strategy: "keyword" }` so the re-route is skipped. `makeNaxConfig` deep-merges, so this override is sufficient.
+- **Override `_tierEscalationDeps.savePRD` with save/restore**, capturing the saved PRD. Use `beforeEach`/`afterEach` (preferred) or try/finally — never leave it reassigned (it leaks into other tests). Pattern:
+  ```typescript
+  import { _tierEscalationDeps } from "@/execution/escalation/tier-escalation";
+  let origSavePRD: typeof _tierEscalationDeps.savePRD;
+  let savedPrd: PRD | undefined;
+  beforeEach(() => { origSavePRD = _tierEscalationDeps.savePRD; savedPrd = undefined;
+    _tierEscalationDeps.savePRD = async (p) => { savedPrd = p; }; });
+  afterEach(() => { _tierEscalationDeps.savePRD = origSavePRD; });
+  ```
+- **The `EscalationHandlerContext` wrapper** (storiesToExecute, routing, pipelineResult, etc.) is constructed inline and cast `as unknown as Parameters<typeof handleTierEscalation>[0]`, exactly as the existing tests do. Only the leaf objects (story/prd/config/agentManager) use the shared helpers.
+
 ### File map (what each task touches)
 
 | File | Responsibility | Tasks |
@@ -680,8 +705,11 @@ complexity-derived tier. ADR-025 gap #4 prerequisite."
 
 **Files:**
 - Modify: `src/config/schemas-execution.ts:17-21` (escalation Zod schema)
-- Modify: `src/config/runtime-types.ts:34-39` (escalation runtime type)
+- Modify: `src/config/schemas.ts:82-90` (hardcoded `AutoModeConfigSchema.default({...})` block)
+- Modify: `src/config/runtime-types.ts:34-40` (`AutoModeConfig.escalation` inline type — NOT `EscalationEntry` at line 23, which is an unrelated `{from,to}` type)
 - Test: `test/unit/config/` (locate the schema test — see Step 1)
+
+> **Zod v4 gotcha (this repo uses `zod@^4.3.6`):** In Zod 4, `schema.default(x)` returns `x` as the *output* **without re-parsing it through the schema** (that behavior moved to `.prefault()`). So `AutoModeConfigSchema.default({...})` returns the hardcoded block verbatim — a field-level `resetMode: z.enum().default("initial")` is **not** applied to it. You must add `resetMode: "initial"` to the hardcoded default block too (Step 4b), or `NaxConfigSchema.parse({})` (and therefore `DEFAULT_CONFIG`) will have `resetMode: undefined` at runtime while the output type claims it is required. User-provided partial configs that include an `escalation` object *are* parsed normally, so the field-level default still covers them.
 
 - [ ] **Step 1: Locate the config-schema test file**
 
@@ -747,22 +775,38 @@ In `src/config/schemas-execution.ts`, extend the escalation object (lines 17-21)
   }),
 ```
 
+- [ ] **Step 4b: Add `resetMode` to the hardcoded default block (REQUIRED — Zod 4 short-circuit)**
+
+In `src/config/schemas.ts`, the `AutoModeConfigSchema.default({...})` block (lines 74-91) hardcodes the escalation default. Add `resetMode: "initial"` so the parsed default carries it:
+
+```typescript
+      escalation: {
+        enabled: true,
+        tierOrder: [
+          { tier: "fast", attempts: 5 },
+          { tier: "balanced", attempts: 3 },
+          { tier: "powerful", attempts: 2 },
+        ],
+        escalateEntireBatch: true,
+        resetMode: "initial",
+      },
+```
+
 - [ ] **Step 5: Add to the runtime type**
 
-In `src/config/runtime-types.ts`, extend the `escalation` shape (lines 34-39):
+`src/config/runtime-types.ts` is hand-written (confirmed: header says "Type Definitions", no codegen). Extend the `AutoModeConfig.escalation` inline shape (lines 34-40). Do NOT touch `EscalationEntry` (line 23) — it is an unrelated `{ from, to }` type:
 
 ```typescript
   escalation: {
     enabled: boolean;
     /** Ordered tier escalation with per-tier attempt budgets */
     tierOrder: Array<{ tier: string; attempts: number; agent?: string }>;
+    /** When a batch fails, escalate all stories in the batch (default: true) */
     escalateEntireBatch?: boolean;
     /** Reset behaviour for failed stories on re-run (ADR-025). */
     resetMode: "initial" | "last";
   };
 ```
-
-> If `runtime-types.ts` is generated from the schema (check the file header), regenerate instead of hand-editing. Otherwise hand-edit to match.
 
 - [ ] **Step 6: Run test + typecheck**
 
@@ -772,7 +816,7 @@ Expected: PASS, no type errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/config/schemas-execution.ts src/config/runtime-types.ts test/unit/config/
+git add src/config/schemas-execution.ts src/config/schemas.ts src/config/runtime-types.ts test/unit/config/
 git commit -m "feat(config): add autoMode.escalation.resetMode (initial|last)
 
 Controls where a re-run resumes after escalation exhaustion. Defaults to
