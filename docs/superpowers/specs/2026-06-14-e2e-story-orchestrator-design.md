@@ -121,8 +121,9 @@ interface E2EHarnessOptions {
 }
 
 interface E2EHarnessResult {
-  result: ExecutionPlanResult;            // success, exitReason, phaseOutputs
-  phaseLog: PhaseRun[];                   // ordered phase executions incl. repeats
+  result: ExecutionPlanResult;            // { success, phaseOutputs, rectificationExhausted? }
+                                          //   (verified story-orchestrator.ts:176–181 — NO top-level exitReason)
+  phaseLog: PhaseRun[];                   // ordered phase executions incl. repeats (from slot instrumentation)
   strategiesFired: string[];              // which fix strategies ran
 }
 
@@ -135,10 +136,12 @@ Responsibilities:
 - Assemble `PlanInputs` via `makeMockPlanInputs` for the chosen strategy.
 - Inject attempt-aware closures into `_lintCheckDeps.runQualityCommand`,
   `_typecheckCheckDeps.*`, `_fullSuiteGateDeps.runTests` — saving originals.
-- Record a **phase-execution log**: subscribe to phase start/finish (via the dispatch
-  event bus or a thin wrapper around `runPhase`) to capture ordered phase runs and repeat
-  counts. *(Exact observation seam to be confirmed in the plan — preferred is the existing
-  event bus; fallback is wrapping the phase slots.)*
+- Record a **phase-execution log**: **confirmed there is no phase-level dispatch event**,
+  so the harness **instruments the phase slots** — wrap each slot op's `execute` to push
+  `{ name, attempt }` onto an ordered log before delegating. This captures ordering and
+  repeat counts. (Set-level revalidation assertions additionally use the exported pure
+  function `phasesToRevalidate(strategiesRun, allPhases)` at `story-orchestrator.ts:525`,
+  and `phaseOutputs` keys give the final which-phases-ran snapshot.)
 - Restore all `_deps` and call `runtime.close()` in `afterEach` (per the runtime-cleanup
   forbidden-pattern rule).
 
@@ -147,9 +150,11 @@ Responsibilities:
 `makeTempDir` / `cleanupTempDir`, `makeStory`, `makeNaxConfig`, `makeMockCallContext`,
 `makeMockPlanInputs`, `makeRuntimeWithFakeAgent`.
 
-> **Open item for the plan:** confirm `makeMockPlanInputs` exposes every slot the
-> scenarios need (notably the `rectification` strategy set and review inputs). If not, a
-> small **test-only** extension to that helper is in scope.
+> **Open item for the plan:** `makeMockPlanInputs(overrides: Partial<PlanInputs>)`
+> (verified) accepts arbitrary slot overrides, so no helper change is needed **provided
+> the `PlanInputs` type already declares the `rectification` and review (`semanticReview`,
+> `adversarialReview`) slots**. Confirm in the plan; only if a slot is absent from
+> `PlanInputs` is a minimal test-only extension in scope.
 
 ---
 
@@ -196,8 +201,11 @@ Each file stays < 800 lines, split by concern.
 
 Primary signal is the **observed phase-execution log** (ordered, with repeats), plus:
 
-- `result.success`, `result.exitReason`, presence/shape of `result.phaseOutputs[…]`.
+- `result.success`, `result.rectificationExhausted`, presence/shape of `result.phaseOutputs[…]`
+  (no top-level `exitReason` — exhaustion is observed via `rectificationExhausted === true`).
 - `strategiesFired` — which fix strategy claimed the findings.
+- Set-level revalidation assertions may also call the exported `phasesToRevalidate()` pure
+  function directly for a unit-precise check alongside the end-to-end log.
 
 This validates the revalidation-map behavior end-to-end and ties each test back to a row
 in `story-orchestrator-flow.md` §4.
