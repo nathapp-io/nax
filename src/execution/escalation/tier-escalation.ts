@@ -53,6 +53,8 @@ function buildEscalationFailure(
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     cost: cost ?? 0,
     timestamp: new Date().toISOString(),
+    ...(story.routing?.agent !== undefined ? { agent: story.routing.agent } : {}),
+    ...(story.routing?.agentProfileId !== undefined ? { agentProfileId: story.routing.agentProfileId } : {}),
   };
 }
 
@@ -60,10 +62,13 @@ function buildEscalationRecord(
   currentTier: string,
   nextTier: string,
   reason: string,
+  agents?: { fromAgent?: string; toAgent?: string },
 ): UserStory["escalations"][number] {
   return {
     fromTier: currentTier,
     toTier: nextTier,
+    ...(agents?.fromAgent !== undefined ? { fromAgent: agents.fromAgent } : {}),
+    ...(agents?.toAgent !== undefined ? { toAgent: agents.toAgent } : {}),
     reason,
     timestamp: new Date().toISOString(),
   };
@@ -166,6 +171,17 @@ export async function preIterationTierCheck(
       nextTier: escalatedTier,
     });
 
+    const budgetReason = `Exceeded tier budget for ${currentTier} (${story.attempts}/${tierCfg.attempts})`;
+    const preIterationFailure = buildEscalationFailure(
+      story,
+      currentTier,
+      undefined, // no review findings — iteration never ran
+      undefined, // no attempt cost — iteration never ran
+      budgetReason,
+      undefined, // no TDD failure category — pre-iteration
+    );
+    const preIterationError = `Attempt ${story.attempts} exhausted budget on tier: ${currentTier}`;
+
     // Update story routing in PRD and reset attempts for new tier
     const updatedPrd = {
       ...prd,
@@ -176,11 +192,10 @@ export async function preIterationTierCheck(
               attempts: 0, // Reset attempts for new tier
               escalations: [
                 ...(s.escalations || []),
-                buildEscalationRecord(
-                  currentTier,
-                  escalatedTier,
-                  `Exceeded tier budget for ${currentTier} (${story.attempts}/${tierCfg.attempts})`,
-                ),
+                buildEscalationRecord(currentTier, escalatedTier, budgetReason, {
+                  fromAgent: s.routing?.agent,
+                  toAgent: nextAgent,
+                }),
               ],
               routing: s.routing
                 ? {
@@ -193,6 +208,8 @@ export async function preIterationTierCheck(
                     modelTier: escalatedTier,
                     ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
                   },
+              priorErrors: [...(s.priorErrors || []), preIterationError],
+              priorFailures: [...(s.priorFailures || []), preIterationFailure].slice(-3),
             }
           : s,
       ) as PRD["userStories"],
@@ -426,6 +443,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
               currentStoryTier,
               shouldSwitchToTestAfter ? currentStoryTier : escalatedTier,
               ctx.pipelineResult.reason ?? "Escalated to next retry path",
+              { fromAgent: s.routing?.agent, toAgent: nextAgent },
             )
           : undefined;
 

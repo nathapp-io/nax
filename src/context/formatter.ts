@@ -9,8 +9,8 @@ import type { BuiltContext, ContextElement } from "./types";
 /**
  * Format built context as markdown for agent consumption.
  *
- * Generates markdown with sections for progress, prior errors,
- * test coverage, current story, dependency stories, and relevant files.
+ * Generates markdown with sections for progress, prior failures, prior errors,
+ * test coverage, current story, planning analysis, dependency stories, and relevant files.
  */
 export function formatContextAsMarkdown(built: BuiltContext): string {
   const sections: string[] = [];
@@ -27,9 +27,11 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
   }
 
   renderSection(sections, byType, "progress", "## Progress\n", renderSimple);
+  renderSection(sections, byType, "prior-failures", "## Prior Failures (Structured Context)\n", renderSimple);
   renderErrorSection(sections, byType);
   renderSection(sections, byType, "test-coverage", "", renderSimple);
   renderSection(sections, byType, "story", "## Current Story\n", renderSimple);
+  renderSection(sections, byType, "planning-analysis", "## Planning Analysis\n", renderSimple);
   renderSection(sections, byType, "dependency", "## Dependency Stories\n", renderSimple);
   renderSection(sections, byType, "file", "## Relevant Source Files\n", renderSimple);
 

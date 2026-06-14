@@ -37,6 +37,8 @@ export interface AutoModeConfig {
     tierOrder: Array<{ tier: string; attempts: number; agent?: string }>;
     /** When a batch fails, escalate all stories in the batch (default: true) */
     escalateEntireBatch?: boolean;
+    /** Reset behaviour for failed stories on re-run (ADR-025). */
+    resetMode: "initial" | "last";
   };
 }
 

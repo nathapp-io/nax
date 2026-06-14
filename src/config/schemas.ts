@@ -87,6 +87,7 @@ export const NaxConfigSchema = z
           { tier: "powerful", attempts: 2 },
         ],
         escalateEntireBatch: true,
+        resetMode: "initial",
       },
     }),
     routing: RoutingConfigSchema.default({

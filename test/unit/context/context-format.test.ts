@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { buildContext, formatContextAsMarkdown } from "../../../src/context";
-import type { ContextBudget, StoryContext } from "../../../src/context/types";
+import type { BuiltContext, ContextBudget, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { makeTempDir } from "../../helpers/temp";
 
@@ -31,7 +31,6 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     attempts: s.attempts || 0,
     routing: s.routing,
     priorErrors: s.priorErrors,
-    relevantFiles: s.relevantFiles,
     contextFiles: s.contextFiles,
     expectedFiles: s.expectedFiles,
   })),
@@ -275,6 +274,42 @@ describe("Context Builder", () => {
       expect(markdown).toContain('TypeError: Cannot read property "foo" of undefined');
       expect(markdown).toContain("Test execution failed");
       expect(markdown).not.toContain("⚠️ MANDATORY");
+    });
+
+    test("should render prior-failures element into the markdown (ADR-025 gap #1)", () => {
+      const built: BuiltContext = {
+        summary: "Context: prior-failures (10 tokens)",
+        totalTokens: 10,
+        truncated: false,
+        elements: [
+          {
+            type: "prior-failures",
+            content: "### Attempt 1 — fast\n**Summary:** Tier fast [tests-failing]: 2 tests red",
+            priority: 95,
+            tokens: 10,
+          },
+        ],
+      };
+
+      const md = formatContextAsMarkdown(built);
+
+      expect(md).toContain("Prior Failures (Structured Context)");
+      expect(md).toContain("Tier fast [tests-failing]: 2 tests red");
+    });
+
+    test("should render planning-analysis element into the markdown (ADR-025 gap #1)", () => {
+      const built: BuiltContext = {
+        summary: "Context: planning-analysis (5 tokens)",
+        totalTokens: 5,
+        truncated: false,
+        elements: [
+          { type: "planning-analysis", content: "ANALYSIS: use the existing resolver", priority: 88, tokens: 5 },
+        ],
+      };
+
+      const md = formatContextAsMarkdown(built);
+
+      expect(md).toContain("ANALYSIS: use the existing resolver");
     });
   });
 });

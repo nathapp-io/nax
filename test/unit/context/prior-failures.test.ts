@@ -23,7 +23,6 @@ describe("formatPriorFailures", () => {
 
     const formatted = formatPriorFailures([failure]);
 
-    expect(formatted).toContain("## Prior Failures (Structured Context)");
     expect(formatted).toContain("### Attempt 1 — balanced");
     expect(formatted).toContain("**Stage:** verify");
     expect(formatted).toContain("**Summary:** Test verification failed");
@@ -456,6 +455,55 @@ describe("buildContext with priorFailures", () => {
 
     const priorFailuresElement = built.elements.find((e) => e.type === "prior-failures");
     expect(priorFailuresElement).toBeUndefined();
+  });
+});
+
+describe("formatPriorFailures — ADR-025 gap #2: agent/profileId rendered", () => {
+  test("renders agent and agentProfileId when present on StructuredFailure", () => {
+    const failure: StructuredFailure = {
+      attempt: 1,
+      modelTier: "fast",
+      stage: "escalation",
+      summary: "Failed on fast tier",
+      agent: "claude",
+      agentProfileId: "fast-claude",
+      timestamp: new Date().toISOString(),
+    };
+
+    const formatted = formatPriorFailures([failure]);
+
+    expect(formatted).toContain("claude");
+    expect(formatted).toContain("fast-claude");
+  });
+
+  test("renders agent without profileId when only agent is set", () => {
+    const failure: StructuredFailure = {
+      attempt: 1,
+      modelTier: "balanced",
+      stage: "escalation",
+      summary: "Failed on balanced tier",
+      agent: "codex",
+      timestamp: new Date().toISOString(),
+    };
+
+    const formatted = formatPriorFailures([failure]);
+
+    expect(formatted).toContain("**Agent:** codex");
+    expect(formatted).not.toContain("profile:");
+  });
+
+  test("omits Agent line when neither agent nor agentProfileId is set", () => {
+    const failure: StructuredFailure = {
+      attempt: 1,
+      modelTier: "balanced",
+      stage: "verify",
+      summary: "Test verification failed",
+      timestamp: new Date().toISOString(),
+    };
+
+    const formatted = formatPriorFailures([failure]);
+
+    expect(formatted).not.toContain("**Agent:**");
   });
 });
 

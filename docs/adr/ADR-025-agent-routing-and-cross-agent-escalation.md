@@ -185,6 +185,11 @@ Run-time routing folds into `classifyRouteOp` (not a new op), filling
 - **`initialProfileId` is forward-looking.** Escalation today never rewrites
   `agentProfileId`, so `initialProfileId` currently always equals the live value;
   it becomes meaningful only when escalation starts reassigning profiles.
+- **Agent/profile provenance now recorded.** `EscalationAttempt` carries `fromAgent`/`toAgent`
+  for cross-agent jumps (written by `buildEscalationRecord`); `StructuredFailure` carries
+  `agent`/`agentProfileId` for the producing agent context. `initialModelTier` is now
+  persisted alongside `initialAgent` and `initialProfileId` (write-once at first route
+  and plan time), enabling deterministic reset behavior per `autoMode.escalation.resetMode`.
 
 ### Neutral
 
@@ -224,9 +229,16 @@ the global order proves too coarse.
 1. **Custom-tier ranking.** `TIER_RANK` should become config-derived if custom
    tier names are formally supported; today they rely on escalation-record
    evidence to survive a routing pass.
-2. **Origin-agent metrics.** `initialAgent` / `initialProfileId` are persisted to
-   the PRD only; whether to surface them in `metrics/tracker.ts` (alongside
-   `initialComplexity`) is deferred.
+2. **Reset behavior and determinism.** `initialModelTier` is now persisted and
+   governs reset. With `autoMode.escalation.resetMode: "initial"` (default),
+   `resetFailedStoriesToPending` restores the origin rung, clears escalation
+   history, and resets attempts; `resetMode: "last"` keeps the escalated
+   rung but resets attempts. Clearing `escalations[]` in `"initial"` mode
+   prevents `routing.ts` tier-preservation (BUG-032) from re-pinning the
+   story to the exhausted rung on re-run — acceptable because live PRD state
+   is not the permanent audit log (run logs/metrics carry full history).
+   Whether to surface `initialAgent`/`initialModelTier` in `metrics/tracker.ts`
+   is deferred.
 3. **Staleness handling at run.** The content hash can flag a story edited after
    plan; whether run warns, ignores, or (future Part A) re-routes is open.
 4. **Part A activation.** When/whether to ship run-time routing behind
@@ -254,3 +266,15 @@ remedy).
 
 See the source plans for per-delta detail, file-level edits, and acceptance
 criteria.
+
+### Follow-up: Escalation-Completeness (gaps #1–#4 closed)
+
+After the initial ADR-025 implementation, four gaps were identified and closed:
+
+1. **Prompt-injection drop (gap #1):** `formatContextAsMarkdown` in `src/context/formatter.ts` now renders `prior-failures` and `planning-analysis` element types; both were previously computed by `buildContext` but silently discarded, preventing the agent from seeing the prior context.
+
+2. **Agent/profile provenance (gap #2):** `EscalationAttempt` carries `fromAgent`/`toAgent` for cross-agent jumps (written by `buildEscalationRecord`); `StructuredFailure` carries `agent`/`agentProfileId` rendered into the prior-failures block shown to the next rung's agent.
+
+3. **Pre-iteration prior context (gap #3):** `preIterationTierCheck` now populates `priorErrors`/`priorFailures` (budget-based, capped at 3) before escalating, matching the existing `handleTierEscalation` behavior and ensuring the escalated agent sees the context.
+
+4. **Deterministic reset (gap #4):** `resetFailedStoriesToPending` now always resets `attempts = 0`. Per `autoMode.escalation.resetMode` (default `"initial"`), with `"initial"` mode the story restores the origin rung (`initialModelTier`, `initialAgent`) and clears `escalations[]`, preventing tier-preservation from re-pinning the story to an exhausted rung; with `"last"` mode the escalated rung is kept but attempts reset. `initialModelTier` is stamped write-once at first route and plan time, parallel to `initialAgent`.

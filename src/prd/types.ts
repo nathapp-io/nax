@@ -59,6 +59,10 @@ export interface StructuredFailure {
   cost?: number;
   /** ISO timestamp when failure was recorded */
   timestamp: string;
+  /** Agent that produced this failure — undefined for single-agent ladders */
+  agent?: string;
+  /** Profile id active when this failure occurred — undefined when no profile assigned */
+  agentProfileId?: string;
 }
 
 /** Routing metadata per story */
@@ -93,12 +97,18 @@ export interface StoryRouting {
   agentProfileId?: string;
   /** Model tier from the matched agent profile's target — set at plan time, used to bias routing tier selection */
   profileModelTier?: ModelTier;
+  /** Model tier at first route — written once, never overwritten by escalation. Used by reset (ADR-025). */
+  initialModelTier?: ModelTier;
 }
 
 /** Escalation attempt tracking */
 export interface EscalationAttempt {
   fromTier: ModelTier;
   toTier: ModelTier;
+  /** Agent active before this escalation (cross-agent ladders) — undefined for single-agent ladders */
+  fromAgent?: string;
+  /** Agent the story escalated to (cross-agent ladders) — undefined for single-agent ladders */
+  toAgent?: string;
   reason: string;
   timestamp: string;
 }
@@ -192,7 +202,9 @@ export interface UserStory {
  * Falls back to relevantFiles for backward compatibility.
  */
 export function getContextFiles(story: UserStory): string[] {
-  const files = story.contextFiles ?? story.relevantFiles ?? [];
+  // Cast drops the @deprecated tag so TypeScript doesn't warn on this intentional read.
+  const legacyFiles = (story as Omit<UserStory, "relevantFiles"> & { relevantFiles?: string[] }).relevantFiles;
+  const files = story.contextFiles ?? legacyFiles ?? [];
   return files.map((f) => (typeof f === "string" ? f : f.path));
 }
 

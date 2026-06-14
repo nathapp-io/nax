@@ -81,6 +81,7 @@ export const routingStage: PipelineStage = {
     const initialAgent = ctx.story.routing?.initialAgent ?? (neverEscalated ? routing.agent : undefined);
     const initialProfileId =
       ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
+    const initialModelTier = ctx.story.routing?.initialModelTier ?? (neverEscalated ? routing.modelTier : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),
@@ -93,6 +94,7 @@ export const routingStage: PipelineStage = {
       ...(routing.agent !== undefined && { agent: routing.agent }),
       ...(initialAgent !== undefined && { initialAgent }),
       ...(initialProfileId !== undefined && { initialProfileId }),
+      ...(initialModelTier !== undefined && { initialModelTier }),
     };
     if (ctx.prdPath) {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);

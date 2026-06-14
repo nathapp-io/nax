@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
-import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
+import { pipelineEventBus } from "@/pipeline";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -742,6 +742,207 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
     } finally {
       _tierEscalationDeps.savePRD = origSavePRD;
       _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// preIterationTierCheck — ADR-025 gap #3: priorErrors / priorFailures captured
+//
+// When a story exhausts its per-rung attempt budget before an iteration spawns,
+// the saved PRD must carry priorErrors and priorFailures so the next tier's
+// agent prompt has context about why escalation happened.
+// ---------------------------------------------------------------------------
+
+describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on budget exhaustion", () => {
+  test("saves priorErrors and priorFailures when story budget is exhausted (AC)", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { preIterationTierCheck, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    let capturedPrd: import("@/prd").PRD | undefined;
+    _tierEscalationDeps.savePRD = async (prd) => {
+      capturedPrd = prd as import("@/prd").PRD;
+    };
+
+    try {
+      const story = {
+        id: "US-prior-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        // attempts === tierCfg.attempts (2) → budget exhausted
+        attempts: 2,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+      };
+
+      const prd = {
+        project: "test",
+        feature: "f",
+        branchName: "b",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [story],
+      };
+
+      const config = {
+        autoMode: {
+          escalation: {
+            enabled: true,
+            tierOrder: [
+              { tier: "fast", attempts: 2 },
+              { tier: "balanced", attempts: 3 },
+            ],
+          },
+        },
+        // per-story mode bypasses LLM re-route
+        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+        models: {},
+      };
+
+      const result = await preIterationTierCheck(
+        story as unknown as Parameters<typeof preIterationTierCheck>[0],
+        { modelTier: "fast" },
+        config as unknown as Parameters<typeof preIterationTierCheck>[2],
+        prd as unknown as Parameters<typeof preIterationTierCheck>[3],
+        "/tmp/test-prd-prior.json",
+        undefined,
+        { hooks: {} } as unknown as Parameters<typeof preIterationTierCheck>[6],
+        "f",
+        0,
+        "/tmp",
+      );
+
+      // Escalation must have been triggered
+      expect(result.shouldSkipIteration).toBe(true);
+
+      // savePRD must have been called with a PRD capturing prior context
+      expect(capturedPrd).toBeDefined();
+
+      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-prior-001");
+      expect(savedStory).toBeDefined();
+
+      // priorErrors: at least one entry mentioning the tier "fast"
+      expect(savedStory!.priorErrors).toBeDefined();
+      expect((savedStory!.priorErrors ?? []).length).toBeGreaterThanOrEqual(1);
+      expect((savedStory!.priorErrors ?? []).some((e) => e.includes("fast"))).toBe(true);
+
+      // priorFailures: exactly 1 entry with modelTier "fast" and summary containing "budget"
+      expect(savedStory!.priorFailures).toBeDefined();
+      expect((savedStory!.priorFailures ?? []).length).toBe(1);
+      const failure = (savedStory!.priorFailures ?? [])[0];
+      expect(failure.modelTier).toBe("fast");
+      expect(failure.summary.toLowerCase()).toContain("budget");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleTierEscalation — ADR-025 gap #2: cross-agent escalation provenance
+//
+// When the tierOrder has agent-qualified rungs and a story escalates to a
+// different agent, the escalation record must capture fromAgent / toAgent
+// so the audit trail can distinguish a cross-agent jump from a same-agent
+// tier bump.
+// ---------------------------------------------------------------------------
+
+describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation provenance", () => {
+  test("escalation record includes fromAgent and toAgent on cross-agent escalation", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    let capturedPrd: import("@/prd").PRD | undefined;
+    _tierEscalationDeps.savePRD = async (prd) => {
+      capturedPrd = prd as import("@/prd").PRD;
+    };
+
+    try {
+      const story = {
+        id: "US-provenance-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: {
+          modelTier: "balanced",
+          testStrategy: "test-after" as const,
+          agent: "claude",
+          complexity: "medium" as const,
+          reasoning: "",
+        },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            defaultAgent: "claude",
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", agent: "claude", attempts: 3 },
+                { tier: "balanced", agent: "claude", attempts: 2 },
+                { tier: "fast", agent: "codex", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd-provenance.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as unknown as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+
+      // savePRD must have been called
+      expect(capturedPrd).toBeDefined();
+
+      const savedStory = capturedPrd!.userStories.find((s) => s.id === "US-provenance-001");
+      expect(savedStory).toBeDefined();
+
+      // At least one escalation record must exist
+      expect((savedStory!.escalations ?? []).length).toBeGreaterThanOrEqual(1);
+
+      // The most recent escalation record must carry cross-agent provenance
+      const record = savedStory!.escalations![savedStory!.escalations!.length - 1];
+      expect(record.fromAgent).toBe("claude");
+      expect(record.toAgent).toBe("codex");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
     }
   });
 });
