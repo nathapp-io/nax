@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
+import { makeLogger } from "../../../helpers";
 import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
 
 // ---------------------------------------------------------------------------
