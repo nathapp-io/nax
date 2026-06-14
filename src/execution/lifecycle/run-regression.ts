@@ -172,25 +172,12 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   const logger = getSafeLogger();
   const { config, prd, workdir, runtime } = options;
 
-  // Check if regression gate is deferred
+  // The deferred regression runs for both 'deferred' and 'per-story' modes
+  // ('per-story' is a superset: per-story gate during the loop + deferred at end-of-run).
+  // Only 'disabled' suppresses it entirely.
   const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
   if (regressionMode === "disabled") {
     logger?.info("regression", "Deferred regression gate disabled");
-    return {
-      success: true,
-      failedTests: 0,
-      failedTestFiles: [],
-      passedTests: 0,
-      rectificationAttempts: 0,
-      affectedStories: [],
-      storyCosts: {},
-      storyDurations: {},
-      storyOutcomes: {},
-    };
-  }
-
-  if (regressionMode !== "deferred") {
-    logger?.info("regression", "Regression gate mode is not deferred, skipping");
     return {
       success: true,
       failedTests: 0,

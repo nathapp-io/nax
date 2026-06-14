@@ -197,6 +197,20 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
     expect(regressionCalls.length).toBe(0);
   });
 
+  test("DOES call setPostRunPhase + runDeferredRegression when mode is per-story (superset of deferred)", async () => {
+    const statusWriter = makeStatusWriter();
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const config = makeConfig("per-story", "bun test");
+
+    await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
+
+    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalled();
+    const regressionCalls = statusWriter.setPostRunPhase.mock.calls.filter(
+      (c: unknown[]) => c[0] === "regression",
+    );
+    expect(regressionCalls.length).toBeGreaterThan(0);
+  });
+
   test("does NOT call setPostRunPhase for regression when no test command configured", async () => {
     const statusWriter = makeStatusWriter();
     const prd = makePRD([{ id: "US-001", status: "passed" }]);

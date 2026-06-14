@@ -335,7 +335,7 @@ describe("runDeferredRegression — test output context forwarding", () => {
 // disabled / non-deferred mode
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("runDeferredRegression — disabled mode", () => {
+describe("runDeferredRegression — mode gating", () => {
   test("returns success immediately when mode is disabled", async () => {
     const config = makeConfig();
     (config.execution.regressionGate as { mode: string }).mode = "disabled";
@@ -352,6 +352,25 @@ describe("runDeferredRegression — disabled mode", () => {
     expect(result.success).toBe(true);
     expect(_regressionDeps.runVerification).not.toHaveBeenCalled();
     expect(result.storyCosts).toEqual({});
+  });
+
+  test("runs the deferred suite when mode is per-story (superset of deferred)", async () => {
+    const config = makeConfig();
+    (config.execution.regressionGate as { mode: string }).mode = "per-story";
+
+    _regressionDeps.runVerification = mock(async () => makePassResult());
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 150, failed: 0, failures: [] }));
+
+    const result = await runDeferredRegression({
+      config,
+      prd: makePrd(["US-001"]),
+      workdir: "/tmp/test",
+      runtime: makeMockRuntime(),
+    } as unknown as DeferredRegressionOptions);
+
+    expect(result.success).toBe(true);
+    // per-story no longer short-circuits — the full suite is actually run.
+    expect(_regressionDeps.runVerification).toHaveBeenCalled();
   });
 });
 

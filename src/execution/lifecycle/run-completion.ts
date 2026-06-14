@@ -118,7 +118,12 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const regressionMode = config.execution.regressionGate?.mode;
   if (options.skipRegression) {
     // Regression phase already passed on a prior run — skip
-  } else if (regressionMode === "deferred" && config.quality.commands.test) {
+  } else if (
+    // 'per-story' is a superset of 'deferred': the per-story full-suite gate runs
+    // during the main loop AND the deferred regression runs once at end-of-run.
+    (regressionMode === "deferred" || regressionMode === "per-story") &&
+    config.quality.commands.test
+  ) {
     statusWriter.setPostRunPhase("regression", { status: "running" });
     pipelineEventBus.emit({ type: "postrun:phase:started", phase: "regression" });
 
