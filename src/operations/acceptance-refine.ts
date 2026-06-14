@@ -31,7 +31,7 @@ export const acceptanceRefineOp: CompleteOperation<AcceptanceRefineInput, Accept
   // already runs 3 stale retries before reaching parse(); the op-tier retry then
   // adds one more completeAs call (4 more adapter attempts). Bounded at 8 total.
   retry: { preset: "transient-network" as const, maxAttempts: 2, baseDelayMs: 0 },
-  model: (_input, ctx) => ctx.config.acceptance.generateModel ?? ctx.config.acceptance.model,
+  model: (_input, ctx) => ctx.config.acceptance.model,
   timeoutMs: (_input, ctx) => ctx.config.acceptance.timeoutMs,
   build(input, _ctx) {
     const prompt = new AcceptancePromptBuilder().buildRefinementPrompt(input.criteria, input.codebaseContext, {

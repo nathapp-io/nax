@@ -79,8 +79,8 @@ describe("acceptanceRefineOp shape", () => {
     const modelResolver = acceptanceRefineOp.model as (input: AcceptanceRefineInput, ctx: BuildContext<AcceptanceConfig>) => unknown;
 
     expect(modelResolver(SAMPLE_INPUT, ctx)).toEqual({
-      agent: "claude",
-      model: "balanced",
+      agent: "opencode",
+      model: "opencode-go/minimax-m2.7",
     });
   });
 
