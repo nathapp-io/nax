@@ -157,6 +157,9 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     startedAt: storyStartTime,
     completedAt: new Date().toISOString(),
     fullSuiteGatePassed,
+    ...(ctx.fullSuiteGateFailingFiles && ctx.fullSuiteGateFailingFiles.length > 0
+      ? { failingTestFiles: ctx.fullSuiteGateFailingFiles }
+      : {}),
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
     tokens: agentResult?.tokenUsage
       ? new TokenUsage({

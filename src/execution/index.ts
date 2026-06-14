@@ -27,11 +27,13 @@ export {
 export { PidRegistry, _pidRegistryDeps } from "./pid-registry";
 export {
   runDeferredRegression,
+  findResponsibleStoryByTransition,
   _regressionDeps,
   handleRunCompletion,
   _runCompletionDeps,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
+  type StorySnapshot,
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./lifecycle";
@@ -42,6 +44,7 @@ export {
   EXHAUSTED_EXIT_REASONS,
   phasesToRevalidate,
   orderGateLast,
+  gateFailureKeys,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   type OrchestratorSlot,

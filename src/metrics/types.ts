@@ -130,6 +130,13 @@ export interface StoryMetrics {
   runtimeCrashes?: number;
   /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
   fullSuiteGatePassed?: boolean;
+  /**
+   * Test files failing at this story's full-suite gate (post-rectification).
+   * Snapshot used by the deferred-regression gate to attribute an end-of-run
+   * regression to the story where a test transitioned pass -> fail. Absent when
+   * no per-story gate ran (non-TDD + deferred) or the gate passed cleanly.
+   */
+  failingTestFiles?: string[];
   /** Cost incurred only during rectification (only set when source === 'rectification') */
   rectificationCost?: number;
   /** Token usage for this story */

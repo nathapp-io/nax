@@ -14,7 +14,9 @@ export { cleanupRun, type RunCleanupOptions } from "./run-cleanup";
 export { setupRun, type RunSetupOptions, type RunSetupResult } from "./run-setup";
 export {
   runDeferredRegression,
+  findResponsibleStoryByTransition,
   _regressionDeps,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
+  type StorySnapshot,
 } from "./run-regression";

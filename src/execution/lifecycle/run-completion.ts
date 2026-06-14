@@ -127,6 +127,20 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       prd,
       workdir,
       runtime: options.runtime,
+      // Per-story gate snapshots enable causal blame attribution (transition
+      // pass -> fail) instead of the git-recency heuristic. Sequential runs
+      // only: in parallel mode story completion order (`completedAt`) is not
+      // causal and each story runs in an isolated worktree, so a per-story
+      // snapshot does not reflect merged-repo state — fall back to the git
+      // heuristic there by withholding snapshots.
+      storyMetrics:
+        options.isSequential === false
+          ? undefined
+          : allStoryMetrics.map((m) => ({
+              storyId: m.storyId,
+              completedAt: m.completedAt,
+              failingTestFiles: m.failingTestFiles,
+            })),
     });
 
     const lastRunAt = new Date().toISOString();
