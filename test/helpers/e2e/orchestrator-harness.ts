@@ -7,9 +7,7 @@
  * The runtime is closed in finally to prevent idle-watchdog timer leaks.
  */
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
-import { _lintCheckDeps } from "@/operations/lint-check";
-import { _typecheckCheckDeps } from "@/operations/typecheck-check";
-import { _fullSuiteGateDeps } from "@/operations/full-suite-gate";
+import { _lintCheckDeps, _typecheckCheckDeps, _fullSuiteGateDeps } from "@/operations";
 import type { NaxConfig } from "@/config";
 import type { TestStrategy } from "@/config/schema-types";
 import type { UserStory } from "@/prd/types";

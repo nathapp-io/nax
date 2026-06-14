@@ -15,7 +15,6 @@ describe("E2E: makeScriptedAgent", () => {
       implementer: (attempt) => ({ output: `impl-${attempt}` }),
     });
 
-    await agent.openSession({ sessionName: fakeHandle("test-writer").id } as never);
     const r1 = await agent.sendTurn(fakeHandle("test-writer"), "p", noopOpts);
     const r2 = await agent.sendTurn(fakeHandle("test-writer"), "p", noopOpts);
     const r3 = await agent.sendTurn(fakeHandle("implementer"), "p", noopOpts);
