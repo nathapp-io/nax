@@ -30,6 +30,20 @@
 | `phasesToRevalidate(strategiesRun, allPhases)` exported pure fn | `src/execution/story-orchestrator.ts:525` |
 | `TurnResult`: `{ output, tokenUsage, estimatedCostUsd, internalRoundTrips }` (min) | `src/agents/types.ts:446-474` |
 
+## Handover Notes (read first)
+
+This plan was verified against the code on 2026-06-14. Four facts are load-bearing — do not second-guess them:
+
+1. **Instrumentation is correct.** Wrapping `_storyOrchestratorDeps.callOp` captures **initial phases, revalidation re-runs, AND fix-strategy op executions** — all route through `runPhase` → `_storyOrchestratorDeps.callOp` (story-orchestrator.ts:741), including the fix cycle's `wrappedCallOp` (`:920-925`). You do not need any other seam.
+
+2. **`strategiesFired` holds fix-OP names, not strategy names.** The wrap sees `op.name` of the fix operation, which may differ from the strategy's `name` (e.g. the strategy `"mechanical-lintfix"` may dispatch an op named differently). **Therefore: in Tasks 5 & 6, first RUN the test and `console.log(strategiesFired)` to observe the actual op names, then write the assertion against the observed name.** The robust primary signal is the phase-log re-run pattern (e.g. `lint-check` ran exactly twice, gate ran once), not the strategy name.
+
+3. **No `git init` needed.** `captureGitRef` returns `undefined` on a non-git temp dir without throwing (src/utils/git.ts:90-98). The harness tolerates it. Do not add git setup.
+
+4. **Result shape** (`StoryOrchestratorResult`, story-orchestrator.ts:175-192): `{ success, phaseOutputs, rectificationExhausted?, gateRegressedDuringRect?, unfixedFindings?, phaseCosts, totalCostUsd, durationMs }`. The staleness test (Task 7) should assert `result.gateRegressedDuringRect === true` for a precise signal.
+
+**Elevated-risk area:** populating `semanticReview` / `adversarialReview` input slots (heavy shapes). The harness builds **minimal type-valid** review inputs (empty `diff`/`stat`/inventory) — the scripted agent ignores the prompt and returns canned findings, so the diff content is irrelevant. Concrete templates are in Task 3 Step 5. Reviews only run when `config.review.enabled` + `config.review.checks`/`semantic`/`adversarial` are set (handled in `makeE2EConfig`). If a review phase unexpectedly does not appear in `phaseLog`, the cause is almost always a missing config flag or an unpopulated input slot — not the orchestrator.
+
 ## File structure
 
 | File | Responsibility |
@@ -318,7 +332,6 @@ Expected: FAIL — `runOrchestratorE2E` not exported.
  * attempt-aware gate _deps. Records an ordered phase log by wrapping the single
  * chokepoint every phase passes through: _storyOrchestratorDeps.callOp.
  */
-import { afterEach } from "bun:test";
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
 import { _lintCheckDeps } from "@/operations/lint-check";
 import { _typecheckCheckDeps } from "@/operations/typecheck-check";
@@ -363,15 +376,38 @@ export interface E2EOptions {
 }
 
 export interface E2EResult {
-  result: { success: boolean; phaseOutputs: Record<string, unknown>; rectificationExhausted?: boolean };
+  result: {
+    success: boolean;
+    phaseOutputs: Record<string, unknown>;
+    rectificationExhausted?: boolean;
+    gateRegressedDuringRect?: boolean;
+  };
   phaseLog: string[];
   strategiesFired: string[];
 }
 
-/** Config that turns on the real rectification strategy assembly. Confirm keys in Step 1. */
+/**
+ * Config that (a) enables real rectification strategy assembly and (b) enables the
+ * review phases so they appear in the plan. Confirm exact keys against
+ * src/config/schemas.ts in Step 1 — `makeNaxConfig` deep-merges over schema defaults,
+ * so you only set what differs.
+ */
 function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
   return makeNaxConfig({
-    quality: { commands: { lint: "lint", typecheck: "tc", test: "t", lintFix: "lint --fix" }, autofix: { enabled: true } },
+    quality: {
+      commands: { lint: "lint", typecheck: "tc", test: "t", lintFix: "lint --fix" },
+      autofix: { enabled: true },
+    },
+    review: {
+      enabled: true,
+      checks: ["lint", "typecheck"],
+      // semantic/adversarial sub-configs must exist so review phases are added.
+      // Confirm the real default sub-shape in schemas.ts and spread it; these are
+      // the minimal fields the input slots read (diffMode + blockingThreshold).
+      semantic: { diffMode: "full" },
+      adversarial: { diffMode: "full" },
+      blockingThreshold: "error",
+    },
     ...overrides,
   } as Partial<NaxConfig>);
 }
@@ -414,21 +450,40 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     return { passed: g.passed, failed: g.failed, output: g.output ?? "", parsedSummary: { passed: g.passed ? 1 : 0, failed: g.failed, skipped: 0 } as never, timedOut: false };
   };
 
-  // --- inputs: all slots populated; buildPlanForStrategy assembles real strategies from config ---
+  // --- inputs: all slots populated with minimal type-valid shapes (verified against
+  //     assemblePlanInputsFromCtx, src/execution/plan-inputs.ts:224-407). buildPlanForStrategy
+  //     assembles the REAL fix strategies from config; we pass an empty extra-strategies array.
+  //     The scripted agent ignores prompts, so diff/stat/inventory may be empty. ---
+  const rtp = { globs: ["**/*.test.ts"], regex: [/\.test\.ts$/], pathspec: [] as string[], testDirs: ["test"] };
+  const sem = config.review!.semantic!;
+  const adv = config.review!.adversarial!;
+  const bt = config.review!.blockingThreshold;
+
   const inputs = makeMockPlanInputs({
     story, config,
-    testWriter: { story } as never,
-    greenfieldGate: { story, workdir } as never,
-    implementer: { story } as never,
-    fullSuiteGate: { story, workdir } as never,
-    verifier: { story } as never,
-    verifyScoped: { story, workdir } as never,
-    lintCheck: { workdir, storyId: story.id } as never,
-    typecheckCheck: { workdir, storyId: story.id } as never,
-    semanticReview: { story } as never,
-    adversarialReview: { story } as never,
+    resolvedTestPatterns: rtp,
+    testWriter: { story, promptMarkdown: "tw", resolvedTestPatterns: rtp },
+    greenfieldGate: { story, workdir, resolvedTestPatterns: rtp },
+    implementer: { story, promptMarkdown: "impl" },
+    fullSuiteGate: { story, workdir, featureName: "e2e", projectDir: workdir, resolvedTestPatterns: rtp },
+    verifier: { story, promptMarkdown: "verify" },
+    verifyScoped: {
+      workdir, storyId: story.id, storyGitRef: undefined, naxIgnoreIndex: undefined,
+      regressionMode: "scoped", repoRoot: workdir, packagePrefix: "", resolvedTestPatterns: rtp,
+    },
+    lintCheck: { workdir, storyId: story.id },
+    typecheckCheck: { workdir, storyId: story.id },
+    semanticReview: {
+      workdir, story, semanticConfig: sem, mode: sem.diffMode, storyGitRef: undefined,
+      stat: "", diff: "", excludePatterns: [], blockingThreshold: bt,
+    },
+    adversarialReview: {
+      workdir, story, adversarialConfig: adv, mode: adv.diffMode, storyGitRef: undefined,
+      stat: "", diff: "", testInventory: "", excludePatterns: [], testGlobs: [],
+      refExcludePatterns: [], blockingThreshold: bt,
+    },
     rectification: { maxAttempts: 3, strategies: [], abortOnIncreasingFailures: false },
-  });
+  } as Parameters<typeof makeMockPlanInputs>[0]);
 
   const ctx = makeMockCallContext({ runtime, packageDir: workdir });
 
@@ -445,15 +500,35 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     cleanupTempDir(workdir);
   }
 }
-
-afterEach(() => {
-  // Defensive: restore happens in finally; this guards against a throw before finally.
-});
 ```
 
-- [ ] **Step 5: Resolve real input slot shapes**
+> Cleanup (deps restore + `runtime.close()` + temp-dir removal) is in the `finally`, so it
+> runs even if `plan.run()` throws. No `afterEach` is needed in the harness itself.
 
-The `{ story } as never` casts above are placeholders for the real op-input types. For each slot, read the input type referenced in `src/execution/plan-inputs.ts:40-56` (e.g. `TestWriterInput`, `ImplementerInput`, `FullSuiteGateInput`, `LintCheckInput`) and replace the cast with the correctly-shaped object. Mirror what `assemblePlanInputs` builds in `src/execution/plan-inputs.ts`. Remove every `as never` cast — strict mode must pass.
+- [ ] **Step 5: Typecheck the slot shapes and reconcile**
+
+The input objects above were derived from the real construction in
+`assemblePlanInputsFromCtx` (`src/execution/plan-inputs.ts:224-407`). Run `bun run typecheck`
+and fix any field mismatch against these verified reference shapes (do NOT invent fields):
+
+```
+TestWriterInput      : { story, promptMarkdown, resolvedTestPatterns, featureContextMarkdown?, constitution?, lite? }   (plan-inputs.ts:224)
+GreenfieldGateInput  : { story, workdir, resolvedTestPatterns }                                                          (:238)
+ImplementerInput     : { story, promptMarkdown, featureContextMarkdown?, constitution? }                                 (:241)
+FullSuiteGateInput   : { story, workdir, featureName, projectDir, resolvedTestPatterns }                                 (:252)
+VerifierInput        : { story, promptMarkdown }                                                                         (:263)
+VerifyScopedInput    : { workdir, storyId, storyGitRef, naxIgnoreIndex, regressionMode, repoRoot, packagePrefix, resolvedTestPatterns }  (:266)
+LintCheckInput       : { workdir, storyId }                                                                              (:287)
+TypecheckCheckInput  : { workdir, storyId }                                                                              (:295)
+SemanticReviewInput  : { workdir, story, semanticConfig, mode, storyGitRef, stat, diff, excludePatterns, blockingThreshold, featureCtxBlock?, priorSemanticIterations?, _refresh? }      (:313)
+AdversarialReviewInput: { workdir, story, adversarialConfig, mode, storyGitRef, stat, diff, testInventory, excludePatterns, testGlobs, refExcludePatterns, blockingThreshold, featureCtxBlock?, priorAdversarialIterations?, _refresh? }  (:364)
+```
+
+If a required field is missing/extra, the type error names it exactly — add/remove only that
+field, sourcing its value from the corresponding `assemblePlanInputsFromCtx` line. If
+`regressionMode` rejects `"scoped"`, read `toVerifyScopedMode` for the valid union. If
+`semanticConfig`/`adversarialConfig` reject the minimal `{ diffMode }`, spread the real
+default sub-config from `src/config/schemas.ts` instead.
 
 - [ ] **Step 6: Export from barrels**
 
@@ -593,7 +668,18 @@ describe("E2E: mechanical lint-fix", () => {
 - [ ] **Step 2: Run, observe, lock**
 
 Run: `timeout 90 bun test test/e2e/mechanical-fix.e2e.test.ts --timeout=30000`
-Expected: PASS. If `mechanical-lintfix` does not fire, confirm `config.quality.commands.lintFix` is set in `makeE2EConfig` (Task 3 Step 1) and that lint findings carry `source: "lint"`. The key soundness assertion is that the test gate does not re-run a second time after the lint-fix.
+
+First run will likely FAIL on the `strategiesFired` assertion — per Handover Note 2, the
+captured name is the fix-**op** name, which may differ from the strategy name
+`"mechanical-lintfix"`. Temporarily add `console.log({ phaseLog, strategiesFired })` before
+the assertions, run once, read the actual op name, then set the assertion to that observed
+name (or drop the `strategiesFired` assertion and rely on the phase-log re-run pattern, which
+is the robust signal). Remove the `console.log` before committing.
+
+If `mechanical-lintfix` does not fire at all (no extra `lint-check` run), confirm
+`config.quality.commands.lintFix` is set in `makeE2EConfig` and that the injected lint
+failure produces a finding with `source: "lint"`. The load-bearing assertion is the
+soundness one: the test gate (`verify-scoped`) does NOT re-run after the lint-fix.
 
 - [ ] **Step 3: Commit**
 
@@ -642,10 +728,13 @@ describe("E2E: agent-fix", () => {
 });
 ```
 
-- [ ] **Step 2: Run**
+- [ ] **Step 2: Run (observe strategy op name first)**
 
 Run: `timeout 90 bun test test/e2e/agent-fix.e2e.test.ts --timeout=30000`
-Expected: PASS — `autofix-implementer` fired, full chain re-ran.
+Per Handover Note 2, observe the actual `strategiesFired` op name via a temporary
+`console.log` and lock the assertion to it (or rely on the full-chain re-run pattern:
+`typecheck-check` and `semantic-review` each appearing ≥2×). Expected once locked: PASS —
+implementer fix fired, full chain re-ran.
 
 - [ ] **Step 3: Discovery for the adversarial-test-writer path**
 
@@ -787,6 +876,8 @@ test("verifier passes but gate regresses during rectification -> story re-fails"
     },
   });
   expect(result.success).toBe(false);
+  // Precise signal: the verifier-SSOT staleness guard (story-orchestrator.ts:1297) flips this.
+  expect(result.gateRegressedDuringRect).toBe(true);
 });
 ```
 
@@ -847,7 +938,16 @@ git push -u origin test/e2e-story-orchestrator
 
 ## Residual discovery (flagged inline, not blockers)
 
-1. **Slot input shapes** (Task 3 Step 5) — replace `as never` casts with real op-input objects mirroring `assemblePlanInputs`.
-2. **Rectification config gating** (Task 3 Step 1) — confirm `shouldRunRectification` keys.
-3. **Adversarial review JSON schema** (Task 6 Step 3) — confirm `validateAdversarialShape` shape for a `fixTarget:"test"` finding.
-4. **Observed-order reconciliation** — happy-path/edge assertions lock to observed phase order; document any deviation from `story-orchestrator-flow.md` §2 in comments.
+1. **Slot input shapes** (Task 3 Step 5) — concrete templates provided; only a `typecheck`
+   reconcile remains (add/remove the exact field a type error names, sourced from the quoted
+   `assemblePlanInputsFromCtx` lines). Likely friction points: `regressionMode` union value,
+   and whether `semanticConfig`/`adversarialConfig` need the full default sub-config vs `{ diffMode }`.
+2. **Rectification + review config gating** (Task 3 Step 1) — confirm `shouldRunRectification`
+   keys and the real `review.semantic`/`review.adversarial` default sub-shape in `schemas.ts`.
+3. **Adversarial review JSON schema** (Task 6 Step 3) — confirm `validateAdversarialShape` shape
+   for a `fixTarget:"test"` finding (adversarial parse throws on bad shape, so this must be exact).
+4. **Observed-order reconciliation** — happy-path/edge phase-order and `strategiesFired` op-name
+   assertions lock to observed values (Handover Note 2); document any deviation from
+   `story-orchestrator-flow.md` §2 in comments.
+
+All four are bounded "read function X, copy the shape" steps — none require design judgment.
