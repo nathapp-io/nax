@@ -192,12 +192,10 @@ export async function preIterationTierCheck(
               attempts: 0, // Reset attempts for new tier
               escalations: [
                 ...(s.escalations || []),
-                buildEscalationRecord(
-                  currentTier,
-                  escalatedTier,
-                  budgetReason,
-                  { fromAgent: s.routing?.agent, toAgent: nextAgent ?? s.routing?.agent },
-                ),
+                buildEscalationRecord(currentTier, escalatedTier, budgetReason, {
+                  fromAgent: s.routing?.agent,
+                  toAgent: nextAgent ?? s.routing?.agent,
+                }),
               ],
               routing: s.routing
                 ? {

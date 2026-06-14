@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { NaxConfigSchema } from "@/config";
 
 describe("autoMode.escalation.resetMode (ADR-025 gap #4)", () => {
   test("defaults to 'initial' when omitted", () => {

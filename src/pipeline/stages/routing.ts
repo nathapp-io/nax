@@ -81,8 +81,7 @@ export const routingStage: PipelineStage = {
     const initialAgent = ctx.story.routing?.initialAgent ?? (neverEscalated ? routing.agent : undefined);
     const initialProfileId =
       ctx.story.routing?.initialProfileId ?? (neverEscalated ? ctx.story.routing?.agentProfileId : undefined);
-    const initialModelTier =
-      ctx.story.routing?.initialModelTier ?? (neverEscalated ? routing.modelTier : undefined);
+    const initialModelTier = ctx.story.routing?.initialModelTier ?? (neverEscalated ? routing.modelTier : undefined);
 
     ctx.story.routing = {
       ...(ctx.story.routing ?? {}),

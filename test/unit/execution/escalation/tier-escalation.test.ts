@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "../../../helpers";
-import { pipelineEventBus } from "../../../../src/pipeline/event-bus";
+import { makeLogger } from "@test/helpers";
+import { pipelineEventBus } from "@/pipeline";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -760,9 +760,9 @@ describe("preIterationTierCheck — ADR-025 gap #3: prior context captured on bu
     const { preIterationTierCheck, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
-    let capturedPrd: import("../../../../src/prd").PRD | undefined;
+    let capturedPrd: import("@/prd").PRD | undefined;
     _tierEscalationDeps.savePRD = async (prd) => {
-      capturedPrd = prd as import("../../../../src/prd").PRD;
+      capturedPrd = prd as import("@/prd").PRD;
     };
 
     try {
@@ -859,9 +859,9 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePRD;
-    let capturedPrd: import("../../../../src/prd").PRD | undefined;
+    let capturedPrd: import("@/prd").PRD | undefined;
     _tierEscalationDeps.savePRD = async (prd) => {
-      capturedPrd = prd as import("../../../../src/prd").PRD;
+      capturedPrd = prd as import("@/prd").PRD;
     };
 
     try {

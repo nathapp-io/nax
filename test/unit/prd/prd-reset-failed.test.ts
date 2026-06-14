@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resetFailedStoriesToPending } from "../../../src/prd";
-import type { PRD, UserStory } from "../../../src/prd/types";
+import { resetFailedStoriesToPending } from "@/prd";
+import type { PRD, UserStory } from "@/prd/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
