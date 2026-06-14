@@ -182,6 +182,13 @@ export interface StoryOrchestratorResult {
   readonly unfixedFindings?: readonly Finding[];
   /** Set when rectification short-circuited with empty findings — resume ran scope-backfill. */
   readonly liteScopeIncomplete?: boolean;
+  /**
+   * True when rectification introduced full-suite-gate failures absent from the
+   * verifier-time baseline — the verifier verdict is stale and no longer exempts
+   * the gate (carve-out staleness fix). Surfaced so post-run categorization can
+   * route the failure to escalation as `tests-failing`.
+   */
+  readonly gateRegressedDuringRect?: boolean;
 }
 
 export type PhaseKind =
@@ -405,6 +412,22 @@ export function extractPhaseFindings(output: unknown): Finding[] {
   const success =
     "success" in record ? record.success === true : "passed" in record ? record.passed === true : findings.length === 0;
   return success ? [] : findings;
+}
+
+/**
+ * Failing-test identity keys (`file::testName`) from a full-suite-gate output.
+ * Returns an empty set when the gate passed (extractPhaseFindings yields [] on
+ * success). Used to detect gate failures *introduced* during rectification by
+ * diffing against the verifier-time baseline — see ExecutionPlan.run success
+ * aggregation. Exported for unit testing.
+ */
+export function gateFailureKeys(gateOutput: unknown): Set<string> {
+  const keys = new Set<string>();
+  for (const f of extractPhaseFindings(gateOutput)) {
+    if (f.source !== "test-runner") continue;
+    keys.add(`${f.file ?? ""}::${f.rule ?? ""}`);
+  }
+  return keys;
 }
 
 /**
@@ -1098,6 +1121,14 @@ export class ExecutionPlan {
       }
     }
 
+    // Baseline of gate failures the verifier implicitly blessed. The main loop
+    // halts on any phase failure (no exemptions), so a verifier that ran-and-passed
+    // means the gate was green at that point — any gate failure observed after
+    // rectification was therefore introduced by it. Captured before any
+    // rectification (including the ADR-024 non-blocking pass) mutates the gate.
+    const gateName = this.state.fullSuiteGate?.slot.op.name;
+    const preRectGateFailureKeys = gateName ? gateFailureKeys(phaseOutputs[gateName]) : new Set<string>();
+
     const rectResult = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
 
     // Resume the canonical loop after rectification resolves. The strategy-specific
@@ -1252,12 +1283,28 @@ export class ExecutionPlan {
     // judgment). Exempt the gate from aggregation so the story doesn't roll back
     // over failures it didn't cause. The gate output stays in `phaseOutputs` for
     // diagnostics; rectification (when configured) still consumes its findings.
+    //
+    // Staleness guard: the verifier judged the *pre-rectification* tree. If
+    // rectification then introduced NEW gate failures (keys absent from the
+    // verifier-time baseline), the verdict is stale for those — it can no longer
+    // exempt the gate, else a review-fix that breaks a test is silently laundered
+    // into a pass and leaks to the deferred regression sweep.
     const verifierName = this.state.verifier?.slot.op.name;
-    const gateName = this.state.fullSuiteGate?.slot.op.name;
+    // `gateName` and `preRectGateFailureKeys` captured above, before rectification.
     // SSOT requires an explicit pass — see `phaseExplicitlyPassed` for why we
     // don't use the defensive `phasePassed` here.
-    const verifierPassedSsot = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
-    if (
+    const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
+    const gateRegressedDuringRect =
+      gateName !== undefined &&
+      [...gateFailureKeys(phaseOutputs[gateName])].some((k) => !preRectGateFailureKeys.has(k));
+    const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
+    if (verifierExplicitlyPassed && gateRegressedDuringRect) {
+      logger?.warn(
+        "story-orchestrator",
+        "Gate regressed during rectification after verifier passed — verifier verdict is stale, failing story",
+        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir },
+      );
+    } else if (
       verifierPassedSsot &&
       gateName !== undefined &&
       !phasePassed(gateName, phaseOutputs[gateName], this.ctx.storyId)
@@ -1306,6 +1353,7 @@ export class ExecutionPlan {
       durationMs,
       phaseOutputs,
       ...rectResult,
+      gateRegressedDuringRect,
     };
   }
 }

@@ -99,6 +99,7 @@ export function extractPauseReason(phaseOutputs: Record<string, unknown>): strin
 export function deriveTddFailureCategory(
   phaseOutputs: Record<string, unknown>,
   unfixedFindings?: readonly Finding[],
+  gateRegressedDuringRect?: boolean,
 ): FailureCategory | undefined {
   // Test-writer failure → session-failure
   const testWriterOutput = phaseOutputs[testWriterOp.name] as { success?: boolean } | undefined;
@@ -127,8 +128,12 @@ export function deriveTddFailureCategory(
 
   // Verifier passed → it is the SSOT for the TDD verdict. Even if the gate flagged
   // failures, the verifier has judged this story OK (e.g. unrelated regressions).
-  // Skip the gate-derived category in that case.
-  const verifierPassed = verifierOutput?.success === true;
+  // Skip the gate-derived category in that case — UNLESS rectification introduced
+  // new gate failures after the verifier ran, which makes the verdict stale (the
+  // story is failed for exactly this reason; route it to escalation as a gate
+  // failure rather than dropping the category). Mirrors the success-aggregation
+  // staleness guard in ExecutionPlan.run.
+  const verifierPassed = verifierOutput?.success === true && !gateRegressedDuringRect;
 
   // Full-suite gate exhausted: rectification ran out of retry budget AND at least
   // one test-runner finding remains unfixed. Takes priority over the plain
@@ -325,7 +330,11 @@ export async function applyPostRunInspection(
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
   const failureCategory =
     isTdd && !planResult.success
-      ? deriveTddFailureCategory(planResult.phaseOutputs, planResult.unfixedFindings)
+      ? deriveTddFailureCategory(
+          planResult.phaseOutputs,
+          planResult.unfixedFindings,
+          planResult.gateRegressedDuringRect,
+        )
       : undefined;
 
   // Diagnostic: if a TDD plan failed but no category was derived, the routing path

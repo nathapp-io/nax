@@ -44,6 +44,7 @@ export {
   EXHAUSTED_EXIT_REASONS,
   phasesToRevalidate,
   orderGateLast,
+  gateFailureKeys,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   type OrchestratorSlot,
