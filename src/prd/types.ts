@@ -196,7 +196,9 @@ export interface UserStory {
  * Falls back to relevantFiles for backward compatibility.
  */
 export function getContextFiles(story: UserStory): string[] {
-  const files = story.contextFiles ?? story.relevantFiles ?? [];
+  // Cast drops the @deprecated tag so TypeScript doesn't warn on this intentional read.
+  const legacyFiles = (story as Omit<UserStory, "relevantFiles"> & { relevantFiles?: string[] }).relevantFiles;
+  const files = story.contextFiles ?? legacyFiles ?? [];
   return files.map((f) => (typeof f === "string" ? f : f.path));
 }
 
