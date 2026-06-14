@@ -193,7 +193,7 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // remaining failed stories (incomplete work) are reset here so they re-enter the queue.
   const resetRef = ctx.config.review?.semantic?.resetRefOnRerun ?? false;
   const storyIsolation = ctx.config.execution.storyIsolation;
-  const resetStories = resetFailedStoriesToPending(prd, resetRef, storyIsolation);
+  const resetStories = resetFailedStoriesToPending(prd, { resetRef, storyIsolation });
   if (resetStories.length > 0) {
     const resetIds = resetStories.map((s) => s.id);
     logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
