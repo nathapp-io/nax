@@ -34,5 +34,5 @@ export { makeLinkWithCosts } from "./link-with-costs";
 export { makeMockCallContext } from "./call-context";
 export { makeMockPlanInputs } from "./plan-inputs";
 export { verbatimWarn, withWarnSpy } from "./verbatim-warn-spy";
-export { makeScriptedAgent } from "./e2e";
-export type { ScriptedAgentSpec, ScriptedTurn } from "./e2e";
+export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
+export type { ScriptedAgentSpec, ScriptedTurn, E2EOptions, E2EResult, E2EGates } from "./e2e";
