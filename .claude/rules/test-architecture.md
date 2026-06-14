@@ -23,6 +23,7 @@ src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 | Unit | `test/unit/<mirror-of-src>/` | Test individual functions/classes in isolation |
 | Integration | `test/integration/<feature>.test.ts` | Test multiple modules working together |
 | UI | `test/ui/` | TUI component tests |
+| E2E | `test/e2e/*.e2e.test.ts` | Independent end-to-end suite. **Excluded from `bun run test`** — run via `bun run test:e2e`. For full-flow orchestration tests with scripted agents. |
 
 ## Placement Rules
 

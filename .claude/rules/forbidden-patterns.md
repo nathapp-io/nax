@@ -93,7 +93,7 @@ const prompt = new AcceptancePromptBuilder().buildSourceFixPrompt(...);
 
 | ❌ Forbidden | ✅ Use Instead | Why |
 |:---|:---|:---|
-| Test files in `test/` root | `test/unit/`, `test/integration/`, etc. | Orphaned files with no clear ownership |
+| Test files in `test/` root | `test/unit/`, `test/integration/`, `test/ui/`, or `test/e2e/` (sanctioned independent suite, run via `bun run test:e2e`) | Orphaned files with no clear ownership |
 | Standalone bug-fix test files (`*-bug026.test.ts`) | Add to existing relevant test file | Fragments test coverage, creates ownership confusion |
 | `TEST_COVERAGE_*.md` in test/ | `docs/` directory | Test dir is for test code only |
 | `rm -rf` in test cleanup | `test/helpers/temp.ts` helpers (`makeTempDir()` / `cleanupTempDir()` / `withTempDir()`) | Accidental deletion risk; temp-dir handling is centralized and portable |
