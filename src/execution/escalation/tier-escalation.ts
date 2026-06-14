@@ -194,7 +194,7 @@ export async function preIterationTierCheck(
                 ...(s.escalations || []),
                 buildEscalationRecord(currentTier, escalatedTier, budgetReason, {
                   fromAgent: s.routing?.agent,
-                  toAgent: nextAgent ?? s.routing?.agent,
+                  toAgent: nextAgent,
                 }),
               ],
               routing: s.routing
@@ -443,7 +443,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
               currentStoryTier,
               shouldSwitchToTestAfter ? currentStoryTier : escalatedTier,
               ctx.pipelineResult.reason ?? "Escalated to next retry path",
-              { fromAgent: s.routing?.agent, toAgent: nextAgent ?? s.routing?.agent },
+              { fromAgent: s.routing?.agent, toAgent: nextAgent },
             )
           : undefined;
 

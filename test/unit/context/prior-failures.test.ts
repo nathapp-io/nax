@@ -23,7 +23,6 @@ describe("formatPriorFailures", () => {
 
     const formatted = formatPriorFailures([failure]);
 
-    expect(formatted).toContain("## Prior Failures (Structured Context)");
     expect(formatted).toContain("### Attempt 1 — balanced");
     expect(formatted).toContain("**Stage:** verify");
     expect(formatted).toContain("**Summary:** Test verification failed");

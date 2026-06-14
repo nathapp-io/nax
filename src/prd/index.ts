@@ -278,14 +278,13 @@ export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions =
     story.attempts = 0;
 
     if (resetMode === "initial" && story.routing) {
-      if (story.routing.initialModelTier !== undefined) {
-        story.routing.modelTier = story.routing.initialModelTier;
-      }
-      if (story.routing.initialAgent !== undefined) {
-        story.routing.agent = story.routing.initialAgent;
-      } else {
-        story.routing.agent = undefined;
-      }
+      story.routing = {
+        ...story.routing,
+        ...(story.routing.initialModelTier !== undefined && {
+          modelTier: story.routing.initialModelTier,
+        }),
+        agent: story.routing.initialAgent,
+      };
       story.escalations = [];
     }
 

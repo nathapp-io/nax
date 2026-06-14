@@ -27,7 +27,7 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
   }
 
   renderSection(sections, byType, "progress", "## Progress\n", renderSimple);
-  renderSection(sections, byType, "prior-failures", "", renderSimple);
+  renderSection(sections, byType, "prior-failures", "## Prior Failures (Structured Context)\n", renderSimple);
   renderErrorSection(sections, byType);
   renderSection(sections, byType, "test-coverage", "", renderSimple);
   renderSection(sections, byType, "story", "## Current Story\n", renderSimple);

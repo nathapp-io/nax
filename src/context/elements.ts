@@ -80,7 +80,6 @@ export function formatPriorFailures(failures: StructuredFailure[]): string {
   }
 
   const parts: string[] = [];
-  parts.push("## Prior Failures (Structured Context)\n");
 
   for (const failure of failures) {
     parts.push(`### Attempt ${failure.attempt} — ${failure.modelTier}`);

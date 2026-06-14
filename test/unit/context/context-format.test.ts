@@ -284,7 +284,7 @@ describe("Context Builder", () => {
         elements: [
           {
             type: "prior-failures",
-            content: "## Prior Failures (Structured Context)\n### Attempt 1 — fast\n**Summary:** Tier fast [tests-failing]: 2 tests red",
+            content: "### Attempt 1 — fast\n**Summary:** Tier fast [tests-failing]: 2 tests red",
             priority: 95,
             tokens: 10,
           },
