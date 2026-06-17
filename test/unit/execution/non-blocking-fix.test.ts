@@ -35,8 +35,15 @@ describe("non-blocking-fix gating", () => {
     ).toBe(true);
   });
 
-  test("scope-aware build is done at plan time (see Task 6 Step 1) — not by name filtering", () => {
-    expect(typeof shouldRunNonBlockingFix).toBe("function");
+  test("scope-aware build is done at plan time — not by name filtering", () => {
+    const enabled = {
+      enabled: true,
+      scope: "both" as const,
+      regressionAttempts: 1,
+      verifierGuard: true,
+    };
+    expect(shouldRunNonBlockingFix(enabled, 1)).toBe(true);
+    expect(shouldRunNonBlockingFix(enabled, -1)).toBe(false);
   });
 });
 

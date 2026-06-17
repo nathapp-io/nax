@@ -18,7 +18,7 @@ describe("nonBlockingFix config", () => {
     expect(cfg.nonBlockingFix).toBeUndefined();
   });
 
-  test("rejects scope outside source|both", () => {
+  test("rejects scope outside source|both|triage", () => {
     expect(() => AdversarialReviewConfigSchema.parse({ nonBlockingFix: { scope: "test" } })).toThrow();
   });
 
