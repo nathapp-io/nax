@@ -102,9 +102,17 @@ function findingCategory(f: AnyLLMFinding): string | undefined {
   return "category" in f && f.category ? f.category : undefined;
 }
 
+function deriveFixTargetForReviewFinding(category: string | undefined, source: string | undefined) {
+  if (source === "semantic-review" || source === "semantic-debate-review") {
+    return "source";
+  }
+  return categoryToFixTarget(category);
+}
+
 export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOptions = {}): ReviewFinding {
   const category = findingCategory(f);
   const narrowed = narrowSeverity(f.severity);
+  const source = opts.source;
   const result: ReviewFinding = {
     ruleId: deriveRuleId(category, f.issue),
     severity: narrowed,
@@ -113,8 +121,8 @@ export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOpti
     message: joinMessage(f.issue, f.suggestion),
   };
   if (category) result.category = category;
-  if (opts.source) result.source = opts.source;
-  result.fixTarget = categoryToFixTarget(category);
+  if (source) result.source = source;
+  result.fixTarget = deriveFixTargetForReviewFinding(category, source);
   const meta = buildMeta(f, f.severity !== narrowed ? f.severity : undefined);
   if (meta) result.meta = meta;
   return result;

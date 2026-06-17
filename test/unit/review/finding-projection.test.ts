@@ -146,6 +146,12 @@ describe("llmFindingToReviewFinding", () => {
     expect(rf.source).toBe("semantic-review");
   });
 
+  test("semantic-review source preserves fixTarget=source when category is absent", () => {
+    const f: LLMFinding = { severity: "error", file: "x.ts", line: 1, issue: "y", suggestion: "" };
+    const rf = llmFindingToReviewFinding(f, { source: "semantic-review" });
+    expect(rf.fixTarget).toBe("source");
+  });
+
   test("empty issue produces 'unspecified' slug — documents intentional fallback bucket", () => {
     const f: LLMFinding = { severity: "warning", file: "x.ts", line: 1, issue: "", suggestion: "" };
     const rf = llmFindingToReviewFinding(f);

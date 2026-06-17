@@ -12,10 +12,13 @@
  * A best-effort pass that exceeds the cap is treated as exhausted → restored.
  * Measurement errors are fail-safe: also restored.
  */
-import type { NonBlockingFixConfig } from "../config/selectors";
+import type { NonBlockingFixConfig, TestPatternConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
 import { getSafeLogger } from "../logger";
 import { captureSnapshotRef, rollbackToRef } from "../tdd/rollback";
+import { createTestFileClassifier, resolveTestFilePatterns } from "../test-runners";
+import { typedSpawn } from "../utils/bun-deps";
+import { packageDirRelative } from "../utils/paths";
 import type { PhaseKind } from "./story-orchestrator";
 
 /** Phase kinds to strip from revalidation — always the LLM reviews. */
@@ -59,6 +62,11 @@ export interface NonBlockingFixDeps {
   measureSourceDiff: (workdir: string, fromRef: string) => Promise<SourceDiffMetrics>;
 }
 
+export const _nonBlockingFixDeps = {
+  spawn: typedSpawn,
+  resolveTestFilePatterns,
+};
+
 const DEFAULT_DEPS: NonBlockingFixDeps = {
   captureSnapshotRef,
   rollbackToRef,
@@ -81,6 +89,45 @@ export interface NonBlockingFixResult {
   restored: boolean;
 }
 
+interface CreateMeasureSourceDiffArgs {
+  config: TestPatternConfig;
+  projectDir: string;
+  packageDir: string;
+}
+
+export function createMeasureSourceDiff(args: CreateMeasureSourceDiffArgs): NonBlockingFixDeps["measureSourceDiff"] {
+  const packageDirRel = packageDirRelative(args.projectDir, args.packageDir);
+  return async (workdir: string, fromRef: string): Promise<SourceDiffMetrics> => {
+    const resolved = await _nonBlockingFixDeps.resolveTestFilePatterns(args.config, args.projectDir, packageDirRel);
+    const isTestFile = createTestFileClassifier(resolved);
+    const proc = _nonBlockingFixDeps.spawn(["git", "diff", "--numstat", fromRef], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await Bun.readableStreamToText(proc.stdout);
+    const stderr = await Bun.readableStreamToText(proc.stderr);
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      const detail = stderr.trim() || `exit ${exitCode}`;
+      throw new Error(`[non-blocking-fix] git diff --numstat failed: ${detail}`);
+    }
+
+    let fileCount = 0;
+    let sourceLineCount = 0;
+    for (const line of stdout.trim().split("\n").filter(Boolean)) {
+      const [addedStr, _deletedStr, filePath] = line.split("\t");
+      if (!filePath || isTestFile(filePath)) continue;
+      fileCount += 1;
+      const added = Number.parseInt(addedStr ?? "", 10);
+      if (Number.isFinite(added)) sourceLineCount += added;
+    }
+
+    return { fileCount, sourceLineCount };
+  };
+}
+
 /**
  * Snapshot → run harness → keep on success, restore (files + phaseOutputs) on
  * exhaustion. Never throws into the caller's verdict path: failure ⇒ restore ⇒
@@ -88,8 +135,9 @@ export interface NonBlockingFixResult {
  */
 export async function runNonBlockingFix(
   args: NonBlockingFixArgs,
-  _deps: NonBlockingFixDeps = DEFAULT_DEPS,
+  overrides: Partial<NonBlockingFixDeps> = {},
 ): Promise<NonBlockingFixResult> {
+  const _deps: NonBlockingFixDeps = { ...DEFAULT_DEPS, ...overrides };
   const logger = getSafeLogger();
   if (!shouldRunNonBlockingFix(args.cfg, args.advisoryFindings.length)) {
     return { ran: false, kept: false, restored: false };
@@ -160,5 +208,6 @@ async function restoreToSnapshot(
   logger?.info("non-blocking-fix", "best-effort fix exhausted — restored to adversarial-passed", {
     storyId: args.storyId,
   });
+
   return { ran: true, kept: false, restored: true };
 }
