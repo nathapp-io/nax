@@ -3,7 +3,7 @@
   "feature": "nonblocking-fix-category-triage",
   "branchName": "feat/nonblocking-fix-category-triage",
   "createdAt": "2026-06-17T09:54:21Z",
-  "updatedAt": "2026-06-17T10:56:51.494Z",
+  "updatedAt": "2026-06-17T11:06:18.320Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,8 +125,8 @@
         "execution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -189,7 +189,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/build-plan-for-strategy.ts",
@@ -200,7 +202,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6284448fbe0df330333ca064153567ed9f369a2a"
     },
     {
       "id": "US-005",
