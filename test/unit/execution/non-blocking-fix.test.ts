@@ -10,28 +10,19 @@ describe("non-blocking-fix gating", () => {
   test("disabled config → does not run", () => {
     expect(shouldRunNonBlockingFix(undefined, 2)).toBe(false);
     expect(
-      shouldRunNonBlockingFix(
-        { enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true },
-        2,
-      ),
+      shouldRunNonBlockingFix({ enabled: false, scope: "both", regressionAttempts: 1, verifierGuard: true }, 2),
     ).toBe(false);
   });
 
   test("enabled but zero advisory findings → does not run", () => {
     expect(
-      shouldRunNonBlockingFix(
-        { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true },
-        0,
-      ),
+      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true }, 0),
     ).toBe(false);
   });
 
   test("enabled with advisory findings → runs", () => {
     expect(
-      shouldRunNonBlockingFix(
-        { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true },
-        3,
-      ),
+      shouldRunNonBlockingFix({ enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true }, 3),
     ).toBe(true);
   });
 
@@ -51,9 +42,7 @@ describe("runNonBlockingFix keep vs restore", () => {
   const baseArgs = {
     workdir: "/tmp/x",
     storyId: "us-001",
-    advisoryFindings: [
-      { source: "adversarial-review", severity: "warning", category: "input", message: "m" },
-    ] as never,
+    advisoryFindings: [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never,
     cfg: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true } as const,
   };
   const fakeDeps = {
@@ -119,5 +108,119 @@ describe("nonBlockingExtraPhases with triage scope", () => {
       verifierGuard: false,
     });
     expect(phases).toEqual([]);
+  });
+});
+
+describe("runNonBlockingFix sourceDiffCap", () => {
+  const advisory = [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never;
+
+  test("AC-2: source diff exceeding maxLines → restored over kept", async () => {
+    let rolled = "";
+    const res = await runNonBlockingFix(
+      {
+        workdir: "/tmp/x",
+        storyId: "us-002",
+        advisoryFindings: advisory,
+        cfg: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 50 },
+        },
+        phaseOutputs: {},
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+        measureSourceDiff: async () => ({ fileCount: 1, sourceLineCount: 100 }),
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: false, restored: true });
+    expect(rolled).toBe("snap-sha");
+  });
+
+  test("AC-3: source diff within cap → kept", async () => {
+    const res = await runNonBlockingFix(
+      {
+        workdir: "/tmp/x",
+        storyId: "us-003",
+        advisoryFindings: advisory,
+        cfg: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+        },
+        phaseOutputs: {},
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async () => {},
+        measureSourceDiff: async () => ({ fileCount: 2, sourceLineCount: 100 }),
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: true, restored: false });
+  });
+
+  test("AC-4: measureSourceDiff throws → restored (fail-safe)", async () => {
+    let rolled = "";
+    const res = await runNonBlockingFix(
+      {
+        workdir: "/tmp/x",
+        storyId: "us-004",
+        advisoryFindings: advisory,
+        cfg: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+        },
+        phaseOutputs: {},
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+        measureSourceDiff: async () => {
+          throw new Error("git diff failed");
+        },
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: false, restored: true });
+    expect(rolled).toBe("snap-sha");
+  });
+
+  test("AC-5: all changes in test files → kept when within cap", async () => {
+    const res = await runNonBlockingFix(
+      {
+        workdir: "/tmp/x",
+        storyId: "us-005",
+        advisoryFindings: advisory,
+        cfg: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 10, maxLines: 200 },
+        },
+        phaseOutputs: {},
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async () => {},
+        measureSourceDiff: async () => ({ fileCount: 0, sourceLineCount: 0 }),
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: true, restored: false });
   });
 });

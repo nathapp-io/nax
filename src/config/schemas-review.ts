@@ -138,11 +138,20 @@ export const AdversarialReviewConfigSchema = z.object({
        */
       verifierGuard: z.boolean().default(true),
       /**
-       * Maximum source-only diff size (lines) allowed under scope "triage". Safety
-       * rail for the un-reviewed source edits triage newly enables. Undefined
-       * means unbounded (existing behaviour).
+       * Maximum source-only diff size allowed under scope "triage". Safety rail
+       * for the un-reviewed source edits triage newly enables. Absent or empty
+       * means bounded by the schema defaults (maxFiles: 10, maxLines: 500).
+       * `maxFiles` bounds the number of changed source files; `maxLines` bounds
+       * the total added source lines. Test files are excluded via
+       * `resolveTestFilePatterns` before comparison.
        */
-      sourceDiffCap: z.number().int().min(0).optional(),
+      sourceDiffCap: z
+        .object({
+          maxFiles: z.number().int().min(0).default(10),
+          maxLines: z.number().int().min(0).default(500),
+        })
+        .optional()
+        .default({ maxFiles: 10, maxLines: 500 }),
     })
     .optional(),
 });

@@ -10,6 +10,7 @@ describe("nonBlockingFix config", () => {
       scope: "both",
       regressionAttempts: 1,
       verifierGuard: true,
+      sourceDiffCap: { maxFiles: 10, maxLines: 500 },
     });
   });
 
@@ -39,6 +40,28 @@ describe("nonBlockingFix config", () => {
   test("AC-3: rejects scope outside source|both|triage", () => {
     expect(() =>
       AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true, scope: "invalid" } }),
+    ).toThrow();
+  });
+
+  test("AC-1: sourceDiffCap defaults maxFiles and maxLines when unset", () => {
+    const cfg = AdversarialReviewConfigSchema.parse({ nonBlockingFix: {} });
+    expect(cfg.nonBlockingFix?.sourceDiffCap?.maxFiles).toBe(10);
+    expect(cfg.nonBlockingFix?.sourceDiffCap?.maxLines).toBe(500);
+  });
+
+  test("sourceDiffCap user values are preserved verbatim", () => {
+    const cfg = AdversarialReviewConfigSchema.parse({
+      nonBlockingFix: { sourceDiffCap: { maxFiles: 3, maxLines: 50 } },
+    });
+    expect(cfg.nonBlockingFix?.sourceDiffCap).toEqual({ maxFiles: 3, maxLines: 50 });
+  });
+
+  test("sourceDiffCap rejects negative values", () => {
+    expect(() =>
+      AdversarialReviewConfigSchema.parse({ nonBlockingFix: { sourceDiffCap: { maxFiles: -1, maxLines: 50 } } }),
+    ).toThrow();
+    expect(() =>
+      AdversarialReviewConfigSchema.parse({ nonBlockingFix: { sourceDiffCap: { maxFiles: 5, maxLines: -10 } } }),
     ).toThrow();
   });
 });
