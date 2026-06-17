@@ -143,6 +143,35 @@ describe("runNonBlockingFix sourceDiffCap", () => {
     expect(rolled).toBe("snap-sha");
   });
 
+  test("source diff exceeding maxFiles → restored (maxFiles branch coverage)", async () => {
+    let rolled = "";
+    const res = await runNonBlockingFix(
+      {
+        workdir: "/tmp/x",
+        storyId: "us-maxfiles",
+        advisoryFindings: advisory,
+        cfg: {
+          enabled: true,
+          scope: "triage",
+          regressionAttempts: 1,
+          verifierGuard: true,
+          sourceDiffCap: { maxFiles: 5, maxLines: 500 },
+        },
+        phaseOutputs: {},
+        runRectify: async () => ({ rectificationExhausted: false }),
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+        measureSourceDiff: async () => ({ fileCount: 20, sourceLineCount: 10 }),
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: false, restored: true });
+    expect(rolled).toBe("snap-sha");
+  });
+
   test("AC-3: source diff within cap → kept", async () => {
     const res = await runNonBlockingFix(
       {
