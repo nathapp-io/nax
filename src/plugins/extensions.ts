@@ -4,6 +4,7 @@
  * Defines interfaces for specific plugin extensions that can be provided.
  */
 
+import type { FixTarget } from "../findings/types";
 import type { UserStory } from "../prd/types";
 import type { PluginLogger } from "./types";
 
@@ -47,6 +48,13 @@ export interface ReviewFinding {
    * without re-introducing the LLMFinding shape at the top level.
    */
   meta?: Record<string, unknown>;
+  /**
+   * Where the fix should land. Optional — mechanical producers (lint,
+   * typecheck) typically leave this unset; LLM producers tag explicitly via
+   * `categoryToFixTarget(category)` so triage can route without re-deriving
+   * from the file path.
+   */
+  fixTarget?: FixTarget;
 }
 
 /**

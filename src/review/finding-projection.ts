@@ -16,6 +16,7 @@
 import type { Finding } from "../findings";
 import type { ReviewFinding } from "../plugins/extensions";
 import type { AdversarialLLMFinding } from "./adversarial-helpers";
+import { categoryToFixTarget } from "./category-fix-target";
 import type { LLMFinding } from "./semantic-helpers";
 
 type AnyLLMFinding = LLMFinding | AdversarialLLMFinding;
@@ -113,6 +114,7 @@ export function llmFindingToReviewFinding(f: AnyLLMFinding, opts: ProjectionOpti
   };
   if (category) result.category = category;
   if (opts.source) result.source = opts.source;
+  result.fixTarget = categoryToFixTarget(category);
   const meta = buildMeta(f, f.severity !== narrowed ? f.severity : undefined);
   if (meta) result.meta = meta;
   return result;
