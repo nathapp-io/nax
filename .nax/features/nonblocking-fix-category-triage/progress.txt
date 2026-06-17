@@ -1,1 +1,2 @@
 [2026-06-17T10:29:50.066Z] US-001 — PASSED — Add categoryToFixTarget SSOT helper and review export — Cost: $2.9215
+[2026-06-17T10:56:48.399Z] US-002 — PASSED — Tag adversarial findings with fixTarget and persist it in review audit output — Cost: $1.7139
