@@ -2,3 +2,4 @@
 [2026-06-17T10:56:48.399Z] US-002 — PASSED — Tag adversarial findings with fixTarget and persist it in review audit output — Cost: $1.7139
 [2026-06-17T11:06:15.274Z] US-003 — PASSED — Add triage scope to non-blocking config and verifier guard wiring — Cost: $0.4011
 [2026-06-17T13:04:56.853Z] US-004 — PASSED — Build the triage strategy set with default-preserving implementer and test-writer options — Cost: $5.5236
+[2026-06-17T13:43:06.514Z] US-005 — PASSED — Enforce source-edit diff caps with restore-over-keep in runNonBlockingFix — Cost: $3.3057

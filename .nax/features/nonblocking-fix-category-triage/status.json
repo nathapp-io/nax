@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-06-17T10-05-07-143Z",
+    "feature": "nonblocking-fix-category-triage",
+    "startedAt": "2026-06-17T10:05:07.143Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 71526
+  },
+  "progress": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 14.165834712400004,
+    "limit": 50
+  },
+  "current": null,
+  "iterations": 6,
+  "updatedAt": "2026-06-17T13:53:19.216Z",
+  "durationMs": 13692073,
+  "postRun": {
+    "acceptance": {
+      "status": "passed",
+      "lastRunAt": "2026-06-17T13:52:52.479Z"
+    },
+    "regression": {
+      "status": "passed",
+      "lastRunAt": "2026-06-17T13:53:18.484Z"
+    }
+  }
+}

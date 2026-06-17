@@ -248,10 +248,10 @@ export async function buildPlanForStrategy(
       // test-writer owns test-targeted adversarial; blanket clause disabled to prevent overlap.
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
-          claimAdversarialSource: true,
+          adversarialReviewByFixTarget: "source",
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
         makeAutofixTestWriterStrategy(story, config, nbSink, {
-          disableBlanketAdversarial: true,
+          includeAdversarialReview: false,
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
     } else {

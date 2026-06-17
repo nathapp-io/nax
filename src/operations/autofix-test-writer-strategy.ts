@@ -11,13 +11,18 @@ import type { DeclarationSink } from "./declaration-sink";
 /** Options controlling which findings the test-writer rectifier claims. */
 export interface AutofixTestWriterStrategyOptions {
   /**
-   * When true, disables the blanket `source === "adversarial-review"` clause.
-   * The test-writer will only claim findings with `fixTarget === "test"` (or
-   * mockHandoffs). Used in the `triage` non-blocking fix scope so that
-   * source-targeted adversarial findings route exclusively to the implementer.
-   * (default: false)
+   * When `true` (default) the test-writer's `appliesTo` includes the blanket
+   * `source === "adversarial-review"` clause so the test-writer owns every
+   * adversarial finding regardless of `fixTarget`. This is the historical
+   * behaviour preserved for the blocking three-session workflow.
+   *
+   * When `false`, the blanket clause is disabled and the test-writer will only
+   * claim findings with `fixTarget === "test"` (or `mockHandoffs`). Used in
+   * the `triage` non-blocking fix scope so that source-targeted adversarial
+   * findings route exclusively to the implementer.
+   * (default: true)
    */
-  disableBlanketAdversarial?: boolean;
+  includeAdversarialReview?: boolean;
 }
 
 export function makeAutofixTestWriterStrategy(
@@ -26,11 +31,13 @@ export function makeAutofixTestWriterStrategy(
   sink: DeclarationSink,
   opts: AutofixTestWriterStrategyOptions = {},
 ): FixStrategy<Finding, AutofixTestWriterInput, AutofixTestWriterOutput, AutofixConfig> {
-  const disableBlanket = opts.disableBlanketAdversarial === true;
+  const includeAdversarial = opts.includeAdversarialReview !== false;
   return {
     name: "autofix-test-writer",
     appliesTo: (f) =>
-      f.fixTarget === "test" || (!disableBlanket && f.source === "adversarial-review") || sink.mockHandoffs.length > 0,
+      f.fixTarget === "test" ||
+      (includeAdversarial && f.source === "adversarial-review") ||
+      sink.mockHandoffs.length > 0,
     fixOp: testWriterRectifyOp,
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
       // Consume mock-structure handoffs from the shared sink (one-shot).

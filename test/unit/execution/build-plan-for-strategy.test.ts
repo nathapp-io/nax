@@ -787,9 +787,10 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
 
   // The NBF call is the LAST runFixCycle invocation; any subsequent runFixCycle
   // calls come from post-rectification-resume retries, not NBF. NBF strategies
-  // are distinguished by their fixTarget-routed composition (claimAdversarialSource
-  // / disableBlanketAdversarial), not by name overlap. For AC1 we only need to
-  // assert name membership on the LAST call (which is NBF when NBF fires).
+  // are distinguished by their fixTarget-routed composition
+  // (adversarialReviewByFixTarget / includeAdversarialReview), not by name
+  // overlap. For AC1 we only need to assert name membership on the LAST call
+  // (which is NBF when NBF fires).
   function lastCaptured(): string[] {
     return capturedStrategyNamesByCall[capturedStrategyNamesByCall.length - 1] ?? [];
   }
