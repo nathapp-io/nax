@@ -13,7 +13,6 @@ import { ExecutionPlan, buildPlanForStrategy } from "@/execution";
 import type { PlanInputs } from "@/execution";
 import { _storyOrchestratorDeps } from "@/execution";
 import {
-  makeAutofixImplementerStrategy,
   makeAutofixTestWriterStrategy,
   makeDeclarationSink,
 } from "@/operations";
@@ -936,17 +935,149 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
 // ─────────────────────────────────────────────────────────────────────────────
 // US-006 AC2/AC3/AC4: triage strategy set routes findings by fixTarget
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// The spec says "Given the `triage` strategy set... when each strategy's
+// `appliesTo` is evaluated, then..." — the set is the one built by
+// `buildPlanForStrategy` for `scope: "triage"`, not a manual mirror of the
+// option shapes. We drive through `buildPlanForStrategy` and capture the NBF
+// strategies from the `runFixCycle` mock.
+//
+// Mock setup contract: when full-suite-gate fails, the main loop short-circuits
+// before adversarial-review runs, so NBF never fires (advisory findings empty).
+// To force NBF to fire we override the shared callOp so the gate passes and
+// adversarial-review produces advisory findings — NBF then becomes the ONLY
+// runFixCycle call, and we can assert on its strategies directly.
 
-describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavior", () => {
-  // We don't drive these through plan.run() — that mixes too many moving parts.
-  // The triage strategy set is determined by buildPlanForStrategy's nbf branch;
-  // we inspect the strategies it would assemble by intercepting the call to
-  // addNonBlockingFix via the underlying strategy factories.
-  //
-  // The factories are pure; the predicates are deterministic. By constructing
-  // the same strategies the NBF branch would build for triage and exercising
-  // each strategy's appliesTo against the AC's findings, we prove the branch
-  // routes correctly.
+describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavior (driven through plan)", () => {
+  let capturedStrategiesByCall: Array<Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>> = [];
+  let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
+  let origCallOp: typeof _storyOrchestratorDeps.callOp;
+  let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
+  let origRollbackSpawn: typeof _rollbackDeps.spawn;
+  let origRollbackAutoCommit: typeof _rollbackDeps.autoCommitIfDirty;
+  let runtime: NaxRuntime;
+
+  beforeEach(() => {
+    capturedStrategiesByCall = [];
+    origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    origCallOp = _storyOrchestratorDeps.callOp;
+    origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
+    origRollbackSpawn = _rollbackDeps.spawn;
+    origRollbackAutoCommit = _rollbackDeps.autoCommitIfDirty;
+
+    _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
+    _rollbackDeps.autoCommitIfDirty = mock(async () => {});
+    _rollbackDeps.spawn = mock((_cmd: string[], _opts: unknown) => ({
+      stdout: new Response("abc1234\n").body,
+      stderr: new Response("").body,
+      exited: Promise.resolve(0),
+    })) as typeof _rollbackDeps.spawn;
+    // Gate PASSES (so the main loop reaches adversarial-review), adversarial-review
+    // produces advisory findings, NBF fires. With gate failing, the main loop
+    // short-circuits and NBF never fires (see AC1: scope=source test for the
+    // matching pattern).
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "adversarial-review") {
+        return {
+          success: true,
+          passed: true,
+          advisoryFindings: [
+            {
+              source: "adversarial-review",
+              severity: "info",
+              category: "test-gap",
+              message: "advisory gap",
+              fixTarget: "test",
+            },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (cycle: { strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> }) => {
+        capturedStrategiesByCall.push(cycle.strategies);
+        return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+      },
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
+  });
+
+  afterEach(async () => {
+    _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    _storyOrchestratorDeps.callOp = origCallOp;
+    _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
+    _rollbackDeps.spawn = origRollbackSpawn;
+    _rollbackDeps.autoCommitIfDirty = origRollbackAutoCommit;
+    await runtime?.close();
+  });
+
+  function makeCtxWithRuntime(config = makeNaxConfig()) {
+    runtime = makeTestRuntime({ config });
+    return makeMockCallContext({ runtime });
+  }
+
+  function withTriageNbf(): ReturnType<typeof makeNaxConfig> {
+    return makeNaxConfig({
+      quality: { commands: {}, autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          nonBlockingFix: {
+            enabled: true,
+            scope: "triage",
+            regressionAttempts: 1,
+            verifierGuard: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Returns the captured NBF strategy set. With the gate-passing callOp mock,
+   * NBF is the ONLY runFixCycle call (no gate failure → no main rect).
+   */
+  function nbfStrategies(): Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> {
+    if (capturedStrategiesByCall.length === 0) {
+      throw new Error("NBF never fired — capturedStrategiesByCall is empty");
+    }
+    return capturedStrategiesByCall[capturedStrategiesByCall.length - 1] ?? [];
+  }
+
+  function findStrategy(
+    name: string,
+    set: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>,
+  ): import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any> {
+    const s = set.find((x) => x.name === name);
+    if (!s) {
+      throw new Error(
+        `strategy '${name}' not found in captured NBF set: ${set.map((x) => x.name).join(", ")}`,
+      );
+    }
+    return s;
+  }
+
+  async function buildAndRunTriagePlan() {
+    const story = makeStory({ attempts: 1 });
+    const config = withTriageNbf();
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      adversarialReview: {
+        story,
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+  }
 
   function makeFinding(overrides: Record<string, unknown> = {}): import("@/findings").Finding {
     return {
@@ -959,36 +1090,30 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
     };
   }
 
-  test("AC2: triage scope → implementer.appliesTo=true and test-writer.appliesTo=false for adversarial source finding", () => {
-    // The triage NBF branch builds the implementer with claimAdversarialSource and
-    // the test-writer with disableBlanketAdversarial. Mirror those option shapes here.
-    const implementer = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink(), {
-      claimAdversarialSource: true,
-    });
-    const testWriter = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink(), {
-      disableBlanketAdversarial: true,
-    });
+  test("AC2: triage scope → implementer.appliesTo=true and test-writer.appliesTo=false for adversarial source finding", async () => {
+    await buildAndRunTriagePlan();
+    const nbfSet = nbfStrategies();
+    const implementer = findStrategy("autofix-implementer", nbfSet);
+    const testWriter = findStrategy("autofix-test-writer", nbfSet);
     const finding = makeFinding({ source: "adversarial-review", fixTarget: "source" });
     expect(implementer.appliesTo(finding)).toBe(true);
     expect(testWriter.appliesTo(finding)).toBe(false);
   });
 
-  test("AC3: triage scope → test-writer.appliesTo=true and implementer.appliesTo=false for adversarial test finding", () => {
-    const implementer = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink(), {
-      claimAdversarialSource: true,
-    });
-    const testWriter = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink(), {
-      disableBlanketAdversarial: true,
-    });
+  test("AC3: triage scope → test-writer.appliesTo=true and implementer.appliesTo=false for adversarial test finding", async () => {
+    await buildAndRunTriagePlan();
+    const nbfSet = nbfStrategies();
+    const implementer = findStrategy("autofix-implementer", nbfSet);
+    const testWriter = findStrategy("autofix-test-writer", nbfSet);
     const finding = makeFinding({ source: "adversarial-review", fixTarget: "test" });
     expect(testWriter.appliesTo(finding)).toBe(true);
     expect(implementer.appliesTo(finding)).toBe(false);
   });
 
-  test("AC4: triage scope → test-writer.appliesTo=true for advisory convention finding with fixTarget=test", () => {
-    const testWriter = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink(), {
-      disableBlanketAdversarial: true,
-    });
+  test("AC4: triage scope → test-writer.appliesTo=true for advisory convention finding with fixTarget=test", async () => {
+    await buildAndRunTriagePlan();
+    const nbfSet = nbfStrategies();
+    const testWriter = findStrategy("autofix-test-writer", nbfSet);
     const finding = makeFinding({
       source: "adversarial-review",
       category: "convention",
@@ -1001,26 +1126,19 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
 // ─────────────────────────────────────────────────────────────────────────────
 // US-006 AC5/AC6: default-preserving factory options preserve existing behaviour
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// AC5 is a factory-level test (per spec: "Given `makeAutofixTestWriterStrategy`
+// built with default options...") and stays as a direct factory test.
+//
+// AC6 is an integration test: the spec says "Given the blocking three-session
+// strategy set" — that's the set built by `buildPlanForStrategy` for three-session
+// TDD with NBF disabled (the "blocking" qualifier means before NBF, i.e. the
+// regular rectification cycle's strategies). We drive through `buildPlanForStrategy`
+// and capture the main-rectification strategies from the `runFixCycle` mock.
+// With the gate failing, main rect fires; with NBF disabled, NBF doesn't fire,
+// so the only captured call is the main rect.
 
-describe("buildPlanForStrategy — AC5/AC6: blocking three-session set unchanged", () => {
-  test("AC6: blocking three-session set → test-writer.appliesTo=true and implementer.appliesTo=false for adversarial source finding", () => {
-    // The blocking three-session set is built by buildPlanForStrategy with NO
-    // includeAdversarialReview on the implementer (per build-plan-for-strategy.ts:188-191)
-    // and the test-writer with default opts (blanket adversarial clause preserved).
-    // Mirror those option shapes here.
-    const implementer = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink());
-    const testWriter = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink());
-    const finding: import("@/findings").Finding = {
-      source: "adversarial-review",
-      severity: "warning",
-      category: "input",
-      message: "advisory finding",
-      fixTarget: "source",
-    };
-    expect(testWriter.appliesTo(finding)).toBe(true);
-    expect(implementer.appliesTo(finding)).toBe(false);
-  });
-
+describe("buildPlanForStrategy — AC5/AC6: default-preserving factory options + blocking set behaviour", () => {
   test("AC5: default makeAutofixTestWriterStrategy still claims adversarial source finding (preserves blanket behaviour)", () => {
     const testWriter = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeDeclarationSink());
     const finding: import("@/findings").Finding = {
@@ -1031,6 +1149,87 @@ describe("buildPlanForStrategy — AC5/AC6: blocking three-session set unchanged
       fixTarget: "source",
     };
     expect(testWriter.appliesTo(finding)).toBe(true);
+  });
+
+  test("AC6: blocking three-session set → test-writer.appliesTo=true and implementer.appliesTo=false for adversarial source finding (driven through plan)", async () => {
+    // Drive through buildPlanForStrategy with NBF disabled and gate failing,
+    // so the main-rectification cycle is the only runFixCycle call. The
+    // blocking three-session set assembles (per build-plan-for-strategy.ts:188-198):
+    //   - autofix-implementer with includeAdversarialReview: false (three-session)
+    //   - autofix-test-writer with default opts (blanket adversarial preserved)
+    //   - full-suite-rectify
+    const capturedStrategySets: Array<Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>>> = [];
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
+    const origRollbackSpawn = _rollbackDeps.spawn;
+    const origRollbackAutoCommit = _rollbackDeps.autoCommitIfDirty;
+    let runtime: NaxRuntime;
+    try {
+      _storyOrchestratorDeps.captureGitRef = mock(async () => "HEAD");
+      _rollbackDeps.autoCommitIfDirty = mock(async () => {});
+      _rollbackDeps.spawn = mock((_cmd: string[], _opts: unknown) => ({
+        stdout: new Response("abc1234\n").body,
+        stderr: new Response("").body,
+        exited: Promise.resolve(0),
+      })) as typeof _rollbackDeps.spawn;
+      // Gate fails → main rect fires; NBF is disabled → only main rect runs.
+      _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+        if (op.name === "full-suite-gate") {
+          return {
+            success: false,
+            findings: [{ source: "test-runner", severity: "error", message: "test failed" }],
+          };
+        }
+        return { success: true };
+      }) as typeof _storyOrchestratorDeps.callOp;
+      _storyOrchestratorDeps.runFixCycle = mock(
+        async (cycle: { strategies: Array<import("@/findings").FixStrategy<import("@/findings").Finding, any, any, any>> }) => {
+          capturedStrategySets.push(cycle.strategies);
+          return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+        },
+      ) as typeof _storyOrchestratorDeps.runFixCycle;
+
+      const config = makeNaxConfig({
+        quality: { commands: {}, autofix: { enabled: true } },
+        execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+        // No review.adversarial configured → NBF never enabled → blocking three-session set.
+      });
+      const story = makeStory({ attempts: 1 });
+      runtime = makeTestRuntime({ config });
+      const ctx = makeMockCallContext({ runtime });
+      const inputs = makeTddRetryInputs(story, {
+        rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+      });
+      const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+      await plan.run();
+
+      // Main rect is the only runFixCycle call (gate fails → main rect; NBF disabled).
+      const mainRectSet = capturedStrategySets[capturedStrategySets.length - 1] ?? [];
+      expect(mainRectSet.length).toBeGreaterThan(0);
+      const implementer = mainRectSet.find((s) => s.name === "autofix-implementer");
+      const testWriter = mainRectSet.find((s) => s.name === "autofix-test-writer");
+      expect(implementer).toBeDefined();
+      expect(testWriter).toBeDefined();
+      const finding: import("@/findings").Finding = {
+        source: "adversarial-review",
+        severity: "warning",
+        category: "input",
+        message: "advisory finding",
+        fixTarget: "source",
+      };
+      // test-writer (default opts, blanket adversarial preserved) claims the finding.
+      expect(testWriter!.appliesTo(finding)).toBe(true);
+      // implementer (includeAdversarialReview: false for three-session) does NOT.
+      expect(implementer!.appliesTo(finding)).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.captureGitRef = origCaptureGitRef;
+      _rollbackDeps.spawn = origRollbackSpawn;
+      _rollbackDeps.autoCommitIfDirty = origRollbackAutoCommit;
+      await runtime?.close();
+    }
   });
 });
 
