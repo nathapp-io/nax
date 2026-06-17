@@ -28,7 +28,7 @@ export function nonBlockingExcludePhases(): readonly PhaseKind[] {
 
 /** Extra revalidation phases: verifier when test edits are possible and guarded. */
 export function nonBlockingExtraPhases(cfg: NonBlockingFixConfig): readonly PhaseKind[] {
-  return cfg.scope === "both" && cfg.verifierGuard ? ["verifier"] : [];
+  return (cfg.scope === "both" || cfg.scope === "triage") && cfg.verifierGuard ? ["verifier"] : [];
 }
 
 export interface NonBlockingFixDeps {

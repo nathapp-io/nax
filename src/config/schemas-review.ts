@@ -123,18 +123,26 @@ export const AdversarialReviewConfigSchema = z.object({
       /** Master switch. Opt-in; ramp to true after validating signal quality. */
       enabled: z.boolean().default(false),
       /**
-       * "source": autofix-implementer only.
+       * "source":  autofix-implementer only.
        * "both":    + autofix-test-writer (test edits allowed).
+       * "triage":  route by finding fixTarget (implementer vs test-writer);
+       *            bounded by `sourceDiffCap` to cap un-reviewed source edits.
        */
-      scope: z.enum(["source", "both"]).default("both"),
+      scope: z.enum(["source", "both", "triage"]).default("both"),
       /** Fix attempts to clear a regression the best-effort fix introduced. */
       regressionAttempts: z.number().int().min(0).default(1),
       /**
-       * When true (default) and a test edit occurs (scope "both"), add the verifier
-       * to deterministic revalidation as the replacement for the stripped adversarial
-       * re-run. No-op when no verifier exists (single-session).
+       * When true (default) and a test edit occurs (scope "both" or "triage"), add
+       * the verifier to deterministic revalidation as the replacement for the
+       * stripped adversarial re-run. No-op when no verifier exists (single-session).
        */
       verifierGuard: z.boolean().default(true),
+      /**
+       * Maximum source-only diff size (lines) allowed under scope "triage". Safety
+       * rail for the un-reviewed source edits triage newly enables. Undefined
+       * means unbounded (existing behaviour).
+       */
+      sourceDiffCap: z.number().int().min(0).optional(),
     })
     .optional(),
 });

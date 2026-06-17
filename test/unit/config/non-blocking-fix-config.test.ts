@@ -25,4 +25,20 @@ describe("nonBlockingFix config", () => {
   test("rejects negative regressionAttempts", () => {
     expect(() => AdversarialReviewConfigSchema.parse({ nonBlockingFix: { regressionAttempts: -1 } })).toThrow();
   });
+
+  test("AC-1: scope 'triage' parses successfully", () => {
+    const cfg = AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true, scope: "triage" } });
+    expect(cfg.nonBlockingFix?.scope).toBe("triage");
+  });
+
+  test("AC-2: scope defaults to 'both' when unset", () => {
+    const cfg = AdversarialReviewConfigSchema.parse({ nonBlockingFix: {} });
+    expect(cfg.nonBlockingFix?.scope).toBe("both");
+  });
+
+  test("AC-3: rejects scope outside source|both|triage", () => {
+    expect(() =>
+      AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true, scope: "invalid" } }),
+    ).toThrow();
+  });
 });

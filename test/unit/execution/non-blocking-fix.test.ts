@@ -1,6 +1,7 @@
 // test/unit/execution/non-blocking-fix.test.ts
 import { describe, expect, test } from "bun:test";
 import {
+  nonBlockingExtraPhases,
   runNonBlockingFix,
   shouldRunNonBlockingFix,
 } from "../../../src/execution/non-blocking-fix";
@@ -89,5 +90,27 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(res).toEqual({ ran: true, kept: false, restored: true });
     expect(rolled).toBe("snap-sha");
     expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true }); // restored
+  });
+});
+
+describe("nonBlockingExtraPhases with triage scope", () => {
+  test("AC-4: scope 'triage' + verifierGuard true → ['verifier']", () => {
+    const phases = nonBlockingExtraPhases({
+      enabled: true,
+      scope: "triage",
+      regressionAttempts: 1,
+      verifierGuard: true,
+    });
+    expect(phases).toEqual(["verifier"]);
+  });
+
+  test("AC-5: scope 'triage' + verifierGuard false → []", () => {
+    const phases = nonBlockingExtraPhases({
+      enabled: true,
+      scope: "triage",
+      regressionAttempts: 1,
+      verifierGuard: false,
+    });
+    expect(phases).toEqual([]);
   });
 });
