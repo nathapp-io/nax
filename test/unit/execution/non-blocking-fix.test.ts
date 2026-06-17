@@ -90,7 +90,7 @@ describe("runNonBlockingFix keep vs restore", () => {
 });
 
 describe("nonBlockingExtraPhases with triage scope", () => {
-  test("AC-4: scope 'triage' + verifierGuard true → ['verifier']", () => {
+  test("phases: scope 'triage' + verifierGuard true → ['verifier']", () => {
     const phases = nonBlockingExtraPhases({
       enabled: true,
       scope: "triage",
@@ -100,7 +100,7 @@ describe("nonBlockingExtraPhases with triage scope", () => {
     expect(phases).toEqual(["verifier"]);
   });
 
-  test("AC-5: scope 'triage' + verifierGuard false → []", () => {
+  test("phases: scope 'triage' + verifierGuard false → []", () => {
     const phases = nonBlockingExtraPhases({
       enabled: true,
       scope: "triage",
@@ -173,6 +173,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
   });
 
   test("AC-3: source diff within cap → kept", async () => {
+    let rolled = "";
     const res = await runNonBlockingFix(
       {
         workdir: "/tmp/x",
@@ -190,11 +191,14 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => "snap-sha",
-        rollbackToRef: async () => {},
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
         measureSourceDiff: async () => ({ fileCount: 2, sourceLineCount: 100 }),
       },
     );
     expect(res).toEqual({ ran: true, kept: true, restored: false });
+    expect(rolled).toBe("");
   });
 
   test("AC-4: measureSourceDiff throws → restored (fail-safe)", async () => {
@@ -229,6 +233,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
   });
 
   test("AC-5: all changes in test files → kept when within cap", async () => {
+    let rolled = "";
     const res = await runNonBlockingFix(
       {
         workdir: "/tmp/x",
@@ -246,10 +251,13 @@ describe("runNonBlockingFix sourceDiffCap", () => {
       },
       {
         captureSnapshotRef: async () => "snap-sha",
-        rollbackToRef: async () => {},
-        measureSourceDiff: async () => ({ fileCount: 0, sourceLineCount: 0 }),
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+        measureSourceDiff: async () => ({ fileCount: 2, sourceLineCount: 0 }),
       },
     );
     expect(res).toEqual({ ran: true, kept: true, restored: false });
+    expect(rolled).toBe("");
   });
 });
