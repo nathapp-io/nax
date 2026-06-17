@@ -1,0 +1,230 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "nonblocking-fix-category-triage",
+  "branchName": "feat/nonblocking-fix-category-triage",
+  "createdAt": "2026-06-17T09:54:21Z",
+  "updatedAt": "2026-06-17T10:00:38.857Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add categoryToFixTarget SSOT helper and review export",
+      "description": "**Goal** — Add a single SSOT helper that maps adversarial categories to `fixTarget` without duplicating the blocking-category list.\n\n**Motivation** — The signal exists; it is simply not populated for adversarial findings (only `test-gap → \"test\"` today, `adversarial-helpers.ts:108`) and is overridden by the test-writer's blanket clause.\n\n**Approach** — `categoryToFixTarget(category)` is a pure, deterministic map (not an LLM call), backed by `BLOCKING_CATEGORIES`:\n\n| category | fixTarget | rationale |\n|:--|:--|:--|\n| `input`, `error-path`, `abandonment`, `assumption` | `\"source\"` | the `BLOCKING_CATEGORIES` source-defect set |\n| `test-gap` | `\"test\"` | test quality — the test-writer's lane |\n| `convention` | `\"test\"` | conservative: stays on the test-writer (ambiguous bucket, never routed to un-reviewed source) |\n| unrecognized | `\"test\"` | safe default — never route an unknown category to source editing |\n\n### Worked skeleton — `categoryToFixTarget` (novel SSOT helper)\n\n```typescript\n// src/review/category-fix-target.ts\nimport { BLOCKING_CATEGORIES } from \"./ac-structural-counterfactual\";\nimport type { FixTarget } from \"../findings/types\";\n\n/**\n * Maps an adversarial finding category to the fix lane that owns it.\n * SSOT: the \"source\" set IS `BLOCKING_CATEGORIES` — never a hand-copied list.\n * `convention` and any unrecognized category default to \"test\" (conservative:\n * the implementer never receives an ambiguous/unknown finding for un-reviewed\n * source editing).\n */\nexport function categoryToFixTarget(category: string | undefined): FixTarget {\n  return category != null && BLOCKING_CATEGORIES.has(category) ? \"source\" : \"test\";\n}\n```\n\n**Scope** — In: `src/review/category-fix-target.ts`, export wiring in `src/review/index.ts`, and unit coverage proving the helper derives source categories from `BLOCKING_CATEGORIES`. Out: converter changes, config/schema changes, routing changes, and diff-cap enforcement.\n\n**Interface**\n```typescript\nexport function categoryToFixTarget(category: string | undefined): FixTarget\n```",
+      "acceptanceCriteria": [
+        "Given `categoryToFixTarget` imported from `@/review`, when it is called with `\"abandonment\"`, then it returns `\"source\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"input\"`, then it returns `\"source\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"error-path\"`, then it returns `\"source\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"assumption\"`, then it returns `\"source\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"test-gap\"`, then it returns `\"test\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"convention\"`, then it returns `\"test\"`",
+        "Given `categoryToFixTarget`, when it is called with `\"some-unrecognized-category\"`, then it returns `\"test\"`",
+        "Given every member of `BLOCKING_CATEGORIES`, when `categoryToFixTarget(member)` is evaluated, then it returns `\"source\"`, and given `\"test-gap\"` and `\"convention\"`, when each is evaluated, then it returns `\"test\"`"
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "triage",
+        "ssot"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is one new pure helper plus one export in an existing module, with direct unit assertions and no integration branching.",
+        "agentProfileId": "opencode-structural",
+        "agent": "opencode",
+        "profileModelTier": "fast",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-structural",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "src/review/ac-structural-counterfactual.ts",
+        "src/findings/types.ts",
+        "src/review/index.ts",
+        "test/unit/review/ac-structural-counterfactual.test.ts"
+      ],
+      "expectedFiles": [
+        "src/review/category-fix-target.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Tag adversarial findings with fixTarget and persist it in review audit output",
+      "description": "**Goal** — Populate `fixTarget` consistently on adversarial findings in both the cycle-facing and audit-facing converter paths.\n\n**Motivation** — The per-finding `fixTarget` never governs routing.\n\n**Approach** — `ReviewFinding` — `src/plugins/extensions.ts:20` | `{ ruleId, severity, file, line, message, category?, source?, meta? }` — **no `fixTarget`** | **modify** — add optional `fixTarget?: FixTarget` (additive; plugin-facing)\n\n`toAdversarialReviewFindings` — `src/review/adversarial-helpers.ts:94` | sets `fixTarget: f.category === \"test-gap\" ? \"test\" : undefined` | **modify** — replace with `categoryToFixTarget(f.category)`\n\n`llmFindingsToReviewFindings` / `llmFindingToReviewFinding` — `src/review/finding-projection.ts:104,121` | builds `ReviewFinding`, does **not** set `fixTarget` | **modify** — set `fixTarget` via the same map (feeds the audit)\n\n`ReviewAuditEntry.result.findings` — `src/review/review-audit.ts:58` | `{ passed: boolean; findings: unknown[] } | null` | **read** — no schema change; `fixTarget` rides through `unknown[]` once `ReviewFinding` carries it |\n\n**Scope** — In: adversarial finding conversion, review finding projection, plugin-facing `ReviewFinding` typing, and audit persistence coverage. Out: strategy predicates, config scope changes, and diff-cap logic.\n\n**Interface**\n```typescript\nexport interface ReviewFinding {\n  fixTarget?: FixTarget;\n}\n```",
+      "acceptanceCriteria": [
+        "Given an adversarial LLM finding with `category: \"abandonment\"`, when `toAdversarialReviewFindings` converts it, then the returned `Finding.fixTarget` equals `\"source\"`",
+        "Given an adversarial LLM finding with `category: \"test-gap\"`, when `toAdversarialReviewFindings` converts it, then the returned `Finding.fixTarget` equals `\"test\"`",
+        "Given an adversarial LLM finding with `category: \"input\"`, when `llmFindingsToReviewFindings` converts it with `source: \"adversarial-review\"`, then the returned `ReviewFinding.fixTarget` equals `\"source\"`",
+        "Given the same adversarial LLM finding, when it is converted through `toAdversarialReviewFindings` and `llmFindingsToReviewFindings`, then both outputs carry the same `fixTarget` value",
+        "Given an adversarial LLM finding with `category: \"some-unrecognized-category\"`, when it is converted through `llmFindingsToReviewFindings`, then the returned `ReviewFinding.fixTarget` equals `\"test\"`",
+        "Given an adversarial review-audit entry recorded for a finding with `category: \"abandonment\"`, when the corresponding `ReviewAuditEntry` is persisted, then the stored finding carries `fixTarget: \"source\"`"
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "audit",
+        "triage"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change is spread across two existing converter paths and an additive interface field, but it stays inside established review-mapping code and current audit tests.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/review/category-fix-target.ts",
+        "src/review/adversarial-helpers.ts",
+        "src/review/finding-projection.ts",
+        "src/plugins/extensions.ts",
+        "src/review/review-audit.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Add triage scope to non-blocking config and verifier guard wiring",
+      "description": "**Goal** — Extend the non-blocking fix configuration to expose `scope: \"triage\"`, keep `both` as the default, and make verifier guarding apply to triage-capable test edits.\n\n**Motivation** — Default stays `both`; `triage` is opt-in.\n\n**Approach** — `nonBlockingFix` schema — `src/config/schemas-review.ts:129` | `scope: z.enum([\"source\",\"both\"]).default(\"both\")` | **modify** — add `\"triage\"`; add `sourceDiffCap`\n\n`NonBlockingFixConfig` — `src/config/selectors.ts:143` | derived from schema | **read** — type updates automatically |\n\n`nonBlockingExtraPhases` — `src/execution/non-blocking-fix.ts` | `cfg.scope === \"both\" && cfg.verifierGuard ? [\"verifier\"] : []` | **modify** — apply verifier guard under `\"triage\"` too |\n\n**Scope** — In: schema/defaults for `scope`, invalid-scope rejection, and `nonBlockingExtraPhases()` behavior for triage. Out: strategy routing changes and diff-cap enforcement internals.\n\n**Interface**\n```typescript\nscope: z.enum([\"source\", \"both\", \"triage\"]).default(\"both\")\n```",
+      "acceptanceCriteria": [
+        "Given `AdversarialReviewConfigSchema`, when it parses `{ nonBlockingFix: { enabled: true, scope: \"triage\" } }`, then the parsed `nonBlockingFix.scope` equals `\"triage\"`",
+        "Given `AdversarialReviewConfigSchema`, when it parses a `nonBlockingFix` object with `scope` unset, then the parsed `nonBlockingFix.scope` equals `\"both\"`",
+        "Given `AdversarialReviewConfigSchema`, when it parses `{ nonBlockingFix: { enabled: true, scope: \"invalid\" } }`, then parsing throws",
+        "Given `nonBlockingExtraPhases`, when it is called with `{ scope: \"triage\", verifierGuard: true, ... }`, then it returns `[\"verifier\"]`",
+        "Given `nonBlockingExtraPhases`, when it is called with `{ scope: \"triage\", verifierGuard: false, ... }`, then it returns `[]`"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "triage",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a schema enum expansion plus one pure revalidation helper change, using the repo’s established config pattern and existing unit-test seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas-review.ts",
+        "src/config/selectors.ts",
+        "src/execution/non-blocking-fix.ts",
+        "test/unit/config/non-blocking-fix-config.test.ts",
+        "test/unit/execution/non-blocking-fix.test.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Build the triage strategy set with default-preserving implementer and test-writer options",
+      "description": "**Goal** — Add a dedicated `triage` non-blocking strategy branch that routes each adversarial finding by `fixTarget` while preserving current behavior everywhere else.\n\n**Motivation** — The fix is to route by category.\n\n**Approach** — Routing under `scope: \"triage\"`: the implementer claims `fixTarget === \"source\"` adversarial findings; the test-writer claims `fixTarget === \"test\"` adversarial findings; `full-suite-rectify` recovers regressions — exactly one strategy claims each finding.\n\n`nbf strategy build — src/execution/build-plan-for-strategy.ts:234-258` | `source`/`both` branches | **modify** — add `triage` branch |\n\n`makeAutofixTestWriterStrategy` — `src/operations/autofix-test-writer-strategy.ts:11` | `(story, config, sink)`, `appliesTo` claims all adversarial | **modify** — add default-preserving options object; option to disable the blanket adversarial clause |\n\n`makeAutofixImplementerStrategy` — `src/operations/autofix-implementer-strategy.ts:27` | `(story, config, sink, { includeAdversarialReview? })` | **modify** — option to claim `fixTarget === \"source\"` adversarial findings |\n\nPattern to mirror: the existing `source`/`both` branches in `build-plan-for-strategy.ts:234-258` already build scope-specific strategy sets with a private `nbSink` and `nbPostValidate` — the `triage` branch follows the same shape. Default-preserving factory options follow `makeAutofixImplementerStrategy`'s existing `AutofixImplementerStrategyOptions` pattern (`autofix-implementer-strategy.ts:13-25`).\n\n**Scope** — In: non-blocking `triage` branch, strategy predicate options, and proof that blocking and existing default branches remain unchanged. Out: category mapping logic and diff-cap enforcement.\n\n**Interface**\n```typescript\nexport interface AutofixImplementerStrategyOptions {\n  includeAdversarialReview?: boolean;\n}\n```\n```typescript\nexport function makeAutofixImplementerStrategy(\n  story: UserStory,\n  config: NaxConfig,\n  sink: DeclarationSink,\n  opts: AutofixImplementerStrategyOptions = {},\n): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig>\n```",
+      "acceptanceCriteria": [
+        "Given the non-blocking strategy set built for `scope: \"triage\"`, when the strategy names are inspected, then they include `\"autofix-implementer\"`, `\"autofix-test-writer\"`, and `\"full-suite-rectify\"`",
+        "Given the `triage` strategy set and an advisory finding with `source: \"adversarial-review\"` and `fixTarget: \"source\"`, when each strategy's `appliesTo` is evaluated, then `autofix-implementer` returns `true` and `autofix-test-writer` returns `false`",
+        "Given the `triage` strategy set and an advisory finding with `source: \"adversarial-review\"` and `fixTarget: \"test\"`, when each strategy's `appliesTo` is evaluated, then `autofix-test-writer` returns `true` and `autofix-implementer` returns `false`",
+        "Given the `triage` strategy set and an advisory `convention` finding with `fixTarget: \"test\"`, when `autofix-test-writer.appliesTo` is evaluated, then it returns `true`",
+        "Given `makeAutofixTestWriterStrategy` built with default options, when `appliesTo` is evaluated for an adversarial finding with `fixTarget: \"source\"`, then it returns `true`",
+        "Given the blocking three-session strategy set, when an adversarial finding with `fixTarget: \"source\"` is evaluated, then `autofix-test-writer.appliesTo` returns `true` and `autofix-implementer.appliesTo` returns `false`"
+      ],
+      "tags": [
+        "feature",
+        "routing",
+        "triage",
+        "rectification"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is a four-file behavior change built on existing strategy factories and unit tests, with explicit backward-compatibility assertions already defined by the spec.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/build-plan-for-strategy.ts",
+        "src/operations/autofix-test-writer-strategy.ts",
+        "src/operations/autofix-implementer-strategy.ts",
+        "src/findings/cycle-types.ts",
+        "test/unit/execution/build-plan-for-strategy.test.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Enforce source-edit diff caps with restore-over-keep in runNonBlockingFix",
+      "description": "**Goal** — Bound the source-edit surface that triage enables by measuring non-test source edits and restoring the snapshot when the cap is exceeded or cannot be measured.\n\n**Motivation** — A minimal `sourceDiffCap` bounds the un-reviewed source edits that triage newly enables.\n\n**Approach** — `runNonBlockingFix` / `NonBlockingFixDeps` — `src/execution/non-blocking-fix.ts:62` | `_deps = { captureSnapshotRef, rollbackToRef }` | **modify** — add `measureSourceDiff` dep; enforce `sourceDiffCap` before keep |\n\n**Failure Handling**\n- **Floor unchanged.** Snapshot at pass entry → restore files + `phaseOutputs` on exhaustion (`non-blocking-fix.ts:73,93-98`). Worst case remains \"nothing changed.\"\n- **Source-diff over cap → restore-over-keep.** A best-effort pass whose **source** diff (test files excluded via `resolveTestFilePatterns`, never an inline regex) exceeds `sourceDiffCap` is treated as exhausted → restored. This is the only new failure path; it is fail-safe (defaults to restore).\n- **Unknown category → `\"test\"`** (never routed to the implementer).\n- **`measureSourceDiff` errors** are treated as \"cap exceeded\" → restore (fail-safe).\n\n**Scope** — In: non-blocking keep/restore logic, `NonBlockingFixDeps`, config defaults for `sourceDiffCap`, and diff measurement wired through test-file resolution. Out: strategy predicates and audit tagging.\n\n**Interface**\n```typescript\nexport interface NonBlockingFixDeps {\n  captureSnapshotRef: typeof captureSnapshotRef;\n  rollbackToRef: typeof rollbackToRef;\n}\n```",
+      "acceptanceCriteria": [
+        "Given `AdversarialReviewConfigSchema`, when it parses a `nonBlockingFix` object with `sourceDiffCap` unset, then the parsed `sourceDiffCap.maxFiles` and `sourceDiffCap.maxLines` equal their schema defaults",
+        "Given `runNonBlockingFix` with a `measureSourceDiff` dependency reporting a source change that exceeds `sourceDiffCap.maxLines` and a `runRectify` result where `rectificationExhausted` is `false`, when the function completes, then it returns `{ ran: true, kept: false, restored: true }` and invokes the rollback dependency",
+        "Given `runNonBlockingFix` with a `measureSourceDiff` dependency reporting a source change within `sourceDiffCap` and a `runRectify` result where `rectificationExhausted` is `false`, when the function completes, then it returns `{ ran: true, kept: true, restored: false }`",
+        "Given `runNonBlockingFix` with a `measureSourceDiff` dependency that throws, when the function completes, then it returns `{ ran: true, kept: false, restored: true }`",
+        "Given `runNonBlockingFix` with a diff whose changed files are all test files and whose measured source-line count is zero, when the diff stays within `sourceDiffCap`, then it returns `{ ran: true, kept: true, restored: false }`"
+      ],
+      "tags": [
+        "feature",
+        "safety",
+        "triage",
+        "execution"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The change extends one existing execution helper and one schema with a fail-safe branch, and the behavior is directly observable through current unit-test seams.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/non-blocking-fix.ts",
+        "src/config/schemas-review.ts",
+        "src/test-runners/resolver.ts",
+        "test/unit/execution/non-blocking-fix.test.ts",
+        "test/unit/config/non-blocking-fix-config.test.ts"
+      ]
+    }
+  ],
+  "analysis": "The feature is an additive change to the adversarial non-blocking fix path, not a greenfield subsystem. The existing SSOT for source-defect adversarial categories already exists as `BLOCKING_CATEGORIES` in `src/review/ac-structural-counterfactual.ts:25`, and its unit contract is already pinned by `test/unit/review/ac-structural-counterfactual.test.ts:13`. Today adversarial wire findings only tag `fixTarget` for `test-gap`; every other adversarial finding leaves it unset in `src/review/adversarial-helpers.ts:94`, specifically `fixTarget: f.category === \"test-gap\" ? \"test\" : undefined` at `src/review/adversarial-helpers.ts:108`. Audit-side `ReviewFinding` projection also drops `fixTarget` entirely: `llmFindingToReviewFinding()` and `llmFindingsToReviewFindings()` build `ReviewFinding` with category/source/meta only in `src/review/finding-projection.ts:104-122`, while the plugin-facing `ReviewFinding` shape in `src/plugins/extensions.ts:20-50` has no `fixTarget` field. That means triage cannot work until both producer paths agree on the same category-to-target mapping and the audit contract grows an additive optional field.\n\nThe routing bug is real in current code. Non-blocking strategy assembly only has `source` and `both` branches in `src/execution/build-plan-for-strategy.ts:234-258`. In `scope === \"source\"`, the implementer is configured with `includeAdversarialReview: true` (`src/execution/build-plan-for-strategy.ts:239-245`). In the `else` branch, which is effectively `both`, the implementer is explicitly configured with `includeAdversarialReview: false` and the test-writer is always added (`src/execution/build-plan-for-strategy.ts:246-253`). The test-writer then claims every adversarial finding unconditionally because `makeAutofixTestWriterStrategy()` uses `f.fixTarget === \"test\" || f.source === \"adversarial-review\" || sink.mockHandoffs.length > 0` in `src/operations/autofix-test-writer-strategy.ts:11-19`. The implementer strategy already has an options-object seam that can be extended without breaking callers: `AutofixImplementerStrategyOptions` lives at `src/operations/autofix-implementer-strategy.ts:13-25`, and the current predicate only claims allowed sources or all adversarial findings when `includeAdversarialReview` is set (`src/operations/autofix-implementer-strategy.ts:27-42`). The cycle contract explicitly expects `appliesTo` to discriminate by `source`, `category`, `fixTarget`, or file pattern in `src/findings/cycle-types.ts:118-122`, so the spec’s triage routing is aligned with the existing architecture rather than a new pattern.\n\nConfig and orchestration seams are already isolated. The schema currently restricts `nonBlockingFix.scope` to `\"source\" | \"both\"` with `both` defaulting in `src/config/schemas-review.ts:121-139`, and the derived type alias comes from the schema in `src/config/selectors.ts:143`, so adding `triage` and `sourceDiffCap` at the schema automatically updates the public selector type. Runtime behavior for verifier guarding is centralized in `src/execution/non-blocking-fix.ts:29-32`, where `nonBlockingExtraPhases()` currently returns `[\"verifier\"]` only for `scope === \"both\" && cfg.verifierGuard`; that is the only place the triage scope must be wired for revalidation behavior. `runNonBlockingFix()` is already the keep-vs-restore boundary, with `_deps` containing only snapshot/rollback hooks in `src/execution/non-blocking-fix.ts:34-40` and restore semantics implemented at `src/execution/non-blocking-fix.ts:62-103`. This is the right insertion point for `measureSourceDiff`, the cap decision, and the fail-safe restore path because the function already snapshots files and in-place restores `phaseOutputs` on exhaustion. The test-file SSOT needed for source-only diff counting already exists in `resolveTestFilePatterns()` in `src/test-runners/resolver.ts:1-195`; ADR-009 is explicit that inline test-file checks are forbidden (`src/test-runners/resolver.ts:3-7`), so any diff-cap implementation should reuse that resolver rather than invent a new matcher.\n\nExisting tests give clear extension points. Config defaults and invalid-scope rejection are already covered in `test/unit/config/non-blocking-fix-config.test.ts:5-27`. Non-blocking run gating, keep-vs-restore behavior, and rollback of `phaseOutputs` are already covered in `test/unit/execution/non-blocking-fix.test.ts:8-92` and `test/unit/execution/non-blocking-fix-wiring.test.ts:5-24`. `BLOCKING_CATEGORIES` is pinned by `test/unit/review/ac-structural-counterfactual.test.ts:13-19`. `llmFindingToReviewFinding()` already has focused unit coverage for category, source propagation, and meta shaping in `test/unit/review/finding-projection.test.ts:8-189`, making it the natural place to add `fixTarget` assertions. `toAdversarialReviewFindings()` already has direct unit coverage for metadata passthrough in `test/unit/review/adversarial-metadata-audit.test.ts:353-388`, so extending those tests with `fixTarget` expectations fits the current suite layout. The test-writer’s blanket adversarial behavior is already codified in `test/unit/operations/autofix-test-writer-strategy.test.ts:40-84`, and the implementer’s current refusal to claim `adversarial-review` unless opted in is codified in `test/unit/operations/autofix-implementer-strategy.test.ts:41-117`. Plan assembly already has strategy-capture tests in `test/unit/execution/build-plan-for-strategy.test.ts:578-625`. Review-audit shape for adversarial findings is covered by tests that inspect persisted `ReviewFinding[]` payloads in `test/unit/review/adversarial-audit-shape.test.ts:71-132`, so extending the persisted shape with `fixTarget` is low-risk and observable. Builder storage for non-blocking fix overrides is already covered in `test/unit/execution/rectification-overrides.test.ts:28-47`, which is relevant when adding a new `triage` scope branch.\n\nImpact areas are localized but cross-module: review mapping (`src/review/*`), plugin-facing finding types (`src/plugins/extensions.ts`), config schema/selectors (`src/config/*`), strategy routing (`src/execution/build-plan-for-strategy.ts`, `src/operations/autofix-*-strategy.ts`), and non-blocking restore logic (`src/execution/non-blocking-fix.ts`). Backward compatibility risk is mainly behavioral: `scope: \"both\"`, `scope: \"source\"`, and the blocking cycle must remain byte-identical even after adversarial findings start carrying `fixTarget`. The safest way to preserve that is exactly what the spec prescribes: add default-preserving factory options to the strategy builders instead of changing their defaults, and keep the blocking strategy set on the existing blanket test-writer path. The plugin contract change is additive because `ReviewFinding.fixTarget` is optional; existing review plugins will remain valid. Unknown categories must default to `\"test\"` so new or malformed reviewer categories never unlock unreviewed source edits. The new `sourceDiffCap` is a safety rail, not a migration burden: any cap or measurement failure should restore to the adversarial-passed snapshot instead of partially keeping changes. There is no external migration step; the feature is opt-in through `review.adversarial.nonBlockingFix.scope = \"triage\"`, with default scope remaining `\"both\"`.",
+  "routingProfile": "cross-agent"
+}
