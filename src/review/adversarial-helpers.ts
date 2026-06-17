@@ -7,6 +7,7 @@
 
 import type { Finding, FindingSeverity } from "../findings";
 import { tryParseLLMJson } from "../utils/llm-json";
+import { categoryToFixTarget } from "./category-fix-target";
 import { isBlockingSeverity } from "./severity";
 export { isBlockingSeverity };
 
@@ -105,7 +106,7 @@ export function toAdversarialReviewFindings(findings: AdversarialLLMFinding[]): 
       line: f.line,
       message: f.issue,
       suggestion: f.suggestion,
-      fixTarget: f.category === "test-gap" ? "test" : undefined,
+      fixTarget: categoryToFixTarget(f.category),
       meta: Object.keys(metaExtras).length > 0 ? metaExtras : undefined,
     };
   });

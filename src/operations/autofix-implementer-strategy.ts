@@ -22,6 +22,18 @@ export interface AutofixImplementerStrategyOptions {
    * (default: false)
    */
   includeAdversarialReview?: boolean;
+  /**
+   * Restrict the implementer to claiming `adversarial-review` findings whose
+   * `fixTarget` matches this value (e.g. `"source"`). When set, this supersedes
+   * the blanket `includeAdversarialReview` for adversarial findings so that
+   * fixTarget=test adversarial findings stay with the test-writer. Used in the
+   * `triage` non-blocking fix scope so that source-targeted adversarial
+   * findings go to the implementer and test-targeted findings go to the
+   * test-writer without overlap.
+   * (default: undefined — implementer does not claim adversarial findings
+   * unless `includeAdversarialReview` is also true)
+   */
+  adversarialReviewByFixTarget?: "source" | "test";
 }
 
 export function makeAutofixImplementerStrategy(
@@ -31,6 +43,7 @@ export function makeAutofixImplementerStrategy(
   opts: AutofixImplementerStrategyOptions = {},
 ): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
   const claimsAdversarial = opts.includeAdversarialReview === true;
+  const adversarialReviewByFixTarget = opts.adversarialReviewByFixTarget;
   return {
     name: "autofix-implementer",
     appliesTo: (f) =>
@@ -38,7 +51,14 @@ export function makeAutofixImplementerStrategy(
       // Edge case: lint/typecheck error on a test file routes here instead of
       // autofix-test-writer, but style fixes don't require test-writer context.
       ((f.fixTarget === "source" || f.fixTarget == null) && IMPLEMENTER_SOURCES.has(f.source)) ||
-      (claimsAdversarial && f.source === "adversarial-review"),
+      // triage scope: claim only adversarial findings whose fixTarget matches
+      // the requested target. Supersedes the blanket includeAdversarialReview
+      // for adversarial findings so that fixTarget=test adversarial findings
+      // stay with the test-writer.
+      (adversarialReviewByFixTarget !== undefined &&
+        f.source === "adversarial-review" &&
+        f.fixTarget === adversarialReviewByFixTarget) ||
+      (adversarialReviewByFixTarget === undefined && claimsAdversarial && f.source === "adversarial-review"),
     fixOp: implementerRectifyOp,
     buildInput: (findings, _prior, _cycleCtx): AutofixImplementerInput => ({
       failedChecks: findingsToFailedChecks(findings),

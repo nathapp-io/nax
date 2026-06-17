@@ -37,6 +37,7 @@ import { prepareAdversarialReviewInput, prepareSemanticReviewInput } from "../re
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import {
+  createMeasureSourceDiff,
   nonBlockingExcludePhases,
   nonBlockingExtraPhases,
   runNonBlockingFix,
@@ -50,6 +51,7 @@ export const _storyOrchestratorDeps = {
   captureGitRef,
   prepareSemanticReviewInput,
   prepareAdversarialReviewInput,
+  runNonBlockingFix,
 };
 
 /**
@@ -1256,22 +1258,31 @@ export class ExecutionPlan {
       this.ctx.storyId &&
       shouldRunNonBlockingFix(advCfg, advisoryFindings.length)
     ) {
-      await runNonBlockingFix({
-        workdir: this.ctx.packageDir,
-        storyId: this.ctx.storyId,
-        advisoryFindings,
-        cfg: advCfg,
-        phaseOutputs,
-        runRectify: (maxAttempts) =>
-          runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
-            initialFindings: advisoryFindings,
-            strategies: this.state.nonBlockingFixStrategies ?? [],
-            excludePhaseKinds: nonBlockingExcludePhases(),
-            extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
-            maxAttempts,
-            postValidate: this.state.nonBlockingFixPostValidate,
+      await _storyOrchestratorDeps.runNonBlockingFix(
+        {
+          workdir: this.ctx.packageDir,
+          storyId: this.ctx.storyId,
+          advisoryFindings,
+          cfg: advCfg,
+          phaseOutputs,
+          runRectify: (maxAttempts) =>
+            runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
+              initialFindings: advisoryFindings,
+              strategies: this.state.nonBlockingFixStrategies ?? [],
+              excludePhaseKinds: nonBlockingExcludePhases(),
+              extraRevalidationKinds: nonBlockingExtraPhases(advCfg),
+              maxAttempts,
+              postValidate: this.state.nonBlockingFixPostValidate,
+            }),
+        },
+        {
+          measureSourceDiff: createMeasureSourceDiff({
+            config: this.ctx.runtime.configLoader.current(),
+            projectDir: this.ctx.runtime.projectDir,
+            packageDir: this.ctx.packageDir,
           }),
-      });
+        },
+      );
     }
 
     // Aggregate success across every op that produced output, including fix-ops
