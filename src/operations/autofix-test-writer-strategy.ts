@@ -8,14 +8,29 @@ import type { AutofixTestWriterInput, AutofixTestWriterOutput } from "./autofix-
 import { testWriterRectifyOp } from "./autofix-test-writer";
 import type { DeclarationSink } from "./declaration-sink";
 
+/** Options controlling which findings the test-writer rectifier claims. */
+export interface AutofixTestWriterStrategyOptions {
+  /**
+   * When true, disables the blanket `source === "adversarial-review"` clause.
+   * The test-writer will only claim findings with `fixTarget === "test"` (or
+   * mockHandoffs). Used in the `triage` non-blocking fix scope so that
+   * source-targeted adversarial findings route exclusively to the implementer.
+   * (default: false)
+   */
+  disableBlanketAdversarial?: boolean;
+}
+
 export function makeAutofixTestWriterStrategy(
   story: UserStory,
   config: NaxConfig,
   sink: DeclarationSink,
+  opts: AutofixTestWriterStrategyOptions = {},
 ): FixStrategy<Finding, AutofixTestWriterInput, AutofixTestWriterOutput, AutofixConfig> {
+  const disableBlanket = opts.disableBlanketAdversarial === true;
   return {
     name: "autofix-test-writer",
-    appliesTo: (f) => f.fixTarget === "test" || f.source === "adversarial-review" || sink.mockHandoffs.length > 0,
+    appliesTo: (f) =>
+      f.fixTarget === "test" || (!disableBlanket && f.source === "adversarial-review") || sink.mockHandoffs.length > 0,
     fixOp: testWriterRectifyOp,
     buildInput: (findings, _prior, _cycleCtx): AutofixTestWriterInput => {
       // Consume mock-structure handoffs from the shared sink (one-shot).

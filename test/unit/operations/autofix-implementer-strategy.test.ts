@@ -133,6 +133,63 @@ describe("makeAutofixImplementerStrategy", () => {
     expect(input.failedChecks[0]?.findings).toEqual([semanticFinding]);
   });
 
+  describe("triage: claimAdversarialSource opt-in", () => {
+    test("claims adversarial-review with fixTarget=source when claimAdversarialSource=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        claimAdversarialSource: true,
+      });
+      const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(true);
+    });
+
+    test("does NOT claim adversarial-review with fixTarget=test when claimAdversarialSource=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        claimAdversarialSource: true,
+      });
+      const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+
+    test("does NOT claim adversarial-review with fixTarget=undefined when claimAdversarialSource=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        claimAdversarialSource: true,
+      });
+      const finding = makeFinding({ fixTarget: undefined, source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+
+    test("default opts do NOT claim any adversarial findings (claimAdversarialSource unset)", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+
+    test("AC6: three-session default (no opts) does NOT claim adversarial source findings", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink());
+      const finding = makeFinding({ fixTarget: "source", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+
+    test("still claims IMPLEMENTER_SOURCES source findings when claimAdversarialSource=true", () => {
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        claimAdversarialSource: true,
+      });
+      const finding = makeFinding({ fixTarget: "source", source: "lint" });
+      expect(strategy.appliesTo(finding)).toBe(true);
+    });
+
+    test("does NOT claim adversarial findings with fixTarget=test even alongside includeAdversarialReview=true", () => {
+      // AC3 routing: even with the blanket opt-in, the test-targeted adversarial
+      // finding must NOT be claimed by the implementer (it's the test-writer's lane).
+      const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: true,
+        claimAdversarialSource: true,
+      });
+      const finding = makeFinding({ fixTarget: "test", source: "adversarial-review" });
+      expect(strategy.appliesTo(finding)).toBe(false);
+    });
+  });
+
   describe("extractApplied — sink partitioning", () => {
     function makeOutput(
       declarations: AutofixImplementerOutput["testEditDeclarations"],

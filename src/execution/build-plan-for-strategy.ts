@@ -243,8 +243,19 @@ export async function buildPlanForStrategy(
           includeAdversarialReview: true,
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
+    } else if (nbf.scope === "triage") {
+      // triage scope: route by fixTarget — implementer owns source-targeted adversarial,
+      // test-writer owns test-targeted adversarial; blanket clause disabled to prevent overlap.
+      nbStrategies.push(
+        makeAutofixImplementerStrategy(story, config, nbSink, {
+          claimAdversarialSource: true,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
+        makeAutofixTestWriterStrategy(story, config, nbSink, {
+          disableBlanketAdversarial: true,
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
     } else {
-      // "both" scope: implementer handles regression/source findings; test-writer owns adversarial
+      // "both" scope (default): implementer handles regression/source findings; test-writer owns adversarial
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
           includeAdversarialReview: false,
