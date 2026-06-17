@@ -1,0 +1,212 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given `categoryToFixTarget` imported from `@/review`, when it is called with `\"abandonment\"`, then it returns `\"source\"`",
+    "refined": "assert(categoryToFixTarget('abandonment') === 'source')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"input\"`, then it returns `\"source\"`",
+    "refined": "assert(categoryToFixTarget('input') === 'source')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"error-path\"`, then it returns `\"source\"`",
+    "refined": "assert(categoryToFixTarget('error-path') === 'source')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"assumption\"`, then it returns `\"source\"`",
+    "refined": "assert(categoryToFixTarget('assumption') === 'source')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"test-gap\"`, then it returns `\"test\"`",
+    "refined": "assert(categoryToFixTarget('test-gap') === 'test')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"convention\"`, then it returns `\"test\"`",
+    "refined": "assert(categoryToFixTarget('convention') === 'test')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given `categoryToFixTarget`, when it is called with `\"some-unrecognized-category\"`, then it returns `\"test\"`",
+    "refined": "assert(categoryToFixTarget('some-unrecognized-category') === 'test')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given every member of `BLOCKING_CATEGORIES`, when `categoryToFixTarget(member)` is evaluated, then it returns `\"source\"`, and given `\"test-gap\"` and `\"convention\"`, when each is evaluated, then it returns `\"test\"`",
+    "refined": "BLOCKING_CATEGORIES.forEach(cat => assert(categoryToFixTarget(cat) === 'source')); assert(categoryToFixTarget('test-gap') === 'test'); assert(categoryToFixTarget('convention') === 'test')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given an adversarial LLM finding with `category: \"abandonment\"`, when `toAdversarialReviewFindings` converts it, then the returned `Finding.fixTarget` equals `\"source\"`",
+    "refined": "Invoke `toAdversarialReviewFindings([{ category: \"abandonment\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }])` and assert the first element of the returned array has `fixTarget === \"source\"`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given an adversarial LLM finding with `category: \"test-gap\"`, when `toAdversarialReviewFindings` converts it, then the returned `Finding.fixTarget` equals `\"test\"`",
+    "refined": "Invoke `toAdversarialReviewFindings([{ category: \"test-gap\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }])` and assert the first element of the returned array has `fixTarget === \"test\"`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given an adversarial LLM finding with `category: \"input\"`, when `llmFindingsToReviewFindings` converts it with `source: \"adversarial-review\"`, then the returned `ReviewFinding.fixTarget` equals `\"source\"`",
+    "refined": "Invoke `llmFindingsToReviewFindings([{ category: \"input\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }], \"adversarial-review\")` and assert the first element has `fixTarget === \"source\"`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given the same adversarial LLM finding, when it is converted through `toAdversarialReviewFindings` and `llmFindingsToReviewFindings`, then both outputs carry the same `fixTarget` value",
+    "refined": "Invoke `toAdversarialReviewFindings([{ category: \"abandonment\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }])` and `llmFindingsToReviewFindings([{ category: \"abandonment\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }], \"adversarial-review\")` and assert both returned findings have the same `fixTarget` value",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given an adversarial LLM finding with `category: \"some-unrecognized-category\"`, when it is converted through `llmFindingsToReviewFindings`, then the returned `ReviewFinding.fixTarget` equals `\"test\"`",
+    "refined": "Invoke `llmFindingsToReviewFindings([{ category: \"some-unrecognized-category\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }], \"adversarial-review\")` and assert the first element has `fixTarget === \"test\"`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given an adversarial review-audit entry recorded for a finding with `category: \"abandonment\"`, when the corresponding `ReviewAuditEntry` is persisted, then the stored finding carries `fixTarget: \"source\"`",
+    "refined": "Create a `ReviewAuditEntry` with `result.findings` containing a finding from `toAdversarialReviewFindings([{ category: \"abandonment\", ruleId: \"test-rule\", message: \"test\", severity: \"high\" }])`, serialize and deserialize it (e.g., via `JSON.stringify`/`JSON.parse` or the actual persistence mechanism), and assert the deserialized finding's `fixTarget === \"source\"`",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given `AdversarialReviewConfigSchema`, when it parses `{ nonBlockingFix: { enabled: true, scope: \"triage\" } }`, then the parsed `nonBlockingFix.scope` equals `\"triage\"`",
+    "refined": "Call `AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true, scope: \"triage\" } })` and assert the returned object has `nonBlockingFix.scope === \"triage\"`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given `AdversarialReviewConfigSchema`, when it parses a `nonBlockingFix` object with `scope` unset, then the parsed `nonBlockingFix.scope` equals `\"both\"`",
+    "refined": "Call `AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true } })` and assert the returned object has `nonBlockingFix.scope === \"both\"`",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given `AdversarialReviewConfigSchema`, when it parses `{ nonBlockingFix: { enabled: true, scope: \"invalid\" } }`, then parsing throws",
+    "refined": "Wrap `AdversarialReviewConfigSchema.parse({ nonBlockingFix: { enabled: true, scope: \"invalid\" } })` in a try-catch and assert it throws a ZodError",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given `nonBlockingExtraPhases`, when it is called with `{ scope: \"triage\", verifierGuard: true, ... }`, then it returns `[\"verifier\"]`",
+    "refined": "Call `nonBlockingExtraPhases({ scope: \"triage\", verifierGuard: true, enabled: true })` and assert it returns exactly `[\"verifier\"]` (array of length 1 containing \"verifier\")",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given `nonBlockingExtraPhases`, when it is called with `{ scope: \"triage\", verifierGuard: false, ... }`, then it returns `[]`",
+    "refined": "Call `nonBlockingExtraPhases({ scope: \"triage\", verifierGuard: false, enabled: true })` and assert it returns exactly `[]` (empty array)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given the non-blocking strategy set built for `scope: \"triage\"`, when the strategy names are inspected, then they include `\"autofix-implementer\"`, `\"autofix-test-writer\"`, and `\"full-suite-rectify\"`",
+    "refined": "When `buildPlanForStrategy({ scope: 'triage', story, config })` is invoked, the returned `FixStrategySet.strategies` array contains exactly 3 strategies with `name` values equal to `'autofix-implementer'`, `'autofix-test-writer'`, and `'full-suite-rectify'`, in that order",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given the `triage` strategy set and an advisory finding with `source: \"adversarial-review\"` and `fixTarget: \"source\"`, when each strategy's `appliesTo` is evaluated, then `autofix-implementer` returns `true` and `autofix-test-writer` returns `false`",
+    "refined": "When the triage strategy set is built and a finding `{ source: 'adversarial-review', fixTarget: 'source', category: 'advisory', severity: 'high' }` is passed to `autofixImplementer.appliesTo(findings)` it returns `true`, and when passed to `autofixTestWriter.appliesTo(findings)` it returns `false`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given the `triage` strategy set and an advisory finding with `source: \"adversarial-review\"` and `fixTarget: \"test\"`, when each strategy's `appliesTo` is evaluated, then `autofix-test-writer` returns `true` and `autofix-implementer` returns `false`",
+    "refined": "When the triage strategy set is built and a finding `{ source: 'adversarial-review', fixTarget: 'test', category: 'advisory', severity: 'high' }` is passed to `autofixTestWriter.appliesTo(findings)` it returns `true`, and when passed to `autofixImplementer.appliesTo(findings)` it returns `false`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given the `triage` strategy set and an advisory `convention` finding with `fixTarget: \"test\"`, when `autofix-test-writer.appliesTo` is evaluated, then it returns `true`",
+    "refined": "When the triage strategy set is built and a finding `{ source: 'convention', fixTarget: 'test', category: 'advisory', severity: 'medium' }` is passed to `autofixTestWriter.appliesTo(findings)` it returns `true`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given `makeAutofixTestWriterStrategy` built with default options, when `appliesTo` is evaluated for an adversarial finding with `fixTarget: \"source\"`, then it returns `true`",
+    "refined": "When `makeAutofixTestWriterStrategy(story, config, sink)` is called with default options (no `includeAdversarialReview: false`), and a finding `{ source: 'adversarial-review', fixTarget: 'source', category: 'advisory' }` is passed to the returned strategy's `appliesTo` method, it returns `true`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given the blocking three-session strategy set, when an adversarial finding with `fixTarget: \"source\"` is evaluated, then `autofix-test-writer.appliesTo` returns `true` and `autofix-implementer.appliesTo` returns `false`",
+    "refined": "When `buildPlanForStrategy({ scope: 'source', story, config })` (blocking three-session mode) is invoked and a finding `{ source: 'adversarial-review', fixTarget: 'source', category: 'advisory' }` is evaluated, `autofixTestWriter.appliesTo(findings)` returns `true` and `autofixImplementer.appliesTo(findings)` returns `false`",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given `AdversarialReviewConfigSchema`, when it parses a `nonBlockingFix` object with `sourceDiffCap` unset, then the parsed `sourceDiffCap.maxFiles` and `sourceDiffCap.maxLines` equal their schema defaults",
+    "refined": "When `AdversarialReviewConfigSchema.parse({ nonBlockingFix: {} })` is called, the returned object has `sourceDiffCap.maxFiles` equal to 10 and `sourceDiffCap.maxLines` equal to 500",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given `runNonBlockingFix` with a `measureSourceDiff` dependency reporting a source change that exceeds `sourceDiffCap.maxLines` and a `runRectify` result where `rectificationExhausted` is `false`, when the function completes, then it returns `{ ran: true, kept: false, restored: true }` and invokes the rollback dependency",
+    "refined": "When `runNonBlockingFix` is called with deps where `measureSourceDiff` returns `{ fileCount: 1, sourceLineCount: 501 }` (exceeding default maxLines of 500) and `runRectify` returns `{ rectificationExhausted: false }`, the function returns `{ ran: true, kept: false, restored: true }` and `rollbackToRef` was called exactly once",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given `runNonBlockingFix` with a `measureSourceDiff` dependency reporting a source change within `sourceDiffCap` and a `runRectify` result where `rectificationExhausted` is `false`, when the function completes, then it returns `{ ran: true, kept: true, restored: false }`",
+    "refined": "When `runNonBlockingFix` is called with deps where `measureSourceDiff` returns `{ fileCount: 1, sourceLineCount: 100 }` (within default maxLines of 500) and `runRectify` returns `{ rectificationExhausted: false }`, the function returns `{ ran: true, kept: true, restored: false }`",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given `runNonBlockingFix` with a `measureSourceDiff` dependency that throws, when the function completes, then it returns `{ ran: true, kept: false, restored: true }`",
+    "refined": "When `runNonBlockingFix` is called with deps where `measureSourceDiff` throws an Error and `runRectify` returns `{ rectificationExhausted: false }`, the function returns `{ ran: true, kept: false, restored: true }` and `rollbackToRef` was called exactly once",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given `runNonBlockingFix` with a diff whose changed files are all test files and whose measured source-line count is zero, when the diff stays within `sourceDiffCap`, then it returns `{ ran: true, kept: true, restored: false }`",
+    "refined": "When `runNonBlockingFix` is called with deps where `measureSourceDiff` returns `{ fileCount: 2, sourceLineCount: 0 }` (all test files) and `runRectify` returns `{ rectificationExhausted: false }`, the function returns `{ ran: true, kept: true, restored: false }`",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]
