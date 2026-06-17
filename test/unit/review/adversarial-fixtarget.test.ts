@@ -6,11 +6,13 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { AdversarialLLMFinding } from "../../../src/review/adversarial-helpers";
 import { toAdversarialReviewFindings } from "../../../src/review/adversarial-helpers";
-import { llmFindingsToReviewFindings } from "../../../src/review/finding-projection";
-import { ReviewAuditor, writeReviewAudit, _reviewAuditDeps } from "../../../src/review/review-audit";
-import type { ReviewAuditEntry } from "../../../src/review/review-audit";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
+import { _adversarialDeps, llmFindingsToReviewFindings } from "@/review";
+import { _reviewAuditDeps, ReviewAuditor } from "@/runtime";
+import type { ReviewAuditEntry } from "@/runtime";
+
+const { writeReviewAudit } = _adversarialDeps;
 
 function makeAdversarialFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
   return {
