@@ -3,7 +3,7 @@
   "feature": "nonblocking-fix-category-triage",
   "branchName": "feat/nonblocking-fix-category-triage",
   "createdAt": "2026-06-17T09:54:21Z",
-  "updatedAt": "2026-06-17T10:20:55.113Z",
+  "updatedAt": "2026-06-17T10:29:53.179Z",
   "userStories": [
     {
       "id": "US-001",
@@ -26,8 +26,8 @@
         "ssot"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -91,7 +91,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/review/category-fix-target.ts",
@@ -102,7 +104,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "310196ada6ac4b4f639fb69191f5b49e59d855ab"
     },
     {
       "id": "US-003",
