@@ -23,6 +23,18 @@ export interface AutofixTestWriterStrategyOptions {
    * (default: true)
    */
   includeAdversarialReview?: boolean;
+  /**
+   * Severity floor for findings rendered into the rectifier prompt. The prompt
+   * builder drops findings below this floor. Defaults (when undefined) to the
+   * run's `review.blockingThreshold` (i.e. `"error"`), which is correct for the
+   * blocking cycle but WRONG for the non-blocking fix: that path is seeded
+   * exclusively with advisory findings *below* the blocking threshold
+   * (`adversarial.ts` advisory filter), so the run threshold would strip every
+   * finding back out and the agent receives an empty findings list. The
+   * non-blocking strategy set passes `"info"` here so all seeded advisory
+   * findings render. (default: undefined → `config.review.blockingThreshold`)
+   */
+  promptSeverityFloor?: "error" | "warning" | "info";
 }
 
 export function makeAutofixTestWriterStrategy(
@@ -32,6 +44,7 @@ export function makeAutofixTestWriterStrategy(
   opts: AutofixTestWriterStrategyOptions = {},
 ): FixStrategy<Finding, AutofixTestWriterInput, AutofixTestWriterOutput, AutofixConfig> {
   const includeAdversarial = opts.includeAdversarialReview !== false;
+  const blockingThreshold = opts.promptSeverityFloor ?? config.review?.blockingThreshold;
   return {
     name: "autofix-test-writer",
     appliesTo: (f) =>
@@ -59,7 +72,7 @@ export function makeAutofixTestWriterStrategy(
           failedChecks: findingsToFailedChecks(findings),
           story,
           mode: "mock-restructure",
-          blockingThreshold: config.review?.blockingThreshold,
+          blockingThreshold,
           handoffReason,
           handoffFiles,
         };
@@ -67,7 +80,7 @@ export function makeAutofixTestWriterStrategy(
       return {
         failedChecks: findingsToFailedChecks(findings),
         story,
-        blockingThreshold: config.review?.blockingThreshold,
+        blockingThreshold,
       };
     },
     maxAttempts: config.execution.rectification.maxAttemptsPerStrategy,

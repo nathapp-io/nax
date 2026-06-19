@@ -34,6 +34,16 @@ export interface AutofixImplementerStrategyOptions {
    * unless `includeAdversarialReview` is also true)
    */
   adversarialReviewByFixTarget?: "source" | "test";
+  /**
+   * Severity floor for findings rendered into the rectifier prompt. The prompt
+   * builder drops findings below this floor (default `"error"`). The
+   * non-blocking fix is seeded exclusively with advisory findings *below* the
+   * run's blocking threshold, so without an explicit `"info"` floor every
+   * seeded finding is filtered back out and the agent receives an empty
+   * findings list. The non-blocking strategy set passes `"info"`.
+   * (default: undefined → `config.review.blockingThreshold`)
+   */
+  promptSeverityFloor?: "error" | "warning" | "info";
 }
 
 export function makeAutofixImplementerStrategy(
@@ -44,6 +54,7 @@ export function makeAutofixImplementerStrategy(
 ): FixStrategy<Finding, AutofixImplementerInput, AutofixImplementerOutput, AutofixConfig> {
   const claimsAdversarial = opts.includeAdversarialReview === true;
   const adversarialReviewByFixTarget = opts.adversarialReviewByFixTarget;
+  const blockingThreshold = opts.promptSeverityFloor ?? config.review?.blockingThreshold;
   return {
     name: "autofix-implementer",
     appliesTo: (f) =>
@@ -64,6 +75,7 @@ export function makeAutofixImplementerStrategy(
       failedChecks: findingsToFailedChecks(findings),
       story,
       findings,
+      blockingThreshold,
     }),
     extractApplied: (output) => {
       // Accumulate test-edit declarations and mock handoffs into the shared sink
