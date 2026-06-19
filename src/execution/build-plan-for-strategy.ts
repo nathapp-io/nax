@@ -277,6 +277,10 @@ export async function buildPlanForStrategy(
       );
     }
     // Always: recover from a test regression that the best-effort fix introduces.
+    // No `promptSeverityFloor` here on purpose: this strategy only claims
+    // `source: "test-runner"` regression findings (never advisory adversarial
+    // findings), and its prompt renders failing tests without a severity filter,
+    // so a floor would be inert.
     nbStrategies.push(
       makeFullSuiteRectifyStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
     );
