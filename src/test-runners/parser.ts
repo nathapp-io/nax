@@ -7,8 +7,8 @@
  * Supported:
  *   - Bun test
  *   - Jest / Vitest
- *   - pytest        (common-parser fallback — structured extraction TODO)
- *   - go test       (common-parser fallback — structured extraction TODO)
+ *   - pytest        (FAILED lines + file:line stackTrace from verbose FAILURES block)
+ *   - go test       (--- FAIL: lines + file:line:msg from indented error lines)
  *   - Unknown       (common-parser fallback via broad regexes)
  */
 
@@ -258,8 +258,17 @@ function parseJestOutput(output: string): TestSummary {
  * ====== 2 failed, 5 passed in 0.42s ======
  * ```
  *
- * TODO: Add structured error/stack extraction from the verbose block.
- * Currently falls back to common parser for counts and extracts FAILED lines for names.
+ * Verbose format adds a FAILURES block with per-test sections:
+ * ```
+ * ================================= FAILURES =================================
+ * ________________________________ test_bar __________________________________
+ *     def test_bar():
+ * >       assert 1 == 2
+ * E       AssertionError: assert 1 == 2
+ *
+ * tests/test_foo.py:5: AssertionError
+ * ```
+ * The file:line reference at the end of each section is extracted into stackTrace.
  */
 function parsePytestOutput(output: string): TestSummary {
   const common = parseCommonOutput(output);
@@ -280,11 +289,64 @@ function parsePytestOutput(output: string): TestSummary {
     }
   }
 
+  // Merge file:line stackTrace entries from the verbose FAILURES block
+  const verboseStacks = parsePytestVerboseStacks(output);
+  for (const failure of failures) {
+    const leafName = failure.testName.split(" > ").pop() ?? failure.testName;
+    // Class-based tests: FAILED line yields "TestClass > test_method" but the verbose
+    // block header uses "TestClass.test_method" (dot separator). Try both forms.
+    const stack =
+      verboseStacks.get(leafName) ??
+      verboseStacks.get(failure.testName) ??
+      verboseStacks.get(failure.testName.replace(/ > /g, "."));
+    if (stack && stack.length > 0) {
+      failure.stackTrace = stack;
+    }
+  }
+
   return {
     passed: common.passed,
     failed: common.failed,
     failures: failures.length > 0 ? failures : common.failures,
   };
+}
+
+/**
+ * Extract a map of testName → stackTrace entries from the pytest verbose FAILURES block.
+ *
+ * Block headers look like: "____ test_name ____" (4+ underscores padding each side).
+ * Class-based test headers use dot notation: "____ TestClass.test_method ____".
+ * File:line references look like: "tests/foo.py:10: AssertionError" (bare, unindented).
+ *
+ * Known limitation: if two test files both define a function with the same name (e.g.
+ * both define `test_foo`), the map key collides and the last block wins. The wrong
+ * stackTrace may be assigned to one of the failures. This is a minor edge case that
+ * would require full file-path correlation to resolve.
+ */
+function parsePytestVerboseStacks(output: string): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const failuresIdx = output.indexOf("FAILURES");
+  if (failuresIdx === -1) return result;
+
+  let currentTest: string | null = null;
+  for (const line of output.slice(failuresIdx).split("\n")) {
+    const headerMatch = line.match(/^_{4,}\s+(.+?)\s+_{4,}$/);
+    if (headerMatch) {
+      currentTest = headerMatch[1].trim();
+      continue;
+    }
+    if (currentTest) {
+      // "tests/test_foo.py:10: AssertionError" — bare (unindented) file:line reference
+      const fileLineMatch = line.match(/^(\S+\.py):(\d+):/);
+      if (fileLineMatch) {
+        const entry = `${fileLineMatch[1]}:${fileLineMatch[2]}`;
+        const existing = result.get(currentTest) ?? [];
+        result.set(currentTest, [...existing, entry]);
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -294,28 +356,54 @@ function parsePytestOutput(output: string): TestSummary {
  * ```
  * --- FAIL: TestFoo (0.00s)
  *     foo_test.go:12: Error message
+ *     foo_test.go:13: additional context
  * ok  	example.com/pkg	0.042s
  * FAIL	example.com/pkg	0.001s
  * ```
  *
- * TODO: Add structured error extraction from indented lines after "--- FAIL:".
- * Currently falls back to common parser for counts and extracts FAIL lines for names.
+ * Indented lines directly following "--- FAIL:" carry the file:line:message details.
+ * The first such line populates `file` and `error`; all lines populate `stackTrace`.
+ * Subtests (e.g. "TestSuite/SubTest_one") are preserved verbatim as testName.
  */
 function parseGoTestOutput(output: string): TestSummary {
   const common = parseCommonOutput(output);
 
-  // Structured failure names from "--- FAIL: TestName (Xs)" lines
   const failures: TestFailure[] = [];
-  for (const line of output.split("\n")) {
-    const m = line.match(/^--- FAIL:\s+(\S+)\s+\([\d.]+s\)/);
-    if (m) {
+  const lines = output.split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const failMatch = lines[i].match(/^--- FAIL:\s+(\S+)\s+\([\d.]+s\)/);
+    if (failMatch) {
+      const testName = failMatch[1];
+      i++;
+
+      const errorLines: Array<{ file: string; lineNum: string; msg: string }> = [];
+      while (i < lines.length) {
+        const line = lines[i];
+        if (!line.trim()) {
+          i++;
+          continue;
+        }
+        // Indented error line: "    foo_test.go:12: message" (4+ spaces)
+        const errMatch = line.match(/^\s{4,}(\S+\.go):(\d+):\s+(.+)$/);
+        if (errMatch) {
+          errorLines.push({ file: errMatch[1], lineNum: errMatch[2], msg: errMatch[3] });
+          i++;
+        } else {
+          break;
+        }
+      }
+
       failures.push({
-        file: "unknown",
-        testName: m[1],
-        error: "Unknown error",
-        stackTrace: [],
+        file: errorLines[0]?.file ?? "unknown",
+        testName,
+        error: errorLines[0]?.msg ?? "Unknown error",
+        stackTrace: errorLines.map((e) => `${e.file}:${e.lineNum}: ${e.msg}`),
       });
+      continue;
     }
+    i++;
   }
 
   return {
