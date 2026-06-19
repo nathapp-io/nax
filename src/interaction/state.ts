@@ -6,6 +6,7 @@
 
 import { unlink } from "node:fs/promises";
 import * as path from "node:path";
+import { NaxError } from "../errors";
 import type { InteractionRequest, InteractionResponse } from "./types";
 
 /** Serialized run state for pause/resume */
@@ -50,7 +51,10 @@ const SAFE_INTERACTION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
  */
 export function validateInteractionId(id: string): void {
   if (!SAFE_INTERACTION_ID_RE.test(id)) {
-    throw new Error(`Invalid interaction ID — must match [a-zA-Z0-9_-]{1,128}: ${id}`);
+    throw new NaxError(`Invalid interaction ID — must match [a-zA-Z0-9_-]{1,128}: ${id}`, "INTERACTION_ERROR", {
+      stage: "run",
+      id,
+    });
   }
 }
 
@@ -62,7 +66,11 @@ function assertPathWithin(filePath: string, baseDir: string): void {
   const resolved = path.resolve(filePath);
   const base = path.resolve(baseDir);
   if (!resolved.startsWith(base + path.sep) && resolved !== base) {
-    throw new Error(`Path traversal detected: ${filePath} is outside ${baseDir}`);
+    throw new NaxError(`Path traversal detected: ${filePath} is outside ${baseDir}`, "INTERACTION_ERROR", {
+      stage: "run",
+      filePath,
+      baseDir,
+    });
   }
 }
 
