@@ -79,16 +79,16 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
     ctx.statusWriter.setCurrentStory(null);
     await ctx.statusWriter.update(0, 0);
 
-    // Log detailed error message to console
-    console.error("");
-    console.error(chalk.red("❌ PRECHECK FAILED"));
-    console.error(chalk.red("─".repeat(60)));
+    // Write precheck failure details directly to stderr for immediate terminal visibility
+    process.stderr.write("\n");
+    process.stderr.write(`${chalk.red("❌ PRECHECK FAILED")}\n`);
+    process.stderr.write(`${chalk.red("─".repeat(60))}\n`);
     for (const blocker of precheckResult.output.blockers) {
-      console.error(chalk.red(`✗ ${blocker.name}: ${blocker.message}`));
+      process.stderr.write(`${chalk.red(`✗ ${blocker.name}: ${blocker.message}`)}\n`);
     }
-    console.error(chalk.red("─".repeat(60)));
-    console.error(chalk.yellow("\nRun 'nax precheck' for detailed information"));
-    console.error(chalk.dim("Use --skip-precheck to bypass (not recommended)\n"));
+    process.stderr.write(`${chalk.red("─".repeat(60))}\n`);
+    process.stderr.write(`${chalk.yellow("\nRun 'nax precheck' for detailed information")}\n`);
+    process.stderr.write(`${chalk.dim("Use --skip-precheck to bypass (not recommended)\n")}\n`);
 
     throw new Error(`Precheck failed: ${precheckResult.output.blockers.map((b) => b.name).join(", ")}`);
   }
@@ -101,11 +101,11 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
     });
 
     if (ctx.headless && ctx.formatterMode !== "json") {
-      console.log(chalk.yellow("\n⚠️  Precheck warnings:"));
+      process.stdout.write(`${chalk.yellow("\n⚠️  Precheck warnings:")}\n`);
       for (const warning of precheckResult.output.warnings) {
-        console.log(chalk.yellow(`  ⚠ ${warning.name}: ${warning.message}`));
+        process.stdout.write(`${chalk.yellow(`  ⚠ ${warning.name}: ${warning.message}`)}\n`);
       }
-      console.log("");
+      process.stdout.write("\n");
     }
   } else {
     logger?.info("precheck", "All precheck validations passed");

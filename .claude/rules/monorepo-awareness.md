@@ -177,16 +177,18 @@ Consolidate. Every new concept gets one resolver/registry and only one:
 
 If a new file needs to answer "X?", search for an existing resolver before writing `COMMON_X = [...]` constants. The second inline constant is a bug waiting to happen.
 
-## Current Known Violations (2026-04-18 audit)
+## Current Known Violations
 
-These are tracked and will be cleaned up incrementally. Do not add to this list.
+All violations from the 2026-04-18 audit have been resolved:
 
-| Site | Violation | Tracking |
-|:---|:---|:---|
-| `src/context/test-scanner.ts:121,148-150,189` | `COMMON_TEST_DIRS` + `.spec.ts` literals — ADR-009 | [#533](https://github.com/nathapp-io/nax/issues/533) |
-| `src/verification/smart-runner.ts:199,336-337` | Hardcoded `test/unit/` + `test/integration/` layout | [#534](https://github.com/nathapp-io/nax/issues/534) |
-| `src/context/builder.ts:265` | `workdir \|\| process.cwd()` fallback | [#535](https://github.com/nathapp-io/nax/issues/535) |
-| `src/prompts/sections/role-task.ts:24-28` | Language detection by `cmd.startsWith("bun test")` | [#536](https://github.com/nathapp-io/nax/issues/536) |
+| Site | Violation | Tracking | Status |
+|:---|:---|:---|:---|
+| `src/context/test-scanner.ts:121,148-150,189` | `COMMON_TEST_DIRS` + `.spec.ts` literals — ADR-009 | [#533](https://github.com/nathapp-io/nax/issues/533) | ✅ Resolved |
+| `src/verification/smart-runner.ts:199,336-337` | Hardcoded `test/unit/` + `test/integration/` layout | [#534](https://github.com/nathapp-io/nax/issues/534) | ✅ Resolved |
+| `src/context/builder.ts:265` | `workdir \|\| process.cwd()` fallback | [#535](https://github.com/nathapp-io/nax/issues/535) | ✅ Resolved |
+| `src/prompts/sections/role-task.ts:24-28` | Language detection by `cmd.startsWith("bun test")` | [#536](https://github.com/nathapp-io/nax/issues/536) | ✅ Resolved |
+
+Do not add new violations to this table — open a GitHub issue and reference it in the code instead.
 
 ## References
 

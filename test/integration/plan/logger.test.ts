@@ -378,9 +378,9 @@ describe("Logger", () => {
     const skipInCI = fullTest;
     skipInCI("handles file write errors gracefully", () => {
       // Create logger with invalid path
-      const originalError = console.error;
+      const originalWrite = process.stderr.write.bind(process.stderr);
       const errors: string[] = [];
-      console.error = (msg: string) => errors.push(msg);
+      process.stderr.write = ((msg: string) => { errors.push(msg); return true; }) as typeof process.stderr.write;
 
       const logger = initLogger({
         level: "info",
@@ -389,9 +389,9 @@ describe("Logger", () => {
 
       logger.info("test", "message");
 
-      console.error = originalError;
+      process.stderr.write = originalWrite;
 
-      // Should log error to console but not crash
+      // Should log error to stderr but not crash
       expect(errors.some((e) => e.includes("Failed to write to log file"))).toBe(true);
     });
   });
