@@ -1,5 +1,5 @@
+import { buildDecomposePromptSync } from "@/prompts";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
-import { buildDecomposePromptSync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import { decomposeConfigSelector } from "../config";
 import type { DecomposeConfig } from "../config/selectors";
