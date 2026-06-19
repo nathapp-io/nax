@@ -46,7 +46,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const resolved: ResolvedDebater[] = [];
   for (const debater of debaters) {
     if (!agentManager.getAgent(debater.agent)) {
-      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`, { storyId: ctx.storyId });
       continue;
     }
     resolved.push({ debater, agentName: debater.agent });

@@ -41,7 +41,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
 
   for (const debater of debaters) {
     if (!ctx.agentManager.getAgent(debater.agent)) {
-      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+      logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`, { storyId: ctx.storyId });
     }
   }
 

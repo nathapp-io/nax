@@ -50,7 +50,7 @@ export const optimizerStage: PipelineStage = {
 
     // Ensure prompt exists
     if (!ctx.prompt) {
-      logger.debug("optimizer", "No prompt to optimize, skipping");
+      logger.debug("optimizer", "No prompt to optimize, skipping", { storyId: ctx.story?.id ?? "unknown" });
       return { action: "continue" };
     }
 
@@ -71,6 +71,7 @@ export const optimizerStage: PipelineStage = {
     // Log optimization results
     const savingsPercent = Math.round(result.savings * 100);
     logger.info("optimizer", `${optimizer.name}: ${savingsPercent}% savings`, {
+      storyId: ctx.story?.id ?? "unknown",
       originalTokens: result.originalTokens,
       optimizedTokens: result.optimizedTokens,
       tokensSaved: result.originalTokens - result.optimizedTokens,

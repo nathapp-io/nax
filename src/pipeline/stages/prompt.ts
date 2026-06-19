@@ -117,6 +117,7 @@ export const promptStage: PipelineStage = {
 
     if (isBatch) {
       logger.info("prompt", "Batch session prepared", {
+        storyId: "batch",
         storyCount: ctx.stories.length,
         testStrategy: ctx.routing.testStrategy,
       });

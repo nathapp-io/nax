@@ -42,13 +42,13 @@ export const queueCheckStage: PipelineStage = {
 
     for (const cmd of queueCommands) {
       if (cmd.type === "PAUSE") {
-        logger.warn("queue", "Paused by user", { command: "PAUSE" });
+        logger.warn("queue", "Paused by user", { storyId: ctx.story?.id ?? "unknown", command: "PAUSE" });
         await clearQueueFile(ctx.workdir);
         return { action: "pause", reason: "User requested pause via .queue.txt" };
       }
 
       if (cmd.type === "ABORT") {
-        logger.warn("queue", "Aborting: marking remaining stories as skipped");
+        logger.warn("queue", "Aborting: marking remaining stories as skipped", { storyId: ctx.story?.id ?? "unknown" });
 
         // Mark all pending stories as skipped
         for (const s of ctx.prd.userStories) {
