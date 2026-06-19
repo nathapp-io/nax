@@ -220,5 +220,7 @@ describe("makeFullSuiteRectifyStrategy — with DeclarationSink", () => {
     expect(sink.testEdits).toHaveLength(1);
     // unresolved is suppressed — agent-gave-up must NOT fire when a handoff can still run
     expect(result.unresolved).toBeUndefined();
+    // summary must not echo the UNRESOLVED text either: this iteration is a handoff, not a give-up
+    expect(result.summary).toBe("Fixed failing tests");
   });
 });

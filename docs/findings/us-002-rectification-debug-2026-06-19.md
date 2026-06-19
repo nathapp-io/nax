@@ -231,6 +231,8 @@ The only unfixed item is the test itself: `test/oauth/admin-client.guard.route.s
 
 2. (Optional) Consider logging a structured "rectification narrative" when `gateRegressedDuringRect` fires — even with the current fixes, a future case where the cycle exits "resolved" via verifier-SSOT but the resume gate regresses would still get a generic escalation reason. Capturing "last round changed files X,Y via approach Z" would give the powerful-tier agent more context in that scenario.
 
+3. (Optional — code review MEDIUM) The **regression** rectification path (`run-regression.ts:422`) uses the *non-sink* variant of `makeFullSuiteRectifyStrategy`, whose `fixOp` is `implementerOp` (not `fullSuiteRectifyOp`) with a static `extractApplied`. `implementerOp` never parses `UNRESOLVED:`, so an agent giving up during *deferred-regression* rectification still drops the diagnosis. Out of scope for US-002 (the per-story full-suite findings cycle, sink variant), and arguably a pre-existing limitation rather than a regression — but the bug class is only half-fixed. Fixing it means switching the non-sink variant to `fullSuiteRectifyOp` (or teaching `implementerOp` to surface UNRESOLVED), which has its own blast radius and deserves its own change.
+
 ---
 
 ## 8. Files Changed (This Session)
