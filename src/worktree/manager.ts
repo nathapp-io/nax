@@ -207,13 +207,11 @@ export class WorktreeManager {
       if (error instanceof NaxError) {
         throw error;
       }
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new NaxError(`Failed to remove worktree: ${String(error)}`, "WORKTREE_ERROR", {
+      throw new NaxError(error instanceof Error ? error.message : String(error), "WORKTREE_ERROR", {
         stage: "worktree",
         storyId,
         worktreePath,
+        cause: error instanceof Error ? error : undefined,
       });
     }
 
@@ -271,12 +269,10 @@ export class WorktreeManager {
       if (error instanceof NaxError) {
         throw error;
       }
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new NaxError(`Failed to list worktrees: ${String(error)}`, "WORKTREE_ERROR", {
+      throw new NaxError(error instanceof Error ? error.message : String(error), "WORKTREE_ERROR", {
         stage: "worktree",
         projectRoot,
+        cause: error instanceof Error ? error : undefined,
       });
     }
   }
