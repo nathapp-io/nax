@@ -1,20 +1,5 @@
 {
-  "count": 25,
-  "updatedAt": "2026-05-11T08:41:45.258Z",
-  "byFile": {
-    "src/pipeline/stages/queue-check.ts": 2,
-    "src/pipeline/stages/optimizer.ts": 2,
-    "src/pipeline/stages/verify.ts": 2,
-    "src/pipeline/stages/review.ts": 2,
-    "src/pipeline/stages/constitution.ts": 3,
-    "src/pipeline/stages/prompt.ts": 1,
-    "src/pipeline/stages/routing.ts": 2,
-    "src/debate/runner-stateful.ts": 1,
-    "src/debate/runner.ts": 2,
-    "src/debate/runner-hybrid.ts": 1,
-    "src/debate/runner-plan.ts": 1,
-    "src/debate/session-helpers.ts": 1,
-    "src/review/runner.ts": 1,
-    "src/review/orchestrator.ts": 4
-  }
+  "count": 0,
+  "updatedAt": "2026-06-19T16:03:25.728Z",
+  "byFile": {}
 }
