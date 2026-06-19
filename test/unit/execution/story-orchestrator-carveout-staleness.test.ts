@@ -284,3 +284,108 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ExecutionPlan.run — completeness guard: carve-out must NOT pass a story when a
+// configured review phase never ran (US-002 regression).
+//
+// Repro: full-suite-gate stays red with the SAME finding through rectification
+// (subset of baseline → NOT regressed → carve-out would normally exempt it).
+// verifier + semantic-review pass during the lite revalidation (full-suite-rectify
+// scope excludes adversarial-review). The post-rectification resume loop breaks at
+// the still-red gate (canonical pos 4) before reaching adversarial-review (pos 10),
+// so adversarial-review never runs — yet the verifier-SSOT carve-out exempts the
+// gate and the story passes WITHOUT adversarial judgment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ExecutionPlan.run — completeness guard (configured review must run)", () => {
+  let rt: NaxRuntime | undefined;
+  afterEach(async () => {
+    await rt?.close();
+  });
+
+  test("carve-out exempts red gate but adversarial-review never ran → story fails (not silent pass)", async () => {
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2, abortOnIncreasingFailures: false } },
+    });
+    rt = makeTestRuntime({ config });
+
+    // Gate: red with the SAME finding on every run (main loop + every re-run).
+    // Identical finding → post-rect keys ⊆ baseline → gateRegressedDuringRect=false.
+    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "full-suite-gate",
+      stage: "verify",
+      config: testSel,
+      execute: async () => ({
+        success: false,
+        passed: false,
+        estimatedCostUsd: 0,
+        findings: [testFinding("foo.test.ts", "persistent")],
+      }),
+    };
+    const semanticOp = makeDeterministicOp("semantic-review", { success: true });
+
+    let adversarialRuns = 0;
+    const adversarialOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "adversarial-review",
+      stage: "verify",
+      config: testSel,
+      execute: async () => {
+        adversarialRuns++;
+        return { success: true, passed: true, estimatedCostUsd: 0, findings: [] };
+      },
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = (async (
+      _ctx: unknown,
+      op: { kind?: string; execute?: (i: unknown, c: unknown) => unknown },
+      input: unknown,
+    ) => {
+      if (op.kind === "deterministic" && op.execute) return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    // Lite revalidation in full-suite-rectify scope: gate-last (carve-out discards
+    // it after verifier passes), excludes adversarial-review. Exit "resolved".
+    _storyOrchestratorDeps.runFixCycle = (async (cycle: {
+      validate: (c: unknown, o: unknown) => Promise<unknown>;
+    }) => {
+      await cycle.validate({}, { mode: "lite", strategiesRun: ["full-suite-rectify"] });
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    try {
+      const ctx = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-adv",
+      } as unknown as CallContext;
+
+      const result = await new StoryOrchestratorBuilder()
+        .addImplementer({ op: mockImplementerOp, input: { code: "" } })
+        .addFullSuiteGate({ op: gateOp, input: { story: { id: "US-adv" } as never, workdir: "/tmp" } })
+        .addVerifier({ op: makeDeterministicOp("verifier", { success: true }), input: {} })
+        .addSemanticReview({ op: semanticOp, input: {} })
+        .addAdversarialReview({ op: adversarialOp, input: {} })
+        .addRectification({ maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false })
+        .build(ctx)
+        .run();
+
+      // Precondition: this is the carve-out path, not the staleness path.
+      expect(result.gateRegressedDuringRect).toBe(false);
+      // The bug: adversarial-review never executed (resume broke at the red gate).
+      expect(adversarialRuns).toBe(0);
+      expect("adversarial-review" in result.phaseOutputs).toBe(false);
+      // The fix: a configured review that never ran must NOT yield a passing story.
+      expect(result.success).toBe(false);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+});

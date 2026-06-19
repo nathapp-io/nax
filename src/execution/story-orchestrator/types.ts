@@ -47,6 +47,16 @@ export interface StoryOrchestratorResult {
    * route the failure to escalation as `tests-failing`.
    */
   readonly gateRegressedDuringRect?: boolean;
+  /**
+   * Names of configured review phases (semantic-review / adversarial-review) that
+   * never executed before the verdict — e.g. the post-rectification resume loop
+   * broke at a still-red full-suite-gate (canonical pos 4) before reaching the
+   * review (pos 9-10). A non-empty list forces success=false and routes to
+   * escalation via `deriveTddFailureCategory` → `review-incomplete`, so the story
+   * cannot pass on the verifier-SSOT carve-out without semantic/adversarial
+   * judgment (US-002 regression).
+   */
+  readonly missingRequiredReviewPhases?: readonly string[];
 }
 
 export type PhaseKind =

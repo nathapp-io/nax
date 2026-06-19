@@ -95,6 +95,11 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
       return "pause";
     case "runtime-crash":
       return "pause";
+    // Exhausted all tiers without ever running the configured review — the gate
+    // stayed red and the story never got semantic/adversarial judgment. Needs a
+    // human, same as verifier-rejected.
+    case "review-incomplete":
+      return "pause";
     case "session-failure":
     case "tests-failing":
     case "full-suite-gate-exhausted":

@@ -27,6 +27,8 @@ export type FailureCategory =
   | "verifier-rejected"
   /** Greenfield project with no test files — TDD not applicable (BUG-010) */
   | "greenfield-no-tests"
+  /** A configured review phase (semantic / adversarial) never ran before the verdict */
+  | "review-incomplete"
   /** Worktree dependency preparation failed before pipeline execution started */
   | "dependency-prep"
   | "runtime-crash";
