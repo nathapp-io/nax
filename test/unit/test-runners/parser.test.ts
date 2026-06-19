@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseTestOutput } from "../../../src/test-runners";
+import { parseTestOutput } from "@/test-runners";
 
 describe("pytest output — structured error/stack extraction", () => {
   test("extracts stackTrace file:line reference from verbose FAILURES block", () => {
