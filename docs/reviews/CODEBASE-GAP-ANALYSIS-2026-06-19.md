@@ -18,7 +18,7 @@
 | 4 | No test coverage tooling at all (vs. stated 80% rule) | **HIGH** | S |
 | 5 | Structured test-output parsing (pytest / go test) deferred — 4 TODOs | **MED** | M |
 | 6 | CLAUDE.md documents removed `src/agents/claude/` CLI adapter (ACP-only now) | **MED** | S |
-| 7 | Duplicate logging subsystems: `src/logger/` **and** `src/logging/` | **MED** | M |
+| 7 | ~~Duplicate logging subsystems: `src/logger/` **and** `src/logging/`~~ — **corrected: not duplicates** (see §4). `src/logging/` renamed → `src/log-format/` to fix the naming collision. | RESOLVED | M |
 | 8 | 11 more source files over 600-line limit; 4 more tests over 800 | **MED** | L |
 | 9 | 15+ src subsystems have no architecture doc; duplicate ADR-014; missing ADR-001–004 | **MED** | M |
 | 10 | Thin/zero unit coverage in optimizer, session-manager extracts, ACP output parsing, review parsers | **MED** | M |
@@ -87,7 +87,11 @@ Project rule: **600-line hard limit (source), 800 (test)** — "split before add
 
 ## 4. Duplication & Dead Code
 
-- **Two logging subsystems:** `src/logger/` (`logger.ts`, `formatters.ts`, `redact.ts`, `types.ts`) and `src/logging/` (`formatter.ts`, `types.ts`). The project standard cites `src/logger`. `src/logging/` looks like a leftover/parallel implementation — confirm which is canonical and delete or merge the other. Singleton-fragmentation risk if both are imported.
+- **~~Two logging subsystems~~ — CORRECTION (post-analysis):** `src/logger/` and `src/logging/` are **not** duplicates. They are cleanly layered, distinct concerns:
+  - `src/logger/` — the structured JSONL **Logger** facility (`Logger`, `initLogger`, `getLogger`, redaction); produces `LogEntry`. Project-standard `src/logger`, ~168 importers.
+  - `src/logging/` — a human-facing **presentation/formatter** layer (run summaries, verbosity modes, color, cost/duration) that *consumes* `LogEntry` from `src/logger/types` and renders it. Live (used by `headless-formatter.ts`).
+
+  The original "duplicate" finding was inaccurate — there was nothing to merge or delete. The only real issue was the **misleading near-identical names**, which is exactly what produced this false finding. **Resolution:** `src/logging/` was renamed to **`src/log-format/`** to remove the collision (5 import sites updated; behavior unchanged).
 - **`writeSetupConfig`** — orphan stub (see §2.2).
 
 ---
@@ -99,7 +103,7 @@ Project rule: **600-line hard limit (source), 800 (test)** — "split before add
   - Missing **ADR-001–004** (sequence starts at 005) with no explanation.
   - **Duplicate ADR-014**: `ADR-014-runscope-and-middleware.md` and `ADR-014-runscope-and-operation-standardization.md` (both rejected, superseded by ADR-018) — collapse to one with a historical note.
   - **ADR-006 / ADR-009** still read as "proposed" though their decisions are in force (ADR-009's test-pattern SSOT is implemented and its tracked violations are resolved — see §6). Finalize their status.
-- **Architecture doc coverage:** 15+ `src/` subsystems have no dedicated architecture doc — notably `agents/`, `config/`, `runtime/`, `logger`/`logging`, `cli/`, `commands/`, `optimizer/`, `plan/`, `precheck/`, `project/`. Consider one "remaining subsystems" overview rather than 15 stubs.
+- **Architecture doc coverage:** 15+ `src/` subsystems have no dedicated architecture doc — notably `agents/`, `config/`, `runtime/`, `logger`/`log-format`, `cli/`, `commands/`, `optimizer/`, `plan/`, `precheck/`, `project/`. Consider one "remaining subsystems" overview rather than 15 stubs.
 - **Index gap:** `docs/architecture/spec-to-prd-pipeline.md` exists but isn't linked from `ARCHITECTURE.md`.
 
 ---
@@ -144,7 +148,7 @@ Thin or zero **isolated** coverage:
 1. **Add coverage tooling** + CI threshold (`bun test --coverage`). Small, unblocks everything else. *(§7)*
 2. **Fix or reject scoped permissions** so it can't silently degrade to `safe`. *(§2.1)*
 3. **Update CLAUDE.md** — remove CLI-adapter / `src/agents/claude/` references. Cheap, prevents agent confusion (it's loaded into every session). *(§5)*
-4. **Resolve the duplicate logging dir** — pick canonical, delete the other. *(§4)*
+4. ~~Resolve the duplicate logging dir~~ — **done**: not a duplicate; `src/logging/` renamed → `src/log-format/` to fix the naming collision. *(§4)*
 5. **Add a file-size lint gate** and split `story-orchestrator.ts`. *(§3)*
 6. **Refresh the Known-Violations table** (mark #533–536 resolved). *(§6)*
 7. **Land structured test parsers** for pytest/go test. *(§2.3)*
