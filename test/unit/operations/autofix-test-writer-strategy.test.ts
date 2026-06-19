@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Finding } from "@/findings";
 import type { FixCycleContext } from "@/findings/cycle-types";
 import { makeAutofixTestWriterStrategy, makeDeclarationSink } from "@/operations";
+import { RectifierPromptBuilder } from "@/prompts";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 
 const mockCtx = {} as any;
@@ -100,6 +101,42 @@ describe("makeAutofixTestWriterStrategy", () => {
     expect(input.failedChecks).toHaveLength(1);
     expect(input.failedChecks[0]?.check).toBe("adversarial");
     expect(input.failedChecks[0]?.findings).toEqual([adversarialFinding]);
+  });
+
+  describe("promptSeverityFloor: advisory findings render into the prompt", () => {
+    const advisoryFinding: Finding = {
+      source: "adversarial-review",
+      severity: "info",
+      category: "test-gap",
+      message: "Tautological test never asserts on populate_indicators output",
+      file: "tests/unit/strategies/test_convergence.py",
+      line: 297,
+      fixTarget: "test",
+    };
+
+    test("default (no floor) drops sub-error advisory findings — the original bug", () => {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink());
+      const input = strategy.buildInput([advisoryFinding], [], {} as FixCycleContext);
+      // blockingThreshold defaults to config.review.blockingThreshold ("error").
+      const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, makeStory(), {
+        blockingThreshold: input.blockingThreshold,
+      });
+      expect(prompt).not.toContain("test_convergence.py");
+    });
+
+    test("promptSeverityFloor=info renders sub-error advisory findings", () => {
+      const strategy = makeAutofixTestWriterStrategy(makeStory(), makeNaxConfig(), makeSink(), {
+        includeAdversarialReview: false,
+        promptSeverityFloor: "info",
+      });
+      const input = strategy.buildInput([advisoryFinding], [], {} as FixCycleContext);
+      expect(input.blockingThreshold).toBe("info");
+      const prompt = RectifierPromptBuilder.testWriterRectification(input.failedChecks, makeStory(), {
+        blockingThreshold: input.blockingThreshold,
+      });
+      expect(prompt).toContain("test_convergence.py");
+      expect(prompt).toContain("Tautological test");
+    });
   });
 
   describe("triage: includeAdversarialReview opt-out", () => {

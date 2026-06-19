@@ -133,6 +133,22 @@ describe("makeAutofixImplementerStrategy", () => {
     expect(input.failedChecks[0]?.findings).toEqual([semanticFinding]);
   });
 
+  test("buildInput omits blockingThreshold by default (inherits run threshold)", () => {
+    const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink());
+    const input = strategy.buildInput([], [], {} as FixCycleContext);
+    // config.review.blockingThreshold defaults to "error".
+    expect(input.blockingThreshold).toBe("error");
+  });
+
+  test("promptSeverityFloor=info sets blockingThreshold so advisory findings render (non-blocking fix)", () => {
+    const strategy = makeAutofixImplementerStrategy(makeStory(), makeNaxConfig(), makeSink(), {
+      adversarialReviewByFixTarget: "source",
+      promptSeverityFloor: "info",
+    });
+    const input = strategy.buildInput([], [], {} as FixCycleContext);
+    expect(input.blockingThreshold).toBe("info");
+  });
+
   describe("triage: adversarialReviewByFixTarget opt-in", () => {
     test("claims adversarial-review with fixTarget=source when adversarialReviewByFixTarget='source'", () => {
       const strategy = makeAutofixImplementerStrategy(mockCtx, makeNaxConfig(), makeSink(), {

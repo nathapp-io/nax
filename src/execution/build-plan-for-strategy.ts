@@ -236,11 +236,19 @@ export async function buildPlanForStrategy(
   if (nbf?.enabled && inputs.adversarialReview) {
     const nbSink = makeDeclarationSink();
 
+    // The non-blocking fix is seeded exclusively with advisory findings BELOW the
+    // run's blocking threshold (adversarial.ts advisory filter). The rectifier
+    // prompt builder filters by the same threshold, so without an explicit floor
+    // every seeded finding is stripped back out and the agent gets an empty
+    // findings list (then stalls asking the human for them). Pin the floor to
+    // "info" so all advisory findings render. Blocking-cycle strategies above
+    // are unaffected — they don't pass this option.
     if (nbf.scope === "source") {
       // implementer claims adversarial findings in SOURCE scope (both session modes)
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
           includeAdversarialReview: true,
+          promptSeverityFloor: "info",
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
     } else if (nbf.scope === "triage") {
@@ -249,9 +257,11 @@ export async function buildPlanForStrategy(
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
           adversarialReviewByFixTarget: "source",
+          promptSeverityFloor: "info",
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
         makeAutofixTestWriterStrategy(story, config, nbSink, {
           includeAdversarialReview: false,
+          promptSeverityFloor: "info",
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
     } else {
@@ -259,11 +269,18 @@ export async function buildPlanForStrategy(
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
           includeAdversarialReview: false,
+          promptSeverityFloor: "info",
         }) as FixStrategy<Finding, unknown, unknown, unknown>,
-        makeAutofixTestWriterStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
+        makeAutofixTestWriterStrategy(story, config, nbSink, {
+          promptSeverityFloor: "info",
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
       );
     }
     // Always: recover from a test regression that the best-effort fix introduces.
+    // No `promptSeverityFloor` here on purpose: this strategy only claims
+    // `source: "test-runner"` regression findings (never advisory adversarial
+    // findings), and its prompt renders failing tests without a severity filter,
+    // so a floor would be inert.
     nbStrategies.push(
       makeFullSuiteRectifyStrategy(story, config, nbSink) as FixStrategy<Finding, unknown, unknown, unknown>,
     );

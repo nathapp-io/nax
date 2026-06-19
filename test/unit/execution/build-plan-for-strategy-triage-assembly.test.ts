@@ -30,6 +30,9 @@ function makeTddRetryInputs(story: UserStory, extra: Partial<PlanInputs> = {}): 
 
 describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-006)", () => {
   let capturedStrategyNamesByCall: string[][] = [];
+  // Full strategy objects from each fix-cycle call, so tests can invoke
+  // buildInput and assert the prompt severity floor was wired (not just names).
+  let capturedStrategiesByCall: Array<Array<{ name: string; buildInput: (...args: never[]) => unknown }>> = [];
   let origRunFixCycle: typeof _storyOrchestratorDeps.runFixCycle;
   let origCallOp: typeof _storyOrchestratorDeps.callOp;
   let origCaptureGitRef: typeof _storyOrchestratorDeps.captureGitRef;
@@ -39,6 +42,7 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
 
   beforeEach(() => {
     capturedStrategyNamesByCall = [];
+    capturedStrategiesByCall = [];
     origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
     origCallOp = _storyOrchestratorDeps.callOp;
     origCaptureGitRef = _storyOrchestratorDeps.captureGitRef;
@@ -76,10 +80,13 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
       }
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
-    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: { strategies: Array<{ name: string }> }) => {
-      capturedStrategyNamesByCall.push(cycle.strategies.map((s) => s.name));
-      return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
-    }) as typeof _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.runFixCycle = mock(
+      async (cycle: { strategies: Array<{ name: string; buildInput: (...args: never[]) => unknown }> }) => {
+        capturedStrategyNamesByCall.push(cycle.strategies.map((s) => s.name));
+        capturedStrategiesByCall.push(cycle.strategies);
+        return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };
+      },
+    ) as typeof _storyOrchestratorDeps.runFixCycle;
   });
 
   afterEach(async () => {
@@ -162,6 +169,59 @@ describe("buildPlanForStrategy — AC1: triage scope NBF strategy assembly (US-0
     expect(nbfNames).toContain("autofix-implementer");
     expect(nbfNames).toContain("autofix-test-writer");
     expect(nbfNames).toContain("full-suite-rectify");
+  });
+
+  test("NBF scope=triage wires promptSeverityFloor='info' so advisory findings render (not just names)", async () => {
+    // Green gate (every op except adversarial-review succeeds) so the story is
+    // green and the non-blocking fix cycle actually runs — that cycle is the
+    // captured set. (A failing gate would instead capture the main rectification
+    // cycle, which shares the same strategy names but carries the run threshold.)
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === "adversarial-review") {
+        return {
+          success: true,
+          passed: true,
+          advisoryFindings: [
+            { source: "adversarial-review", severity: "info", category: "test-gap", message: "advisory gap", fixTarget: "test" },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    const story = makeStory({ attempts: 1 });
+    const config = withNbfScope("triage");
+    const ctx = makeCtxWithRuntime(config);
+    const inputs = makeTddRetryInputs(story, {
+      adversarialReview: {
+        story,
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+
+    // Drive a sub-error (info) advisory finding through the assembled autofix
+    // strategies' buildInput and assert the "info" floor reached the op input.
+    // A dropped `promptSeverityFloor: "info"` in either non-blocking branch would
+    // surface here as "error" (the run threshold), reproducing the empty-prompt bug.
+    const advisory = {
+      source: "adversarial-review",
+      severity: "info",
+      category: "test-gap",
+      message: "advisory gap",
+      fixTarget: "test",
+    } as never;
+    const floorOf = (s?: { buildInput: (...args: never[]) => unknown }) =>
+      (s?.buildInput([advisory] as never, [] as never, {} as never) as { blockingThreshold?: string } | undefined)
+        ?.blockingThreshold;
+
+    const nbfSet = capturedStrategiesByCall[0] ?? [];
+    expect(nbfSet.length).toBeGreaterThan(0);
+    expect(floorOf(nbfSet.find((s) => s.name === "autofix-test-writer"))).toBe("info");
+    expect(floorOf(nbfSet.find((s) => s.name === "autofix-implementer"))).toBe("info");
   });
 
   test("AC1: NBF scope=triage does NOT regress — scope=both still assembles the same three", async () => {
