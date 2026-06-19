@@ -226,7 +226,11 @@ export async function runRectification(
   }
 
   if (EXHAUSTED_EXIT_REASONS.has(cycleResult.exitReason) && cycleResult.finalFindings.length > 0) {
-    return { rectificationExhausted: true, unfixedFindings: cycleResult.finalFindings };
+    return {
+      rectificationExhausted: true,
+      unfixedFindings: cycleResult.finalFindings,
+      ...(cycleResult.unresolvedDetail ? { unresolvedDetail: cycleResult.unresolvedDetail } : {}),
+    };
   }
   if (cycleResult.exitReason === "validate-short-circuit") {
     // Empty findings — surface the lite-scope-backfill flag so resume can still run.

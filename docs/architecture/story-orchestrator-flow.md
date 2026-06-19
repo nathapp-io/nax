@@ -265,6 +265,14 @@ over a safe default.
 - Exit reasons (`src/execution/story-orchestrator.ts:61`, `EXHAUSTED_EXIT_REASONS`):
   `max-attempts-total`, `max-attempts-per-strategy`, `no-strategy`, `agent-gave-up`,
   `validate-short-circuit`, `bail-when`.
+- **`agent-gave-up`** fires when a fix-op emits the `UNRESOLVED:` sentinel (the implementer
+  signalling a contradiction it cannot resolve — e.g. `full-suite-rectify` and
+  `autofix-implementer` both parse it). The sentinel's reason text is carried as
+  `unresolvedDetail` through `RectificationResult` → `StoryOrchestratorResult` →
+  `decideStageAction`, which surfaces it in the escalation reason
+  (`"Rectification exhausted: <detail>"`) so the next tier's `priorErrors` carries the
+  diagnosis. When a fix-op emits both `UNRESOLVED:` and a test-edit declaration, the
+  declaration wins (the test-writer handoff runs instead of giving up).
 - **Terminal lite-validate**: when a strategy exhausts its attempts, a final "lite"
   validate re-orders phases so `full-suite-gate` runs **last** (`orderGateLast()`, `:552`).
 

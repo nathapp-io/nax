@@ -1,13 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { runOrchestratorE2E } from "@test/helpers";
 import type { QualityCommandResult } from "@/quality/runner";
+import { runOrchestratorE2E } from "@test/helpers";
 
 const PASS_REVIEW = () => ({ output: JSON.stringify({ passed: true, findings: [] }) });
 const impl = () => ({ output: JSON.stringify({ filesChanged: ["src/a.ts"] }) });
 
 const ALWAYS_FAIL_TC: QualityCommandResult = {
-  commandName: "typecheck", command: "tc", success: false, exitCode: 1,
-  output: "TS2304: Cannot find name 'x'", durationMs: 1, timedOut: false,
+  commandName: "typecheck",
+  command: "tc",
+  success: false,
+  exitCode: 1,
+  output: "TS2304: Cannot find name 'x'",
+  durationMs: 1,
+  timedOut: false,
 };
 
 const PASSING_VERDICT = JSON.stringify({
@@ -46,8 +51,13 @@ describe("E2E: exhaustion + edge", () => {
     const verifier = () => ({ output: PASSING_VERDICT });
     const { result, phaseLog } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      agent: { "test-writer": tw, implementer: impl, verifier,
-        "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
     });
     // greenfield-gate must appear in the log (it always runs in three-session-tdd)
     expect(phaseLog).toContain("greenfield-gate");
@@ -78,15 +88,36 @@ describe("E2E: exhaustion + edge", () => {
 
     const { result, phaseLog } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
-      agent: { "test-writer": tw, implementer: impl, verifier,
-        "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
       gates: {
-        typecheck: () => tcCall++ === 0
-          ? { commandName: "typecheck", command: "tc", success: false, exitCode: 1, output: "TS2304", durationMs: 1, timedOut: false }
-          : { commandName: "typecheck", command: "tc", success: true, exitCode: 0, output: "", durationMs: 1, timedOut: false },
-        fullSuite: () => fsCall++ === 0
-          ? { passed: true, failed: 0 }
-          : { passed: false, failed: 1, output: "new failure" },
+        typecheck: () =>
+          tcCall++ === 0
+            ? {
+                commandName: "typecheck",
+                command: "tc",
+                success: false,
+                exitCode: 1,
+                output: "TS2304",
+                durationMs: 1,
+                timedOut: false,
+              }
+            : {
+                commandName: "typecheck",
+                command: "tc",
+                success: true,
+                exitCode: 0,
+                output: "",
+                durationMs: 1,
+                timedOut: false,
+              },
+        fullSuite: () =>
+          fsCall++ === 0 ? { passed: true, failed: 0 } : { passed: false, failed: 1, output: "new failure" },
       },
     });
 
@@ -99,5 +130,55 @@ describe("E2E: exhaustion + edge", () => {
     // full-suite-gate appears 3 times: once in the main loop (passes), twice in
     // revalidation attempts (both fail because fsCall >= 1 always returns failed).
     expect(phaseLog.filter((p) => p === "full-suite-gate").length).toBe(3);
+  });
+
+  test("implementer UNRESOLVED on full-suite-rectify → agent-gave-up exhaustion carries unresolvedDetail (US-002)", async () => {
+    // The full-suite gate fails with a test-runner finding → full-suite-rectify is the
+    // sole matching strategy. On the rectification turn the implementer emits an
+    // `UNRESOLVED:` sentinel (the AC5/AC6 relative-URL contradiction). fullSuiteRectifyOp
+    // parses it → extractApplied returns { unresolved } (no test-edit declarations, so the
+    // declaration-priority guard does not suppress it) → the cycle exits "agent-gave-up"
+    // in round 1, threading unresolvedDetail through to StoryOrchestratorResult.
+    //
+    // This exercises the REAL producer→result chain (parse → extractApplied → cycle →
+    // rectification spread → execution-plan), complementing the post-run unit test which
+    // covers result→escalation-reason. Without the fix the sentinel was dropped, the cycle
+    // ran extra rounds, and the diagnosis never surfaced.
+    const UNRESOLVED_REASON =
+      "AC5/AC6 pass relative loginUrl '/login' to OAuthModule.registerAsync; the library rejects relative URLs (new URL('/login') throws)";
+    const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
+    const verifier = () => ({ output: PASSING_VERDICT });
+    // Per-role attempt counter: attempt 0 = main implementer phase (normal output);
+    // attempt 1+ = full-suite-rectify fix-op turns (emit the UNRESOLVED sentinel).
+    const implementer = (attempt: number) =>
+      attempt === 0
+        ? { output: JSON.stringify({ filesChanged: ["src/a.ts"] }) }
+        : { output: `Tried to fix the failing tests but cannot.\nUNRESOLVED: ${UNRESOLVED_REASON}` };
+
+    const { result } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      agent: {
+        "test-writer": tw,
+        implementer,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+      gates: {
+        fullSuite: () => ({
+          passed: false,
+          failed: 1,
+          output: "AC5/AC6 relative URL failure",
+          // Structured failure → source:"test-runner", category:"failed-test" finding,
+          // which is what full-suite-rectify.appliesTo matches.
+          failures: [{ testName: "AC5 redirects to login", file: "test/oauth/admin.spec.ts", error: "Invalid URL" }],
+        }),
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.rectificationExhausted).toBe(true);
+    // The implementer's diagnosis is threaded through verbatim so the escalated tier knows why.
+    expect(result.unresolvedDetail).toBe(UNRESOLVED_REASON);
   });
 });
