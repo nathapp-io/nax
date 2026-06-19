@@ -11,6 +11,7 @@ import { Glob } from "bun";
 import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import { DEFAULT_SCAN_TEST_DIRS, DEFAULT_TS_DERIVE_SUFFIXES, extractTestDirs } from "../test-runners/conventions";
+import { errorMessage } from "../utils/errors";
 
 // ============================================================================
 // Types
@@ -310,7 +311,10 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
         });
       }
     } catch (err) {
-      getLogger().debug("test-scanner", "Failed to read file during glob scan", { path: fullPath, error: String(err) });
+      getLogger().debug("test-scanner", "Failed to read file during glob scan", {
+        path: fullPath,
+        error: errorMessage(err),
+      });
     }
   }
 
