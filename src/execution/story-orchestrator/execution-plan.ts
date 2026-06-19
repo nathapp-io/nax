@@ -302,8 +302,8 @@ export class ExecutionPlan {
     // green the gate and actually run the review; the story becomes terminal only
     // once escalation is exhausted.
     const requiredReviewPhaseNames = [
-      this.state.semanticReview ? "semantic-review" : undefined,
-      this.state.adversarialReview ? "adversarial-review" : undefined,
+      this.state.semanticReview?.slot.op.name,
+      this.state.adversarialReview?.slot.op.name,
     ].filter((name): name is string => name !== undefined);
     const missingRequiredReviewPhases = requiredReviewPhaseNames.filter((name) => !(name in phaseOutputs));
     if (missingRequiredReviewPhases.length > 0) {

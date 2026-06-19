@@ -80,6 +80,15 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
+  it("escalates on review-incomplete with category in reason (US-002)", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("review-incomplete", false, ctx);
+
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") expect(result.reason).toBe("TDD review-incomplete");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+
   it("escalates on greenfield-no-tests with category in reason", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure("greenfield-no-tests", false, ctx);

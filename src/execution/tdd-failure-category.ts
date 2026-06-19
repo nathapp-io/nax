@@ -10,15 +10,6 @@ export function deriveTddFailureCategory(
   gateRegressedDuringRect?: boolean,
   missingRequiredReviewPhases?: readonly string[],
 ): FailureCategory | undefined {
-  // A configured review phase never ran (e.g. the resume loop broke at a red gate
-  // before reaching it). Checked FIRST so it outranks the verifier-SSOT carve-out
-  // below — an unreviewed story must not be exempted into a pass. Routed to
-  // escalation by `routeTddFailure` so a stronger tier can green the gate and run
-  // the review; terminal only after escalation is exhausted (US-002).
-  if (missingRequiredReviewPhases && missingRequiredReviewPhases.length > 0) {
-    return "review-incomplete";
-  }
-
   // Test-writer failure → session-failure
   const testWriterOutput = phaseOutputs[testWriterOp.name] as { success?: boolean } | undefined;
   if (testWriterOutput?.success === false) {
@@ -94,6 +85,17 @@ export function deriveTddFailureCategory(
   const implOutput = phaseOutputs[implementerOp.name] as { success?: boolean } | undefined;
   if (implOutput?.success === false) {
     return "session-failure";
+  }
+
+  // A configured review phase never ran, and no more-specific category applied.
+  // This is the verifier-SSOT carve-out case: the verifier passed, so the
+  // gate-derived categories above were skipped, yet a red gate stopped the resume
+  // loop before reaching the reviews (semantic/adversarial). Checked LAST so a
+  // genuine gate/session/verifier failure keeps its specific category (no masking
+  // of `tests-failing`). Routes to escalation so a stronger tier can green the
+  // gate and run the review; terminal (pause) only after escalation exhausts (US-002).
+  if (missingRequiredReviewPhases && missingRequiredReviewPhases.length > 0) {
+    return "review-incomplete";
   }
 
   return undefined;

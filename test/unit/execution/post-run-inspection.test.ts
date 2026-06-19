@@ -132,6 +132,47 @@ describe("deriveTddFailureCategory", () => {
     expect(result).toBeUndefined();
   });
 
+  // ─── US-002: review-incomplete (configured review never ran) ──────────────
+
+  test("returns review-incomplete in the carve-out case (verifier passed, gate red, review absent)", () => {
+    // Verifier passed → gate-derived categories skipped → the missing review is the
+    // real reason. Routes to escalation so a stronger tier can green the gate and run it.
+    const result = deriveTddFailureCategory(
+      {
+        [fullSuiteGateOp.name]: { success: false, passed: false, findings: [] },
+        [verifierOp.name]: { success: true },
+      },
+      undefined,
+      false,
+      ["adversarial-review"],
+    );
+    expect(result).toBe("review-incomplete");
+  });
+
+  test("a genuine red gate (verifier did NOT pass) keeps tests-failing even with a missing review (no masking)", () => {
+    // review-incomplete is checked LAST — a real gate failure must not be masked into
+    // review-incomplete (which would flip the max-attempts outcome from fail to pause).
+    const result = deriveTddFailureCategory(
+      {
+        [fullSuiteGateOp.name]: { success: false, passed: false, findings: [] },
+      },
+      undefined,
+      false,
+      ["adversarial-review"],
+    );
+    expect(result).toBe("tests-failing");
+  });
+
+  test("a session failure outranks a missing review", () => {
+    const result = deriveTddFailureCategory(
+      { [implementerOp.name]: { success: false } },
+      undefined,
+      false,
+      ["semantic-review", "adversarial-review"],
+    );
+    expect(result).toBe("session-failure");
+  });
+
   // ─── US-001: full-suite-gate-exhausted derivation ─────────────────────────
 
   test("returns full-suite-gate-exhausted when rectification exhausted with max-attempts-total and test-runner finding", () => {

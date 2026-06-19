@@ -237,6 +237,11 @@ export async function applyPostRunInspection(
   }
 
   const pauseReason = extractPauseReason(planResult.phaseOutputs);
+  // Non-TDD stories get no failureCategory and rely on the generic escalate path
+  // below (`!planResult.success` → escalate). A non-TDD missing-review failure
+  // (`missingRequiredReviewPhases`) therefore still escalates and re-runs the
+  // review, but on exhaustion resolves to `fail` rather than the `review-incomplete`
+  // `pause` the TDD path uses — the core bug (skipped review) is fixed for both.
   const failureCategory =
     isTdd && !planResult.success
       ? deriveTddFailureCategory(
