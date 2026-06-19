@@ -13,7 +13,7 @@
 | # | Finding | Severity | Effort |
 |:--|:--------|:--------:|:------:|
 | 1 | `story-orchestrator.ts` (1462 LOC) + its test (1734 LOC) — 2.4×/2.2× over hard limit | **HIGH** | L |
-| 2 | Scoped permission profile is a non-functional Phase-2 stub | **HIGH** | M |
+| 2 | Scoped permission profile is a non-functional Phase-2 stub | **MITIGATED** | M |
 | 3 | `setup-write.ts` `writeSetupConfig()` throws "not implemented", no callers | **HIGH** | M |
 | 4 | ~~No test coverage tooling at all (vs. stated 80% rule)~~ — **RESOLVED**: `bun run test:coverage` enforces an 80% floor via `scripts/check-coverage.ts` (lcov-parsing; current ~81% lines / ~84% funcs). | RESOLVED | S |
 | 5 | Structured test-output parsing (pytest / go test) deferred — 4 TODOs | **MED** | M |
@@ -33,7 +33,9 @@
 ### 2.1 Scoped permission profile — HIGH
 `src/config/permissions.ts` — `resolveScopedPermissions()` is a Phase-2 stub returning `{ mode: "approve-reads", skipPermissions: false }` (identical to `safe`). The `allowedTools?: string[]` field is declared but never populated.
 
-**Impact:** `execution.permissionProfile: "scoped"` silently behaves like `safe`. A user who sets it believes they have tool-scoped permissions but does not. Either implement Phase 2 or reject the value at config-parse time until it lands.
+**Impact:** `execution.permissionProfile: "scoped"` silently behaves like `safe`. A user who sets it believes they have tool-scoped permissions but does not.
+
+**MITIGATED (interim):** the full Phase-2 feature is deferred and tracked by **GitHub #374** (note: its stated acpx `--allowed-tools` blocker is already cleared in the acpx fork, and the CLI-adapter subtask P2-002 is obsolete since the CLI adapter was removed). Until it lands, `permissionProfile: "scoped"` is now **rejected at config-load** with a `CONFIG_SCOPED_PROFILE_UNIMPLEMENTED` error pointing to #374 (`rejectUnimplementedScopedProfile` in `src/config/loader.ts`) — so the silent downgrade can no longer happen.
 
 ### 2.2 `setup-write.ts` — HIGH
 `src/cli/setup-write.ts:14` — `writeSetupConfig()` is `throw new Error("not implemented")` and has **no callers anywhere in `src/`**. Dead orphan stub: either wire it up or remove it.
@@ -146,7 +148,7 @@ Thin or zero **isolated** coverage:
 ## 8. Quick Wins (recommended order)
 
 1. ~~**Add coverage tooling** + CI threshold~~ — **done**: `bun run test:coverage` enforces an 80% floor via `scripts/check-coverage.ts`. *(§7)*
-2. **Fix or reject scoped permissions** so it can't silently degrade to `safe`. *(§2.1)*
+2. ~~**Fix or reject scoped permissions** so it can't silently degrade to `safe`.~~ — **done (rejected at load)**; full feature deferred to #374. *(§2.1)*
 3. **Update CLAUDE.md** — remove CLI-adapter / `src/agents/claude/` references. Cheap, prevents agent confusion (it's loaded into every session). *(§5)*
 4. ~~Resolve the duplicate logging dir~~ — **done**: not a duplicate; `src/logging/` renamed → `src/log-format/` to fix the naming collision. *(§4)*
 5. **Add a file-size lint gate** and split `story-orchestrator.ts`. *(§3)*
