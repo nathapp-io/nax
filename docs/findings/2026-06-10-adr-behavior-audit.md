@@ -91,7 +91,7 @@ ADR-018 session-runner classes             ──► ADR-019 Phase C (buildHopCa
 
 Survivors carried forward from rejected ADRs: `Operation<I,O,C>` + `ConfigSelector` (014-alt/015), `PackageView`/`PackageRegistry` (014-alt/016), observer middleware in simplified form (014).
 
-**Housekeeping:** two files share the ADR-014 number (`runscope-and-middleware`, `runscope-and-operation-standardization`), both Rejected. Consider renaming one (e.g. ADR-014a/b) or adding a cross-note so the index stays unambiguous.
+**Housekeeping:** two files shared the ADR-014 number (`runscope-and-middleware`, `runscope-and-operation-standardization`), both Rejected. Resolved by renaming `runscope-and-middleware` to `ADR-014b-runscope-and-middleware-superseded` with a supersession header.
 
 ---
 

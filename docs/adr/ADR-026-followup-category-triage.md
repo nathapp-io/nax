@@ -1,4 +1,4 @@
-# ADR-024 Follow-up: Category-Based fixTarget Triage for the Non-Blocking Fix
+# ADR-026: Category-Based fixTarget Triage for the Non-Blocking Fix
 
 **Status:** Accepted
 **Date:** 2026-06-17

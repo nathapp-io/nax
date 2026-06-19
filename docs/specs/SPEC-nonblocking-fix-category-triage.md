@@ -13,7 +13,7 @@ A pass over 147 adversarial review-audits (rs-stock + nathapp-nestjs-platform, 2
 
 The fix is to route by category. nax already maintains the source/advisory taxonomy (`BLOCKING_CATEGORIES = {input, error-path, abandonment, assumption}`, `ac-structural-counterfactual.ts:25`), and `FixStrategy.appliesTo` is documented to discriminate "by source, category, fixTarget, or file pattern" (`cycle-types.ts:120`). The signal exists; it is simply not populated for adversarial findings (only `test-gap → "test"` today, `adversarial-helpers.ts:108`) and is overridden by the test-writer's blanket clause.
 
-Full rationale, evidence table, and alternatives: `docs/adr/ADR-024-followup-category-triage.md`.
+Full rationale, evidence table, and alternatives: `docs/adr/ADR-026-followup-category-triage.md`.
 
 ### Non-Goals
 
