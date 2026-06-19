@@ -3,9 +3,6 @@
  *
  * Detects Bun runtime crashes in test output so they can be classified as
  * RUNTIME_CRASH rather than TEST_FAILURE, preventing spurious tier escalation.
- *
- * STUB — implementation is intentionally absent. Tests are RED until
- * the real logic is written.
  */
 
 /**
@@ -28,7 +25,6 @@ export const CRASH_PATTERNS = [
  * @param output - Raw stdout/stderr from the test runner
  */
 export function detectRuntimeCrash(output: string | undefined | null): boolean {
-  // STUB: not implemented yet — always returns false
   if (!output) return false;
   return CRASH_PATTERNS.some((pattern) => output.includes(pattern));
 }

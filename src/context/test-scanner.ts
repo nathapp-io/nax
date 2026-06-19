@@ -309,7 +309,9 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
           describes,
         });
       }
-    } catch {}
+    } catch (err) {
+      getLogger().debug("test-scanner", "Failed to read file during glob scan", { path: fullPath, error: String(err) });
+    }
   }
 
   // Sort by path for stable output

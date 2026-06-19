@@ -72,7 +72,7 @@ export class Logger {
         mkdirSync(dir, { recursive: true });
       }
     } catch (error) {
-      console.error(`[logger] Failed to create log directory: ${error}`);
+      process.stderr.write(`[logger] Failed to create log directory: ${error}\n`);
     }
   }
 
@@ -166,7 +166,7 @@ export class Logger {
     const filePath = this.filePath;
     this.writeQueueTail = this.writeQueueTail.then(() =>
       appendFile(filePath, line).catch((error) => {
-        console.error(`[logger] Failed to write to log file: ${error}`);
+        process.stderr.write(`[logger] Failed to write to log file: ${error}\n`);
       }),
     );
   }
