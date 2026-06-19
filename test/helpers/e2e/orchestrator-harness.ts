@@ -1,3 +1,5 @@
+import type { NaxConfig } from "@/config";
+import type { TestStrategy } from "@/config/schema-types";
 /**
  * E2E-only: drives the REAL Story Orchestrator end-to-end with scripted agents +
  * attempt-aware gate _deps. Records an ordered phase log by wrapping the single
@@ -7,21 +9,19 @@
  * The runtime is closed in finally to prevent idle-watchdog timer leaks.
  */
 import { _storyOrchestratorDeps, buildPlanForStrategy } from "@/execution";
-import { _lintCheckDeps, _typecheckCheckDeps, _fullSuiteGateDeps } from "@/operations";
-import type { NaxConfig } from "@/config";
-import type { TestStrategy } from "@/config/schema-types";
+import { _fullSuiteGateDeps, _lintCheckDeps, _typecheckCheckDeps } from "@/operations";
 import type { UserStory } from "@/prd/types";
 import type { QualityCommandResult } from "@/quality/runner";
 import {
+  cleanupTempDir,
   makeMockCallContext,
   makeMockPlanInputs,
   makeNaxConfig,
   makeRuntimeWithFakeAgent,
   makeStory,
   makeTempDir,
-  cleanupTempDir,
 } from "../index";
-import { makeScriptedAgent, type ScriptedAgentSpec } from "./scripted-agent";
+import { type ScriptedAgentSpec, makeScriptedAgent } from "./scripted-agent";
 
 type GateFn<T> = (attempt: number) => T;
 
@@ -38,7 +38,19 @@ const PASS_QC = (name: string): QualityCommandResult => ({
 export interface E2EGates {
   lint?: GateFn<QualityCommandResult>;
   typecheck?: GateFn<QualityCommandResult>;
-  fullSuite?: GateFn<{ passed: boolean; failed: number; output?: string }>;
+  /**
+   * `failures` is optional. When omitted, `parsedSummary.failures` is left undefined
+   * (preserving the legacy behavior where a `failed > 0` gate crashes the gate parse and
+   * is swallowed as `validator-error`). Provide structured failures to drive the gate's
+   * real finding path (`source: "test-runner"`, `category: "failed-test"`) — e.g. to
+   * exercise the full-suite-rectify strategy.
+   */
+  fullSuite?: GateFn<{
+    passed: boolean;
+    failed: number;
+    output?: string;
+    failures?: Array<{ testName: string; file?: string; error: string }>;
+  }>;
 }
 
 export interface E2EOptions {
@@ -55,6 +67,7 @@ export interface E2EResult {
     phaseOutputs: Record<string, unknown>;
     rectificationExhausted?: boolean;
     gateRegressedDuringRect?: boolean;
+    unresolvedDetail?: string;
   };
   phaseLog: string[];
   strategiesFired: string[];
@@ -128,17 +141,19 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
     } else if (opName) {
       strategiesFired.push(opName);
     }
-    return origCallOp(ctx as Parameters<typeof origCallOp>[0], op as Parameters<typeof origCallOp>[1], input as Parameters<typeof origCallOp>[2]);
+    return origCallOp(
+      ctx as Parameters<typeof origCallOp>[0],
+      op as Parameters<typeof origCallOp>[1],
+      input as Parameters<typeof origCallOp>[2],
+    );
   };
 
   const lintAttempts = { n: 0 };
   const tcAttempts = { n: 0 };
   const fsAttempts = { n: 0 };
 
-  _lintCheckDeps.runQualityCommand = async () =>
-    opts.gates?.lint?.(lintAttempts.n++) ?? PASS_QC("lint");
-  _typecheckCheckDeps.runQualityCommand = async () =>
-    opts.gates?.typecheck?.(tcAttempts.n++) ?? PASS_QC("typecheck");
+  _lintCheckDeps.runQualityCommand = async () => opts.gates?.lint?.(lintAttempts.n++) ?? PASS_QC("lint");
+  _typecheckCheckDeps.runQualityCommand = async () => opts.gates?.typecheck?.(tcAttempts.n++) ?? PASS_QC("typecheck");
   _fullSuiteGateDeps.runTests = async (_input, _gateCtx) => {
     const g = opts.gates?.fullSuite?.(fsAttempts.n++) ?? { passed: true, failed: 0 };
     return {
@@ -146,8 +161,16 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       failed: g.failed,
       output: g.output ?? "",
       // TestSummary has a complex shape; cast via unknown to avoid importing its full type.
+      // `failures` is only set when the caller supplies it — otherwise it stays undefined
+      // to preserve the legacy gate-parse-crash → validator-error behavior some tests rely on.
       // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
-      parsedSummary: { passed: g.passed ? 1 : 0, failed: g.failed, skipped: 0 } as any,
+      parsedSummary: {
+        passed: g.passed ? 1 : 0,
+        failed: g.failed,
+        skipped: 0,
+        ...(g.failures ? { failures: g.failures } : {}),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal test summary for gate mock
+      } as any,
       timedOut: false,
     };
   };
