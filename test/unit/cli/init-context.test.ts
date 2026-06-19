@@ -7,7 +7,7 @@
  */
 
 import { join } from "node:path";
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   generateContextTemplate,
   initContext,
@@ -281,7 +281,7 @@ describe("generateContextTemplate — output structure", () => {
 describe("initContext — creates context.md from template", () => {
   test("creates .nax/ directory and non-empty context.md when they do not exist", async () => {
     await withTempDir(async (dir) => {
-      await initContext(dir, { ai: false });
+      await initContext(dir);
 
       expect(await Bun.file(join(dir, ".nax", "context.md")).exists()).toBe(true);
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
@@ -297,7 +297,7 @@ describe("initContext — creates context.md from template", () => {
       const contextPath = join(dir, ".nax", "context.md");
       await Bun.write(contextPath, "EXISTING_CONTENT");
 
-      await initContext(dir, { ai: false, ...(force ? { force } : {}) });
+      await initContext(dir, force ? { force } : {});
 
       const content = await Bun.file(contextPath).text();
       if (contentUnchanged) {
@@ -312,7 +312,7 @@ describe("initContext — creates context.md from template", () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "scan-test-proj" }));
       await Bun.write(join(dir, "src", "index.ts"), "export {}");
-      await initContext(dir, { ai: false });
+      await initContext(dir);
       const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("scan-test-proj");
       expect(content).toContain("src/index.ts");
@@ -320,92 +320,4 @@ describe("initContext — creates context.md from template", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// initContext — AI mode
-// ---------------------------------------------------------------------------
-
-describe("initContext — AI mode (--ai flag)", () => {
-  test("falls back to template mode when LLM call throws", async () => {
-    await withTempDir(async (dir) => {
-      // Import _deps after withTempDir is called to allow overriding
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-
-      mod._initContextDeps.callLLM = mock(async () => {
-        throw new Error("LLM unavailable");
-      });
-
-      try {
-        await mod.initContext(dir, { ai: true });
-
-        // Should have fallen back — context.md must still be created
-        expect(await Bun.file(join(dir, ".nax", "context.md")).exists()).toBe(true);
-
-        const content = await Bun.file(join(dir, ".nax", "context.md")).text();
-        expect(content.length).toBeGreaterThan(0);
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-
-  test.each([
-    [true, 1],
-    [false, 0],
-  ] as const)("calls LLM %d time(s) when ai=%s", async (ai, expectedCalls) => {
-    await withTempDir(async (dir) => {
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-      const callLLMMock = mock(async () => "# AI output");
-      mod._initContextDeps.callLLM = callLLMMock;
-      try {
-        await mod.initContext(dir, { ai });
-        expect(callLLMMock).toHaveBeenCalledTimes(expectedCalls);
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-
-  test("uses LLM output as context.md content when LLM succeeds", async () => {
-    await withTempDir(async (dir) => {
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-
-      mod._initContextDeps.callLLM = mock(async () => "# AI Generated\n\nRich narrative content.");
-
-      try {
-        await mod.initContext(dir, { ai: true });
-
-        const content = await Bun.file(join(dir, ".nax", "context.md")).text();
-        expect(content).toContain("AI Generated");
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-
-  test("LLM prompt contains scan results", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "llm-test-proj" }));
-
-      const mod = await import("../../../src/cli/init-context");
-      const original = mod._initContextDeps.callLLM;
-
-      let capturedPrompt = "";
-      mod._initContextDeps.callLLM = mock(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return "# Generated";
-      });
-
-      try {
-        await mod.initContext(dir, { ai: true });
-
-        expect(capturedPrompt).toContain("llm-test-proj");
-      } finally {
-        mod._initContextDeps.callLLM = original;
-      }
-    });
-  });
-});
 

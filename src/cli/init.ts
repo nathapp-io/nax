@@ -102,8 +102,6 @@ export interface InitOptions {
 
 /** Options for initProject */
 export interface InitProjectOptions {
-  /** Use LLM to generate context.md (--ai flag) */
-  ai?: boolean;
   /** Force overwrite of existing files */
   force?: boolean;
   /** Project name for validation and identity registry */
@@ -336,8 +334,8 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
     logger.info("init", "Project config already exists", { path: configPath });
   }
 
-  // Generate context.md (template or LLM-enhanced with --ai flag)
-  await initContext(projectRoot, { ai: options?.ai, force: options?.force });
+  // Generate context.md from template
+  await initContext(projectRoot, { force: options?.force });
 
   // Create .nax/constitution.md with stack-aware content
   const constitutionPath = join(projectDir, "constitution.md");

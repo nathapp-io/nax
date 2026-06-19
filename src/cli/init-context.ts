@@ -43,18 +43,8 @@ interface PackageManifest {
 
 /** initContext options */
 export interface InitContextOptions {
-  ai?: boolean;
   force?: boolean;
 }
-
-/** Dependency injection for testing */
-export const _initContextDeps = {
-  callLLM: async (_prompt: string): Promise<string> => {
-    // Placeholder implementation
-    // In production, this would call the nax LLM infrastructure
-    throw new Error("callLLM not implemented");
-  },
-};
 
 /**
  * Recursively find all files in a directory, excluding certain paths.
@@ -276,51 +266,6 @@ export function generateContextTemplate(scan: ProjectScan): string {
 }
 
 /**
- * Generate context.md with LLM enhancement
- */
-async function generateContextWithLLM(scan: ProjectScan): Promise<string> {
-  const logger = getLogger();
-
-  // Build LLM prompt from scan results
-  const scanSummary = `
-Project: ${scan.projectName}
-Entry Points: ${scan.entryPoints.join(", ") || "None detected"}
-Config Files: ${scan.configFiles.join(", ") || "None detected"}
-Total Files: ${scan.fileTree.length}
-Description: ${scan.packageManifest?.description || "Not provided"}
-`;
-
-  const prompt = `
-You are a technical documentation expert. Generate a concise, well-structured context.md file for a software project based on this scan:
-
-${scanSummary}
-
-The context.md should include:
-1. Project overview (name, purpose, key technologies)
-2. Entry points and main modules
-3. Key dependencies and why they're used
-4. Development setup and common commands
-5. Architecture overview (brief)
-6. Development guidelines
-
-Keep it under 2000 tokens. Use markdown formatting. Be specific to the detected stack and structure.
-`;
-
-  try {
-    const result = await _initContextDeps.callLLM(prompt);
-    logger.info("init", "Generated context.md with LLM", { storyId: "init-context" });
-    return result;
-  } catch (err) {
-    logger.warn(
-      "init",
-      `LLM context generation failed, falling back to template: ${err instanceof Error ? err.message : String(err)}`,
-      { storyId: "init-context" },
-    );
-    return generateContextTemplate(scan);
-  }
-}
-
-/**
  * Generate a minimal package context.md template.
  *
  * @param packagePath - Relative path of the package (e.g. "packages/api")
@@ -404,13 +349,8 @@ export async function initContext(projectRoot: string, options: InitContextOptio
   // Scan the project
   const scan = await scanProject(projectRoot);
 
-  // Generate content (template or LLM-enhanced)
-  let content: string;
-  if (options.ai) {
-    content = await generateContextWithLLM(scan);
-  } else {
-    content = generateContextTemplate(scan);
-  }
+  // Generate content from template
+  const content = generateContextTemplate(scan);
 
   // Write context.md
   await Bun.write(contextPath, content);
