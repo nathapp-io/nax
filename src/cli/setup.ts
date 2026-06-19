@@ -1,13 +1,15 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { NaxError } from "../errors";
-import type { SetupPlan } from "../operations/setup-generate";
+import type { MonoPackageConfig, SetupPlan } from "../operations/setup-generate";
 import type { CallContext } from "../operations/types";
 import { analyzeRepo } from "./setup-analyze";
 import { fillScripts } from "./setup-fill";
 import { generateSetupPlan as _generateSetupPlan } from "./setup-llm";
 import type { RepoAnalysis } from "./setup-types";
 import { runSetupGate } from "./setup-verify";
+import { writeSetupConfig as _writeSetupConfig } from "./setup-write";
+import type { WriteSetupConfigResult } from "./setup-write";
 
 export interface SetupOptions {
   dir?: string;
@@ -42,11 +44,12 @@ export const _setupDeps = {
     _generateSetupPlan(ctx, analysis),
   runGate: (workdir: string, config: NaxConfig): Promise<number> => runSetupGate(workdir, config),
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
-  writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
-  mkdir: async (path: string): Promise<void> => {
-    const proc = Bun.spawn(["mkdir", "-p", path]);
-    await proc.exited;
-  },
+  writeSetupConfig: (
+    workdir: string,
+    config: NaxConfig,
+    monoConfigs: MonoPackageConfig[],
+    opts?: { force?: boolean },
+  ): Promise<WriteSetupConfigResult> => _writeSetupConfig(workdir, config, monoConfigs, opts),
   stdout: (msg: string): void => {
     process.stdout.write(`${msg}\n`);
   },
@@ -95,14 +98,7 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
       await _setupDeps.fillScripts(workdir, analysis);
     }
 
-    await _setupDeps.mkdir(naxDir);
-    await _setupDeps.writeFile(naxConfigPath, JSON.stringify(plan.config, null, 2));
-
-    for (const mc of plan.monoConfigs) {
-      const monoDir = join(naxDir, "mono", mc.relativeDir);
-      await _setupDeps.mkdir(monoDir);
-      await _setupDeps.writeFile(join(monoDir, "config.json"), JSON.stringify(mc.config, null, 2));
-    }
+    await _setupDeps.writeSetupConfig(workdir, plan.config, plan.monoConfigs, { force: options.force });
 
     const gateResult = await _setupDeps.runGate(workdir, plan.config);
     if (gateResult !== 0) {
