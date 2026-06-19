@@ -69,8 +69,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/verification/` | Test execution, smart runner, scoped runner (per-story verify via verifyScopedOp / fullSuiteGateOp) |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) + permissions |
-| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` |
-| `src/agents/claude/` | Claude Code CLI adapter (multi-file) |
+| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` (the only protocol) |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
 | `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
@@ -107,9 +106,9 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 
 ## Agent Adapter & LLM Calls
 
-- **Two protocol modes:** CLI (`Bun.spawn`) and ACP (JSON-RPC via `acpx`), toggled by `agent.protocol` in config (default: `"acp"`)
+- **Single protocol:** ACP (JSON-RPC via `acpx`) is the only protocol. `agent.protocol` accepts only `"acp"`; the registry hard-codes it (`src/agents/registry.ts`). The legacy CLI (`Bun.spawn`) adapter was removed.
 - **LLM fallback rule:** Any code needing LLM calls MUST resolve the agent via the canonical accessors — `ctx.agentManager?.getDefault() ?? "claude"` in pipeline stages, or `resolveDefaultAgent(config)` in standalone modules. Never inline stubs, never read `config.autoMode.defaultAgent` (removed in ADR-012 Phase 6). Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
-- **Forward-compatible:** `getAgent()` returns the correct adapter for the active protocol — calling code doesn't need to know which mode is active.
+- **Forward-compatible:** `getAgent()` returns the active adapter — calling code doesn't depend on the protocol.
 - See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern.
 
 ## Permission Resolution (Mandatory)
