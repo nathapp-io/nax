@@ -79,3 +79,33 @@ describe("fullSuiteRectifyOp.parse (AC-4)", () => {
     expect(result.testEditDeclarations).toEqual([]);
   });
 });
+
+describe("fullSuiteRectifyOp.parse — UNRESOLVED sentinel (AC-5)", () => {
+  const input = { story, findings: [finding] };
+
+  test("UNRESOLVED: line sets unresolvedReason", () => {
+    const output =
+      "Tried several approaches.\n\nUNRESOLVED: The test passes relative URLs that the library rejects — cannot satisfy without modifying the test.";
+    const result = fullSuiteRectifyOp.parse(output, input, ctx);
+    expect(result.unresolvedReason).toBe(
+      "The test passes relative URLs that the library rejects — cannot satisfy without modifying the test.",
+    );
+  });
+
+  test("output without UNRESOLVED: leaves unresolvedReason undefined", () => {
+    const result = fullSuiteRectifyOp.parse("Fixed everything.", input, ctx);
+    expect(result.unresolvedReason).toBeUndefined();
+  });
+
+  test("UNRESOLVED: coexists with test-edit declarations", () => {
+    const output = `TEST_EDIT_REASON: lint_only
+FILE: test/unit/foo.test.ts
+FINDING: no-unused-vars
+CHANGE: const x = 1; → // removed
+
+UNRESOLVED: AC6 cannot be satisfied without changing the assertion.`;
+    const result = fullSuiteRectifyOp.parse(output, input, ctx);
+    expect(result.testEditDeclarations).toHaveLength(1);
+    expect(result.unresolvedReason).toBe("AC6 cannot be satisfied without changing the assertion.");
+  });
+});

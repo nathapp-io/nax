@@ -14,6 +14,8 @@ export interface FullSuiteRectifyInput {
 export interface FullSuiteRectifyOutput {
   applied: true;
   testEditDeclarations: TestEditDeclaration[];
+  /** Populated when the agent emits UNRESOLVED: — triggers agent-gave-up exit in the findings cycle. */
+  unresolvedReason?: string;
 }
 
 export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRectifyOutput, AutofixConfig> = {
@@ -31,6 +33,11 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
   },
   parse(output, _input, _ctx) {
     const declarations = parseTestEditDeclarations(output);
-    return { applied: true, testEditDeclarations: declarations };
+    const unresolvedMatch = output.match(/^UNRESOLVED:\s*(.+)$/m);
+    return {
+      applied: true,
+      testEditDeclarations: declarations,
+      ...(unresolvedMatch ? { unresolvedReason: unresolvedMatch[1]?.trim() } : {}),
+    };
   },
 };

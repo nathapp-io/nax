@@ -368,9 +368,13 @@ export async function decideStageAction(
         storyId: ctx.story.id,
         findingsCount: planResult.unfixedFindings.length,
         findingSources,
+        ...(planResult.unresolvedDetail ? { unresolvedDetail: planResult.unresolvedDetail } : {}),
       });
       await cleanupSessionOnFailure(ctx);
-      return { action: "escalate", reason: "Rectification exhausted with unfixed findings" };
+      const exhaustedReason = planResult.unresolvedDetail
+        ? `Rectification exhausted: ${planResult.unresolvedDetail}`
+        : "Rectification exhausted with unfixed findings";
+      return { action: "escalate", reason: exhaustedReason };
     }
   }
 

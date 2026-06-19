@@ -57,6 +57,9 @@ export interface StoryOrchestratorResult {
    * judgment (US-002 regression).
    */
   readonly missingRequiredReviewPhases?: readonly string[];
+  /** When rectification exited via agent-gave-up, the implementer's UNRESOLVED: reason text.
+   *  Surfaced into the escalation reason so the next tier's priorErrors carries the diagnosis. */
+  readonly unresolvedDetail?: string;
 }
 
 export type PhaseKind =
@@ -203,6 +206,8 @@ export interface RectificationResult {
   unfixedFindings?: readonly Finding[];
   /** Validate short-circuited with empty findings — resume must still run scope-backfill phases. */
   liteScopeIncomplete?: boolean;
+  /** Populated when exitReason is "agent-gave-up" — the implementer's UNRESOLVED: reason text. */
+  unresolvedDetail?: string;
 }
 
 export const STRICT_VERDICT_PHASE_NAMES = new Set<string>([

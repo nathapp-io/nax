@@ -5,13 +5,13 @@
  * decideStageAction from src/execution/post-run.ts.
  */
 
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
-  deriveTddFailureCategory,
-  extractPauseReason,
+  _postRunDeps,
   applyPostRunInspection,
   decideStageAction,
-  _postRunDeps,
+  deriveTddFailureCategory,
+  extractPauseReason,
 } from "../../../src/execution/post-run";
 import type { InspectionOptions } from "../../../src/execution/post-run";
 import { EXHAUSTED_EXIT_REASONS } from "../../../src/execution/story-orchestrator";
@@ -164,12 +164,10 @@ describe("deriveTddFailureCategory", () => {
   });
 
   test("a session failure outranks a missing review", () => {
-    const result = deriveTddFailureCategory(
-      { [implementerOp.name]: { success: false } },
-      undefined,
-      false,
-      ["semantic-review", "adversarial-review"],
-    );
+    const result = deriveTddFailureCategory({ [implementerOp.name]: { success: false } }, undefined, false, [
+      "semantic-review",
+      "adversarial-review",
+    ]);
     expect(result).toBe("session-failure");
   });
 
@@ -193,10 +191,7 @@ describe("deriveTddFailureCategory", () => {
       const unfixedFindings: Finding[] = [
         { source: "test-runner", severity: "error", category: "test-failure", message: "failing" },
       ];
-      const result = deriveTddFailureCategory(
-        { rectification: { exitReason, success: false } },
-        unfixedFindings,
-      );
+      const result = deriveTddFailureCategory({ rectification: { exitReason, success: false } }, unfixedFindings);
       expect(result).toBe("full-suite-gate-exhausted");
     }
   });
@@ -312,7 +307,12 @@ function makeInspectionOpts(overrides: Partial<InspectionOptions> = {}): Inspect
 
 const LINT_FINDING: Finding = { source: "lint", severity: "error", message: "unused var", category: "lint" };
 const TYPECHECK_FINDING: Finding = { source: "typecheck", severity: "error", message: "type error", category: "type" };
-const TEST_RUNNER_FINDING: Finding = { source: "test-runner", severity: "error", message: "test failed", category: "test" };
+const TEST_RUNNER_FINDING: Finding = {
+  source: "test-runner",
+  severity: "error",
+  message: "test failed",
+  category: "test",
+};
 const SEMANTIC_REVIEW_FINDING: Finding = {
   source: "semantic-review",
   severity: "error",
@@ -442,6 +442,30 @@ describe("AC8: mechanicalFailedOnly — non-mechanical source present → escala
       throw new Error(`Expected escalate action, got ${result.action}`);
     }
     expect(result.reason).toBe("Rectification exhausted with unfixed findings");
+  });
+
+  test("rectificationExhausted + unresolvedDetail → escalation reason carries the agent's diagnosis", async () => {
+    // Point 2 (US-002): when the implementer signals UNRESOLVED, the cycle exits
+    // agent-gave-up and threads unresolvedDetail through to the escalation reason so
+    // the powerful-tier agent's priorErrors explains WHY rectification gave up — not a
+    // generic "exhausted" line. Guards post-run.ts:374-376 against regression.
+    const ctx = makeTestContext();
+    const detail =
+      "AC5/AC6 pass relative loginUrl '/login' to OAuthModule.registerAsync; assertAuthorizeConfig rejects relative URLs (new URL('/login') throws)";
+    const planResult = makePlanResult({
+      success: false,
+      rectificationExhausted: true,
+      unfixedFindings: [TEST_RUNNER_FINDING],
+      unresolvedDetail: detail,
+    });
+    const opts = makeInspectionOpts();
+    const inspection = await applyPostRunInspection(ctx, planResult, opts);
+    const result = await decideStageAction(ctx, planResult, inspection, opts);
+
+    if (result.action !== "escalate") {
+      throw new Error(`Expected escalate action, got ${result.action}`);
+    }
+    expect(result.reason).toBe(`Rectification exhausted: ${detail}`);
   });
 
   test("rectificationExhausted + semantic-review finding in TDD mode bypasses pause routing", async () => {

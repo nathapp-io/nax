@@ -55,7 +55,16 @@ export function makeFullSuiteRectifyStrategy(
             sink.testEdits.push(d);
           }
         }
-        return { targetFiles: [], summary: "Fixed failing tests" };
+        // Only propagate `unresolved` (triggering agent-gave-up exit) when there
+        // are no testEditDeclarations. If the agent emitted UNRESOLVED alongside an
+        // Exception 4(b) declaration, the declaration takes priority so postValidate
+        // can still invoke the test-writer handoff to fix the broken test.
+        const hasDeclarations = output.testEditDeclarations.length > 0;
+        return {
+          targetFiles: [],
+          summary: output.unresolvedReason ?? "Fixed failing tests",
+          ...(output.unresolvedReason && !hasDeclarations ? { unresolved: output.unresolvedReason } : {}),
+        };
       },
       maxAttempts: config.execution.rectification.maxAttemptsPerStrategy,
       coRun: "exclusive",
