@@ -291,21 +291,49 @@ export class ExecutionPlan {
         { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir },
       );
     }
-    const success = Object.entries(phaseOutputs).every(([name, output]) => {
-      if (verifierPassedSsot && name === gateName) return true;
-      return phasePassed(name, output, this.ctx.storyId);
-    });
+
+    // Completeness guard (US-002): a configured review phase absent from
+    // phaseOutputs never ran — the post-rectification resume loop can break at a
+    // still-red full-suite-gate (canonical pos 4) before reaching the reviews
+    // (pos 9-10). The verifier-SSOT carve-out must NOT launder such a story into
+    // a pass: it cannot be certified without the semantic/adversarial judgment it
+    // was configured to require. Forcing success=false routes it to escalation
+    // (deriveTddFailureCategory → "review-incomplete") so a stronger tier can
+    // green the gate and actually run the review; the story becomes terminal only
+    // once escalation is exhausted.
+    const requiredReviewPhaseNames = [
+      this.state.semanticReview?.slot.op.name,
+      this.state.adversarialReview?.slot.op.name,
+    ].filter((name): name is string => name !== undefined);
+    const missingRequiredReviewPhases = requiredReviewPhaseNames.filter((name) => !(name in phaseOutputs));
+    if (missingRequiredReviewPhases.length > 0) {
+      logger?.warn(
+        "story-orchestrator",
+        "Configured review phase(s) never ran — story cannot pass without review judgment, failing for escalation",
+        { storyId: this.ctx.storyId, packageDir: this.ctx.packageDir, missingRequiredReviewPhases },
+      );
+    }
+
+    const success =
+      missingRequiredReviewPhases.length === 0 &&
+      Object.entries(phaseOutputs).every(([name, output]) => {
+        if (verifierPassedSsot && name === gateName) return true;
+        return phasePassed(name, output, this.ctx.storyId);
+      });
     const totalCostUsd = Object.values(phaseCosts).reduce((sum, cost) => sum + cost, 0);
     const durationMs = Date.now() - startedAt;
 
     // Final aggregate log — single end-of-run summary so anyone reading the JSONL
     // can see the orchestrator's verdict without correlating per-phase lines.
-    const failedPhases = Object.entries(phaseOutputs)
-      .filter(([name, output]) => {
-        if (verifierPassedSsot && name === gateName) return false;
-        return !phasePassed(name, output, this.ctx.storyId);
-      })
-      .map(([name]) => name);
+    const failedPhases = [
+      ...Object.entries(phaseOutputs)
+        .filter(([name, output]) => {
+          if (verifierPassedSsot && name === gateName) return false;
+          return !phasePassed(name, output, this.ctx.storyId);
+        })
+        .map(([name]) => name),
+      ...missingRequiredReviewPhases.map((name) => `${name} (never ran)`),
+    ];
     const summary: Record<string, unknown> = {
       storyId: this.ctx.storyId,
       success,
@@ -316,6 +344,7 @@ export class ExecutionPlan {
     };
     if (rectResult.rectificationExhausted) summary.rectificationExhausted = true;
     if (rectResult.unfixedFindings) summary.unfixedFindingsCount = rectResult.unfixedFindings.length;
+    if (missingRequiredReviewPhases.length > 0) summary.missingRequiredReviewPhases = missingRequiredReviewPhases;
     if (success) {
       logger?.info("story-orchestrator", "Story orchestration complete", summary);
     } else {
@@ -330,6 +359,7 @@ export class ExecutionPlan {
       phaseOutputs,
       ...rectResult,
       gateRegressedDuringRect,
+      missingRequiredReviewPhases: missingRequiredReviewPhases.length > 0 ? missingRequiredReviewPhases : undefined,
     };
   }
 }

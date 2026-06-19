@@ -88,7 +88,8 @@ export function routeTddFailure(
     failureCategory === "tests-failing" ||
     failureCategory === "full-suite-gate-exhausted" ||
     failureCategory === "verifier-rejected" ||
-    failureCategory === "runtime-crash"
+    failureCategory === "runtime-crash" ||
+    failureCategory === "review-incomplete"
   ) {
     return { action: "escalate", reason: buildReason(failureCategory) };
   }

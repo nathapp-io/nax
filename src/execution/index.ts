@@ -3,7 +3,7 @@ export { run } from "./runner";
 export type { FailureCategory } from "../tdd/types";
 export { appendProgress } from "./progress";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
-export { escalateTier, getTierConfig, calculateMaxIterations } from "./escalation";
+export { escalateTier, getTierConfig, calculateMaxIterations, resolveMaxAttemptsOutcome } from "./escalation";
 export { readQueueFile, clearQueueFile } from "./queue-handler";
 export {
   hookCtx,

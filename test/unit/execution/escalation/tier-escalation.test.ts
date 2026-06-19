@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
+import { resolveMaxAttemptsOutcome } from "@/execution";
 import { pipelineEventBus } from "@/pipeline";
 
 // ---------------------------------------------------------------------------
@@ -72,36 +73,24 @@ describe("shouldRetrySameTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
-  test("returns pause for runtime-crash failure category", async () => {
-    const { resolveMaxAttemptsOutcome } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
-
+  test("returns pause for runtime-crash failure category", () => {
     expect(resolveMaxAttemptsOutcome("runtime-crash")).toBe("pause");
   });
 
-  test("still returns fail for tests-failing (regression guard)", async () => {
-    const { resolveMaxAttemptsOutcome } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
-
+  test("still returns fail for tests-failing (regression guard)", () => {
     expect(resolveMaxAttemptsOutcome("tests-failing")).toBe("fail");
   });
 
-  test("returns fail for full-suite-gate-exhausted (regression guard)", async () => {
-    const { resolveMaxAttemptsOutcome } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
-
+  test("returns fail for full-suite-gate-exhausted (regression guard)", () => {
     expect(resolveMaxAttemptsOutcome("full-suite-gate-exhausted")).toBe("fail");
   });
 
-  test("still returns pause for verifier-rejected (regression guard)", async () => {
-    const { resolveMaxAttemptsOutcome } = await import(
-      "../../../../src/execution/escalation/tier-escalation"
-    );
-
+  test("still returns pause for verifier-rejected (regression guard)", () => {
     expect(resolveMaxAttemptsOutcome("verifier-rejected")).toBe("pause");
+  });
+
+  test("returns pause for review-incomplete (US-002: exhausted without review judgment → human review)", () => {
+    expect(resolveMaxAttemptsOutcome("review-incomplete")).toBe("pause");
   });
 });
 
