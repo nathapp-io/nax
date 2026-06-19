@@ -20,7 +20,7 @@
 | 6 | CLAUDE.md documents removed `src/agents/claude/` CLI adapter (ACP-only now) | **MED** | S |
 | 7 | ~~Duplicate logging subsystems: `src/logger/` **and** `src/logging/`~~ — **corrected: not duplicates** (see §4). `src/logging/` renamed → `src/log-format/` to fix the naming collision. | RESOLVED | M |
 | 8 | 11 more source files over 600-line limit; 4 more tests over 800 | **MED** | L |
-| 9 | 15+ src subsystems have no architecture doc; duplicate ADR-014; missing ADR-001–004 | **MED** | M |
+| 9 | ~~15+ src subsystems have no architecture doc; duplicate ADR-014; missing ADR-001–004~~ — **RESOLVED**: §39–§51 added to `subsystems.md`; ADR-006/009 finalized; ADR-001–004 gap explained in ARCHITECTURE.md; `spec-to-prd-pipeline.md` linked. | RESOLVED | M |
 | 10 | Thin/zero unit coverage in optimizer, session-manager extracts, ACP output parsing, review parsers | **MED** | M |
 | 11 | `console.log/error` outside CLI boundary (precheck, logger fallback) | **LOW** | S |
 | 12 | Misleading "STUB"/"placeholder" headers on fully-implemented files | **LOW** | S |
@@ -106,7 +106,7 @@ Project rule: **600-line hard limit (source), 800 (test)** — "split before add
   - **Duplicate ADR-014**: `ADR-014-runscope-and-middleware.md` and `ADR-014-runscope-and-operation-standardization.md` (both rejected, superseded by ADR-018) — collapse to one with a historical note.
   - **ADR-006 / ADR-009** still read as "proposed" though their decisions are in force (ADR-009's test-pattern SSOT is implemented and its tracked violations are resolved — see §6). Finalize their status.
 - **Architecture doc coverage:** 15+ `src/` subsystems have no dedicated architecture doc — notably `agents/`, `config/`, `runtime/`, `logger`/`log-format`, `cli/`, `commands/`, `optimizer/`, `plan/`, `precheck/`, `project/`. Consider one "remaining subsystems" overview rather than 15 stubs.
-- **Index gap:** `docs/architecture/spec-to-prd-pipeline.md` exists but isn't linked from `ARCHITECTURE.md`.
+- **Index gap:** ~~`docs/architecture/spec-to-prd-pipeline.md` exists but isn't linked from `ARCHITECTURE.md`~~ — **RESOLVED**: linked in ARCHITECTURE.md index (2026-06-19).
 
 ---
 

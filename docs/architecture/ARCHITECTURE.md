@@ -45,7 +45,7 @@ How agents are configured, permissioned, and organized.
 - **§15 Test Strategy Resolution** — `resolveTestStrategy()`, available strategies, shared prompt fragments
 - **§16 Agent Adapter Conventions** — Folder structure, `shared/` contents, ACP cost alignment
 
-### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§37)
+### [subsystems.md](subsystems.md) — System Architecture & Subsystem Reference (§17–§51)
 
 Deep reference for each subsystem — consult when working on a specific module.
 
@@ -70,10 +70,28 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§35 Agent Manager** (ADR-012 + ADR-019) — `AgentManager` is a peer of `SessionManager`. Three entry points: `completeAs` (sessionless), `runAsSession` (caller-managed handle), `runWithFallback` (chain iteration via `executeHop` callback)
 - **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `reviewAuditor`, `packages`, `logger`, `signal`. Frozen middleware chain (audit → cost → cancellation → logging) wraps every `runAs` / `completeAs` call.
 - **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
+- **§38 Post-Run Curator** — Post-run heuristic observer: collects observations from run artifacts, generates proposals (H1–H6 heuristics), writes `curator-proposals.md`. `nax curator commit` stages accepted proposals. See [curator.md guide](../guides/curator.md).
+- **§39 Config** — Layered config system (global → project → per-package); Zod schema + selectors; `resolvePermissions` SSOT; legacy-key guards.
+- **§40 Logger** — Structured JSONL `LogEntry` producer; `initLogger` / `getLogger` / `getSafeLogger` singleton pattern.
+- **§41 Log Format** — Human-facing terminal renderer; consumes `LogEntry` from §40; `VerbosityMode`, `formatRunSummary`. Leaf — never writes log records.
+- **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `acceptCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
+- **§43 Commands** — Thin CLI wrappers + `resolveProject(opts)` shared entry point; curator, logs, precheck, migrate sub-commands.
+- **§44 Optimizer** — Pipeline stage 6; `NoopOptimizer` / `RuleBasedOptimizer` / plugin; `resolveOptimizer` factory.
+- **§45 Plan** — Spec → `prd.json` pipeline: four strategies (single/pipeline/debate/refine), `runPlanCritic`, `finalizePrdRouting`.
+- **§46 Precheck** — Pre-run validation suite; two tiers (environment + project); `EXIT_CODES`; gates every `nax run` via `run-setup.ts`.
+- **§47 Project** — Heuristic language/framework/type detection from manifest files; `detectLanguage`, `detectProjectProfile`. Authoritative detector — do not re-derive manifest lookups elsewhere.
+- **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, `runFixCycle` fix-loop orchestration, `classifyOutcome`.
+- **§49 Prompts** — All LLM prompt construction: six builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AcceptancePromptBuilder`, `DebatePromptBuilder`, `OneShotPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
+- **§50 Analyze** — `nax analyze` codebase scanner; `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
+- **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage`, `killProcessTree`, `bun-deps.ts`, `writeQueueCommand`.
 
 ### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow
 
 How a single story executes inside `executionStage`: the `CANONICAL_ORDER` phase list, three-session vs single-session mode selection (`routing.testStrategy`), the phase taxonomy (agent sessions / gates / mechanical checks / LLM reviews), and the review → fix → revalidation cycle (`STRATEGY_TO_REVALIDATION_PHASES`). Includes the `mechanical-lintfix` soundness note — why `full-suite-gate` is not re-run after a lint-fix, and why Biome safe-fix mode keeps that sound.
+
+### [spec-to-prd-pipeline.md](spec-to-prd-pipeline.md) — Spec → PRD → Execution Workflow
+
+The four-stage workflow contract: brainstorming → spec-writing → spec-review → `nax plan`. SSOT for how `contextFiles` / `expectedFiles` / `expectedOutput` flow from `SPEC-*.md` through `prd.json` into per-story execution. Covers the `nax plan` decomposition step (`src/operations/plan-refine.ts`, `src/prompts/builders/plan-builder.ts`), the spec-review fidelity gate (Phase 9), and the cross-story produced-file rule.
 
 ---
 
@@ -118,4 +136,12 @@ How a single story executes inside `executionStage`: the `CANONICAL_ORDER` phase
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-06-10 (codebase audit). Maintained by nax-dev.*
+## ADR Sequence Note
+
+The ADR sequence starts at **ADR-005**. ADR-001–004 were never filed — the project began formal ADR tracking mid-development, at the point of the pipeline re-architecture. There are no tombstone files for 001–004; the gap is intentional.
+
+The ADR index lives in `docs/adr/`. Key ADRs: 005 (pipeline re-arch), 009 (test-pattern SSOT), 010 (context engine), 011–013 (session/agent ownership), 018 (runtime layering), 019–020 (dispatch boundary), 023 (execution unification).
+
+---
+
+*Created: 2026-03-10. Last updated: 2026-06-19 (ADR gap note, spec-to-prd link, subsystems §39–§51). Maintained by nax-dev.*

@@ -1,8 +1,9 @@
 # ADR-009: Test File Pattern — Single Source of Truth
 
-**Status:** Proposed
+**Status:** Accepted — `resolveTestFilePatterns()` is the live SSOT in `src/test-runners/resolver.ts`; all four tracked violations (#533–#536) resolved as of 2026-06-17
 **Date:** 2026-04-15
 **Author:** William Khoo, Claude
+**Implemented:** 2026-05 (v0.57+)
 **Related:** FEAT-015 spec (`docs/specs/feat-015-test-file-pattern-detection.md`), Issue #461
 
 ---

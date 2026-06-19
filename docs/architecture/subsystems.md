@@ -1,10 +1,11 @@
 # Subsystems — nax
 
-> §17–§38: Pipeline, execution, TDD, acceptance, verification, routing, plugins,
-> runtime, managers, operations, and the post-run curator.
+> §17–§51: Pipeline, execution, TDD, acceptance, verification, routing, plugins,
+> runtime, managers, operations, post-run curator, config, logger, log-format,
+> CLI, commands, optimizer, plan, precheck, project, findings, prompts, analyze, utils.
 > Part of the [Architecture Documentation](ARCHITECTURE.md).
 >
-> _Last updated: 2026-06-10._
+> _Last updated: 2026-06-19._
 
 ---
 
@@ -1496,3 +1497,255 @@ See [curator.md guide](../guides/curator.md) for full CLI reference.
 Review audit ([§25](./subsystems.md#§25-review--quality-system)) captures semantic and adversarial findings. Curator's H1 heuristic (repeated review finding) depends on `review.audit.enabled: true` to populate `<outputDir>/review-audit/`. Without it, H1 produces no proposals and curator quality degrades gracefully (other heuristics still fire).
 
 User guide: [curator.md guide](../guides/curator.md) §Integration with Review Audit.
+
+---
+
+## §39 Config (`src/config/`)
+
+Layered configuration system — the single source of truth for all nax settings. Loads `~/.nax/config.json` (global) and `<workdir>/.nax/config.json` (project), merges them with schema-derived defaults, applies per-package monorepo overrides from `.nax/mono/<pkg>/config.json`, and validates the result with Zod. Guards removed/legacy keys (`rejectLegacyAgentKeys`, `rejectUnimplementedScopedProfile`) at load time to prevent silent degradation.
+
+**Key exports:**
+- `NaxConfig`, `NaxConfigSchema`, `DEFAULT_CONFIG` — main config type + Zod schema + schema-derived default (never a hand-maintained literal)
+- `loadConfig(workdir)` / `createConfigLoader()` / `ConfigLoader` — entry points; return fully merged, validated config; `ConfigLoader` is the runtime accessor for live-reload awareness
+- `findProjectDir(startDir)`, `globalConfigPath()`, `globalConfigDir()`, `projectConfigDir()` — config filesystem discovery helpers (`getRunsDir` / `getEventsRootDir` live in `src/utils/paths.ts`, not here)
+- `resolvePermissions(config, stage)` / `PipelineStage` / `ResolvedPermissions` — permission SSOT (see §14 in `agent-adapters.md`); lives in `src/config/permissions.ts` and is imported directly by callers, not via the config barrel
+- Named selectors (20+): `tddConfigSelector`, `planConfigSelector`, `routingConfigSelector`, … — typed config slices consumed by `callOp` via `packageView.select`
+- `resolveTestStrategy()`, `isThreeSessionStrategy()` — test-strategy resolution (ADR-015)
+- `deepMergeConfig()`, `mergePackageConfig()` — merge primitives for the layering order
+- `validateDirectory()`, `isWithinDirectory()` — path-security guards (see §12 in `design-patterns.md`)
+
+**Entry point:** `src/config/index.ts` (barrel); slice types are imported from the leaf `src/config/selectors` (see `config-patterns.md`).
+
+**Called by:** almost everything. Wired at bootstrap by `loadConfig` in `src/execution/lifecycle/run-setup.ts`. `resolvePermissions` is called inside `src/agents/manager.ts`, `src/session/manager.ts`, and `src/session/manager-run.ts`.
+
+---
+
+## §40 Logger (`src/logger/`)
+
+Structured JSONL logging facility — the single place where `LogEntry` records are produced. Writes to an optional JSONL file and/or the console (level-gated for console; file always receives all levels). `src/log-format/` (§41) consumes `LogEntry` for human-facing presentation — the two directories are cleanly layered, distinct concerns.
+
+**Key exports:**
+- `Logger` — owns file writer + optional console output
+- `initLogger(opts)` — global singleton initialiser (call once per run in `run-setup.ts`)
+- `getLogger()` / `getSafeLogger()` — `getLogger` throws if not yet initialised; `getSafeLogger` returns `undefined` (for modules that may run before init)
+- `resetLogger()` — test teardown helper
+- `LogEntry`, `LogLevel`, `LoggerOptions`, `StoryLogger` — types
+- `formatConsole()`, `formatJsonl()` — raw formatters (internal; human presentation is in §41)
+
+**Entry point:** `src/logger/index.ts`
+
+**Called by:** every pipeline stage and subsystem. `suppressConsole: true` is set when TUI mode is active to avoid corrupting Ink's terminal output.
+
+---
+
+## §41 Log Format (`src/log-format/`)
+
+Human-facing presentation layer for log entries and run summaries. Consumes `LogEntry` records from `src/logger/` (§40) and renders them with colour and multiple verbosity modes. This module never writes `LogEntry` records — it is a pure leaf, called only by `src/pipeline/subscribers/headless-formatter.ts` and the TUI event stream.
+
+**Key exports:**
+- `formatLogEntry(entry, opts)` / `FormattedEntry` — formats a single `LogEntry` for terminal display
+- `formatRunSummary(summary, opts)` — renders end-of-run statistics (cost, duration, pass/fail counts)
+- `formatTimestamp()`, `formatDuration()`, `formatCost()` — display helpers
+- `VerbosityMode` — `"quiet" | "normal" | "verbose" | "json"`
+- `RunSummary`, `StoryStartData`, `StageResultData`, `FormatterOptions` — data types
+- `EMOJI` — named emoji constants (isolated here to keep `src/logger/` machine-parseable)
+
+**Entry point:** `src/log-format/index.ts`
+
+> **Rename note (2026-06-17):** was `src/logging/`; renamed to remove the near-identical collision with `src/logger/` that produced false "duplicate subsystem" findings. 5 import sites updated; behaviour unchanged.
+
+---
+
+## §42 CLI (`src/cli/`)
+
+High-level CLI command implementations. Each file maps to one user-facing command (`init`, `setup`, `plan`, `accept`, `runs`, `status`, `rules`, `interact`, `generate`, `config`). Commands are wired to the Bun binary in `bin/nax.ts` via `src/commands/` (§43). This is one of two directories permitted to call `process.cwd()` as the bootstrap workdir default.
+
+**Key exports:**
+- `initCommand(opts)` — interactive project initialisation
+- `setupCommand(opts)` / `writeSetupConfig()` — config wizard; `writeSetupConfig` writes config files via `Bun.write` and handles mono package configs (fully implemented in `src/cli/setup-write.ts`)
+- `planCommand(opts)`, `planDecomposeCommand(opts)`, `runPlanPipeline(...)` — planning flow (delegates to `src/plan/`)
+- `acceptCommand(opts)` — acceptance test runner
+- `runsListCommand()`, `runsShowCommand()` — run history viewer
+- `displayCostMetrics()`, `displayFeatureStatus()` — status sub-commands
+- `generateCommand(opts)` — `nax generate` (regenerates CLAUDE.md from context.md)
+- `configCommand(opts)` — config get / set / diff display
+- `rulesExportCommand()`, `rulesLintCommand()`, `rulesMigrateCommand()` — rules management
+- `interactListCommand()`, `interactRespondCommand()`, `interactCancelCommand()` — interaction queue
+- `resolveRunProfileOverride(opts)` — resolves `--profile` CLI flag to a permission profile name
+
+**Entry point:** `src/cli/index.ts`
+
+---
+
+## §43 Commands (`src/commands/`)
+
+Thin wrappers and shared resolution utilities that sit between `bin/nax.ts` and `src/cli/` (§42). Handles cross-cutting concerns: run-project resolution, precheck orchestration, curator, log streaming, run locking, config migration.
+
+**Key exports:**
+- `resolveProject(opts)` / `resolveProjectAsync(opts)` / `ResolvedProject` — resolves workdir + config + runtime for any command; the single entry point every command uses
+- `curatorStatus()`, `curatorCommit()`, `curatorDryrun()`, `curatorGc()` — post-run curator sub-commands
+- `logsCommand(opts)` — streams / filters `.nax/logs/*.jsonl` entries
+- `precheckCommand(opts)` — wires `src/precheck/` (§46) to the CLI
+- `runsCommand(opts)` — run history listing
+- `unlockCommand(opts)` — removes stale `.nax/nax.lock` files
+- `migrateCommand(opts)` / `detectGeneratedContent()` — migrates legacy PRD/config formats
+
+**Entry point:** `src/commands/index.ts`
+
+---
+
+## §44 Optimizer (`src/optimizer/`)
+
+Prompt token-reduction layer, invoked as pipeline stage 6 (`src/pipeline/stages/optimizer.ts`). Two built-in implementations: `NoopOptimizer` (pass-through) and `RuleBasedOptimizer` (heuristic whitespace/section reduction). A plugin can provide a third via `IPromptOptimizer`. Strategy is resolved once per run by `resolveOptimizer(config, pluginRegistry)`.
+
+**Key exports:**
+- `IPromptOptimizer` — interface: `optimize(input) → Promise<PromptOptimizerResult>`
+- `PromptOptimizerInput`, `PromptOptimizerResult` — input/output types
+- `NoopOptimizer` — returns prompt unchanged; used when no plugin or rule-based config is active
+- `RuleBasedOptimizer` — strips redundant whitespace, collapses repeated sections
+- `resolveOptimizer(config, pluginRegistry?)` — factory: plugin → rule-based → noop
+- `estimateTokens(text)` — rough character-based token estimator
+
+**Entry point:** `src/optimizer/index.ts`
+
+> **Coverage note:** `rule-based.optimizer.ts` core logic has thin unit test coverage (§10 gap in gap analysis). Add targeted tests before extending rule logic.
+
+---
+
+## §45 Plan (`src/plan/`)
+
+Planning pipeline that converts a feature spec into a `prd.json`. Supports four strategies — `single` (one-shot LLM), `pipeline` (sequential critique passes), `debate` (multi-agent parallel then synthesise), `refine` (existing PRD + spec delta). Orchestrated by `planCommand` (§42). The `runPlanCritic` step runs mechanical checks (citation, contradiction, AC-anchoring, coverage) and an LLM judge; blockers trigger a draft revision via `planDraftOp`.
+
+**Key exports:**
+- `IPlanStrategy`, `PlanModeContext`, `PlanCommandOptions`, `PlanDeps` — shared types
+- `SinglePlanStrategy`, `PipelinePlanStrategy`, `DebatePlanStrategy`, `RefinePlanStrategy` — four concrete strategies
+- `createPlanStrategy(mode, deps)` — factory; selects strategy from `config.plan.mode`
+- `buildPlanModeContext(opts, deps)` — assembles the context object threaded through strategy execution
+- `writeOrRecoverPrd(path, content)` — atomic PRD write with recovery on parse failure
+- `runPlanCritic(input)` — mechanical + LLM critic; triggers revision on blockers
+- `finalizePrdRouting(prd, config)` — sets per-story `modelTier` / `testStrategy` from routing config
+- `buildPlanComposition(config)` — builds debate composition for pipeline/debate modes
+
+**Entry point:** `src/plan/index.ts`
+
+**Called by:** `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`. Depends on `src/debate/` (§29), `src/operations/` (§37), `src/prd/`, `src/prompts/` (§49).
+
+---
+
+## §46 Precheck (`src/precheck/`)
+
+Pre-run validation suite. Runs ordered checks before story execution and fails-fast on Tier-1 blockers. Two tiers: environment checks (git, agent CLI, dependencies, disk — no PRD required) and project checks (PRD validity, story counts, story size gate — PRD required). Output is a human-readable table or machine-readable JSON.
+
+**Key exports:**
+- `runPrechecks(prd, workdir, config, opts)` — main entry point; returns `PrecheckOutput`
+- `PrecheckOutput` — `{ passed, blockers, warnings, summary, feature }`
+- `EXIT_CODES` — `{ SUCCESS: 0, BLOCKER: 1, INVALID_PRD: 2 }`
+- `Check`, `PrecheckResult`, `PrecheckOptions` — types
+- Named check functions: `checkGitRepoExists`, `checkAgentCLI`, `checkPRDValid`, `checkPendingStories`, `storySizeGate`, and 15+ others
+- `storySizeGate(prd, config)` — checks individual story complexity / AC count against configured thresholds
+
+**Entry point:** `src/precheck/index.ts`
+
+**Called by:** `src/commands/precheck.ts` (`nax precheck` command) and `src/execution/lifecycle/run-setup.ts` (automatic pre-run gate on every `nax run`).
+
+---
+
+## §47 Project (`src/project/`)
+
+Auto-detects project language, type, test framework, and lint tool from filesystem manifest files. Language detection inspects `go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements.txt`, `package.json`, `tsconfig.json`. Project-type detection (web-app, api, library, cli, fullstack) infers from dependency lists. All detection is heuristic; the result populates `ProjectProfile` in config and is used by context generators and routing. This is the authoritative detector — new code must call these functions, not re-derive manifest lookups (see `monorepo-awareness.md` §5 / §C).
+
+**Key exports:**
+- `detectLanguage(packageDir)` → `"typescript" | "javascript" | "go" | "python" | "rust" | "unknown"`
+- `inferFrameworkAndTestRunner(language, pkg)` → `{ framework, testRunner }` from package deps
+- `detectProjectProfile(workdir, existing?)` — full profile detection; skips fields already set in `existing`
+
+**Entry point:** `src/project/index.ts` (re-exports from `detector.ts` and `package-stack.ts`)
+
+**Called by:** `src/analyze/scanner.ts` (§50), `src/cli/setup-analyze.ts`, `src/execution/lifecycle/run-setup.ts` (`detectProjectProfile`), `src/context/engine/providers/code-neighbor.ts` and `src/quality/self-verification.ts` (`detectLanguage`), `src/acceptance/hardening.ts` (`detectLanguage` via leaf path).
+
+---
+
+## §48 Findings (`src/findings/`)
+
+Unified finding wire format (ADR-021) and fix-cycle orchestration (ADR-022). All subsystems that detect problems (lint, typecheck, semantic review, adversarial review, acceptance, TDD verifier, plugins) convert their outputs to `Finding[]` at their boundary. The fix cycle (`runFixCycle`) iterates up to `maxIterations`, applies `FixStrategy` instances, validates results, and classifies outcomes.
+
+**Key exports:**
+- `Finding`, `FindingSeverity`, `FindingSource`, `FixTarget` — wire types (ADR-021 SSOT)
+- `SEVERITY_ORDER`, `compareSeverity(a, b)`, `findingKey(f)` — severity ordering and stable identity key
+- Per-producer adapters: `lintDiagnosticToFinding()`, `reviewFindingToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
+- `FixStrategy`, `FixCycle`, `FixCycleConfig`, `FixCycleContext`, `FixCycleResult`, `FixCycleExitReason`, `ValidateResult` — cycle-orchestration types
+- `runFixCycle(ctx, strategies, findings, config)` — the fix loop (`story-orchestrator.ts` is the primary consumer)
+- `classifyOutcome(result)` — determines overall story outcome from cycle result
+
+**Entry point:** `src/findings/index.ts`
+
+**Called by:** `src/execution/story-orchestrator.ts` (primary consumer of `runFixCycle`). All review/lint/test subsystems call the adapter converters at their output boundaries.
+
+---
+
+## §49 Prompts (`src/prompts/`)
+
+Single home for all LLM prompt construction. No prompt template literals are permitted outside this module (see `forbidden-patterns.md` → Prompt Builder Convention). Every string sent to an agent surfaces from a builder class in `src/prompts/builders/`. Builders compose `PromptSection` objects via `SectionAccumulator`; section content functions live in `src/prompts/core/sections/`.
+
+**Builder classes:**
+| Builder | Handles |
+|:---|:---|
+| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, single-session, tdd-simple, batch roles |
+| `RectifierPromptBuilder` | TDD-test-failure, TDD-suite-failure, verify-failure, review-findings rectification |
+| `ReviewPromptBuilder` | Semantic review dialogue |
+| `AdversarialReviewPromptBuilder` | Adversarial review dialogue |
+| `AcceptancePromptBuilder` | Acceptance generator, diagnoser, fix-executor |
+| `DebatePromptBuilder` | Propose, critique, rebut, synthesise |
+| `OneShotPromptBuilder` | Short single-turn prompts (router, decomposer, auto-approver) |
+| `PlanPromptBuilder` | `nax plan` decomposition prompts |
+| `GrounderPromptBuilder` | Debate pre-phase: repo grounding |
+| `CriticPromptBuilder` | Plan critic (mechanical + LLM checks) |
+| `PatchPromptBuilder` | Verifier-pick selector |
+
+**Key infrastructure exports:**
+- `composeSections(sections)` → assembled prompt string — used by `callOp` (§37)
+- `PromptSection` — `{ key, content, separator? }` — unit of composition
+- `loadPromptOverride(role, workdir)` — disk-based prompt override for TDD roles
+- `buildSourceRootsSection(roots)` — formats `SourceRoot[]` for plan/grounding prompts
+- `SectionAccumulator` — internal builder engine (not barrel-exported; used only within `src/prompts/builders/`)
+
+**Entry point:** `src/prompts/index.ts` (barrel). No subsystem imports from `src/prompts/builders/` directly — always via the barrel.
+
+**Called by:** all `Operation` implementations in `src/operations/` (§37) via `composeSections`, and `src/pipeline/stages/prompt.ts` (stage 5).
+
+---
+
+## §50 Analyze (`src/analyze/`)
+
+Codebase scanner used by `nax analyze` and the planning pipeline. Discovers workspace packages, detects their language, reads `package.json` dep lists, and emits a `CodebaseScan` with `SourceRoot[]` entries (path, language, framework, testRunner, dependencies). Internally delegates to `discoverWorkspacePackages` (§ test-runners module) and `detectLanguage` (§47) — does not re-implement package boundary detection.
+
+**Key exports:**
+- `scanCodebase(workdir)` — main entry point; returns `CodebaseScan`
+- `scanSourceRoots(workdir)` — returns `SourceRoot[]` (lower-level; used by `nax plan`)
+- `CodebaseScan`, `SourceRoot` — output types
+- `_scannerDeps` — injectable deps (`discoverWorkspacePackages`, `detectLanguage`, `readPackageJson`) for testing
+
+**Entry point:** `src/analyze/index.ts`
+
+**Called by:** `src/cli/plan-runtime.ts` (wires `scanSourceRoots` into `_planDeps`), `src/cli/plan-command.ts`, `src/cli/plan-decompose.ts`, `src/plan/strategies/context-builder.ts`, `src/debate/pre-phase/grounder.ts` — all consume `scanSourceRoots` via the `_planDeps` injection point.
+
+---
+
+## §51 Utils (`src/utils/`)
+
+General-purpose utilities with no shared subsystem home. No internal cross-dependencies within `src/utils/`. Each file is independently importable from its leaf path (no barrel — `import from "src/utils/llm-json"`, not `"src/utils"`).
+
+**Key files:**
+| File | Key Exports | Purpose |
+|:---|:---|:---|
+| `llm-json.ts` | `parseLLMJson<T>()`, `extractJsonFromMarkdown()`, `buildJsonOutputPrompt()` | **SSOT for LLM JSON parsing** (see `forbidden-patterns.md`). Three-tier extraction: markdown fence → JSON5 → raw. Called by every Operation parser. |
+| `git.ts` | `getRepoRoot()`, `getHeadCommit()`, `getBranchName()`, `commitChanges()`, `stageFiles()`, `captureOutputFiles()`, `captureDiffSummary()` | Git operations via `Bun.spawn`. |
+| `path-filters.ts` | `filterNaxInternalPaths()`, `filterLockfiles()` | Removes `.nax/` and lockfile paths from "changed files" lists before surfacing to LLM prompts. |
+| `path-security.ts` | `resolveSafePath()`, `containsPath()` | Lexical + realpath containment checks (see §12 in `design-patterns.md`). |
+| `json-file.ts` | `loadJsonFile<T>()`, `writeJsonFile()` | Typed JSON read/write wrappers over `Bun.file` / `Bun.write`. |
+| `errors.ts` | `errorMessage(err)` | Safely extracts a string from `unknown` thrown values. |
+| `process-kill.ts` | `killProcessTree(pid)` | SIGTERM + SIGKILL with timeout; used by crash recovery. |
+| `bun-deps.ts` | Injectable `spawn`, `sleep`, `file`, `write` refs | Test mocking shims for Bun built-ins. |
+| `queue-writer.ts` | `writeQueueCommand()` | Writes PAUSE/ABORT/SKIP signals to `.nax/queue`. |
+
+Other files (`gitignore.ts`, `diff-files.ts`, `feature-name.ts`, `command-argv.ts`, `nax-project-root.ts`, `log-test-output.ts`) are single-purpose helpers — consult their source for details.

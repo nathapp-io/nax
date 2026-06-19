@@ -1,8 +1,9 @@
 # ADR-006: Acceptance Retry Loop Restructure
 
-**Status:** Proposed  
-**Date:** 2026-04-10  
-**Author:** William Khoo, Claude  
+**Status:** Accepted — implemented in `src/acceptance/` (retry loop, `fix-executor.ts`, `diagnosis.ts`)
+**Date:** 2026-04-10
+**Author:** William Khoo, Claude
+**Implemented:** 2026-05 (v0.55+)
 
 ---
 
