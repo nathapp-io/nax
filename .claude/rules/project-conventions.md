@@ -20,9 +20,10 @@ Quick rules of thumb:
 
 ## File Size
 
-- **600-line hard limit** for all source and test files.
-- If a file approaches 600 lines, split it before adding more code.
+- **600-line hard limit** for source files; **800-line hard limit** for test files (per `forbidden-patterns.md`).
+- If a file approaches its limit, split it before adding more code.
 - Split by logical concern (one function/class per file when possible).
+- **Enforced** by `bun run check:file-sizes` (part of `bun run lint`). It ratchets against a baseline: existing oversized files are grandfathered but may not grow, and new files must be under the limit. After splitting a grandfathered file, lower the baseline with `bun run check:file-sizes:update`.
 
 ## Module Structure
 
