@@ -53,9 +53,14 @@ export function resolvePermissions(config: AgentManagerConfig | undefined, _stag
 
 /**
  * Phase 2 stub — resolves per-stage permissions from config block.
- * Returns safe defaults until Phase 2 is implemented.
+ *
+ * NOT YET IMPLEMENTED (tracked by GitHub #374). Currently unreachable in normal
+ * flow: `rejectUnimplementedScopedProfile` in src/config/loader.ts rejects
+ * `permissionProfile: "scoped"` at config-load time so it can't silently degrade
+ * here. Kept as a defensive fallback for any path that bypasses the loader guard.
+ * When #374 lands, implement per docs/specs/scoped-permissions.md §2.4 and remove
+ * the loader guard.
  */
 function resolveScopedPermissions(_config: AgentManagerConfig | undefined, _stage: PipelineStage): ResolvedPermissions {
-  // Phase 2 implementation goes here
   return { mode: "approve-reads", skipPermissions: false };
 }

@@ -171,6 +171,30 @@ function rejectLegacyRectificationKeys(conf: Record<string, unknown>): void {
   throw new NaxError(message, "CONFIG_LEGACY_RECTIFICATION_KEYS", { stage: "config", legacyKeys });
 }
 
+/**
+ * @internal Reject `execution.permissionProfile: "scoped"` until Phase 2 lands.
+ *
+ * The scoped profile is a valid enum value (Zod accepts it), but its resolver
+ * (`resolveScopedPermissions`) is still a stub that silently returns "safe"
+ * defaults. A user who sets `"scoped"` would believe they have per-stage tool
+ * allowlists while actually running in the weaker `safe` mode — a silent
+ * downgrade. Fail fast with a pointer to the tracking issue instead.
+ *
+ * Remove this guard when scoped permissions are implemented (GitHub #374).
+ */
+function rejectUnimplementedScopedProfile(conf: Record<string, unknown>): void {
+  const execution = conf.execution as Record<string, unknown> | undefined;
+  if (execution?.permissionProfile !== "scoped") return;
+
+  const message = [
+    'Invalid configuration — execution.permissionProfile: "scoped" is not yet implemented.',
+    "The scoped (per-stage tool allowlist) profile is tracked by GitHub #374 and would",
+    'otherwise silently run as "safe", giving you weaker permissions than intended.',
+    'Use "unrestricted" or "safe" for now.',
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_SCOPED_PROFILE_UNIMPLEMENTED", { stage: "config" });
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -418,6 +442,9 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // that were split across quality.autofix and execution.rectification before
   // unification. Same Zod-strip rationale.
   rejectLegacyRectificationKeys(rawConfig);
+  // Fail fast on the not-yet-implemented scoped permission profile (GitHub #374)
+  // rather than letting it silently degrade to "safe".
+  rejectUnimplementedScopedProfile(rawConfig);
 
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
@@ -544,6 +571,7 @@ export async function loadConfigForWorkdir(
     // ADR-012 Phase 6 — legacy-key guard applies to per-package overlays too.
     rejectLegacyAgentKeys(rawMerged);
     rejectLegacyRectificationKeys(rawMerged);
+    rejectUnimplementedScopedProfile(rawMerged);
     const result = NaxConfigSchema.safeParse(rawMerged);
     if (!result.success) {
       // Fail-fast — consistent with root-chain resolution (a missing profile file
