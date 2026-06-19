@@ -6,8 +6,8 @@
  */
 
 import chalk from "chalk";
-import type { RunSummary } from "../../logging";
-import { formatRunSummary } from "../../logging";
+import type { RunSummary } from "../../log-format";
+import { formatRunSummary } from "../../log-format";
 import { NAX_VERSION } from "../../version";
 
 export interface RunHeaderOptions {

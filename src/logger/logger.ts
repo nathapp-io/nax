@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
-import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../logging/index.js";
+import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../log-format/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import { redactSecrets } from "./redact.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
