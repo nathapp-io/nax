@@ -15,7 +15,7 @@
 | 1 | `story-orchestrator.ts` (1462 LOC) + its test (1734 LOC) — 2.4×/2.2× over hard limit | **HIGH** | L |
 | 2 | Scoped permission profile is a non-functional Phase-2 stub | **HIGH** | M |
 | 3 | `setup-write.ts` `writeSetupConfig()` throws "not implemented", no callers | **HIGH** | M |
-| 4 | No test coverage tooling at all (vs. stated 80% rule) | **HIGH** | S |
+| 4 | ~~No test coverage tooling at all (vs. stated 80% rule)~~ — **RESOLVED**: `bun run test:coverage` enforces an 80% floor via `scripts/check-coverage.ts` (lcov-parsing; current ~81% lines / ~84% funcs). | RESOLVED | S |
 | 5 | Structured test-output parsing (pytest / go test) deferred — 4 TODOs | **MED** | M |
 | 6 | CLAUDE.md documents removed `src/agents/claude/` CLI adapter (ACP-only now) | **MED** | S |
 | 7 | ~~Duplicate logging subsystems: `src/logger/` **and** `src/logging/`~~ — **corrected: not duplicates** (see §4). `src/logging/` renamed → `src/log-format/` to fix the naming collision. | RESOLVED | M |
@@ -128,7 +128,7 @@ The "Known Violations (2026-04-18)" table in `.claude/rules/monorepo-awareness.m
 
 ## 7. Test Coverage Gaps
 
-**No coverage tooling exists.** `package.json` has no `--coverage` script and no threshold gate, despite the stated 80% requirement. This is the single highest-leverage fix: add `bun test --coverage` with a CI threshold so the rest of this section becomes measurable rather than estimated.
+**~~No coverage tooling exists.~~ RESOLVED.** `bun run test:coverage` now runs the unit suite with coverage and enforces an 80% line/function floor via `scripts/check-coverage.ts` (Bun's `bunfig` `coverageThreshold` computes but does not gate the exit code in 1.3.x, so the script parses `coverage/lcov.info` itself). Measured baseline: ~81% lines / ~84% functions. The remaining per-subsystem gaps below are now measurable from the per-file lcov report.
 
 Overall ratio ~1.28 tests:source. Well-covered: `execution/` (~2.1:1), `tdd/` (~3:1), `config/` (~1.9:1), `operations/` (~1.5:1).
 
@@ -145,7 +145,7 @@ Thin or zero **isolated** coverage:
 
 ## 8. Quick Wins (recommended order)
 
-1. **Add coverage tooling** + CI threshold (`bun test --coverage`). Small, unblocks everything else. *(§7)*
+1. ~~**Add coverage tooling** + CI threshold~~ — **done**: `bun run test:coverage` enforces an 80% floor via `scripts/check-coverage.ts`. *(§7)*
 2. **Fix or reject scoped permissions** so it can't silently degrade to `safe`. *(§2.1)*
 3. **Update CLAUDE.md** — remove CLI-adapter / `src/agents/claude/` references. Cheap, prevents agent confusion (it's loaded into every session). *(§5)*
 4. ~~Resolve the duplicate logging dir~~ — **done**: not a duplicate; `src/logging/` renamed → `src/log-format/` to fix the naming collision. *(§4)*

@@ -13,6 +13,17 @@ This rule is enforced by a PreToolUse hook: `.claude/hooks/guard-bun-test.ts`. B
 | One file / directory (iteration) | `timeout 30 bun test <path> --timeout=5000` |
 | Long-running targeted test | `timeout -k 5s 60s bun test <path> --timeout=60000` |
 | AGENT Friendly (Only print errors) | `AGENT=1 timeout 30 bun test <path> --timeout=5000` |
+| Coverage gate (enforces 80% floor) | `bun run test:coverage` |
+| Coverage report (no gate) | `bun run test:coverage:report` |
+
+## Coverage
+
+`bun run test:coverage` runs the unit suite with coverage and **fails if overall line or
+function coverage drops below 80%** (the rule in `common/testing.md`). The floor is enforced
+by `scripts/check-coverage.ts`, which parses `coverage/lcov.info` — Bun 1.3.x's `bunfig`
+`coverageThreshold` computes coverage but does NOT gate the exit code, so the script does.
+Scope is `test/unit/` (the bulk, fast and reliable); raise the floor in `check-coverage.ts`
+as coverage improves.
 
 ## Rules
 

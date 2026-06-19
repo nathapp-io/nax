@@ -13,3 +13,12 @@ preload = ["./test/preload.ts"]
 # Exclude nax dogfood feature directories (contain acceptance tests from nax runs, not source tests)
 exclude = [".nax/**"]
 AGENT = 1
+
+# Coverage — only collected when `--coverage` is passed (e.g. `bun run test:coverage`);
+# normal `bun test` runs are unaffected. Test files themselves are excluded from the
+# report. NOTE: Bun 1.3.x computes `coverageThreshold` but does NOT enforce it via exit
+# code, so the floor is enforced by scripts/check-coverage.ts (which parses coverage/
+# lcov.info), not here.
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"

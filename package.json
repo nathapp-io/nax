@@ -35,6 +35,8 @@
     "test:integration": "bun test ./test/integration/ --timeout=60000",
     "test:ui": "bun test ./test/ui/ --timeout=60000",
     "test:e2e": "timeout -k 5s 180s bun test test/e2e/ --timeout=60000",
+    "test:coverage": "bun run scripts/check-coverage.ts",
+    "test:coverage:report": "bun run scripts/check-coverage.ts --report",
     "check-test-overlap": "bun run scripts/check-test-overlap.ts",
     "check-dead-tests": "bun run scripts/check-dead-tests.ts",
     "check:test-sizes": "bun run scripts/check-test-sizes.ts",
