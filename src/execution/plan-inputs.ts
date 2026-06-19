@@ -149,20 +149,6 @@ function hasReviewEscalation(story: UserStory): boolean {
   return (story.priorFailures ?? []).some((f: { stage?: string }) => f.stage === "review");
 }
 
-async function buildThreeSessionPrompt(
-  role: "test-writer" | "implementer" | "verifier",
-  ctx: import("../pipeline/types").PipelineContext,
-  lite: boolean,
-): Promise<string> {
-  return TddPromptBuilder.buildForRole(role, ctx.workdir, ctx.config, ctx.story, {
-    lite,
-    contextMarkdown: ctx.contextMarkdown,
-    featureContextMarkdown: ctx.featureContextMarkdown,
-    contextBundle: ctx.contextBundle,
-    constitution: ctx.constitution?.content,
-  });
-}
-
 function buildFeatureCtxBlock(
   ctx: import("../pipeline/types").PipelineContext,
   role: "reviewer-semantic" | "reviewer-adversarial",
@@ -213,11 +199,20 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
   // Using projectDir as root (with packageDirRel for monorepos) is the SSOT per ADR-009.
   const packageDirRel = packageDirRelative(ctx.projectDir, ctx.workdir);
   const resolvedTestPatterns = await resolveTestFilePatterns(config, ctx.projectDir, packageDirRel);
+  const tddOpts = {
+    lite: isLite,
+    contextMarkdown: ctx.contextMarkdown,
+    featureContextMarkdown: ctx.featureContextMarkdown,
+    contextBundle: ctx.contextBundle,
+    constitution: ctx.constitution?.content,
+  };
   const [testWriterPrompt, implementerPrompt, verifierPrompt] = _isTdd
     ? await Promise.all([
-        _isFreshRun ? buildThreeSessionPrompt("test-writer", ctx, isLite) : Promise.resolve(""),
-        buildThreeSessionPrompt("implementer", ctx, isLite),
-        buildThreeSessionPrompt("verifier", ctx, isLite),
+        _isFreshRun
+          ? TddPromptBuilder.buildForRole("test-writer", ctx.workdir, ctx.config, ctx.story, tddOpts)
+          : Promise.resolve(""),
+        TddPromptBuilder.buildForRole("implementer", ctx.workdir, ctx.config, ctx.story, tddOpts),
+        TddPromptBuilder.buildForRole("verifier", ctx.workdir, ctx.config, ctx.story, tddOpts),
       ])
     : ["", ctx.prompt as string, ""];
 
