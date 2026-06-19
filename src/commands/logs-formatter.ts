@@ -5,10 +5,10 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
+import { formatDuration, formatLogEntry, formatRunSummary } from "../log-format/formatter";
 import type { LogEntry, LogLevel } from "../logger/types";
-import { formatDuration, formatLogEntry, formatRunSummary } from "../logging/formatter";
 export { formatDuration };
-import type { VerbosityMode } from "../logging/types";
+import type { VerbosityMode } from "../log-format/types";
 import { extractRunSummary } from "./logs-reader";
 
 /**

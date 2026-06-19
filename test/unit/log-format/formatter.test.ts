@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatLogEntry } from "../../../src/logging";
+import { formatLogEntry } from "../../../src/log-format";
 import type { LogEntry } from "../../../src/logger/types";
 
 const TS = "2026-05-29T11:35:59.000Z";
