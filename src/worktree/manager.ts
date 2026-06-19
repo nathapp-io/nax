@@ -137,7 +137,12 @@ export class WorktreeManager {
             projectRoot,
           });
         }
-        throw error;
+        throw new NaxError(error.message, "WORKTREE_ERROR", {
+          stage: "worktree",
+          storyId,
+          projectRoot,
+          cause: error,
+        });
       }
       throw new NaxError(`Failed to create worktree: ${String(error)}`, "WORKTREE_ERROR", {
         stage: "worktree",
