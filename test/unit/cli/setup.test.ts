@@ -12,6 +12,8 @@ import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
 import type { RepoAnalysis } from "../../../src/cli/setup-types";
 import type { SetupPlan } from "../../../src/operations/setup-generate";
+import type { NaxConfig } from "@/config";
+import type { MonoPackageConfig } from "@/operations/setup-generate";
 import { withTempDir } from "../../helpers/temp";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -69,8 +71,7 @@ beforeEach(() => {
   _setupDeps.stdout = mock((_msg: string) => {});
   _setupDeps.stderr = mock((_msg: string) => {});
   _setupDeps.fileExists = mock(async () => false);
-  _setupDeps.writeFile = mock(async () => {});
-  _setupDeps.mkdir = mock(async () => {});
+  _setupDeps.writeSetupConfig = mock(async () => ({ written: [] }));
   _setupDeps.fillScripts = mock(async () => {});
 });
 
@@ -98,17 +99,17 @@ describe("setupCommand — AC1: exits 0 and produces .nax/config.json", () => {
     });
   });
 
-  test("AC1 boundary: written config passes NaxConfigSchema.safeParse", async () => {
-    let writtenContent: string | undefined;
-    _setupDeps.writeFile = mock(async (_path: string, content: string) => {
-      if (_path.endsWith("config.json") && !_path.includes("mono")) writtenContent = content;
+  test("AC1 boundary: config passed to writeSetupConfig passes NaxConfigSchema.safeParse", async () => {
+    let capturedConfig: NaxConfig | undefined;
+    _setupDeps.writeSetupConfig = mock(async (_workdir: string, config: NaxConfig) => {
+      capturedConfig = config;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      expect(writtenContent).toBeDefined();
-      const parsed = JSON.parse(writtenContent ?? "{}");
-      expect(NaxConfigSchema.safeParse(parsed).success).toBe(true);
+      expect(capturedConfig).toBeDefined();
+      expect(NaxConfigSchema.safeParse(capturedConfig).success).toBe(true);
     });
   });
 });
@@ -116,35 +117,40 @@ describe("setupCommand — AC1: exits 0 and produces .nax/config.json", () => {
 // ─── AC2: monorepo → one .nax/mono/<relativeDir>/config.json per package ─────
 
 describe("setupCommand — AC2: writes mono configs for each member package", () => {
-  test("AC2: calls writeFile for each relativeDir in monoConfigs", async () => {
+  test("AC2: passes all monoConfigs to writeSetupConfig", async () => {
     _setupDeps.analyzeRepo = mock(async () => MONO_ANALYSIS);
     _setupDeps.generateSetupPlan = mock(async () => MONO_PLAN);
 
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
-    });
+    let capturedMonoConfigs: MonoPackageConfig[] | undefined;
+    _setupDeps.writeSetupConfig = mock(
+      async (_workdir: string, _config: NaxConfig, monoConfigs: MonoPackageConfig[]) => {
+        capturedMonoConfigs = monoConfigs;
+        return { written: [] };
+      },
+    );
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      const monoConfigPaths = writtenPaths.filter((p) => p.includes("mono"));
-      expect(monoConfigPaths).toHaveLength(2);
+      expect(capturedMonoConfigs).toHaveLength(2);
     });
   });
 
-  test("AC2 boundary: mono config paths include each package relativeDir", async () => {
+  test("AC2 boundary: mono configs include each package relativeDir", async () => {
     _setupDeps.analyzeRepo = mock(async () => MONO_ANALYSIS);
     _setupDeps.generateSetupPlan = mock(async () => MONO_PLAN);
 
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
-    });
+    let capturedMonoConfigs: MonoPackageConfig[] | undefined;
+    _setupDeps.writeSetupConfig = mock(
+      async (_workdir: string, _config: NaxConfig, monoConfigs: MonoPackageConfig[]) => {
+        capturedMonoConfigs = monoConfigs;
+        return { written: [] };
+      },
+    );
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      expect(writtenPaths.some((p) => p.includes("packages/a"))).toBe(true);
-      expect(writtenPaths.some((p) => p.includes("packages/b"))).toBe(true);
+      expect(capturedMonoConfigs?.some((mc) => mc.relativeDir === "packages/a")).toBe(true);
+      expect(capturedMonoConfigs?.some((mc) => mc.relativeDir === "packages/b")).toBe(true);
     });
   });
 });
@@ -152,28 +158,32 @@ describe("setupCommand — AC2: writes mono configs for each member package", ()
 // ─── AC3: single-package → no .nax/mono/ directory ──────────────────────────
 
 describe("setupCommand — AC3: single-package produces no mono directory entries", () => {
-  test("AC3: does not write any mono config paths when monoConfigs is empty", async () => {
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
-    });
+  test("AC3: passes empty monoConfigs to writeSetupConfig for single-package plan", async () => {
+    let capturedMonoConfigs: MonoPackageConfig[] | undefined;
+    _setupDeps.writeSetupConfig = mock(
+      async (_workdir: string, _config: NaxConfig, monoConfigs: MonoPackageConfig[]) => {
+        capturedMonoConfigs = monoConfigs;
+        return { written: [] };
+      },
+    );
 
     await withTempDir(async (dir) => {
       const exitCode = await runSetup({ dir });
       expect(exitCode).toBe(0);
-      expect(writtenPaths.some((p) => p.includes("mono"))).toBe(false);
+      expect(capturedMonoConfigs).toEqual([]);
     });
   });
 
-  test("AC3 boundary: does not call mkdir with a mono path for single-package plan", async () => {
-    const createdDirs: string[] = [];
-    _setupDeps.mkdir = mock(async (path: string) => {
-      createdDirs.push(path);
+  test("AC3 boundary: writeSetupConfig is called exactly once for single-package plan", async () => {
+    let callCount = 0;
+    _setupDeps.writeSetupConfig = mock(async () => {
+      callCount++;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      expect(createdDirs.some((p) => p.includes("mono"))).toBe(false);
+      expect(callCount).toBe(1);
     });
   });
 });
@@ -181,16 +191,17 @@ describe("setupCommand — AC3: single-package produces no mono directory entrie
 // ─── AC4: --dry-run → exits 0, no files, prints summary ─────────────────────
 
 describe("setupCommand — AC4: dry-run creates no files and prints summary", () => {
-  test("AC4: exits 0 and writes no files when dryRun is true", async () => {
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
+  test("AC4: exits 0 and does not call writeSetupConfig when dryRun is true", async () => {
+    let writeCallCount = 0;
+    _setupDeps.writeSetupConfig = mock(async () => {
+      writeCallCount++;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       const exitCode = await runSetup({ dir, dryRun: true });
       expect(exitCode).toBe(0);
-      expect(writtenPaths).toHaveLength(0);
+      expect(writeCallCount).toBe(0);
     });
   });
 
@@ -221,20 +232,20 @@ describe("setupCommand — AC5: exits 1 when generateSetupPlan rejects with SETU
     });
   });
 
-  test("AC5 boundary: does not write config.json when SETUP_PLAN_INVALID", async () => {
+  test("AC5 boundary: does not call writeSetupConfig when SETUP_PLAN_INVALID", async () => {
     _setupDeps.generateSetupPlan = mock(async () => {
       throw new NaxError("plan failed", "SETUP_PLAN_INVALID");
     });
 
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
+    let writeCallCount = 0;
+    _setupDeps.writeSetupConfig = mock(async () => {
+      writeCallCount++;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      const configWrites = writtenPaths.filter((p) => p.endsWith("config.json") && !p.includes("mono"));
-      expect(configWrites).toHaveLength(0);
+      expect(writeCallCount).toBe(0);
     });
   });
 });
@@ -254,17 +265,18 @@ describe("setupCommand — AC6: collision refusal without --force", () => {
     });
   });
 
-  test("AC6 boundary: does not call writeFile for root config when collision detected", async () => {
+  test("AC6 boundary: does not call writeSetupConfig when collision detected", async () => {
     _setupDeps.fileExists = mock(async (path: string) => path.endsWith("config.json"));
 
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
+    let writeCallCount = 0;
+    _setupDeps.writeSetupConfig = mock(async () => {
+      writeCallCount++;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir });
-      expect(writtenPaths.some((p) => p.endsWith(".nax/config.json"))).toBe(false);
+      expect(writeCallCount).toBe(0);
     });
   });
 });
@@ -272,36 +284,35 @@ describe("setupCommand — AC6: collision refusal without --force", () => {
 // ─── AC7: existing config + --force → replaces content ──────────────────────
 
 describe("setupCommand — AC7: --force overwrites existing config", () => {
-  test("AC7: exits 0 and writes config even when file already exists", async () => {
+  test("AC7: exits 0 and calls writeSetupConfig even when file already exists", async () => {
     _setupDeps.fileExists = mock(async (path: string) => path.endsWith("config.json"));
 
-    const writtenPaths: string[] = [];
-    _setupDeps.writeFile = mock(async (path: string) => {
-      writtenPaths.push(path);
+    let writeCallCount = 0;
+    _setupDeps.writeSetupConfig = mock(async () => {
+      writeCallCount++;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       const exitCode = await runSetup({ dir, force: true });
       expect(exitCode).toBe(0);
-      expect(writtenPaths.some((p) => p.endsWith("config.json") && !p.includes("mono"))).toBe(true);
+      expect(writeCallCount).toBe(1);
     });
   });
 
-  test("AC7 boundary: written content under --force matches generated plan config", async () => {
+  test("AC7 boundary: config passed under --force matches generated plan config", async () => {
     _setupDeps.fileExists = mock(async () => true);
 
-    let writtenContent: string | undefined;
-    _setupDeps.writeFile = mock(async (path: string, content: string) => {
-      if (!path.includes("mono")) writtenContent = content;
+    let capturedConfig: NaxConfig | undefined;
+    _setupDeps.writeSetupConfig = mock(async (_workdir: string, config: NaxConfig) => {
+      capturedConfig = config;
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir, force: true });
-      if (writtenContent !== undefined) {
-        expect(NaxConfigSchema.safeParse(JSON.parse(writtenContent)).success).toBe(true);
-      } else {
-        expect(writtenContent).toBeDefined();
-      }
+      expect(capturedConfig).toBeDefined();
+      expect(NaxConfigSchema.safeParse(capturedConfig).success).toBe(true);
     });
   });
 });
@@ -460,19 +471,20 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
     });
   });
 
-  test("AC13: fillScripts is called before writeFile for config", async () => {
+  test("AC13: fillScripts is called before writeSetupConfig", async () => {
     const callOrder: string[] = [];
     _setupDeps.fillScripts = mock(async () => {
       callOrder.push("fillScripts");
     });
-    _setupDeps.writeFile = mock(async () => {
-      callOrder.push("writeFile");
+    _setupDeps.writeSetupConfig = mock(async () => {
+      callOrder.push("writeSetupConfig");
+      return { written: [] };
     });
 
     await withTempDir(async (dir) => {
       await runSetup({ dir, fillScripts: true });
       const fillIdx = callOrder.indexOf("fillScripts");
-      const writeIdx = callOrder.indexOf("writeFile");
+      const writeIdx = callOrder.indexOf("writeSetupConfig");
       expect(fillIdx).toBeGreaterThanOrEqual(0);
       expect(fillIdx).toBeLessThan(writeIdx);
     });
