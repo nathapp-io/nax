@@ -1,3 +1,4 @@
+import { OneShotPromptBuilder } from "@/prompts";
 import { routingConfigSelector } from "../config";
 import type { RoutingConfig } from "../config/selectors";
 import type { UserStory } from "../prd";
@@ -16,9 +17,6 @@ export interface ClassifyRouteInput extends Pick<UserStory, "title" | "descripti
  * `validateRoutingDecision` (config-aware tier check + `testStrategy` derivation).
  */
 export type ClassifyRouteOutput = RoutingDecision;
-
-const CLASSIFY_ROLE = `You are a story classifier that assigns complexity and model tier to user stories.
-Respond with JSON only — no explanation text before or after.`;
 
 export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRouteOutput, RoutingConfig> = {
   kind: "complete",
@@ -44,7 +42,7 @@ export const classifyRouteOp: CompleteOperation<ClassifyRouteInput, ClassifyRout
     ].join("\n");
 
     return {
-      role: { id: "role", content: CLASSIFY_ROLE, overridable: false },
+      role: { id: "role", content: OneShotPromptBuilder.classifierRoleContent(), overridable: false },
       task: { id: "task", content: `${ROUTING_INSTRUCTIONS}\n\n## Story\n\n${storyBody}`, overridable: false },
     };
   },
@@ -85,7 +83,7 @@ export const classifyRouteBatchOp: CompleteOperation<UserStory[], Map<string, Ro
     const taskContent = `${ROUTING_INSTRUCTIONS}\n\n## Stories\n\n${storyBlocks}\n\n## Output Schema\n\n${BATCH_ROUTING_SCHEMA_INLINE}`;
 
     return {
-      role: { id: "role", content: CLASSIFY_ROLE, overridable: false },
+      role: { id: "role", content: OneShotPromptBuilder.classifierRoleContent(), overridable: false },
       task: { id: "task", content: taskContent, overridable: false },
     };
   },

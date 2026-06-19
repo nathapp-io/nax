@@ -1,11 +1,11 @@
 /**
  * OneShotPromptBuilder — escape hatch for structurally trivial one-shot prompts.
  *
- * Covers router, decomposer, and auto-approver: each is a short instruction +
- * optional input data + optional JSON schema. They share no domain and do not
- * justify dedicated builder classes.
+ * Covers router, decomposer, auto-approver, and classifier: each is a short
+ * instruction + optional input data + optional JSON schema. They share no domain
+ * and do not justify dedicated builder classes.
  *
- * CONSTRAINT: ≤150 lines. If you find yourself adding domain-specific methods
+ * CONSTRAINT: ≤160 lines. If you find yourself adding domain-specific methods
  * here, promote the prompt to its own dedicated builder instead.
  */
 
@@ -111,6 +111,16 @@ export class OneShotPromptBuilder {
       "3. If more than one remains, choose the LOWEST cost profile.",
       "4. If none clearly fit, omit `agentProfileId` entirely — never invent a profile id.",
     ].join("\n");
+  }
+
+  /** Role content for the story classifier (classifyRouteOp / classifyRouteBatchOp). */
+  static classifierRoleContent(): string {
+    return "You are a story classifier that assigns complexity and model tier to user stories.\nRespond with JSON only — no explanation text before or after.";
+  }
+
+  /** Role content for the auto-approver (autoApproveOp). */
+  static autoApproverRoleContent(): string {
+    return "You are an AI orchestration decision-maker.";
   }
 
   /**
