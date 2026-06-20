@@ -113,6 +113,49 @@ export function gateFailureKeys(gateOutput: unknown): Set<string> {
 }
 
 /**
+ * The key `gateFailureKeys` emits for a gate failure with no identity — both `file`
+ * and `rule` empty. Produced by execution-failure synth findings (non-zero exit, no
+ * structured failures). Such a key cannot be diffed against a baseline, so the
+ * staleness guard must treat it as a regression rather than a comparable identity.
+ */
+const KEYLESS_GATE_FAILURE_KEY = "::";
+
+/**
+ * Did the full-suite gate REGRESS during rectification relative to the verifier-time
+ * baseline? Drives the verifier-SSOT carve-out: a verifier that passed exempts a red
+ * gate as a "pre-existing/unrelated regression" ONLY while the gate did not get worse
+ * after the verifier blessed it.
+ *
+ * Returns false when the final gate is passing (green ⇒ nothing to be stale about).
+ *
+ * When the final gate is failing, it regressed if EITHER:
+ *  - it carries a structured failure key absent from `baselineKeys` (a new, identifiable
+ *    failing test), OR
+ *  - it failed in a KEYLESS form — a timeout (`findings: []` ⇒ empty key set) or an
+ *    execution-failure (synth finding ⇒ `"::"`). These yield no identity to compare, so
+ *    the structured key-diff alone is blind to them (audit #3). We cannot prove a keyless
+ *    failure is the same one the verifier blessed, and silently exempting an unidentifiable
+ *    red suite is exactly the laundering this guards against — so treat it as a regression.
+ *
+ * Pure over (output, baseline, gateName) — exported for unit testing.
+ */
+export function gateRegressedAfterRectification(
+  finalGateOutput: unknown,
+  baselineKeys: ReadonlySet<string>,
+  gateName: string,
+  storyId?: string,
+): boolean {
+  // Green gate ⇒ not regressed. Also guards the keyless check below: a passing gate
+  // has an empty key set too, but must never be read as a keyless failure.
+  if (phasePassed(gateName, finalGateOutput, storyId)) return false;
+
+  const finalKeys = gateFailureKeys(finalGateOutput);
+  const hasNewStructuredKey = [...finalKeys].some((k) => !baselineKeys.has(k));
+  const isKeylessFailure = finalKeys.size === 0 || finalKeys.has(KEYLESS_GATE_FAILURE_KEY);
+  return hasNewStructuredKey || isKeylessFailure;
+}
+
+/**
  * Determine which phases to re-run after a fix iteration.
  *
  * The verifier IS eligible for revalidation when a strategy mapped to include

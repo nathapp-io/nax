@@ -3,7 +3,13 @@
 
 export { StoryOrchestratorBuilder } from "./builder";
 export { ExecutionPlan } from "./execution-plan";
-export { extractPhaseFindings, gateFailureKeys, orderGateLast, phasesToRevalidate } from "./phase-eval";
+export {
+  extractPhaseFindings,
+  gateFailureKeys,
+  gateRegressedAfterRectification,
+  orderGateLast,
+  phasesToRevalidate,
+} from "./phase-eval";
 export { runRectification } from "./rectification";
 export { _storyOrchestratorDeps, refreshReviewInputForDispatch, withIncreasingFailuresBail } from "./run-phase";
 export {

@@ -8,7 +8,7 @@ import {
   nonBlockingExtraPhases,
   shouldRunNonBlockingFix,
 } from "../non-blocking-fix";
-import { gateFailureKeys, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
+import { gateFailureKeys, gateRegressedAfterRectification, phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { collectOrderedPhases } from "./phase-state";
 import { runRectification } from "./rectification";
 import { _storyOrchestratorDeps, runPhase } from "./run-phase";
@@ -271,9 +271,11 @@ export class ExecutionPlan {
     // SSOT requires an explicit pass — see `phaseExplicitlyPassed` for why we
     // don't use the defensive `phasePassed` here.
     const verifierExplicitlyPassed = verifierName !== undefined && phaseExplicitlyPassed(phaseOutputs[verifierName]);
+    // Compares the FINAL gate against the verifier-time baseline, including keyless
+    // (timeout / execution-failure) regressions the raw key-diff is blind to (audit #3).
     const gateRegressedDuringRect =
       gateName !== undefined &&
-      [...gateFailureKeys(phaseOutputs[gateName])].some((k) => !preRectGateFailureKeys.has(k));
+      gateRegressedAfterRectification(phaseOutputs[gateName], preRectGateFailureKeys, gateName, this.ctx.storyId);
     const verifierPassedSsot = verifierExplicitlyPassed && !gateRegressedDuringRect;
     if (verifierExplicitlyPassed && gateRegressedDuringRect) {
       logger?.warn(
