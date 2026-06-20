@@ -45,6 +45,7 @@ export {
   phasesToRevalidate,
   orderGateLast,
   gateFailureKeys,
+  gateRegressedAfterRectification,
   refreshReviewInputForDispatch,
   withIncreasingFailuresBail,
   type OrchestratorSlot,

@@ -16,7 +16,12 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { type DEFAULT_CONFIG, pickSelector } from "@/config";
-import { StoryOrchestratorBuilder, _storyOrchestratorDeps, gateFailureKeys } from "@/execution";
+import {
+  StoryOrchestratorBuilder,
+  _storyOrchestratorDeps,
+  gateFailureKeys,
+  gateRegressedAfterRectification,
+} from "@/execution";
 import { deriveTddFailureCategory } from "@/execution";
 import type { CallContext, DeterministicOperation, RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
@@ -92,6 +97,50 @@ describe("gateFailureKeys", () => {
   test("returns empty set for undefined / non-object output", () => {
     expect(gateFailureKeys(undefined).size).toBe(0);
     expect(gateFailureKeys("nope").size).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// gateRegressedAfterRectification — pure (audit #3: keyless-failure blind spot)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("gateRegressedAfterRectification", () => {
+  const GATE = "full-suite-gate";
+  // An execution-failure synth finding: source test-runner, no file/rule → key "::".
+  const execFailFinding = { source: "test-runner", category: "execution-failed", severity: "error", message: "boom" };
+
+  test("green final gate → not regressed", () => {
+    const out = { success: true, passed: true, findings: [] };
+    expect(gateRegressedAfterRectification(out, new Set(), GATE)).toBe(false);
+    // Even with a non-empty baseline (pre-existing failures the verifier blessed).
+    expect(gateRegressedAfterRectification(out, new Set(["foo.test.ts::t-a"]), GATE)).toBe(false);
+  });
+
+  test("structured failure that is a SUBSET of baseline → not regressed (carve-out preserved)", () => {
+    const out = { success: false, passed: false, findings: [testFinding("foo.test.ts", "t-a")] };
+    const baseline = new Set(["foo.test.ts::t-a", "bar.test.ts::t-b"]);
+    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(false);
+  });
+
+  test("NEW structured failure key absent from baseline → regressed", () => {
+    const out = { success: false, passed: false, findings: [testFinding("new.test.ts", "t-new")] };
+    const baseline = new Set(["foo.test.ts::t-a"]);
+    expect(gateRegressedAfterRectification(out, baseline, GATE)).toBe(true);
+  });
+
+  test("TIMEOUT (failing, findings: []) → regressed even though there is no key to diff (#3)", () => {
+    // Before #3 this returned false: empty key set ⇒ [].some(...) ⇒ false ⇒ laundered.
+    const timeoutOut = { success: false, passed: false, status: "timeout", findings: [] };
+    expect(gateRegressedAfterRectification(timeoutOut, new Set(["foo.test.ts::t-a"]), GATE)).toBe(true);
+    // Even when the baseline was already failing with structured keys.
+    expect(gateRegressedAfterRectification(timeoutOut, new Set(), GATE)).toBe(true);
+  });
+
+  test("EXECUTION-FAILURE (failing, synth key '::') → regressed even if baseline also had '::' (#3)", () => {
+    // Before #3: '::' ∈ baseline ⇒ not "new" ⇒ false ⇒ a story-caused suite crash laundered.
+    const out = { success: false, passed: false, status: "execution-failed", findings: [execFailFinding] };
+    expect(gateRegressedAfterRectification(out, new Set(["::"]), GATE)).toBe(true);
+    expect(gateRegressedAfterRectification(out, new Set(["foo.test.ts::t-a"]), GATE)).toBe(true);
   });
 });
 
@@ -219,6 +268,83 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
       // Without the fix the carve-out would exempt the gate → success=true.
       expect(result.success).toBe(false);
       expect(result.gateRegressedDuringRect).toBe(true);
+    } finally {
+      _storyOrchestratorDeps.callOp = origCallOp;
+      _storyOrchestratorDeps.runFixCycle = origRunFixCycle;
+    }
+  });
+
+  test("verifier passed but the gate regressed into a KEYLESS failure (timeout) → story fails (audit #3)", async () => {
+    // Same shape as the structured-regression test above, but rectification drives the gate
+    // green → FAILING-WITH-NO-FINDINGS (a timeout: success:false, findings:[]). The pre-#3
+    // key-diff was blind to this — an empty key set never produces a "new" key — so the
+    // verifier-SSOT carve-out laundered a genuinely red suite into a pass. With #3 the
+    // keyless failure is treated as a regression and the story fails.
+    const config = makeNaxConfig({
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2, abortOnIncreasingFailures: false } },
+    });
+    rt = makeTestRuntime({ config });
+
+    let gateCalls = 0;
+    const gateOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "full-suite-gate",
+      stage: "verify",
+      config: testSel,
+      execute: async () => {
+        gateCalls++;
+        const ok = gateCalls === 1;
+        // Re-runs report a timeout: failing, but with NO structured findings → no keys.
+        return { success: ok, passed: ok, estimatedCostUsd: 0, status: ok ? "passed" : "timeout", findings: [] };
+      },
+    };
+    let reviewCalls = 0;
+    const reviewOp: DeterministicOperation<unknown, unknown, typeof DEFAULT_CONFIG> = {
+      kind: "deterministic",
+      name: "semantic-review",
+      stage: "verify",
+      config: testSel,
+      execute: async () => {
+        reviewCalls++;
+        const ok = reviewCalls > 1;
+        return {
+          success: ok,
+          passed: ok,
+          estimatedCostUsd: 0,
+          findings: ok
+            ? []
+            : [{ source: "semantic", category: "x", severity: "error", message: "r", rule: "r", file: "a.ts" }],
+        };
+      },
+    };
+
+    const origCallOp = _storyOrchestratorDeps.callOp;
+    const origRunFixCycle = _storyOrchestratorDeps.runFixCycle;
+    _storyOrchestratorDeps.callOp = (async (
+      _ctx: unknown,
+      op: { kind?: string; execute?: (i: unknown, c: unknown) => unknown },
+      input: unknown,
+    ) => {
+      if (op.kind === "deterministic" && op.execute) return op.execute(input, _ctx);
+      return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = (async (cycle: { validate: (c: unknown, o: unknown) => Promise<unknown> }) => {
+      await cycle.validate({}, { mode: "full", strategiesRun: ["autofix-implementer"] });
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    try {
+      const ctx = {
+        runtime: rt,
+        packageView: rt.packages.repo(),
+        packageDir: "/tmp",
+        agentName: "claude",
+        storyId: "US-keyless",
+      } as unknown as CallContext;
+      const result = await buildPlan(ctx, gateOp, reviewOp).run();
+      // The keyless gate failure is now recognised as a regression — no silent pass.
+      expect(result.gateRegressedDuringRect).toBe(true);
+      expect(result.success).toBe(false);
     } finally {
       _storyOrchestratorDeps.callOp = origCallOp;
       _storyOrchestratorDeps.runFixCycle = origRunFixCycle;

@@ -4,9 +4,14 @@
 > - **#5** (`routeTddFailure` exhaustiveness guard) + **#4** (`phaseCosts` restored on nbf rollback):
 >   landed on `fix/story-orchestrator-should-fix` (merged, #1267).
 > - **#1** (nbf snapshot throws into the verdict path) + **#2** (`full-suite-rectify` re-runs
->   `adversarial-review`): landed on `fix/story-orchestrator-nbf-snapshot-adversarial-staleness`.
+>   `adversarial-review`): landed on `fix/story-orchestrator-nbf-snapshot-adversarial-staleness` (merged, #1268).
+> - **#3** (staleness guard blind to keyless gate failures): landed on
+>   `fix/staleness-guard-keyless-gate-failures` — keyless (timeout / execution-failure) gate failures
+>   are now treated as regressions, closing the carve-out laundering path.
 > - **#7** re-examined and intentionally left unchanged (the `undefined → pause` fallback is correct; see §7).
-> - **#3** (staleness guard blind to keyless gate failures) remains the one open must-fix item.
+>
+> **All must-fix items (#1, #2, #3) are now resolved.** Remaining open items are LOW nice-to-haves
+> (#6, #8) and the documented-by-design #9.
 
 > Scope: behavioral correctness of the per-story execution flow (`src/execution/story-orchestrator/`)
 > and its collaborators — rectification, resume loops, the verifier-SSOT carve-out + staleness guard,
@@ -29,7 +34,7 @@ guard's representational assumptions**. The highest-value fixes are #1, #2, and 
 |---|----------|------|----------|--------|
 | 1 | MEDIUM–HIGH | Confirmed bug | `non-blocking-fix.ts:158` | ✅ **Fixed** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`) — snapshot capture wrapped; failure degrades to `ran:false`, never throws |
 | 2 | MEDIUM | Confirmed bug | `story-orchestrator/types.ts:174-182` | ✅ **Fixed** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`) — `adversarial-review` added to `full-suite-rectify` revalidation set |
-| 3 | HIGH impact / conditional reach | Design weakness | `phase-eval.ts:110`, `full-suite-gate.ts` (timeout/exec-fail) | **Open** — staleness guard blind to keyless gate failures → a red suite *can* be exempted |
+| 3 | HIGH impact / conditional reach | Design weakness | `phase-eval.ts` (`gateRegressedAfterRectification`) | ✅ **Fixed** (`fix/staleness-guard-keyless-gate-failures`) — keyless (timeout/exec-fail) gate failures now treated as regressions |
 | 4 | LOW–MEDIUM | Confirmed bug (metrics) | `non-blocking-fix.ts:195-217` | ✅ **Fixed** (`fix/story-orchestrator-should-fix`) — `phaseCosts` snapshotted at entry, restored on rollback |
 | 5 | MEDIUM | Design gap | `pipeline/stages/execution-helpers.ts:64` | ✅ **Fixed** (`fix/story-orchestrator-should-fix`) — `routeTddFailure` now exhaustive (`satisfies never`) |
 | 6 | LOW–MEDIUM | Design gap | `non-blocking-fix.ts:120-125` | **Open** — `sourceDiffCap` counts only *added* lines; a large *deleting* edit bypasses the cap |
@@ -137,6 +142,22 @@ spot itself is verified.
 green/passing and the final gate is failing in *any* representation, treat the verdict as stale
 (revoke the exemption). Fold timeout / execution-failure / `failed>0-but-empty-findings` into the
 regression signal explicitly rather than relying on extractable keys.
+
+> ✅ **Resolved** (`fix/staleness-guard-keyless-gate-failures`). Extracted a pure
+> `gateRegressedAfterRectification(finalGateOutput, baselineKeys, gateName, storyId?)` in
+> `phase-eval.ts` and routed the carve-out's `gateRegressedDuringRect` through it. It returns false
+> when the final gate is green; when failing, it flags a regression if EITHER a structured failure key
+> is absent from the baseline (the original precise diff) **OR** the failure is keyless — a timeout
+> (`findings: []` → empty key set) or an execution-failure (synth key `"::"`). A keyless failure yields
+> no identity to prove it is the pre-existing failure the verifier blessed, so it conservatively counts
+> as a regression rather than being laundered into a pass. The structured-subset carve-out (legit
+> pre-existing failures) is preserved unchanged. Tests: five pure-function cases (green, subset, new
+> key, timeout, execution-failure) plus an end-to-end `ExecutionPlan.run` case proving a timeout
+> regression now fails the story instead of passing via the carve-out.
+>
+> **Scope note:** this closes the keyless-key blind spot. The deeper Finding 3 concern (baseline is
+> captured at main-loop end, not at verifier-pass time) is unchanged and remains a latent design point;
+> the conservative keyless handling de-risks it, but a full fix would re-anchor the baseline.
 
 ### 4. phaseCosts not restored on nbf rollback — Confirmed bug (metrics only)
 
@@ -258,9 +279,9 @@ disposition so the pause/fail decision doesn't depend on strategy.
    `captureSnapshotRef` wrapped; failure degrades to `ran:false`, never throws.
 2. ✅ **#2 — adversarial-review staleness** — **DONE** (same branch). `adversarial-review` added to the
    `full-suite-rectify` revalidation set; three dependent tests updated.
-3. **#3 — staleness guard status comparison** — **OPEN.** Harden `gateRegressedDuringRect` to compare
-   gate pass/fail *status*, not just keys, so keyless (timeout/exec-fail) regressions can't be exempted.
-   Highest design value; pair with unit tests for the timeout and execution-failure representations.
+3. ✅ **#3 — staleness guard status comparison** — **DONE** (`fix/staleness-guard-keyless-gate-failures`).
+   `gateRegressedAfterRectification` now treats keyless (timeout/exec-fail) gate failures as regressions;
+   pure-function + end-to-end tests added.
 
 **Should-fix (robustness / disposition):**
 
@@ -277,9 +298,9 @@ disposition so the pause/fail decision doesn't depend on strategy.
 8. **#8 — confirm/wire `isolation-violation` producer.**
 9. **#9 — unify non-TDD review-incomplete disposition** (if the asymmetry is undesired; decide jointly with #7).
 
-**Remaining work:** **#3** (the staleness-guard status comparison) is the last open must-fix — it
-changes the carve-out/staleness logic, so it warrants its own focused PR with unit tests for the
-timeout and execution-failure representations. #6 / #8 are low-priority follow-ups.
+**Remaining work:** all must-fix items are resolved. Open items are LOW nice-to-haves — **#6** (count
+deletions in `sourceDiffCap`), **#8** (confirm/wire the `isolation-violation` producer) — plus the
+documented-by-design **#9**. None are blocking.
 
 > All findings are in **production** code and pre-date the e2e coverage PR (#1266); that PR's tests are
 > correct and independent of these fixes.
