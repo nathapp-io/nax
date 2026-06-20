@@ -10,8 +10,9 @@
 >   are now treated as regressions, closing the carve-out laundering path.
 > - **#7** re-examined and intentionally left unchanged (the `undefined → pause` fallback is correct; see §7).
 >
-> **All must-fix items (#1, #2, #3) are now resolved.** Remaining open items are LOW nice-to-haves
-> (#6, #8) and the documented-by-design #9.
+> **All must-fix items (#1, #2, #3) are now resolved.** **#8** resolved as documented (mechanical
+> isolation check is advisory by design; verifier owns legitimacy — `fix/isolation-violation-producer`).
+> Remaining open: only the LOW **#6** (sourceDiffCap added-only) and the documented-by-design **#9**.
 
 > Scope: behavioral correctness of the per-story execution flow (`src/execution/story-orchestrator/`)
 > and its collaborators — rectification, resume loops, the verifier-SSOT carve-out + staleness guard,
@@ -39,7 +40,7 @@ guard's representational assumptions**. The highest-value fixes are #1, #2, and 
 | 5 | MEDIUM | Design gap | `pipeline/stages/execution-helpers.ts:64` | ✅ **Fixed** (`fix/story-orchestrator-should-fix`) — `routeTddFailure` now exhaustive (`satisfies never`) |
 | 6 | LOW–MEDIUM | Design gap | `non-blocking-fix.ts:120-125` | **Open** — `sourceDiffCap` counts only *added* lines; a large *deleting* edit bypasses the cap |
 | 7 | MEDIUM → LOW | Re-examined | `tdd-failure-category.ts:101` | ⏸️ **No change** — on inspection the `undefined → pause` fallback is correct; a richer category needs a design change (see below) |
-| 8 | LOW | Design gap | `tdd-failure-category.ts:32` | **Open** — `isolation-violation` handling appears dead for the verifier path |
+| 8 | LOW | Design gap | `tdd-failure-category.ts:32` | ✅ **Resolved as documented** (`fix/isolation-violation-producer`) — mechanical isolation check is advisory by design; verifier owns legitimacy. Not a missing producer |
 | 9 | LOW | Intentional asymmetry | `post-run.ts:245` | **Open** (by design) — TDD pauses vs non-TDD hard-fails for the same "review never ran" root cause |
 
 Gating note: #1, #4, #6 only bite when the **non-blocking fix is enabled** (`review.adversarial.nonBlockingFix.enabled`, default `false`).
@@ -243,6 +244,22 @@ blast radius).
 
 **Fix:** confirm the producer. If isolation violations are only stamped by the test-writer/implementer
 isolation gates (not the verifier), document that; otherwise wire `categorizeVerdict` to emit it.
+
+> ✅ **Resolved as documented** (`fix/isolation-violation-producer`). Investigation confirmed
+> `"isolation-violation"` has **no producer** anywhere in `src/` — but this is **by design, not a bug
+> to wire**. The *mechanical* isolation check (`verifyTestWriterIsolation` /
+> `verifyImplementerIsolation`) detects which files changed but **cannot judge legitimacy** (a stub in
+> `src/` may be required); only the verifier can. So `run-phase.ts` logs a mechanical violation as
+> **advisory** — it never flips phase success or stamps the category. Legitimacy is owned by the
+> verifier, which emits `verifier-rejected` for illegitimate test edits (`tdd/verdict.ts`). Wiring the
+> mechanical check to fail runs would punish violations the verifier might deem legitimate (and would
+> add escalation churn after long dormancy), so we deliberately do **not**. The consumer machinery
+> (`deriveTddFailureCategory` passthrough, `routeTddFailure` → escalate + `retryAsLite`, tier → pause,
+> `shouldRollbackTddFailure`) is **not dead** — it stays wired for a verifier- or plugin-driven producer
+> that *can* assess legitimacy; `deriveTddFailureCategory` already passes through
+> `verifierOutput.failureCategory`. Documented at the two key sites (`run-phase.ts` advisory log,
+> `types.ts` `FailureCategory` definition) so it is not re-flagged as a missing producer. No runtime
+> behavior change.
 
 ### 9. TDD vs non-TDD review-incomplete disposition asymmetry — Intentional, documented
 

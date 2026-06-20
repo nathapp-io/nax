@@ -15,7 +15,14 @@ export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
 /** Failure categories for story-run results. */
 export type FailureCategory =
-  /** Test-writer violated file isolation or created no test files */
+  /**
+   * Test-writer violated file isolation or created no test files. Routed (escalate →
+   * retryAsLite → pause) by `routeTddFailure` / `resolveMaxAttemptsOutcome` and rolled back
+   * by `shouldRollbackTddFailure`. NOTE: no producer currently emits this — the *mechanical*
+   * isolation check is advisory only (it cannot judge legitimacy; see run-phase.ts), and the
+   * verifier emits `verifier-rejected` for illegitimate test edits. This category is reserved
+   * for a verifier- or plugin-driven producer that can assess legitimacy. Audit #8.
+   */
   | "isolation-violation"
   /** A session crashed, timed out, or the agent failed to produce usable output */
   | "session-failure"
