@@ -15,7 +15,28 @@ export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
 /** Failure categories for story-run results. */
 export type FailureCategory =
-  /** Test-writer violated file isolation or created no test files */
+  /**
+   * Test-writer violated file isolation or created no test files. Routed (escalate →
+   * retryAsLite → pause) by `routeTddFailure` / `resolveMaxAttemptsOutcome` and rolled back
+   * by `shouldRollbackTddFailure`.
+   *
+   * NO producer currently emits this, by design — and the verifier *structurally cannot*
+   * (Audit #8):
+   *   - The *mechanical* isolation checks (`verifyTestWriterIsolation` /
+   *     `verifyImplementerIsolation`) detect which files changed but cannot judge whether a
+   *     change is legitimate (a stub in src/ may be required), so they stay advisory — see
+   *     run-phase.ts.
+   *   - The verifier reviews the *implementer*, not the test-writer. Its `VerifierVerdict`
+   *     (tdd/verdict.ts) has no field describing test-writer-wrote-source; `testModifications`
+   *     describes the *implementer editing tests*, which correctly maps to `verifier-rejected`.
+   *     Routing that to `isolation-violation` would be wrong — `retryAsLite` *relaxes* isolation
+   *     on retry, the opposite of enforcing "don't edit tests."
+   *
+   * So a real producer would need NEW verifier scope (a verdict field where the verifier judges
+   * the test-writer's isolation legitimacy) or a plugin. The routing/rollback machinery stays
+   * wired for such a producer via `deriveTddFailureCategory`'s `verifierOutput.failureCategory`
+   * passthrough; until then it is dormant, not dead.
+   */
   | "isolation-violation"
   /** A session crashed, timed out, or the agent failed to produce usable output */
   | "session-failure"

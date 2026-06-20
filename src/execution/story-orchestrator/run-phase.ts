@@ -177,12 +177,22 @@ export async function runPhase(
         });
       }
 
+      // Isolation is ADVISORY here, by design. The mechanical check
+      // (verifyTestWriterIsolation / verifyImplementerIsolation) detects which files
+      // changed but cannot judge whether a change is LEGITIMATE — only the verifier can
+      // (e.g. a stub in src/ may be required). So a mechanical violation is logged, not
+      // enforced: it never flips phase success and never produces the `isolation-violation`
+      // FailureCategory. Legitimacy is owned by the verifier, which emits `verifier-rejected`
+      // for illegitimate test modifications (see tdd/verdict.ts). The `isolation-violation`
+      // category's consumer machinery (escalate→retryAsLite, pause, rollback) stays wired for
+      // a verifier- or plugin-driven producer; do not wire this mechanical check to it.
+      // (Audit #8 — resolved as documented, not a missing producer.)
       const isolation = (output as { isolation?: { passed: boolean; violations: string[] } })?.isolation;
       if (isolation) {
         if (isolation.passed) {
           logger?.info("tdd", "Isolation maintained", { storyId: ctx.storyId, role: opName });
         } else {
-          logger?.error("tdd", "Isolation violated", {
+          logger?.error("tdd", "Isolation violated (advisory — verifier judges legitimacy)", {
             storyId: ctx.storyId,
             role: opName,
             violations: isolation.violations,
