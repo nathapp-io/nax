@@ -89,6 +89,41 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true }); // restored
   });
 
+  test("snapshot capture fails → returns ran:false and does NOT throw (audit #1)", async () => {
+    // A non-git workdir or transient git failure makes captureSnapshotRef throw. The pass
+    // must degrade to "did not run" — never propagate the throw into the caller's verdict
+    // path (the module contract). runRectify must not even be invoked (no rollback point).
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const phaseCosts: Record<string, number> = { implementer: 0.1 };
+    let rectifyCalled = false;
+    let rolled = false;
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs,
+        phaseCosts,
+        runRectify: async () => {
+          rectifyCalled = true;
+          return { rectificationExhausted: false };
+        },
+      },
+      {
+        captureSnapshotRef: async () => {
+          throw new Error("git rev-parse HEAD failed in non-blocking-fix snapshot");
+        },
+        rollbackToRef: async () => {
+          rolled = true;
+        },
+      },
+    );
+    expect(res).toEqual({ ran: false, kept: false, restored: false });
+    expect(rectifyCalled).toBe(false); // never started — no safe undo point
+    expect(rolled).toBe(false);
+    // Tree state untouched: no rectify ran, so phaseOutputs/phaseCosts are unchanged.
+    expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true });
+    expect(phaseCosts).toEqual({ implementer: 0.1 });
+  });
+
   test("restored → phaseCosts rolled back to entry snapshot (no inflation from discarded pass)", async () => {
     // The best-effort rectify pass accrues cost into the shared phaseCosts map. On
     // rollback that cost must be reverted alongside phaseOutputs, so a discarded pass

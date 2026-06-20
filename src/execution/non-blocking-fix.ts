@@ -155,7 +155,23 @@ export async function runNonBlockingFix(
   // snapshot. Both are restored together on rollback so a discarded pass leaves no trace.
   const phaseOutputsSnapshot = { ...args.phaseOutputs };
   const phaseCostsSnapshot = { ...args.phaseCosts };
-  const restoreRef = await _deps.captureSnapshotRef(args.workdir, args.storyId);
+
+  // The snapshot ref is the rollback point. If it cannot be captured (non-git workdir,
+  // detached/transient git failure), the best-effort pass has no safe undo, so skip it
+  // entirely rather than throw. This honours the module contract — "never throws into the
+  // caller's verdict path": a snapshot failure must degrade to "nbf did not run", never to
+  // a hard story failure. The capture sits OUTSIDE the rectify try/catch below, so without
+  // this guard its throw would propagate straight through ExecutionPlan.run(). (Audit #1.)
+  let restoreRef: string;
+  try {
+    restoreRef = await _deps.captureSnapshotRef(args.workdir, args.storyId);
+  } catch (err) {
+    logger?.warn("non-blocking-fix", "snapshot capture failed — skipping best-effort pass (no rollback point)", {
+      storyId: args.storyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { ran: false, kept: false, restored: false };
+  }
   const maxAttempts = 1 + args.cfg.regressionAttempts;
 
   let exhausted = false;

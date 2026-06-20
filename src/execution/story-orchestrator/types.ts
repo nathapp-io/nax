@@ -170,7 +170,10 @@ export const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[
   // excluded. Same once-per-story semantics as above.
   "autofix-test-writer": ["lint-check", "typecheck-check", "full-suite-gate", "adversarial-review"],
   // full-suite-rectify edits TEST code to fix failing tests — this legitimately
-  // changes the verifier's verdict, so verifier IS re-judged.
+  // changes the verifier's verdict, so verifier IS re-judged. adversarial-review is
+  // included because it specifically judges test quality/coverage: rewriting tests is
+  // exactly when its prior verdict goes stale, so it must re-run rather than be read as
+  // a pre-rectification pass by the post-rectification resume. (Audit #2.)
   "full-suite-rectify": [
     "lint-check",
     "typecheck-check",
@@ -178,6 +181,7 @@ export const STRATEGY_TO_REVALIDATION_PHASES: Record<string, readonly PhaseKind[
     "verifier",
     "verify-scoped",
     "semantic-review",
+    "adversarial-review",
   ],
 };
 
