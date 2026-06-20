@@ -124,6 +124,15 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
+  it("pauses on dependency-prep (infra prep failure, not tier-recoverable)", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("dependency-prep", false, ctx);
+
+    expect(result.action).toBe("pause");
+    if (result.action === "pause") expect(result.reason).toBe("Three-session TDD requires review");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+
   it("uses custom reviewReason when pausing", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure(undefined, false, ctx, "Custom reason for pause");

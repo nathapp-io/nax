@@ -79,6 +79,14 @@ export interface NonBlockingFixArgs {
   advisoryFindings: readonly Finding[];
   cfg: NonBlockingFixConfig;
   phaseOutputs: Record<string, unknown>;
+  /**
+   * Per-phase cost accumulator. The best-effort rectify pass mutates this in place
+   * (same object the cycle accumulates into). Snapshotted at entry and restored on
+   * rollback so a discarded pass leaves no trace in the result's cost breakdown —
+   * symmetric with `phaseOutputs`. (True total spend still lives in the cost
+   * middleware / CostAggregator, the SSOT; this is the diagnostic per-phase split.)
+   */
+  phaseCosts: Record<string, number>;
   /** Runs the harness; returns true when it exhausted without resolving. */
   runRectify: (maxAttempts: number) => Promise<{ rectificationExhausted?: boolean }>;
 }
@@ -143,8 +151,10 @@ export async function runNonBlockingFix(
     return { ran: false, kept: false, restored: false };
   }
   // Shallow copy is sufficient: phase outputs are replaced wholesale by each stage,
-  // never mutated in place.
+  // never mutated in place. phaseCosts is a flat number map — a shallow copy is a full
+  // snapshot. Both are restored together on rollback so a discarded pass leaves no trace.
   const phaseOutputsSnapshot = { ...args.phaseOutputs };
+  const phaseCostsSnapshot = { ...args.phaseCosts };
   const restoreRef = await _deps.captureSnapshotRef(args.workdir, args.storyId);
   const maxAttempts = 1 + args.cfg.regressionAttempts;
 
@@ -173,7 +183,7 @@ export async function runNonBlockingFix(
           storyId: args.storyId,
           error: err instanceof Error ? err.message : String(err),
         });
-        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, logger);
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
       if (metrics.fileCount > cap.maxFiles || metrics.sourceLineCount > cap.maxLines) {
         logger?.info("non-blocking-fix", "source diff exceeded cap — restoring", {
@@ -182,14 +192,14 @@ export async function runNonBlockingFix(
           sourceLineCount: metrics.sourceLineCount,
           cap,
         });
-        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, logger);
+        return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
       }
     }
     logger?.info("non-blocking-fix", "best-effort fix kept", { storyId: args.storyId });
     return { ran: true, kept: true, restored: false };
   }
 
-  return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, logger);
+  return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
 }
 
 async function restoreToSnapshot(
@@ -197,14 +207,19 @@ async function restoreToSnapshot(
   _deps: NonBlockingFixDeps,
   restoreRef: string,
   phaseOutputsSnapshot: Record<string, unknown>,
+  phaseCostsSnapshot: Record<string, number>,
   logger: ReturnType<typeof getSafeLogger>,
 ): Promise<NonBlockingFixResult> {
   await _deps.rollbackToRef(args.workdir, restoreRef);
-  // In-place restore required: ExecutionPlan.run holds a direct reference to phaseOutputs;
-  // returning a new object would leave the caller with stale gate/verifier results from
-  // the failed best-effort pass. Intentional exception to the immutability rule.
+  // In-place restore required: ExecutionPlan.run holds a direct reference to phaseOutputs
+  // and phaseCosts; returning new objects would leave the caller with stale gate/verifier
+  // results and inflated costs from the failed best-effort pass. Intentional exception to
+  // the immutability rule. Cost is restored alongside outputs so the result's per-phase
+  // breakdown stays symmetric with its outputs after a discarded pass.
   for (const key of Object.keys(args.phaseOutputs)) delete args.phaseOutputs[key];
   Object.assign(args.phaseOutputs, phaseOutputsSnapshot);
+  for (const key of Object.keys(args.phaseCosts)) delete args.phaseCosts[key];
+  Object.assign(args.phaseCosts, phaseCostsSnapshot);
   logger?.info("non-blocking-fix", "best-effort fix exhausted — restored to adversarial-passed", {
     storyId: args.storyId,
   });
