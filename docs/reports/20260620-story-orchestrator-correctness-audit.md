@@ -260,6 +260,17 @@ isolation gates (not the verifier), document that; otherwise wire `categorizeVer
 > `verifierOutput.failureCategory`. Documented at the two key sites (`run-phase.ts` advisory log,
 > `types.ts` `FailureCategory` definition) so it is not re-flagged as a missing producer. No runtime
 > behavior change.
+>
+> **Follow-up — can the verifier produce it?** Investigated whether `categorizeVerdict` could emit
+> `isolation-violation` instead of folding cases into `verifier-rejected`. It **structurally cannot**:
+> the `VerifierVerdict` (`tdd/verdict.ts`) reviews the *implementer*, not the test-writer, and has no
+> field describing test-writer-wrote-source. Its only isolation-adjacent signal, `testModifications`
+> (the implementer editing tests), correctly maps to `verifier-rejected` — routing it to
+> `isolation-violation` would be wrong, because that category escalates with `retryAsLite=true`, which
+> *relaxes* isolation on retry (the opposite of enforcing "don't edit tests"). A genuine producer would
+> require **new verifier scope** — a verdict field where the verifier judges the test-writer's isolation
+> legitimacy — which is a feature well beyond this LOW item. Conclusion: the category is producer-less by
+> design *and structural necessity*, not oversight. Left as documented.
 
 ### 9. TDD vs non-TDD review-incomplete disposition asymmetry — Intentional, documented
 
