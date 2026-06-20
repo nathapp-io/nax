@@ -74,3 +74,7 @@ export { SetupPromptBuilder } from "./builders/setup-builder";
 // Wave 1 composition utilities — slot-ordered assembly and serialisation.
 export { composeSections, join } from "./compose";
 export type { ComposeInput } from "./compose";
+
+// Decompose prompt builder — prompt assembly for nax plan / decompose operations.
+export { buildDecomposePromptSync, buildDecomposePromptAsync } from "./builders/decompose-builder";
+export type { DecomposePromptInput } from "./builders/decompose-builder";

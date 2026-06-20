@@ -1,6 +1,7 @@
 import { existsSync, symlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { validateStoryId } from "../prd/validate";
 import { spawn } from "../utils/bun-deps";
@@ -116,17 +117,38 @@ export class WorktreeManager {
 
       const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
       if (exitCode !== 0) {
-        throw new Error(`Failed to create worktree: ${stderr || "unknown error"}`);
+        throw new NaxError(`Failed to create worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
+          stage: "worktree",
+          storyId,
+          projectRoot,
+          stderr,
+        });
       }
     } catch (error) {
+      if (error instanceof NaxError) {
+        throw error;
+      }
       if (error instanceof Error) {
         // Enhance error messages for common scenarios
         if (error.message.includes("not a git repository")) {
-          throw new Error(`Not a git repository: ${projectRoot}`);
+          throw new NaxError(`Not a git repository: ${projectRoot}`, "WORKTREE_ERROR", {
+            stage: "worktree",
+            storyId,
+            projectRoot,
+          });
         }
-        throw error;
+        throw new NaxError(error.message, "WORKTREE_ERROR", {
+          stage: "worktree",
+          storyId,
+          projectRoot,
+          cause: error,
+        });
       }
-      throw new Error(`Failed to create worktree: ${String(error)}`);
+      throw new NaxError(`Failed to create worktree: ${String(error)}`, "WORKTREE_ERROR", {
+        stage: "worktree",
+        storyId,
+        projectRoot,
+      });
     }
 
     // Symlink .env if it exists
@@ -138,7 +160,12 @@ export class WorktreeManager {
       } catch (error) {
         // Clean up worktree if symlinking fails
         await this.remove(projectRoot, storyId);
-        throw new Error(`Failed to symlink .env: ${errorMessage(error)}`);
+        throw new NaxError(`Failed to symlink .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
+          stage: "worktree",
+          storyId,
+          envSource,
+          envTarget,
+        });
       }
     }
   }
@@ -168,15 +195,29 @@ export class WorktreeManager {
           stderr.includes("no such worktree") ||
           stderr.includes("is not a working tree")
         ) {
-          throw new Error(`Worktree not found: ${worktreePath}`);
+          throw new NaxError(`Worktree not found: ${worktreePath}`, "WORKTREE_ERROR", {
+            stage: "worktree",
+            storyId,
+            worktreePath,
+          });
         }
-        throw new Error(`Failed to remove worktree: ${stderr || "unknown error"}`);
+        throw new NaxError(`Failed to remove worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
+          stage: "worktree",
+          storyId,
+          worktreePath,
+          stderr,
+        });
       }
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof NaxError) {
         throw error;
       }
-      throw new Error(`Failed to remove worktree: ${String(error)}`);
+      throw new NaxError(error instanceof Error ? error.message : String(error), "WORKTREE_ERROR", {
+        stage: "worktree",
+        storyId,
+        worktreePath,
+        cause: error instanceof Error ? error : undefined,
+      });
     }
 
     // Delete branch
@@ -221,15 +262,23 @@ export class WorktreeManager {
         new Response(proc.stdout).text(),
       ]);
       if (exitCode !== 0) {
-        throw new Error(`Failed to list worktrees: ${stderr || "unknown error"}`);
+        throw new NaxError(`Failed to list worktrees: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
+          stage: "worktree",
+          projectRoot,
+          stderr,
+        });
       }
 
       return this.parseWorktreeList(stdout);
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof NaxError) {
         throw error;
       }
-      throw new Error(`Failed to list worktrees: ${String(error)}`);
+      throw new NaxError(error instanceof Error ? error.message : String(error), "WORKTREE_ERROR", {
+        stage: "worktree",
+        projectRoot,
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   }
 

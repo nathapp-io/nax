@@ -102,7 +102,7 @@ export const autoApproveOp: CompleteOperation<AutoApproveInput, AutoApproveOutpu
       .build();
 
     return {
-      role: { id: "role", content: "You are an AI orchestration decision-maker.", overridable: false },
+      role: { id: "role", content: OneShotPromptBuilder.autoApproverRoleContent(), overridable: false },
       task: { id: "task", content: prompt, overridable: false },
     };
   },

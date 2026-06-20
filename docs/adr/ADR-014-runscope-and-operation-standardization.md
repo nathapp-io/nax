@@ -7,7 +7,7 @@
 **Related:** #523 (fallback state divergence across orphan AgentManagers — unblocked by this ADR)
 **Superseded-by:** ADR-018 (Runtime Layering with Session Runners)
 
-> **Tombstone (2026-06-10):** This is the *second* ADR-014 draft filed on 2026-04-23 (the parallel proposal). Both share the ADR-014 number and were filed as Reject on the same day. This file covers RunScope Composition + Prompt Middleware; the sibling `ADR-014-runscope-and-middleware.md` covers Agent Middleware + Orphan Consolidation. Both were superseded by ADR-017 → ADR-018. The `Superseded-by` field in the original header incorrectly pointed to "ADR-014 (RunScope and Middleware)" — corrected here to ADR-018.
+> **Tombstone (2026-06-10):** This is the *second* ADR-014 draft filed on 2026-04-23 (the parallel proposal). Both share the ADR-014 number and were filed as Reject on the same day. This file covers RunScope Composition + Prompt Middleware; the sibling `ADR-014b-runscope-and-middleware-superseded.md` covers Agent Middleware + Orphan Consolidation. Both were superseded by ADR-017 → ADR-018. The `Superseded-by` field in the original header incorrectly pointed to "ADR-014 (RunScope and Middleware)" — corrected here to ADR-018.
 ---
 
 ## Context

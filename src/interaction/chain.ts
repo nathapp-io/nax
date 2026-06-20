@@ -4,6 +4,7 @@
  * Manages plugin priority, fallback cascade, and request routing.
  */
 
+import { NaxError } from "../errors";
 import type { InteractionFallback, InteractionPlugin, InteractionRequest, InteractionResponse } from "./types";
 
 /** Plugin chain entry */
@@ -52,7 +53,7 @@ export class InteractionChain {
   async send(request: InteractionRequest): Promise<void> {
     const plugin = this.getPrimary();
     if (!plugin) {
-      throw new Error("No interaction plugin registered");
+      throw new NaxError("No interaction plugin registered", "INTERACTION_ERROR", { stage: "run" });
     }
     await plugin.send(request);
   }
@@ -62,7 +63,7 @@ export class InteractionChain {
    */
   async receive(requestId: string, timeout?: number): Promise<InteractionResponse> {
     if (this.plugins.length === 0) {
-      throw new Error("No interaction plugin registered");
+      throw new NaxError("No interaction plugin registered", "INTERACTION_ERROR", { stage: "run", requestId });
     }
 
     const timeoutMs = timeout ?? this.config.defaultTimeout;
@@ -82,7 +83,11 @@ export class InteractionChain {
 
     // All plugins failed - throw with all error messages
     const errorMessages = errors.map((e) => e.message).join("; ");
-    throw new Error(`All interaction plugins failed: ${errorMessages}`);
+    throw new NaxError(`All interaction plugins failed: ${errorMessages}`, "INTERACTION_ERROR", {
+      stage: "run",
+      requestId,
+      pluginCount: this.plugins.length,
+    });
   }
 
   /**

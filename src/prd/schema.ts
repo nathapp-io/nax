@@ -6,6 +6,7 @@
 
 import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
+import { NaxError } from "../errors";
 import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
 import type { ContextFileEntry, PRD, UserStory } from "./types";
@@ -54,7 +55,10 @@ function normalizeComplexity(raw: string): Complexity | null {
  */
 function validateStory(raw: unknown, index: number, allIds: Set<string>): UserStory {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    throw new Error(`[schema] story[${index}] must be an object`);
+    throw new NaxError(`[schema] story[${index}] must be an object`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      index,
+    });
   }
 
   const s = raw as Record<string, unknown>;
@@ -62,10 +66,16 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   // id
   const rawId = s.id;
   if (rawId === undefined || rawId === null || rawId === "") {
-    throw new Error(`[schema] story[${index}].id is required and must be non-empty`);
+    throw new NaxError(`[schema] story[${index}].id is required and must be non-empty`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      index,
+    });
   }
   if (typeof rawId !== "string") {
-    throw new Error(`[schema] story[${index}].id must be a string`);
+    throw new NaxError(`[schema] story[${index}].id must be a string`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      index,
+    });
   }
   const id = normalizeStoryId(rawId);
   validateStoryId(id);
@@ -73,23 +83,38 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   // title
   const title = s.title;
   if (!title || typeof title !== "string" || title.trim() === "") {
-    throw new Error(`[schema] story[${index}].title is required and must be non-empty`);
+    throw new NaxError(`[schema] story[${index}].title is required and must be non-empty`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      index,
+    });
   }
 
   // description
   const description = s.description;
   if (!description || typeof description !== "string" || description.trim() === "") {
-    throw new Error(`[schema] story[${index}].description is required and must be non-empty`);
+    throw new NaxError(
+      `[schema] story[${index}].description is required and must be non-empty`,
+      "SCHEMA_VALIDATION_FAILED",
+      { stage: "schema", index },
+    );
   }
 
   // acceptanceCriteria
   const ac = s.acceptanceCriteria;
   if (!Array.isArray(ac) || ac.length === 0) {
-    throw new Error(`[schema] story[${index}].acceptanceCriteria is required and must be a non-empty array`);
+    throw new NaxError(
+      `[schema] story[${index}].acceptanceCriteria is required and must be a non-empty array`,
+      "SCHEMA_VALIDATION_FAILED",
+      { stage: "schema", index },
+    );
   }
   for (let i = 0; i < ac.length; i++) {
     if (typeof ac[i] !== "string") {
-      throw new Error(`[schema] story[${index}].acceptanceCriteria[${i}] must be a string`);
+      throw new NaxError(
+        `[schema] story[${index}].acceptanceCriteria[${i}] must be a string`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index, acIndex: i },
+      );
     }
   }
 
@@ -98,7 +123,11 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   let suggestedCriteria: string[] | undefined;
   if (s.suggestedCriteria !== undefined && s.suggestedCriteria !== null) {
     if (!Array.isArray(s.suggestedCriteria)) {
-      throw new Error(`[schema] story[${index}].suggestedCriteria must be an array when present`);
+      throw new NaxError(
+        `[schema] story[${index}].suggestedCriteria must be an array when present`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index },
+      );
     }
     if (s.suggestedCriteria.length > 0) {
       const coerced: string[] = [];
@@ -114,7 +143,11 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
           // LLM emitted {criterion, rationale} — extract the string criterion only
           coerced.push((item as Record<string, unknown>).criterion as string);
         } else {
-          throw new Error(`[schema] story[${index}].suggestedCriteria[${i}] must be a string`);
+          throw new NaxError(
+            `[schema] story[${index}].suggestedCriteria[${i}] must be a string`,
+            "SCHEMA_VALIDATION_FAILED",
+            { stage: "schema", index, scIndex: i },
+          );
         }
       }
       suggestedCriteria = coerced;
@@ -126,17 +159,24 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   const routing = typeof s.routing === "object" && s.routing !== null ? (s.routing as Record<string, unknown>) : {};
   const rawComplexity = routing.complexity ?? s.complexity;
   if (rawComplexity === undefined || rawComplexity === null) {
-    throw new Error(
+    throw new NaxError(
       `[schema] story[${index}] missing complexity. Set routing.complexity to one of: ${VALID_COMPLEXITY.join(", ")}`,
+      "SCHEMA_VALIDATION_FAILED",
+      { stage: "schema", index },
     );
   }
   if (typeof rawComplexity !== "string") {
-    throw new Error(`[schema] story[${index}].routing.complexity must be a string`);
+    throw new NaxError(`[schema] story[${index}].routing.complexity must be a string`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      index,
+    });
   }
   const complexity = normalizeComplexity(rawComplexity);
   if (complexity === null) {
-    throw new Error(
+    throw new NaxError(
       `[schema] story[${index}].routing.complexity "${rawComplexity}" is invalid. Valid values: ${VALID_COMPLEXITY.join(", ")}`,
+      "SCHEMA_VALIDATION_FAILED",
+      { stage: "schema", index, rawComplexity },
     );
   }
 
@@ -150,8 +190,10 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   const rawJustification = routing.noTestJustification ?? s.noTestJustification;
   if (testStrategy === "no-test") {
     if (!rawJustification || typeof rawJustification !== "string" || (rawJustification as string).trim() === "") {
-      throw new Error(
+      throw new NaxError(
         `[schema] story[${index}].routing.noTestJustification is required when testStrategy is "no-test"`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index },
       );
     }
   }
@@ -173,7 +215,11 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   // Validate dependency references (against already-known IDs)
   for (const dep of dependencies) {
     if (!allIds.has(dep)) {
-      throw new Error(`[schema] story[${index}].dependencies references unknown story ID "${dep}"`);
+      throw new NaxError(
+        `[schema] story[${index}].dependencies references unknown story ID "${dep}"`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index, dep },
+      );
     }
   }
 
@@ -186,13 +232,24 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   let workdir: string | undefined;
   if (rawWorkdir !== undefined && rawWorkdir !== null) {
     if (typeof rawWorkdir !== "string") {
-      throw new Error(`[schema] story[${index}].workdir must be a string`);
+      throw new NaxError(`[schema] story[${index}].workdir must be a string`, "SCHEMA_VALIDATION_FAILED", {
+        stage: "schema",
+        index,
+      });
     }
     if (rawWorkdir.startsWith("/")) {
-      throw new Error(`[schema] story[${index}].workdir must be relative (no leading /): "${rawWorkdir}"`);
+      throw new NaxError(
+        `[schema] story[${index}].workdir must be relative (no leading /): "${rawWorkdir}"`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index, rawWorkdir },
+      );
     }
     if (rawWorkdir.includes("..")) {
-      throw new Error(`[schema] story[${index}].workdir must not contain '..': "${rawWorkdir}"`);
+      throw new NaxError(
+        `[schema] story[${index}].workdir must not contain '..': "${rawWorkdir}"`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index, rawWorkdir },
+      );
     }
     workdir = rawWorkdir;
   }
@@ -205,10 +262,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
       if (typeof f === "string") {
         if (f.trim() === "") continue;
         if (f.startsWith("/")) {
-          throw new Error(`[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${f}"`);
+          throw new NaxError(
+            `[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${f}"`,
+            "SCHEMA_VALIDATION_FAILED",
+            { stage: "schema", index, filePath: f },
+          );
         }
         if (f.includes("..")) {
-          throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${f}"`);
+          throw new NaxError(
+            `[schema] story[${index}].contextFiles entry must not contain '..': "${f}"`,
+            "SCHEMA_VALIDATION_FAILED",
+            { stage: "schema", index, filePath: f },
+          );
         }
         contextFiles.push(f);
       } else if (typeof f === "object" && f !== null && typeof (f as Record<string, unknown>).path === "string") {
@@ -216,12 +281,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
         const path = (obj.path as string).trim();
         if (path === "") continue;
         if (path.startsWith("/")) {
-          throw new Error(
+          throw new NaxError(
             `[schema] story[${index}].contextFiles entry must be relative (no absolute paths): "${path}"`,
+            "SCHEMA_VALIDATION_FAILED",
+            { stage: "schema", index, filePath: path },
           );
         }
         if (path.includes("..")) {
-          throw new Error(`[schema] story[${index}].contextFiles entry must not contain '..': "${path}"`);
+          throw new NaxError(
+            `[schema] story[${index}].contextFiles entry must not contain '..': "${path}"`,
+            "SCHEMA_VALIDATION_FAILED",
+            { stage: "schema", index, filePath: path },
+          );
         }
         const entry: ContextFileEntry = { path };
         if (typeof obj.factId === "string" && obj.factId.length > 0) {
@@ -244,12 +315,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
       const trimmed = f.trim();
       if (trimmed === "") continue;
       if (trimmed.startsWith("/")) {
-        throw new Error(
+        throw new NaxError(
           `[schema] story[${index}].expectedFiles entry must be relative (no absolute paths): "${trimmed}"`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "schema", index, filePath: trimmed },
         );
       }
       if (trimmed.includes("..")) {
-        throw new Error(`[schema] story[${index}].expectedFiles entry must not contain '..': "${trimmed}"`);
+        throw new NaxError(
+          `[schema] story[${index}].expectedFiles entry must not contain '..': "${trimmed}"`,
+          "SCHEMA_VALIDATION_FAILED",
+          { stage: "schema", index, filePath: trimmed },
+        );
       }
       expectedFiles.push(trimmed);
     }
@@ -262,8 +339,10 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   if (s.verifiedBy !== undefined && s.verifiedBy !== null) {
     const vb = s.verifiedBy as Record<string, unknown>;
     if (typeof vb.kind !== "string" || !(VALID_VERIFIED_BY_KINDS as readonly string[]).includes(vb.kind)) {
-      throw new Error(
+      throw new NaxError(
         `[schema] story[${index}].verifiedBy.kind "${vb.kind}" is invalid. Valid values: ${VALID_VERIFIED_BY_KINDS.join(", ")}`,
+        "SCHEMA_VALIDATION_FAILED",
+        { stage: "schema", index, kind: vb.kind },
       );
     }
     verifiedBy = {
@@ -372,7 +451,10 @@ function parseRawString(text: string): unknown {
     return JSON.parse(sanitized);
   } catch (err) {
     const parseErr = err as SyntaxError;
-    throw new Error(`[schema] Failed to parse JSON: ${parseErr.message}`, { cause: parseErr });
+    throw new NaxError(`[schema] Failed to parse JSON: ${parseErr.message}`, "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+      cause: parseErr,
+    });
   }
 }
 
@@ -389,7 +471,7 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
   const parsed: unknown = typeof raw === "string" ? parseRawString(raw) : raw;
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("[schema] PRD output must be a JSON object");
+    throw new NaxError("[schema] PRD output must be a JSON object", "SCHEMA_VALIDATION_FAILED", { stage: "schema" });
   }
 
   const obj = parsed as Record<string, unknown>;
@@ -397,7 +479,9 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
   // Validate top-level userStories
   const rawStories = obj.userStories;
   if (!Array.isArray(rawStories) || rawStories.length === 0) {
-    throw new Error("[schema] userStories is required and must be a non-empty array");
+    throw new NaxError("[schema] userStories is required and must be a non-empty array", "SCHEMA_VALIDATION_FAILED", {
+      stage: "schema",
+    });
   }
 
   // First pass: collect all story IDs (after normalization) for dependency validation

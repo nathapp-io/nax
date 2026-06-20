@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
-import { buildDecomposePromptAsync } from "../../../src/agents/shared/decompose-prompt";
+import { buildDecomposePromptAsync } from "@/prompts";
 import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { NaxError } from "../../../src/errors";

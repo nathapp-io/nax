@@ -11,6 +11,7 @@
  * See: docs/specs/acp-session-mode.md
  */
 
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { ProtocolIds } from "@/runtime/protocol-types";
 import type { TokenUsage } from "../cost";
@@ -182,7 +183,10 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error(`complete() timed out after ${timeoutMs}ms`)), timeoutMs);
+          timeoutId = setTimeout(
+            () => reject(new NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs })),
+            timeoutMs,
+          );
         });
         timeoutPromise.catch(() => {});
 

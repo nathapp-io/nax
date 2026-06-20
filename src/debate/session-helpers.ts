@@ -146,6 +146,7 @@ export async function resolveOutcome(
     logger?.warn(
       "debate",
       "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",
+      { storyId },
     );
   }
 

@@ -7,13 +7,6 @@
 
 export class PatchPromptBuilder {
   build(winnerOutput: string, deltas: string[]): string {
-    // TODO: Implement patch prompt generation
-    // Build a prompt that:
-    // 1. Presents the winner proposal output
-    // 2. Lists distinct ACs from runner-up
-    // 3. Asks agent to patch winner with insights from runner-up
-    // 4. Limits to maxDeltas distinct criteria
-
     const deltaList = deltas.map((d, i) => `${i + 1}. ${d}`).join("\n");
 
     return `You are enhancing a proposal by incorporating insights from a runner-up variant.

@@ -103,7 +103,7 @@ Project rule: **600-line hard limit (source), 800 (test)** — "split before add
 - **CLAUDE.md is stale on the agent adapter.** It documents two protocol modes ("CLI and ACP") and a `src/agents/claude/` directory. **Verified: that directory does not exist** — the registry hard-codes `protocol: "acp"` (`src/agents/registry.ts:50`) and the config schema only accepts `"acp"`. Update the "Agent Adapter & LLM Calls" section and the `src/agents/claude/` row in the directory table.
 - **ADR hygiene:**
   - Missing **ADR-001–004** (sequence starts at 005) with no explanation.
-  - **Duplicate ADR-014**: `ADR-014-runscope-and-middleware.md` and `ADR-014-runscope-and-operation-standardization.md` (both rejected, superseded by ADR-018) — collapse to one with a historical note.
+  - **Duplicate ADR-014**: `ADR-014b-runscope-and-middleware-superseded.md` and `ADR-014-runscope-and-operation-standardization.md` (both rejected, superseded by ADR-018) — collapsed with a historical note.
   - **ADR-006 / ADR-009** still read as "proposed" though their decisions are in force (ADR-009's test-pattern SSOT is implemented and its tracked violations are resolved — see §6). Finalize their status.
 - **Architecture doc coverage:** 15+ `src/` subsystems have no dedicated architecture doc — notably `agents/`, `config/`, `runtime/`, `logger`/`log-format`, `cli/`, `commands/`, `optimizer/`, `plan/`, `precheck/`, `project/`. Consider one "remaining subsystems" overview rather than 15 stubs.
 - **Index gap:** ~~`docs/architecture/spec-to-prd-pipeline.md` exists but isn't linked from `ARCHITECTURE.md`~~ — **RESOLVED**: linked in ARCHITECTURE.md index (2026-06-19).

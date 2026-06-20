@@ -6,9 +6,9 @@
  */
 
 import { join } from "node:path";
+import { buildDecomposePromptAsync } from "@/prompts";
 import { resolveDefaultAgent } from "../agents";
 import { parseDecomposeOutput } from "../agents/shared/decompose";
-import { buildDecomposePromptAsync } from "../agents/shared/decompose-prompt";
 import type { DecomposedStory } from "../agents/shared/types-extended";
 import type { NaxConfig } from "../config";
 import type { DebateStageConfig } from "../debate";

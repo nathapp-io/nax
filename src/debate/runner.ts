@@ -66,6 +66,7 @@ export class DebateRunner {
       logger?.warn(
         "debate",
         `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`,
+        { storyId: this.ctx.storyId },
       );
       return this.runPanelOneShot(prompt);
     }
@@ -126,7 +127,9 @@ export class DebateRunner {
       const resolved: ResolvedDebater[] = [];
       for (const debater of debaters) {
         if (!agentManager.getAgent(debater.agent)) {
-          logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+          logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`, {
+            storyId: this.ctx.storyId,
+          });
           continue;
         }
         resolved.push({ debater, agentName: debater.agent });

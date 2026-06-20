@@ -41,12 +41,14 @@ export const constitutionStage: PipelineStage = {
       ctx.constitution = result;
 
       logger.debug("constitution", "Constitution loaded", {
+        storyId: ctx.story.id,
         tokens: result.tokens,
         truncated: result.truncated,
       });
 
       if (result.truncated) {
         logger.warn("constitution", "Constitution truncated", {
+          storyId: ctx.story.id,
           originalTokens: result.originalTokens,
           tokens: result.tokens,
           maxTokens: ctx.config.constitution.maxTokens,
@@ -55,7 +57,7 @@ export const constitutionStage: PipelineStage = {
     } else {
       // SOFT FAILURE: Constitution missing or failed to load — continue without it
       // This is acceptable because constitution is optional project governance
-      logger.debug("constitution", "Constitution not found or failed to load");
+      logger.debug("constitution", "Constitution not found or failed to load", { storyId: ctx.story.id });
     }
 
     return { action: "continue" };

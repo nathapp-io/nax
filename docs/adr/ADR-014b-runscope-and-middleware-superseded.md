@@ -1,4 +1,6 @@
-# ADR-014: RunScope, Agent Middleware, and Orphan Consolidation
+# ADR-014b: RunScope, Agent Middleware, and Orphan Consolidation (Superseded)
+
+> **SUPERSEDED** by `ADR-014-runscope-and-operation-standardization.md`.
 
 **Status:** Reject — see ADR-018 (Runtime Layering) for the accepted design
 **Date:** 2026-04-23
