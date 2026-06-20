@@ -23,14 +23,16 @@ const FAIL_LINT: QualityCommandResult = {
 };
 
 describe("E2E: post-rectification resume", () => {
-  test("review-incomplete: carve-out cannot launder a story whose adversarial-review never ran (US-002)", async () => {
-    // The full-suite-gate (canonical pos 4) fails persistently. full-suite-rectify
-    // re-judges the verifier, which PASSES — so the verifier-SSOT carve-out exempts the
-    // (still-red) gate from success aggregation. The resume then walks the canonical order
-    // and reaches semantic-review (pos 9), but breaks again at the still-red gate before
-    // adversarial-review (pos 10) can run. The completeness guard (US-002) refuses to let
-    // the carve-out pass a story that was never adversarially reviewed: it forces
-    // success=false and surfaces the never-run review for escalation routing.
+  test("carve-out PASS path: full-suite-rectify re-runs BOTH reviews, so an exempted red gate is fully judged (audit #2)", async () => {
+    // The full-suite-gate (canonical pos 4) fails persistently with the SAME finding.
+    // full-suite-rectify re-judges the verifier, which PASSES — so the verifier-SSOT
+    // carve-out treats the still-red gate as a pre-existing/unrelated regression and
+    // exempts it from success aggregation. Crucially, since audit #2, full-suite-rectify's
+    // revalidation set includes BOTH semantic- AND adversarial-review, so the code is fully
+    // review-judged before the carve-out lets it pass. The completeness guard
+    // (missingRequiredReviewPhases) therefore stays empty and the story passes legitimately
+    // — no longer the "silent pass without adversarial judgment" US-002 gap, which #2 closes
+    // at the source. This also exercises the verifier-SSOT carve-out PASS path end-to-end.
     const verifier = () => ({ output: PASSING_VERDICT });
     const { result, phaseLog } = await runOrchestratorE2E({
       strategy: "three-session-tdd",
@@ -51,14 +53,16 @@ describe("E2E: post-rectification resume", () => {
       },
     });
 
-    // Despite the verifier-SSOT carve-out exempting the red gate, the story cannot pass.
-    expect(result.success).toBe(false);
-    expect(result.missingRequiredReviewPhases).toBeDefined();
-    expect(result.missingRequiredReviewPhases).toContain("adversarial-review");
-    // The resume reached semantic-review (it ran) but never adversarial-review — that gap
-    // is precisely what the US-002 guard catches.
+    // The gate is genuinely red, but the verifier-SSOT carve-out exempts it.
+    const gateOut = result.phaseOutputs["full-suite-gate"] as { success?: boolean } | undefined;
+    expect(gateOut?.success).toBe(false);
+    // Story passes: gate exempted AND every configured review ran and passed.
+    expect(result.success).toBe(true);
+    expect(result.missingRequiredReviewPhases).toBeUndefined();
+    // audit #2: full-suite-rectify edits tests, so adversarial-review re-runs (its prior
+    // verdict would be stale). Both reviews appear in the log.
     expect(phaseLog).toContain("semantic-review");
-    expect(phaseLog).not.toContain("adversarial-review");
+    expect(phaseLog).toContain("adversarial-review");
   });
 
   test("mechanical-only resume: exhausted lint-only findings still run the reviews", async () => {

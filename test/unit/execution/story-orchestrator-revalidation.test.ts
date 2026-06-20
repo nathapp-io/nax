@@ -344,11 +344,12 @@ describe("phasesToRevalidate — AC3.3: mechanical-lintfix → only lint-check",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC3.4: strategiesRun=["full-suite-rectify"] → lint, typecheck, gate, scoped, semantic; NO adversarial
+// AC3.4: strategiesRun=["full-suite-rectify"] → lint, typecheck, gate, verifier, scoped,
+// semantic AND adversarial (it edits tests → both reviews re-judge). (Audit #2.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("phasesToRevalidate — AC3.4: full-suite-rectify → verifier included, adversarial excluded", () => {
-  test("AC3.4: strategiesRun=['full-suite-rectify'] → lint, typecheck, gate, verifier, scoped, semantic called; adversarial excluded", async () => {
+describe("phasesToRevalidate — AC3.4: full-suite-rectify → verifier + both reviews included", () => {
+  test("AC3.4: strategiesRun=['full-suite-rectify'] → lint, typecheck, gate, verifier, scoped, semantic, adversarial all called", async () => {
     const ctx = makeCtx();
     const { capturedCycle, capturedCtx, getCalledOpsInValidate } = await captureAndSetupValidate(ctx);
 
@@ -369,8 +370,10 @@ describe("phasesToRevalidate — AC3.4: full-suite-rectify → verifier included
     // full-suite-rectify is a code-editing strategy — verifier re-judges the TDD verdict
     expect(called.has("verifier")).toBe(true);
 
-    // adversarial-review is NOT in full-suite-rectify's revalidation set
-    expect(called.has("adversarial-review")).toBe(false);
+    // adversarial-review IS now in full-suite-rectify's revalidation set: this strategy
+    // edits TEST code, which is exactly what adversarial-review judges, so its prior
+    // verdict is stale and must re-run rather than be read as a pre-rectification pass.
+    expect(called.has("adversarial-review")).toBe(true);
   });
 });
 

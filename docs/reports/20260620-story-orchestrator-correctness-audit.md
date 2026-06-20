@@ -1,10 +1,12 @@
 # StoryOrchestrator Correctness Audit — 2026-06-20
 
-> **Update (2026-06-20):** the two safe "should-fix" robustness items have landed on
-> `fix/story-orchestrator-should-fix` — **#5** (`routeTddFailure` exhaustiveness guard) and **#4**
-> (`phaseCosts` restored on nbf rollback), each with regression tests. **#7** was re-examined during
-> implementation and intentionally left unchanged (the `undefined → pause` fallback is correct; see §7).
-> The must-fix items **#1, #2, #3** remain open.
+> **Update (2026-06-20):** resolution progress —
+> - **#5** (`routeTddFailure` exhaustiveness guard) + **#4** (`phaseCosts` restored on nbf rollback):
+>   landed on `fix/story-orchestrator-should-fix` (merged, #1267).
+> - **#1** (nbf snapshot throws into the verdict path) + **#2** (`full-suite-rectify` re-runs
+>   `adversarial-review`): landed on `fix/story-orchestrator-nbf-snapshot-adversarial-staleness`.
+> - **#7** re-examined and intentionally left unchanged (the `undefined → pause` fallback is correct; see §7).
+> - **#3** (staleness guard blind to keyless gate failures) remains the one open must-fix item.
 
 > Scope: behavioral correctness of the per-story execution flow (`src/execution/story-orchestrator/`)
 > and its collaborators — rectification, resume loops, the verifier-SSOT carve-out + staleness guard,
@@ -25,8 +27,8 @@ guard's representational assumptions**. The highest-value fixes are #1, #2, and 
 
 | # | Severity | Type | Location | Status |
 |---|----------|------|----------|--------|
-| 1 | MEDIUM–HIGH | Confirmed bug | `non-blocking-fix.ts:148` | **Open** — nbf snapshot capture throws into the verdict path (violates documented contract); reproduced empirically |
-| 2 | MEDIUM | Confirmed bug | `story-orchestrator/types.ts:174-181` | **Open** — `full-suite-rectify` edits tests but never re-runs `adversarial-review` → stale verdict |
+| 1 | MEDIUM–HIGH | Confirmed bug | `non-blocking-fix.ts:158` | ✅ **Fixed** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`) — snapshot capture wrapped; failure degrades to `ran:false`, never throws |
+| 2 | MEDIUM | Confirmed bug | `story-orchestrator/types.ts:174-182` | ✅ **Fixed** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`) — `adversarial-review` added to `full-suite-rectify` revalidation set |
 | 3 | HIGH impact / conditional reach | Design weakness | `phase-eval.ts:110`, `full-suite-gate.ts` (timeout/exec-fail) | **Open** — staleness guard blind to keyless gate failures → a red suite *can* be exempted |
 | 4 | LOW–MEDIUM | Confirmed bug (metrics) | `non-blocking-fix.ts:195-217` | ✅ **Fixed** (`fix/story-orchestrator-should-fix`) — `phaseCosts` snapshotted at entry, restored on rollback |
 | 5 | MEDIUM | Design gap | `pipeline/stages/execution-helpers.ts:64` | ✅ **Fixed** (`fix/story-orchestrator-should-fix`) — `routeTddFailure` now exhaustive (`satisfies never`) |
@@ -68,6 +70,13 @@ non-git temp workdir (the e2e PR works around it by stubbing the git deps).
 `{ ran: false, kept: false, restored: false }` (treat an unsnapshottable tree as "cannot run nbf",
 never as a story failure).
 
+> ✅ **Resolved** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`). `captureSnapshotRef`
+> is now wrapped in its own try/catch: a failure logs a warning and returns
+> `{ ran: false, kept: false, restored: false }` — `runRectify` is never invoked (no rollback point),
+> so the tree and `phaseOutputs`/`phaseCosts` are untouched. The "never throws into the caller's
+> verdict path" contract now holds for non-git / git-flaky workdirs. Regression test:
+> `non-blocking-fix.test.ts` — "snapshot capture fails → returns ran:false and does NOT throw".
+
 ### 2. `full-suite-rectify` edits tests but never re-runs adversarial-review — Confirmed bug
 
 ```ts
@@ -83,6 +92,16 @@ the pre-rectification adversarial verdict is read as current against rewritten t
 
 **Fix:** add `"adversarial-review"` to the `full-suite-rectify` revalidation set. (Alternative:
 force-rerun reviews in the resume whenever rectification edited tests, instead of trusting a prior pass.)
+
+> ✅ **Resolved** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`). `adversarial-review`
+> added to `STRATEGY_TO_REVALIDATION_PHASES["full-suite-rectify"]`, so editing tests now re-runs the
+> review that judges them. **Ripple (intended):** three tests that encoded the old exclusion were
+> updated — `story-orchestrator-revalidation.test.ts` (AC3.4 now asserts adversarial *included*),
+> `story-orchestrator-carveout-staleness.test.ts` (the completeness-guard repro now uses
+> `mechanical-lintfix`, the realistic strategy that still excludes a review), and the
+> `resume.e2e.test.ts` scenario (a persistent-red-gate story under full-suite-rectify is now *fully*
+> review-judged → the verifier-SSOT carve-out PASS path, repurposed as the #2 regression). This
+> closes the US-002 "silent pass without adversarial judgment" gap at the source for full-suite-rectify.
 
 ### 3. Staleness guard is blind to keyless gate failures — Design weakness (high impact)
 
@@ -233,14 +252,14 @@ disposition so the pause/fail decision doesn't depend on strategy.
 
 ## Recommended fix plan
 
-**Must-fix (correctness, concrete, high confidence) — still OPEN:**
+**Must-fix (correctness, concrete, high confidence):**
 
-1. **#1 — nbf snapshot throw.** Move `captureSnapshotRef` inside the try/catch; fail closed to
-   `{ran:false}`. Smallest diff, reproduced bug, violates a stated contract.
-2. **#2 — adversarial-review staleness.** Add `"adversarial-review"` to the `full-suite-rectify`
-   revalidation set. One-line change; add a regression test (tests edited → adversarial re-runs).
-3. **#3 — staleness guard status comparison.** Harden `gateRegressedDuringRect` to compare gate
-   pass/fail *status*, not just keys, so keyless (timeout/exec-fail) regressions can't be exempted.
+1. ✅ **#1 — nbf snapshot throw** — **DONE** (`fix/story-orchestrator-nbf-snapshot-adversarial-staleness`).
+   `captureSnapshotRef` wrapped; failure degrades to `ran:false`, never throws.
+2. ✅ **#2 — adversarial-review staleness** — **DONE** (same branch). `adversarial-review` added to the
+   `full-suite-rectify` revalidation set; three dependent tests updated.
+3. **#3 — staleness guard status comparison** — **OPEN.** Harden `gateRegressedDuringRect` to compare
+   gate pass/fail *status*, not just keys, so keyless (timeout/exec-fail) regressions can't be exempted.
    Highest design value; pair with unit tests for the timeout and execution-failure representations.
 
 **Should-fix (robustness / disposition):**
@@ -258,9 +277,9 @@ disposition so the pause/fail decision doesn't depend on strategy.
 8. **#8 — confirm/wire `isolation-violation` producer.**
 9. **#9 — unify non-TDD review-incomplete disposition** (if the asymmetry is undesired; decide jointly with #7).
 
-**Remaining sequencing:** land #1, #2 as small independent commits (each with a focused regression
-test), then #3 (the staleness-guard status comparison) with unit tests for the timeout and
-execution-failure representations. #6 / #8 are low-priority follow-ups.
+**Remaining work:** **#3** (the staleness-guard status comparison) is the last open must-fix — it
+changes the carve-out/staleness logic, so it warrants its own focused PR with unit tests for the
+timeout and execution-failure representations. #6 / #8 are low-priority follow-ups.
 
 > All findings are in **production** code and pre-date the e2e coverage PR (#1266); that PR's tests are
 > correct and independent of these fixes.

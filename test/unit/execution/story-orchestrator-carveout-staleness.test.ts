@@ -291,11 +291,13 @@ describe("ExecutionPlan.run — carve-out staleness", () => {
 //
 // Repro: full-suite-gate stays red with the SAME finding through rectification
 // (subset of baseline → NOT regressed → carve-out would normally exempt it).
-// verifier + semantic-review pass during the lite revalidation (full-suite-rectify
-// scope excludes adversarial-review). The post-rectification resume loop breaks at
-// the still-red gate (canonical pos 4) before reaching adversarial-review (pos 10),
-// so adversarial-review never runs — yet the verifier-SSOT carve-out exempts the
-// gate and the story passes WITHOUT adversarial judgment.
+// verifier + semantic-review pass during the lite revalidation under a strategy whose
+// scope excludes adversarial-review (mechanical-lintfix — since audit #2, full-suite-rectify
+// DOES re-run adversarial, so a mechanical strategy is now the realistic way a review is
+// skipped). The post-rectification resume loop breaks at the still-red gate (canonical
+// pos 4) before reaching adversarial-review (pos 10), so adversarial-review never runs —
+// yet the verifier-SSOT carve-out exempts the gate. The completeness guard must still fail
+// the story rather than pass it WITHOUT adversarial judgment.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ExecutionPlan.run — completeness guard (configured review must run)", () => {
@@ -348,12 +350,13 @@ describe("ExecutionPlan.run — completeness guard (configured review must run)"
       if (op.kind === "deterministic" && op.execute) return op.execute(input, _ctx);
       return { success: true, filesChanged: [], estimatedCostUsd: 0, durationMs: 0 };
     }) as typeof _storyOrchestratorDeps.callOp;
-    // Lite revalidation in full-suite-rectify scope: gate-last (carve-out discards
-    // it after verifier passes), excludes adversarial-review. Exit "resolved".
+    // Lite revalidation under mechanical-lintfix scope: revalidates lint-check only, so
+    // adversarial-review is excluded (full-suite-rectify now includes it — audit #2 — so a
+    // mechanical strategy is the realistic way a configured review is skipped). Exit "resolved".
     _storyOrchestratorDeps.runFixCycle = (async (cycle: {
       validate: (c: unknown, o: unknown) => Promise<unknown>;
     }) => {
-      await cycle.validate({}, { mode: "lite", strategiesRun: ["full-suite-rectify"] });
+      await cycle.validate({}, { mode: "lite", strategiesRun: ["mechanical-lintfix"] });
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     }) as typeof _storyOrchestratorDeps.runFixCycle;
 
