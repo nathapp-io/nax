@@ -76,31 +76,43 @@ export function routeTddFailure(
     return trimmedDetail ? `TDD ${category}: ${trimmedDetail}` : `TDD ${category}`;
   };
 
-  if (failureCategory === "isolation-violation") {
-    if (!isLiteMode) {
-      ctx.retryAsLite = true;
-    }
-    return { action: "escalate", reason: buildReason("isolation-violation") };
-  }
-
-  if (
-    failureCategory === "session-failure" ||
-    failureCategory === "tests-failing" ||
-    failureCategory === "full-suite-gate-exhausted" ||
-    failureCategory === "verifier-rejected" ||
-    failureCategory === "runtime-crash" ||
-    failureCategory === "review-incomplete"
-  ) {
-    return { action: "escalate", reason: buildReason(failureCategory) };
-  }
-
-  // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
-  if (failureCategory === "greenfield-no-tests") {
-    return { action: "escalate", reason: buildReason("greenfield-no-tests") };
-  }
-
-  return {
+  // No specific category (e.g. a non-TDD-categorizable quality/review failure, or a
+  // non-three-session review verdict) → fall back to the human-review pause.
+  const pauseFallback: StageResult = {
     action: "pause",
     reason: reviewReason || "Three-session TDD requires review",
   };
+  if (failureCategory === undefined) {
+    return pauseFallback;
+  }
+
+  // Exhaustive over FailureCategory: a new member added to the union must be routed
+  // here explicitly, or the `satisfies never` default below fails compilation. Mirrors
+  // the guard in `resolveMaxAttemptsOutcome` so both terminal paths stay in lockstep.
+  switch (failureCategory) {
+    case "isolation-violation":
+      if (!isLiteMode) {
+        ctx.retryAsLite = true;
+      }
+      return { action: "escalate", reason: buildReason("isolation-violation") };
+    case "session-failure":
+    case "tests-failing":
+    case "full-suite-gate-exhausted":
+    case "verifier-rejected":
+    case "runtime-crash":
+    case "review-incomplete":
+    // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
+    case "greenfield-no-tests":
+      return { action: "escalate", reason: buildReason(failureCategory) };
+    case "dependency-prep":
+      // Worktree dependency prep hard-fails in the iteration runner before the
+      // pipeline routes here, so this arm is unreachable in practice — handled
+      // explicitly to keep the exhaustiveness check honest. An infra prep failure
+      // is not auto-recoverable by a stronger tier, so pause for human review.
+      return pauseFallback;
+    default:
+      // Exhaustive check: if a new FailureCategory is added, this errors at compile time.
+      failureCategory satisfies never;
+      return pauseFallback;
+  }
 }

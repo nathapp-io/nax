@@ -44,6 +44,7 @@ describe("runNonBlockingFix keep vs restore", () => {
     storyId: "us-001",
     advisoryFindings: [{ source: "adversarial-review", severity: "warning", category: "input", message: "m" }] as never,
     cfg: { enabled: true, scope: "both", regressionAttempts: 1, verifierGuard: true } as const,
+    phaseCosts: {} as Record<string, number>,
   };
   const fakeDeps = {
     captureSnapshotRef: async () => "snap-sha",
@@ -87,6 +88,50 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(rolled).toBe("snap-sha");
     expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true }); // restored
   });
+
+  test("restored → phaseCosts rolled back to entry snapshot (no inflation from discarded pass)", async () => {
+    // The best-effort rectify pass accrues cost into the shared phaseCosts map. On
+    // rollback that cost must be reverted alongside phaseOutputs, so a discarded pass
+    // leaves the result's per-phase cost breakdown symmetric with its outputs.
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const phaseCosts: Record<string, number> = { implementer: 0.10 };
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs,
+        phaseCosts,
+        runRectify: async () => {
+          phaseCosts.implementer = 0.35; // pass spent more
+          phaseCosts["adversarial-review"] = 0.20; // and added a new phase
+          return { rectificationExhausted: true };
+        },
+      },
+      fakeDeps,
+    );
+    expect(res).toEqual({ ran: true, kept: false, restored: true });
+    // Reverted to the entry snapshot — the discarded pass's cost is gone, the new key removed.
+    expect(phaseCosts).toEqual({ implementer: 0.10 });
+  });
+
+  test("kept → phaseCosts retains the best-effort pass cost", async () => {
+    // When the pass is kept (resolved, within cap), its cost is real work and stays.
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    const phaseCosts: Record<string, number> = { implementer: 0.10 };
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs,
+        phaseCosts,
+        runRectify: async () => {
+          phaseCosts.implementer = 0.35;
+          return { rectificationExhausted: false };
+        },
+      },
+      fakeDeps,
+    );
+    expect(res).toEqual({ ran: true, kept: true, restored: false });
+    expect(phaseCosts).toEqual({ implementer: 0.35 });
+  });
 });
 
 describe("nonBlockingExtraPhases with triage scope", () => {
@@ -129,6 +174,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           sourceDiffCap: { maxFiles: 10, maxLines: 50 },
         },
         phaseOutputs: {},
+        phaseCosts: {},
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
@@ -158,6 +204,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           sourceDiffCap: { maxFiles: 5, maxLines: 500 },
         },
         phaseOutputs: {},
+        phaseCosts: {},
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
@@ -187,6 +234,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
         },
         phaseOutputs: {},
+        phaseCosts: {},
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
@@ -216,6 +264,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
         },
         phaseOutputs: {},
+        phaseCosts: {},
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {
@@ -247,6 +296,7 @@ describe("runNonBlockingFix sourceDiffCap", () => {
           sourceDiffCap: { maxFiles: 10, maxLines: 200 },
         },
         phaseOutputs: {},
+        phaseCosts: {},
         runRectify: async () => ({ rectificationExhausted: false }),
       },
       {

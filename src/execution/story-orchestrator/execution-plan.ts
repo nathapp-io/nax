@@ -230,6 +230,7 @@ export class ExecutionPlan {
           advisoryFindings,
           cfg: advCfg,
           phaseOutputs,
+          phaseCosts,
           runRectify: (maxAttempts) =>
             runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
               initialFindings: advisoryFindings,
