@@ -59,6 +59,39 @@ export interface E2EOptions {
   gates?: E2EGates;
   story?: Partial<UserStory>;
   config?: Partial<NaxConfig>;
+  /**
+   * Seed `test/placeholder.test.ts` so greenfield-gate detects pre-existing tests
+   * and does NOT pause with "greenfield-no-tests". Defaults to `true`. Set to
+   * `false` to drive the greenfield-no-tests pause branch (three-session only).
+   */
+  seedPlaceholderTest?: boolean;
+  /**
+   * Source-diff metrics the spied `runNonBlockingFix` reports for the ADR-024
+   * best-effort pass. Defaults to `{ fileCount: 0, sourceLineCount: 0 }` (within
+   * any cap → kept). Set above the configured `sourceDiffCap` to drive the
+   * cap-exceeded → restored fail-safe branch. The harness always stubs the
+   * git-backed snapshot/rollback deps so nbf works in the non-git temp workdir.
+   */
+  nonBlockingFixDiff?: { fileCount: number; sourceLineCount: number };
+  /**
+   * Overrides for the rectification phase options. Defaults: maxAttempts 3,
+   * abortOnIncreasingFailures false. Set `abortOnIncreasingFailures: true` (with an
+   * optional `consecutiveIncreasesToBail`) to drive the increasing-failures bail-when path.
+   */
+  rectification?: {
+    maxAttempts?: number;
+    abortOnIncreasingFailures?: boolean;
+    consecutiveIncreasesToBail?: number;
+  };
+}
+
+/** Surfaced non-blocking-fix outcome (ADR-024). Captured by spying
+ * `_storyOrchestratorDeps.runNonBlockingFix`, whose return value is otherwise
+ * discarded by ExecutionPlan. `undefined` when the nbf path never invoked it. */
+export interface E2ENonBlockingFix {
+  ran: boolean;
+  kept: boolean;
+  restored: boolean;
 }
 
 export interface E2EResult {
@@ -68,9 +101,14 @@ export interface E2EResult {
     rectificationExhausted?: boolean;
     gateRegressedDuringRect?: boolean;
     unresolvedDetail?: string;
+    liteScopeIncomplete?: boolean;
+    missingRequiredReviewPhases?: readonly string[];
+    unfixedFindings?: readonly unknown[];
   };
   phaseLog: string[];
   strategiesFired: string[];
+  /** nbf outcome when the non-blocking-fix path ran; undefined otherwise. */
+  nonBlockingFix?: E2ENonBlockingFix;
 }
 
 function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
@@ -79,6 +117,9 @@ function makeE2EConfig(overrides?: Partial<NaxConfig>): NaxConfig {
   // mechanical-lintfix, or `enabled/checks` for review). Other top-level overrides
   // pass through directly.
   const { quality: qualityOverride, review: reviewOverride, ...topLevelRest } = overrides ?? {};
+  // `makeNaxConfig` deep-merges against DEFAULT_CONFIG, so a partial `review.adversarial`
+  // override (e.g. `{ nonBlockingFix: { enabled: true } }`) merges into — rather than
+  // wipes — the default adversarial config (diffMode etc. survive for makeMockPlanInputs).
   return makeNaxConfig({
     quality: {
       commands: { lint: "lint", typecheck: "tc", test: "true", lintFix: "lint --fix" },
@@ -101,13 +142,17 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   // Seed a placeholder test file so the greenfield-gate detects pre-existing tests
   // and does not pause with "greenfield-no-tests". The gate uses Bun.Glob for
   // non-git workdirs (temp dirs created by makeTempDir are not git repos).
-  await Bun.write(`${workdir}/test/placeholder.test.ts`, "// E2E seed\n");
+  // Opt out (seedPlaceholderTest: false) to drive the greenfield-no-tests pause branch.
+  if (opts.seedPlaceholderTest !== false) {
+    await Bun.write(`${workdir}/test/placeholder.test.ts`, "// E2E seed\n");
+  }
   const story = makeStory({ id: "US-001", ...opts.story });
 
   const { runtime } = makeRuntimeWithFakeAgent(makeScriptedAgent(opts.agent), { config, workdir });
 
   // --- save originals ---
   const origCallOp = _storyOrchestratorDeps.callOp;
+  const origRunNbf = _storyOrchestratorDeps.runNonBlockingFix;
   const origLint = _lintCheckDeps.runQualityCommand;
   const origTc = _typecheckCheckDeps.runQualityCommand;
   const origRunTests = _fullSuiteGateDeps.runTests;
@@ -146,6 +191,30 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
       op as Parameters<typeof origCallOp>[1],
       input as Parameters<typeof origCallOp>[2],
     );
+  };
+
+  // ExecutionPlan discards runNonBlockingFix's return — spy it so the nbf outcome
+  // ({ ran, kept, restored }) is observable. Delegates to the real implementation.
+  let nonBlockingFix: E2ENonBlockingFix | undefined;
+  // biome-ignore lint/suspicious/noExplicitAny: E2E instrumentation wrapper — passes through to origRunNbf
+  (_storyOrchestratorDeps as { runNonBlockingFix: (...args: any[]) => any }).runNonBlockingFix = async (
+    nbfArgs: unknown,
+    nbfDeps: unknown,
+  ) => {
+    // Stub the git-backed snapshot/rollback/diff deps so nbf works in the non-git
+    // temp workdir and the source-diff cap path is deterministic. Merged AFTER the
+    // execution-plan's deps so these wins (the plan only supplies measureSourceDiff).
+    const stubDeps = {
+      captureSnapshotRef: async () => "e2e-nbf-snapshot",
+      rollbackToRef: async () => {},
+      measureSourceDiff: async () => opts.nonBlockingFixDiff ?? { fileCount: 0, sourceLineCount: 0 },
+    };
+    const out = await origRunNbf(nbfArgs as Parameters<typeof origRunNbf>[0], {
+      ...(nbfDeps as object),
+      ...stubDeps,
+    } as Parameters<typeof origRunNbf>[1]);
+    nonBlockingFix = { ran: out.ran, kept: out.kept, restored: out.restored };
+    return out;
   };
 
   const lintAttempts = { n: 0 };
@@ -243,9 +312,12 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
         }
       : {}),
     rectification: {
-      maxAttempts: 3,
+      maxAttempts: opts.rectification?.maxAttempts ?? 3,
       strategies: [],
-      abortOnIncreasingFailures: false,
+      abortOnIncreasingFailures: opts.rectification?.abortOnIncreasingFailures ?? false,
+      ...(opts.rectification?.consecutiveIncreasesToBail !== undefined
+        ? { consecutiveIncreasesToBail: opts.rectification.consecutiveIncreasesToBail }
+        : {}),
     },
   });
 
@@ -254,9 +326,10 @@ export async function runOrchestratorE2E(opts: E2EOptions): Promise<E2EResult> {
   try {
     const plan = await buildPlanForStrategy(ctx, story, config, opts.strategy, inputs);
     const result = await plan.run();
-    return { result: result as E2EResult["result"], phaseLog, strategiesFired };
+    return { result: result as E2EResult["result"], phaseLog, strategiesFired, nonBlockingFix };
   } finally {
     _storyOrchestratorDeps.callOp = origCallOp;
+    _storyOrchestratorDeps.runNonBlockingFix = origRunNbf;
     _lintCheckDeps.runQualityCommand = origLint;
     _typecheckCheckDeps.runQualityCommand = origTc;
     _fullSuiteGateDeps.runTests = origRunTests;

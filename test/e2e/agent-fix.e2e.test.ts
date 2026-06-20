@@ -74,6 +74,59 @@ describe("E2E: agent-fix", () => {
     ]);
   });
 
+  test("three-session: typecheck fail -> autofix-implementer re-runs full-suite-gate, NOT verifier", async () => {
+    // Strategy parity for autofix-implementer. In three-session the full-suite-gate IS
+    // present, so the revalidation set [lint, typecheck, full-suite-gate, semantic, adversarial]
+    // re-runs it (it was absent in the test-after variant above). The verifier is the
+    // TDD-isolation judge — a once-per-story phase NOT in the revalidation set — so it
+    // must run exactly once despite the source-code fix.
+    const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
+    const verifier = () => ({ output: PASSING_VERDICT });
+    let tcCall = 0;
+    const { result, phaseLog, strategiesFired } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+      gates: {
+        typecheck: () => (tcCall++ === 0 ? FAIL_TC : PASS_TC),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(strategiesFired).toContain("autofix-implementer");
+    // full-suite-gate re-run by revalidation (present in three-session): runs twice.
+    expect(phaseLog.filter((p) => p === "full-suite-gate").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "typecheck-check").length).toBe(2);
+    expect(phaseLog.filter((p) => p === "lint-check").length).toBe(2);
+    // SOUNDNESS: verifier NOT re-run by autofix-implementer (excluded from its set).
+    expect(phaseLog.filter((p) => p === "verifier").length).toBe(1);
+    expect(phaseLog.filter((p) => p === "semantic-review").length).toBe(1);
+    expect(phaseLog.filter((p) => p === "adversarial-review").length).toBe(1);
+
+    // Main loop short-circuits at typecheck-check (pos 8) → autofix-implementer →
+    // revalidation in canonical order: full-suite-gate(4), lint(7), typecheck(8),
+    // semantic(9), adversarial(10).
+    expect(phaseLog).toEqual([
+      "test-writer",
+      "greenfield-gate",
+      "implementer",
+      "full-suite-gate",
+      "verifier",
+      "lint-check",
+      "typecheck-check",
+      "full-suite-gate",
+      "lint-check",
+      "typecheck-check",
+      "semantic-review",
+      "adversarial-review",
+    ]);
+  });
+
   test("adversarial(test-gap) -> autofix-test-writer -> revalidation set", async () => {
     const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
     const verifier = () => ({ output: PASSING_VERDICT });

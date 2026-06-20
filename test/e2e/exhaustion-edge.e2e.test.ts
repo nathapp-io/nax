@@ -43,6 +43,103 @@ describe("E2E: exhaustion + edge", () => {
     expect(result.rectificationExhausted).toBe(true);
   });
 
+  test("greenfield-gate pauses with greenfield-no-tests when no tests exist (seed disabled)", async () => {
+    // With the placeholder seed disabled, the scripted test-writer does not write real
+    // files, so greenfield-gate finds no pre-existing tests and short-circuits the run
+    // with pauseReason "greenfield-no-tests" (BUG-010). The implementer never runs.
+    const tw = () => ({ output: JSON.stringify({ filesChanged: ["test/a.test.ts"] }) });
+    const verifier = () => ({ output: PASSING_VERDICT });
+    const { result, phaseLog } = await runOrchestratorE2E({
+      strategy: "three-session-tdd",
+      seedPlaceholderTest: false,
+      agent: {
+        "test-writer": tw,
+        implementer: impl,
+        verifier,
+        "reviewer-semantic": PASS_REVIEW,
+        "reviewer-adversarial": PASS_REVIEW,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    const gateOut = result.phaseOutputs["greenfield-gate"] as { pauseReason?: string } | undefined;
+    expect(gateOut?.pauseReason).toBe("greenfield-no-tests");
+    // Short-circuit at the gate: implementer (canonical pos 3) never runs.
+    expect(phaseLog).not.toContain("implementer");
+  });
+
+  test("no-strategy: a finding no loaded strategy matches exhausts with zero fix attempts", async () => {
+    // With autofix disabled, the only loaded strategies are mechanical-lintfix (lintFix
+    // present) and full-suite-rectify (verify-scoped present): one claims lint findings,
+    // the other claims test-runner findings. A blocking adversarial finding (source
+    // "adversarial") matches NEITHER, so the cycle exits "no-strategy" at iteration 0 —
+    // rectification is exhausted and no fix op is ever dispatched. (Adversarial findings
+    // survive substantiation without an AC index, unlike semantic findings — so this is
+    // the clean way to land a surviving-but-unmatched finding.)
+    const failingAdversarial = () => ({
+      output: JSON.stringify({
+        passed: false,
+        findings: [
+          {
+            severity: "warning",
+            category: "test-gap",
+            file: "test/a.test.ts",
+            line: 1,
+            issue: "missing edge-case coverage",
+            suggestion: "add the missing test",
+            verifiedBy: { file: "test/a.test.ts", observed: "expect(fn(null))" },
+          },
+        ],
+      }),
+    });
+    const { result, strategiesFired } = await runOrchestratorE2E({
+      strategy: "test-after",
+      // autofix off → no autofix-* strategies; blockingThreshold "warning" → the finding blocks.
+      config: {
+        quality: { autofix: { enabled: false } },
+        review: { blockingThreshold: "warning" },
+      } as unknown as Parameters<typeof runOrchestratorE2E>[0]["config"],
+      agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": failingAdversarial },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.rectificationExhausted).toBe(true);
+    // No fix op was dispatched — no loaded strategy matched the adversarial finding.
+    expect(strategiesFired).toEqual([]);
+  });
+
+  test("bail-when: increasing typecheck failures abort before maxAttempts", async () => {
+    // typecheck regresses (1 error → 2 errors) after the autofix-implementer fix. With
+    // abortOnIncreasingFailures enabled and consecutiveIncreasesToBail=1, the cycle bails
+    // on the first increase rather than burning all maxAttempts. Exhausted=true, but the
+    // typecheck phase ran fewer times than the always-fail exhaustion case (3 attempts).
+    let tcCall = 0;
+    const tc = () => {
+      const n = tcCall++;
+      return {
+        commandName: "typecheck",
+        command: "tc",
+        success: false,
+        exitCode: 1,
+        // attempt 0: one error; attempt 1+: two errors (increasing finding count).
+        output: n === 0 ? "TS2304: Cannot find name 'a'" : "TS2304: name 'a'\nTS2305: name 'b'",
+        durationMs: 1,
+        timedOut: false,
+      };
+    };
+    const { result, phaseLog } = await runOrchestratorE2E({
+      strategy: "test-after",
+      rectification: { maxAttempts: 5, abortOnIncreasingFailures: true, consecutiveIncreasesToBail: 1 },
+      agent: { implementer: impl, "reviewer-semantic": PASS_REVIEW, "reviewer-adversarial": PASS_REVIEW },
+      gates: { typecheck: tc },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.rectificationExhausted).toBe(true);
+    // Bailed early: typecheck ran far fewer than maxAttempts (5) times.
+    expect(phaseLog.filter((p) => p === "typecheck-check").length).toBeLessThan(5);
+  });
+
   test("greenfield-gate runs and does not prevent three-session completion", async () => {
     // The harness seeds a placeholder test file (test/placeholder.test.ts) so
     // greenfield-gate detects pre-existing tests and proceeds normally (does not pause
