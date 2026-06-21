@@ -111,9 +111,10 @@ describe("explicit path — starts with ./", () => {
     writeFileSync(join(tempDir, "custom.md"), "# custom");
     const result = await resolveFeatureSpec("custom.md", tempDir);
     // ends in .md → explicit path branch; file is resolved relative to workdir
-    // If it resolves to missing (no ./ prefix won't be caught as explicit path in naive impl)
     // The spec says: starts with ./ or / or ends in .md
-    expect(["ok", "missing"]).toContain(result.status);
+    // Since custom.md exists in tempDir, it should resolve to ok
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBeNull(); // explicit path → featureName is null
   });
 });
 
@@ -187,6 +188,7 @@ describe("feature name — spec source search order", () => {
     const checked = result.checked ?? [];
     expect(checked.some((p) => p.includes("spec.md"))).toBe(true);
     expect(checked.some((p) => p.includes(join("specs", "no-spec.md")))).toBe(true);
+    expect(checked.some((p) => p.includes(join("docs", "specs", "SPEC-no-spec.md")))).toBe(true);
     expect(checked.some((p) => p.includes("prd.json"))).toBe(true);
   });
 
