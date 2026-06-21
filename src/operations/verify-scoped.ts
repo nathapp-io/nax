@@ -76,7 +76,9 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     let detectedFromPackage = false;
     if (!baseCommand) {
       const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
-      baseCommand = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).test;
+      // input.workdir is the resolved ABSOLUTE package dir; ctx.packageView.packageDir
+      // is the RELATIVE key — never probe the filesystem against it.
+      baseCommand = (await resolveDefaultQualityCommands(input.workdir)).test;
       detectedFromPackage = Boolean(baseCommand);
     }
 
@@ -101,7 +103,8 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     await maybeRunNewPackageSetup({
       runtime: ctx.runtime,
       storyId: input.storyId,
-      packageDir: ctx.packageView.packageDir,
+      // Absolute package dir — must match the abs dirs registered via markNewPackageDirs.
+      packageDir: input.workdir,
       setupCommand: quality.quality?.commands?.setup,
     });
 
@@ -161,9 +164,10 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
     const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
-    // Detected default → run from the package dir; configured-but-no-override → repo root.
+    // Detected default → run from the package dir (absolute input.workdir, not the
+    // relative packageView key); configured-but-no-override → repo root.
     const cmdWorkdir = detectedFromPackage
-      ? ctx.packageView.packageDir
+      ? input.workdir
       : ctx.packageView.hasOverride
         ? input.workdir
         : ctx.packageView.repoRoot;

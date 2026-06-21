@@ -131,9 +131,11 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
     // detected there (e.g. a new package's freshly-scaffolded pyproject.toml).
     if (!resolvedTestCmd) {
       const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
-      const detected = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).test;
+      // input.workdir is the resolved ABSOLUTE package dir (CallContext.packageDir = ctx.workdir).
+      // ctx.packageView.packageDir is the RELATIVE key — never probe/spawn against it.
+      const detected = (await resolveDefaultQualityCommands(input.workdir)).test;
       if (detected) {
-        return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: ctx.packageView.packageDir };
+        return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: input.workdir };
       }
       const pkg = input.story.workdir ?? input.workdir;
       throw new NaxError(
@@ -234,7 +236,8 @@ export const fullSuiteGateOp: DeterministicOperation<
     await maybeRunNewPackageSetup({
       runtime: ctx.runtime,
       storyId: input.story.id,
-      packageDir: ctx.packageView.packageDir,
+      // Absolute package dir — must match the abs dirs registered via markNewPackageDirs.
+      packageDir: input.workdir,
       setupCommand: gateCtx.config.quality?.commands?.setup,
     });
     logger.info("verify[regression]", "Running full-suite gate", {

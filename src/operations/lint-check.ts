@@ -49,7 +49,9 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     let detectedFromPackage = false;
     if (!command) {
       const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
-      command = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).lint;
+      // input.workdir is the resolved ABSOLUTE package dir; ctx.packageView.packageDir
+      // is the RELATIVE key — never probe the filesystem against it.
+      command = (await resolveDefaultQualityCommands(input.workdir)).lint;
       detectedFromPackage = Boolean(command);
     }
 
@@ -63,9 +65,10 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
-    // Detected default → run from the package dir; configured-but-no-override → repo root.
+    // Detected default → run from the package dir (absolute input.workdir, not the
+    // relative packageView key); configured-but-no-override → repo root.
     const cmdWorkdir = detectedFromPackage
-      ? ctx.packageView.packageDir
+      ? input.workdir
       : ctx.packageView.hasOverride
         ? input.workdir
         : ctx.packageView.repoRoot;

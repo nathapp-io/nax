@@ -58,7 +58,12 @@ export async function resolveDefaultQualityCommands(packageDir: string): Promise
   const cached = memo.get(packageDir);
   if (cached) return cached;
   const result = await compute(packageDir);
-  memo.set(packageDir, result);
+  // Only memoize non-empty results. An empty {} means no manifest was detected
+  // yet — a new package's manifest may be scaffolded by the implementer later in
+  // the same long-lived process, so caching {} would permanently mask it.
+  if (result.test || result.typecheck || result.lint) {
+    memo.set(packageDir, result);
+  }
   return result;
 }
 
