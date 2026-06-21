@@ -6,26 +6,19 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { makePRD, makeStory } from "@test/helpers";
 import { ensureStoryPackageDirs } from "@/execution";
 import type { _ensurePackageDirsDeps } from "@/execution/ensure-package-dirs";
-import type { PRD, UserStory } from "@/prd";
+import type { UserStory } from "@/prd";
 
 const ROOT = "/repo";
 
-function makeStory(id: string, workdir?: string): UserStory {
-  return {
-    id,
-    title: `Story ${id}`,
-    description: "",
-    acceptanceCriteria: [],
-    dependencies: [],
-    status: "pending",
-    ...(workdir !== undefined ? { workdir } : {}),
-  } as UserStory;
+function story(id: string, workdir?: string): UserStory {
+  return makeStory(workdir !== undefined ? { id, workdir } : { id });
 }
 
-function makePrd(stories: UserStory[]): PRD {
-  return { feature: "feat", userStories: stories } as PRD;
+function makePrd(stories: UserStory[]): ReturnType<typeof makePRD> {
+  return makePRD({ userStories: stories });
 }
 
 function makeDeps(existing: Set<string>) {
@@ -45,7 +38,7 @@ function makeDeps(existing: Set<string>) {
 describe("ensureStoryPackageDirs", () => {
   test("creates the package dir when story.workdir does not exist", async () => {
     const { deps, created } = makeDeps(new Set([ROOT]));
-    const prd = makePrd([makeStory("US-001", "packages/portfolio")]);
+    const prd = makePrd([story("US-001", "packages/portfolio")]);
 
     const result = await ensureStoryPackageDirs(prd, ROOT, deps);
 
@@ -55,7 +48,7 @@ describe("ensureStoryPackageDirs", () => {
 
   test("does not recreate an existing package dir", async () => {
     const { deps, created } = makeDeps(new Set([ROOT, "/repo/packages/core"]));
-    const prd = makePrd([makeStory("US-001", "packages/core")]);
+    const prd = makePrd([story("US-001", "packages/core")]);
 
     const result = await ensureStoryPackageDirs(prd, ROOT, deps);
 
@@ -66,8 +59,8 @@ describe("ensureStoryPackageDirs", () => {
   test("deduplicates stories sharing the same workdir", async () => {
     const { deps, created } = makeDeps(new Set([ROOT]));
     const prd = makePrd([
-      makeStory("US-001", "packages/portfolio"),
-      makeStory("US-002", "packages/portfolio"),
+      story("US-001", "packages/portfolio"),
+      story("US-002", "packages/portfolio"),
     ]);
 
     await ensureStoryPackageDirs(prd, ROOT, deps);
@@ -77,7 +70,7 @@ describe("ensureStoryPackageDirs", () => {
 
   test("ignores stories without a workdir (root-scoped)", async () => {
     const { deps, created } = makeDeps(new Set([ROOT]));
-    const prd = makePrd([makeStory("US-001"), makeStory("US-002", "")]);
+    const prd = makePrd([story("US-001"), story("US-002", "")]);
 
     await ensureStoryPackageDirs(prd, ROOT, deps);
 
@@ -87,9 +80,9 @@ describe("ensureStoryPackageDirs", () => {
   test("creates dirs for multiple distinct new packages", async () => {
     const { deps, created } = makeDeps(new Set([ROOT, "/repo/packages/core"]));
     const prd = makePrd([
-      makeStory("US-001", "packages/portfolio"),
-      makeStory("US-002", "packages/core"),
-      makeStory("US-003", "apps/web"),
+      story("US-001", "packages/portfolio"),
+      story("US-002", "packages/core"),
+      story("US-003", "apps/web"),
     ]);
 
     const result = await ensureStoryPackageDirs(prd, ROOT, deps);
@@ -100,7 +93,7 @@ describe("ensureStoryPackageDirs", () => {
 
   test("never escapes the repo root via traversal in workdir", async () => {
     const { deps, created } = makeDeps(new Set([ROOT]));
-    const prd = makePrd([makeStory("US-001", "../evil")]);
+    const prd = makePrd([story("US-001", "../evil")]);
 
     await ensureStoryPackageDirs(prd, ROOT, deps);
 
