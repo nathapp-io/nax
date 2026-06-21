@@ -202,10 +202,10 @@ export interface QualityConfig {
     lintFixScoped?: string;
     /** Auto-fix formatting (e.g., "biome format --write") */
     formatFix?: string;
-    /** Scoped auto-format command template with {{files}} placeholder */
     formatFixScoped?: string;
-    /** Build command (e.g., "bun run build") */
     build?: string;
+    /** One-time package init (e.g. "uv sync"/"bun install"); see schema for full docs. */
+    setup?: string;
   };
   /** Lint output parsing preferences for scope-aware rectification splitting. */
   lintOutput?: {

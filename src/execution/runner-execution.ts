@@ -22,6 +22,7 @@ import { precomputeBatchPlan } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
 import { ensureStoryPackageDirs } from "./ensure-package-dirs";
 import { getAllReadyStories } from "./helpers";
+import { markNewPackageDirs } from "./new-package-setup";
 
 /**
  * Options for the execution phase.
@@ -129,6 +130,10 @@ export async function runExecutionPhase(
     try {
       const createdDirs = await ensureStoryPackageDirs(prd, options.workdir);
       if (createdDirs.length > 0) {
+        // Register the new dirs so quality.commands.setup runs once per package,
+        // lazily, before that package's first verify gate (after the implementer
+        // scaffolds its manifest).
+        markNewPackageDirs(options.runtime, createdDirs);
         logger?.info("execution", "Bootstrapped new package directories", {
           count: createdDirs.length,
           dirs: createdDirs,

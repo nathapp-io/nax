@@ -1,5 +1,7 @@
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
+// Leaf import (not the execution barrel) to avoid the execution→operations cycle.
+import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
@@ -83,6 +85,15 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
         isFullSuite: true,
       };
     }
+
+    // One-time init for a newly-created package (e.g. `uv sync` / `bun install`),
+    // now that the implementer has scaffolded the manifest. No-op for existing packages.
+    await maybeRunNewPackageSetup({
+      runtime: ctx.runtime,
+      storyId: input.storyId,
+      packageDir: ctx.packageView.packageDir,
+      setupCommand: quality.quality?.commands?.setup,
+    });
 
     const regressionMode = input.regressionMode ?? "deferred";
     // Note: smart-runner config lives at execution.smartTestRunner (not quality.smartRunner).

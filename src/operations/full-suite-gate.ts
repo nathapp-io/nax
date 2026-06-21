@@ -19,6 +19,9 @@
 import type { NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
 import { NaxError } from "../errors";
+// Leaf import (not the execution barrel) to avoid the execution→operations cycle;
+// same file resolves to one module, so the setup registry stays a singleton.
+import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
@@ -218,6 +221,14 @@ export const fullSuiteGateOp: DeterministicOperation<
     }
 
     const gateCtx = await deps.resolveGateContext(input, ctx);
+    // One-time init for a newly-created package (e.g. `uv sync` / `bun install`),
+    // now that the implementer has scaffolded the manifest. No-op for existing packages.
+    await maybeRunNewPackageSetup({
+      runtime: ctx.runtime,
+      storyId: input.story.id,
+      packageDir: ctx.packageView.packageDir,
+      setupCommand: gateCtx.config.quality?.commands?.setup,
+    });
     logger.info("verify[regression]", "Running full-suite gate", {
       storyId: input.story.id,
       packageDir: input.story.workdir,

@@ -6,6 +6,7 @@ export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { escalateTier, getTierConfig, calculateMaxIterations, resolveMaxAttemptsOutcome } from "./escalation";
 export { readQueueFile, clearQueueFile } from "./queue-handler";
 export { ensureStoryPackageDirs } from "./ensure-package-dirs";
+export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
 export {
   hookCtx,
   maybeGetContext,
