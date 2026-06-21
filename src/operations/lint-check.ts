@@ -41,9 +41,19 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     deps: LintCheckDeps = _lintCheckDeps,
   ): Promise<LintCheckOutput> {
     const quality = ctx.packageView.select(qualityConfigSelector).quality;
-    const command = quality?.commands?.lint;
+    let command = quality?.commands?.lint;
 
-    // No command configured → skip (success, non-blocking) with a warning.
+    // Detection fallback: derive a default from the package's manifest when no
+    // command is configured (only emitted when the tool/config is present). Runs
+    // from the package dir, since that is where it was detected.
+    let detectedFromPackage = false;
+    if (!command) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      command = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).lint;
+      detectedFromPackage = Boolean(command);
+    }
+
+    // No command configured or detected → skip (success, non-blocking) with a warning.
     // Never spawn an empty command (that would exit 0 and read as a false pass).
     if (!command) {
       getSafeLogger()?.warn("quality", "No lint command configured — skipping lint gate", {
@@ -53,8 +63,12 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
-    // Root-config fallback: command was not defined per-package, so run from repo root.
-    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
+    // Detected default → run from the package dir; configured-but-no-override → repo root.
+    const cmdWorkdir = detectedFromPackage
+      ? ctx.packageView.packageDir
+      : ctx.packageView.hasOverride
+        ? input.workdir
+        : ctx.packageView.repoRoot;
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "lint",

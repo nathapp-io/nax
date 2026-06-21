@@ -126,10 +126,18 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       input.workdir,
       input.story.workdir,
     );
+    // Detection fallback: no command configured (root or per-package) — derive one
+    // from the package's manifest. Runs from the package dir, since the default was
+    // detected there (e.g. a new package's freshly-scaffolded pyproject.toml).
     if (!resolvedTestCmd) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      const detected = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).test;
+      if (detected) {
+        return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: ctx.packageView.packageDir };
+      }
       const pkg = input.story.workdir ?? input.workdir;
       throw new NaxError(
-        `No test command configured for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
+        `No test command configured or detected for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
         "TEST_COMMAND_MISSING",
         {
           stage: "full-suite-gate",

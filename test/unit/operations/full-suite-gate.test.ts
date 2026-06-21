@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
+import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
 function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   return {
@@ -280,5 +281,42 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       deps,
     );
     expect(seenWorkdir).toBe("/repo");
+  });
+});
+
+describe("fullSuiteGateOp — resolveGateContext detection fallback", () => {
+  const originalDefaults = { ..._commandDefaultsDeps };
+  afterEach(() => {
+    Object.assign(_commandDefaultsDeps, originalDefaults);
+    clearCommandDefaultsCache();
+  });
+
+  test("derives a test command from the manifest and runs it from the package dir", async () => {
+    clearCommandDefaultsCache();
+    _commandDefaultsDeps.detectLanguage = async () => "go";
+    const ctx = ctxWithConfig({ quality: { commands: {} } });
+    ctx.packageView.packageDir = "/repo/packages/new";
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { story: { id: "US-001", workdir: "packages/new" } as any, workdir: "/repo" },
+      ctx,
+    );
+
+    expect(gateCtx.testCmd).toBe("go test ./...");
+    expect(gateCtx.cmdWorkdir).toBe("/repo/packages/new");
+  });
+
+  test("throws TEST_COMMAND_MISSING when neither config nor detection yields a command", async () => {
+    clearCommandDefaultsCache();
+    _commandDefaultsDeps.detectLanguage = async () => undefined;
+    const ctx = ctxWithConfig({ quality: { commands: {} } });
+    ctx.packageView.packageDir = "/repo/packages/empty";
+
+    await expect(
+      _fullSuiteGateDeps.resolveGateContext(
+        { story: { id: "US-001", workdir: "packages/empty" } as any, workdir: "/repo" },
+        ctx,
+      ),
+    ).rejects.toThrow(/No test command configured or detected/);
   });
 });

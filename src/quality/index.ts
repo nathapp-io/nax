@@ -9,6 +9,12 @@ export type { QualityCommandOptions, QualityCommandResult } from "./runner";
 export { resolveQualityTestCommands, _commandResolverDeps } from "./command-resolver";
 export type { ResolvedTestCommands } from "./command-resolver";
 export {
+  resolveDefaultQualityCommands,
+  clearCommandDefaultsCache,
+  _commandDefaultsDeps,
+} from "./command-defaults";
+export type { DefaultQualityCommands } from "./command-defaults";
+export {
   parseSelfVerificationMarker,
   resolveSelfVerificationPromptInput,
 } from "./self-verification";

@@ -45,7 +45,17 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
     deps: TypecheckCheckDeps = _typecheckCheckDeps,
   ): Promise<TypecheckCheckOutput> {
     const quality = ctx.packageView.select(qualityConfigSelector).quality;
-    const command = quality?.commands?.typecheck;
+    let command = quality?.commands?.typecheck;
+
+    // Detection fallback: derive a default from the package's manifest when no
+    // command is configured (only safe built-ins / present-config). Runs from the
+    // package dir, since that is where it was detected.
+    let detectedFromPackage = false;
+    if (!command) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      command = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).typecheck;
+      detectedFromPackage = Boolean(command);
+    }
 
     if (!command) {
       getSafeLogger()?.warn("quality", "No typecheck command configured — skipping typecheck gate", {
@@ -55,8 +65,12 @@ export const typecheckCheckOp: DeterministicOperation<TypecheckCheckInput, Typec
       return { success: true, status: "skipped", findings: [], durationMs: 0 };
     }
 
-    // Root-config fallback: command was not defined per-package, so run from repo root.
-    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
+    // Detected default → run from the package dir; configured-but-no-override → repo root.
+    const cmdWorkdir = detectedFromPackage
+      ? ctx.packageView.packageDir
+      : ctx.packageView.hasOverride
+        ? input.workdir
+        : ctx.packageView.repoRoot;
     const start = Date.now();
     const result = await deps.runQualityCommand({
       commandName: "typecheck",

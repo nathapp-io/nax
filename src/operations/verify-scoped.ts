@@ -68,9 +68,19 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
   ): Promise<VerifyScopedOutput> {
     const logger = getLogger();
     const quality = ctx.packageView.select(qualityConfigSelector);
-    const baseCommand = quality.quality?.commands?.test;
+    let baseCommand = quality.quality?.commands?.test;
 
-    // No test command configured → skip (deferred run-end gate still covers regressions).
+    // Detection fallback: no command configured (root or per-package) — derive one
+    // from the package's manifest (e.g. a new package's scaffolded pyproject.toml).
+    // When used, tests run from the package dir since that is where it was detected.
+    let detectedFromPackage = false;
+    if (!baseCommand) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      baseCommand = (await resolveDefaultQualityCommands(ctx.packageView.packageDir)).test;
+      detectedFromPackage = Boolean(baseCommand);
+    }
+
+    // No test command configured or detected → skip (deferred run-end gate still covers regressions).
     if (!baseCommand) {
       logger.warn("quality", "No test command configured — skipping scoped verify", {
         storyId: input.storyId,
@@ -108,7 +118,7 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       // via qualityConfigSelector = pickSelector("quality", "quality", "execution").
       smartRunnerConfig: quality.execution?.smartTestRunner,
       scopeTestThreshold: quality.quality?.scopeTestThreshold,
-      fallbackFullSuiteCommand: quality.quality?.commands?.test,
+      fallbackFullSuiteCommand: baseCommand,
       naxIgnoreIndex: input.naxIgnoreIndex,
       repoRoot: input.repoRoot,
       packagePrefix: input.packagePrefix,
@@ -151,8 +161,12 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
     const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
-    // Root-config fallback: command was not defined per-package, so run from repo root.
-    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
+    // Detected default → run from the package dir; configured-but-no-override → repo root.
+    const cmdWorkdir = detectedFromPackage
+      ? ctx.packageView.packageDir
+      : ctx.packageView.hasOverride
+        ? input.workdir
+        : ctx.packageView.repoRoot;
     logger.info("verify[scoped]", "Running scoped tests", {
       storyId: input.storyId,
       packageDir: input.packageDir,
