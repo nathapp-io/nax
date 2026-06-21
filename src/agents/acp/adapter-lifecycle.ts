@@ -5,6 +5,7 @@
 
 import { createHash } from "node:crypto";
 import type { ModelDef } from "../../config/schema";
+import { NaxError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import type { ProtocolIds } from "../../runtime/protocol-types";
 import { sleep, which } from "../../utils/bun-deps";
@@ -21,6 +22,20 @@ export const _acpAdapterDeps = {
   which,
 
   sleep,
+
+  /**
+   * Check that a session's cwd exists and is a directory. Injectable so tests
+   * don't touch real disk. Uses stat().isDirectory() because Bun.file(dir)
+   * .exists() returns false for directories.
+   */
+  async cwdExists(dir: string): Promise<boolean> {
+    const { stat } = await import("node:fs/promises");
+    try {
+      return (await stat(dir)).isDirectory();
+    } catch {
+      return false;
+    }
+  },
 
   /**
    * Create an ACP client for the given command string.
@@ -153,6 +168,20 @@ export async function ensureAcpSession(
 ): Promise<{ session: AcpSession; resumed: boolean }> {
   if (!agentName) {
     throw new Error("[acp-adapter] agentName is required for ensureAcpSession");
+  }
+
+  // Fail fast with an actionable error if the session cwd is missing. acpx would
+  // otherwise spawn the agent subprocess in a nonexistent directory and die with
+  // a cryptic "Failed to spawn agent command". The common trigger is a new
+  // feature on a brand-new package (story.workdir pointing at a not-yet-created
+  // dir); ensureStoryPackageDirs bootstraps these up front, so reaching this
+  // guard signals a path that bypassed that step.
+  if (client.cwd && !(await _acpAdapterDeps.cwdExists(client.cwd))) {
+    throw new NaxError(
+      `[acp-adapter] Session cwd does not exist: ${client.cwd} — cannot start agent "${agentName}". If this is a new package for the feature, ensure its directory is created before the run.`,
+      "SESSION_CWD_MISSING",
+      { stage: "open-session", agentName, cwd: client.cwd, sessionName },
+    );
   }
 
   if (client.loadSession) {
