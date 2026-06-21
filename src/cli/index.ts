@@ -55,3 +55,5 @@ export {
   type RulesMigrateOptions,
 } from "./rules";
 export { resolveRunProfileOverride } from "./resolve-run-profile";
+export { resolveFeatureSpec } from "./features-resolve";
+export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";

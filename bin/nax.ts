@@ -62,6 +62,7 @@ import {
   runsShowCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
+import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -720,6 +721,40 @@ program
     }
   });
 
+// ── features helpers ──────────────────────────────────
+function printHumanReadable(result: import("../src/cli/features-resolve").ResolveResult): void {
+  const { status, featureName, specSource, candidates } = result;
+  if (status === "ok") {
+    if (featureName) console.log(`Feature: ${featureName}`);
+    if (specSource) console.log(`Spec:    ${specSource.path} (${specSource.kind})`);
+    return;
+  }
+  if (status === "ambiguous") {
+    console.log("Multiple features found — pass one explicitly:");
+    (candidates ?? []).forEach((c, i) => console.log(`  ${i + 1}. ${c}`));
+    return;
+  }
+  if (status === "missing") {
+    console.log(chalk.yellow(`Missing: ${result.message}`));
+    if (result.checked?.length) {
+      console.log(chalk.dim("Checked:"));
+      result.checked.forEach((p) => console.log(chalk.dim(`  ${p}`)));
+    }
+    return;
+  }
+  if (status === "feature-not-found") {
+    console.log(chalk.yellow(`Not found: ${result.message}`));
+    if (candidates?.length) {
+      console.log("Available features:");
+      candidates.forEach((c) => console.log(`  ${c}`));
+    }
+    return;
+  }
+  if (status === "not-a-nax-repo") {
+    console.error(chalk.red(result.message));
+  }
+}
+
 // ── features ─────────────────────────────────────────
 const features = program.command("features").description("Manage features");
 
@@ -843,6 +878,56 @@ features
       }
     }
     console.log();
+  });
+
+features
+  .command("resolve [name]")
+  .description("Resolve feature name and spec source deterministically")
+  .option("--json", "Emit machine-readable JSON to stdout")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (name: string | undefined, options: { json?: boolean; dir: string }) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      if (options.json) {
+        console.log(
+          JSON.stringify({ status: "not-a-nax-repo", message: (err as Error).message }),
+        );
+      } else {
+        console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      }
+      process.exit(1);
+    }
+
+    let result: import("../src/cli/features-resolve").ResolveResult;
+    try {
+      result = await resolveFeatureSpec(name, workdir);
+    } catch (err) {
+      // Hard error — e.g. invalid feature name (slashes, ..)
+      const msg = (err as Error).message ?? "unexpected error";
+      if (options.json) {
+        console.log(JSON.stringify({ status: "not-a-nax-repo", message: msg }));
+      } else {
+        console.error(chalk.red(`Error: ${msg}`));
+      }
+      process.exit(1);
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      printHumanReadable(result);
+    }
+
+    // Exit code: 0 = ok, 2 = needs human decision, 1 = hard error (handled above)
+    if (result.status === "ok") {
+      process.exit(0);
+    } else if (result.status === "not-a-nax-repo") {
+      process.exit(1);
+    } else {
+      process.exit(2);
+    }
   });
 
 // ── plan ─────────────────────────────────────────────
