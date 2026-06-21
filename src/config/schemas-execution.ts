@@ -159,6 +159,14 @@ export const QualityConfigSchema = z.object({
       formatFix: z.string().optional(),
       formatFixScoped: z.string().optional(),
       build: z.string().optional(),
+      /**
+       * One-time package initialization (e.g. `uv sync`, `bun install`,
+       * `go mod download`). Runs once per newly-created package directory
+       * (story.workdir that did not exist at run start), after the implementer
+       * scaffolds the manifest and before the first verify/test gate. Layerable
+       * per-package via `.nax/mono/<pkg>/config.json`.
+       */
+      setup: z.string().optional(),
     })
     .default({}),
   lintOutput: z

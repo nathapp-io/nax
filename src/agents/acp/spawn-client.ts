@@ -542,7 +542,7 @@ function parseSessionIds(stdout: string): { sessionId: string | undefined; recor
  */
 export class SpawnAcpClient implements AcpClient {
   private readonly model: string;
-  private readonly cwd: string;
+  readonly cwd: string;
   private readonly timeoutSeconds: number;
   private readonly promptRetries: number;
   private readonly env: Record<string, string | undefined>;

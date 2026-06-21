@@ -1,5 +1,7 @@
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
+// Leaf import (not the execution barrel) to avoid the execution→operations cycle.
+import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
@@ -66,9 +68,21 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
   ): Promise<VerifyScopedOutput> {
     const logger = getLogger();
     const quality = ctx.packageView.select(qualityConfigSelector);
-    const baseCommand = quality.quality?.commands?.test;
+    let baseCommand = quality.quality?.commands?.test;
 
-    // No test command configured → skip (deferred run-end gate still covers regressions).
+    // Detection fallback: no command configured (root or per-package) — derive one
+    // from the package's manifest (e.g. a new package's scaffolded pyproject.toml).
+    // When used, tests run from the package dir since that is where it was detected.
+    let detectedFromPackage = false;
+    if (!baseCommand) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      // input.workdir is the resolved ABSOLUTE package dir; ctx.packageView.packageDir
+      // is the RELATIVE key — never probe the filesystem against it.
+      baseCommand = (await resolveDefaultQualityCommands(input.workdir)).test;
+      detectedFromPackage = Boolean(baseCommand);
+    }
+
+    // No test command configured or detected → skip (deferred run-end gate still covers regressions).
     if (!baseCommand) {
       logger.warn("quality", "No test command configured — skipping scoped verify", {
         storyId: input.storyId,
@@ -84,6 +98,16 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       };
     }
 
+    // One-time init for a newly-created package (e.g. `uv sync` / `bun install`),
+    // now that the implementer has scaffolded the manifest. No-op for existing packages.
+    await maybeRunNewPackageSetup({
+      runtime: ctx.runtime,
+      storyId: input.storyId,
+      // Absolute package dir — must match the abs dirs registered via markNewPackageDirs.
+      packageDir: input.workdir,
+      setupCommand: quality.quality?.commands?.setup,
+    });
+
     const regressionMode = input.regressionMode ?? "deferred";
     // Note: smart-runner config lives at execution.smartTestRunner (not quality.smartRunner).
     // qualityConfigSelector picks both "quality" and "execution" keys (see src/config/selectors.ts:74).
@@ -97,7 +121,7 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
       // via qualityConfigSelector = pickSelector("quality", "quality", "execution").
       smartRunnerConfig: quality.execution?.smartTestRunner,
       scopeTestThreshold: quality.quality?.scopeTestThreshold,
-      fallbackFullSuiteCommand: quality.quality?.commands?.test,
+      fallbackFullSuiteCommand: baseCommand,
       naxIgnoreIndex: input.naxIgnoreIndex,
       repoRoot: input.repoRoot,
       packagePrefix: input.packagePrefix,
@@ -140,8 +164,13 @@ export const verifyScopedOp: DeterministicOperation<VerifyScopedInput, VerifySco
     // for agent-cleanup. The legacy ScopedStrategy also used regression(), so this preserves parity
     // — it is NOT a new perf regression introduced by this port.
     const scopedTimeout = quality.execution?.regressionGate?.timeoutSeconds ?? 600;
-    // Root-config fallback: command was not defined per-package, so run from repo root.
-    const cmdWorkdir = ctx.packageView.hasOverride ? input.workdir : ctx.packageView.repoRoot;
+    // Detected default → run from the package dir (absolute input.workdir, not the
+    // relative packageView key); configured-but-no-override → repo root.
+    const cmdWorkdir = detectedFromPackage
+      ? input.workdir
+      : ctx.packageView.hasOverride
+        ? input.workdir
+        : ctx.packageView.repoRoot;
     logger.info("verify[scoped]", "Running scoped tests", {
       storyId: input.storyId,
       packageDir: input.packageDir,

@@ -20,7 +20,9 @@ import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
+import { ensureStoryPackageDirs } from "./ensure-package-dirs";
 import { getAllReadyStories } from "./helpers";
+import { markNewPackageDirs } from "./new-package-setup";
 
 /**
  * Options for the execution phase.
@@ -118,6 +120,31 @@ export async function runExecutionPhase(
 
   // Clear LLM routing cache at start of new run
   clearLlmCache();
+
+  // Create package directories for stories targeting not-yet-existing packages
+  // (new feature on a new package). Must run before any session opens — both the
+  // pre-run acceptance pipeline (inside executeUnified) and the execution loop
+  // resolve the agent cwd to join(repoRoot, story.workdir); acpx cannot spawn in
+  // a nonexistent cwd. Skipped under dryRun so planning never mutates the tree.
+  if (!options.dryRun) {
+    try {
+      const createdDirs = await ensureStoryPackageDirs(prd, options.workdir);
+      if (createdDirs.length > 0) {
+        // Register the new dirs so quality.commands.setup runs once per package,
+        // lazily, before that package's first verify gate (after the implementer
+        // scaffolds its manifest).
+        markNewPackageDirs(options.runtime, createdDirs);
+        logger?.info("execution", "Bootstrapped new package directories", {
+          count: createdDirs.length,
+          dirs: createdDirs,
+        });
+      }
+    } catch (err) {
+      logger?.warn("execution", "Failed to ensure story package directories — continuing", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // PERF-1: Precompute batch plan once from ready stories
   const readyStories = getAllReadyStories(prd);

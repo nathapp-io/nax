@@ -57,6 +57,8 @@ export interface AcpClientOptions {
 }
 
 export interface AcpClient {
+  /** Working directory the client spawns agent subprocesses in (when known). */
+  readonly cwd?: string;
   start(): Promise<void>;
   createSession(opts: { agentName: string; permissionMode: string; sessionName?: string }): Promise<AcpSession>;
   /** Resume an existing named session. Returns null if the session is not found. */

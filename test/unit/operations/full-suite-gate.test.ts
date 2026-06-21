@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { _newPackageSetupDeps, markNewPackageDirs } from "@/execution";
 import { fullSuiteGateOp, _fullSuiteGateDeps } from "@/operations";
+import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 
 function ctxWithConfig(config: any = {}, opts: { hasOverride?: boolean; repoRoot?: string } = {}) {
   return {
@@ -280,5 +282,102 @@ describe("fullSuiteGateOp — ported RegressionStrategy behavior (issue #1116)",
       deps,
     );
     expect(seenWorkdir).toBe("/repo");
+  });
+});
+
+describe("fullSuiteGateOp — resolveGateContext detection fallback", () => {
+  const originalDefaults = { ..._commandDefaultsDeps };
+  afterEach(() => {
+    Object.assign(_commandDefaultsDeps, originalDefaults);
+    clearCommandDefaultsCache();
+  });
+
+  test("derives a test command from the manifest and runs it from the package dir", async () => {
+    clearCommandDefaultsCache();
+    // Regression (C1): detection MUST probe the absolute input.workdir, never the
+    // relative packageView.packageDir key — otherwise a run launched from a cwd !=
+    // repoRoot probes the wrong directory and silently detects nothing.
+    let probedDir = "";
+    _commandDefaultsDeps.detectLanguage = async (dir: string) => {
+      probedDir = dir;
+      return "go";
+    };
+    const ctx = ctxWithConfig({ quality: { commands: {} } });
+    ctx.packageView.packageDir = "packages/new"; // relative key, as in production
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { story: { id: "US-001", workdir: "packages/new" } as any, workdir: "/repo/packages/new" },
+      ctx,
+    );
+
+    expect(probedDir).toBe("/repo/packages/new"); // absolute, not "packages/new"
+    expect(gateCtx.testCmd).toBe("go test ./...");
+    expect(gateCtx.cmdWorkdir).toBe("/repo/packages/new");
+  });
+
+  test("throws TEST_COMMAND_MISSING when neither config nor detection yields a command", async () => {
+    clearCommandDefaultsCache();
+    _commandDefaultsDeps.detectLanguage = async () => undefined;
+    const ctx = ctxWithConfig({ quality: { commands: {} } });
+    ctx.packageView.packageDir = "packages/empty"; // relative key, as in production
+
+    await expect(
+      _fullSuiteGateDeps.resolveGateContext(
+        { story: { id: "US-001", workdir: "packages/empty" } as any, workdir: "/repo/packages/empty" },
+        ctx,
+      ),
+    ).rejects.toThrow(/No test command configured or detected/);
+  });
+});
+
+describe("fullSuiteGateOp — new-package setup wiring (C1 regression)", () => {
+  const originalSpawn = _newPackageSetupDeps.spawn;
+  afterEach(() => {
+    _newPackageSetupDeps.spawn = originalSpawn;
+  });
+
+  function spawnCapture(capture: { cwd?: string; count: number }) {
+    return mock((_argv: string[], opts: { cwd: string }) => {
+      capture.cwd = opts.cwd;
+      capture.count += 1;
+      return {
+        exited: Promise.resolve(0),
+        stdout: new Response("").body,
+        stderr: new Response("").body,
+        pid: 1,
+        kill: () => {},
+      };
+    });
+  }
+
+  test("setup fires when dirs are registered as ABSOLUTE but packageView.packageDir is RELATIVE", async () => {
+    // This is the exact production wiring the original code got wrong:
+    // markNewPackageDirs receives absolute dirs (resolved against options.workdir),
+    // while ctx.packageView.packageDir is the relative key. The gate must pass
+    // input.workdir (absolute) so the registry match succeeds and setup runs once.
+    const capture = { cwd: undefined as string | undefined, count: 0 };
+    _newPackageSetupDeps.spawn = spawnCapture(capture) as typeof _newPackageSetupDeps.spawn;
+
+    const ctx = ctxWithConfig({ quality: { commands: { setup: "uv sync" } } });
+    ctx.packageView.packageDir = "packages/portfolio"; // RELATIVE key (production shape)
+    markNewPackageDirs(ctx.runtime, ["/repo/packages/portfolio"]); // ABSOLUTE registration
+
+    const deps = makeDeps({
+      resolveGateContext: async () => ({
+        config: { quality: { commands: { setup: "uv sync" } } } as any,
+        testCmd: "bun test",
+        fullSuiteTimeout: 60,
+        cmdWorkdir: "/repo/packages/portfolio",
+      }),
+    });
+
+    await fullSuiteGateOp.execute(
+      { story: { id: "US-001", workdir: "packages/portfolio" } as any, workdir: "/repo/packages/portfolio" },
+      ctx,
+      deps,
+    );
+
+    expect(capture.count).toBe(1);
+    expect(capture.cwd).toBe("/repo/packages/portfolio");
   });
 });

@@ -19,6 +19,9 @@
 import type { NaxConfig } from "../config";
 import { rectificationGateConfigSelector } from "../config/selectors";
 import { NaxError } from "../errors";
+// Leaf import (not the execution barrel) to avoid the execution→operations cycle;
+// same file resolves to one module, so the setup registry stays a singleton.
+import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
@@ -123,10 +126,20 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       input.workdir,
       input.story.workdir,
     );
+    // Detection fallback: no command configured (root or per-package) — derive one
+    // from the package's manifest. Runs from the package dir, since the default was
+    // detected there (e.g. a new package's freshly-scaffolded pyproject.toml).
     if (!resolvedTestCmd) {
+      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
+      // input.workdir is the resolved ABSOLUTE package dir (CallContext.packageDir = ctx.workdir).
+      // ctx.packageView.packageDir is the RELATIVE key — never probe/spawn against it.
+      const detected = (await resolveDefaultQualityCommands(input.workdir)).test;
+      if (detected) {
+        return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: input.workdir };
+      }
       const pkg = input.story.workdir ?? input.workdir;
       throw new NaxError(
-        `No test command configured for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
+        `No test command configured or detected for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
         "TEST_COMMAND_MISSING",
         {
           stage: "full-suite-gate",
@@ -218,6 +231,15 @@ export const fullSuiteGateOp: DeterministicOperation<
     }
 
     const gateCtx = await deps.resolveGateContext(input, ctx);
+    // One-time init for a newly-created package (e.g. `uv sync` / `bun install`),
+    // now that the implementer has scaffolded the manifest. No-op for existing packages.
+    await maybeRunNewPackageSetup({
+      runtime: ctx.runtime,
+      storyId: input.story.id,
+      // Absolute package dir — must match the abs dirs registered via markNewPackageDirs.
+      packageDir: input.workdir,
+      setupCommand: gateCtx.config.quality?.commands?.setup,
+    });
     logger.info("verify[regression]", "Running full-suite gate", {
       storyId: input.story.id,
       packageDir: input.story.workdir,
