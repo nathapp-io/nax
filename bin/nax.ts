@@ -891,7 +891,7 @@ features
       workdir = validateDirectory(options.dir);
     } catch (err) {
       if (options.json) {
-        console.log(JSON.stringify({ status: "not-a-nax-repo", message: (err as Error).message }));
+        console.log(JSON.stringify({ status: "error", message: (err as Error).message }));
       } else {
         console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       }
@@ -905,7 +905,7 @@ features
       // Hard error — e.g. invalid feature name (slashes, ..)
       const msg = (err as Error).message ?? "unexpected error";
       if (options.json) {
-        console.log(JSON.stringify({ status: "not-a-nax-repo", message: msg }));
+        console.log(JSON.stringify({ status: "error", message: msg }));
       } else {
         console.error(chalk.red(`Error: ${msg}`));
       }
