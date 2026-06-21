@@ -62,7 +62,6 @@ import {
   runsShowCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
-import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -70,6 +69,7 @@ import {
   profileShowCommand,
   profileUseCommand,
 } from "../src/cli/config-profile";
+import { resolveFeatureSpec } from "../src/cli/features-resolve";
 import { generateCommand } from "../src/cli/generate";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
@@ -738,7 +738,7 @@ function printHumanReadable(result: import("../src/cli/features-resolve").Resolv
     console.log(chalk.yellow(`Missing: ${result.message}`));
     if (result.checked?.length) {
       console.log(chalk.dim("Checked:"));
-      result.checked.forEach((p) => console.log(chalk.dim(`  ${p}`)));
+      for (const p of result.checked) console.log(chalk.dim(`  ${p}`));
     }
     return;
   }
@@ -746,7 +746,7 @@ function printHumanReadable(result: import("../src/cli/features-resolve").Resolv
     console.log(chalk.yellow(`Not found: ${result.message}`));
     if (candidates?.length) {
       console.log("Available features:");
-      candidates.forEach((c) => console.log(`  ${c}`));
+      for (const c of candidates) console.log(`  ${c}`);
     }
     return;
   }
@@ -891,9 +891,7 @@ features
       workdir = validateDirectory(options.dir);
     } catch (err) {
       if (options.json) {
-        console.log(
-          JSON.stringify({ status: "not-a-nax-repo", message: (err as Error).message }),
-        );
+        console.log(JSON.stringify({ status: "not-a-nax-repo", message: (err as Error).message }));
       } else {
         console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       }
