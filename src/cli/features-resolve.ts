@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { findProjectDir } from "../config";
 import { validateFeatureName } from "../utils/feature-name";
+import { type AcceptanceResolution, resolveFeatureAcceptance } from "./features-acceptance";
 
 export type ResolveStatus = "ok" | "ambiguous" | "missing" | "feature-not-found" | "not-a-nax-repo";
 
@@ -16,6 +17,8 @@ export interface ResolveResult {
   status: ResolveStatus;
   featureName?: string | null;
   specSource?: SpecSource | null;
+  /** Acceptance test target(s) for the feature. Present only on an `ok` result with a known featureName. */
+  acceptance?: AcceptanceResolution;
   candidates?: string[];
   checked?: string[];
   message: string;
@@ -162,6 +165,7 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
         status: "ok",
         featureName: name,
         specSource: source,
+        acceptance: await resolveFeatureAcceptance(name, workdir),
         message: `resolved spec: ${source.path}`,
       };
     }
@@ -215,6 +219,7 @@ export async function resolveFeatureSpec(name: string | undefined, workdir: stri
       status: "ok",
       featureName: onlyName,
       specSource: source,
+      acceptance: await resolveFeatureAcceptance(onlyName, workdir),
       message: `resolved spec: ${source.path}`,
     };
   }
