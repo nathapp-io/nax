@@ -393,6 +393,32 @@ describe("parseTestFailures()", () => {
 
     expect(parseTestFailures(output)).toEqual(["AC-3"]);
   });
+
+  test("vitest: does NOT match a passing test whose title contains the word FAIL", () => {
+    const output = [
+      " Test Files  1 passed (1)",
+      "   ✓ AC-7: handles FAIL responses gracefully 5ms",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual([]);
+  });
+
+  test("vitest: strips leading erase-line codes before the FAIL anchor", () => {
+    const esc = String.fromCharCode(27);
+    const output = [
+      " Test Files  1 failed (1)",
+      `${esc}[2K${esc}[1G FAIL  .nax/x.test.tsx > AC-4: still detected`,
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-4"]);
+  });
+
+  test("pytest FAILED lines are not double-handled by the vitest FAIL branch (unknown framework)", () => {
+    // No framework summary line → detector returns "unknown" → all branches run.
+    const output = "FAILED tests/test_feature.py::test_AC_2_empty_input - AssertionError";
+
+    expect(parseTestFailures(output)).toEqual(["AC-2"]);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -13,11 +13,13 @@
 import { detectFramework } from "./detector";
 
 /**
- * Strips ANSI SGR color codes so failure markers and AC tokens match on plain text.
+ * Strips ANSI escape sequences (CSI: SGR color codes plus cursor/erase codes such
+ * as the `\x1b[2K` vitest's live reporter prefixes lines with) so failure markers
+ * and AC tokens match on plain text — including the line-leading FAIL badge.
  * Built via RegExp() so the ESC byte (0x1b) is not a control character in the source
  * regex literal (which Biome's noControlCharactersInRegex rightly forbids).
  */
-const ANSI_SGR_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
 
 /**
  * Parse test runner output to extract failed AC IDs.
@@ -39,9 +41,10 @@ const ANSI_SGR_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"
  * @returns Deduplicated array of AC IDs, e.g. ["AC-1", "AC-3", "AC-HOOK"]
  */
 export function parseTestFailures(output: string): string[] {
-  // Strip ANSI color codes first: vitest/jest colorize the "FAIL" marker and test
-  // titles, which would otherwise sit between "AC" and the number and break matching.
-  const clean = output.replace(ANSI_SGR_PATTERN, "");
+  // Strip ANSI escapes first: vitest/jest colorize the "FAIL" marker and test titles,
+  // and the live reporter prefixes lines with cursor/erase codes — both would otherwise
+  // sit between tokens and break matching (and defeat the line-start FAIL anchor below).
+  const clean = output.replace(ANSI_ESCAPE_PATTERN, "");
   const framework = detectFramework(clean);
   const failedACs: string[] = [];
   const lines = clean.split("\n");
@@ -85,9 +88,11 @@ export function parseTestFailures(output: string): string[] {
     //  - vitest default-reporter block headers: " FAIL  <file> > <suite> > AC-N: ..."
     // The default reporter never uses bullet glyphs, so the FAIL header is the only
     // place the AC id appears — without it these failures fell through to AC-ERROR.
-    // `(?:^|\s)FAIL\s` matches the header but not pytest's "FAILED" (no whitespace after FAIL).
+    // The FAIL badge is anchored to the (ANSI-stripped) line start, so a passing line
+    // whose title merely contains the word "FAIL" is not matched; `\s` after FAIL also
+    // excludes pytest's "FAILED" (handled by its own branch above).
     if (framework === "jest" || framework === "vitest" || framework === "unknown") {
-      if (/[●×✕]/.test(line) || /(?:^|\s)FAIL\s/.test(line)) {
+      if (/[●×✕]/.test(line) || /^\s*FAIL\s/.test(line)) {
         const acMatch = line.match(/AC[-_]?(\d+)/i);
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;
