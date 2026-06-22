@@ -13,13 +13,23 @@
 import { detectFramework } from "./detector";
 
 /**
+ * Strips ANSI SGR color codes so failure markers and AC tokens match on plain text.
+ * Built via RegExp() so the ESC byte (0x1b) is not a control character in the source
+ * regex literal (which Biome's noControlCharactersInRegex rightly forbids).
+ */
+const ANSI_SGR_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/**
  * Parse test runner output to extract failed AC IDs.
  *
  * Supported frameworks and their failure markers:
  * - Bun:        "(fail) AC-N: description [duration]"
  * - Go:         "--- FAIL: TestAC-N_desc (0.00s)"
  * - pytest:     "FAILED tests/...::test_AC_N_desc"
- * - Jest/Vitest: "  ● AC-N: description" or "× AC-N: description"
+ * - Jest/Vitest: "  ● AC-N: description", "× AC-N: description", or vitest's
+ *   default-reporter block header " FAIL  <file> > <suite> > AC-N: description"
+ *
+ * ANSI color codes are stripped before matching (vitest/jest colorize the marker).
  *
  * Special sentinels:
  * - AC-HOOK: bun lifecycle hook timeout (beforeAll/afterAll timed out, no AC label)
@@ -29,9 +39,12 @@ import { detectFramework } from "./detector";
  * @returns Deduplicated array of AC IDs, e.g. ["AC-1", "AC-3", "AC-HOOK"]
  */
 export function parseTestFailures(output: string): string[] {
-  const framework = detectFramework(output);
+  // Strip ANSI color codes first: vitest/jest colorize the "FAIL" marker and test
+  // titles, which would otherwise sit between "AC" and the number and break matching.
+  const clean = output.replace(ANSI_SGR_PATTERN, "");
+  const framework = detectFramework(clean);
   const failedACs: string[] = [];
-  const lines = output.split("\n");
+  const lines = clean.split("\n");
 
   for (const line of lines) {
     // Bun: "(fail) AC-N: description [duration]"
@@ -67,9 +80,14 @@ export function parseTestFailures(output: string): string[] {
       }
     }
 
-    // Jest / Vitest: "  ● AC-N: description" or "× AC-N: description"
+    // Jest / Vitest. Two output shapes carry the failing test name (and AC label):
+    //  - bullet markers: "  ● AC-N: description" (jest summary) / "× AC-N: ..." (vitest verbose)
+    //  - vitest default-reporter block headers: " FAIL  <file> > <suite> > AC-N: ..."
+    // The default reporter never uses bullet glyphs, so the FAIL header is the only
+    // place the AC id appears — without it these failures fell through to AC-ERROR.
+    // `(?:^|\s)FAIL\s` matches the header but not pytest's "FAILED" (no whitespace after FAIL).
     if (framework === "jest" || framework === "vitest" || framework === "unknown") {
-      if (/[●×✕]/.test(line)) {
+      if (/[●×✕]/.test(line) || /(?:^|\s)FAIL\s/.test(line)) {
         const acMatch = line.match(/AC[-_]?(\d+)/i);
         if (acMatch) {
           const acId = `AC-${acMatch[1]}`;

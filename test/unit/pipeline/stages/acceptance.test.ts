@@ -363,6 +363,36 @@ describe("parseTestFailures()", () => {
 
     expect(parseTestFailures(output)).toEqual([]);
   });
+
+  test("vitest default reporter: extracts AC IDs from FAIL block headers", () => {
+    const output = [
+      " ❯ .nax/features/x/.nax-acceptance.test.tsx (5 tests | 2 failed) 120ms",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯",
+      "",
+      " FAIL  .nax/features/x/.nax-acceptance.test.tsx > Watchlist > AC-9: updates the watchlist",
+      'AssertionError: expected undefined to be "w1"',
+      " ❯ .nax/features/x/.nax-acceptance.test.tsx:649:26",
+      "",
+      " FAIL  .nax/features/x/.nax-acceptance.test.tsx > AC-12: removes a ticker",
+      "AssertionError: expected 2 to be 1",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  2 failed | 3 passed (5)",
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-9", "AC-12"]);
+  });
+
+  test("vitest: extracts AC IDs from ANSI-colored FAIL headers", () => {
+    const esc = String.fromCharCode(27); // ANSI escape (vitest colorizes the FAIL marker)
+    const output = [
+      " Test Files  1 failed (1)",
+      `${esc}[31m${esc}[7m FAIL ${esc}[27m${esc}[39m .nax/x.test.tsx > ${esc}[1mAC-3: does the thing${esc}[22m`,
+    ].join("\n");
+
+    expect(parseTestFailures(output)).toEqual(["AC-3"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
