@@ -57,3 +57,9 @@ export {
 export { resolveRunProfileOverride } from "./resolve-run-profile";
 export { resolveFeatureSpec } from "./features-resolve";
 export type { ResolveResult, ResolveStatus, SpecSource, SpecSourceKind } from "./features-resolve";
+export { resolveFeatureAcceptance } from "./features-acceptance";
+export type {
+  AcceptanceGroupResult,
+  AcceptanceResolution,
+  AcceptanceResolutionStatus,
+} from "./features-acceptance";

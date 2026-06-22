@@ -68,6 +68,31 @@ describe("not-a-nax-repo", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Acceptance block attachment
+// ---------------------------------------------------------------------------
+
+describe("acceptance block", () => {
+  test("ok result with a named feature attaches the acceptance block", async () => {
+    const naxDir = initNaxRepo();
+    createFeature(naxDir, "auth", { prdJson: true });
+    const result = await resolveFeatureSpec("auth", tempDir);
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBe("auth");
+    expect(result.acceptance?.status).toBe("ok");
+    expect(result.acceptance?.groups[0].testPath).toBe(".nax/features/auth/.nax-acceptance.test.ts");
+  });
+
+  test("path-only ok result (featureName null) has no acceptance block", async () => {
+    initNaxRepo();
+    writeFileSync(join(tempDir, "my-spec.md"), "# content");
+    const result = await resolveFeatureSpec("./my-spec.md", tempDir);
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBeNull();
+    expect(result.acceptance).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Explicit path
 // ---------------------------------------------------------------------------
 
