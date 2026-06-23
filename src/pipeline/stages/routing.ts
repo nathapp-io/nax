@@ -100,7 +100,7 @@ export const routingStage: PipelineStage = {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 
-    // @design: BUG-010: Greenfield detection — force test-after if no test files exist
+    // @design: BUG-010: Greenfield detection — force tdd-simple if no test files exist (security-critical stories keep three-session-tdd)
     // MW-011: Scan story.workdir for monorepo, not repo root
     // STRAT-001: no-test is exempt from greenfield override
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
