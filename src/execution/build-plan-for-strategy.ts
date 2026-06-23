@@ -243,7 +243,24 @@ export async function buildPlanForStrategy(
     // findings list (then stalls asking the human for them). Pin the floor to
     // "info" so all advisory findings render. Blocking-cycle strategies above
     // are unaffected — they don't pass this option.
-    if (nbf.scope === "source") {
+    if (!isThreeSession) {
+      // Single-session strategies (tdd-simple / test-after / no-test) have no
+      // separate test-writer session — the one warm implementer session authored
+      // both source and tests. Route ALL advisory adversarial findings to that
+      // implementer regardless of nbf.scope, instead of resuming a cold,
+      // context-less test-writer session (which the three-session "both"/"triage"
+      // scopes below do). Mirrors the main rectification's single-session carve-out
+      // (`includeAdversarialReview: !isThreeSession`, test-writer gated on
+      // isThreeSession). Without this, a single-session story's non-blocking fix
+      // dispatched an `autofix-test-writer` strategy that woke a stale test-writer
+      // session (#1276 follow-up: US-003 in the 2026-06-23 run log).
+      nbStrategies.push(
+        makeAutofixImplementerStrategy(story, config, nbSink, {
+          includeAdversarialReview: true,
+          promptSeverityFloor: "info",
+        }) as FixStrategy<Finding, unknown, unknown, unknown>,
+      );
+    } else if (nbf.scope === "source") {
       // implementer claims adversarial findings in SOURCE scope (both session modes)
       nbStrategies.push(
         makeAutofixImplementerStrategy(story, config, nbSink, {
