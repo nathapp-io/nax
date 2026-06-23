@@ -7,16 +7,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "../../../helpers";
+import { RectifierPromptBuilder } from "../../../../src/prompts";
 import {
   buildEscapeHatch,
+  escapeHatchFor,
   exceptionCountWord,
   implementerOwnsTests,
   testEditHeadline,
-  escapeHatchFor,
 } from "../../../../src/prompts/builders/rectifier-builder-helpers";
-import { RectifierPromptBuilder } from "../../../../src/prompts";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import { makeStory } from "../../../helpers";
 
 const TDD_STORY = makeStory({
   id: "US-TDD",
@@ -70,7 +70,10 @@ describe("buildEscapeHatch", () => {
       ["'Exceptions 1–4' line present", "Exceptions 1–4"],
       ["includes Exception 4 heading", "### Exception 4 — Mock-structure handoff"],
       ["Exception 4 case (a): wrong mocks", "mocks reference primitives the new code bypasses"],
-      ["Exception 4 case (b): required test-infrastructure", "Required test-infrastructure does not yet exist and must be introduced"],
+      [
+        "Exception 4 case (b): required test-infrastructure",
+        "Required test-infrastructure does not yet exist and must be introduced",
+      ],
       ["case (b) hermetic language", "hermetic/fixture-backed test surface"],
     ])("%s", (_label, needle) => {
       expect(hatch).toContain(needle);
@@ -113,6 +116,19 @@ describe("buildEscapeHatch", () => {
     test("snapshot: full non-TDD escape hatch", () => {
       expect(hatch).toMatchSnapshot();
     });
+  });
+});
+
+// ─── nax-artifact disqualifier (universal, both paths) ───────────────────────
+
+describe("buildEscapeHatch — nax-artifact disqualifier", () => {
+  test.each([
+    ["TDD path", buildEscapeHatch({ includeMockHandoff: true })],
+    ["non-TDD path", buildEscapeHatch({ includeMockHandoff: false })],
+  ])("%s includes the .nax/ coverage disqualifier", (_label, hatch) => {
+    expect(hatch).toContain("never a false positive because a `.nax/` file exists");
+    expect(hatch).toContain("NOT source-tree test coverage");
+    expect(hatch).toContain("author a real test under the package's resolved test path");
   });
 });
 
@@ -332,7 +348,11 @@ describe("rectification prompts — single-session permits test edits (US-003 re
 
   test("dialogueAwareRectification for tdd-simple: permits edits; three-session still forbids", () => {
     const opts = { findingReasoning: new Map<string, string>(), history: [] };
-    const permitted = RectifierPromptBuilder.dialogueAwareRectification([makeCheck("semantic")], TDD_SIMPLE_STORY, opts);
+    const permitted = RectifierPromptBuilder.dialogueAwareRectification(
+      [makeCheck("semantic")],
+      TDD_SIMPLE_STORY,
+      opts,
+    );
     expect(permitted).toContain("MAY edit test files");
     expect(permitted).not.toContain("Do NOT change test files or test behavior");
 

@@ -124,6 +124,13 @@ UNRESOLVED: <brief explanation of which findings conflicted and why they cannot 
 
 Before emitting UNRESOLVED, confirm none of Exceptions 1–${count} apply.
 
+**A missing-test or \`test-gap\` finding is never a false positive because a \`.nax/\` file exists.**
+\`.nax/\` is nax's own artifact directory; \`.nax-acceptance.test.ts\` is generated scaffolding for the
+acceptance gate — it is NOT source-tree test coverage. You may NOT cite any \`.nax/\`-resident file as
+evidence that an acceptance criterion is already tested, and you may NOT emit UNRESOLVED on that basis.
+The only valid response to a missing-test finding is to
+author a real test under the package's resolved test path.
+
 ## Test-file edit exceptions
 
 The "do not modify test files" rule has ${countWord} narrow escape valves. Each requires a
