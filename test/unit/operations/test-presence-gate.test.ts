@@ -96,7 +96,7 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
     }
   });
 
-  test("returns success=true (safe fallback) when workdir does not exist (isGreenfieldStory absorbs error)", async () => {
+  test("returns success=true (safe fallback) when workdir does not exist (scan error absorbed)", async () => {
     const ctx = { runtime: {} } as any;
     const out = await (testPresenceGateOp as any).execute(
       {
@@ -111,9 +111,63 @@ describe("testPresenceGateOp — post-implementer test presence check", () => {
       },
       ctx,
     );
-    // isGreenfieldStory catches filesystem errors and returns false (= not greenfield = has tests)
-    // so success=true, hasTests=true.
+    // hasTestFilesOnDisk throws on a missing dir; the gate catches it and does NOT
+    // block the story on a flaky scan → success=true, hasTests=true.
     expect(out.success).toBe(true);
     expect(out.hasTests).toBe(true);
+  });
+
+  test("detects an UNTRACKED authored test file in a git repo (regression: must not use git ls-files)", async () => {
+    const dir = makeTempDir();
+    try {
+      await Bun.spawn(["git", "init"], { cwd: dir }).exited;
+      await writeFile(join(dir, "index.ts"), "export const x = 1;");
+      await Bun.spawn(["git", "add", "index.ts"], { cwd: dir }).exited;
+      await Bun.spawn(["git", "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-m", "init"], {
+        cwd: dir,
+      }).exited;
+      // Implementer authors a test file — committed source, but the test is UNTRACKED.
+      await mkdir(join(dir, "test"), { recursive: true });
+      await writeFile(join(dir, "test", "index.test.ts"), "test('x', () => {});");
+      const out = await (testPresenceGateOp as any).execute(
+        {
+          story: { id: "s5" } as any,
+          workdir: dir,
+          resolvedTestPatterns: {
+            globs: ["test/**/*.test.ts"],
+            regex: [/\.test\.ts$/],
+            pathspec: [],
+            testDirs: ["test"],
+          },
+        },
+        { runtime: {} } as any,
+      );
+      expect(out.success).toBe(true);
+      expect(out.hasTests).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("does NOT count a .nax/ acceptance harness as an authored test", async () => {
+    const dir = makeTempDir();
+    try {
+      // Only a nax-generated harness exists under .nax/ — no real source tests.
+      await mkdir(join(dir, ".nax", "features", "feat"), { recursive: true });
+      await writeFile(join(dir, ".nax", "features", "feat", ".nax-acceptance.test.ts"), "test('ac', () => {});");
+      const out = await (testPresenceGateOp as any).execute(
+        {
+          story: { id: "s6" } as any,
+          workdir: dir,
+          resolvedTestPatterns: { globs: ["**/*.test.ts"], regex: [/\.test\.ts$/], pathspec: [], testDirs: ["test"] },
+        },
+        { runtime: {} } as any,
+      );
+      expect(out.success).toBe(false);
+      expect(out.hasTests).toBe(false);
+      expect(out.pauseReason).toBe("no-tests-authored");
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });
