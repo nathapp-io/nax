@@ -72,7 +72,7 @@ describe("greenfieldGateOp — deterministic filesystem detection", () => {
     }
   });
 
-  test("returns success=true (safe fallback) when workdir does not exist (isGreenfieldStory absorbs error)", async () => {
+  test("returns success=true (safe fallback) when workdir does not exist (scan error absorbed)", async () => {
     const ctx = { runtime: {} } as any;
     const out = await (greenfieldGateOp as any).execute(
       {
@@ -87,12 +87,57 @@ describe("greenfieldGateOp — deterministic filesystem detection", () => {
       },
       ctx,
     );
-    // isGreenfieldStory catches filesystem errors from the root call and re-throws,
-    // then the outer try-catch in isGreenfieldStory's wrapper returns false (not greenfield).
-    // Wait — actually looking at the code: scanForTestFiles throws for root call,
-    // and isGreenfieldStory catches all errors and returns false (= not greenfield = has tests).
-    // So success=true, hasPreExistingTests=true.
+    // hasTestFilesOnDisk throws on a missing dir; the gate catches it and does NOT
+    // pause the story on a flaky scan → success=true, hasPreExistingTests=true.
     expect(out.success).toBe(true);
     expect(out.hasPreExistingTests).toBe(true);
+  });
+
+  test("detects an UNTRACKED test file in a git repo (regression: must not use git ls-files)", async () => {
+    const dir = makeTempDir();
+    try {
+      await Bun.spawn(["git", "init"], { cwd: dir }).exited;
+      await writeFile(join(dir, "index.ts"), "export const x = 1;");
+      await Bun.spawn(["git", "add", "index.ts"], { cwd: dir }).exited;
+      await Bun.spawn(["git", "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-m", "init"], {
+        cwd: dir,
+      }).exited;
+      // Test-writer authored a test file — committed source, but the test is UNTRACKED.
+      await mkdir(join(dir, "test"), { recursive: true });
+      await writeFile(join(dir, "test", "index.test.ts"), "test('x', () => {});");
+      const out = await (greenfieldGateOp as any).execute(
+        {
+          story: { id: "s5" } as any,
+          workdir: dir,
+          resolvedTestPatterns: { globs: ["test/**/*.test.ts"], regex: [/\.test\.ts$/], pathspec: [], testDirs: ["test"] },
+        },
+        { runtime: {} } as any,
+      );
+      expect(out.success).toBe(true);
+      expect(out.hasPreExistingTests).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test("does NOT count a .nax/ acceptance harness as a test file", async () => {
+    const dir = makeTempDir();
+    try {
+      await mkdir(join(dir, ".nax", "features", "feat"), { recursive: true });
+      await writeFile(join(dir, ".nax", "features", "feat", ".nax-acceptance.test.ts"), "test('ac', () => {});");
+      const out = await (greenfieldGateOp as any).execute(
+        {
+          story: { id: "s6" } as any,
+          workdir: dir,
+          resolvedTestPatterns: { globs: ["**/*.test.ts"], regex: [/\.test\.ts$/], pathspec: [], testDirs: ["test"] },
+        },
+        { runtime: {} } as any,
+      );
+      expect(out.success).toBe(false);
+      expect(out.hasPreExistingTests).toBe(false);
+      expect(out.pauseReason).toBe("greenfield-no-tests");
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });

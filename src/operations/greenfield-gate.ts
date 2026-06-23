@@ -7,7 +7,7 @@
  */
 
 import { pickSelector } from "../config";
-import { isGreenfieldStory } from "../context/greenfield";
+import { hasTestFilesOnDisk } from "../context/greenfield";
 import type { UserStory } from "../prd";
 import type { ResolvedTestPatterns } from "../test-runners";
 import type { CallContext, DeterministicOperation } from "./types";
@@ -35,11 +35,14 @@ const greenfieldGateConfigSelector = pickSelector("greenfield-gate", "execution"
 type GreenfieldGateConfig = ReturnType<typeof greenfieldGateConfigSelector.select>;
 
 /**
- * Greenfield Gate Operation — detects if story is greenfield (no test files) via
- * filesystem scan. When greenfield, sets success=false + pauseReason="greenfield-no-tests"
- * so the orchestrator pause handler skips TDD test-writer (BUG-010).
+ * Greenfield Gate Operation — runs AFTER the test-writer and detects whether tests
+ * now exist via a filesystem scan (`hasTestFilesOnDisk`). Tracked-only detection
+ * (`git ls-files`) would miss the test-writer's freshly-authored, still-untracked
+ * tests and false-fire `greenfield-no-tests`; the scan sees them and excludes `.nax/`
+ * so nax's own acceptance harness never counts.
  *
- * No LLM session is opened — this is a pure filesystem check.
+ * When no tests exist, sets success=false + pauseReason="greenfield-no-tests".
+ * No LLM session is opened — this is a pure deterministic filesystem check.
  */
 export const greenfieldGateOp: DeterministicOperation<GreenfieldGateInput, GreenfieldGateOutput, GreenfieldGateConfig> =
   {
@@ -48,11 +51,19 @@ export const greenfieldGateOp: DeterministicOperation<GreenfieldGateInput, Green
     stage: "verify",
     config: greenfieldGateConfigSelector,
     async execute(input: GreenfieldGateInput, _ctx: CallContext): Promise<GreenfieldGateOutput> {
-      // isGreenfieldStory takes raw glob strings (readonly string[]), not ResolvedTestPatterns
+      // Scan the FILESYSTEM (not `git ls-files`): the test-writer's freshly-authored
+      // tests are still untracked when this gate runs, so a tracked-only check would
+      // miss them and falsely report greenfield. hasTestFilesOnDisk also excludes
+      // `.nax/` so the generated acceptance harness never counts.
       const globs: readonly string[] = input.resolvedTestPatterns.globs;
-      // isGreenfieldStory catches its own errors and returns false (not greenfield) on failure.
-      const isGreenfield = await isGreenfieldStory(input.story, input.workdir, globs);
-      if (isGreenfield) {
+      let hasTests: boolean;
+      try {
+        hasTests = await hasTestFilesOnDisk(input.workdir, globs);
+      } catch {
+        // Scan failed (e.g. workdir vanished) — do not pause the story on a flaky scan.
+        return { success: true, hasPreExistingTests: true };
+      }
+      if (!hasTests) {
         return { success: false, hasPreExistingTests: false, pauseReason: "greenfield-no-tests" };
       }
       return { success: true, hasPreExistingTests: true };
