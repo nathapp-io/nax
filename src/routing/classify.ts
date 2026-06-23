@@ -68,6 +68,19 @@ const PUBLIC_API_KEYWORDS = [
   "endpoint",
 ];
 
+/**
+ * True when a story's title/tags indicate security-critical or public-API work —
+ * the same signals that force three-session-tdd in determineTestStrategy. The
+ * greenfield routing override uses this to KEEP three-session-tdd on greenfield for
+ * these stories (preserving the verifier + test/impl isolation) instead of
+ * downgrading to a single-session strategy. Description is excluded (BUG-031:
+ * only stable, immutable story fields).
+ */
+export function isSecurityCriticalStory(title: string, tags: readonly string[] = []): boolean {
+  const text = [title, ...tags].join(" ").toLowerCase();
+  return SECURITY_KEYWORDS.some((kw) => text.includes(kw)) || PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));
+}
+
 // ---------------------------------------------------------------------------
 // Core classification functions
 // ---------------------------------------------------------------------------
@@ -126,12 +139,7 @@ export function determineTestStrategy(
 
   // auto mode: apply heuristics
   // @design: BUG-031: exclude description — only use stable, immutable story fields
-  const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
-
-  const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));
-  const isPublicApi = PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));
-
-  if (isSecurityCritical || isPublicApi) return "three-session-tdd";
+  if (isSecurityCriticalStory(title, tags)) return "three-session-tdd";
 
   if (complexity === "expert") return "three-session-tdd";
   if (complexity === "complex") return "three-session-tdd-lite";

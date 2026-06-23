@@ -23,7 +23,7 @@ export type { RoutingDecision } from "./decision";
 import { MAX_CACHE_SIZE, cachedDecisions, evictOldest } from "./strategies/llm-cache";
 
 // Pure classification logic lives in classify.ts (no agent-registry dep) — re-exported here for back-compat.
-export { classifyComplexity, determineTestStrategy } from "./classify";
+export { classifyComplexity, determineTestStrategy, isSecurityCriticalStory } from "./classify";
 import { classifyComplexity, determineTestStrategy } from "./classify";
 
 // ---------------------------------------------------------------------------
