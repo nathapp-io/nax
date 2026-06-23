@@ -104,6 +104,14 @@ export function routeTddFailure(
     // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
     case "greenfield-no-tests":
       return { action: "escalate", reason: buildReason(failureCategory) };
+    // Single-session implementer authored no tests → escalate so implementer is retried
+    // with an explicit test-authoring directive carried via priorErrors
+    case "no-tests-authored":
+      return {
+        action: "escalate",
+        reason:
+          "No test files were authored for this story. You MUST write tests covering every acceptance criterion under the package's resolved test path before implementation is considered complete.",
+      };
     case "dependency-prep":
       // Worktree dependency prep hard-fails in the iteration runner before the
       // pipeline routes here, so this arm is unreachable in practice — handled

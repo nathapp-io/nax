@@ -1,5 +1,12 @@
 import type { Finding } from "../findings/types";
-import { fullSuiteGateOp, greenfieldGateOp, implementerOp, testWriterOp, verifierOp } from "../operations";
+import {
+  fullSuiteGateOp,
+  greenfieldGateOp,
+  implementerOp,
+  testPresenceGateOp,
+  testWriterOp,
+  verifierOp,
+} from "../operations";
 import { EXHAUSTED_EXIT_REASONS } from "./story-orchestrator";
 import type { FailureCategory } from "./types";
 
@@ -24,6 +31,16 @@ export function deriveTddFailureCategory(
     | undefined;
   if (greenfieldOutput?.success === false && greenfieldOutput?.pauseReason === "greenfield-no-tests") {
     return "greenfield-no-tests";
+  }
+
+  // Test-presence gate: when success=false + pauseReason="no-tests-authored", the
+  // single-session implementer ran but produced no test files. Trigger escalation so
+  // the implementer is retried with an explicit test-authoring directive.
+  const testPresenceOutput = phaseOutputs[testPresenceGateOp.name] as
+    | { success?: boolean; pauseReason?: string }
+    | undefined;
+  if (testPresenceOutput?.success === false && testPresenceOutput?.pauseReason === "no-tests-authored") {
+    return "no-tests-authored";
   }
 
   // Verifier failure → derive from verifier output

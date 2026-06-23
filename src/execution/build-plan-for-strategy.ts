@@ -109,6 +109,15 @@ export async function buildPlanForStrategy(
     builder.addImplementer(inputs.implementer);
   }
 
+  // Test-presence gate: single-session test-authoring strategies only (tdd-simple / test-after).
+  // Runs AFTER the implementer to confirm it authored at least one test file.
+  // Three-session strategies use a separate test-writer + greenfield-gate instead.
+  // input is assembled only for tdd-simple/test-after by assemblePlanInputsFromCtx,
+  // so input presence is the sufficient guard here.
+  if (!isThreeSession && inputs.testPresenceGate) {
+    builder.addTestPresenceGate(inputs.testPresenceGate);
+  }
+
   // Full-suite gate: TDD always, non-TDD only when regressionGate.mode === "per-story" (issue #1116).
   const regressionMode = config.execution?.regressionGate?.mode ?? "deferred";
   if (inputs.fullSuiteGate && (isThreeSession || regressionMode === "per-story")) {

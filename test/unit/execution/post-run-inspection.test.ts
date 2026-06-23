@@ -21,6 +21,7 @@ import {
   fullSuiteGateOp,
   greenfieldGateOp,
   implementerOp,
+  testPresenceGateOp,
   testWriterOp,
   verifierOp,
   verifyScopedOp,
@@ -73,6 +74,23 @@ describe("deriveTddFailureCategory", () => {
       [greenfieldGateOp.name]: { success: false, pauseReason: "greenfield-no-tests" },
     });
     expect(result).toBe("greenfield-no-tests");
+  });
+
+  test("returns no-tests-authored when test-presence gate failed with that pauseReason", () => {
+    const result = deriveTddFailureCategory({
+      [testPresenceGateOp.name]: { success: false, pauseReason: "no-tests-authored" },
+    });
+    expect(result).toBe("no-tests-authored");
+  });
+
+  test("test-presence-gate failure takes precedence over verifier failure (checked before verifier in deriveTddFailureCategory)", () => {
+    // deriveTddFailureCategory checks: testWriter → greenfield → testPresence → verifier.
+    // So test-presence-gate wins when both it and the verifier fail.
+    const result = deriveTddFailureCategory({
+      [testPresenceGateOp.name]: { success: false, pauseReason: "no-tests-authored" },
+      [verifierOp.name]: { success: false },
+    });
+    expect(result).toBe("no-tests-authored");
   });
 
   test("returns verifier failureCategory when verifier failed", () => {

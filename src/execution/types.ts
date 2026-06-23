@@ -48,6 +48,8 @@ export type FailureCategory =
   | "verifier-rejected"
   /** Greenfield project with no test files — TDD not applicable (BUG-010) */
   | "greenfield-no-tests"
+  /** Single-session implementer ran but authored no test files — re-runs implementer with test directive */
+  | "no-tests-authored"
   /** A configured review phase (semantic / adversarial) never ran before the verdict */
   | "review-incomplete"
   /** Worktree dependency preparation failed before pipeline execution started */

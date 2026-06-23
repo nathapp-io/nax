@@ -66,6 +66,7 @@ export type PhaseKind =
   | "test-writer"
   | "greenfield-gate"
   | "implementer"
+  | "test-presence-gate"
   | "full-suite-gate"
   | "verifier"
   | "verify-scoped"
@@ -112,6 +113,7 @@ export interface InternalBuildState {
   implementer?: InternalPhase;
   testWriter?: InternalPhase;
   greenfieldGate?: InternalPhase;
+  testPresenceGate?: InternalPhase;
   fullSuiteGate?: InternalPhase;
   verifier?: InternalPhase;
   verifyScoped?: InternalPhase;
@@ -132,6 +134,7 @@ export const CANONICAL_ORDER: readonly PhaseKind[] = [
   "test-writer",
   "greenfield-gate",
   "implementer",
+  "test-presence-gate",
   "full-suite-gate",
   "verifier",
   "verify-scoped",
@@ -145,6 +148,7 @@ export const PHASE_KIND_TO_STATE_KEY: Record<PhaseKind, keyof InternalBuildState
   "test-writer": "testWriter",
   "greenfield-gate": "greenfieldGate",
   implementer: "implementer",
+  "test-presence-gate": "testPresenceGate",
   "full-suite-gate": "fullSuiteGate",
   verifier: "verifier",
   "verify-scoped": "verifyScoped",

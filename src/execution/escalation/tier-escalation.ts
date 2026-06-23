@@ -93,6 +93,7 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
     case "isolation-violation":
     case "verifier-rejected":
     case "greenfield-no-tests":
+    case "no-tests-authored":
       return "pause";
     case "runtime-crash":
       return "pause";
