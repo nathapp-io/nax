@@ -7,9 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeLogger } from "@test/helpers";
 import { resolveMaxAttemptsOutcome } from "@/execution";
 import { pipelineEventBus } from "@/pipeline";
+import { makeLogger } from "@test/helpers";
 
 // ---------------------------------------------------------------------------
 // shouldRetrySameTier — pure predicate (BUG-070)
@@ -21,9 +21,7 @@ describe("shouldRetrySameTier", () => {
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
-    expect(
-      shouldRetrySameTier({ status: "RUNTIME_CRASH", success: false }),
-    ).toBe(true);
+    expect(shouldRetrySameTier({ status: "RUNTIME_CRASH", success: false })).toBe(true);
   });
 
   test("returns false when verifyResult status is TEST_FAILURE", async () => {
@@ -31,9 +29,7 @@ describe("shouldRetrySameTier", () => {
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
-    expect(
-      shouldRetrySameTier({ status: "TEST_FAILURE", success: false }),
-    ).toBe(false);
+    expect(shouldRetrySameTier({ status: "TEST_FAILURE", success: false })).toBe(false);
   });
 
   test("returns false when verifyResult is undefined", async () => {
@@ -49,9 +45,7 @@ describe("shouldRetrySameTier", () => {
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
-    expect(
-      shouldRetrySameTier({ status: "TIMEOUT", success: false }),
-    ).toBe(false);
+    expect(shouldRetrySameTier({ status: "TIMEOUT", success: false })).toBe(false);
   });
 
   test("returns false when verifyResult status is PASS", async () => {
@@ -59,9 +53,7 @@ describe("shouldRetrySameTier", () => {
     const { shouldRetrySameTier } = mod;
 
     expect(typeof shouldRetrySameTier).toBe("function");
-    expect(
-      shouldRetrySameTier({ status: "PASS", success: true }),
-    ).toBe(false);
+    expect(shouldRetrySameTier({ status: "PASS", success: true })).toBe(false);
   });
 });
 
@@ -91,6 +83,10 @@ describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
 
   test("returns pause for review-incomplete (US-002: exhausted without review judgment → human review)", () => {
     expect(resolveMaxAttemptsOutcome("review-incomplete")).toBe("pause");
+  });
+
+  test("returns pause for no-tests-authored (exhausted without any tests authored → human review)", () => {
+    expect(resolveMaxAttemptsOutcome("no-tests-authored")).toBe("pause");
   });
 });
 
@@ -191,7 +187,13 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { modelTier: "fast", testStrategy: "test-after", agent: "claude", complexity: "medium", reasoning: "" },
+        routing: {
+          modelTier: "fast",
+          testStrategy: "test-after",
+          agent: "claude",
+          complexity: "medium",
+          reasoning: "",
+        },
       };
 
       const ctx = {
@@ -264,7 +266,13 @@ describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude", complexity: "medium", reasoning: "" },
+        routing: {
+          modelTier: "balanced",
+          testStrategy: "test-after",
+          agent: "claude",
+          complexity: "medium",
+          reasoning: "",
+        },
       };
 
       const ctx = {
@@ -721,9 +729,7 @@ describe("preIterationTierCheck — M2: unmatched rung on non-empty agent ladder
       // A warn must be emitted so the silent-unlimited-budget path is observable.
       const warnCalls = mockLogger.calls.filter((c) => c.level === "warn");
       expect(warnCalls.length).toBeGreaterThan(0);
-      const unmatchedWarn = warnCalls.find((c) =>
-        c.message.includes("Current rung not found in tierOrder"),
-      );
+      const unmatchedWarn = warnCalls.find((c) => c.message.includes("Current rung not found in tierOrder"));
       expect(unmatchedWarn).toBeDefined();
       expect(unmatchedWarn?.data?.storyId).toBe("US-unmatched-001");
       expect(unmatchedWarn?.data?.agent).toBe("codex");

@@ -9,6 +9,7 @@ import {
   implementerOp,
   lintCheckOp,
   semanticReviewOp,
+  testPresenceGateOp,
   testWriterOp,
   typecheckCheckOp,
   verifierOp,
@@ -21,6 +22,7 @@ import type {
   ImplementerInput,
   LintCheckInput,
   SemanticReviewInput,
+  TestPresenceGateInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
@@ -51,6 +53,13 @@ export class StoryOrchestratorBuilder {
   addGreenfieldGate(input: GreenfieldGateInput): this;
   addGreenfieldGate(value: GreenfieldGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
     setPhase(this.state, "greenfield-gate", isSlot(value) ? value : { op: greenfieldGateOp, input: value });
+    return this;
+  }
+
+  addTestPresenceGate<I, O, C>(slot: OrchestratorSlot<I, O, C>): this;
+  addTestPresenceGate(input: TestPresenceGateInput): this;
+  addTestPresenceGate(value: TestPresenceGateInput | OrchestratorSlot<unknown, unknown, unknown>): this {
+    setPhase(this.state, "test-presence-gate", isSlot(value) ? value : { op: testPresenceGateOp, input: value });
     return this;
   }
 

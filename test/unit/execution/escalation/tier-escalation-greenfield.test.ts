@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 /**
- * S5: Strategy Fallback Tests — greenfield-no-tests → test-after
+ * S5: Strategy Fallback Tests — greenfield-no-tests → tdd-simple
  *
  * Moved from test/integration/context/ — pure logic, no integration surface.
  * Import goes to the leaf module, not runner.ts barrel, to avoid importing
@@ -8,33 +8,35 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { isThreeSessionStrategy } from "../../../../src/config/test-strategy";
 import { resolveMaxAttemptsOutcome } from "../../../../src/execution/escalation/tier-escalation";
 import type { UserStory } from "../../../../src/prd";
 import type { FailureCategory } from "../../../../src/tdd/types";
 
 describe("S5: greenfield-no-tests fallback", () => {
   /**
-   * Simulates the escalation routing logic from runner.ts for test-after switch.
-   * This mirrors the exact transform applied when greenfield-no-tests fires.
+   * Simulates the escalation routing logic from runner.ts for the greenfield switch.
+   * This mirrors the exact transform applied when greenfield-no-tests fires: any
+   * three-session strategy is swapped to tdd-simple (single-session, test-first).
    */
   function applyGreenfieldFallbackRouting(
     story: UserStory,
     escalateFailureCategory: FailureCategory | undefined,
     nextTier: "fast" | "balanced" | "powerful",
   ): { routing: UserStory["routing"]; attempts: number } {
-    const escalateRetryAsTestAfter = escalateFailureCategory === "greenfield-no-tests";
-    const currentTestStrategy = story.routing?.testStrategy ?? "test-after";
-    const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
+    const escalateRetryAsTddSimple = escalateFailureCategory === "greenfield-no-tests";
+    const currentTestStrategy = story.routing?.testStrategy ?? "tdd-simple";
+    const shouldSwitchToTddSimple = escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy);
 
     const updatedRouting = story.routing
       ? {
           ...story.routing,
-          modelTier: shouldSwitchToTestAfter ? story.routing.modelTier : nextTier,
-          ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
+          modelTier: shouldSwitchToTddSimple ? story.routing.modelTier : nextTier,
+          ...(shouldSwitchToTddSimple ? { testStrategy: "tdd-simple" as const } : {}),
         }
       : undefined;
 
-    const shouldResetAttempts = shouldSwitchToTestAfter || story.routing?.modelTier !== nextTier;
+    const shouldResetAttempts = shouldSwitchToTddSimple || story.routing?.modelTier !== nextTier;
 
     return {
       routing: updatedRouting,
@@ -42,8 +44,8 @@ describe("S5: greenfield-no-tests fallback", () => {
     };
   }
 
-  describe("AC1: greenfield-no-tests switches to test-after on first occurrence", () => {
-    test("story on three-session-tdd switches to test-after and resets attempts", () => {
+  describe("AC1: greenfield-no-tests switches to tdd-simple on first occurrence", () => {
+    test("story on three-session-tdd switches to tdd-simple and resets attempts", () => {
       const story: UserStory = {
         id: "US-001",
         title: "Greenfield Story",
@@ -65,12 +67,12 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       const { routing, attempts } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
 
-      expect(routing?.testStrategy).toBe("test-after");
+      expect(routing?.testStrategy).toBe("tdd-simple");
       expect(routing?.modelTier).toBe("fast"); // Tier stays the same
       expect(attempts).toBe(0); // Attempts reset on strategy switch
     });
 
-    test("story on three-session-tdd-lite switches to test-after", () => {
+    test("story on three-session-tdd-lite switches to tdd-simple", () => {
       const story: UserStory = {
         id: "US-002",
         title: "Lite TDD Story",
@@ -92,7 +94,7 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       const { routing, attempts } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "powerful");
 
-      expect(routing?.testStrategy).toBe("test-after");
+      expect(routing?.testStrategy).toBe("tdd-simple");
       expect(routing?.modelTier).toBe("balanced"); // Tier stays the same
       expect(attempts).toBe(0); // Attempts reset
     });
@@ -146,19 +148,19 @@ describe("S5: greenfield-no-tests fallback", () => {
         },
       };
 
-      // First greenfield-no-tests: switch to test-after
+      // First greenfield-no-tests: switch to tdd-simple
       let result = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
       story = { ...story, attempts: result.attempts, routing: result.routing };
 
-      expect(story.routing?.testStrategy).toBe("test-after");
+      expect(story.routing?.testStrategy).toBe("tdd-simple");
       expect(story.routing?.modelTier).toBe("fast");
       expect(story.attempts).toBe(0);
 
-      // Second greenfield-no-tests: already on test-after, escalate tier
+      // Second greenfield-no-tests: already single-session (tdd-simple), escalate tier
       result = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
       story = { ...story, attempts: result.attempts, routing: result.routing };
 
-      expect(story.routing?.testStrategy).toBe("test-after"); // Stays test-after
+      expect(story.routing?.testStrategy).toBe("tdd-simple"); // Stays tdd-simple
       expect(story.routing?.modelTier).toBe("balanced"); // Tier escalates
       expect(story.attempts).toBe(0); // Attempts reset on tier change
     });
@@ -175,7 +177,7 @@ describe("S5: greenfield-no-tests fallback", () => {
   });
 
   describe("non-greenfield-no-tests categories behave normally", () => {
-    test("isolation-violation does NOT trigger test-after switch", () => {
+    test("isolation-violation does NOT trigger tdd-simple switch", () => {
       const story: UserStory = {
         id: "US-005",
         title: "Isolation Violation",
@@ -201,7 +203,7 @@ describe("S5: greenfield-no-tests fallback", () => {
       expect(routing?.modelTier).toBe("balanced");
     });
 
-    test("tests-failing does NOT trigger test-after switch", () => {
+    test("tests-failing does NOT trigger tdd-simple switch", () => {
       const story: UserStory = {
         id: "US-006",
         title: "Tests Failing",
@@ -249,7 +251,7 @@ describe("S5: greenfield-no-tests fallback", () => {
       expect(routing).toBeUndefined();
     });
 
-    test("undefined failure category does NOT trigger test-after switch", () => {
+    test("undefined failure category does NOT trigger tdd-simple switch", () => {
       const story: UserStory = {
         id: "US-008",
         title: "No Category",

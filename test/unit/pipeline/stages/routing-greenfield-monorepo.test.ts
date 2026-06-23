@@ -114,12 +114,13 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     await rm(repoRoot, { recursive: true, force: true });
   });
 
-  test("story with workdir=apps/cli detects greenfield and forces test-after", async () => {
+  test("story with workdir=apps/cli detects greenfield — security-critical keeps three-session-tdd", async () => {
     // Use the REAL isGreenfieldStory (not mocked) so it scans the filesystem
     _routingDeps.isGreenfieldStory = _origDeps.isGreenfieldStory;
 
     const story = makeStory("apps/cli");
-    // Mark story.routing as already set to trigger the greenfield check path
+    // "Config & Auth" title contains "auth" → isSecurityCriticalStory returns true
+    // Security-critical greenfield: three-session-tdd is preserved (no downgrade)
     story.routing = {
       complexity: "simple",
       modelTier: "fast",
@@ -132,9 +133,9 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     const result = await routingStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    // Despite three-session-tdd in cache, greenfield scan of apps/cli → force test-after
-    expect(ctx.routing.testStrategy).toBe("test-after");
-    expect(ctx.routing.reasoning).toContain("GREENFIELD OVERRIDE");
+    // Greenfield + security-critical → three-session-tdd preserved
+    expect(ctx.routing.testStrategy).toBe("three-session-tdd");
+    expect(ctx.routing.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
   test("story without workdir scans repo root — not greenfield when root has tests", async () => {

@@ -170,26 +170,30 @@ describe("Routing Stage - Task classified log shows final routing state after al
     resetLogger();
   });
 
-  test("logs final routing state (not raw LLM output) when greenfield override is applied", async () => {
+  test("logs final routing state (not raw LLM output) — security-critical greenfield keeps three-session", async () => {
     await Bun.write(join(workdir, "src/index.ts"), "export const foo = 42;");
 
     const ctx = createTestContext(workdir);
+    // Default story is "Add user authentication" / tags [security, auth] → security-critical
+    // Security-critical greenfield: three-session-tdd is preserved (no downgrade)
     const result = await routingStage.execute(ctx);
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd");
     expect(ctx.routing?.complexity).toBe("complex");
     expect(ctx.routing?.modelTier).toBe("powerful");
-    expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
-  test("logs final routing state when using cached routing with greenfield override", async () => {
+  test("logs final routing state when using cached routing — security-critical greenfield keeps three-session", async () => {
     await Bun.write(join(workdir, "src/index.ts"), "export const foo = 42;");
 
     const ctx = createTestContext(workdir);
+    // Default story is security-critical; cached routing with three-session-tdd is preserved
     ctx.story.routing = {
       complexity: "medium",
+      modelTier: "balanced",
       testStrategy: "three-session-tdd",
       reasoning: "Cached from previous run",
     };
@@ -198,10 +202,10 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd");
     expect(ctx.routing?.complexity).toBe("medium");
     expect(ctx.routing?.modelTier).toBe("balanced");
-    expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
   test("logs final routing state when no overrides are needed", async () => {
@@ -218,12 +222,14 @@ describe("Routing Stage - Task classified log shows final routing state after al
     expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
-  test("ctx.routing is set after all overrides are applied", async () => {
+  test("ctx.routing is set after all overrides are applied — security-critical greenfield keeps three-session-tdd-lite", async () => {
     await Bun.write(join(workdir, "src/auth.ts"), "export function authenticate() {}");
 
     const ctx = createTestContext(workdir);
+    // Default story is security-critical; cached three-session-tdd-lite is preserved
     ctx.story.routing = {
       complexity: "simple",
+      modelTier: "fast",
       testStrategy: "three-session-tdd-lite",
       reasoning: "Cached simple routing",
     };
@@ -232,7 +238,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
     expect(ctx.routing?.complexity).toBe("simple");
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd-lite");
     expect(ctx.routing?.modelTier).toBe("fast");
   });
 });

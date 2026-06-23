@@ -2,8 +2,9 @@
  * Greenfield Detection
  *
  * Detects whether a story is "greenfield" (no existing test files in workdir).
- * Greenfield stories skip TDD and use test-after strategy to prevent test-writer
- * from producing empty test files (BUG-010).
+ * Greenfield stories drop three-session TDD for the single-session tdd-simple
+ * strategy: the isolated test-writer is skipped on greenfield (it would produce
+ * empty test files, BUG-010), so one session writes tests-first then implements.
  */
 
 import type { UserStory } from "../prd/types";
@@ -32,6 +33,9 @@ const IGNORE_DIRS = new Set([
   "out",
   "tmp",
   "temp",
+  // nax's own artifact dir — its generated `.nax-acceptance.test.ts` harness is
+  // NOT source-tree coverage and must never count as an authored test file.
+  ".nax",
   ".git",
 ]);
 
@@ -57,17 +61,15 @@ async function gitLsFiles(workdir: string): Promise<string[] | null> {
 }
 
 /**
- * Return true if at least one test file exists in `workdir` matching `patterns`.
- * Uses `git ls-files` as primary; falls back to Bun.Glob for non-git workdirs.
+ * Return true if at least one test file matching `patterns` exists ON DISK in
+ * `workdir` — tracked OR untracked. Pure filesystem scan (Bun.Glob), so it sees
+ * files the agent just authored but has not committed. `IGNORE_DIRS` (incl.
+ * `.nax`, `node_modules`) are excluded so nax artifacts never count.
+ *
+ * Use this (not `isGreenfieldStory`) for any POST-implementer check: by then the
+ * authored tests are untracked, and `git ls-files` would not list them.
  */
-async function hasTestFiles(workdir: string, patterns: readonly string[]): Promise<boolean> {
-  const files = await gitLsFiles(workdir);
-
-  if (files !== null) {
-    return files.some((f) => isTestFileByPatterns(f, patterns));
-  }
-
-  // Fallback: Bun.Glob scan for non-git workdirs (e.g. temp fixtures in tests).
+export async function hasTestFilesOnDisk(workdir: string, patterns: readonly string[]): Promise<boolean> {
   for (const pattern of patterns) {
     const g = new Bun.Glob(pattern);
     for await (const path of g.scan({ cwd: workdir, onlyFiles: true })) {
@@ -77,6 +79,23 @@ async function hasTestFiles(workdir: string, patterns: readonly string[]): Promi
     }
   }
   return false;
+}
+
+/**
+ * Return true if at least one test file exists in `workdir` matching `patterns`.
+ * Uses `git ls-files` as primary; falls back to a filesystem scan for non-git
+ * workdirs. PRE-implementer only — tracked-file semantics are intentional here so
+ * the greenfield pre-check reflects committed state.
+ */
+async function hasTestFiles(workdir: string, patterns: readonly string[]): Promise<boolean> {
+  const files = await gitLsFiles(workdir);
+
+  if (files !== null) {
+    return files.some((f) => isTestFileByPatterns(f, patterns));
+  }
+
+  // Fallback: filesystem scan for non-git workdirs (e.g. temp fixtures in tests).
+  return hasTestFilesOnDisk(workdir, patterns);
 }
 
 /**

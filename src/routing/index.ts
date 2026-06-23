@@ -15,6 +15,7 @@ export {
   routeTask,
   classifyComplexity,
   determineTestStrategy,
+  isSecurityCriticalStory,
   complexityToModelTier,
   tryLlmBatchRoute,
   _tryLlmBatchRouteDeps,

@@ -14,7 +14,7 @@
 import { isGreenfieldStory } from "@/context";
 import { getLogger } from "@/logger";
 import { savePRD } from "@/prd";
-import { clearCache, complexityToModelTier, resolveRouting } from "@/routing";
+import { clearCache, complexityToModelTier, isSecurityCriticalStory, resolveRouting } from "@/routing";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
 import { packageDirRelative } from "@/utils/paths";
@@ -100,7 +100,7 @@ export const routingStage: PipelineStage = {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 
-    // @design: BUG-010: Greenfield detection — force test-after if no test files exist
+    // @design: BUG-010: Greenfield detection — force tdd-simple if no test files exist (security-critical stories keep three-session-tdd)
     // MW-011: Scan story.workdir for monorepo, not repo root
     // STRAT-001: no-test is exempt from greenfield override
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
@@ -126,13 +126,28 @@ export const routingStage: PipelineStage = {
         });
       const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir, resolved?.globs);
       if (isGreenfield) {
-        logger.info("routing", "Greenfield detected — forcing test-after strategy", {
-          storyId: ctx.story.id,
-          originalStrategy: routing.testStrategy,
-          scanDir: greenfieldScanDir,
-        });
-        routing.testStrategy = "test-after";
-        routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using test-after instead of TDD]`;
+        if (isSecurityCriticalStory(ctx.story.title, ctx.story.tags)) {
+          // Security-critical greenfield: KEEP three-session-tdd. The greenfield gate
+          // (disk detection) now validates the test-writer's authored tests, and the
+          // verifier + test/impl isolation matter for security code. Do not downgrade.
+          logger.info("routing", "Greenfield + security-critical — keeping three-session strategy", {
+            storyId: ctx.story.id,
+            strategy: routing.testStrategy,
+            scanDir: greenfieldScanDir,
+          });
+        } else {
+          // Non-security greenfield uses the single-session test-first strategy:
+          // cheaper than three sessions, and tdd-simple writes tests FIRST (RED) from
+          // the ACs — guaranteeing non-empty, AC-anchored coverage instead of an
+          // easily-skipped test-after step.
+          logger.info("routing", "Greenfield detected — forcing tdd-simple strategy", {
+            storyId: ctx.story.id,
+            originalStrategy: routing.testStrategy,
+            scanDir: greenfieldScanDir,
+          });
+          routing.testStrategy = "tdd-simple";
+          routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using tdd-simple (test-first, single-session) instead of three-session TDD]`;
+        }
       }
     }
 

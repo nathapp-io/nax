@@ -77,6 +77,8 @@ export {
 } from "./execution-gates";
 export { greenfieldGateOp } from "./greenfield-gate";
 export type { GreenfieldGateInput, GreenfieldGateOutput } from "./greenfield-gate";
+export { testPresenceGateOp } from "./test-presence-gate";
+export type { TestPresenceGateInput, TestPresenceGateOutput } from "./test-presence-gate";
 export { fullSuiteGateOp, _fullSuiteGateDeps } from "./full-suite-gate";
 export type {
   FullSuiteGateInput,

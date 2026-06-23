@@ -6,7 +6,7 @@
  * plan construction.
  */
 
-import { isThreeSessionStrategy } from "../config";
+import { isSingleSessionTestOwningStrategy, isThreeSessionStrategy } from "../config";
 import type { NaxConfig } from "../config/schema";
 import { filterContextByRole } from "../context";
 import { NaxError } from "../errors";
@@ -17,6 +17,7 @@ import type {
   ImplementerInput,
   LintCheckInput,
   SemanticReviewInput,
+  TestPresenceGateInput,
   TestWriterInput,
   TypecheckCheckInput,
   VerifierInput,
@@ -45,6 +46,7 @@ export interface PlanInputs {
   readonly testWriter?: TestWriterInput;
   readonly greenfieldGate?: GreenfieldGateInput;
   readonly implementer?: ImplementerInput;
+  readonly testPresenceGate?: TestPresenceGateInput;
   readonly fullSuiteGate?: FullSuiteGateInput;
   readonly verifier?: VerifierInput;
   readonly verifyScoped?: VerifyScopedInput;
@@ -240,6 +242,15 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     constitution: ctx.constitution?.content,
   };
 
+  // testPresenceGate: present only for single-session test-authoring strategies (tdd-simple,
+  // test-after). Runs AFTER the implementer to confirm it authored test files. Three-session
+  // strategies have a dedicated test-writer phase + greenfield-gate pre-implementer, so they
+  // don't need this post-implementer check. no-test never owns tests, so excluded.
+  const testPresenceGateInput: TestPresenceGateInput | undefined =
+    isSingleSessionTestOwningStrategy(ctx.routing.testStrategy) && resolvedTestPatterns
+      ? { story, workdir: ctx.workdir, resolvedTestPatterns }
+      : undefined;
+
   // fullSuiteGate: TDD always; non-TDD only when regressionGate.mode === "per-story" (issue #1116).
   // The build-plan-for-strategy.ts builder gates on (isThreeSession || regressionMode === "per-story")
   // so having a defined input here for non-TDD per-story runs is safe — the builder adds it only once.
@@ -417,6 +428,7 @@ export async function assemblePlanInputsFromCtx(ctx: import("../pipeline/types")
     testWriter: testWriterInput,
     greenfieldGate: greenfieldGateInput,
     implementer: implementerInput,
+    testPresenceGate: testPresenceGateInput,
     fullSuiteGate: fullSuiteGateInput,
     verifier: verifierInput,
     verifyScoped: verifyScopedInput,

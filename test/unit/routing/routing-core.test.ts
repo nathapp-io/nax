@@ -11,7 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { escalateTier } from "../../../src/execution/runner";
-import { classifyComplexity, complexityToModelTier, determineTestStrategy, routeTask } from "../../../src/routing";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy, isSecurityCriticalStory, routeTask } from "../../../src/routing";
 import { makeNaxConfig } from "../../helpers";
 
 describe("classifyComplexity", () => {
@@ -189,6 +189,26 @@ describe("escalateTier", () => {
 
     result = escalateTier({ tier: result!.tier }, defaultTiers);
     expect(result).toBeNull();
+  });
+});
+
+describe("isSecurityCriticalStory", () => {
+  test.each([
+    ["security tag", "Add login", ["security"], true],
+    ["auth in title", "Add user authentication", [], true],
+    ["oauth keyword", "OAuth claim release", [], true],
+    ["token keyword", "Refresh token rotation", [], true],
+    ["public-api keyword", "Publish SDK endpoint", [], true],
+    ["case-insensitive", "Add OAUTH Bridge", [], true],
+    ["neutral story", "Fix typo in README", [], false],
+    ["neutral with ui tag", "Render dashboard", ["ui"], false],
+  ])("%s -> %p", (_label, title, tags, expected) => {
+    expect(isSecurityCriticalStory(title, tags as string[])).toBe(expected);
+  });
+
+  test("defaults tags to empty array", () => {
+    expect(isSecurityCriticalStory("Add auth guard")).toBe(true);
+    expect(isSecurityCriticalStory("Rename variable")).toBe(false);
   });
 });
 
