@@ -77,7 +77,7 @@ const PUBLIC_API_KEYWORDS = [
  * only stable, immutable story fields).
  */
 export function isSecurityCriticalStory(title: string, tags: readonly string[] = []): boolean {
-  const text = [title, ...tags].join(" ").toLowerCase();
+  const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
   return SECURITY_KEYWORDS.some((kw) => text.includes(kw)) || PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));
 }
 
