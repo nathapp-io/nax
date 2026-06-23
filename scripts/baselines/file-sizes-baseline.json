@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-19T15:24:41.479Z",
+  "updatedAt": "2026-06-23T12:58:49.626Z",
   "byFile": {
     "src/agents/acp/adapter.ts": 633,
     "src/agents/acp/spawn-client.ts": 737,
@@ -13,7 +13,7 @@
     "src/session/manager.ts": 707,
     "test/unit/cli/plan.test.ts": 1087,
     "test/unit/debate/runner-plan.test.ts": 1048,
-    "test/unit/execution/escalation/tier-escalation.test.ts": 937,
+    "test/unit/execution/escalation/tier-escalation.test.ts": 943,
     "test/unit/execution/story-orchestrator.test.ts": 1734,
     "test/unit/operations/plan-refine.test.ts": 818
   }
