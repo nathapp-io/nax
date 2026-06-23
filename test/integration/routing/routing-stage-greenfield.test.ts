@@ -204,15 +204,33 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
     resetLogger();
   });
 
-  test("forces test-after when no test files exist (greenfield)", async () => {
-    // Create source files but no test files
-    await createTestFile(workdir, "src/index.ts", "export const foo = 42;");
-
+  test("keeps three-session-tdd for SECURITY-critical greenfield (no downgrade)", async () => {
     const ctx = createTestContext(workdir, true);
+    // default story is "Add user authentication" / tags [security, auth] → security-critical
+
     const result = await routingStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    expect(ctx.routing).toBeDefined();
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
+  });
+
+  test("downgrades NON-security greenfield to tdd-simple", async () => {
+    const ctx = createTestContext(workdir, true);
+    ctx.story.title = "Render dashboard widget";
+    ctx.story.description = "Add a chart component";
+    ctx.story.acceptanceCriteria = ["Renders chart"];
+    ctx.story.tags = [];
+    ctx.story.routing = {
+      complexity: "complex",
+      modelTier: "balanced",
+      testStrategy: "three-session-tdd",
+      reasoning: "complex non-security",
+    };
+
+    const result = await routingStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
     expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
@@ -267,11 +285,12 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
     expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
-  test("handles both TDD and TDD-lite strategies", async () => {
-    // Test that greenfield detection works for both TDD variants
+  test("keeps three-session-tdd-lite for security-critical greenfield", async () => {
+    // Test that greenfield detection preserves TDD-lite for security stories
     await createTestFile(workdir, "src/index.ts", "export const foo = 42;");
 
     const ctx = createTestContext(workdir, true);
+    // default story is security-critical ("Add user authentication" / tags [security, auth])
     ctx.story.routing = {
       complexity: "medium",
       testStrategy: "three-session-tdd-lite",
@@ -282,8 +301,8 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
-    expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd-lite");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
   test("ignores test files in node_modules", async () => {
@@ -295,8 +314,9 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    // Should treat as greenfield since node_modules is ignored
-    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
+    // Greenfield (node_modules ignored) + security-critical story → keep three-session-tdd
+    expect(ctx.routing?.testStrategy).toBe("three-session-tdd");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
   test("detects various test file patterns", async () => {
