@@ -126,7 +126,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "tdd.sessionTiers.verifier": "Model tier for verifier session",
   "tdd.testWriterAllowedPaths": "Glob patterns for files test-writer can modify",
   "tdd.rollbackOnFailure": "Rollback git changes when TDD fails",
-  "tdd.greenfieldDetection": "Force test-after on projects with no test files",
+  "tdd.greenfieldDetection": "Force tdd-simple on projects with no test files",
 
   // Constitution
   constitution: "Constitution settings (core rules and constraints)",

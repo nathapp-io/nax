@@ -213,7 +213,7 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
@@ -243,19 +243,28 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
     expect(ctx.routing?.testStrategy).toMatch(/three-session-tdd/);
   });
 
-  test("only overrides TDD strategies, not test-after", async () => {
-    // Create a simple story that would normally get test-after
+  test("only overrides three-session strategies, not single-session test-after", async () => {
+    // A story already routed to test-after (single-session) must pass through the
+    // greenfield check untouched — the override only fires for three-session strategies.
     const ctx = createTestContext(workdir, true);
     ctx.story.title = "Fix typo in README";
     ctx.story.description = "Update README.md";
     ctx.story.acceptanceCriteria = ["Typo fixed"];
+    ctx.story.tags = [];
+    ctx.story.routing = {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "single-session test-after",
+    };
 
     const result = await routingStage.execute(ctx);
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    // test-after strategy should remain unchanged
+    // test-after strategy should remain unchanged (no GREENFIELD OVERRIDE)
     expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.reasoning).not.toContain("GREENFIELD OVERRIDE");
   });
 
   test("handles both TDD and TDD-lite strategies", async () => {
@@ -273,7 +282,7 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
@@ -287,7 +296,7 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
     // Should treat as greenfield since node_modules is ignored
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
   });
 
   test("detects various test file patterns", async () => {

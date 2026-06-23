@@ -2,8 +2,9 @@
  * Greenfield Detection
  *
  * Detects whether a story is "greenfield" (no existing test files in workdir).
- * Greenfield stories skip TDD and use test-after strategy to prevent test-writer
- * from producing empty test files (BUG-010).
+ * Greenfield stories drop three-session TDD for the single-session tdd-simple
+ * strategy: the isolated test-writer is skipped on greenfield (it would produce
+ * empty test files, BUG-010), so one session writes tests-first then implements.
  */
 
 import type { UserStory } from "../prd/types";

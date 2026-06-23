@@ -132,8 +132,8 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     const result = await routingStage.execute(ctx);
 
     expect(result.action).toBe("continue");
-    // Despite three-session-tdd in cache, greenfield scan of apps/cli → force test-after
-    expect(ctx.routing.testStrategy).toBe("test-after");
+    // Despite three-session-tdd in cache, greenfield scan of apps/cli → force tdd-simple
+    expect(ctx.routing.testStrategy).toBe("tdd-simple");
     expect(ctx.routing.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 

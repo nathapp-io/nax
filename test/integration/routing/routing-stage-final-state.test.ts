@@ -178,7 +178,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.complexity).toBe("complex");
     expect(ctx.routing?.modelTier).toBe("powerful");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
@@ -198,7 +198,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
     expect(ctx.routing).toBeDefined();
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.complexity).toBe("medium");
     expect(ctx.routing?.modelTier).toBe("balanced");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
@@ -232,7 +232,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
     expect(ctx.routing?.complexity).toBe("simple");
-    expect(ctx.routing?.testStrategy).toBe("test-after");
+    expect(ctx.routing?.testStrategy).toBe("tdd-simple");
     expect(ctx.routing?.modelTier).toBe("fast");
   });
 });

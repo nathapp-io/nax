@@ -126,13 +126,18 @@ export const routingStage: PipelineStage = {
         });
       const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir, resolved?.globs);
       if (isGreenfield) {
-        logger.info("routing", "Greenfield detected — forcing test-after strategy", {
+        // Greenfield must use a SINGLE-SESSION strategy: the three-session
+        // test-writer is skipped on greenfield (greenfieldGateOp, BUG-010), so any
+        // three-session strategy would yield no tests. tdd-simple is preferred over
+        // test-after because it writes tests FIRST (RED) from the ACs — guaranteeing
+        // non-empty, AC-anchored coverage instead of an easily-skipped test-after step.
+        logger.info("routing", "Greenfield detected — forcing tdd-simple strategy", {
           storyId: ctx.story.id,
           originalStrategy: routing.testStrategy,
           scanDir: greenfieldScanDir,
         });
-        routing.testStrategy = "test-after";
-        routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using test-after instead of TDD]`;
+        routing.testStrategy = "tdd-simple";
+        routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using tdd-simple (test-first, single-session) instead of three-session TDD]`;
       }
     }
 

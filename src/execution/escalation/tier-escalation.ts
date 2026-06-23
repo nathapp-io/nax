@@ -8,7 +8,8 @@
  */
 
 import { pipelineEventBus } from "@/pipeline";
-import type { NaxConfig } from "../../config";
+import { isThreeSessionStrategy } from "../../config";
+import type { NaxConfig, TestStrategy } from "../../config";
 import type { Finding } from "../../findings";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
@@ -365,8 +366,10 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const escalateRetryAsLite = ctx.pipelineResult.context.retryAsLite === true;
   const escalateFailureCategory = ctx.pipelineResult.context.tddFailureCategory;
   const escalateReviewFindings = ctx.pipelineResult.context.reviewFindings;
-  // S5: Auto-switch to test-after on greenfield-no-tests
-  const escalateRetryAsTestAfter = escalateFailureCategory === "greenfield-no-tests";
+  // S5: Auto-switch to tdd-simple on greenfield-no-tests. Single-session is required
+  // (the three-session test-writer is skipped on greenfield, BUG-010); tdd-simple is
+  // preferred over test-after because it writes tests first (RED) from the ACs.
+  const escalateRetryAsTddSimple = escalateFailureCategory === "greenfield-no-tests";
   const routingMode = ctx.config.routing.llm?.mode ?? "hybrid";
 
   if (!escalationResult || !ctx.config.autoMode.escalation.enabled) {
@@ -387,16 +390,17 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   // Can escalate — log and update stories
   for (const s of storiesToEscalate) {
     const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-    // STRAT-001: no-test stories must NOT be escalated to a test strategy — if the story was
-    // correctly classified as no-test, adding tests won't help.
-    const shouldSwitchToTestAfter =
-      escalateRetryAsTestAfter && currentTestStrategy !== "test-after" && currentTestStrategy !== "no-test";
+    // STRAT-001: no-test stories must NOT be escalated to a test strategy. Only
+    // three-session strategies need switching — single-session strategies (tdd-simple /
+    // test-after) already let the implementer own its tests on greenfield.
+    const shouldSwitchToTddSimple =
+      escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy as TestStrategy);
 
-    if (shouldSwitchToTestAfter) {
-      logger?.warn("escalation", "Switching strategy to test-after (greenfield-no-tests fallback)", {
+    if (shouldSwitchToTddSimple) {
+      logger?.warn("escalation", "Switching strategy to tdd-simple (greenfield-no-tests fallback)", {
         storyId: s.id,
         fromStrategy: currentTestStrategy,
-        toStrategy: "test-after",
+        toStrategy: "tdd-simple",
       });
     } else {
       logger?.warn("escalation", "Escalating story to next tier", {
@@ -423,30 +427,30 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const shouldEscalate = storiesToEscalate.some((story) => story.id === s.id);
       if (!shouldEscalate) return s;
 
-      // S5: Check if this is a one-time test-after switch
-      // STRAT-001: no-test stories are exempt from test-after escalation
+      // S5: Check if this is a one-time switch to tdd-simple (single-session, test-first)
+      // STRAT-001: no-test stories are exempt; single-session strategies need no switch
       const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-      const shouldSwitchToTestAfter =
-        escalateRetryAsTestAfter && currentTestStrategy !== "test-after" && currentTestStrategy !== "no-test";
+      const shouldSwitchToTddSimple =
+        escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy as TestStrategy);
 
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {
         ...baseRouting,
-        modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : escalatedTier,
+        modelTier: shouldSwitchToTddSimple ? baseRouting.modelTier : escalatedTier,
         ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
         ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
-        ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
+        ...(shouldSwitchToTddSimple ? { testStrategy: "tdd-simple" as const } : {}),
       };
 
       // @design: BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
       const isChangingTier = currentStoryTier !== escalatedTier;
-      const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
+      const shouldResetAttempts = isChangingTier || shouldSwitchToTddSimple;
       const escalationRecord =
-        isChangingTier || shouldSwitchToTestAfter
+        isChangingTier || shouldSwitchToTddSimple
           ? buildEscalationRecord(
               currentStoryTier,
-              shouldSwitchToTestAfter ? currentStoryTier : escalatedTier,
+              shouldSwitchToTddSimple ? currentStoryTier : escalatedTier,
               ctx.pipelineResult.reason ?? "Escalated to next retry path",
               { fromAgent: s.routing?.agent, toAgent: nextAgent },
             )
