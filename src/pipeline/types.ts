@@ -180,6 +180,10 @@ export interface PipelineContext extends DispatchContext {
       packageDir: string;
       testFramework?: string;
       commandOverride?: string;
+      /** This package's own combined stdout+stderr (not the cross-package dump). */
+      output: string;
+      /** This package's own failed AC ids (not the deduped global union). */
+      failedACs: string[];
     }>;
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
