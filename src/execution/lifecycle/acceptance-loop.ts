@@ -470,59 +470,68 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       );
     }
 
-    // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
-    const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(
-      ctx.acceptanceTestPaths,
-      failures.failedPackages?.[0],
-      ctx.config,
-    );
+    // ── 4+5. Per-package fan-out: diagnose + fix each failed package ──────
+    // #1277: one fix cycle per failed package, each scoped to its packageDir,
+    // testPath, command, and sliced output. Budget is per-package (each gets
+    // its own maxRetries). A final full validation pass catches cross-package
+    // regressions before declaring success.
+    const failedPkgs =
+      failures.failedPackages && failures.failedPackages.length > 0
+        ? failures.failedPackages
+        : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
+
+    // NOTE: `semanticVerdicts` and `totalACs` are ALREADY declared above
+    // (runtime-null guard scope) — DO NOT re-declare them here.
+    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
+
     const testEntries = ctx.acceptanceTestPaths
       ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
-    const effectiveAcceptanceTestPath = acceptanceTestPath || testEntries[0]?.testPath || "";
-    const selectedTestEntry = testEntries.find((entry) => entry.testPath === effectiveAcceptanceTestPath);
-    const testFileContent = selectedTestEntry?.content ?? testEntries[0]?.content ?? "";
 
-    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
-    const diagnosis = await resolveAcceptanceDiagnosis({
-      ctx,
-      failures,
-      totalACs,
-      strategy,
-      semanticVerdicts,
-      diagnosisOpts: {
-        testOutput: failures.testOutput,
-        testFileContent,
-        acceptanceTestPath: effectiveAcceptanceTestPath,
-        workdir: ctx.workdir,
+    const remainingFindings: Finding[] = [];
+    for (const pkg of failedPkgs) {
+      const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(ctx.acceptanceTestPaths, pkg, ctx.config);
+      const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
+      const testFileContent =
+        testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? testEntries[0]?.content ?? "";
+
+      const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
+      const diagnosis = await resolveAcceptanceDiagnosis({
+        ctx,
+        failures: pkgFailures,
+        totalACs,
+        strategy,
+        semanticVerdicts,
+        diagnosisOpts: {
+          testOutput: pkg.output,
+          testFileContent,
+          acceptanceTestPath: effectivePath,
+          workdir: pkg.packageDir,
+          storyId: firstStory?.id,
+        },
+      });
+
+      logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
         storyId: firstStory?.id,
-      },
-    });
+        packageDir: pkg.packageDir,
+        verdict: diagnosis.verdict,
+        confidence: diagnosis.confidence,
+        attempt: acceptanceRetries,
+      });
 
-    logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
-      storyId: firstStory?.id,
-      verdict: diagnosis.verdict,
-      confidence: diagnosis.confidence,
-      attempt: acceptanceRetries,
-    });
+      const cycleResult = await runAcceptanceFixCycle(ctx, prd, pkgFailures, diagnosis, effectivePath, testCommand, {
+        packageDir: pkg.packageDir,
+        testPath: effectivePath,
+      });
+      totalCost += cycleResult.costUsd ?? 0;
+      const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
+      if (!pkgResolved) remainingFindings.push(...cycleResult.finalFindings);
+    }
 
-    // ── 5. Run acceptance fix cycle ────────────────────────────────────
-    const cycleResult = await runAcceptanceFixCycle(
-      ctx,
-      prd,
-      failures,
-      diagnosis,
-      effectiveAcceptanceTestPath,
-      testCommand,
-    );
-    // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
-    // accumulation here is best-effort and may undercount. The authoritative total
-    // is reconciled in handleRunCompletion via Math.max(local, aggregator).
-    totalCost += cycleResult.costUsd ?? 0;
-    // "resolved" is the canonical success exit; also treat empty finalFindings as success
-    // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
-    const success = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
-    // retries here counts: 1 outer pass (acceptanceRetries) + N internal strategy attempts.
+    // ── Final full validation pass (all packages) — catches cross-package
+    //    regressions one isolated cycle could miss. ───────────────────────
+    const finalCheck = await runAcceptanceTestsOnce(ctx, prd);
+    const success = finalCheck.passed && remainingFindings.length === 0;
     return buildResult(
       success,
       prd,
@@ -530,8 +539,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       iterations,
       storiesCompleted,
       prdDirty,
-      success ? undefined : cycleResult.finalFindings.map((f) => f.message),
-      acceptanceRetries + cycleResult.iterations.length,
+      success ? undefined : (finalCheck.failedACs.length > 0 ? finalCheck.failedACs : remainingFindings.map((f) => f.message)),
+      acceptanceRetries,
     );
   }
 

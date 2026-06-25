@@ -556,6 +556,83 @@ describe("strategy buildInput closures", () => {
 
 // ─── validate closure — M4 ───────────────────────────────────────────────────
 
+describe("runAcceptanceLoop per-package fan-out", () => {
+  test("runs a fix cycle for every failed package, not just the first", async () => {
+    const fixedPackages: string[] = [];
+    _acceptanceFixCycleDeps.runFixCycle = async (_cycle, cycleCtx) => {
+      fixedPackages.push(cycleCtx.packageDir);
+      return { iterations: [], finalFindings: [], exitReason: "resolved" };
+    };
+
+    const apiPkg = { testPath: "/repo/apps/api/t.test.ts", packageDir: "/repo/apps/api", output: "api boom", failedACs: ["AC-1"] };
+    const webPkg = { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web", output: "web boom", failedACs: ["AC-2"] };
+
+    // Stub the dynamically-imported acceptanceStage: first call reports both failed packages,
+    // subsequent calls (final validation pass) pass.
+    let callCount = 0;
+    const acceptanceStageModule = await import("../../../../src/pipeline/stages/acceptance");
+    const origExecute = acceptanceStageModule.acceptanceStage.execute;
+    const stubbedExecute = (ctx: any) => {
+      callCount++;
+      if (callCount === 1) {
+        ctx.acceptanceFailures = {
+          failedACs: ["AC-1", "AC-2"],
+          findings: [],
+          testOutput: "combined output",
+          failedPackages: [apiPkg, webPkg],
+        };
+        return Promise.resolve({ action: "fail" as const });
+      }
+      return Promise.resolve({ action: "continue" as const });
+    };
+    mock.module("../../../../src/pipeline/stages/acceptance", () => ({
+      ...acceptanceStageModule,
+      acceptanceStage: { ...acceptanceStageModule.acceptanceStage, execute: stubbedExecute },
+    }));
+
+    // Stub loadAcceptanceTestContent to return empty entries (no real files).
+    const acceptanceModule = await import("../../../../src/acceptance");
+    const origLoadContent = acceptanceModule.loadAcceptanceTestContent;
+    mock.module("../../../../src/acceptance", () => ({
+      ...acceptanceModule,
+      loadAcceptanceTestContent: async () => [],
+    }));
+
+    // Stub diagnosis to skip real LLM call.
+    const fixModule = await import("../../../../src/execution/lifecycle/acceptance-fix");
+    const origCallOp = fixModule._diagnosisDeps.callOp;
+    (fixModule._diagnosisDeps as any).callOp = async () => ({
+      output: { verdict: "source_bug", reasoning: "stub", confidence: 0.9 },
+      costUsd: 0,
+    });
+
+    try {
+      const ctx = makeCtx();
+      ctx.workdir = "/repo";
+      ctx.featureDir = undefined; // skip stub guard / loadSemanticVerdicts
+      ctx.acceptanceTestPaths = [
+        { testPath: "/repo/apps/api/t.test.ts", packageDir: "/repo/apps/api" },
+        { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web" },
+      ];
+
+      const { runAcceptanceLoop } = await import("../../../../src/execution/lifecycle/acceptance-loop");
+      await runAcceptanceLoop(ctx);
+
+      expect(fixedPackages.sort()).toEqual(["/repo/apps/api", "/repo/apps/web"]);
+    } finally {
+      (fixModule._diagnosisDeps as any).callOp = origCallOp;
+      mock.module("../../../../src/pipeline/stages/acceptance", () => ({
+        ...acceptanceStageModule,
+        acceptanceStage: { ...acceptanceStageModule.acceptanceStage, execute: origExecute },
+      }));
+      mock.module("../../../../src/acceptance", () => ({
+        ...acceptanceModule,
+        loadAcceptanceTestContent: origLoadContent,
+      }));
+    }
+  });
+});
+
 describe("cycle.validate closure", () => {
   test("returns empty findings when runAcceptanceTestsOnce passes", async () => {
     let capturedCycle: FixCycle<Finding> | undefined;
