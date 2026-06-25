@@ -495,11 +495,11 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       : [];
 
     const remainingFindings: Finding[] = [];
+    let totalInternalIterations = 0;
     for (const pkg of failedPkgs) {
       const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(ctx.acceptanceTestPaths, pkg, ctx.config);
       const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
-      const testFileContent =
-        testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? testEntries[0]?.content ?? "";
+      const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
 
       const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
       const diagnosis = await resolveAcceptanceDiagnosis({
@@ -530,6 +530,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         testPath: effectivePath,
       });
       totalCost += cycleResult.costUsd ?? 0;
+      totalInternalIterations += cycleResult.iterations.length;
       const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
       if (!pkgResolved) remainingFindings.push(...cycleResult.finalFindings);
     }
@@ -538,6 +539,13 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     //    regressions one isolated cycle could miss. ───────────────────────
     const finalCheck = await runAcceptanceTestsOnce(ctx, prd);
     const success = finalCheck.passed && remainingFindings.length === 0;
+    const failureMessages = !success
+      ? finalCheck.failedACs.length > 0
+        ? finalCheck.failedACs
+        : remainingFindings.length > 0
+          ? remainingFindings.map((f) => f.message)
+          : ["acceptance validation failed (unknown cause)"]
+      : undefined;
     return buildResult(
       success,
       prd,
@@ -545,12 +553,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       iterations,
       storiesCompleted,
       prdDirty,
-      success
-        ? undefined
-        : finalCheck.failedACs.length > 0
-          ? finalCheck.failedACs
-          : remainingFindings.map((f) => f.message),
-      acceptanceRetries,
+      failureMessages,
+      acceptanceRetries + totalInternalIterations,
     );
   }
 
