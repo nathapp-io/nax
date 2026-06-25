@@ -249,6 +249,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   try {
     opResult = await _adversarialDeps.callOp(callCtx, adversarialReviewOp, {
       workdir,
+      repoRoot: projectDir ?? workdir,
       story,
       adversarialConfig,
       mode: diffMode,

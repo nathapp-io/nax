@@ -27,6 +27,8 @@ export type ValidatedSemanticShape = NonNullable<ReturnType<typeof validateLLMSh
 
 export interface SemanticReviewInput {
   workdir: string;
+  /** Absolute repo root (= projectDir ?? workdir). Anchors evidence path resolution for monorepo packages. */
+  repoRoot?: string;
   story: SemanticStory;
   semanticConfig: SemanticReviewConfig;
   mode: "embedded" | "ref";
@@ -353,6 +355,7 @@ export const semanticReviewOp: RunOperation<SemanticReviewInput, SemanticReviewO
       input.workdir,
       input.story.id,
       threshold,
+      input.repoRoot,
     );
 
     const { accepted, dropped } = filterByAcGroundingMinimal(substantiated, input.story.acceptanceCriteria);
@@ -386,7 +389,7 @@ async function requoteBlockingFindings(
   let used = 0;
   for (const [index, finding] of next.entries()) {
     if (!isBlockingSeverity(finding.severity, threshold)) continue;
-    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir });
+    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir, repoRoot: ctx.input.repoRoot });
     if (initialEvidence.status !== "unmatched") continue;
     if (used >= maxRequotes) break;
     used += 1;
@@ -417,6 +420,7 @@ async function requoteBlockingFindings(
     const requotedEvidence = await checkFindingEvidence({
       finding: updatedFinding,
       workdir: ctx.input.workdir,
+      repoRoot: ctx.input.repoRoot,
     });
     if (requotedEvidence.status === "matched") {
       getSafeLogger()?.info("review", "Recovered semantic finding via same-session requote", {
