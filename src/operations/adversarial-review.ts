@@ -482,9 +482,9 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const substantiated = await substantiateAdversarialFindings({
       findings,
       workdir: input.workdir,
+      repoRoot: input.repoRoot,
       storyId: input.story.id,
       blockingThreshold: threshold,
-      repoRoot: input.repoRoot,
     });
 
     const { accepted, dropped } = filterByAcQuote(substantiated, input.story.acceptanceCriteria);
