@@ -115,13 +115,14 @@ type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"
 
 export function resolveAcceptanceFixTarget(
   acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
-  failedPackages: AcceptanceTestRunResult["failedPackages"],
+  failedPackage:
+    | { testPath: string; packageDir: string; commandOverride?: string }
+    | undefined,
   config: NaxConfig,
 ): {
   acceptanceTestPath: string;
   testCommand: string | undefined;
 } {
-  const failedPackage = failedPackages?.[0];
   const matchedEntry = failedPackage
     ? acceptanceTestPaths?.find(
         (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
@@ -456,7 +457,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
     const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(
       ctx.acceptanceTestPaths,
-      failures.failedPackages,
+      failures.failedPackages?.[0],
       ctx.config,
     );
     const testEntries = ctx.acceptanceTestPaths

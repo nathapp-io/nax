@@ -297,17 +297,31 @@ describe("resolveAcceptanceFixTarget", () => {
           testFramework: "jest",
         },
       ],
-      [
-        {
-          testPath: "/repo/apps/api/.nax-acceptance.test.ts",
-          packageDir: "/repo/apps/api",
-          commandOverride: "pnpm vitest run {{FILE}}",
-          testFramework: "vitest",
-        },
-      ],
+      {
+        testPath: "/repo/apps/api/.nax-acceptance.test.ts",
+        packageDir: "/repo/apps/api",
+        commandOverride: "pnpm vitest run {{FILE}}",
+      },
       config,
     );
     expect(result.acceptanceTestPath).toBe("/repo/apps/api/.nax-acceptance.test.ts");
+    expect(result.testCommand).toBe("pnpm vitest run {{FILE}}");
+  });
+
+  test("resolves the given package, not just the first acceptanceTestPaths entry", () => {
+    const config = makeNaxConfig({
+      acceptance: { command: "bun test {{FILE}} --timeout=60000" },
+      execution: { regressionGate: { mode: "disabled" } },
+    });
+    const result = resolveAcceptanceFixTarget(
+      [
+        { testPath: "/repo/apps/api/.nax-acceptance.test.ts", packageDir: "/repo/apps/api", commandOverride: "npx jest {{FILE}}" },
+        { testPath: "/repo/apps/web/.nax-acceptance.test.ts", packageDir: "/repo/apps/web", commandOverride: "pnpm vitest run {{FILE}}" },
+      ],
+      { testPath: "/repo/apps/web/.nax-acceptance.test.ts", packageDir: "/repo/apps/web", commandOverride: "pnpm vitest run {{FILE}}" },
+      config,
+    );
+    expect(result.acceptanceTestPath).toBe("/repo/apps/web/.nax-acceptance.test.ts");
     expect(result.testCommand).toBe("pnpm vitest run {{FILE}}");
   });
 
@@ -343,12 +357,10 @@ describe("resolveAcceptanceFixTarget", () => {
           commandOverride: "npx jest {{FILE}}",
         },
       ],
-      [
-        {
-          testPath: "/repo/apps/other/.nax-acceptance.test.ts",
-          packageDir: "/repo/apps/other",
-        },
-      ],
+      {
+        testPath: "/repo/apps/other/.nax-acceptance.test.ts",
+        packageDir: "/repo/apps/other",
+      },
       config,
     );
 
