@@ -71,12 +71,17 @@ export async function substantiateSemanticEvidence(
 export async function checkFindingEvidence(opts: {
   finding: FindingWithEvidence;
   workdir: string;
+  repoRoot?: string;
 }): Promise<EvidenceCheckResult> {
   const observed = opts.finding.verifiedBy?.observed?.trim();
   const file = opts.finding.verifiedBy?.file?.trim() || opts.finding.file;
   const line = opts.finding.verifiedBy?.line ?? opts.finding.line;
   if (!observed) return { status: "missing-observed", file, line };
-  const contents = await readSafeFile(opts.workdir, file);
+  // repoRoot first (git paths are repo-root-relative), then workdir as a
+  // package-relative fallback. Dedupe when they are equal (single-package).
+  const roots =
+    opts.repoRoot && opts.repoRoot !== opts.workdir ? [opts.repoRoot, opts.workdir] : [opts.workdir];
+  const contents = await readSafeFile(roots, file);
   if (contents === null) return { status: "unreadable", file, line, observed };
   return matchesEvidence(contents, observed, line)
     ? { status: "matched", file, line, observed }
@@ -125,13 +130,21 @@ export function downgradeUnsubstantiatedFinding<F extends FindingWithEvidence>(o
   return { ...opts.finding, severity: "unverifiable" };
 }
 
-async function readSafeFile(workdir: string, file: string): Promise<string | null> {
-  const validated = validateModulePath(file, [workdir]);
-  if (validated.valid && validated.absolutePath) {
-    try {
-      return await Bun.file(validated.absolutePath).text();
-    } catch {
-      return null;
+async function readSafeFile(roots: string[], file: string): Promise<string | null> {
+  // Relative paths: try each candidate root, return the first that actually
+  // reads. git emits repo-root-relative paths (e.g. "apps/api/src/x.ts"), so a
+  // package-scoped workdir alone double-prefixes and misses. Trying [repoRoot,
+  // workdir] resolves both repo-relative and package-relative findings without
+  // assuming which style the reviewer used. validateModulePath checks
+  // containment (not existence), so the Bun.file read is what disambiguates.
+  for (const root of roots) {
+    const validated = validateModulePath(file, [root]);
+    if (validated.valid && validated.absolutePath) {
+      try {
+        return await Bun.file(validated.absolutePath).text();
+      } catch {
+        // File not present under this root — try the next candidate.
+      }
     }
   }
   if (isAbsolute(file)) {

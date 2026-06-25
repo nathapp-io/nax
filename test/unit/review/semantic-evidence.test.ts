@@ -461,3 +461,92 @@ describe("checkFindingEvidence — generalized over Finding shape (Issue #987)",
     expect(result.acIndex).toBe(1);
   });
 });
+
+describe("checkFindingEvidence — monorepo repoRoot resolution", () => {
+  test("repo-relative finding path resolves against repoRoot, not packageDir", async () => {
+    await withTempDir(async (repoRoot) => {
+      // Monorepo: package lives at <repoRoot>/apps/api ; source at apps/api/src/x.ts
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      // Finding cites the repo-root-relative path (as git emits it). `observed`
+      // is NOT in the file (simulates a bogus diff-stat "observed").
+      const finding = makeFinding({
+        file: "apps/api/src/x.ts",
+        line: 0,
+        verifiedBy: {
+          command: "git diff --stat",
+          file: "apps/api/src/x.ts",
+          line: 0,
+          observed: "no x.ts in the changeset",
+        },
+      });
+
+      const result = await checkFindingEvidence({ finding, workdir: packageDir, repoRoot });
+
+      // File is now readable (resolved against repoRoot), observed absent -> "unmatched".
+      // Before the fix this was "unreadable" (doubled path) and the finding survived.
+      expect(result.status).toBe("unmatched");
+    });
+  });
+
+  test("repo-relative finding path with matching observed resolves to matched", async () => {
+    await withTempDir(async (repoRoot) => {
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      const finding = makeFinding({
+        file: "apps/api/src/x.ts",
+        line: 1,
+        verifiedBy: {
+          command: "Read apps/api/src/x.ts",
+          file: "apps/api/src/x.ts",
+          line: 1,
+          observed: "export const handler = () => 1;",
+        },
+      });
+
+      const result = await checkFindingEvidence({ finding, workdir: packageDir, repoRoot });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("package-relative finding path still resolves against packageDir (belt-and-suspenders)", async () => {
+    await withTempDir(async (repoRoot) => {
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      // Package-relative path (no apps/api prefix). Must still resolve via the
+      // workdir anchor when repoRoot resolution misses.
+      const finding = makeFinding({
+        file: "src/x.ts",
+        line: 1,
+        verifiedBy: {
+          command: "Read src/x.ts",
+          file: "src/x.ts",
+          line: 1,
+          observed: "export const handler = () => 1;",
+        },
+      });
+
+      const result = await checkFindingEvidence({ finding, workdir: packageDir, repoRoot });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+
+  test("single-package (repoRoot omitted) is unchanged", async () => {
+    await withTempDir(async (workdir) => {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src/foo.ts"), "export function foo() {}\n");
+
+      const result = await checkFindingEvidence({ finding: makeFinding(), workdir });
+
+      expect(result.status).toBe("matched");
+    });
+  });
+});
