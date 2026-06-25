@@ -18,3 +18,4 @@ export * from "./requote-response";
 export * from "./severity";
 export { validateLLMShape } from "./semantic-helpers";
 export { categoryToFixTarget } from "./category-fix-target";
+export { hasInspectionTrail, substantiateAdversarialFindings } from "./finding-filters";

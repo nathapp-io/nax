@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { substantiateAdversarialFindings } from "@/review/finding-filters";
+import { substantiateAdversarialFindings } from "@/review";
 import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { IAgentManager } from "@/agents";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";

@@ -80,8 +80,7 @@ export async function checkFindingEvidence(opts: {
   if (!observed) return { status: "missing-observed", file, line };
   // repoRoot first (git paths are repo-root-relative), then workdir as a
   // package-relative fallback. Dedupe when they are equal (single-package).
-  const roots =
-    opts.repoRoot && opts.repoRoot !== opts.workdir ? [opts.repoRoot, opts.workdir] : [opts.workdir];
+  const roots = opts.repoRoot && opts.repoRoot !== opts.workdir ? [opts.repoRoot, opts.workdir] : [opts.workdir];
   const contents = await readSafeFile(roots, file);
   if (contents === null) return { status: "unreadable", file, line, observed };
   return matchesEvidence(contents, observed, line)
