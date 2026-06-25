@@ -119,9 +119,7 @@ type AcceptanceFailedPackage = NonNullable<
 
 export function resolveAcceptanceFixTarget(
   acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
-  failedPackage:
-    | { testPath: string; packageDir: string; commandOverride?: string }
-    | undefined,
+  failedPackage: { testPath: string; packageDir: string; commandOverride?: string } | undefined,
   config: NaxConfig,
 ): {
   acceptanceTestPath: string;
@@ -223,9 +221,7 @@ async function runAcceptanceTestsOnce(
   prd: PRD,
   packageFilter?: AcceptanceTestPathEntry[],
 ): Promise<AcceptanceTestRunResult> {
-  const baseCtx: AcceptanceLoopContext = packageFilter
-    ? { ...ctx, acceptanceTestPaths: packageFilter }
-    : ctx;
+  const baseCtx: AcceptanceLoopContext = packageFilter ? { ...ctx, acceptanceTestPaths: packageFilter } : ctx;
   const acceptanceContext = buildAcceptanceContext(baseCtx, prd);
   const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
   const result = await acceptanceStage.execute(acceptanceContext);
@@ -331,14 +327,18 @@ export async function runAcceptanceFixCycle(
 /**
  * Run the acceptance retry loop.
  *
- * Each iteration:
- *   1. Run acceptance tests → PASS → done / FAIL → collect failures
+ * Each outer iteration:
+ *   1. Run acceptance tests → PASS → done / FAIL → collect per-package failures
  *   2. Stub guard (with stubRegenCount cap) → regen + continue
- *   3. Diagnose (fresh each iteration via resolveAcceptanceDiagnosis)
- *   4. runAcceptanceFixCycle(diagnosis) — runFixCycle handles retries
- *   5. return result (runFixCycle replaces all subsequent outer passes)
+ *   3. Per-package fan-out (#1277): for each failed package, diagnose over that
+ *      package's sliced output and run a fix cycle scoped to its packageDir,
+ *      testPath, and command. Budget is PER-PACKAGE — each failed package gets
+ *      its own maxRetries via runFixCycle's maxAttemptsTotal.
+ *   4. Final full validation pass (all packages) → success only if it passes
+ *      and no package-level findings remain.
  *
- * The outer loop owns stub guard and diagnosis. runFixCycle owns fix retry logic.
+ * The outer loop owns the stub guard and the package fan-out. runFixCycle owns
+ * per-package fix retry logic.
  */
 export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
   const logger = getSafeLogger();
@@ -539,7 +539,11 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       iterations,
       storiesCompleted,
       prdDirty,
-      success ? undefined : (finalCheck.failedACs.length > 0 ? finalCheck.failedACs : remainingFindings.map((f) => f.message)),
+      success
+        ? undefined
+        : finalCheck.failedACs.length > 0
+          ? finalCheck.failedACs
+          : remainingFindings.map((f) => f.message),
       acceptanceRetries,
     );
   }

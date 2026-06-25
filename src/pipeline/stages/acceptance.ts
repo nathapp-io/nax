@@ -235,7 +235,14 @@ export const acceptanceStage: PipelineStage = {
       }
 
       if (actualFailures.length > 0) {
-        failedPackages.push({ testPath, packageDir, testFramework, commandOverride, output, failedACs: actualFailures });
+        failedPackages.push({
+          testPath,
+          packageDir,
+          testFramework,
+          commandOverride,
+          output,
+          failedACs: actualFailures,
+        });
         logger.error("acceptance", "Acceptance tests failed", {
           storyId: ctx.story.id,
           failedACs: actualFailures,
