@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { DiagnosisResult } from "../../../../src/acceptance/types";
 import type { Finding } from "../../../../src/findings";
 import { acFailureToFinding, acSentinelToFinding } from "../../../../src/findings";
-import type { FixCycle, FixCycleResult } from "../../../../src/findings";
+import type { FixCycle, FixCycleContext, FixCycleResult } from "../../../../src/findings";
 import {
   _acceptanceFixCycleDeps,
   runAcceptanceFixCycle,
@@ -433,6 +433,26 @@ describe("runAcceptanceFixCycle", () => {
     );
 
     expect(result).toBe(expectedResult);
+  });
+
+  test("scopes fix cycle packageDir to the fixTarget package, not repo root", async () => {
+    let capturedCtx: FixCycleContext | undefined;
+    _acceptanceFixCycleDeps.runFixCycle = async (_cycle, cycleCtx) => {
+      capturedCtx = cycleCtx;
+      return { iterations: [], finalFindings: [], exitReason: "resolved" };
+    };
+
+    await runAcceptanceFixCycle(
+      makeCtx(),
+      makePrd(),
+      { failedACs: ["AC-1"], testOutput: "boom" },
+      makeDiagnosis(),
+      "/repo/apps/api/.nax-acceptance.test.ts",
+      "npx jest {{FILE}}",
+      { packageDir: "/repo/apps/api", testPath: "/repo/apps/api/.nax-acceptance.test.ts" },
+    );
+
+    expect(capturedCtx?.packageDir).toBe("/repo/apps/api");
   });
 });
 

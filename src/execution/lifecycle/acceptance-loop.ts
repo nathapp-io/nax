@@ -108,10 +108,14 @@ interface AcceptanceTestRunResult {
   passed: boolean;
   failedACs: string[];
   testOutput: string;
-  failedPackages?: AcceptanceTestPathEntry[];
+  failedPackages?: AcceptanceFailedPackage[];
 }
 
 type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
+
+type AcceptanceFailedPackage = NonNullable<
+  NonNullable<PipelineContext["acceptanceFailures"]>["failedPackages"]
+>[number];
 
 export function resolveAcceptanceFixTarget(
   acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
@@ -172,11 +176,12 @@ function buildFixCycleCtx(
   ctx: AcceptanceLoopContext,
   runtime: NonNullable<AcceptanceLoopContext["runtime"]>,
   storyId: string,
+  packageDir: string,
 ): FixCycleContext {
   return {
     runtime,
-    packageView: runtime.packages.resolve(ctx.workdir),
-    packageDir: ctx.workdir,
+    packageView: runtime.packages.resolve(packageDir),
+    packageDir,
     storyId,
     featureName: ctx.feature,
     // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle
@@ -213,8 +218,15 @@ function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): PipelineC
   };
 }
 
-async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Promise<AcceptanceTestRunResult> {
-  const acceptanceContext = buildAcceptanceContext(ctx, prd);
+async function runAcceptanceTestsOnce(
+  ctx: AcceptanceLoopContext,
+  prd: PRD,
+  packageFilter?: AcceptanceTestPathEntry[],
+): Promise<AcceptanceTestRunResult> {
+  const baseCtx: AcceptanceLoopContext = packageFilter
+    ? { ...ctx, acceptanceTestPaths: packageFilter }
+    : ctx;
+  const acceptanceContext = buildAcceptanceContext(baseCtx, prd);
   const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
   const result = await acceptanceStage.execute(acceptanceContext);
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
@@ -247,6 +259,7 @@ export async function runAcceptanceFixCycle(
   diagnosis: DiagnosisResult,
   acceptanceTestPath: string,
   testCommand?: string,
+  fixTarget?: { packageDir: string; testPath: string },
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -257,7 +270,7 @@ export async function runAcceptanceFixCycle(
   let currentFailedACs = initialFailures.failedACs;
 
   const storyId = prd.userStories[0]?.id ?? "unknown";
-  const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId);
+  const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId, fixTarget?.packageDir ?? ctx.workdir);
 
   const cycle: FixCycle<Finding> = {
     findings: findingsForDiagnosis(initialFailures.failedACs, initialFailures.testOutput, diagnosis),
@@ -296,7 +309,10 @@ export async function runAcceptanceFixCycle(
       },
     ],
     validate: async (_ctx, _opts: { mode: "full" | "lite" }) => {
-      const result = await runAcceptanceTestsOnce(ctx, prd);
+      const packageFilter = fixTarget
+        ? ctx.acceptanceTestPaths?.filter((entry) => entry.packageDir === fixTarget.packageDir)
+        : undefined;
+      const result = await runAcceptanceTestsOnce(ctx, prd, packageFilter);
       if (result.passed) return [];
       currentTestOutput = result.testOutput;
       currentFailedACs = result.failedACs;
