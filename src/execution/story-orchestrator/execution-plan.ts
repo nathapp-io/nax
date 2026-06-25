@@ -214,11 +214,25 @@ export class ExecutionPlan {
 
     // ADR-024 — non-blocking best-effort fix over advisory adversarial findings.
     // Only when the story is currently green (adversarial passed, nothing pending).
+    //
+    // This green precondition is load-bearing, not cosmetic: nbf's floor guarantee
+    // (§5, restore-to-adversarial-passed) only holds when the entry state IS the
+    // adversarial-passed tree. Without the guard, a story whose outer rectification
+    // exhausted with unfixed review findings (e.g. semantic-review short-circuit)
+    // still entered nbf, kept cosmetic edits on the red tree, and then escalated on
+    // the real failures it never touched — polluting the next tier's working tree
+    // for no benefit (log 2026-06-24, US-001). Skip nbf entirely when the story is
+    // red: there is no passed state to improve upon, and the blocking failures must
+    // flow to escalation untouched.
+    const storyCurrentlyGreen =
+      !rectResult.rectificationExhausted &&
+      Object.entries(phaseOutputs).every(([name, output]) => phasePassed(name, output, this.ctx.storyId));
     const advCfg = this.state.adversarialReview ? this.state.nonBlockingFix : undefined;
     const advisoryOut = phaseOutputs["adversarial-review"] as { advisoryFindings?: Finding[] } | undefined;
     const advisoryFindings = advisoryOut?.advisoryFindings ?? [];
     if (
       advCfg &&
+      storyCurrentlyGreen &&
       this.state.rectification &&
       this.ctx.storyId &&
       shouldRunNonBlockingFix(advCfg, advisoryFindings.length)
