@@ -398,6 +398,8 @@ Expected: FAIL — `capturedCtx.packageDir` is `ctx.workdir` (repo root), not `/
 
 - [ ] **Step 3: Add `packageDir` param to `buildFixCycleCtx`**
 
+> The only call site (`const cycleCtx = buildFixCycleCtx(...)`, currently line 259) is updated in **Step 5** below — after this signature change the build will not compile until Step 5 lands, so do Steps 3→5 in one commit before running typecheck.
+
 Replace `src/execution/lifecycle/acceptance-loop.ts:170-184`:
 
 ```typescript
@@ -417,6 +419,27 @@ function buildFixCycleCtx(
     agentName: ctx.agentManager?.getDefault() ?? "claude",
   };
 }
+```
+
+- [ ] **Step 3b: Align the `AcceptanceTestRunResult.failedPackages` type with Task 1**
+
+After Task 1, `acceptanceFailures.failedPackages` entries carry `output` + `failedACs`, but `AcceptanceTestRunResult` (acceptance-loop.ts:107-112) still types `failedPackages` as the leaner `AcceptanceTestPathEntry[]`. The assignment still compiles (structural width), but the type silently drops the new fields. Tighten it so the type stays honest. Replace lines 107-112:
+
+```typescript
+interface AcceptanceTestRunResult {
+  passed: boolean;
+  failedACs: string[];
+  testOutput: string;
+  failedPackages?: AcceptanceFailedPackage[];
+}
+```
+
+and add this alias just below the existing `AcceptanceTestPathEntry` alias (currently line 114):
+
+```typescript
+type AcceptanceFailedPackage = NonNullable<
+  NonNullable<PipelineContext["acceptanceFailures"]>["failedPackages"]
+>[number];
 ```
 
 - [ ] **Step 4: Add a package filter to `runAcceptanceTestsOnce`**
@@ -569,11 +592,10 @@ Replace lines 456-518 (from the `// Load test file content for diagnosis` commen
         ? failures.failedPackages
         : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
 
+    // NOTE: `semanticVerdicts` and `totalACs` are ALREADY declared above at the
+    // current lines 437-440 (outside this replacement range) — DO NOT re-declare
+    // them here or you get a duplicate-`const` compile error. They are in scope.
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
-    const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
-    const totalACs = prd.userStories
-      .filter((s) => !s.id.startsWith("US-FIX-"))
-      .flatMap((s) => s.acceptanceCriteria).length;
 
     const testEntries = ctx.acceptanceTestPaths
       ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
@@ -635,7 +657,7 @@ Replace lines 456-518 (from the `// Load test file content for diagnosis` commen
     );
 ```
 
-> **Note:** Delete the now-dead `const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(...)` block and the standalone single diagnosis call that previously sat at lines 457-500 — the replacement above subsumes them. Keep the runtime-null guard (lines 442-454) above this block intact.
+> **Note:** This replacement covers **only lines 456-518**. Everything above it stays: the `semanticVerdicts`/`totalACs` declarations (lines 437-440) and the runtime-null guard (lines 442-454) are KEPT and remain in scope — the replacement code uses `semanticVerdicts` and `totalACs` without re-declaring them. Within the 456-518 range, delete the now-dead `const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(...)` block, the `effectiveAcceptanceTestPath`/`selectedTestEntry`/`testFileContent` vars, the single `strategy` declaration, the standalone single diagnosis call, the diagnosis logger, and the single fix-cycle + return — the replacement above subsumes all of them.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
