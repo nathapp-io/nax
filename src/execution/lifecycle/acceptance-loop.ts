@@ -90,11 +90,17 @@ export interface AcceptanceLoopResult {
 
 export const _acceptanceLoopDeps = {
   loadSemanticVerdicts,
+  loadAcceptanceTestContent: loadAcceptanceTestContentModule,
 };
 
 /** Injectable deps for the fix cycle — swap in tests. */
 export const _acceptanceFixCycleDeps = {
   runFixCycle,
+};
+
+/** Injectable deps for runAcceptanceTestsOnce — swap in tests to avoid mock.module(). */
+export const _runAcceptanceTestsOnceDeps = {
+  importAcceptanceStage: () => import("../../pipeline/stages/acceptance"),
 };
 
 // _regenerateDeps, regenerateAcceptanceTest, generateAndAddFixStories, executeFixStory
@@ -108,20 +114,23 @@ interface AcceptanceTestRunResult {
   passed: boolean;
   failedACs: string[];
   testOutput: string;
-  failedPackages?: AcceptanceTestPathEntry[];
+  failedPackages?: AcceptanceFailedPackage[];
 }
 
 type AcceptanceTestPathEntry = NonNullable<PipelineContext["acceptanceTestPaths"]>[number];
 
+type AcceptanceFailedPackage = NonNullable<
+  NonNullable<PipelineContext["acceptanceFailures"]>["failedPackages"]
+>[number];
+
 export function resolveAcceptanceFixTarget(
   acceptanceTestPaths: AcceptanceTestPathEntry[] | undefined,
-  failedPackages: AcceptanceTestRunResult["failedPackages"],
+  failedPackage: { testPath: string; packageDir: string; commandOverride?: string } | undefined,
   config: NaxConfig,
 ): {
   acceptanceTestPath: string;
   testCommand: string | undefined;
 } {
-  const failedPackage = failedPackages?.[0];
   const matchedEntry = failedPackage
     ? acceptanceTestPaths?.find(
         (entry) => entry.testPath === failedPackage.testPath || entry.packageDir === failedPackage.packageDir,
@@ -171,11 +180,12 @@ function buildFixCycleCtx(
   ctx: AcceptanceLoopContext,
   runtime: NonNullable<AcceptanceLoopContext["runtime"]>,
   storyId: string,
+  packageDir: string,
 ): FixCycleContext {
   return {
     runtime,
-    packageView: runtime.packages.resolve(ctx.workdir),
-    packageDir: ctx.workdir,
+    packageView: runtime.packages.resolve(packageDir),
+    packageDir,
     storyId,
     featureName: ctx.feature,
     // agentName captured once at cycle construction time; fallback changes not reflected mid-cycle
@@ -212,9 +222,14 @@ function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): PipelineC
   };
 }
 
-async function runAcceptanceTestsOnce(ctx: AcceptanceLoopContext, prd: PRD): Promise<AcceptanceTestRunResult> {
-  const acceptanceContext = buildAcceptanceContext(ctx, prd);
-  const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+async function runAcceptanceTestsOnce(
+  ctx: AcceptanceLoopContext,
+  prd: PRD,
+  packageFilter?: AcceptanceTestPathEntry[],
+): Promise<AcceptanceTestRunResult> {
+  const baseCtx: AcceptanceLoopContext = packageFilter ? { ...ctx, acceptanceTestPaths: packageFilter } : ctx;
+  const acceptanceContext = buildAcceptanceContext(baseCtx, prd);
+  const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
   const result = await acceptanceStage.execute(acceptanceContext);
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
   const failures = acceptanceContext.acceptanceFailures;
@@ -246,6 +261,7 @@ export async function runAcceptanceFixCycle(
   diagnosis: DiagnosisResult,
   acceptanceTestPath: string,
   testCommand?: string,
+  fixTarget?: { packageDir: string; testPath: string },
 ): Promise<FixCycleResult<Finding>> {
   const runtime = ctx.runtime;
   if (!runtime) {
@@ -256,7 +272,7 @@ export async function runAcceptanceFixCycle(
   let currentFailedACs = initialFailures.failedACs;
 
   const storyId = prd.userStories[0]?.id ?? "unknown";
-  const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId);
+  const cycleCtx = buildFixCycleCtx(ctx, runtime, storyId, fixTarget?.packageDir ?? ctx.workdir);
 
   const cycle: FixCycle<Finding> = {
     findings: findingsForDiagnosis(initialFailures.failedACs, initialFailures.testOutput, diagnosis),
@@ -295,7 +311,10 @@ export async function runAcceptanceFixCycle(
       },
     ],
     validate: async (_ctx, _opts: { mode: "full" | "lite" }) => {
-      const result = await runAcceptanceTestsOnce(ctx, prd);
+      const packageFilter = fixTarget
+        ? ctx.acceptanceTestPaths?.filter((entry) => entry.packageDir === fixTarget.packageDir)
+        : undefined;
+      const result = await runAcceptanceTestsOnce(ctx, prd, packageFilter);
       if (result.passed) return [];
       currentTestOutput = result.testOutput;
       currentFailedACs = result.failedACs;
@@ -314,14 +333,18 @@ export async function runAcceptanceFixCycle(
 /**
  * Run the acceptance retry loop.
  *
- * Each iteration:
- *   1. Run acceptance tests → PASS → done / FAIL → collect failures
+ * Each outer iteration:
+ *   1. Run acceptance tests → PASS → done / FAIL → collect per-package failures
  *   2. Stub guard (with stubRegenCount cap) → regen + continue
- *   3. Diagnose (fresh each iteration via resolveAcceptanceDiagnosis)
- *   4. runAcceptanceFixCycle(diagnosis) — runFixCycle handles retries
- *   5. return result (runFixCycle replaces all subsequent outer passes)
+ *   3. Per-package fan-out (#1277): for each failed package, diagnose over that
+ *      package's sliced output and run a fix cycle scoped to its packageDir,
+ *      testPath, and command. Budget is PER-PACKAGE — each failed package gets
+ *      its own maxRetries via runFixCycle's maxAttemptsTotal.
+ *   4. Final full validation pass (all packages) → success only if it passes
+ *      and no package-level findings remain.
  *
- * The outer loop owns stub guard and diagnosis. runFixCycle owns fix retry logic.
+ * The outer loop owns the stub guard and the package fan-out. runFixCycle owns
+ * per-package fix retry logic.
  */
 export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult> {
   const logger = getSafeLogger();
@@ -337,7 +360,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
-  const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+  const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
 
   while (acceptanceRetries < maxRetries) {
     // ── 1. Run acceptance ────────────────────────────────────────────────
@@ -453,59 +476,76 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       );
     }
 
-    // Load test file content for diagnosis (still needed for import parsing in loadSourceFilesForDiagnosis)
-    const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(
-      ctx.acceptanceTestPaths,
-      failures.failedPackages,
-      ctx.config,
-    );
-    const testEntries = ctx.acceptanceTestPaths
-      ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
-      : [];
-    const effectiveAcceptanceTestPath = acceptanceTestPath || testEntries[0]?.testPath || "";
-    const selectedTestEntry = testEntries.find((entry) => entry.testPath === effectiveAcceptanceTestPath);
-    const testFileContent = selectedTestEntry?.content ?? testEntries[0]?.content ?? "";
+    // ── 4+5. Per-package fan-out: diagnose + fix each failed package ──────
+    // #1277: one fix cycle per failed package, each scoped to its packageDir,
+    // testPath, command, and sliced output. Budget is per-package (each gets
+    // its own maxRetries). A final full validation pass catches cross-package
+    // regressions before declaring success.
+    const failedPkgs =
+      failures.failedPackages && failures.failedPackages.length > 0
+        ? failures.failedPackages
+        : [{ testPath: "", packageDir: ctx.workdir, output: failures.testOutput, failedACs: failures.failedACs }];
 
+    // NOTE: `semanticVerdicts` and `totalACs` are ALREADY declared above
+    // (runtime-null guard scope) — DO NOT re-declare them here.
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
-    const diagnosis = await resolveAcceptanceDiagnosis({
-      ctx,
-      failures,
-      totalACs,
-      strategy,
-      semanticVerdicts,
-      diagnosisOpts: {
-        testOutput: failures.testOutput,
-        testFileContent,
-        acceptanceTestPath: effectiveAcceptanceTestPath,
-        workdir: ctx.workdir,
+
+    const testEntries = ctx.acceptanceTestPaths
+      ? await _acceptanceLoopDeps.loadAcceptanceTestContent(ctx.acceptanceTestPaths.map((p) => p.testPath))
+      : [];
+
+    const remainingFindings: Finding[] = [];
+    let totalInternalIterations = 0;
+    for (const pkg of failedPkgs) {
+      const { acceptanceTestPath, testCommand } = resolveAcceptanceFixTarget(ctx.acceptanceTestPaths, pkg, ctx.config);
+      const effectivePath = acceptanceTestPath || pkg.testPath || testEntries[0]?.testPath || "";
+      const testFileContent = testEntries.find((entry) => entry.testPath === effectivePath)?.content ?? "";
+
+      const pkgFailures = { failedACs: pkg.failedACs, testOutput: pkg.output };
+      const diagnosis = await resolveAcceptanceDiagnosis({
+        ctx,
+        failures: pkgFailures,
+        totalACs,
+        strategy,
+        semanticVerdicts,
+        diagnosisOpts: {
+          testOutput: pkg.output,
+          testFileContent,
+          acceptanceTestPath: effectivePath,
+          workdir: pkg.packageDir,
+          storyId: firstStory?.id,
+        },
+      });
+
+      logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
         storyId: firstStory?.id,
-      },
-    });
+        packageDir: pkg.packageDir,
+        verdict: diagnosis.verdict,
+        confidence: diagnosis.confidence,
+        attempt: acceptanceRetries,
+      });
 
-    logger?.info("acceptance.diagnosis", "Diagnosis resolved", {
-      storyId: firstStory?.id,
-      verdict: diagnosis.verdict,
-      confidence: diagnosis.confidence,
-      attempt: acceptanceRetries,
-    });
+      const cycleResult = await runAcceptanceFixCycle(ctx, prd, pkgFailures, diagnosis, effectivePath, testCommand, {
+        packageDir: pkg.packageDir,
+        testPath: effectivePath,
+      });
+      totalCost += cycleResult.costUsd ?? 0;
+      totalInternalIterations += cycleResult.iterations.length;
+      const pkgResolved = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
+      if (!pkgResolved) remainingFindings.push(...cycleResult.finalFindings);
+    }
 
-    // ── 5. Run acceptance fix cycle ────────────────────────────────────
-    const cycleResult = await runAcceptanceFixCycle(
-      ctx,
-      prd,
-      failures,
-      diagnosis,
-      effectiveAcceptanceTestPath,
-      testCommand,
-    );
-    // Cost is captured at the dispatch-bus layer (runtime.costAggregator); the local
-    // accumulation here is best-effort and may undercount. The authoritative total
-    // is reconciled in handleRunCompletion via Math.max(local, aggregator).
-    totalCost += cycleResult.costUsd ?? 0;
-    // "resolved" is the canonical success exit; also treat empty finalFindings as success
-    // in case the last validate pass cleared all findings before runFixCycle emitted "resolved".
-    const success = cycleResult.exitReason === "resolved" || cycleResult.finalFindings.length === 0;
-    // retries here counts: 1 outer pass (acceptanceRetries) + N internal strategy attempts.
+    // ── Final full validation pass (all packages) — catches cross-package
+    //    regressions one isolated cycle could miss. ───────────────────────
+    const finalCheck = await runAcceptanceTestsOnce(ctx, prd);
+    const success = finalCheck.passed && remainingFindings.length === 0;
+    const failureMessages = !success
+      ? finalCheck.failedACs.length > 0
+        ? finalCheck.failedACs
+        : remainingFindings.length > 0
+          ? remainingFindings.map((f) => f.message)
+          : ["acceptance validation failed (unknown cause)"]
+      : undefined;
     return buildResult(
       success,
       prd,
@@ -513,8 +553,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       iterations,
       storiesCompleted,
       prdDirty,
-      success ? undefined : cycleResult.finalFindings.map((f) => f.message),
-      acceptanceRetries + cycleResult.iterations.length,
+      failureMessages,
+      acceptanceRetries + totalInternalIterations,
     );
   }
 

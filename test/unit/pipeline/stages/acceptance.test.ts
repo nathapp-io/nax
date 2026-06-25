@@ -259,8 +259,71 @@ describe("US-002: per-package acceptance runner", () => {
           packageDir: "/tmp/test-workdir/apps/api",
           testFramework: "jest",
           commandOverride: "npx jest --config jest.nax.config.js {{FILE}}",
+          output: expect.stringContaining("AC-2"),
+          failedACs: ["AC-2"],
         },
       ]);
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      (Bun as any).file = origFile;
+    }
+  });
+
+  test("records per-package output and failedACs on each failed package entry", async () => {
+    const origSpawn = Bun.spawn;
+    (Bun as any).spawn = (_cmd: string[], opts: any) => {
+      const isApi = opts.cwd === "/tmp/test-workdir/apps/api";
+      const output = isApi ? "FAIL AC-1 api boom\n" : "FAIL AC-2 web boom\n";
+      return {
+        exited: Promise.resolve(1),
+        stdout: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(output));
+            controller.close();
+          },
+        }),
+        stderr: new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      };
+    };
+
+    const origFile = Bun.file;
+    (Bun as any).file = (_p: string) => ({
+      exists: () => Promise.resolve(true),
+      text: () => Promise.resolve(""),
+    });
+
+    const ctx = makeCtx({
+      acceptanceTestPaths: [
+        {
+          testPath: "/tmp/test-workdir/apps/api/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/api",
+          testFramework: "jest",
+          commandOverride: "npx jest {{FILE}}",
+        },
+        {
+          testPath: "/tmp/test-workdir/apps/web/.nax-acceptance.test.ts",
+          packageDir: "/tmp/test-workdir/apps/web",
+          testFramework: "vitest",
+          commandOverride: "pnpm vitest run {{FILE}}",
+        },
+      ],
+    });
+
+    try {
+      const result = await acceptanceStage.execute(ctx);
+      expect(result.action).toBe("fail");
+      const pkgs = ctx.acceptanceFailures?.failedPackages ?? [];
+      const api = pkgs.find((p) => p.packageDir === "/tmp/test-workdir/apps/api");
+      const web = pkgs.find((p) => p.packageDir === "/tmp/test-workdir/apps/web");
+      expect(api?.output).toContain("api");
+      expect(web?.output).toContain("web");
+      expect(api?.failedACs).toEqual(["AC-1"]);
+      expect(web?.failedACs).toEqual(["AC-2"]);
+      expect(ctx.acceptanceFailures?.failedACs).toEqual(["AC-1", "AC-2"]);
     } finally {
       (Bun as any).spawn = origSpawn;
       (Bun as any).file = origFile;

@@ -149,6 +149,8 @@ export const acceptanceStage: PipelineStage = {
       packageDir: string;
       testFramework?: string;
       commandOverride?: string;
+      output: string;
+      failedACs: string[];
     }> = [];
     const allOutputParts: string[] = [];
     let anyError = false;
@@ -219,7 +221,7 @@ export const acceptanceStage: PipelineStage = {
         errorExitCode = exitCode;
         allFailedACs.push("AC-ERROR");
         allFindings.push(acSentinelToFinding("AC-ERROR", output));
-        failedPackages.push({ testPath, packageDir, testFramework, commandOverride });
+        failedPackages.push({ testPath, packageDir, testFramework, commandOverride, output, failedACs: ["AC-ERROR"] });
         continue;
       }
 
@@ -233,7 +235,14 @@ export const acceptanceStage: PipelineStage = {
       }
 
       if (actualFailures.length > 0) {
-        failedPackages.push({ testPath, packageDir, testFramework, commandOverride });
+        failedPackages.push({
+          testPath,
+          packageDir,
+          testFramework,
+          commandOverride,
+          output,
+          failedACs: actualFailures,
+        });
         logger.error("acceptance", "Acceptance tests failed", {
           storyId: ctx.story.id,
           failedACs: actualFailures,
