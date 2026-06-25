@@ -130,4 +130,80 @@ describe("non-blocking-fix runtime wiring", () => {
     const deps = runNonBlockingFix.mock.calls[0]?.[1] as { measureSourceDiff?: unknown } | undefined;
     expect(typeof deps?.measureSourceDiff).toBe("function");
   });
+
+  test("non-blocking fix is SKIPPED when the story is not green (rectification exhausted with unfixed findings)", async () => {
+    // Regression: log 2026-06-24 US-001. Adversarial review FAILED (blocking findings)
+    // yet its output still carried advisoryFindings. The outer rectification fixed the
+    // blocking findings but its revalidation flipped semantic-review red and exhausted
+    // (validate-short-circuit, 6 unfixed findings). nbf then read those advisory findings
+    // off the still-failing adversarial output, ran on the red tree, kept cosmetic edits,
+    // and the story escalated on the real failures. ADR-024 §5: nbf only acts on an
+    // already-green (adversarial-passed) story; its restore-to-adversarial-passed floor is
+    // meaningless when the entry state is red.
+    const runNonBlockingFix = mock(async () => ({ ran: true, kept: true, restored: false }));
+    (_storyOrchestratorDeps as { runNonBlockingFix?: typeof runNonBlockingFix }).runNonBlockingFix = runNonBlockingFix;
+
+    // Adversarial review FAILS (blocking findings) but still surfaces advisory findings —
+    // so the main loop short-circuits here and the story is red, yet advisoryFindings > 0.
+    _storyOrchestratorDeps.callOp = mock(async (_ctx, op) => {
+      if (op.name === "adversarial-review") {
+        return {
+          success: false,
+          passed: false,
+          normalizedFindings: [
+            { source: "adversarial-review", severity: "error", category: "logic", message: "blocking finding" },
+          ],
+          advisoryFindings: [
+            { source: "adversarial-review", severity: "warning", category: "input", message: "advisory finding" },
+          ],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    // Outer rectification exhausts with a non-mechanical unfixed finding → story is red.
+    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
+      iterations: [{}],
+      finalFindings: [{ source: "semantic-review", severity: "error", category: "logic", message: "unfixable" }],
+      exitReason: "max-attempts-total" as const,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const config = makeNaxConfig({
+      quality: { autofix: { enabled: true } },
+      execution: { rectification: { enabled: true, maxAttemptsTotal: 2 } },
+      review: {
+        adversarial: {
+          model: "balanced",
+          diffMode: "ref",
+          rules: [],
+          timeoutMs: 600_000,
+          parallel: false,
+          maxConcurrentSessions: 2,
+          nonBlockingFix: { enabled: true, scope: "triage", regressionAttempts: 1, verifierGuard: true },
+        },
+      },
+    });
+    const story = makeStory({ attempts: 1 });
+    runtime = makeTestRuntime({ config });
+    const ctx = makeMockCallContext({ runtime });
+    const inputs = makeMockPlanInputs({
+      story,
+      implementer: { story },
+      fullSuiteGate: { story, workdir: "/tmp/test" },
+      verifier: { story },
+      adversarialReview: {
+        story,
+        workdir: "/tmp/test",
+        adversarialConfig: config.review.adversarial!,
+        mode: config.review.adversarial!.diffMode,
+      },
+      rectification: { maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false },
+    });
+
+    const plan = await buildPlanForStrategy(ctx, story, config, "three-session-tdd", inputs);
+    await plan.run();
+
+    expect(runNonBlockingFix).not.toHaveBeenCalled();
+  });
 });
