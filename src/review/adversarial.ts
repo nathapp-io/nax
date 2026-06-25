@@ -235,7 +235,6 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   // NOTE: llmCost stays 0 on the runtime path — buildHopCallback charges cost via
   // costAggregator. ReviewCheckResult.cost is 0 for pipeline-managed reviews.
   const llmCost = 0;
-
   const callCtx = {
     runtime,
     packageView: runtime.packages.resolve(workdir),
@@ -249,6 +248,7 @@ export async function runAdversarialReview(opts: RunAdversarialReviewOptions): P
   try {
     opResult = await _adversarialDeps.callOp(callCtx, adversarialReviewOp, {
       workdir,
+      repoRoot: projectDir ?? workdir,
       story,
       adversarialConfig,
       mode: diffMode,

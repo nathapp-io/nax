@@ -31,6 +31,8 @@ export type ValidatedAdversarialShape = NonNullable<ReturnType<typeof validateAd
 export interface AdversarialReviewInput {
   /** Absolute path to the package workdir — required by verify() for evidence substantiation. */
   workdir: string;
+  /** Absolute repo root (= projectDir ?? workdir). Anchors evidence path resolution for monorepo packages. */
+  repoRoot?: string;
   story: SemanticStory;
   adversarialConfig: AdversarialReviewConfig;
   mode: "embedded" | "ref";
@@ -162,7 +164,11 @@ async function requoteBlockingAdversarialFindings(
   let used = 0;
   for (const [index, finding] of next.entries()) {
     if (!isBlockingSeverity(finding.severity, threshold)) continue;
-    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir });
+    const initialEvidence = await checkFindingEvidence({
+      finding,
+      workdir: ctx.input.workdir,
+      repoRoot: ctx.input.repoRoot,
+    });
     if (initialEvidence.status !== "unmatched") continue;
     if (used >= maxRequotes) break;
     used += 1;
@@ -192,6 +198,7 @@ async function requoteBlockingAdversarialFindings(
     const requotedEvidence = await checkFindingEvidence({
       finding: updatedFinding,
       workdir: ctx.input.workdir,
+      repoRoot: ctx.input.repoRoot,
     });
     if (requotedEvidence.status === "matched") {
       getSafeLogger()?.info("review", "Recovered adversarial finding via same-session requote", {
@@ -475,6 +482,7 @@ export const adversarialReviewOp: RunOperation<AdversarialReviewInput, Adversari
     const substantiated = await substantiateAdversarialFindings({
       findings,
       workdir: input.workdir,
+      repoRoot: input.repoRoot,
       storyId: input.story.id,
       blockingThreshold: threshold,
     });

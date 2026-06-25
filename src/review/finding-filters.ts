@@ -55,12 +55,13 @@ export async function substantiateAdversarialFindings(opts: {
   workdir: string;
   storyId: string;
   blockingThreshold: "error" | "warning" | "info";
+  repoRoot?: string;
 }): Promise<AdversarialLLMFinding[]> {
-  const { findings, workdir, storyId, blockingThreshold } = opts;
+  const { findings, workdir, storyId, blockingThreshold, repoRoot } = opts;
   return Promise.all(
     findings.map(async (finding) => {
       if (!isBlockingSeverity(finding.severity, blockingThreshold)) return finding;
-      const evidence = await checkFindingEvidence({ finding, workdir });
+      const evidence = await checkFindingEvidence({ finding, workdir, repoRoot });
       if (evidence.status !== "unmatched" && evidence.status !== "missing-observed") return finding;
       return downgradeUnsubstantiatedFinding({
         finding,
