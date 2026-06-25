@@ -389,7 +389,11 @@ async function requoteBlockingFindings(
   let used = 0;
   for (const [index, finding] of next.entries()) {
     if (!isBlockingSeverity(finding.severity, threshold)) continue;
-    const initialEvidence = await checkFindingEvidence({ finding, workdir: ctx.input.workdir, repoRoot: ctx.input.repoRoot });
+    const initialEvidence = await checkFindingEvidence({
+      finding,
+      workdir: ctx.input.workdir,
+      repoRoot: ctx.input.repoRoot,
+    });
     if (initialEvidence.status !== "unmatched") continue;
     if (used >= maxRequotes) break;
     used += 1;
