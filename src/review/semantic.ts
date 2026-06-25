@@ -296,6 +296,7 @@ export async function runSemanticReview(opts: RunSemanticReviewOptions): Promise
   try {
     opResult = await _semanticDeps.callOp(callCtx, semanticReviewOp, {
       workdir,
+      repoRoot: projectDir ?? workdir,
       story,
       semanticConfig,
       mode: diffMode,

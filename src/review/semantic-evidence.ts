@@ -56,12 +56,13 @@ export async function substantiateSemanticEvidence(
   workdir: string,
   storyId: string,
   blockingThreshold: "error" | "warning" | "info" = "error",
+  repoRoot?: string,
 ): Promise<LLMFinding[]> {
   if (diffMode !== "ref") return findings;
   return Promise.all(
     findings.map(async (finding) => {
       if (!isBlockingSeverity(finding.severity, blockingThreshold)) return finding;
-      const evidence = await checkFindingEvidence({ finding, workdir });
+      const evidence = await checkFindingEvidence({ finding, workdir, repoRoot });
       if (evidence.status !== "unmatched") return finding;
       return downgradeUnsubstantiatedFinding({ finding, storyId, ...evidence });
     }),

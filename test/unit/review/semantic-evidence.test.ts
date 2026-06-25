@@ -245,6 +245,37 @@ describe("substantiateSemanticEvidence — ref mode", () => {
     });
   });
 
+  test("downgrades monorepo finding whose observed is absent once repoRoot resolves the path", async () => {
+    await withTempDir(async (repoRoot) => {
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      const finding = makeFinding({
+        file: "apps/api/src/x.ts",
+        line: 0,
+        verifiedBy: {
+          command: "git diff --stat",
+          file: "apps/api/src/x.ts",
+          line: 0,
+          observed: "no x.ts in the changeset",
+        },
+      });
+
+      const result = await substantiateSemanticEvidence(
+        [finding],
+        "ref",
+        packageDir,
+        STORY_ID,
+        "error",
+        repoRoot,
+      );
+
+      expect(result[0].severity).toBe("unverifiable");
+      expect(logger.calls.find((c) => c.message.includes("Downgraded"))).toBeDefined();
+    });
+  });
+
   test("downgrades warning finding when blockingThreshold is warning", async () => {
     await withTempDir(async (workdir) => {
       mkdirSync(join(workdir, "src"), { recursive: true });
