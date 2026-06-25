@@ -9,6 +9,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { substantiateAdversarialFindings } from "@/review/finding-filters";
+import type { AdversarialLLMFinding } from "@/review/adversarial-helpers";
 import type { IAgentManager } from "@/agents";
 import type { AdversarialReviewConfig, SemanticStory } from "@/review/types";
 import { makeAgentAdapter, makeMockAgentManager, makeMockRuntime, makeLogger, withTempDir } from "@test/helpers";
@@ -478,6 +480,65 @@ describe("runAdversarialReview — verifiedBy.observed substantiation (#987)", (
         );
       });
       expect(downgradeEvent).toBeDefined();
+    });
+  });
+});
+
+describe("substantiateAdversarialFindings — monorepo repoRoot resolution", () => {
+  function makeAdvFinding(overrides: Partial<AdversarialLLMFinding> = {}): AdversarialLLMFinding {
+    return {
+      severity: "error",
+      file: "apps/api/src/x.ts",
+      line: 0,
+      issue: "AC not implemented",
+      suggestion: "Implement it",
+      verifiedBy: {
+        file: "apps/api/src/x.ts",
+        line: 0,
+        observed: "no x.ts in the changeset",
+      },
+      ...overrides,
+    } as AdversarialLLMFinding;
+  }
+
+  test("downgrades monorepo finding whose observed is absent once repoRoot resolves the path", async () => {
+    await withTempDir(async (repoRoot) => {
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      const result = await substantiateAdversarialFindings({
+        findings: [makeAdvFinding()],
+        workdir: packageDir,
+        storyId: "STORY-001",
+        blockingThreshold: "error",
+        repoRoot,
+      });
+
+      expect(result[0].severity).toBe("unverifiable");
+    });
+  });
+
+  test("preserves monorepo finding whose observed matches the file", async () => {
+    await withTempDir(async (repoRoot) => {
+      mkdirSync(join(repoRoot, "apps/api/src"), { recursive: true });
+      writeFileSync(join(repoRoot, "apps/api/src/x.ts"), "export const handler = () => 1;\n");
+      const packageDir = join(repoRoot, "apps/api");
+
+      const finding = makeAdvFinding({
+        line: 1,
+        verifiedBy: { file: "apps/api/src/x.ts", line: 1, observed: "export const handler = () => 1;" },
+      });
+
+      const result = await substantiateAdversarialFindings({
+        findings: [finding],
+        workdir: packageDir,
+        storyId: "STORY-001",
+        blockingThreshold: "error",
+        repoRoot,
+      });
+
+      expect(result[0].severity).toBe("error");
     });
   });
 });
