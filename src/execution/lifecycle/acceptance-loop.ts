@@ -90,11 +90,17 @@ export interface AcceptanceLoopResult {
 
 export const _acceptanceLoopDeps = {
   loadSemanticVerdicts,
+  loadAcceptanceTestContent: loadAcceptanceTestContentModule,
 };
 
 /** Injectable deps for the fix cycle — swap in tests. */
 export const _acceptanceFixCycleDeps = {
   runFixCycle,
+};
+
+/** Injectable deps for runAcceptanceTestsOnce — swap in tests to avoid mock.module(). */
+export const _runAcceptanceTestsOnceDeps = {
+  importAcceptanceStage: () => import("../../pipeline/stages/acceptance"),
 };
 
 // _regenerateDeps, regenerateAcceptanceTest, generateAndAddFixStories, executeFixStory
@@ -223,7 +229,7 @@ async function runAcceptanceTestsOnce(
 ): Promise<AcceptanceTestRunResult> {
   const baseCtx: AcceptanceLoopContext = packageFilter ? { ...ctx, acceptanceTestPaths: packageFilter } : ctx;
   const acceptanceContext = buildAcceptanceContext(baseCtx, prd);
-  const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+  const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
   const result = await acceptanceStage.execute(acceptanceContext);
   if (result.action !== "fail") return { passed: true, failedACs: [], testOutput: "" };
   const failures = acceptanceContext.acceptanceFailures;
@@ -354,7 +360,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
-  const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+  const { acceptanceStage } = await _runAcceptanceTestsOnceDeps.importAcceptanceStage();
 
   while (acceptanceRetries < maxRetries) {
     // ── 1. Run acceptance ────────────────────────────────────────────────
@@ -485,7 +491,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
 
     const testEntries = ctx.acceptanceTestPaths
-      ? await loadAcceptanceTestContentModule(ctx.acceptanceTestPaths.map((p) => p.testPath))
+      ? await _acceptanceLoopDeps.loadAcceptanceTestContent(ctx.acceptanceTestPaths.map((p) => p.testPath))
       : [];
 
     const remainingFindings: Finding[] = [];

@@ -16,6 +16,8 @@ import { acFailureToFinding, acSentinelToFinding } from "../../../../src/finding
 import type { FixCycle, FixCycleContext, FixCycleResult } from "../../../../src/findings";
 import {
   _acceptanceFixCycleDeps,
+  _acceptanceLoopDeps,
+  _runAcceptanceTestsOnceDeps,
   runAcceptanceFixCycle,
   type AcceptanceLoopContext,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
@@ -567,11 +569,10 @@ describe("runAcceptanceLoop per-package fan-out", () => {
     const apiPkg = { testPath: "/repo/apps/api/t.test.ts", packageDir: "/repo/apps/api", output: "api boom", failedACs: ["AC-1"] };
     const webPkg = { testPath: "/repo/apps/web/t.test.ts", packageDir: "/repo/apps/web", output: "web boom", failedACs: ["AC-2"] };
 
-    // Stub the dynamically-imported acceptanceStage: first call reports both failed packages,
-    // subsequent calls (final validation pass) pass.
+    // Stub the dynamically-imported acceptanceStage via _deps: first call reports both
+    // failed packages, subsequent calls (final validation pass) pass.
     let callCount = 0;
-    const acceptanceStageModule = await import("../../../../src/pipeline/stages/acceptance");
-    const origExecute = acceptanceStageModule.acceptanceStage.execute;
+    const origImportAcceptanceStage = _runAcceptanceTestsOnceDeps.importAcceptanceStage;
     const stubbedExecute = (ctx: any) => {
       callCount++;
       if (callCount === 1) {
@@ -585,18 +586,12 @@ describe("runAcceptanceLoop per-package fan-out", () => {
       }
       return Promise.resolve({ action: "continue" as const });
     };
-    mock.module("../../../../src/pipeline/stages/acceptance", () => ({
-      ...acceptanceStageModule,
-      acceptanceStage: { ...acceptanceStageModule.acceptanceStage, execute: stubbedExecute },
-    }));
+    _runAcceptanceTestsOnceDeps.importAcceptanceStage = async () =>
+      ({ acceptanceStage: { execute: stubbedExecute } }) as any;
 
-    // Stub loadAcceptanceTestContent to return empty entries (no real files).
-    const acceptanceModule = await import("../../../../src/acceptance");
-    const origLoadContent = acceptanceModule.loadAcceptanceTestContent;
-    mock.module("../../../../src/acceptance", () => ({
-      ...acceptanceModule,
-      loadAcceptanceTestContent: async () => [],
-    }));
+    // Stub loadAcceptanceTestContent via _deps to return empty entries (no real files).
+    const origLoadContent = _acceptanceLoopDeps.loadAcceptanceTestContent;
+    _acceptanceLoopDeps.loadAcceptanceTestContent = async () => [];
 
     // Stub diagnosis to skip real LLM call.
     const fixModule = await import("../../../../src/execution/lifecycle/acceptance-fix");
@@ -621,14 +616,8 @@ describe("runAcceptanceLoop per-package fan-out", () => {
       expect(fixedPackages.sort()).toEqual(["/repo/apps/api", "/repo/apps/web"]);
     } finally {
       (fixModule._diagnosisDeps as any).callOp = origCallOp;
-      mock.module("../../../../src/pipeline/stages/acceptance", () => ({
-        ...acceptanceStageModule,
-        acceptanceStage: { ...acceptanceStageModule.acceptanceStage, execute: origExecute },
-      }));
-      mock.module("../../../../src/acceptance", () => ({
-        ...acceptanceModule,
-        loadAcceptanceTestContent: origLoadContent,
-      }));
+      _runAcceptanceTestsOnceDeps.importAcceptanceStage = origImportAcceptanceStage;
+      _acceptanceLoopDeps.loadAcceptanceTestContent = origLoadContent;
     }
   });
 });
