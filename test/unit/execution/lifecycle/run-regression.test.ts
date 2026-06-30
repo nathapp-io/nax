@@ -231,6 +231,48 @@ describe("runDeferredRegression — early exit after first story", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Blind-rectifier guard: empty structured failures must not no-op as "resolved"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runDeferredRegression — synthetic finding when no structured failures parsed", () => {
+  test("feeds the fix cycle a non-empty finding so it cannot short-circuit to resolved", async () => {
+    const verifyCalls: string[] = [];
+    _regressionDeps.runVerification = mock(async () => {
+      const call = verifyCalls.length;
+      verifyCalls.push(`call-${call}`);
+      // initial: suite fails (non-zero exit) but only a count is parseable, no
+      // structured failures — the rs-stock "230 passed, 10 errors" shape.
+      if (call === 0) {
+        return makeVerifyResult({
+          output: "======================== 230 passed, 10 errors in 5.29s ========================",
+          passCount: 230,
+          failCount: 0,
+        });
+      }
+      return makePassResult(230);
+    });
+
+    _regressionDeps.parseTestOutput = mock(() => ({ passed: 230, failed: 0, failures: [] }));
+
+    let capturedFindingCount = -1;
+    _regressionDeps.runFixCycle = mock(async (cycle, cycleCtx) => {
+      capturedFindingCount = cycle.findings.length;
+      // sanity: the synthetic finding must be one the rectify strategy applies to
+      expect(cycle.findings[0]?.source).toBe("test-runner");
+      void cycleCtx;
+      return makeFixCycleResult(true, 0.1);
+    });
+
+    const result = await runDeferredRegression(makeOptions(["US-001"]));
+
+    // Before the fix this was 0 → runFixCycle would short-circuit to "resolved"
+    // without ever invoking the agent, falsely reporting a successful fix.
+    expect(capturedFindingCount).toBeGreaterThan(0);
+    expect(result.rectificationAttempts).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Early exit: second story fixes the rest
 // ─────────────────────────────────────────────────────────────────────────────
 
