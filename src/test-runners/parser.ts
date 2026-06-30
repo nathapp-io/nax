@@ -291,21 +291,28 @@ function parsePytestOutput(output: string): TestSummary {
     }
   }
 
-  // Collection/import errors: "ERROR collecting <path>" (ERRORS block header) or
-  // "ERROR <path> - <reason>" (short summary). Both forms refer to the same file,
-  // so dedupe by path and prefer the entry carrying a reason.
+  // Collection/import errors come in two line-anchored forms (both tolerate a
+  // leading turbo task prefix like "pkg:test: "):
+  //   - ERRORS block header:  "____ ERROR collecting <path> ____"
+  //   - short summary:        "ERROR <path>[::test] - <reason>"
+  // Requiring either the "collecting" keyword or a " - <reason>" tail keeps
+  // captured app-log lines (e.g. "ERROR app.py:42 boom") from manufacturing
+  // phantom failures. Dedupe by file, preferring the entry carrying a reason.
+  const PLACEHOLDER_REASON = "Collection/import error";
   const errorByFile = new Map<string, TestFailure>();
   for (const line of output.split("\n")) {
-    const em = line.match(/\bERROR\s+(?:collecting\s+)?(\S+\.\w+)(?:\s+-\s+(.*))?/);
-    if (!em) continue;
-    const [, location, reason] = em;
+    const collecting = line.match(/^(?:\S+:\s+)?_*\s*ERROR\s+collecting\s+(\S+\.\w+)/);
+    const summary = line.match(/^(?:\S+:\s+)?ERROR\s+(\S+\.\w+(?:::\S+)?)\s+-\s+(.*)/);
+    const location = collecting?.[1] ?? summary?.[1];
+    if (!location) continue;
+    const reason = summary?.[2]?.trim();
     const file = location.split("::")[0] ?? location;
     const existing = errorByFile.get(file);
-    if (existing && existing.error !== "Collection/import error") continue;
+    if (existing && existing.error !== PLACEHOLDER_REASON) continue;
     errorByFile.set(file, {
       file,
       testName: `collection error: ${file}`,
-      error: reason?.trim() || "Collection/import error",
+      error: reason || PLACEHOLDER_REASON,
       stackTrace: [],
     });
   }
@@ -475,17 +482,16 @@ function parseCommonOutput(output: string): TestSummary {
   // pytest categorises collection/import/fixture problems as "errors" — a bucket
   // distinct from "failed" but equally fatal to the suite (e.g.
   // "230 passed, 10 errors in 5.29s"). Fold the error count into `failed` so the
-  // suite is not reported as all-green. Scope the match to summary-style lines
-  // (those carrying "passed"/"failed" or an "in <n>s" duration) so stray
-  // "N errors" noise from other runners' stack traces is ignored. Last summary
-  // line wins, mirroring the pass/fail "last occurrence" rule above.
-  let errorCount = 0;
-  for (const line of output.split("\n")) {
-    if (!/\b(?:passed|failed)\b/i.test(line) && !/\bin\s+[\d.]+s\b/i.test(line)) continue;
-    const errMatch = line.match(/(\d+)\s+errors?\b/i);
-    if (errMatch) errorCount = Number.parseInt(errMatch[1], 10);
+  // suite is not reported as all-green. This runs for ALL frameworks
+  // (analyzeTestExitCode calls parseCommonOutput directly), so the match is
+  // tightly scoped to the pytest summary tail via a lookahead: the count must be
+  // immediately followed by "... in <n>s" on the same line. That excludes
+  // incidental phrasing like "passed in 1.2s (4 errors suppressed)" and app-log
+  // noise. Last matching count wins, mirroring the pass/fail rule above.
+  const errorMatches = Array.from(output.matchAll(/(\d+)\s+errors?\b(?=[^\n]*\bin\s+[\d.]+\s*s\b)/gi));
+  if (errorMatches.length > 0) {
+    failed += Number.parseInt(errorMatches[errorMatches.length - 1][1], 10);
   }
-  failed += errorCount;
 
   return { passed, failed, failures: [] };
 }

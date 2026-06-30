@@ -161,6 +161,33 @@ ERROR tests/unit/test_broker_cancel.py - ImportError while importing test module
     expect(result.failures.every((f) => f.error.length > 0)).toBe(true);
   });
 
+  test("does NOT count incidental 'N errors' phrasing that is not a pytest summary tail", () => {
+    // "4 errors" trails the duration, so it is not a pytest count — must be ignored.
+    const output = `
+ok - all checks passed in 1.2s (4 errors suppressed)
+=========================== short test summary info ============================
+3 passed in 1.2s
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.failed).toBe(0);
+  });
+
+  test("does NOT manufacture failures from captured app-log lines containing ERROR", () => {
+    const output = `
+tests/test_app.py::test_run
+ERROR app.py:42 something went wrong at runtime
+ERROR    root:client.py:13 connection reset
+=================================== 5 passed in 1.10s ===================================
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.failures).toHaveLength(0);
+    expect(result.failed).toBe(0);
+  });
+
   test("analyzeTestExitCode does NOT classify collection errors as environmental", () => {
     const output = `
 =========================== short test summary info ============================
