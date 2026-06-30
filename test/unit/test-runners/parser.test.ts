@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseTestOutput } from "@/test-runners";
+import { analyzeTestExitCode, parseTestOutput } from "@/test-runners";
 
 describe("pytest output — structured error/stack extraction", () => {
   test("extracts stackTrace file:line reference from verbose FAILURES block", () => {
@@ -94,6 +94,85 @@ FAILED tests/test_foo.py::test_bar - AssertionError: assert 1 == 2
     expect(result.failures[0].file).toBe("tests/test_foo.py");
     expect(result.failures[0].testName).toBe("test_bar");
     expect(result.failures[0].error).toBe("AssertionError: assert 1 == 2");
+  });
+});
+
+describe("pytest output — collection/import errors count as failures", () => {
+  test("counts pytest 'errors' category in the summary line as failed", () => {
+    const output = `
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/unit/test_alpaca_adapter.py ______________
+ImportError while importing test module 'tests/unit/test_alpaca_adapter.py'.
+E   ModuleNotFoundError: No module named 'respx'
+=========================== short test summary info ============================
+ERROR tests/unit/test_alpaca_adapter.py - ImportError while importing test mo...
+======================== 230 passed, 10 errors in 5.29s ========================
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.passed).toBe(230);
+    expect(result.failed).toBe(10);
+  });
+
+  test("counts errors under a turbo line prefix (monorepo aggregate output)", () => {
+    const output = `
+stock-portfolio:test: ==================================== ERRORS ====================================
+stock-portfolio:test: ______________ ERROR collecting tests/unit/test_alpaca_adapter.py ______________
+stock-portfolio:test: E   ModuleNotFoundError: No module named 'respx'
+stock-portfolio:test: =========================== short test summary info ============================
+stock-portfolio:test: ERROR tests/unit/test_alpaca_adapter.py - ImportError while importing test mo...
+stock-portfolio:test: ======================== 230 passed, 10 errors in 5.29s ========================
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.passed).toBe(230);
+    expect(result.failed).toBe(10);
+  });
+
+  test("combines failed + errors when both are present", () => {
+    const output = `
+FAILED tests/test_foo.py::test_bar - AssertionError: assert 1 == 2
+=================== 2 failed, 5 passed, 1 error in 0.42s ===================
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    expect(result.passed).toBe(5);
+    expect(result.failed).toBe(3);
+  });
+
+  test("extracts collection errors into structured failures with file paths", () => {
+    const output = `
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/unit/test_alpaca_adapter.py ______________
+E   ModuleNotFoundError: No module named 'respx'
+=========================== short test summary info ============================
+ERROR tests/unit/test_alpaca_adapter.py - ImportError while importing test module
+ERROR tests/unit/test_broker_cancel.py - ImportError while importing test module
+======================== 230 passed, 2 errors in 5.29s ========================
+`.trim();
+
+    const result = parseTestOutput(output);
+
+    const files = result.failures.map((f) => f.file).sort();
+    expect(files).toEqual(["tests/unit/test_alpaca_adapter.py", "tests/unit/test_broker_cancel.py"]);
+    expect(result.failures.every((f) => f.error.length > 0)).toBe(true);
+  });
+
+  test("analyzeTestExitCode does NOT classify collection errors as environmental", () => {
+    const output = `
+=========================== short test summary info ============================
+ERROR tests/unit/test_alpaca_adapter.py - ImportError while importing test module
+======================== 230 passed, 10 errors in 5.29s ========================
+`.trim();
+
+    const analysis = analyzeTestExitCode(output, 1);
+
+    expect(analysis.failCount).toBe(10);
+    expect(analysis.allTestsPassed).toBe(false);
+    expect(analysis.isEnvironmentalFailure).toBe(false);
   });
 });
 

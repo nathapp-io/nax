@@ -18,8 +18,40 @@ import type { PRD, UserStory } from "@/prd";
 import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
+import type { TestSummary } from "@/test-runners";
 import { hasCommitsForStory } from "@/utils/git";
 import { fullSuite } from "@/verification";
+
+/** Max chars of raw test output embedded in a synthetic regression finding. */
+const SYNTHETIC_FINDING_OUTPUT_LIMIT = 2000;
+
+/**
+ * Build the findings that drive a story's rectification cycle.
+ *
+ * When the parser yields structured failures, map them directly. When it does
+ * NOT — count-only output, or a runner format we can't fully parse, while the
+ * suite is still failing — fall back to a single synthetic finding carrying the
+ * raw output. Without this fallback the fix cycle receives zero findings and
+ * `runFixCycle` short-circuits to exitReason "resolved" *without ever invoking
+ * the agent*, falsely reporting a fix that never ran (the blind-rectifier bug:
+ * empty findings are indistinguishable from an all-green suite).
+ *
+ * Callers MUST only invoke this when the suite is known to be failing.
+ */
+function buildRegressionFindings(summary: TestSummary, rawOutput: string): Finding[] {
+  const structured = testSummaryToFindings(summary);
+  if (structured.length > 0) return structured;
+  return [
+    {
+      source: "test-runner",
+      severity: "error",
+      category: "failed-test",
+      rule: "regression-suite",
+      message: `Full test suite is failing but no individual test failures could be parsed from the output. Diagnose and fix the underlying failure. Raw test output:\n\n${rawOutput.slice(0, SYNTHETIC_FINDING_OUTPUT_LIMIT)}`,
+      fixTarget: "source",
+    },
+  ];
+}
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -405,7 +437,10 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     });
 
     const storyStartMs = Date.now();
-    const initialFindings = testSummaryToFindings(_regressionDeps.parseTestOutput(currentTestOutput));
+    const initialFindings = buildRegressionFindings(
+      _regressionDeps.parseTestOutput(currentTestOutput),
+      currentTestOutput,
+    );
     const packageView = runtime.packages.repo();
     const cycleCtx: FixCycleContext = {
       runtime,
@@ -424,7 +459,10 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       validate: async (_cycleCtx, _opts) => {
         const verification = await _regressionDeps.runVerification(verifyOpts);
         if (verification.success) return [];
-        if (verification.output) return testSummaryToFindings(_regressionDeps.parseTestOutput(verification.output));
+        // Suite still failing — never return an empty finding set here, or the
+        // cycle would falsely conclude "resolved" (see buildRegressionFindings).
+        if (verification.output)
+          return buildRegressionFindings(_regressionDeps.parseTestOutput(verification.output), verification.output);
         return initialFindings;
       },
     };

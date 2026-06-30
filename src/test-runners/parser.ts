@@ -273,10 +273,12 @@ function parseJestOutput(output: string): TestSummary {
 function parsePytestOutput(output: string): TestSummary {
   const common = parseCommonOutput(output);
 
-  // Structured failure names from "FAILED path::test_name - reason" lines
+  // Structured failure names from "FAILED path::test_name - reason" lines.
+  // Allow a leading turbo-style task prefix ("pkg:test: FAILED ...") so the
+  // anchor survives monorepo aggregate output.
   const failures: TestFailure[] = [];
   for (const line of output.split("\n")) {
-    const m = line.match(/^FAILED\s+(\S+)(?:\s+-\s+(.*))?$/);
+    const m = line.match(/^(?:\S+:\s+)?FAILED\s+(\S+)(?:\s+-\s+(.*))?$/);
     if (m) {
       const [, location, reason] = m;
       const parts = location.split("::");
@@ -288,6 +290,26 @@ function parsePytestOutput(output: string): TestSummary {
       });
     }
   }
+
+  // Collection/import errors: "ERROR collecting <path>" (ERRORS block header) or
+  // "ERROR <path> - <reason>" (short summary). Both forms refer to the same file,
+  // so dedupe by path and prefer the entry carrying a reason.
+  const errorByFile = new Map<string, TestFailure>();
+  for (const line of output.split("\n")) {
+    const em = line.match(/\bERROR\s+(?:collecting\s+)?(\S+\.\w+)(?:\s+-\s+(.*))?/);
+    if (!em) continue;
+    const [, location, reason] = em;
+    const file = location.split("::")[0] ?? location;
+    const existing = errorByFile.get(file);
+    if (existing && existing.error !== "Collection/import error") continue;
+    errorByFile.set(file, {
+      file,
+      testName: `collection error: ${file}`,
+      error: reason?.trim() || "Collection/import error",
+      stackTrace: [],
+    });
+  }
+  failures.push(...errorByFile.values());
 
   // Merge file:line stackTrace entries from the verbose FAILURES block
   const verboseStacks = parsePytestVerboseStacks(output);
@@ -449,6 +471,21 @@ function parseCommonOutput(output: string): TestSummary {
       failed = Number.parseInt(failMatches[failMatches.length - 1][1], 10);
     }
   }
+
+  // pytest categorises collection/import/fixture problems as "errors" — a bucket
+  // distinct from "failed" but equally fatal to the suite (e.g.
+  // "230 passed, 10 errors in 5.29s"). Fold the error count into `failed` so the
+  // suite is not reported as all-green. Scope the match to summary-style lines
+  // (those carrying "passed"/"failed" or an "in <n>s" duration) so stray
+  // "N errors" noise from other runners' stack traces is ignored. Last summary
+  // line wins, mirroring the pass/fail "last occurrence" rule above.
+  let errorCount = 0;
+  for (const line of output.split("\n")) {
+    if (!/\b(?:passed|failed)\b/i.test(line) && !/\bin\s+[\d.]+s\b/i.test(line)) continue;
+    const errMatch = line.match(/(\d+)\s+errors?\b/i);
+    if (errMatch) errorCount = Number.parseInt(errMatch[1], 10);
+  }
+  failed += errorCount;
 
   return { passed, failed, failures: [] };
 }
