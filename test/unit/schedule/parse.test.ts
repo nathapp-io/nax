@@ -52,3 +52,40 @@ describe("parseSchedule — time of day", () => {
     expect(parseSchedule(input as string, noon).ok).toBe(false);
   });
 });
+
+describe("parseSchedule — ISO datetime", () => {
+  const now = new Date("2026-07-01T12:00:00");
+
+  test("naive datetime is interpreted as local time", () => {
+    const r = parseSchedule("2026-07-02T02:00", now);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.target.getFullYear()).toBe(2026);
+      expect(r.target.getDate()).toBe(2);
+      expect(r.target.getHours()).toBe(2); // local, not UTC
+      expect(r.target.getMinutes()).toBe(0);
+    }
+  });
+
+  test("explicit Z offset is honored", () => {
+    const r = parseSchedule("2026-07-02T02:00:00Z", now);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.target.getTime()).toBe(Date.parse("2026-07-02T02:00:00Z"));
+  });
+
+  test("past datetime errors", () => {
+    const r = parseSchedule("2026-06-01T00:00", now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("past");
+  });
+
+  test("bare date-only is rejected", () => {
+    const r = parseSchedule("2026-07-02", now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("time");
+  });
+
+  test("garbage is rejected", () => {
+    expect(parseSchedule("not-a-date", now).ok).toBe(false);
+  });
+});

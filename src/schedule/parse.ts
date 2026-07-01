@@ -9,6 +9,13 @@ const SEGMENT_RE = /(\d+)([smhd])/g;
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+// Naive: YYYY-MM-DDTHH:MM(:SS)? with NO offset/Z. Construct explicitly as local.
+const NAIVE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+// Date-only: YYYY-MM-DD with no time component.
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Has an explicit offset or Z after a time component.
+const OFFSET_RE = /T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
 function parseTimeOfDay(input: string, now: Date): ScheduleParseResult | null {
   const m = TIME_RE.exec(input);
   if (!m) return null;
@@ -17,6 +24,35 @@ function parseTimeOfDay(input: string, now: Date): ScheduleParseResult | null {
   const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
   if (target.getTime() <= now.getTime()) {
     target.setDate(target.getDate() + 1); // roll to tomorrow
+  }
+  return { ok: true, target };
+}
+
+function parseIso(input: string, now: Date): ScheduleParseResult {
+  if (DATE_ONLY_RE.test(input)) {
+    return {
+      ok: false,
+      error: `Date-only value "${input}" has no time — specify a time, e.g. ${input}T02:00.`,
+    };
+  }
+
+  let target: Date | null = null;
+
+  const naive = NAIVE_RE.exec(input);
+  if (naive) {
+    const [, y, mo, d, h, mi, s] = naive;
+    // Explicit local-time construction — avoids new Date()'s date-only-UTC footgun.
+    target = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s ?? "0"), 0);
+  } else if (OFFSET_RE.test(input)) {
+    const parsed = new Date(input);
+    if (!Number.isNaN(parsed.getTime())) target = parsed;
+  }
+
+  if (!target || Number.isNaN(target.getTime())) {
+    return { ok: false, error: `Unrecognized schedule "${input}". ${ACCEPTED}` };
+  }
+  if (target.getTime() <= now.getTime()) {
+    return { ok: false, error: `Scheduled time ${input} is in the past.` };
   }
   return { ok: true, target };
 }
@@ -41,5 +77,5 @@ export function parseSchedule(input: string, now: Date): ScheduleParseResult {
   const timeOfDay = parseTimeOfDay(trimmed, now);
   if (timeOfDay) return timeOfDay;
 
-  return { ok: false, error: `Unrecognized schedule "${input}". ${ACCEPTED}` };
+  return parseIso(trimmed, now);
 }
