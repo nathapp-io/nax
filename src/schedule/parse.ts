@@ -67,6 +67,15 @@ function parseRelative(input: string, now: Date): ScheduleParseResult | null {
   return { ok: true, target: new Date(now.getTime() + totalMs) };
 }
 
+export type ScheduleGateResult = { ok: true; target: Date | null } | { ok: false; error: string };
+
+export function resolveScheduleGate(input: string | undefined, now: Date): ScheduleGateResult {
+  if (input === undefined) return { ok: true, target: null };
+  const parsed = parseSchedule(input, now);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  return { ok: true, target: parsed.target };
+}
+
 export function parseSchedule(input: string, now: Date): ScheduleParseResult {
   const trimmed = input.trim();
   if (trimmed === "") return { ok: false, error: `Empty schedule value. ${ACCEPTED}` };
