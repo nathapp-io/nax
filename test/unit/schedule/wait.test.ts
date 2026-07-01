@@ -4,8 +4,10 @@ import { waitForSchedule } from "@/schedule";
 function fakeDeps(startMs: number, stepMs: number) {
   let current = startMs;
   const lines: string[] = [];
+  const logs: Array<{ message: string; data: Record<string, unknown> }> = [];
   return {
     lines,
+    logs,
     deps: {
       now: () => current,
       // Each "delay" advances the fake clock by stepMs instead of waiting.
@@ -14,6 +16,7 @@ function fakeDeps(startMs: number, stepMs: number) {
         current += stepMs;
       },
       render: (line: string) => lines.push(line),
+      log: (message: string, data: Record<string, unknown>) => logs.push({ message, data }),
     },
   };
 }
@@ -60,5 +63,22 @@ describe("waitForSchedule", () => {
     });
     expect(outcome).toBe("fired");
     expect(lines.length).toBe(0);
+  });
+
+  test("headless emits exactly one structured log line with target ISO", async () => {
+    const start = 1_000_000;
+    const { lines, logs, deps } = fakeDeps(start, 5_000);
+    const target = new Date(start + 3_000);
+    const outcome = await waitForSchedule(target, {
+      label: "feat-x",
+      headless: true,
+      signal: new AbortController().signal,
+      _deps: deps,
+    });
+    expect(outcome).toBe("fired");
+    expect(lines.length).toBe(0);              // still no render lines
+    expect(logs.length).toBe(1);               // exactly one structured line
+    expect(logs[0].data.targetIso).toBe(target.toISOString());
+    expect(logs[0].data.label).toBe("feat-x");
   });
 });

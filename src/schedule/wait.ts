@@ -1,3 +1,4 @@
+import { getSafeLogger } from "@/logger";
 import { cancellableDelay } from "@/utils/bun-deps";
 
 export function formatRemaining(ms: number): string {
@@ -15,6 +16,7 @@ export interface WaitDeps {
   now: () => number;
   delay: (ms: number, signal?: AbortSignal) => Promise<void>;
   render: (line: string) => void;
+  log: (message: string, data: Record<string, unknown>) => void;
 }
 
 const TICK_MS = 1_000;
@@ -26,6 +28,7 @@ const DEFAULT_DEPS: WaitDeps = {
     // Rewrite the current TTY line in place.
     process.stdout.write(`\r${line}`);
   },
+  log: (message, data) => getSafeLogger()?.info("schedule", message, data),
 };
 
 export async function waitForSchedule(
@@ -34,6 +37,10 @@ export async function waitForSchedule(
 ): Promise<WaitOutcome> {
   const deps: WaitDeps = { ...DEFAULT_DEPS, ...opts._deps };
   const targetMs = target.getTime();
+
+  if (opts.headless) {
+    deps.log("Scheduled run waiting", { label: opts.label, targetIso: target.toISOString() });
+  }
 
   while (deps.now() < targetMs) {
     if (opts.signal.aborted) return "cancelled";
