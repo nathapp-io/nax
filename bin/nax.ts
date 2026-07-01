@@ -82,6 +82,7 @@ import { loadHooksConfig } from "../src/hooks";
 import { type LogLevel, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
 import { AgentStreamEventBus, projectOutputDir } from "../src/runtime";
+import { resolveScheduleGate, waitForSchedule } from "../src/schedule";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
 import { NAX_BUILD_INFO, NAX_VERSION } from "../src/version";
 
@@ -388,6 +389,7 @@ program
     collectProfile,
     [],
   )
+  .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -395,6 +397,13 @@ program
       workdir = validateDirectory(options.dir);
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Parse --schedule early so a bad value errors before any setup.
+    const scheduleGate = resolveScheduleGate(options.schedule, new Date());
+    if (!scheduleGate.ok) {
+      console.error(chalk.red(`Invalid --schedule: ${scheduleGate.error}`));
       process.exit(1);
     }
 
@@ -635,6 +644,22 @@ program
       if (Number.isNaN(parallel) || parallel < 0) {
         console.error(chalk.red("--parallel must be a non-negative integer"));
         process.exit(1);
+      }
+    }
+
+    if (scheduleGate.target) {
+      const scheduleController = new AbortController();
+      const onSigint = () => scheduleController.abort();
+      process.once("SIGINT", onSigint);
+      const outcome = await waitForSchedule(scheduleGate.target, {
+        label: options.feature,
+        headless: useHeadless || formatterMode === "json",
+        signal: scheduleController.signal,
+      });
+      process.removeListener("SIGINT", onSigint);
+      if (outcome === "cancelled") {
+        console.log(chalk.dim("\nScheduled run cancelled."));
+        process.exit(0);
       }
     }
 
