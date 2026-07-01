@@ -1,7 +1,7 @@
 # Scheduled Run (`nax run --schedule`) — Design
 
 **Date:** 2026-07-01
-**Status:** Draft — pending review
+**Status:** Implemented
 **Scope:** Add a one-shot, foreground scheduled start to `nax run`.
 
 ## 1. Summary
