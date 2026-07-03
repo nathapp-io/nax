@@ -1,7 +1,7 @@
 /**
  * Queue Writer Utility
  *
- * Writes queue commands (PAUSE/ABORT/SKIP) to the queue file.
+ * Writes queue commands (PAUSE/ABORT/SKIP/RETRY/PRIORITY) to the queue file.
  * Used by the TUI to translate keyboard shortcuts into queue commands.
  */
 
@@ -41,6 +41,12 @@ export async function writeQueueCommand(queueFilePath: string, command: QueueCom
       break;
     case "SKIP":
       commandLine = `SKIP ${command.storyId}`;
+      break;
+    case "RETRY":
+      commandLine = `RETRY ${command.storyId}`;
+      break;
+    case "PRIORITY":
+      commandLine = `PRIORITY ${command.storyId} ${command.value}`;
       break;
     default: {
       const _exhaustive: never = command;

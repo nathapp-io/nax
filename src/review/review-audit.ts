@@ -86,10 +86,29 @@ export type ReviewAuditDecision = Omit<ReviewAuditEntry, "sessionName" | "workdi
   workdir?: string;
 };
 
+/**
+ * A single sub-threshold review finding, flattened for run-end aggregation.
+ * §2.1 — these findings are real (found by the reviewer) but never blocked the
+ * story, so without this aggregation they are only visible in the per-story
+ * debug log / the on-disk audit trail.
+ */
+export interface AdvisoryFindingSummaryEntry {
+  storyId?: string;
+  featureName?: string;
+  reviewer: "semantic" | "adversarial";
+  severity: string;
+  category?: string;
+  file?: string;
+  line?: number;
+  issue: string;
+}
+
 export interface IReviewAuditor {
   recordDispatch(entry: ReviewAuditDispatch): void;
   recordDecision(entry: ReviewAuditDecision): void;
   flush(): Promise<void>;
+  /** Advisory (sub-threshold) findings accumulated across every `recordDecision` call this run. */
+  getAdvisoryFindings(): readonly AdvisoryFindingSummaryEntry[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,12 +186,34 @@ export function createNoOpReviewAuditor(): IReviewAuditor {
     recordDispatch() {},
     recordDecision() {},
     async flush() {},
+    getAdvisoryFindings() {
+      return [];
+    },
   };
+}
+
+/** Flatten a decision's `advisoryFindings` (unknown[] from the reviewer's own shape) into summary entries. */
+function toAdvisorySummaryEntries(entry: ReviewAuditDecision): AdvisoryFindingSummaryEntry[] {
+  if (!entry.advisoryFindings || entry.advisoryFindings.length === 0) return [];
+  return entry.advisoryFindings.map((raw) => {
+    const f = raw as { severity?: string; category?: string; file?: string; line?: number; issue?: string };
+    return {
+      storyId: entry.storyId,
+      featureName: entry.featureName,
+      reviewer: entry.reviewer,
+      severity: f.severity ?? "info",
+      category: f.category,
+      file: f.file,
+      line: f.line,
+      issue: f.issue ?? "(no description)",
+    };
+  });
 }
 
 export class ReviewAuditor implements IReviewAuditor {
   private _queue: Promise<void> = Promise.resolve();
   private readonly _dispatches = new Map<string, ReviewAuditDispatch>();
+  private readonly _advisoryFindings: AdvisoryFindingSummaryEntry[] = [];
 
   constructor(
     private readonly _runId: string,
@@ -184,6 +225,8 @@ export class ReviewAuditor implements IReviewAuditor {
   }
 
   recordDecision(entry: ReviewAuditDecision): void {
+    this._advisoryFindings.push(...toAdvisorySummaryEntries(entry));
+
     const key = auditKey(entry.reviewer, entry.storyId);
     const dispatch = this._dispatches.get(key);
     this._dispatches.delete(key);
@@ -215,6 +258,10 @@ export class ReviewAuditor implements IReviewAuditor {
 
   async flush(): Promise<void> {
     await this._queue;
+  }
+
+  getAdvisoryFindings(): readonly AdvisoryFindingSummaryEntry[] {
+    return [...this._advisoryFindings];
   }
 }
 

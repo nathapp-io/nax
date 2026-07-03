@@ -3,7 +3,13 @@
  */
 
 export { runAcceptanceLoop, type AcceptanceLoopContext, type AcceptanceLoopResult } from "./acceptance-loop";
-export { outputRunHeader, outputRunFooter, type RunHeaderOptions, type RunFooterOptions } from "./headless-formatter";
+export {
+  outputRunHeader,
+  outputRunFooter,
+  outputAdvisoryFindingsSummary,
+  type RunHeaderOptions,
+  type RunFooterOptions,
+} from "./headless-formatter";
 export {
   handleRunCompletion,
   _runCompletionDeps,

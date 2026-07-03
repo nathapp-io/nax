@@ -97,7 +97,9 @@ function isResumableCurrentStory(story: UserStory, maxRetries: number): boolean 
  * `status === "failed"` with `attempts <= maxRetries`, return it immediately
  * so the executor retries the same story before moving on.
  *
- * Priority 2 (normal): First pending story whose dependencies are satisfied.
+ * Priority 2 (normal): Among pending stories whose dependencies are satisfied,
+ * the highest `story.priority` wins (set via the PRIORITY queue command);
+ * ties keep array order (stable FIFO — the default when priority is unset).
  *
  * @param prd - PRD containing all stories
  * @param currentStoryId - ID of the story just executed (optional)
@@ -121,19 +123,23 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
     }
   }
 
-  return (
-    prd.userStories.find(
-      (s) =>
-        !s.passes &&
-        s.status !== "passed" &&
-        s.status !== "skipped" &&
-        s.status !== "blocked" &&
-        s.status !== "failed" &&
-        s.status !== "paused" &&
-        s.status !== "decomposed" &&
-        hasSatisfiedDependencies(s, storyIds, completedIds),
-    ) ?? null
+  const eligible = prd.userStories.filter(
+    (s) =>
+      !s.passes &&
+      s.status !== "passed" &&
+      s.status !== "skipped" &&
+      s.status !== "blocked" &&
+      s.status !== "failed" &&
+      s.status !== "paused" &&
+      s.status !== "decomposed" &&
+      hasSatisfiedDependencies(s, storyIds, completedIds),
   );
+
+  if (eligible.length === 0) return null;
+
+  // Priority 2: highest `priority` wins; ties keep array order (stable FIFO —
+  // `reduce` only replaces on strictly-greater priority).
+  return eligible.reduce((best, s) => ((s.priority ?? 0) > (best.priority ?? 0) ? s : best));
 }
 
 /**
@@ -301,6 +307,40 @@ export function markStorySkipped(prd: PRD, storyId: string): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "skipped";
+  }
+}
+
+/**
+ * Reset a single story back to pending (RETRY queue command).
+ * Mirrors {@link resetFailedStoriesToPending}'s per-story behavior but targets
+ * one story by ID regardless of its current status (failed, skipped, blocked, ...).
+ */
+export function resetStoryToPending(prd: PRD, storyId: string): void {
+  const story = prd.userStories.find((s) => s.id === storyId);
+  if (!story) return;
+
+  story.status = "pending";
+  story.attempts = 0;
+  story.failureCategory = undefined;
+  story.failureStage = undefined;
+
+  if (story.routing) {
+    story.routing = {
+      ...story.routing,
+      ...(story.routing.initialModelTier !== undefined && {
+        modelTier: story.routing.initialModelTier,
+      }),
+      agent: story.routing.initialAgent,
+    };
+  }
+  story.escalations = [];
+}
+
+/** Set a story's scheduling priority (PRIORITY queue command). Higher = more urgent. */
+export function setStoryPriority(prd: PRD, storyId: string, priority: number): void {
+  const story = prd.userStories.find((s) => s.id === storyId);
+  if (story) {
+    story.priority = priority;
   }
 }
 

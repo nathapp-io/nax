@@ -7,7 +7,8 @@
 
 import chalk from "chalk";
 import type { RunSummary } from "../../log-format";
-import { formatRunSummary } from "../../log-format";
+import { formatAdvisorySummary, formatRunSummary } from "../../log-format";
+import type { AdvisoryFindingSummaryEntry } from "../../runtime";
 import { NAX_VERSION } from "../../version";
 
 export interface RunHeaderOptions {
@@ -80,4 +81,24 @@ export function outputRunFooter(options: RunFooterOptions): void {
   });
 
   console.log(summaryOutput);
+}
+
+/**
+ * Output the non-blocking (advisory) review findings summary in headless mode.
+ * §2.1 — surfaces sub-threshold review findings that would otherwise only exist
+ * in the on-disk review-audit trail. No-op when there are none, or in json mode
+ * (findings are available via the review-audit JSONL trail instead).
+ */
+export function outputAdvisoryFindingsSummary(
+  findings: readonly AdvisoryFindingSummaryEntry[],
+  formatterMode: "quiet" | "normal" | "verbose" | "json",
+): void {
+  if (findings.length === 0 || formatterMode === "json") {
+    return;
+  }
+
+  const output = formatAdvisorySummary(findings, { mode: formatterMode, useColor: true });
+  if (output) {
+    console.log(output);
+  }
 }

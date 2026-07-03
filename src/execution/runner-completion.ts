@@ -267,9 +267,22 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
   }
 
+  // §2.1 — surface non-blocking (sub-threshold) review findings accumulated this run.
+  // Without this, real findings below `blockingThreshold` are only visible in a
+  // per-story debug log line and the on-disk `.nax/review-audit/` trail.
+  const advisoryFindings = options.runtime?.reviewAuditor?.getAdvisoryFindings() ?? [];
+  if (advisoryFindings.length > 0) {
+    logger?.warn("review", `${advisoryFindings.length} non-blocking review finding(s) surfaced at run end`, {
+      storyId: "_run",
+      count: advisoryFindings.length,
+      findings: advisoryFindings,
+    });
+  }
+
   // Output run footer in headless mode
   if (options.headless && options.formatterMode !== "json") {
-    const { outputRunFooter } = await import("./lifecycle/headless-formatter");
+    const { outputAdvisoryFindingsSummary, outputRunFooter } = await import("./lifecycle/headless-formatter");
+    outputAdvisoryFindingsSummary(advisoryFindings, options.formatterMode);
     outputRunFooter({
       finalCounts: {
         total: finalCounts.total,

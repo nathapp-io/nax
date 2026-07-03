@@ -234,4 +234,68 @@ ABORT
     expect(result.commands).toHaveLength(1);
     expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-042" });
   });
+
+  test("parses RETRY command with story ID", () => {
+    const content = "RETRY US-042\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "RETRY", storyId: "US-042" });
+  });
+
+  test("parses RETRY command case-insensitive and trims story ID", () => {
+    const content = "retry   US-001   \n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "RETRY", storyId: "US-001" });
+  });
+
+  test("handles RETRY without story ID gracefully", () => {
+    const content = "RETRY\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
+
+  test("parses PRIORITY command with story ID and value", () => {
+    const content = "PRIORITY US-042 10\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "PRIORITY", storyId: "US-042", value: 10 });
+  });
+
+  test("parses PRIORITY command case-insensitive with negative value", () => {
+    const content = "priority US-001 -5\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "PRIORITY", storyId: "US-001", value: -5 });
+  });
+
+  test("handles PRIORITY with missing value gracefully", () => {
+    const content = "PRIORITY US-001\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
+
+  test("handles PRIORITY with non-numeric value gracefully", () => {
+    const content = "PRIORITY US-001 high\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
+
+  test("handles PRIORITY with no arguments gracefully", () => {
+    const content = "PRIORITY\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
 });

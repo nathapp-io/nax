@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { formatLogEntry } from "../../../src/log-format";
+import { formatAdvisorySummary, formatLogEntry } from "../../../src/log-format";
 import type { LogEntry } from "../../../src/logger/types";
+import type { AdvisoryFindingSummaryEntry } from "../../../src/runtime";
 
 const TS = "2026-05-29T11:35:59.000Z";
 
@@ -172,5 +173,63 @@ describe("formatLogEntry — verbose mode does not double-print enriched fields"
     const jsonPart = jsonStart >= 0 ? text.slice(jsonStart) : "";
     expect(jsonPart).not.toContain("agentName");
     expect(jsonPart).not.toContain("messageUpdates");
+  });
+});
+
+// ── formatAdvisorySummary() — §2.1 surface sub-threshold review findings ───────
+
+function advisoryFinding(overrides: Partial<AdvisoryFindingSummaryEntry> = {}): AdvisoryFindingSummaryEntry {
+  return {
+    storyId: "US-001",
+    reviewer: "adversarial",
+    severity: "warning",
+    category: "correctness",
+    file: "src/foo.ts",
+    line: 12,
+    issue: "off-AC edge case not handled",
+    ...overrides,
+  };
+}
+
+describe("formatAdvisorySummary", () => {
+  test("returns empty string when there are no findings", () => {
+    expect(formatAdvisorySummary([], { mode: "normal", useColor: false })).toBe("");
+  });
+
+  test("json mode returns a JSON array of the findings", () => {
+    const findings = [advisoryFinding()];
+    const output = formatAdvisorySummary(findings, { mode: "json", useColor: false });
+    expect(JSON.parse(output)).toEqual(findings);
+  });
+
+  test("includes every finding's story ID, severity, and issue text", () => {
+    const findings = [
+      advisoryFinding({ storyId: "US-001", severity: "warning", issue: "issue A" }),
+      advisoryFinding({ storyId: "US-002", severity: "info", issue: "issue B" }),
+    ];
+    const output = plain(formatAdvisorySummary(findings, { mode: "normal", useColor: false }));
+
+    expect(output).toContain("US-001");
+    expect(output).toContain("warning");
+    expect(output).toContain("issue A");
+    expect(output).toContain("US-002");
+    expect(output).toContain("info");
+    expect(output).toContain("issue B");
+  });
+
+  test("groups findings by severity, higher severity first", () => {
+    const findings = [
+      advisoryFinding({ storyId: "US-001", severity: "info", issue: "low" }),
+      advisoryFinding({ storyId: "US-002", severity: "warning", issue: "mid" }),
+    ];
+    const output = plain(formatAdvisorySummary(findings, { mode: "normal", useColor: false }));
+
+    expect(output.indexOf("mid")).toBeLessThan(output.indexOf("low"));
+  });
+
+  test("quiet mode still returns a non-empty summary (never silently dropped)", () => {
+    const output = plain(formatAdvisorySummary([advisoryFinding()], { mode: "quiet", useColor: false }));
+    expect(output.length).toBeGreaterThan(0);
+    expect(output).toContain("US-001");
   });
 });

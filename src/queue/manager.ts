@@ -204,6 +204,8 @@ export class QueueManager {
  * - PAUSE: Pause execution after current story
  * - ABORT: Mark all remaining stories as skipped and stop
  * - SKIP US-XXX: Skip a specific story
+ * - RETRY US-XXX: Reset a failed/skipped story back to pending
+ * - PRIORITY US-XXX <n>: Set a story's scheduling priority
  *
  * Everything else after "--- PENDING ---" is treated as guidance text.
  */
@@ -246,6 +248,30 @@ export function parseQueueFile(content: string): QueueFileResult {
       }
     } else if (upper === "SKIP") {
       // SKIP with no story ID, treat as guidance
+      guidance.push(trimmed);
+    } else if (upper.startsWith("RETRY ")) {
+      const storyId = trimmed.substring(6).trim();
+      if (storyId) {
+        commands.push({ type: "RETRY", storyId });
+      } else {
+        guidance.push(trimmed);
+      }
+    } else if (upper === "RETRY") {
+      // RETRY with no story ID, treat as guidance
+      guidance.push(trimmed);
+    } else if (upper.startsWith("PRIORITY ")) {
+      const rest = trimmed.substring(9).trim();
+      const parts = rest.split(/\s+/);
+      const storyId = parts[0];
+      const value = parts[1] !== undefined ? Number(parts[1]) : Number.NaN;
+      if (storyId && parts.length === 2 && Number.isFinite(value)) {
+        commands.push({ type: "PRIORITY", storyId, value });
+      } else {
+        // Missing/malformed storyId or value, treat as guidance
+        guidance.push(trimmed);
+      }
+    } else if (upper === "PRIORITY") {
+      // PRIORITY with no arguments, treat as guidance
       guidance.push(trimmed);
     } else {
       // Not a command, treat as guidance if in pending section

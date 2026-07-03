@@ -33,6 +33,7 @@ export {
   _regressionDeps,
   handleRunCompletion,
   _runCompletionDeps,
+  outputAdvisoryFindingsSummary,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
   type StorySnapshot,

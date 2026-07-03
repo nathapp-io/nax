@@ -18,6 +18,7 @@ export type { PipelineRunResult } from "./runner";
 export { PipelineEventEmitter } from "./events";
 export type { PipelineEvents, RunSummary } from "./events";
 export { executionStage, _executionDeps } from "./stages";
+export { queueCheckStage } from "./stages/queue-check";
 export { resolveExecutionAgent } from "./stages/execution-helpers";
 export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
 

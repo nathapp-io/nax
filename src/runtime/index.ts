@@ -14,6 +14,7 @@ export type {
 } from "./prompt-auditor";
 export { createNoOpReviewAuditor, ReviewAuditor, _reviewAuditDeps } from "../review/review-audit";
 export type {
+  AdvisoryFindingSummaryEntry,
   IReviewAuditor,
   ReviewAuditDecision,
   ReviewAuditDispatch,

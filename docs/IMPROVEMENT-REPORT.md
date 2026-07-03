@@ -30,7 +30,8 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** `src/queue/types.ts`, `src/queue/manager.ts`.
 - **Gap:** Queue file accepts only `PAUSE` / `ABORT` / `SKIP <storyId>`. Yet `QueueManager` already has `resetToPending` (retry) and priority-sorted `enqueue` (reprioritize / inject) internally — none exposed as commands.
 - **Suggestion:** Add `RETRY <storyId>`, `PRIORITY <storyId> <n>`, `INJECT <story-json-or-path>` queue commands; low effort, primitives exist.
-- **Tracked:** No.
+- **Status:** ✅ `RETRY`/`PRIORITY` shipped in [PR #1290](https://github.com/nathapp-io/nax/pull/1290) — turned out the primitives weren't actually wired into the live execution path (`queue-check.ts` operates on `ctx.prd`/`ctx.stories` directly, bypassing `QueueManager`), so this was more than "just expose them": added `UserStory.priority`, `resetStoryToPending()`/`setStoryPriority()` PRD helpers, and priority-aware `getNextStory()` ordering. `INJECT` was scoped out as materially riskier (no schema to validate an ad hoc new story) — tracked in [#1288](https://github.com/nathapp-io/nax/issues/1288).
+- **Tracked:** Yes — #1288 (INJECT).
 
 ### 1.4 No dashboard or metrics export
 - **Where:** `src/metrics/` (rich `StoryMetrics` / `RunMetrics` / `AggregateMetrics`), output = JSONL under `~/.nax/<project>/…/runs/` + `nax status --cost`.
@@ -48,7 +49,8 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** ADR-025 §7 "Part A — run-time routing (DEFERRED)".
 - **Gap:** v1 ships a single global capability ladder; per-domain ladders and `routing.agents.strategy: "llm"` feeding `classifyRouteOp` are deferred with **no tracking issue** — risk of getting lost.
 - **Suggestion:** File a backlog issue referencing ADR-025 §7.
-- **Tracked:** No.
+- **Status:** ✅ Filed as [#1289](https://github.com/nathapp-io/nax/issues/1289).
+- **Tracked:** Yes — #1289.
 
 ---
 
@@ -58,13 +60,15 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 - **Where:** review severity handling (adversarial review → fix cycle).
 - **Gap:** Off-AC bugs found by adversarial review get downgraded to warning/info; with `review.blockingThreshold: "error"` they are never surfaced to the user at all. Real findings evaporate.
 - **Suggestion:** Aggregate non-blocking findings and report them at run end (severity-graded summary) — aggregation + surfacing, not a new review pass. Related open issue #1157 (whack-a-mole within a file) touches the same subsystem.
-- **Tracked:** Not directly (adjacent: #1157).
+- **Status:** ✅ Fixed in [PR #1290](https://github.com/nathapp-io/nax/pull/1290) — `ReviewAuditor.getAdvisoryFindings()` aggregates sub-threshold findings across the run; surfaced at run end via a severity-graded headless console summary (`formatAdvisorySummary`) plus a structured `logger.warn`. Aggregation only, no new review pass, per the suggestion.
+- **Tracked:** Yes — closed by #1290 (adjacent: #1157, still open).
 
 ### 2.2 `tdd.sessionTiers.implementer` is dead config
 - **Where:** `src/config/schemas-execution.ts:271-274` (intentionally not consumed — implementer follows `story.routing.modelTier` + escalation), but `src/cli/config-descriptions.ts:126` still documents it as "Model tier for implementer session".
 - **Gap:** Schema-present, CLI-documented, silently inert — actively misleading. (`testWriter` and `verifier` sub-fields ARE consumed: `src/operations/write-test.ts:63`, `src/operations/verify.ts:156`.)
 - **Suggestion:** Either warn at config load when set, or fix the CLI description to say it is ignored by design.
-- **Tracked:** No.
+- **Status:** ✅ Fixed in [PR #1290](https://github.com/nathapp-io/nax/pull/1290) — CLI description now states it's ignored by design (chose the doc-fix option, not a config-load warning).
+- **Tracked:** Yes — closed by #1290.
 
 ---
 
@@ -88,7 +92,14 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 
 ## 4. Suggested shortlist (value ÷ effort)
 
-1. **Cost budget cap** (§1.1) — safety feature, infrastructure (cost middleware) already in place.
-2. **Queue RETRY / PRIORITY / INJECT** (§1.3) — primitives exist, just expose them.
-3. **Surface dropped adversarial-review warnings** (§2.1) — known correctness hole; aggregation + reporting only.
-4. File tracking issues for §1.6 (ADR-025 Part A) and §2.2 (dead config) so they don't get lost.
+1. **Cost budget cap** (§1.1) — safety feature, infrastructure (cost middleware) already in place. **Not yet started.**
+2. **Queue RETRY / PRIORITY / INJECT** (§1.3) — primitives exist, just expose them. **✅ RETRY/PRIORITY done (#1290); INJECT tracked (#1288).**
+3. **Surface dropped adversarial-review warnings** (§2.1) — known correctness hole; aggregation + reporting only. **✅ Done (#1290).**
+4. File tracking issues for §1.6 (ADR-025 Part A) and §2.2 (dead config) so they don't get lost. **✅ Done — #1289 filed for §1.6; §2.2 fixed directly rather than just tracked (#1290).**
+
+### Remaining open items from this shortlist
+- §1.1 Cost budget cap — not started.
+- §1.2 Mid-session resume — not started.
+- §1.4 Dashboard / metrics export — not started.
+- §1.5 Plugin ecosystem — not started.
+- #1288 (INJECT queue command) and #1289 (ADR-025 §7 run-time routing) — tracked, not implemented.
