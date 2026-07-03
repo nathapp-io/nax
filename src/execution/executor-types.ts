@@ -50,13 +50,16 @@ export interface SequentialExecutionContext extends DispatchContext {
   naxIgnoreIndex?: NaxIgnoreIndex;
 }
 
+/** Reason the sequential/parallel execution loop stopped. */
+export type ExitReason = "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories" | "pre-merge-aborted";
+
 export interface SequentialExecutionResult {
   prd: PRD;
   iterations: number;
   storiesCompleted: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
-  exitReason: "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories" | "pre-merge-aborted";
+  exitReason: ExitReason;
   deferredReview?: DeferredReviewResult;
 }
 

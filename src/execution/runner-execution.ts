@@ -21,6 +21,7 @@ import { SessionManager } from "../session";
 import { precomputeBatchPlan } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
 import { ensureStoryPackageDirs } from "./ensure-package-dirs";
+import type { ExitReason } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { markNewPackageDirs } from "./new-package-setup";
 
@@ -68,6 +69,8 @@ export interface RunnerExecutionResult {
   durationMs?: number;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to the completion phase. */
   deferredReview?: DeferredReviewResult;
+  /** Why the unified executor's loop stopped — forwarded to the completion phase for status reporting. */
+  exitReason: ExitReason;
 }
 
 /**
@@ -222,5 +225,6 @@ export async function runExecutionPhase(
     totalCost,
     allStoryMetrics,
     deferredReview: unifiedResult.deferredReview,
+    exitReason: unifiedResult.exitReason,
   };
 }

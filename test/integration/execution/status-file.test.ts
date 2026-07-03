@@ -218,7 +218,7 @@ describe("buildStatusSnapshot", () => {
   });
 
   test("all run status values are accepted", () => {
-    const statuses: NaxStatusFile["run"]["status"][] = ["running", "completed", "failed", "stalled"];
+    const statuses: NaxStatusFile["run"]["status"][] = ["running", "completed", "failed", "stalled", "cost-limit"];
     for (const runStatus of statuses) {
       const snapshot = buildStatusSnapshot(makeRunState({ runStatus }));
       expect(snapshot.run.status).toBe(runStatus);

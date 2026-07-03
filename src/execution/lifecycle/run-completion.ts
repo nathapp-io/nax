@@ -26,6 +26,7 @@ import { purgeStaleScratch } from "../../session/scratch-purge";
 import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
 import { clearGitRootCache } from "../../verification/smart-runner";
 import type { DeferredReviewResult } from "../deferred-review";
+import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
 import { runDeferredRegression } from "./run-regression";
@@ -72,6 +73,8 @@ export interface RunCompletionOptions extends DispatchContext {
    * the run only when config.review.pluginMode === "gating".
    */
   deferredReview?: DeferredReviewResult;
+  /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
+  exitReason?: ExitReason;
 }
 
 export interface RunCompletionResult {
@@ -112,9 +115,14 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     statusWriter,
     config,
     hooksConfig,
+    exitReason,
   } = options;
 
   // Run deferred regression gate before final metrics
+  // Tracked separately from the setRunStatus("failed") call below (line ~188) so a
+  // cost-limit exit can never mask a genuine regression-gate failure — see the final
+  // classification at the end of this function.
+  let regressionGateFailed = false;
   const regressionMode = config.execution.regressionGate?.mode;
   if (options.skipRegression) {
     // Regression phase already passed on a prior run — skip
@@ -182,6 +190,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       }
       // Reflect regression gate failure in run status (RL-004)
       statusWriter.setRunStatus("failed");
+      regressionGateFailed = true;
 
       if (hooksConfig) {
         await _runCompletionDeps.fireHook(
@@ -450,7 +459,17 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // Update final status
   statusWriter.setPrd(prd);
   statusWriter.setCurrentStory(null);
-  statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
+  statusWriter.setRunStatus(
+    regressionGateFailed
+      ? "failed"
+      : exitReason === "cost-limit"
+        ? "cost-limit"
+        : isComplete(prd)
+          ? "completed"
+          : isStalled(prd)
+            ? "stalled"
+            : "running",
+  );
   await statusWriter.update(reportedTotal, iterations);
 
   return {
