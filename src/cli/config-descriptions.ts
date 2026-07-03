@@ -122,7 +122,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "tdd.autoApproveVerifier": "Auto-approve legitimate fixes in verifier session",
   "tdd.sessionTiers": "Per-session model tier overrides",
   "tdd.sessionTiers.testWriter": "Model tier for test-writer session",
-  "tdd.sessionTiers.implementer": "Model tier for implementer session",
+  "tdd.sessionTiers.implementer":
+    "Ignored by design — implementer follows story.routing.modelTier + escalation, not this field. Kept optional so legacy configs still parse.",
   "tdd.sessionTiers.verifier": "Model tier for verifier session",
   "tdd.testWriterAllowedPaths": "Glob patterns for files test-writer can modify",
   "tdd.rollbackOnFailure": "Rollback git changes when TDD fails",
