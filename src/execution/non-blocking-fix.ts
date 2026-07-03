@@ -89,6 +89,22 @@ export interface NonBlockingFixArgs {
   phaseCosts: Record<string, number>;
   /** Runs the harness; returns true when it exhausted without resolving. */
   runRectify: (maxAttempts: number) => Promise<{ rectificationExhausted?: boolean }>;
+  /**
+   * Reports whether the KEPT working tree regressed the deterministic full-suite
+   * gate relative to the adversarial-passed baseline. ADR-024 §3: a deterministic
+   * red must revert, never ship.
+   *
+   * `rectificationExhausted` alone is insufficient: the inner rectify cycle can
+   * return not-exhausted via the verifier-SSOT exemption (verifier passed ⇒ gate
+   * red treated as pre-existing) even while its own revalidation left the full-suite
+   * gate red. Keeping that fix then trips the downstream staleness guard in
+   * `ExecutionPlan.run`, which fails the story — breaking the §1/§5 "can never fail
+   * the story" floor. The caller wires this to the SAME staleness predicate the final
+   * verdict uses, so the keep-decision and the verdict can never disagree.
+   *
+   * Absent ⇒ no gate check (backward-compatible).
+   */
+  keptTreeRegressed?: () => boolean;
 }
 
 export interface NonBlockingFixResult {
@@ -187,6 +203,17 @@ export async function runNonBlockingFix(
   }
 
   if (!exhausted) {
+    // ADR-024 §3: a deterministic red in the pass's own revalidation must revert,
+    // not ship. `rectificationExhausted` is insufficient — the inner cycle can report
+    // resolved via the verifier-SSOT exemption while leaving the full-suite gate red.
+    // Reuse the caller's staleness predicate (identical to the final verdict's) so a
+    // "kept then failed by the downstream guard" contradiction is impossible.
+    if (args.keptTreeRegressed?.()) {
+      logger?.info("non-blocking-fix", "kept tree regressed the full-suite gate — restoring (ADR-024 §3)", {
+        storyId: args.storyId,
+      });
+      return restoreToSnapshot(args, _deps, restoreRef, phaseOutputsSnapshot, phaseCostsSnapshot, logger);
+    }
     // Enforce sourceDiffCap over the post-pass snapshot. A pass whose source
     // edits exceed the cap is treated as exhausted → restored (fail-safe).
     const cap = args.cfg.sourceDiffCap;

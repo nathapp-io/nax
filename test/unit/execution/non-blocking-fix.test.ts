@@ -65,6 +65,60 @@ describe("runNonBlockingFix keep vs restore", () => {
     expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true });
   });
 
+  test("restored when kept tree regressed the full-suite gate (ADR-024 §3 deterministic red → revert)", async () => {
+    // The inner rectify cycle can return not-exhausted via the verifier-SSOT exemption
+    // even though its revalidation left the full-suite-gate RED. Keeping such a fix
+    // violates ADR-024 §3 (deterministic red → revert) and the downstream staleness
+    // guard (ExecutionPlan.run) would then fail the story — breaking the §1/§5
+    // "can never fail the story" floor. `keptTreeRegressed` reuses the exact staleness
+    // predicate the final verdict applies, so keep and verdict cannot disagree.
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    let rolled = "";
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs,
+        runRectify: async () => {
+          phaseOutputs["full-suite-gate"] = { success: false }; // fix broke a test
+          return { rectificationExhausted: false }; // but cycle exempted the gate (verifier passed)
+        },
+        keptTreeRegressed: () => (phaseOutputs["full-suite-gate"] as { success?: boolean }).success === false,
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: false, restored: true });
+    expect(rolled).toBe("snap-sha");
+    expect(phaseOutputs["full-suite-gate"]).toEqual({ success: true }); // restored to adversarial-passed
+  });
+
+  test("kept when keptTreeRegressed predicate reports no regression", async () => {
+    // Guard the non-restorative branch: a supplied predicate that returns false must
+    // not force a restore — the resolved, gate-green fix is kept.
+    const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
+    let rolled = "";
+    const res = await runNonBlockingFix(
+      {
+        ...baseArgs,
+        phaseOutputs,
+        runRectify: async () => ({ rectificationExhausted: false }),
+        keptTreeRegressed: () => false,
+      },
+      {
+        captureSnapshotRef: async () => "snap-sha",
+        rollbackToRef: async (_w: string, ref: string) => {
+          rolled = ref;
+        },
+      },
+    );
+    expect(res).toEqual({ ran: true, kept: true, restored: false });
+    expect(rolled).toBe("");
+  });
+
   test("restored when harness exhausts — phaseOutputs rolled back", async () => {
     const phaseOutputs: Record<string, unknown> = { "full-suite-gate": { success: true } };
     let rolled = "";

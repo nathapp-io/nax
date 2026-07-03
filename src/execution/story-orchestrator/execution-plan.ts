@@ -254,6 +254,14 @@ export class ExecutionPlan {
               maxAttempts,
               postValidate: this.state.nonBlockingFixPostValidate,
             }),
+          // ADR-024 §3 — restore any kept pass that regressed the full-suite gate.
+          // Same predicate + baseline the final verdict's staleness guard uses below
+          // (`gateRegressedDuringRect`), so nbf's keep-decision can never disagree with
+          // the verdict: a fix the guard would fail on is restored to adversarial-passed
+          // here instead, leaving the story green with zero net change.
+          keptTreeRegressed: () =>
+            gateName !== undefined &&
+            gateRegressedAfterRectification(phaseOutputs[gateName], preRectGateFailureKeys, gateName, this.ctx.storyId),
         },
         {
           measureSourceDiff: createMeasureSourceDiff({
