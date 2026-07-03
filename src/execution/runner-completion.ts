@@ -24,6 +24,7 @@ import { errorMessage } from "@/utils/errors";
 import { autoCommitIfDirty } from "@/utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
+import type { ExitReason } from "./executor-types";
 import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { hookCtx } from "./story-context";
@@ -61,6 +62,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   pluginProviderCache?: import("../context/engine").PluginProviderCache;
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to handleRunCompletion. */
   deferredReview?: DeferredReviewResult;
+  /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
+  exitReason?: ExitReason;
 }
 
 /**
@@ -248,6 +251,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,
+    exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
   });
@@ -262,7 +266,12 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // A gating-mode plugin reviewer failure fails the run even when all stories passed
     // (#1146 G2). Folded in here — not via setRunStatus inside handleRunCompletion, which
     // this line would otherwise clobber back to "completed".
-    const finalStatus = isComplete(options.prd) && !pluginGateFailed ? "completed" : "failed";
+    const finalStatus =
+      options.exitReason === "cost-limit"
+        ? "cost-limit"
+        : isComplete(options.prd) && !pluginGateFailed
+          ? "completed"
+          : "failed";
     options.statusWriter.setRunStatus(finalStatus);
     await options.statusWriter.writeFeatureStatus(options.featureDir, reportedTotal, options.iterations);
   }

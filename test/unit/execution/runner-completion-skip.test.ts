@@ -331,3 +331,40 @@ describe("runCompletionPhase - skip only applies when acceptance/regression conf
     expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cost-limit exit reason surfaces as a distinct feature-level run status
+// ---------------------------------------------------------------------------
+
+describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () => {
+  test("sets feature-level run status to cost-limit when exitReason is cost-limit, even with incomplete stories", async () => {
+    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const prd = makePRD([
+      { id: "US-001", status: "passed" },
+      { id: "US-002", status: "pending" },
+    ]);
+    const config = makeConfig(true);
+
+    await runCompletionPhase({
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/features/test-feature`,
+      exitReason: "cost-limit",
+    });
+
+    expect(statusWriter.setRunStatus).toHaveBeenCalledWith("cost-limit");
+  });
+
+  test("falls back to completed/failed classification when exitReason is not cost-limit", async () => {
+    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const config = makeConfig(true);
+
+    await runCompletionPhase({
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/features/test-feature`,
+      exitReason: "completed",
+    });
+
+    expect(statusWriter.setRunStatus).toHaveBeenCalledWith("completed");
+  });
+});

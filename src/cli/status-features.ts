@@ -47,6 +47,8 @@ interface FeatureSummary {
     pid: number;
     crashedAt?: string;
   };
+  /** True when the most recent run stopped after hitting execution.costLimit. */
+  costLimitStopped?: boolean;
 }
 
 /** Check if a process is alive via POSIX signal 0 (portable, no subprocess) */
@@ -147,6 +149,8 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
         pid: status.run.pid,
         crashedAt: status.run.crashedAt,
       };
+    } else if (status.run.status === "cost-limit") {
+      summary.costLimitStopped = true;
     }
   }
 
@@ -224,6 +228,13 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
         console.log(chalk.dim(`   Signal:     ${projectStatus.run.crashSignal}`));
       }
       console.log();
+    } else if (projectStatus.run.status === "cost-limit") {
+      console.log(chalk.magenta("💰 Cost Limit Reached:\n"));
+      console.log(chalk.dim(`   Feature:    ${projectStatus.run.feature}`));
+      console.log(chalk.dim(`   Run ID:     ${projectStatus.run.id}`));
+      console.log(chalk.dim(`   Spent:      $${projectStatus.cost.spent.toFixed(4)}`));
+      console.log(chalk.dim(`   Limit:      $${(projectStatus.cost.limit ?? 0).toFixed(4)}`));
+      console.log();
     }
   }
 
@@ -252,6 +263,8 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
       status = chalk.yellow("⚡ Running");
     } else if (summary.crashedRun) {
       status = chalk.red("💥 Crashed");
+    } else if (summary.costLimitStopped) {
+      status = chalk.magenta("💰 Cost limit");
     } else {
       status = chalk.dim("—");
     }

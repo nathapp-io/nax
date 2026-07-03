@@ -243,6 +243,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       agentManager,
       pluginProviderCache,
       deferredReview: executionResult.deferredReview,
+      exitReason: executionResult.exitReason,
       runtime,
       abortSignal: shutdownController.signal,
     });

@@ -26,6 +26,7 @@ import { purgeStaleScratch } from "../../session/scratch-purge";
 import { clearWorkspaceCache } from "../../test-runners/detect/workspace";
 import { clearGitRootCache } from "../../verification/smart-runner";
 import type { DeferredReviewResult } from "../deferred-review";
+import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
 import { runDeferredRegression } from "./run-regression";
@@ -72,6 +73,8 @@ export interface RunCompletionOptions extends DispatchContext {
    * the run only when config.review.pluginMode === "gating".
    */
   deferredReview?: DeferredReviewResult;
+  /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
+  exitReason?: ExitReason;
 }
 
 export interface RunCompletionResult {
@@ -112,6 +115,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     statusWriter,
     config,
     hooksConfig,
+    exitReason,
   } = options;
 
   // Run deferred regression gate before final metrics
@@ -450,7 +454,9 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   // Update final status
   statusWriter.setPrd(prd);
   statusWriter.setCurrentStory(null);
-  statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
+  statusWriter.setRunStatus(
+    exitReason === "cost-limit" ? "cost-limit" : isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running",
+  );
   await statusWriter.update(reportedTotal, iterations);
 
   return {

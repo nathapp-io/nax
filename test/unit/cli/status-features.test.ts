@@ -319,4 +319,36 @@ describe("displayFeatureDetails - PostRun Status Display (US-004)", () => {
     const output = consoleOutput.join("\n");
     expect(output).toContain("Acceptance: failed");
   });
+
+  // ============================================================================
+  // Cost-limit run status surfaces distinctly in the all-features table
+  // ============================================================================
+
+  test("all-features table shows 'Cost limit' status for a feature whose run stopped on cost-limit", async () => {
+    const naxDir = join(testDir, ".nax");
+    const featuresDir = join(naxDir, "features");
+    const featureDir = join(featuresDir, "test-feature");
+    mkdirSync(featureDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    const prd = createTestPRD("test-feature");
+    writeFileSync(join(featureDir, "prd.json"), JSON.stringify(prd, null, 2));
+
+    createStatusFile(featureDir, {
+      run: {
+        id: "run-2026-01-01T00-00-00-000Z",
+        feature: "test-feature",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        status: "cost-limit",
+        dryRun: false,
+        pid: 12345,
+      },
+    });
+
+    // Act: no `feature` option → renders the all-features table
+    await displayFeatureStatus({ dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Cost limit");
+  });
 });

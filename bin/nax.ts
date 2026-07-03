@@ -368,6 +368,7 @@ program
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-a, --agent <name>", "Force a specific agent")
   .option("-m, --max-iterations <n>", "Max iterations", "20")
+  .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
@@ -599,6 +600,14 @@ program
       config.agent.default = options.agent;
     }
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
+    if (options.maxCost !== undefined) {
+      const maxCost = Number.parseFloat(options.maxCost);
+      if (Number.isNaN(maxCost) || maxCost <= 0) {
+        console.error(chalk.red("--max-cost must be a positive number"));
+        process.exit(1);
+      }
+      config.execution.costLimit = maxCost;
+    }
 
     const globalNaxDir = join(homedir(), ".nax");
     const hooks = await loadHooksConfig(naxDir, globalNaxDir);
@@ -1313,7 +1322,7 @@ const runs = program
   .description("Show all registered runs from the central registry (~/.nax/runs/)")
   .option("--project <name>", "Filter by project name")
   .option("--last <N>", "Limit to N most recent runs (default: 20)")
-  .option("--status <status>", "Filter by status (running|completed|failed|crashed)")
+  .option("--status <status>", "Filter by status (running|completed|failed|crashed|cost-limit)")
   .action(async (options) => {
     try {
       await runsCommand({
