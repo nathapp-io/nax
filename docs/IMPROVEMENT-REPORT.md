@@ -78,13 +78,13 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 |---|---|---|
 | `runTddSession` takes 19 positional params; options-object refactor flagged P4 | `src/tdd/session-runner.ts`, `docs/follow-up-runTddSession-options-refactor.md` | Doc only, no issue |
 | `@deprecated` shims awaiting cleanup: `routeStory`/`routeTask`, `validateConfig`, `extractJsonFromMarkdown` wrapper, `decompose-prompt`, `RectifierPromptBuilder` class → static factories | `src/routing/router.ts:269-291`, `src/config/index.ts:53`, `src/routing/strategies/llm-parsing.ts:63`, `src/agents/shared/decompose-prompt.ts:2`, `src/prompts/builders/rectifier-builder.ts:10` | No |
-| `routing.llm.batchMode` / `retries` deprecation shims | `src/config/loader.ts:198,289-320` | #856 (intentional) |
+| `routing.llm.batchMode` / `retries` deprecation shims | `src/config/loader.ts:198,289-320` | ✅ #856 closed (retry policy unified via `RetryStrategy`) |
 | Rule-based prompt optimizer is real working code but off by default and undiscoverable; CLAUDE.md calls the optimizer "no-op" (only half true) | `src/optimizer/rule-based.optimizer.ts`, `src/optimizer/index.ts` | No |
 | `nax setup` is functional but absent from README quick start / CLI table | `src/cli/setup.ts` | No |
 | Stale docs: `docs/release-triage.md` generated 2026-04-21, well behind HEAD; `src/test-runners/resolver.ts:11` "[Phase 1: stub]" comment appears stale (replacement exported in `detect/index.ts:177`) | — | No |
-| `modelDef.env` overrides ignored in `complete()`/`decompose()`/`plan()` | referenced as #391 in release-triage | #391 (verify still open) |
+| `modelDef.env` overrides ignored in `complete()`/`decompose()`/`plan()` | referenced as #391 in release-triage | ✅ #391 closed — verified fixed (`spawn-client.ts` now threads `opts.env`) |
 | Worktree dependency `inherit` semantics / parallel routing / repo-root provisioning | — | **#574 (open)** |
-| Agent-swap metric propagation deferred | `src/agents/manager.ts:217` | #1131 (verify status) |
+| Agent-swap metric propagation deferred | `src/agents/manager.ts:217` | ✅ #1131 closed (post-refactor migration gaps resolved) |
 | `IReviewPlugin` retention decision deferred by ADR-023 §6 | — | No |
 | Reserved Phase-2 fields unused: debate citation/evidence-mode (`src/debate/types.ts:98`, `src/prd/schema.ts:335,355`), progressive context digest threading (`src/pipeline/stages/context.ts:86,177`), session retry-limit interface (`src/session/types.ts:153-155`) | — | No |
 
@@ -98,8 +98,10 @@ The open-issue backlog is small and well-groomed (6 open issues), so most items 
 4. File tracking issues for §1.6 (ADR-025 Part A) and §2.2 (dead config) so they don't get lost. **✅ Done — #1289 filed for §1.6; §2.2 fixed directly rather than just tracked (#1290).**
 
 ### Remaining open items from this shortlist
-- §1.1 Cost budget cap — not started.
-- §1.2 Mid-session resume — not started.
-- §1.4 Dashboard / metrics export — not started.
-- §1.5 Plugin ecosystem — not started.
+> Re-verified 2026-07-03 (post-#1290): `maxCostUsd` absent from `src/config`/`src/execution` (grep-confirmed); #391, #856, #1131 in §3 are closed and fixed in code, updated above.
+
+- **§1.1 Cost budget cap — not started. Recommended next pick** (highest value/effort ratio: `CostAggregator` middleware already exists, needs `execution.maxCostUsd` config field + abort-on-overspend check in the runner loop).
+- §1.2 Mid-session resume — not started (second priority; larger surface, touches crash-recovery + session checkpointing).
+- §1.4 Dashboard / metrics export — not started (cheapest slice is `nax status --cost --json` schema stabilization).
+- §1.5 Plugin ecosystem — not started (needs 2-3 reference plugins to substantiate the extensibility claim).
 - #1288 (INJECT queue command) and #1289 (ADR-025 §7 run-time routing) — tracked, not implemented.

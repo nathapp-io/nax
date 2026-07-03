@@ -32,7 +32,7 @@ export interface RunsOptions {
   /** Limit number of runs displayed (default: 20) */
   last?: number;
   /** Filter by run status */
-  status?: "running" | "completed" | "failed" | "crashed";
+  status?: NaxStatusFile["run"]["status"];
 }
 
 interface RunRow {
@@ -80,6 +80,8 @@ function colorStatus(status: string): string {
       return chalk.red(status);
     case "running":
       return chalk.yellow(status);
+    case "cost-limit":
+      return chalk.magenta(status);
     case "[unavailable]":
       return chalk.dim(status);
     default:

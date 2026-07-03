@@ -499,3 +499,48 @@ describe("handleRunCompletion - run status on regression failure (RL-004)", () =
     expect(passWriter.setRunStatus).not.toHaveBeenCalledWith("failed");
   });
 });
+
+describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () => {
+  test("sets run status to 'cost-limit' when exitReason is 'cost-limit', regardless of PRD completeness", async () => {
+    const config = makeConfig("deferred", "bun test");
+    const statusWriter = makeStatusWriter();
+    const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]);
+
+    await handleRunCompletion({
+      ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
+      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
+
+    expect(statusWriter.setRunStatus).toHaveBeenCalledWith("cost-limit");
+  });
+
+  test("does not set 'cost-limit' when exitReason is absent, even with an incomplete PRD", async () => {
+    const config = makeConfig("deferred", "bun test");
+    const statusWriter = makeStatusWriter();
+    const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "pending" }]);
+
+    await handleRunCompletion({
+      ...makeOpts(config, prd),
+      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
+
+    expect(statusWriter.setRunStatus).not.toHaveBeenCalledWith("cost-limit");
+  });
+
+  test("a genuine regression-gate failure is not masked by a cost-limit exitReason", async () => {
+    const config = makeConfig("deferred", "bun test");
+    const statusWriter = makeStatusWriter();
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
+    ) as typeof _runCompletionDeps.runDeferredRegression;
+
+    await handleRunCompletion({
+      ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
+      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
+
+    expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
+  });
+});
