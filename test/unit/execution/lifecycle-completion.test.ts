@@ -526,4 +526,21 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
 
     expect(statusWriter.setRunStatus).not.toHaveBeenCalledWith("cost-limit");
   });
+
+  test("a genuine regression-gate failure is not masked by a cost-limit exitReason", async () => {
+    const config = makeConfig("deferred", "bun test");
+    const statusWriter = makeStatusWriter();
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => MOCK_REGRESSION_FAILURE,
+    ) as typeof _runCompletionDeps.runDeferredRegression;
+
+    await handleRunCompletion({
+      ...makeOpts(config, prd, undefined, { exitReason: "cost-limit" }),
+      statusWriter: statusWriter as unknown as RunCompletionOptions["statusWriter"],
+    });
+
+    expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
+  });
 });

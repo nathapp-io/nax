@@ -367,4 +367,33 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
 
     expect(statusWriter.setRunStatus).toHaveBeenCalledWith("completed");
   });
+
+  test("a gating plugin-reviewer failure is not masked by a cost-limit exitReason", async () => {
+    const statusWriter = makeStatusWriter(makePostRunStatus("passed", "passed"));
+    const prd = makePRD([{ id: "US-001", status: "passed" }]);
+    const config = makeNaxConfig({
+      acceptance: { enabled: true, maxRetries: 3 },
+      execution: {
+        regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 30, acceptOnTimeout: true },
+      },
+      quality: { commands: { test: "bun test" } },
+      review: { pluginMode: "gating" },
+    });
+
+    await runCompletionPhase({
+      ...makeOpts(config, prd, statusWriter),
+      featureDir: `${WORKDIR}/features/test-feature`,
+      exitReason: "cost-limit",
+      deferredReview: {
+        runStartRef: "abc123",
+        changedFiles: [],
+        reviewerResults: [{ name: "my-reviewer", passed: false, output: "findings" }],
+        anyFailed: true,
+      },
+    });
+
+    // The feature-level status write (SFC-002) is the last call and is authoritative for
+    // `nax status` — it must reflect the gating failure, not the cost-limit exitReason.
+    expect(statusWriter.setRunStatus).toHaveBeenLastCalledWith("failed");
+  });
 });

@@ -601,8 +601,8 @@ program
     }
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
     if (options.maxCost !== undefined) {
-      const maxCost = Number.parseFloat(options.maxCost);
-      if (Number.isNaN(maxCost) || maxCost <= 0) {
+      const maxCost = Number(options.maxCost);
+      if (!Number.isFinite(maxCost) || maxCost <= 0) {
         console.error(chalk.red("--max-cost must be a positive number"));
         process.exit(1);
       }

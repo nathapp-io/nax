@@ -266,10 +266,13 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     // A gating-mode plugin reviewer failure fails the run even when all stories passed
     // (#1146 G2). Folded in here — not via setRunStatus inside handleRunCompletion, which
     // this line would otherwise clobber back to "completed".
-    const finalStatus =
-      options.exitReason === "cost-limit"
+    // pluginGateFailed is checked first so a genuine gate failure is never masked by a
+    // cost-limit stop — the budget being hit doesn't make a reviewer failure less real.
+    const finalStatus = pluginGateFailed
+      ? "failed"
+      : options.exitReason === "cost-limit"
         ? "cost-limit"
-        : isComplete(options.prd) && !pluginGateFailed
+        : isComplete(options.prd)
           ? "completed"
           : "failed";
     options.statusWriter.setRunStatus(finalStatus);

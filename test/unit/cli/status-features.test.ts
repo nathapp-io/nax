@@ -351,4 +351,43 @@ describe("displayFeatureDetails - PostRun Status Display (US-004)", () => {
     const output = consoleOutput.join("\n");
     expect(output).toContain("Cost limit");
   });
+
+  test("displays 'Cost Limit Reached' project-level banner when project status is cost-limit", async () => {
+    const naxDir = join(testDir, ".nax");
+    const featuresDir = join(naxDir, "features");
+    const featureDir = join(featuresDir, "test-feature");
+    mkdirSync(featureDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    const prd = createTestPRD("test-feature");
+    writeFileSync(join(featureDir, "prd.json"), JSON.stringify(prd, null, 2));
+    createStatusFile(featureDir);
+
+    // Project-level status.json (read from the output root, not the feature dir)
+    const projectStatus: NaxStatusFile = {
+      version: 1,
+      run: {
+        id: "run-2026-01-01T00-00-00-000Z",
+        feature: "test-feature",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        status: "cost-limit",
+        dryRun: false,
+        pid: 12345,
+      },
+      progress: { total: 1, passed: 0, failed: 0, paused: 0, blocked: 0, pending: 1 },
+      cost: { spent: 5.5, limit: 5.0 },
+      current: null,
+      iterations: 3,
+      updatedAt: "2026-01-01T01:00:00.000Z",
+      durationMs: 3600000,
+    };
+    writeFileSync(join(naxDir, "status.json"), JSON.stringify(projectStatus, null, 2));
+
+    // Act: no `feature` option → renders the all-features view, including the project banner
+    await displayFeatureStatus({ dir: testDir });
+
+    const output = consoleOutput.join("\n");
+    expect(output).toContain("Cost Limit Reached");
+    expect(output).toContain("$5.5000");
+  });
 });

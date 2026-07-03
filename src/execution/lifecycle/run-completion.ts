@@ -119,6 +119,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   } = options;
 
   // Run deferred regression gate before final metrics
+  // Tracked separately from the setRunStatus("failed") call below (line ~188) so a
+  // cost-limit exit can never mask a genuine regression-gate failure — see the final
+  // classification at the end of this function.
+  let regressionGateFailed = false;
   const regressionMode = config.execution.regressionGate?.mode;
   if (options.skipRegression) {
     // Regression phase already passed on a prior run — skip
@@ -186,6 +190,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       }
       // Reflect regression gate failure in run status (RL-004)
       statusWriter.setRunStatus("failed");
+      regressionGateFailed = true;
 
       if (hooksConfig) {
         await _runCompletionDeps.fireHook(
@@ -455,7 +460,15 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   statusWriter.setPrd(prd);
   statusWriter.setCurrentStory(null);
   statusWriter.setRunStatus(
-    exitReason === "cost-limit" ? "cost-limit" : isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running",
+    regressionGateFailed
+      ? "failed"
+      : exitReason === "cost-limit"
+        ? "cost-limit"
+        : isComplete(prd)
+          ? "completed"
+          : isStalled(prd)
+            ? "stalled"
+            : "running",
   );
   await statusWriter.update(reportedTotal, iterations);
 
