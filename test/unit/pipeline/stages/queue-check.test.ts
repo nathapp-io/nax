@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { initLogger, resetLogger } from "@/logger";
 import { queueCheckStage } from "@/pipeline";
 import type { PipelineContext } from "@/pipeline";
-import { makePRD, makeStory, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 
 function makeCtx(workdir: string, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ id: "US-001", status: "pending" });
@@ -36,6 +36,7 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
 
   afterEach(() => {
     resetLogger();
+    cleanupTempDir(workdir);
   });
 
   test("RETRY resets a failed story to pending and continues", async () => {

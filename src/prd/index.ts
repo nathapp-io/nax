@@ -97,7 +97,9 @@ function isResumableCurrentStory(story: UserStory, maxRetries: number): boolean 
  * `status === "failed"` with `attempts <= maxRetries`, return it immediately
  * so the executor retries the same story before moving on.
  *
- * Priority 2 (normal): First pending story whose dependencies are satisfied.
+ * Priority 2 (normal): Among pending stories whose dependencies are satisfied,
+ * the highest `story.priority` wins (set via the PRIORITY queue command);
+ * ties keep array order (stable FIFO — the default when priority is unset).
  *
  * @param prd - PRD containing all stories
  * @param currentStoryId - ID of the story just executed (optional)
