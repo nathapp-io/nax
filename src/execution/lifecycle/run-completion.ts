@@ -29,6 +29,7 @@ import type { DeferredReviewResult } from "../deferred-review";
 import type { ExitReason } from "../executor-types";
 import { closeAllRunSessions } from "../session-manager-runtime";
 import type { StatusWriter } from "../status-writer";
+import { synthesizeBackfillMetric } from "./backfill-story-metrics";
 import { runDeferredRegression } from "./run-regression";
 
 /**
@@ -307,22 +308,21 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       const existingIdx = existingIndex.get(storyId);
       if (existingIdx === undefined) {
         const story = prd.userStories.find((s) => s.id === storyId);
-        allStoryMetrics.push({
-          storyId,
-          complexity: story?.routing?.complexity ?? "medium",
-          modelTier: "balanced",
-          modelUsed: defaultAgent,
-          attempts: 0,
-          finalTier: "balanced",
-          success: story?.passes ?? true,
-          cost: snap.totalCostUsd,
-          durationMs: 0,
-          firstPassSuccess: story?.passes ?? true,
-          startedAt: completionCompletedAt,
-          completedAt: completionCompletedAt,
-          source: "completion-phase" as const,
-          runtimeCrashes: 0,
-        });
+        // A story with cost but no execution-phase metric either failed in the
+        // execution stage (pipeline stopped before the completion stage) or spent
+        // only in completion phases. synthesizeBackfillMetric distinguishes the two so
+        // a failed story gets its real attempts/model/tier instead of the corrupt
+        // attempts:0 / modelUsed=<agentName> placeholder (issue #1296).
+        allStoryMetrics.push(
+          synthesizeBackfillMetric({
+            storyId,
+            story,
+            totalCostUsd: snap.totalCostUsd,
+            config,
+            defaultAgent,
+            timestamp: completionCompletedAt,
+          }),
+        );
       } else {
         // Story already has an execution-phase entry — replace cost with the aggregator
         // value if it's higher (aggregator is authoritative across all phases).

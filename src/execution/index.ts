@@ -34,6 +34,8 @@ export {
   handleRunCompletion,
   _runCompletionDeps,
   outputAdvisoryFindingsSummary,
+  synthesizeBackfillMetric,
+  type BackfillMetricArgs,
   type DeferredRegressionOptions,
   type DeferredRegressionResult,
   type StorySnapshot,

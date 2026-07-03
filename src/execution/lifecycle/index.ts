@@ -16,6 +16,7 @@ export {
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./run-completion";
+export { synthesizeBackfillMetric, type BackfillMetricArgs } from "./backfill-story-metrics";
 export { cleanupRun, type RunCleanupOptions } from "./run-cleanup";
 export { setupRun, type RunSetupOptions, type RunSetupResult } from "./run-setup";
 export {
