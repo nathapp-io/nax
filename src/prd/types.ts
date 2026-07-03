@@ -141,6 +141,8 @@ export interface UserStory {
   attempts: number;
   /** Story points estimate (optional, defaults to 1) */
   storyPoints?: number;
+  /** Scheduling priority (higher = more urgent). Defaults to 0 when unset. Set via the PRIORITY queue command. */
+  priority?: number;
   /** @deprecated Use contextFiles instead. Relevant source files for context injection */
   relevantFiles?: string[];
   /** Files loaded into agent prompt before execution. Entries may be plain path strings or

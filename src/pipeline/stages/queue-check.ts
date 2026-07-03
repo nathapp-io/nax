@@ -7,7 +7,7 @@
 
 import { clearQueueFile, readQueueFile } from "../../execution/queue-handler";
 import { getLogger } from "../../logger";
-import { markStorySkipped, savePRD } from "../../prd";
+import { markStorySkipped, resetStoryToPending, savePRD, setStoryPriority } from "../../prd";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -63,6 +63,27 @@ export const queueCheckStage: PipelineStage = {
         await clearQueueFile(ctx.workdir);
 
         return { action: "pause", reason: "User requested abort" };
+      }
+
+      if (cmd.type === "RETRY") {
+        logger.warn("queue", "Retrying story by user request", { storyId: cmd.storyId });
+        resetStoryToPending(ctx.prd, cmd.storyId);
+
+        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
+        await savePRD(ctx.prd, prdPath);
+        continue;
+      }
+
+      if (cmd.type === "PRIORITY") {
+        logger.warn("queue", "Setting story priority by user request", {
+          storyId: cmd.storyId,
+          priority: cmd.value,
+        });
+        setStoryPriority(ctx.prd, cmd.storyId, cmd.value);
+
+        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
+        await savePRD(ctx.prd, prdPath);
+        continue;
       }
 
       if (cmd.type === "SKIP") {

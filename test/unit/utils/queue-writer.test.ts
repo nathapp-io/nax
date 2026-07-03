@@ -26,6 +26,17 @@ describe("writeQueueCommand", () => {
     expect(commands).toEqual([{ type: "PAUSE" }, { type: "SKIP", storyId: "US-001" }, { type: "ABORT" }]);
   });
 
+  test("writes RETRY and PRIORITY commands", async () => {
+    await writeQueueCommand(queueFile, { type: "RETRY", storyId: "US-002" });
+    await writeQueueCommand(queueFile, { type: "PRIORITY", storyId: "US-003", value: 5 });
+
+    const { commands } = parseQueueFile(await Bun.file(queueFile).text());
+    expect(commands).toEqual([
+      { type: "RETRY", storyId: "US-002" },
+      { type: "PRIORITY", storyId: "US-003", value: 5 },
+    ]);
+  });
+
   test("serializes concurrent writes without clobbering (no read-modify-write race)", async () => {
     // Fire many writes concurrently — the per-path chain must serialize them so
     // every command lands instead of overwriting each other's read-modify-write.
