@@ -7,6 +7,8 @@
 
 import chalk from "chalk";
 import type { LogEntry } from "../logger/types.js";
+import { SEVERITY_RANK } from "../review/index.js";
+import type { AdvisoryFindingSummaryEntry } from "../review/review-audit.js";
 import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
 
 /**
@@ -412,6 +414,50 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
   lines.push(`  ${EMOJI.duration} Duration: ${c.bold(formatDuration(summary.durationMs))}`);
   lines.push(`  ${EMOJI.cost} Cost:     ${c.bold(formatCost(summary.totalCost))}`);
   lines.push(c.blue("═".repeat(60)));
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+/**
+ * Format the run-end advisory (sub-threshold review) findings summary.
+ *
+ * §2.1 — adversarial/semantic review findings below `blockingThreshold` never
+ * block a story and, absent this call, only ever surface in a per-story debug
+ * log line and the on-disk `.nax/review-audit/` trail. This renders them as a
+ * severity-graded block so real findings are never silently dropped.
+ */
+export function formatAdvisorySummary(
+  findings: readonly AdvisoryFindingSummaryEntry[],
+  options: FormatterOptions,
+): string {
+  if (findings.length === 0) return "";
+
+  const { mode, useColor = true } = options;
+
+  if (mode === "json") {
+    return JSON.stringify(findings);
+  }
+
+  const c = useColor ? chalk : createNoopChalk();
+  const sorted = [...findings].sort((a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0));
+
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(c.yellow("─".repeat(60)));
+  lines.push(c.bold(c.yellow(`  ${EMOJI.warning} NON-BLOCKING REVIEW FINDINGS (${findings.length})`)));
+  lines.push(c.yellow("─".repeat(60)));
+
+  for (const f of sorted) {
+    const location = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : undefined;
+    const parts = [`[${f.severity}]`, f.storyId ?? "unknown", location, f.category].filter(
+      (v): v is string => typeof v === "string" && v.length > 0,
+    );
+    lines.push(`  ${c.gray(parts.join(" · "))}`);
+    lines.push(`    ${f.issue}`);
+  }
+
+  lines.push(c.yellow("─".repeat(60)));
   lines.push("");
 
   return lines.join("\n");

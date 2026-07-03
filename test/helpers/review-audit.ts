@@ -19,6 +19,7 @@ export function captureAuditDecisions(): { auditor: IReviewAuditor; decisions: R
       decisions.push(entry);
     },
     flush: async () => {},
+    getAdvisoryFindings: () => [],
   };
   return { auditor, decisions };
 }

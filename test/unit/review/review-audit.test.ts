@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { ReviewAuditor, writeReviewAudit, _reviewAuditDeps } from "../../../src/review/review-audit";
+import { ReviewAuditor, createNoOpReviewAuditor, writeReviewAudit, _reviewAuditDeps } from "../../../src/review/review-audit";
 import type { ReviewAuditEntry } from "../../../src/review/review-audit";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,5 +279,95 @@ describe("ReviewAuditor", () => {
     expect(second.sessionName).toBe("review-semantic-US-001");
     expect(second.sessionId).toBeNull();
     expect(second.recordId).toBeNull();
+  });
+});
+
+describe("ReviewAuditor.getAdvisoryFindings", () => {
+  let saved: typeof _reviewAuditDeps;
+
+  beforeEach(() => {
+    saved = { ..._reviewAuditDeps };
+  });
+
+  test("aggregates advisory findings from recorded decisions", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-1", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-001",
+      featureName: "my-feature",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings: [{ severity: "warning", category: "correctness", file: "src/foo.ts", issue: "off-AC bug" }],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]).toMatchObject({
+      storyId: "US-001",
+      reviewer: "adversarial",
+      severity: "warning",
+      category: "correctness",
+      file: "src/foo.ts",
+      issue: "off-AC bug",
+    });
+  });
+
+  test("decisions with no advisory findings contribute nothing", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-1", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "semantic",
+      storyId: "US-002",
+      parsed: true,
+      passed: true,
+      result: { passed: true, findings: [] },
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    expect(auditor.getAdvisoryFindings()).toHaveLength(0);
+  });
+
+  test("accumulates advisory findings across multiple stories", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-1", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-001",
+      parsed: true,
+      passed: true,
+      result: { passed: true, findings: [] },
+      advisoryFindings: [{ severity: "info", issue: "a" }],
+    });
+    auditor.recordDecision({
+      reviewer: "semantic",
+      storyId: "US-002",
+      parsed: true,
+      passed: true,
+      result: { passed: true, findings: [] },
+      advisoryFindings: [{ severity: "warning", issue: "b" }, { severity: "warning", issue: "c" }],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(3);
+    expect(summary.map((f) => f.storyId)).toEqual(["US-001", "US-002", "US-002"]);
+  });
+
+  test("no-op auditor returns an empty advisory findings list", () => {
+    const auditor = createNoOpReviewAuditor();
+    expect(auditor.getAdvisoryFindings()).toEqual([]);
   });
 });

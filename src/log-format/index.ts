@@ -10,6 +10,7 @@
 export {
   formatLogEntry,
   formatRunSummary,
+  formatAdvisorySummary,
   formatTimestamp,
   formatDuration,
   formatCost,
