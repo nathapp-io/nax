@@ -14,7 +14,8 @@ export type ContestantStatus =
   | "timeout";
 
 export interface ContestantResult {
-  name: string;
+  /** Optional human-readable label; the agent name is the stable identifier. */
+  name?: string;
   agent: string;
   status: ContestantStatus;
   storiesPassed: number;

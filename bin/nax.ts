@@ -421,7 +421,7 @@ program
         );
         process.exit(1);
       }
-      const errors = validateContestants(contestants);
+      const { errors } = validateContestants(contestants);
       if (errors.length > 0) {
         console.error(chalk.red("Bake-off pre-flight failed:"));
         for (const e of errors) {

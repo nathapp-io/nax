@@ -12,7 +12,7 @@ import type { NaxConfig } from "../config";
 import { runContestant } from "./contestant";
 import type { ContestantOptions } from "./contestant";
 import { validateContestants } from "./preflight";
-import type { ContestantValidationError } from "./preflight";
+import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
 
@@ -28,25 +28,12 @@ export interface BakeoffOptions {
   maxCostUsd?: number;
 }
 
-export interface BakeoffPreflightResult {
-  errors: ContestantValidationError[];
-  validAgents: string[];
-}
-
 /** Injectable dependencies for the coordinator. Tests override individual entries. */
 export interface BakeoffCoordinatorDeps {
-  validateContestants: (names: string[]) => BakeoffPreflightResult;
+  validateContestants: (names: string[]) => ContestantValidationResult;
   runContestant: (agent: string, options: ContestantOptions) => Promise<ContestantResult>;
   rankContestants: typeof rankContestants;
   persistBakeoffResult: (result: BakeoffResult, outputDir: string) => Promise<void>;
-}
-
-/** Default `validateContestants` dep: wraps the real preflight into the {errors, validAgents} shape. */
-function defaultValidateContestants(names: string[]): BakeoffPreflightResult {
-  const errors = validateContestants(names);
-  const invalidAgents = new Set(errors.map((e) => e.agent));
-  const validAgents = names.filter((n) => !invalidAgents.has(n));
-  return { errors, validAgents };
 }
 
 /** Default `persistBakeoffResult` dep: writes bakeoff.json under outputDir. */
@@ -57,8 +44,8 @@ export async function persistBakeoffResult(result: BakeoffResult, outputDir: str
 }
 
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {
-  validateContestants: defaultValidateContestants,
-  runContestant,
+  validateContestants,
+  runContestant: runContestant as unknown as BakeoffCoordinatorDeps["runContestant"],
   rankContestants,
   persistBakeoffResult,
 };
@@ -81,9 +68,7 @@ export async function runBakeoff(
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {
     const contestantOptions: ContestantOptions = {
-      name: agent,
       projectRoot: options.projectRoot,
-      storyId: options.storyId ?? `bakeoff-${options.feature}-${agent}`,
       config: options.config,
       maxCostUsd: options.maxCostUsd,
       feature: options.feature,

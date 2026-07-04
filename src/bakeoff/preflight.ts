@@ -17,14 +17,29 @@ export interface ContestantValidationError {
   reason: ContestantValidationReason;
 }
 
+export interface ContestantValidationResult {
+  errors: ContestantValidationError[];
+  validAgents: string[];
+}
+
 export interface PreflightDeps {
-  which: (name: string) => string | null;
+  isInstalled: (binary: string) => boolean;
   hasAcpAdapterEntry: (name: string) => boolean;
+}
+
+/**
+ * Per-call deps shape. `hasAcpAdapterEntry` is optional because the
+ * test surface and the lean acceptance surface only require `isInstalled`.
+ * When omitted, the default ACP adapter registry is consulted.
+ */
+export interface PreflightCallableDeps {
+  isInstalled: (binary: string) => boolean;
+  hasAcpAdapterEntry?: (name: string) => boolean;
 }
 
 /** Injectable dependencies. Tests override individual entries. */
 export const _preflightDeps: PreflightDeps = {
-  which: defaultWhich,
+  isInstalled: (binary: string) => defaultWhich(binary) !== null,
   hasAcpAdapterEntry: (name: string) => ACP_ADAPTER_NAMES.has(name),
 };
 
@@ -41,24 +56,36 @@ export function parseCompareList(input: string): string[] {
 
 /**
  * Validate that every requested contestant is a known, runnable agent.
- * Returns a list of validation errors (empty when all contestants are valid).
+ * Returns both the validation errors and the subset of contestants that
+ * passed pre-flight. `deps` is optional; when omitted, falls back to the
+ * module-level `_preflightDeps`.
  */
-export function validateContestants(names: string[]): ContestantValidationError[] {
+export function validateContestants(
+  names: string[],
+  deps: PreflightCallableDeps = _preflightDeps,
+): ContestantValidationResult {
   const errors: ContestantValidationError[] = [];
+  const validAgents: string[] = [];
+
+  const hasAdapter = deps.hasAcpAdapterEntry ?? _preflightDeps.hasAcpAdapterEntry;
+
   for (const agent of names) {
     if (!KNOWN_AGENT_NAMES.includes(agent)) {
       errors.push({ agent, reason: "unknown-agent" });
       continue;
     }
-    if (!_preflightDeps.hasAcpAdapterEntry(agent)) {
+    if (!hasAdapter(agent)) {
       errors.push({ agent, reason: "no-acp-adapter" });
       continue;
     }
-    if (!_preflightDeps.which(agent)) {
+    if (!deps.isInstalled(agent)) {
       errors.push({ agent, reason: "dnf-not-installed" });
+      continue;
     }
+    validAgents.push(agent);
   }
-  return errors;
+
+  return { errors, validAgents };
 }
 
 /**
@@ -69,7 +96,7 @@ export function assertCompareAgentExclusive(opts: { compare?: string; agent?: st
   if (opts.compare && opts.agent) {
     throw new NaxError(
       `--compare and --agent are mutually exclusive (got --compare=${opts.compare} --agent=${opts.agent})`,
-      "BAKEOFF_COMPARE_AGENT_EXCLUSIVE",
+      "COMPARE_AGENT_EXCLUSIVE",
       { compare: opts.compare, agent: opts.agent },
     );
   }

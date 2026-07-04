@@ -6,6 +6,8 @@ export type {
   ContestantOptions,
   ContestantPipelineResult,
   ContestantRunnerDeps,
+  ContestantStoryMetric,
+  ContestantStoryResult,
 } from "./contestant";
 export {
   _bakeoffCliDeps,
@@ -27,7 +29,12 @@ export {
   parseCompareList,
   validateContestants,
 } from "./preflight";
-export type { ContestantValidationError, ContestantValidationReason, PreflightDeps } from "./preflight";
+export type {
+  ContestantValidationError,
+  ContestantValidationReason,
+  ContestantValidationResult,
+  PreflightDeps,
+} from "./preflight";
 export { rankContestants } from "./ranking";
 export { renderBakeoffReport } from "./report";
 export type { BakeoffResult, ContestantResult, ContestantStatus } from "./types";

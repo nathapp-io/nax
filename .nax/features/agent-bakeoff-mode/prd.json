@@ -3,7 +3,7 @@
   "feature": "agent-bakeoff-mode",
   "branchName": "feat/agent-bakeoff-mode",
   "createdAt": "2026-07-04T10:14:16.000Z",
-  "updatedAt": "2026-07-04T11:30:20.443Z",
+  "updatedAt": "2026-07-04T12:33:31.346Z",
   "userStories": [
     {
       "id": "US-001",
@@ -16,7 +16,9 @@
         "Given two results with equal `storiesPassed` and equal `costUsd` but `wallTimeMs: 100` versus `wallTimeMs: 200`, when `rankContestants` sorts them, then the `wallTimeMs: 100` result is first.",
         "Given a finisher with `status: \"passed\"` and `storiesPassed: 1` and a DNF with `status: \"dnf-crashed\"` and `storiesPassed: 0`, when `rankContestants` sorts them, then the finisher is first regardless of the DNF cost or time.",
         "Given an input array where every result is a DNF, when `rankContestants` sorts it, then it returns an array of the same length without throwing and orders by `costUsd` ascending.",
-        "Given a `ContestantResult` constructed with `status: \"passed\"` and no `error`, when its `error` field is read, then the value is `undefined`."
+        "Given a `ContestantResult` constructed with `status: \"passed\"` and no `error`, when its `error` field is read, then the value is `undefined`.",
+        "Given two otherwise-equal results, when `rankContestants` sorts them, then it preserves a deterministic order instead of throwing or mutating the input array.",
+        "Given an empty input array, when `rankContestants` sorts it, then it returns an empty array."
       ],
       "tags": [
         "feature",
@@ -51,10 +53,6 @@
         "src/bakeoff/index.ts",
         "test/unit/bakeoff/ranking.test.ts"
       ],
-      "suggestedCriteria": [
-        "Given two otherwise-equal results, when `rankContestants` sorts them, then it preserves a deterministic order instead of throwing or mutating the input array.",
-        "Given an empty input array, when `rankContestants` sorts it, then it returns an empty array."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -72,7 +70,10 @@
         "Given `validateContestants([\"aider\"], deps)`, when validation runs, then it returns an error because `aider` has no ACP adapter entry.",
         "Given `validateContestants([\"gemini\"], deps)` and a PATH probe that reports the `gemini` binary absent, when validation runs, then `gemini` is invalid with reason `dnf-not-installed`.",
         "Given `{ compare: \"claude\", agent: \"codex\" }`, when `assertCompareAgentExclusive` runs, then it throws a `NaxError` whose code identifies the `--compare` and `--agent` conflict.",
-        "Given `contestantCount = 3` and `maxCostPerContestant = 5`, when `computeWorstCaseCost` runs, then it returns `15`."
+        "Given `contestantCount = 3` and `maxCostPerContestant = 5`, when `computeWorstCaseCost` runs, then it returns `15`.",
+        "Given `--compare` with duplicate agent names, when `parseCompareList` parses it, then it preserves order without creating empty entries.",
+        "Given multiple invalid contestants, when `validateContestants` runs, then it returns every offender in one result instead of failing on the first error.",
+        "Given `--compare` with only unknown or unavailable contestants, when pre-flight fails, then no confirmation prompt is shown and no contestant worktree is created."
       ],
       "tags": [
         "feature",
@@ -112,11 +113,6 @@
         "src/bakeoff/preflight.ts",
         "test/unit/bakeoff/preflight.test.ts"
       ],
-      "suggestedCriteria": [
-        "Given `--compare` with duplicate agent names, when `parseCompareList` parses it, then it preserves order without creating empty entries.",
-        "Given multiple invalid contestants, when `validateContestants` runs, then it returns every offender in one result instead of failing on the first error.",
-        "Given `--compare` with only unknown or unavailable contestants, when pre-flight fails, then no confirmation prompt is shown and no contestant worktree is created."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -135,7 +131,8 @@
         "Given a pipeline that throws mid-run, when `runContestant` completes, then it returns `status: \"dnf-crashed\"` with a non-empty `error` string and does not re-throw.",
         "Given a pipeline that signals a per-contestant cost-limit abort, when `runContestant` completes, then it returns `status: \"cost-limit\"`.",
         "Given aggregated `StoryMetrics`, when `runContestant` maps them onto a `ContestantResult`, then `costUsd` comes from total `cost`, `wallTimeMs` comes from total `durationMs`, and `tierEscalations` is derived from `attempts`.",
-        "Given a contestant run where existing pipeline bounds are exhausted without passing, when `runContestant` classifies the terminal result, then it returns `status: \"timeout\"`."
+        "Given a contestant run where existing pipeline bounds are exhausted without passing, when `runContestant` classifies the terminal result, then it returns `status: \"timeout\"`.",
+        "Given zero story metrics from a crashed contestant, when `runContestant` returns, then `storiesPassed`, `costUsd`, and `wallTimeMs` are zero-valued instead of `NaN`."
       ],
       "tags": [
         "feature",
@@ -178,8 +175,7 @@
       ],
       "suggestedCriteria": [
         "Given a worktree-creation failure before the pipeline starts, when `runContestant` completes, then it returns a terminal DNF status with an error message instead of hanging.",
-        "Given `StoryMetrics.reviewMetrics`, when `runContestant` aggregates them, then `reviewFindings` equals the sum of reviewer findings counts across stories.",
-        "Given zero story metrics from a crashed contestant, when `runContestant` returns, then `storiesPassed`, `costUsd`, and `wallTimeMs` are zero-valued instead of `NaN`."
+        "Given `StoryMetrics.reviewMetrics`, when `runContestant` aggregates them, then `reviewFindings` equals the sum of reviewer findings counts across stories."
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -201,7 +197,8 @@
         "Given every contestant resolves to a DNF status, when `runBakeoff` completes, then it still persists `bakeoff.json`, returns a `BakeoffResult` containing all contestants, and signals a non-zero exit outcome.",
         "Given at least one contestant finishes and a bake-off report is produced, when `runBakeoff` completes, then it signals a zero exit outcome.",
         "Given `bin/nax.ts` receives `nax run --compare claude,codex -f <feature>`, when the run action executes, then it routes to `runBakeoff` instead of the single-agent path and passes the parsed contestant list.",
-        "Given `bin/nax.ts` receives `nax run -f <feature>` without `--compare`, when the run action executes, then it calls the existing single-agent `run({...})` path and does not call `runBakeoff`."
+        "Given `bin/nax.ts` receives `nax run -f <feature>` without `--compare`, when the run action executes, then it calls the existing single-agent `run({...})` path and does not call `runBakeoff`.",
+        "Given every contestant resolves to a DNF status, when `persistBakeoffResult` runs, then `bakeoff.json` still contains every contestant row with DNF statuses."
       ],
       "tags": [
         "feature",
@@ -216,8 +213,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -248,7 +245,6 @@
       ],
       "suggestedCriteria": [
         "Given at least one finisher, when `runBakeoff` completes, then it signals a zero exit outcome and emits a one-line winner summary naming the top-ranked agent.",
-        "Given every contestant resolves to a DNF status, when `persistBakeoffResult` runs, then `bakeoff.json` still contains every contestant row with DNF statuses.",
         "Given `--story US-002`, when `runBakeoff` builds its result, then the persisted artifact includes `story: \"US-002\"` and the report only compares that story."
       ],
       "priorErrors": [],

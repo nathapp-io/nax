@@ -1,3 +1,4 @@
 [2026-07-04T10:52:03.512Z] US-001 — PASSED — Bake-off types and ranking foundation — Cost: $1.8725
 [2026-07-04T11:05:02.670Z] US-002 — PASSED — CLI compare options and contestant pre-flight — Cost: $1.3652
 [2026-07-04T11:30:16.814Z] US-003 — PASSED — Pinned contestant runner and worktree isolation — Cost: $1.5959
+[2026-07-04T12:04:22.886Z] US-004 — PASSED — Bake-off coordinator, reporting, persistence, and run-command wiring — Cost: $3.3911

@@ -55,60 +55,71 @@ describe("parseCompareList", () => {
 
 describe("validateContestants", () => {
   // AC-3: both binaries present → no errors
-  it("returns no errors when PATH probe reports both binaries present", () => {
-    const errors = withDeps(
+  it("returns no errors and both agents in validAgents when PATH probe reports both binaries present", () => {
+    const result = withDeps(
       {
-        which: (name: string) => {
-          if (name === "claude" || name === "codex") return `/usr/local/bin/${name}`;
-          return null;
-        },
+        isInstalled: (name: string) => name === "claude" || name === "codex",
         hasAcpAdapterEntry: (name: string) => name === "claude" || name === "codex",
       },
       () => validateContestants(["claude", "codex"]),
     );
-    expect(errors).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.validAgents).toEqual(["claude", "codex"]);
   });
 
   // AC-4: bogus → unknown agent
   it("returns an error identifying 'bogus' as an unknown agent", () => {
-    const errors = withDeps(
+    const result = withDeps(
       {
-        which: (_name: string) => null,
+        isInstalled: (_name: string) => false,
         hasAcpAdapterEntry: (_name: string) => true,
       },
       () => validateContestants(["bogus"]),
     );
-    expect(errors).toHaveLength(1);
-    expect(errors[0].agent).toBe("bogus");
-    expect(errors[0].reason).toBe("unknown-agent");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].agent).toBe("bogus");
+    expect(result.errors[0].reason).toBe("unknown-agent");
+    expect(result.validAgents).toEqual([]);
   });
 
   // AC-5: aider is in KNOWN_AGENT_NAMES but has no ACP adapter entry
   it("returns an error for 'aider' because it has no ACP adapter entry", () => {
-    const errors = withDeps(
+    const result = withDeps(
       {
-        which: (_name: string) => null,
+        isInstalled: (_name: string) => false,
         hasAcpAdapterEntry: (name: string) => name !== "aider",
       },
       () => validateContestants(["aider"]),
     );
-    expect(errors).toHaveLength(1);
-    expect(errors[0].agent).toBe("aider");
-    expect(errors[0].reason).toBe("no-acp-adapter");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].agent).toBe("aider");
+    expect(result.errors[0].reason).toBe("no-acp-adapter");
+    expect(result.validAgents).toEqual([]);
   });
 
   // AC-6: gemini binary absent on PATH → dnf-not-installed
   it("returns dnf-not-installed when PATH probe reports the binary absent", () => {
-    const errors = withDeps(
+    const result = withDeps(
       {
-        which: (_name: string) => null,
+        isInstalled: (_name: string) => false,
         hasAcpAdapterEntry: (name: string) => name === "gemini",
       },
       () => validateContestants(["gemini"]),
     );
-    expect(errors).toHaveLength(1);
-    expect(errors[0].agent).toBe("gemini");
-    expect(errors[0].reason).toBe("dnf-not-installed");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].agent).toBe("gemini");
+    expect(result.errors[0].reason).toBe("dnf-not-installed");
+    expect(result.validAgents).toEqual([]);
+  });
+
+  it("accepts per-call deps without mutating the module _preflightDeps", () => {
+    const deps = {
+      isInstalled: (name: string) => name === "claude",
+      hasAcpAdapterEntry: (name: string) => name === "claude",
+    };
+    const result = validateContestants(["claude", "bogus"], deps);
+    expect(result.validAgents).toEqual(["claude"]);
+    expect(result.errors.map((e) => e.agent)).toEqual(["bogus"]);
   });
 });
 
@@ -120,9 +131,10 @@ describe("assertCompareAgentExclusive", () => {
       throw new Error("expected NaxError to be thrown");
     } catch (err) {
       expect(err).toBeInstanceOf(NaxError);
-      const code = (err as NaxError).code;
-      expect(code.toLowerCase()).toContain("compare");
-      expect(code.toLowerCase()).toContain("agent");
+      const naxErr = err as NaxError;
+      expect(naxErr.code).toBe("COMPARE_AGENT_EXCLUSIVE");
+      expect(naxErr.message).toContain("--compare");
+      expect(naxErr.message).toContain("--agent");
     }
   });
 
