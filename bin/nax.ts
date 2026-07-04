@@ -391,6 +391,8 @@ program
     [],
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
+  .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
+  .option("--story <id>", "Bake-off mode: limit execution to a single story id")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -399,6 +401,29 @@ program
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
+    }
+
+    // Bake-off: --compare and --agent are mutually exclusive
+    try {
+      const { assertCompareAgentExclusive } = await import("../src/bakeoff/preflight");
+      assertCompareAgentExclusive({ compare: options.compare, agent: options.agent });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Bake-off: validate contestants up-front, before any spend
+    if (options.compare) {
+      const { parseCompareList, validateContestants } = await import("../src/bakeoff/preflight");
+      const contestants = parseCompareList(options.compare);
+      const errors = validateContestants(contestants);
+      if (errors.length > 0) {
+        console.error(chalk.red("Bake-off pre-flight failed:"));
+        for (const e of errors) {
+          console.error(chalk.red(`   ${e.agent}: ${e.reason}`));
+        }
+        process.exit(1);
+      }
     }
 
     // Parse --schedule early so a bad value errors before any setup.

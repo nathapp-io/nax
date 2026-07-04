@@ -3,6 +3,7 @@
  */
 
 export {
+  ACP_ADAPTER_NAMES,
   AcpAgentAdapter,
   AcpSessionHandleImpl,
   _acpAdapterDeps,
