@@ -3,7 +3,7 @@
   "feature": "flaky-test-quarantine",
   "branchName": "feat/flaky-test-quarantine",
   "createdAt": "2026-07-04T03:35:57Z",
-  "updatedAt": "2026-07-04T04:16:06.255Z",
+  "updatedAt": "2026-07-04T04:27:53.541Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,8 +89,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -158,7 +158,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-orchestrator/rectification.ts",
@@ -167,7 +169,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "92ffcd9e5eef9d2ca7f15e60284942fbda5a012f"
     },
     {
       "id": "US-004",
