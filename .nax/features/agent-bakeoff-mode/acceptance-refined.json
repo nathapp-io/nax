@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given a `ContestantResult[]`, when `rankContestants` is imported from `@/bakeoff`, then it is callable and returns a `ContestantResult[]`.",
+    "refined": "After importing `rankContestants` from `@/bakeoff`, calling it with a `ContestantResult[]` argument returns an array where every element is a `ContestantResult` and the returned array length equals the input array length.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "Given one result with `storiesPassed: 3` and `costUsd: 9` and another with `storiesPassed: 2` and `costUsd: 1`, when `rankContestants` sorts them, then the 3-passed result is first.",
+    "refined": "Calling `rankContestants` with `[{ storiesPassed: 3, costUsd: 9, wallTimeMs: 100 }, { storiesPassed: 2, costUsd: 1, wallTimeMs: 100 }]` returns an array where the first element's `storiesPassed` equals 3.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given two results with equal `storiesPassed` and `costUsd: 1` versus `costUsd: 2`, when `rankContestants` sorts them, then the `costUsd: 1` result is first.",
+    "refined": "Calling `rankContestants` with `[{ storiesPassed: 2, costUsd: 1, wallTimeMs: 100 }, { storiesPassed: 2, costUsd: 2, wallTimeMs: 100 }]` returns an array where the first element's `costUsd` equals 1.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given two results with equal `storiesPassed` and equal `costUsd` but `wallTimeMs: 100` versus `wallTimeMs: 200`, when `rankContestants` sorts them, then the `wallTimeMs: 100` result is first.",
+    "refined": "Calling `rankContestants` with `[{ storiesPassed: 2, costUsd: 1, wallTimeMs: 200 }, { storiesPassed: 2, costUsd: 1, wallTimeMs: 100 }]` returns an array where the first element's `wallTimeMs` equals 100.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given a finisher with `status: \"passed\"` and `storiesPassed: 1` and a DNF with `status: \"dnf-crashed\"` and `storiesPassed: 0`, when `rankContestants` sorts them, then the finisher is first regardless of the DNF cost or time.",
+    "refined": "Calling `rankContestants` with `[{ status: \"dnf-crashed\", storiesPassed: 0, costUsd: 0.01, wallTimeMs: 100 }, { status: \"passed\", storiesPassed: 1, costUsd: 100, wallTimeMs: 10000 }]` returns an array where the first element's `status` equals \"passed\".",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given an input array where every result is a DNF, when `rankContestants` sorts it, then it returns an array of the same length without throwing and orders by `costUsd` ascending.",
+    "refined": "Calling `rankContestants` with `[{ status: \"dnf-crashed\", storiesPassed: 0, costUsd: 2, wallTimeMs: 100 }, { status: \"dnf-timeout\", storiesPassed: 0, costUsd: 1, wallTimeMs: 200 }]` returns an array of length 2 where the first element's `costUsd` equals 1 and no exception is thrown.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given a `ContestantResult` constructed with `status: \"passed\"` and no `error`, when its `error` field is read, then the value is `undefined`.",
+    "refined": "A `ContestantResult` object `{ status: \"passed\", storiesPassed: 1, costUsd: 1, wallTimeMs: 100 }` has property `error` with value `undefined` (using `hasOwnProperty` or `'error' in obj` check returns false, or `Object.keys` does not include \"error\").",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given the string `\"claude, codex ,gemini\"`, when `parseCompareList` parses it, then it returns `[\"claude\",\"codex\",\"gemini\"]`.",
+    "refined": "parseCompareList('claude, codex ,gemini') returns string[] of length 3 containing exactly 'claude', 'codex', 'gemini' (whitespace trimmed from all entries, no empty strings)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given the string `\"claude,,\"`, when `parseCompareList` parses it, then it returns `[\"claude\"]`.",
+    "refined": "parseCompareList('claude,,') returns string[] of length 1 containing exactly 'claude' (empty strings between consecutive commas are filtered out, trailing comma produces no empty entry)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given `validateContestants([\"claude\",\"codex\"], deps)` and a PATH probe that reports both binaries present, when validation runs, then it returns no errors and both agents are valid.",
+    "refined": "validateContestants(['claude', 'codex'], deps) returns ValidationResult where result.errors is an empty array and result.validAgents contains exactly 'claude' and 'codex'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given `validateContestants([\"bogus\"], deps)`, when validation runs, then the returned errors identify `bogus` as an unknown agent not in `KNOWN_AGENT_NAMES`.",
+    "refined": "validateContestants(['bogus'], deps) returns ValidationResult where result.errors is a non-empty array, result.errors[0].agent === 'bogus', and result.errors[0].reason === 'unknown-agent'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Given `validateContestants([\"aider\"], deps)`, when validation runs, then it returns an error because `aider` has no ACP adapter entry.",
+    "refined": "validateContestants(['aider'], deps) returns ValidationResult where result.errors is a non-empty array, result.errors[0].agent === 'aider', and result.errors[0].reason === 'no-acp-adapter'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given `validateContestants([\"gemini\"], deps)` and a PATH probe that reports the `gemini` binary absent, when validation runs, then `gemini` is invalid with reason `dnf-not-installed`.",
+    "refined": "validateContestants(['gemini'], deps) returns ValidationResult where result.errors is a non-empty array, result.errors[0].agent === 'gemini', and result.errors[0].reason === 'dnf-not-installed'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given `{ compare: \"claude\", agent: \"codex\" }`, when `assertCompareAgentExclusive` runs, then it throws a `NaxError` whose code identifies the `--compare` and `--agent` conflict.",
+    "refined": "assertCompareAgentExclusive({ compare: 'claude', agent: 'codex' }) throws NaxError where error.code === 'COMPARE_AGENT_EXCLUSIVE' and error.message includes references to both '--compare' and '--agent' flags",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given `contestantCount = 3` and `maxCostPerContestant = 5`, when `computeWorstCaseCost` runs, then it returns `15`.",
+    "refined": "computeWorstCaseCost(3, 5) returns number 15 (3 * 5 === 15)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a stubbed pipeline, when `runContestant` is imported from `@/bakeoff` and invoked, then the resolved `ContestantResult.agent` equals the requested agent name.",
+    "refined": "After calling `runContestant('claude', options, deps)` with a stubbed pipeline that resolves successfully, assert: `result.agent === 'claude'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a contestant run whose injected pipeline throws, when `runContestant` executes, then `WorktreeManager.create` is called before the pipeline and `WorktreeManager.remove` is still called afterward.",
+    "refined": "After calling `runContestant(agent, { ...deps, pipeline: jest.fn().mockRejectedValue(new Error('fail')) })`, assert: `deps.worktreeManager.create` was called exactly once before the pipeline throws, and `deps.worktreeManager.remove` was called exactly once afterward. Both calls must occur regardless of pipeline throw.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a contestant name and base config, when `runContestant` invokes the pipeline, then the pipeline receives a config where `agent.default` equals the contestant name and `agent.fallback.enabled` is `false`.",
+    "refined": "Capture the config passed to `pipeline(config, ...)` when calling `runContestant('claude', options, deps)`. Assert: `capturedConfig.agent.default === 'claude'` AND `capturedConfig.agent.fallback.enabled === false`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given a pipeline result where every story passes, when `runContestant` completes, then it returns `status: \"passed\"` and `storiesPassed === storiesTotal`.",
+    "refined": "After calling `runContestant` with a pipeline that returns `StoryResults` where `results.every(r => r.status === 'passed')` and totalStories is 5, assert: `result.status === 'passed'` AND `result.storiesPassed === 5` AND `result.storiesTotal === 5`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given a pipeline result with at least one unpassed story, when `runContestant` completes, then it returns `status: \"failed\"`.",
+    "refined": "After calling `runContestant` with a pipeline that returns `StoryResults` containing at least one story with `status !== 'passed'`, assert: `result.status === 'failed'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given a pipeline that throws mid-run, when `runContestant` completes, then it returns `status: \"dnf-crashed\"` with a non-empty `error` string and does not re-throw.",
+    "refined": "After calling `runContestant` with a pipeline that throws `new Error('mid-run failure')`, assert: `result.status === 'dnf-crashed'`, `typeof result.error === 'string'`, `result.error.length > 0`, and the call does not throw (wrapping in `expect(() => runContestant(...)).not.toThrow()`).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given a pipeline that signals a per-contestant cost-limit abort, when `runContestant` completes, then it returns `status: \"cost-limit\"`.",
+    "refined": "After calling `runContestant` with a pipeline that throws a `CostLimitError` or returns a result with `costLimitReached: true`, assert: `result.status === 'cost-limit'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given aggregated `StoryMetrics`, when `runContant` maps them onto a `ContestantResult`, then `costUsd` comes from total `cost`, `wallTimeMs` comes from total `durationMs`, and `tierEscalations` is derived from `attempts`.",
+    "refined": "After calling `runContestant` with a pipeline that returns `StoryMetrics[]` with known values (e.g., `[{cost: 100, durationMs: 5000, attempts: 1}, {cost: 200, durationMs: 3000, attempts: 3}]`), assert: `result.costUsd === 300` (total cost), `result.wallTimeMs === 8000` (total durationMs), and `result.tierEscalations >= 0` (derived from sum of attempts exceeding baseline).",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given a contestant run where existing pipeline bounds are exhausted without passing, when `runContestant` classifies the terminal result, then it returns `status: \"timeout\"`.",
+    "refined": "After calling `runContestant` with a pipeline that returns a result where `result.status === 'timeout'` or throws a `TimeoutError`, assert: `result.status === 'timeout'`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Given two validated agents, when `runBakeoff` runs, then the second `runContestant` call starts only after the first `runContestant` promise resolves.",
+    "refined": "Assert that `runContestantCalls[1].startTimeMs >= runContestantCalls[0].resolveTimeMs` where `runContestantCalls` is a spy capturing invocation start and resolve timestamps for each contestant call.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given a pre-flight validation failure, when `runBakeoff` runs, then it does not invoke `runContestant` and resolves with a non-zero outcome.",
+    "refined": "Assert that `runContestantSpy.called` is false and `runBakeoffResult.outcome` is not 0 after `runBakeoff` rejects with validation error.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given a validated contestant list, when `runBakeoff` runs, then it calls `runContestant` exactly once per validated agent.",
+    "refined": "Assert `runContestantSpy.callCount === validatedAgents.length` and each call receives the correct agent and feature string.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given collected contestant results, when `runBakeoff` ranks them, then it passes the full array to `rankContestants` and returns a `BakeoffResult` whose `ranking` equals that return value.",
+    "refined": "Assert `rankContestantsSpy.firstCall.args[0]` deep equals all collected contestant results and `runBakeoffResult.ranking` deep equals `rankContestantsSpy.returnValues[0]`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given a `BakeoffResult` and `outputDir`, when `persistBakeoffResult` runs, then it writes `bakeoff.json` under `outputDir` and the parsed file matches the result feature, ranking length, and first-place agent.",
+    "refined": "Assert `fs.readFileSync(outputDir/bakeoff.json, 'utf8')` parses to object where `.feature === result.feature`, `.ranking.length === result.ranking.length`, and `.ranking[0].agent === result.ranking[0].agent`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a ranked `BakeoffResult`, when `renderBakeoffReport` returns its string, then it contains each contestant's agent name, status, `storiesPassed/storiesTotal`, `costUsd`, and `wallTimeMs` with the winner row before lower-ranked rows.",
+    "refined": "Assert returned string contains regex patterns for each contestant's `agent`, `status`, `storiesPassed/storiesTotal`, `costUsd`, `wallTimeMs`, and that the winner's agent string appears at a lower index than all other ranked contestants.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given the first contestant resolves to `status: \"dnf-crashed\"` and a later contestant resolves normally, when `runBakeoff` completes, then it still invokes the later contestant and includes both results in the returned `BakeoffResult`.",
+    "refined": "Assert `runBakeoffResult.ranking.length === 2` and `runBakeoffResult.ranking` contains entries for both the crashed and the normal contestant, with `runContestantSpy.callCount === 2`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given every contestant resolves to a DNF status, when `runBakeoff` completes, then it still persists `bakeoff.json`, returns a `BakeoffResult` containing all contestants, and signals a non-zero exit outcome.",
+    "refined": "Assert `fs.existsSync(outputDir/bakeoff.json)` is true, `runBakeoffResult.ranking.length === allDnfContestants.length`, and `runBakeoffResult.outcome !== 0`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given at least one contestant finishes and a bake-off report is produced, when `runBakeoff` completes, then it signals a zero exit outcome.",
+    "refined": "Assert `runBakeoffResult.outcome === 0` when at least one contestant result has `status !== 'dnf-crashed' && status !== 'dnf-timeout'`.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "Given `bin/nax.ts` receives `nax run --compare claude,codex -f <feature>`, when the run action executes, then it routes to `runBakeoff` instead of the single-agent path and passes the parsed contestant list.",
+    "refined": "Assert `runBakeoffSpy.calledOnceWithExactly({ agents: ['claude', 'codex'], feature: '<feature>' })` and `singleAgentRunSpy.called` is false.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Given `bin/nax.ts` receives `nax run -f <feature>` without `--compare`, when the run action executes, then it calls the existing single-agent `run({...})` path and does not call `runBakeoff`.",
+    "refined": "Assert `singleAgentRunSpy.calledOnce` is true and `runBakeoffSpy.called` is false when CLI args contain no `--compare` flag.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

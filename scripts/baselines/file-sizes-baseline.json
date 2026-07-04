@@ -1,10 +1,10 @@
 {
-  "updatedAt": "2026-06-23T12:58:49.626Z",
+  "updatedAt": "2026-07-04T10:56:20.809Z",
   "byFile": {
-    "src/agents/acp/adapter.ts": 633,
+    "src/agents/acp/adapter.ts": 636,
     "src/agents/acp/spawn-client.ts": 737,
     "src/agents/manager.ts": 820,
-    "src/config/runtime-types.ts": 626,
+    "src/config/runtime-types.ts": 615,
     "src/context/engine/providers/code-neighbor.ts": 613,
     "src/execution/unified-executor.ts": 689,
     "src/operations/call.ts": 631,

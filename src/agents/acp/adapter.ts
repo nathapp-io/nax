@@ -111,6 +111,9 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
   return AGENT_REGISTRY[agentName] ?? DEFAULT_ENTRY;
 }
 
+/** Names that have a real ACP adapter entry (subset of KNOWN_AGENT_NAMES). */
+export const ACP_ADAPTER_NAMES: ReadonlySet<string> = new Set(Object.keys(AGENT_REGISTRY));
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AcpAgentAdapter
 // ─────────────────────────────────────────────────────────────────────────────

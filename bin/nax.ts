@@ -391,6 +391,7 @@ program
     [],
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
+  .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -399,6 +400,56 @@ program
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
+    }
+
+    // Bake-off: --compare and --agent are mutually exclusive
+    try {
+      const { assertCompareAgentExclusive } = await import("../src/bakeoff/preflight");
+      assertCompareAgentExclusive({ compare: options.compare, agent: options.agent });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Bake-off: validate contestants up-front, before any spend
+    if (options.compare) {
+      const { parseCompareList, validateContestants, computeWorstCaseCost } = await import("../src/bakeoff/preflight");
+      const contestants = parseCompareList(options.compare);
+      if (contestants.length === 0) {
+        console.error(
+          chalk.red("Error: --compare requires at least one contestant agent (e.g. --compare claude,codex)"),
+        );
+        process.exit(1);
+      }
+      const { errors, validAgents } = validateContestants(contestants);
+      if (errors.length > 0) {
+        console.error(chalk.red("Bake-off pre-flight failed:"));
+        for (const e of errors) {
+          console.error(chalk.red(`   ${e.agent}: ${e.reason}`));
+        }
+        process.exit(1);
+      }
+
+      // Worst-case cost confirmation gate — printed and confirmed before any
+      // contestant spawns (spec: "N × max-cost is printed and confirmed").
+      if (options.maxCost !== undefined) {
+        const maxCostPerContestant = Number(options.maxCost);
+        if (!Number.isFinite(maxCostPerContestant) || maxCostPerContestant <= 0) {
+          console.error(chalk.red("--max-cost must be a positive number"));
+          process.exit(1);
+        }
+        const worstCase = computeWorstCaseCost(validAgents.length, maxCostPerContestant);
+        console.log(
+          chalk.yellow(
+            `Bake-off worst-case exposure: ${validAgents.length} contestants × $${maxCostPerContestant} = $${worstCase}`,
+          ),
+        );
+        const confirmed = await promptForConfirmation("Proceed with bake-off run?");
+        if (!confirmed) {
+          console.log(chalk.dim("Bake-off cancelled."));
+          process.exit(0);
+        }
+      }
     }
 
     // Parse --schedule early so a bad value errors before any setup.
@@ -670,6 +721,35 @@ program
         console.log(chalk.dim("\nScheduled run cancelled."));
         process.exit(0);
       }
+    }
+
+    // Bake-off routing: when --compare is present, hand off to the bake-off
+    // coordinator and skip the single-agent path. When --compare is absent
+    // we fall through to the existing single-agent run() call unchanged.
+    if (options.compare) {
+      const { handleRunAction, _bakeoffCliDeps } = await import("../src/bakeoff");
+      const bakeoffResult = await handleRunAction(
+        {
+          compare: options.compare,
+          feature: options.feature,
+          projectRoot: workdir,
+          outputDir,
+          config,
+          maxCostUsd: options.maxCost !== undefined ? Number(options.maxCost) : undefined,
+        },
+        _bakeoffCliDeps,
+      );
+      if (tuiInstance) {
+        tuiInstance.unmount();
+      }
+      const { renderBakeoffReport } = await import("../src/bakeoff");
+      const report = renderBakeoffReport(bakeoffResult as import("../src/bakeoff").BakeoffResult);
+      console.log(report);
+      const exitOutcome =
+        typeof (bakeoffResult as { outcome?: number })?.outcome === "number"
+          ? (bakeoffResult as { outcome: number }).outcome
+          : 0;
+      process.exit(exitOutcome);
     }
 
     const result = await run({

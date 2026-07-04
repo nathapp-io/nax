@@ -1,0 +1,258 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "agent-bakeoff-mode",
+  "branchName": "feat/agent-bakeoff-mode",
+  "createdAt": "2026-07-04T10:14:16.000Z",
+  "updatedAt": "2026-07-04T12:33:31.346Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bake-off types and ranking foundation",
+      "description": "**Goal** — Add the pure bake-off types module and ranking function that define the report shape and winner ordering.\n\n**Motivation** — Without empirical cross-agent data, routing defaults and plan-time estimates are guesses.\n\n**Approach** — New pure module: `src/bakeoff/types.ts` (`ContestantStatus`, `ContestantResult`, `BakeoffResult`) and `src/bakeoff/ranking.ts` (`rankContestants`). No dependencies. Barrel `src/bakeoff/index.ts` exports both.\n\nWorked skeleton for the novel pure-scoring shape (`src/bakeoff/ranking.ts`):\n\n```typescript\n// Pure, dependency-free. Correctness-first lexicographic order.\nexport function rankContestants(results: ContestantResult[]): ContestantResult[] {\n  return [...results].sort((a, b) =>\n    b.storiesPassed - a.storiesPassed ||   // more passed wins\n    a.costUsd - b.costUsd ||               // cheaper wins ties\n    a.wallTimeMs - b.wallTimeMs);          // faster wins remaining ties\n}\n```\n\n**Scope** — In: `src/bakeoff/types.ts`, `src/bakeoff/ranking.ts`, `src/bakeoff/index.ts`, and the ranking unit tests. Out: CLI flags, pre-flight validation, contestant execution, reporting, and persistence.\n\n**Interface**\n```typescript\n// Pure, dependency-free. Correctness-first lexicographic order.\nexport function rankContestants(results: ContestantResult[]): ContestantResult[] {\n  return [...results].sort((a, b) =>\n    b.storiesPassed - a.storiesPassed ||   // more passed wins\n    a.costUsd - b.costUsd ||               // cheaper wins ties\n    a.wallTimeMs - b.wallTimeMs);          // faster wins remaining ties\n}\n```",
+      "acceptanceCriteria": [
+        "Given a `ContestantResult[]`, when `rankContestants` is imported from `@/bakeoff`, then it is callable and returns a `ContestantResult[]`.",
+        "Given one result with `storiesPassed: 3` and `costUsd: 9` and another with `storiesPassed: 2` and `costUsd: 1`, when `rankContestants` sorts them, then the 3-passed result is first.",
+        "Given two results with equal `storiesPassed` and `costUsd: 1` versus `costUsd: 2`, when `rankContestants` sorts them, then the `costUsd: 1` result is first.",
+        "Given two results with equal `storiesPassed` and equal `costUsd` but `wallTimeMs: 100` versus `wallTimeMs: 200`, when `rankContestants` sorts them, then the `wallTimeMs: 100` result is first.",
+        "Given a finisher with `status: \"passed\"` and `storiesPassed: 1` and a DNF with `status: \"dnf-crashed\"` and `storiesPassed: 0`, when `rankContestants` sorts them, then the finisher is first regardless of the DNF cost or time.",
+        "Given an input array where every result is a DNF, when `rankContestants` sorts it, then it returns an array of the same length without throwing and orders by `costUsd` ascending.",
+        "Given a `ContestantResult` constructed with `status: \"passed\"` and no `error`, when its `error` field is read, then the value is `undefined`.",
+        "Given two otherwise-equal results, when `rankContestants` sorts them, then it preserves a deterministic order instead of throwing or mutating the input array.",
+        "Given an empty input array, when `rankContestants` sorts it, then it returns an empty array."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "ranking",
+        "metrics"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive types and ranking logic in new files with no external integrations.",
+        "agentProfileId": "opencode-structural",
+        "agent": "opencode",
+        "profileModelTier": "fast",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-structural",
+        "initialModelTier": "fast",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/metrics/types.ts"
+      ],
+      "expectedFiles": [
+        "src/bakeoff/types.ts",
+        "src/bakeoff/ranking.ts",
+        "src/bakeoff/index.ts",
+        "test/unit/bakeoff/ranking.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "648dbef9a794788eb68e8bcf01dc5f1630bb59a8"
+    },
+    {
+      "id": "US-002",
+      "title": "CLI compare options and contestant pre-flight",
+      "description": "**Goal** — Add bake-off CLI parsing and pre-flight validation that rejects invalid contestants before any spend occurs.\n\n**Motivation** — There is no reproducible, acceptance-test-grounded way to compare agents head-to-head on identical work.\n\n**Approach** — Parse `--compare`/`--story`, reject `--compare`+`--agent`, validate each requested agent against the ACP registry + PATH, and compute the worst-case `N × max-cost` for the confirmation prompt. New: `src/bakeoff/preflight.ts`.\n\n**Scope** — In: `bin/nax.ts` run-option parsing and gating, `src/bakeoff/preflight.ts`, and unit tests covering compare-list parsing, validation, exclusivity, and cost math. Out: contestant execution, ranking, report rendering, and JSON artifact persistence.",
+      "acceptanceCriteria": [
+        "Given the string `\"claude, codex ,gemini\"`, when `parseCompareList` parses it, then it returns `[\"claude\",\"codex\",\"gemini\"]`.",
+        "Given the string `\"claude,,\"`, when `parseCompareList` parses it, then it returns `[\"claude\"]`.",
+        "Given `validateContestants([\"claude\",\"codex\"], deps)` and a PATH probe that reports both binaries present, when validation runs, then it returns no errors and both agents are valid.",
+        "Given `validateContestants([\"bogus\"], deps)`, when validation runs, then the returned errors identify `bogus` as an unknown agent not in `KNOWN_AGENT_NAMES`.",
+        "Given `validateContestants([\"aider\"], deps)`, when validation runs, then it returns an error because `aider` has no ACP adapter entry.",
+        "Given `validateContestants([\"gemini\"], deps)` and a PATH probe that reports the `gemini` binary absent, when validation runs, then `gemini` is invalid with reason `dnf-not-installed`.",
+        "Given `{ compare: \"claude\", agent: \"codex\" }`, when `assertCompareAgentExclusive` runs, then it throws a `NaxError` whose code identifies the `--compare` and `--agent` conflict.",
+        "Given `contestantCount = 3` and `maxCostPerContestant = 5`, when `computeWorstCaseCost` runs, then it returns `15`.",
+        "Given `--compare` with duplicate agent names, when `parseCompareList` parses it, then it preserves order without creating empty entries.",
+        "Given multiple invalid contestants, when `validateContestants` runs, then it returns every offender in one result instead of failing on the first error.",
+        "Given `--compare` with only unknown or unavailable contestants, when pre-flight fails, then no confirmation prompt is shown and no contestant worktree is created."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "cli",
+        "agents",
+        "validation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds one new module plus standard CLI and registry validation wiring across a few existing files.",
+        "agentProfileId": "opencode-medium",
+        "agent": "opencode",
+        "profileModelTier": "balanced",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-medium",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/agents/registry.ts",
+        "src/agents/acp/adapter.ts",
+        "src/config/runtime-types-agent.ts",
+        "src/bakeoff/types.ts"
+      ],
+      "expectedFiles": [
+        "src/bakeoff/preflight.ts",
+        "test/unit/bakeoff/preflight.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "527d6f349aa737f7d2902583d661640098a7fb45"
+    },
+    {
+      "id": "US-003",
+      "title": "Pinned contestant runner and worktree isolation",
+      "description": "**Goal** — Implement one contestant execution boundary that pins the selected agent, reuses the existing pipeline, aggregates results, and always tears down its throwaway worktree.\n\n**Motivation** — Bake-off mode turns nax into a benchmark harness and generates that data as a byproduct of a normal run.\n\n**Approach** — `runContestant(agent, options, deps)` runs one pinned agent to a terminal `ContestantResult`: create worktree → run pipeline with cross-agent escalation disabled → aggregate `StoryMetrics` → remove worktree in `finally`. All failure modes isolated to a status. New: `src/bakeoff/contestant.ts`.\n\n**Scope** — In: `src/bakeoff/contestant.ts` and its tests, using `WorktreeManager`, existing execution entrypoints, config pinning, and metrics aggregation. Out: contestant list validation, ranking, report rendering, registry persistence, and CLI branch selection.",
+      "acceptanceCriteria": [
+        "Given a stubbed pipeline, when `runContestant` is imported from `@/bakeoff` and invoked, then the resolved `ContestantResult.agent` equals the requested agent name.",
+        "Given a contestant run whose injected pipeline throws, when `runContestant` executes, then `WorktreeManager.create` is called before the pipeline and `WorktreeManager.remove` is still called afterward.",
+        "Given a contestant name and base config, when `runContestant` invokes the pipeline, then the pipeline receives a config where `agent.default` equals the contestant name and `agent.fallback.enabled` is `false`.",
+        "Given a pipeline result where every story passes, when `runContestant` completes, then it returns `status: \"passed\"` and `storiesPassed === storiesTotal`.",
+        "Given a pipeline result with at least one unpassed story, when `runContestant` completes, then it returns `status: \"failed\"`.",
+        "Given a pipeline that throws mid-run, when `runContestant` completes, then it returns `status: \"dnf-crashed\"` with a non-empty `error` string and does not re-throw.",
+        "Given a pipeline that signals a per-contestant cost-limit abort, when `runContestant` completes, then it returns `status: \"cost-limit\"`.",
+        "Given aggregated `StoryMetrics`, when `runContestant` maps them onto a `ContestantResult`, then `costUsd` comes from total `cost`, `wallTimeMs` comes from total `durationMs`, and `tierEscalations` is derived from `attempts`.",
+        "Given a contestant run where existing pipeline bounds are exhausted without passing, when `runContestant` classifies the terminal result, then it returns `status: \"timeout\"`.",
+        "Given zero story metrics from a crashed contestant, when `runContestant` returns, then `storiesPassed`, `costUsd`, and `wallTimeMs` are zero-valued instead of `NaN`."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "execution",
+        "worktree",
+        "agents",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module orchestration with worktree lifecycle, config pinning, and multiple isolated terminal states raises integration risk.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/worktree/manager.ts",
+        "src/execution/parallel-coordinator.ts",
+        "src/metrics/types.ts",
+        "src/config/selectors.ts",
+        "src/bakeoff/types.ts"
+      ],
+      "expectedFiles": [
+        "src/bakeoff/contestant.ts",
+        "test/unit/bakeoff/contestant.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Given a worktree-creation failure before the pipeline starts, when `runContestant` completes, then it returns a terminal DNF status with an error message instead of hanging.",
+        "Given `StoryMetrics.reviewMetrics`, when `runContestant` aggregates them, then `reviewFindings` equals the sum of reviewer findings counts across stories."
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "03486575bd468511c34c0e07ee6223554925c751"
+    },
+    {
+      "id": "US-004",
+      "title": "Bake-off coordinator, reporting, persistence, and run-command wiring",
+      "description": "**Goal** — Orchestrate sequential contestant runs, rank them, render the terminal comparison, persist `bakeoff.json`, and route `nax run --compare ...` through the new bake-off path.\n\n**Motivation** — It answers \"which agent should I trust for this repo?\" empirically, and produces the cross-agent data that later features (empirical routing, plan-time cost estimation) depend on.\n\n**Approach** — `runBakeoff(options)` runs contestants sequentially, ranks results, and returns a `BakeoffResult`. `renderBakeoffReport(result)` produces the terminal table; `persistBakeoffResult(result, outputDir)` writes `bakeoff.json` to the run registry. Wire `runBakeoff` into the `bin/nax.ts` run action when `--compare` is present. New: `src/bakeoff/coordinator.ts`, `src/bakeoff/report.ts`.\n\n**Scope** — In: coordinator flow, report renderer, JSON persistence, zero/non-zero bake-off outcomes, fail-open continuation across contestant DNFs, `bin/nax.ts` routing to bake-off mode when `--compare` is present, and preservation of the existing single-agent `run({...})` path when `--compare` is absent. Out: new contestant-validation logic beyond the pre-flight module.",
+      "acceptanceCriteria": [
+        "Given two validated agents, when `runBakeoff` runs, then the second `runContestant` call starts only after the first `runContestant` promise resolves.",
+        "Given a pre-flight validation failure, when `runBakeoff` runs, then it does not invoke `runContestant` and resolves with a non-zero outcome.",
+        "Given a validated contestant list, when `runBakeoff` runs, then it calls `runContestant` exactly once per validated agent.",
+        "Given collected contestant results, when `runBakeoff` ranks them, then it passes the full array to `rankContestants` and returns a `BakeoffResult` whose `ranking` equals that return value.",
+        "Given a `BakeoffResult` and `outputDir`, when `persistBakeoffResult` runs, then it writes `bakeoff.json` under `outputDir` and the parsed file matches the result feature, ranking length, and first-place agent.",
+        "Given a ranked `BakeoffResult`, when `renderBakeoffReport` returns its string, then it contains each contestant's agent name, status, `storiesPassed/storiesTotal`, `costUsd`, and `wallTimeMs` with the winner row before lower-ranked rows.",
+        "Given the first contestant resolves to `status: \"dnf-crashed\"` and a later contestant resolves normally, when `runBakeoff` completes, then it still invokes the later contestant and includes both results in the returned `BakeoffResult`.",
+        "Given every contestant resolves to a DNF status, when `runBakeoff` completes, then it still persists `bakeoff.json`, returns a `BakeoffResult` containing all contestants, and signals a non-zero exit outcome.",
+        "Given at least one contestant finishes and a bake-off report is produced, when `runBakeoff` completes, then it signals a zero exit outcome.",
+        "Given `bin/nax.ts` receives `nax run --compare claude,codex -f <feature>`, when the run action executes, then it routes to `runBakeoff` instead of the single-agent path and passes the parsed contestant list.",
+        "Given `bin/nax.ts` receives `nax run -f <feature>` without `--compare`, when the run action executes, then it calls the existing single-agent `run({...})` path and does not call `runBakeoff`.",
+        "Given every contestant resolves to a DNF status, when `persistBakeoffResult` runs, then `bakeoff.json` still contains every contestant row with DNF statuses."
+      ],
+      "tags": [
+        "feature",
+        "bakeoff",
+        "cli",
+        "reporting",
+        "persistence",
+        "registry"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "This story crosses coordinator sequencing, artifact persistence, terminal rendering, and the main run-command dispatch path.",
+        "agentProfileId": "opencode-balanced",
+        "agent": "opencode",
+        "profileModelTier": "powerful",
+        "initialAgent": "opencode",
+        "initialProfileId": "opencode-balanced",
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/metrics/tracker.ts",
+        "src/bakeoff/preflight.ts",
+        "src/bakeoff/contestant.ts",
+        "src/bakeoff/ranking.ts"
+      ],
+      "expectedFiles": [
+        "src/bakeoff/coordinator.ts",
+        "src/bakeoff/report.ts",
+        "test/unit/bakeoff/coordinator.test.ts",
+        "test/unit/bakeoff/report.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Given at least one finisher, when `runBakeoff` completes, then it signals a zero exit outcome and emits a one-line winner summary naming the top-ranked agent.",
+        "Given `--story US-002`, when `runBakeoff` builds its result, then the persisted artifact includes `story: \"US-002\"` and the report only compares that story."
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4604e113260f73c135ed96a8af369fc72aa1a5b8"
+    }
+  ],
+  "analysis": "## Codebase Analysis\n\n- `bin/nax.ts` currently exposes `run` with `--agent`, `--max-cost`, `--parallel`, plan flow, and a single `run({...})` dispatch; there is no `--compare` or `--story` on the run command, so bake-off must extend this CLI path and branch before the existing single-agent execution call (`bin/nax.ts:366`, `bin/nax.ts:369`, `bin/nax.ts:371`, `bin/nax.ts:375`, `bin/nax.ts:597`, `bin/nax.ts:675`).\n- Output directories already resolve per project under `projectOutputDir(...)`, with run logs stored at `features/<feature>/runs/<timestamp>.jsonl`; bake-off persistence should attach to the same runtime/output-dir plumbing rather than inventing a second registry path (`bin/nax.ts:565`, `bin/nax.ts:570`, `src/execution/lifecycle/run-completion.ts:382`, `src/execution/lifecycle/run-completion.ts:398`).\n- Agent validation has two existing but incomplete seams: `KNOWN_AGENT_NAMES` includes `aider`, while ACP adapter registry only defines `claude`, `codex`, `gemini`, and `opencode`; pre-flight must therefore check both name membership and ACP registry/binary availability to fail closed for `aider` instead of silently constructing a default ACP entry (`src/agents/registry.ts:13`, `src/agents/registry.ts:66`, `src/agents/acp/adapter.ts:76`, `src/agents/acp/adapter.ts:103`, `src/agents/acp/adapter.ts:110`, `src/agents/acp/adapter.ts:138`).\n- Cross-agent fallback is already represented in runtime config under `config.agent.fallback.enabled`, `map`, and `maxHopsPerStory`; contestant pinning should reuse this config shape by forcing `agent.default = <contestant>` and `agent.fallback.enabled = false` without disturbing model-tier escalation (`src/config/runtime-types-agent.ts:29`, `src/config/runtime-types-agent.ts:31`, `src/config/runtime-types-agent.ts:33`, `src/config/runtime-types-agent.ts:35`, `src/config/runtime-types-agent.ts:67`).\n- The closest reusable execution seam is `executeParallel(...)`, which already orchestrates story batching, per-story worktrees, and merged metrics inside a run; bake-off should wrap existing execution rather than fork story execution logic (`src/execution/parallel-coordinator.ts:62`, `src/execution/parallel-coordinator.ts:108`, `src/execution/parallel-coordinator.ts:142`, `src/execution/parallel-coordinator.ts:150`, `src/execution/parallel-coordinator.ts:208`).\n- Worktree lifecycle is already encapsulated in `WorktreeManager.create()` and `remove()`, with stale cleanup and `NaxError`-based failures; the contestant runner should call these in a strict `try/finally` boundary so crashes never leak worktrees (`src/worktree/manager.ts:68`, `src/worktree/manager.ts:110`, `src/worktree/manager.ts:120`, `src/worktree/manager.ts:176`, `src/worktree/manager.ts:198`).\n- Story/run metrics already carry most of the raw data bake-off needs: per-story attempts, cost, duration, fallback hops, and reviewer findings live on `StoryMetrics`, while run completion persists `RunMetrics` via `saveRunMetrics(runtime.outputDir, runMetrics)`; bake-off should aggregate from these returned metrics instead of re-measuring independently (`src/metrics/types.ts:98`, `src/metrics/types.ts:111`, `src/metrics/types.ts:118`, `src/metrics/types.ts:120`, `src/metrics/types.ts:177`, `src/metrics/types.ts:185`, `src/metrics/types.ts:235`, `src/execution/lifecycle/run-completion.ts:383`, `src/execution/lifecycle/run-completion.ts:393`, `src/execution/lifecycle/run-completion.ts:398`).\n- Terminal table styling precedent already exists in `runsCommand`, including fixed-width padding, ANSI-aware visible-length calculation, and status coloring; `renderBakeoffReport` should mirror this pattern for consistency instead of introducing a new reporter style (`src/commands/runs.ts:75`, `src/commands/runs.ts:96`, `src/commands/runs.ts:103`, `src/commands/runs.ts:175`, `src/commands/runs.ts:203`).\n- Current tests already cover adjacent seams that reduce implementation risk: ACP registry/install detection, run-registry table rendering, multi-agent precheck behavior, worktree manager cleanup, parallel execution, and metrics persistence. New bake-off tests should mirror this `_deps`-based style under `test/unit/bakeoff/` rather than relying on global module mocks (`test/unit/agents/acp/registry.test.ts:1`, `test/unit/commands/runs.test.ts:1`, `test/unit/precheck/checks-agents.test.ts:1`).\n- Backward compatibility risk is concentrated in the `run` command because that path currently mutates CLI overrides directly into `config.agent.default` and `config.execution.costLimit` before calling the single-agent runner; bake-off wiring must keep the default path unchanged when `--compare` is absent (`bin/nax.ts:597`, `bin/nax.ts:602`, `bin/nax.ts:609`, `bin/nax.ts:675`).\n- Migration path is additive only: introduce new `src/bakeoff/` modules and tests, wire one conditional branch into `bin/nax.ts` for `--compare`, and leave existing single-agent runs, metrics persistence, and `nax runs` behavior untouched when bake-off mode is not invoked.",
+  "routingProfile": "cross-agent-mm"
+}
