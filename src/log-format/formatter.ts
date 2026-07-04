@@ -7,8 +7,14 @@
 
 import chalk from "chalk";
 import type { LogEntry } from "../logger/types.js";
-import { SEVERITY_RANK } from "../review/index.js";
 import type { AdvisoryFindingSummaryEntry } from "../review/review-audit.js";
+// Leaf import (not the ../review barrel): the barrel does `export * from "./runner"`,
+// which transitively pulls operations -> implement. Because src/config/loader.ts depends
+// on the logger, which depends on this formatter, a barrel import here closes a circular
+// __esm init cycle in the bundled build that leaves `implementerOp.config` bound to an
+// undefined selector (crash: "undefined is not an object (evaluating 'selector.name')").
+// severity.ts is a dependency-free leaf, so importing it directly breaks the cycle.
+import { SEVERITY_RANK } from "../review/severity.js";
 import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
 
 /**
