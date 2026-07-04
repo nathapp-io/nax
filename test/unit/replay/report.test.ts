@@ -355,7 +355,7 @@ describe("renderReport — AC9: crashed-run rendering", () => {
         buildStory({
           storyId: "US-001",
           status: "crashed",
-          // cost intentionally undefined
+          cost: undefined,
           phases: [{ name: "test-writer", status: "pass" }],
         }),
       ],
@@ -367,8 +367,8 @@ describe("renderReport — AC9: crashed-run rendering", () => {
     }).not.toThrow();
 
     expect(out!).toContain("CRASHED");
-    // Header should still render a placeholder for missing total cost
-    expect(out!).toMatch(/cost.*\?|n\/?a|--|unknown|—/i);
+    // Header cost line must render a placeholder for missing cost
+    expect(out!).toMatch(/^Cost:.*(\?|--|unknown|—|n\/a)\s*$/im);
   });
 
   test("AC9 boundary: crashed run header contains CRASHED even when no stories have cost", () => {
