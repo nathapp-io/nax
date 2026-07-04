@@ -1,4 +1,13 @@
 export {
+  _contestantDeps,
+  runContestant,
+} from "./contestant";
+export type {
+  ContestantOptions,
+  ContestantPipelineResult,
+  ContestantRunnerDeps,
+} from "./contestant";
+export {
   _preflightDeps,
   assertCompareAgentExclusive,
   computeWorstCaseCost,

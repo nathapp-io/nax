@@ -4,7 +4,14 @@
  * Pure types for cross-agent contestant comparison and ranking.
  */
 
-export type ContestantStatus = "passed" | "dnf-crashed" | "dnf-timeout" | "dnf-killed";
+export type ContestantStatus =
+  | "passed"
+  | "failed"
+  | "dnf-crashed"
+  | "dnf-timeout"
+  | "dnf-killed"
+  | "cost-limit"
+  | "timeout";
 
 export interface ContestantResult {
   name: string;
@@ -13,6 +20,8 @@ export interface ContestantResult {
   storiesPassed: number;
   costUsd: number;
   wallTimeMs: number;
+  tierEscalations?: number;
+  storiesTotal?: number;
   error?: string;
 }
 
