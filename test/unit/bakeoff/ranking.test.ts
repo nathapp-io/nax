@@ -107,6 +107,31 @@ describe("rankContestants", () => {
     expect(ranked[2].costUsd).toBe(3);
   });
 
+  // AC-5 extended: status is primary sort key, not storiesPassed
+  // DNF with storiesPassed > 0 should NOT outrank a finisher with fewer stories
+  it("puts finisher first even when DNF has more storiesPassed", () => {
+    const finisher: ContestantResult = {
+      name: "finisher",
+      agent: "claude",
+      status: "passed",
+      storiesPassed: 1,
+      costUsd: 1,
+      wallTimeMs: 100,
+    };
+    const dnf: ContestantResult = {
+      name: "dnf-crashed",
+      agent: "claude",
+      status: "dnf-crashed",
+      storiesPassed: 5,
+      costUsd: 1,
+      wallTimeMs: 100,
+    };
+    const results = [dnf, finisher];
+    const ranked = rankContestants(results);
+    expect(ranked[0].status).toBe("passed");
+    expect(ranked[0].storiesPassed).toBe(1);
+  });
+
   // AC-7: error field is undefined when status is passed and no error
   it("has error field as undefined when status is passed and no error is provided", () => {
     const result: ContestantResult = {
