@@ -3,7 +3,7 @@
   "feature": "flaky-test-quarantine",
   "branchName": "feat/flaky-test-quarantine",
   "createdAt": "2026-07-04T03:35:57Z",
-  "updatedAt": "2026-07-04T03:41:34.659Z",
+  "updatedAt": "2026-07-04T04:00:25.090Z",
   "userStories": [
     {
       "id": "US-001",
@@ -42,7 +42,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/executor.ts",
@@ -56,7 +58,11 @@
       ],
       "suggestedCriteria": [
         "Given a root config with `execution.flakeDetection` values and a package override that changes only `probeRuns`, when `mergePackageConfig()` merges them, then the merged config keeps the root `enabled`, `maxProbesPerGate`, and `probeTimeoutSeconds` values while using the package override for `probeRuns`."
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "75bba88606a48332077006f6f3243869265a04e2"
     },
     {
       "id": "US-002",
@@ -110,7 +116,10 @@
       ],
       "suggestedCriteria": [
         "Given `triageFlakyFindings` receives findings whose `source` or `category` are not eligible for flaky classification, when it returns, then those findings are passed through unchanged."
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -152,7 +161,10 @@
         "src/execution/story-orchestrator/rectification.ts",
         "src/execution/story-orchestrator/phase-eval.ts",
         "src/verification/flake-triage.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -194,7 +206,10 @@
         "src/execution/lifecycle/run-regression.ts",
         "src/verification/flake-triage.ts",
         "src/metrics/types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Feature scope is an enhancement to the existing verification and rectification pipeline, not a greenfield subsystem. The main impact areas are the verification barrel and executor, test-runner parsing/detection types, smart-runner mapping helpers, story-orchestrator rectification, deferred regression, and config merge/schema paths. `TestFailure` already carries the identity the spec needs: `file`, `testName`, `error`, and `stackTrace` in [src/test-runners/types.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/test-runners/types.ts):9, and the parser can emit `file: \"unknown\"`, which makes some failures inherently unprobeable by design in `src/test-runners/parser.ts:136`, `src/test-runners/parser.ts:199`, and `src/test-runners/parser.ts:428`.\n\nFramework detection already exists and matches the feature design. `Framework` is an open union of `\"bun\" | \"jest\" | \"vitest\" | \"pytest\" | \"go\" | \"unknown\"` and `detectFramework(output)` is the SSOT in [src/test-runners/detector.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/test-runners/detector.ts):13 and [src/test-runners/detector.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/test-runners/detector.ts):77. The probe should reuse that rather than infer frameworks from configured commands, because regression/full-suite failures already flow through raw output.\n\nThe execution seam for isolated probe subprocesses is already available. `executeWithTimeout(command, timeoutSeconds, env?, options)` shells through `_executorDeps.spawn`, supports `cwd`, `shell`, `gracePeriodMs`, and `drainTimeoutMs`, and returns environmental timeout results with `success: false` and `countsTowardEscalation: false` in [src/verification/executor.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/verification/executor.ts):12 and [src/verification/executor.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/verification/executor.ts):66. That seam makes `flake-probe.ts` straightforward to unit test without new infrastructure.\n\nVerification exports need extension. The barrel currently only exports `types`, `executor`, `runners`, and `rectification` in [src/verification/index.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/verification/index.ts):8, so both `runFlakeProbe` and `triageFlakyFindings` require new barrel entries to satisfy the spec’s importability ACs.\n\nFinding conversion already emits stable test-failure findings and leaves room for a new `flaky-test` category. `testFailureToFinding()` maps runner failures to `source: \"test-runner\"`, `severity: \"error\"`, `category: \"failed-test\"`, and `rule: failure.testName` in [src/findings/adapters/test-failure.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/findings/adapters/test-failure.ts):4. `Finding.category` is explicitly free-form, not a closed enum, in [src/findings/types.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/findings/types.ts):69 and [src/findings/types.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/findings/types.ts):101, so relabeling to `flaky-test` is backward-compatible at the type level. The implementer should keep downstream branching on `category`, not `meta`, because `meta` is forensic data only per the spec.\n\nThe baseline pre-existing-test check should reuse the existing ADR-009 helpers, not inline filename heuristics. `resolveTestFilePatterns(config, workdir, packageDir)` already centralizes test classification and package-relative monorepo handling in [src/test-runners/resolver.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/test-runners/resolver.ts):121, and `mapSourceToTests()` / `importGrepFallback()` already provide source-to-test mapping in [src/verification/smart-runner.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/verification/smart-runner.ts):136 and [src/verification/smart-runner.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/verification/smart-runner.ts):210. Existing unit coverage for those helpers is already extensive in `test/unit/verification/smart-runner-discovery.test.ts:15`, `test/unit/verification/smart-runner-packageprefix.test.ts:25`, and `test/unit/test-runners/resolver.test.ts:44`, so the new triage layer should compose them rather than fork their logic.\n\nConfig work is additive but not limited to schema defaults. `ExecutionConfigSchema` currently defines `rectification`, `regressionGate`, `smartTestRunner`, and other execution settings in [src/config/schemas-execution.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/config/schemas-execution.ts):100. `testPatternConfigSelector` already selects `execution`, `project`, and `quality` in [src/config/selectors.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/config/selectors.ts):80, so triage can probably consume the existing slice. The main compatibility risk is package-level merge behavior: `mergePackageConfig()` deep-merges `execution.worktreeDependencies`, `execution.smartTestRunner`, and `execution.regressionGate`, but would currently overwrite a new `execution.flakeDetection` subtree unless `src/config/merge.ts` is updated alongside the schema; see [src/config/merge.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/config/merge.ts):71.\n\nStory-orchestrator integration points are concrete and already structured around findings. `gatherRectificationFindings()` collects findings from validation phases unless `shouldSkipPhaseForRectification()` suppresses the full-suite gate because the verifier already passed in [src/execution/story-orchestrator/rectification.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/story-orchestrator/rectification.ts):16 and [src/execution/story-orchestrator/rectification.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/story-orchestrator/rectification.ts):27. `runRectification()` seeds the fix cycle from `gatherRectificationFindings()` or overrides in [src/execution/story-orchestrator/rectification.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/story-orchestrator/rectification.ts):70. The safest insertion point is after full-suite-gate findings are extracted but before those findings seed the fix cycle.\n\nThe phase-eval logic is a second required modification point. `gateFailureKeys()` currently includes every `test-runner` finding as `${file}::${rule}` without category filtering in [src/execution/story-orchestrator/phase-eval.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/story-orchestrator/phase-eval.ts):106. `gateRegressedAfterRectification()` treats empty-key or `::` keyless failures as regressions in [src/execution/story-orchestrator/phase-eval.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/story-orchestrator/phase-eval.ts):142, so excluding `flaky-test` must be done without weakening keyless execution-failure handling. Existing unit coverage for these helpers lives in [test/unit/execution/story-orchestrator-carveout-staleness.test.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/test/unit/execution/story-orchestrator-carveout-staleness.test.ts):71.\n\nDeferred regression is the highest-risk integration because it currently parses failures, extracts failing test files, attributes them to stories, emits regression events, and dispatches rectification based on all parsed failures. `buildRegressionFindings()` maps parsed failures directly to `failed-test` findings in [src/execution/lifecycle/run-regression.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/lifecycle/run-regression.ts):41, `_regressionDeps` is the existing DI seam in [src/execution/lifecycle/run-regression.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/lifecycle/run-regression.ts):60, and `runDeferredRegression()` extracts `testFilesInFailures` and attributes every failing test file before fix-cycle dispatch in [src/execution/lifecycle/run-regression.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/lifecycle/run-regression.ts):321 and [src/execution/lifecycle/run-regression.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/src/execution/lifecycle/run-regression.ts):353. Triage must run before story attribution or affected-story emission; otherwise quarantined flakes still trigger blame and fix cycles.\n\nCurrent test coverage is a strong base for extension. Regression behavior is already heavily unit-tested in [test/unit/execution/lifecycle/run-regression.test.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/test/unit/execution/lifecycle/run-regression.test.ts):13 and attribution-specific behavior in `test/unit/execution/lifecycle/run-regression-attribution.test.ts:13`. Test-failure finding conversion is covered in [test/unit/findings/adapters/test-failure.test.ts](/Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax/test/unit/findings/adapters/test-failure.test.ts):5. Smart-runner and resolver helpers already have focused suites, so the new feature should add `flake-probe` and `flake-triage` unit suites plus targeted extensions to existing orchestrator/regression suites rather than inventing new integration harnesses.\n\nBackward compatibility and migration are simple: there is no persisted state, no data migration, and the default `execution.flakeDetection.enabled = true` changes runtime behavior only for pre-existing tests that fail and then pass isolated re-runs. `enabled: false` must preserve today’s pipeline behavior exactly. The biggest regression risks are false quarantine from bad baseline detection, double-probing the same test without shared memoization, and accidentally suppressing real gate failures by filtering on `source === test-runner` alone instead of `category === failed-test`. Monorepo compatibility depends on updating deep-merge behavior for the new execution sub-object, even though this repo is currently treated as single-package by the spec.",
