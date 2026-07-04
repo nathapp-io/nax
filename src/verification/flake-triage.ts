@@ -36,9 +36,7 @@ export interface QuarantineMemo {
 export interface FlakeTriageDiff {
   /** Test files changed in the story commit (absolute or workdir-relative). */
   changedTestFiles: readonly string[];
-  /** Non-test source files changed in the story commit (workdir-relative). */
-  changedNonTestFiles: readonly string[];
-  /** Test files mapped from the changed source files (absolute paths). */
+  /** Test files mapped from changed source files (absolute paths). */
   mappedTestFiles: readonly string[];
 }
 
@@ -188,8 +186,13 @@ export async function triageFlakyFindings(input: FlakeTriageInput): Promise<Flak
     let verdict: Awaited<ReturnType<typeof runFlakeProbe>>;
     try {
       verdict = await _flakeTriageDeps.runFlakeProbe({ failure, config: flakeDetection, probeInput });
-    } catch {
-      // Probe crashed — fail closed, leave the finding blocking.
+    } catch (err) {
+      logger?.warn("flake-triage", `Probe dependency threw for ${key} — keeping finding blocking`, {
+        file: copy.file,
+        testName: copy.rule,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Probe crashed — fail closed, leave the finding blocking (AC10).
       result.push(copy);
       continue;
     }
@@ -217,6 +220,7 @@ function basename(path: string): string {
 function isProbeCandidate(finding: Finding, changedTestSet: Set<string>, mappedTestSet: Set<string>): boolean {
   if (finding.category !== "failed-test") return false;
   if (!finding.file || finding.file === "unknown") return false;
+  if (!finding.rule) return false;
   const base = basename(finding.file);
   if (changedTestSet.has(base) || changedTestSet.has(finding.file)) return false;
   if (mappedTestSet.has(base) || mappedTestSet.has(finding.file)) return false;

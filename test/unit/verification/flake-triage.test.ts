@@ -10,7 +10,7 @@
  * layer composes the existing helpers upstream of itself.
  */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Finding } from "../../../src/findings/types";
 import type { FlakeDetectionConfig } from "../../../src/config/runtime-types";
 import type { FlakeProbeVerdict } from "../../../src/verification/flake-probe";
@@ -49,7 +49,6 @@ function makeInput(overrides: Partial<FlakeTriageInput> = {}): FlakeTriageInput 
     findings: [],
     diff: {
       changedTestFiles: [],
-      changedNonTestFiles: [],
       mappedTestFiles: [],
     },
     flakeDetection: defaultFlakeConfig,
@@ -109,7 +108,7 @@ describe("triageFlakyFindings — pre-existing test probing (AC2)", () => {
       makeInput({
         findings: [finding],
         // Empty diff → pre-existing and unmapped.
-        diff: { changedTestFiles: [], changedNonTestFiles: [], mappedTestFiles: [] },
+        diff: { changedTestFiles: [], mappedTestFiles: [] },
       }),
     );
 
@@ -141,7 +140,7 @@ describe("triageFlakyFindings — test file in diff (AC3)", () => {
     const result = await triageFlakyFindings(
       makeInput({
         findings: [finding],
-        diff: { changedTestFiles: ["test/unit/foo.test.ts"], changedNonTestFiles: [], mappedTestFiles: [] },
+        diff: { changedTestFiles: ["test/unit/foo.test.ts"], mappedTestFiles: [] },
       }),
     );
 
@@ -172,7 +171,6 @@ describe("triageFlakyFindings — test file mapped from changed source (AC4)", (
         findings: [finding],
         diff: {
           changedTestFiles: [],
-          changedNonTestFiles: ["src/foo.ts"],
           mappedTestFiles: ["/tmp/probe/test/unit/foo.test.ts"],
         },
       }),
