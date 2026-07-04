@@ -121,9 +121,9 @@ describe("renderReport — AC3: default render skips passed phases", () => {
           status: "passed",
           cost: 0.1,
           phases: [
-            { name: "test-writer", status: "pass" },
-            { name: "implementer", status: "pass" },
-            { name: "verifier", status: "pass" },
+            { name: "passed-only-alpha", status: "pass" },
+            { name: "passed-only-bravo", status: "pass" },
+            { name: "passed-only-charlie", status: "pass" },
           ],
         }),
         buildStory({
@@ -131,8 +131,8 @@ describe("renderReport — AC3: default render skips passed phases", () => {
           status: "failed",
           cost: 0.2,
           phases: [
-            { name: "test-writer", status: "pass" },
-            { name: "implementer", status: "fail" },
+            { name: "failed-only-delta", status: "pass" },
+            { name: "failed-only-echo", status: "fail" },
           ],
           rootCausePhaseIndex: 1,
         }),
@@ -141,11 +141,15 @@ describe("renderReport — AC3: default render skips passed phases", () => {
 
     const out = renderReport(tl);
 
-    const passedBlock = extractStoryBlock(out, "US-001");
-    const lines = passedBlock.split("\n").map((l) => l.trim()).filter(Boolean);
-    for (const line of lines) {
-      expect(line).not.toMatch(/^\s*(test-writer|implementer|verifier)\b/);
-    }
+    // The passed story's phase names must not appear anywhere in the output
+    // when default options are used. Use unique phase names so the assertion
+    // cannot match the failed story's phases.
+    expect(out).not.toContain("passed-only-alpha");
+    expect(out).not.toContain("passed-only-bravo");
+    expect(out).not.toContain("passed-only-charlie");
+    // Sanity: the failed story's phases ARE present.
+    expect(out).toContain("failed-only-delta");
+    expect(out).toContain("failed-only-echo");
   });
 
   test("AC3: default render includes the failed story's phases", () => {
