@@ -19,8 +19,15 @@ import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
+import { detectFramework } from "@/test-runners/detector";
 import { hasCommitsForStory } from "@/utils/git";
 import { fullSuite } from "@/verification";
+import {
+  type FlakeQuarantineReport,
+  NULL_QUARANTINE_MEMO,
+  type QuarantineMemo,
+  triageFlakyFindings,
+} from "@/verification/flake-triage";
 
 /** Max chars of raw test output embedded in a synthetic regression finding. */
 const SYNTHETIC_FINDING_OUTPUT_LIMIT = 2000;
@@ -62,6 +69,9 @@ export const _regressionDeps = {
   runFixCycle: (cycle: FixCycle<Finding>, ctx: FixCycleContext, name: string): Promise<FixCycleResult<Finding>> =>
     runFixCycle(cycle, ctx, name),
   parseTestOutput,
+  triageFlakyFindings: triageFlakyFindings as (
+    input: Parameters<typeof triageFlakyFindings>[0],
+  ) => ReturnType<typeof triageFlakyFindings>,
 };
 
 /**
@@ -91,6 +101,12 @@ export interface DeferredRegressionOptions {
    * gate transition (accurate) before falling back to the git heuristic.
    */
   storyMetrics?: readonly StorySnapshot[];
+  /**
+   * Shared run-scoped quarantine memo. Earlier gates in the same run can
+   * pre-seed this so the regression gate relabels (not re-probes) tests
+   * already judged flaky. Optional — defaults to a no-op memo when omitted.
+   */
+  quarantineMemo?: QuarantineMemo;
 }
 
 export interface DeferredRegressionResult {
@@ -118,6 +134,13 @@ export interface DeferredRegressionResult {
    * regression result as a blanket answer.
    */
   storyOutcomes?: Record<string, boolean>;
+  /**
+   * Quarantine report from the deferred-regression triage. Lists each test
+   * key that was relabeled to `flaky-test` and the human-readable reason
+   * (memo hit, probe verdict, etc.). Present whenever triage ran and produced
+   * at least one quarantine entry; otherwise undefined.
+   */
+  quarantineReport?: FlakeQuarantineReport;
 }
 
 /**
@@ -342,20 +365,61 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     };
   }
 
+  // Run flaky-test triage on the regression suite's failed-test findings.
+  // Triage can relabel `failed-test` findings to `flaky-test`, which excludes
+  // them from the attribution + fix-cycle pipeline below. The shared
+  // run-scoped memo (if provided) short-circuits re-probing for tests already
+  // judged flaky by an earlier gate.
+  const regressionFindings = buildRegressionFindings(testSummary, fullSuiteResult.output);
+  const quarantineMemo = options.quarantineMemo ?? NULL_QUARANTINE_MEMO;
+  const triageResult = await _regressionDeps.triageFlakyFindings({
+    findings: regressionFindings,
+    diff: { changedTestFiles: [], mappedTestFiles: [] },
+    flakeDetection: config.execution.flakeDetection,
+    baseCommand: testCommand,
+    cwd: workdir,
+    framework: detectFramework(fullSuiteResult.output),
+    quarantineMemo,
+  });
+  const quarantineReport = triageResult.quarantineReport.keys.length > 0 ? triageResult.quarantineReport : undefined;
+
+  const triagedFailedFindings = triageResult.findings.filter((f) => f.category === "failed-test");
+
   const affectedStories = new Set<string>();
   const affectedStoriesObjs = new Map<string, UserStory>();
 
   logger?.warn("regression", "Regression detected", {
     failedTests: testSummary.failed,
     passedTests: testSummary.passed,
+    quarantined: triageResult.quarantineReport.keys.length,
   });
 
-  // Extract test file paths from failures
+  // Extract test file paths from non-quarantined failures only.
   const testFilesInFailures = new Set<string>();
-  for (const failure of testSummary.failures) {
-    if (failure.file) {
-      testFilesInFailures.add(failure.file);
+  for (const finding of triagedFailedFindings) {
+    if (finding.file) {
+      testFilesInFailures.add(finding.file);
     }
+  }
+
+  if (testFilesInFailures.size === 0 && triagedFailedFindings.length === 0 && quarantineReport) {
+    // AC2: every failure was triaged as flaky — accept the gate as a pass with
+    // warnings. No attribution, no fix cycles.
+    logger?.info("regression", "All regression failures quarantined as flaky — accepting as pass", {
+      quarantined: quarantineReport.keys.length,
+    });
+    return {
+      success: true,
+      failedTests: 0,
+      failedTestFiles: [],
+      passedTests: testSummary.passed,
+      rectificationAttempts: 0,
+      affectedStories: [],
+      storyCosts: {},
+      storyDurations: {},
+      storyOutcomes: {},
+      quarantineReport,
+    };
   }
 
   if (testFilesInFailures.size === 0) {
@@ -408,6 +472,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
       storyCosts: {},
       storyDurations: {},
       storyOutcomes: {},
+      ...(quarantineReport ? { quarantineReport } : {}),
     };
   }
 
@@ -512,6 +577,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
           storyCosts: storyCostAccum,
           storyDurations: storyDurationAccum,
           storyOutcomes: storyOutcomeAccum,
+          ...(quarantineReport ? { quarantineReport } : {}),
         };
       }
 
@@ -549,5 +615,6 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     storyCosts: storyCostAccum,
     storyDurations: storyDurationAccum,
     storyOutcomes: storyOutcomeAccum,
+    ...(quarantineReport ? { quarantineReport } : {}),
   };
 }
