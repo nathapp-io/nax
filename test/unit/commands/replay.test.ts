@@ -209,6 +209,12 @@ describe("runReplay — AC5: json mode serializes via toReplayJson", () => {
 
     expect((deps.toReplayJson as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
     expect((deps.renderReport as ReturnType<typeof mock>).mock.calls).toHaveLength(0);
+    // The orchestrator must pass the actual reconstructed timeline (built by
+    // reconstructTimeline above) to toReplayJson — verify by checking the
+    // captured argument equals the timeline the reconstructor returned.
+    const jsonArg = (deps.toReplayJson as ReturnType<typeof mock>).mock.calls[0]?.[0] as RunTimeline;
+    expect(jsonArg.runId).toBe("run-known");
+    expect(jsonArg.feature).toBe("feat-known");
     expect(stdoutWrites.join("")).toContain("run-known");
     expect(stdoutWrites.join("")).toContain("feat-known");
     expect(exit).toBe(0);
@@ -459,6 +465,15 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
     const exit = await runReplay("run-crash-x", {}, deps);
 
     expect(exit).toBe(0);
+    // The orchestrator must pass the crashed timeline (built by
+    // reconstructTimeline above) to renderReport — verify by checking the
+    // captured argument has status === "crashed". If the orchestrator
+    // reconstructed with the wrong status, renderReport would receive a
+    // non-crashed timeline and the test would still pass on the mock's
+    // hardcoded 'CRASHED' string alone, so we assert both paths.
+    const reportArg = (deps.renderReport as ReturnType<typeof mock>).mock.calls[0]?.[0] as RunTimeline;
+    expect(reportArg.status).toBe("crashed");
+    expect(reportArg.runId).toBe("run-crash-x");
     expect(stdoutWrites.join("")).toContain("CRASHED");
   });
 });

@@ -37,7 +37,7 @@ export interface ReplayCommandOptions {
 export interface ReplayCommandDeps {
   discoverRun: (query?: string) => Promise<DiscoveredRun>;
   readJsonl: (path: string) => Promise<LogEntry[]>;
-  readMetrics: (eventsDir: string, runId: string) => Promise<RunMetrics | undefined>;
+  readMetrics: (meta: { runId: string; project: string; workdir: string }) => Promise<RunMetrics | undefined>;
   readStatus: (statusPath: string) => Promise<NaxStatusFile | undefined>;
   reconstructTimeline: typeof reconstructTimeline;
   renderReport: (timeline: RunTimeline, options?: RenderOptions) => string;
@@ -72,13 +72,25 @@ async function readJsonOrUndefined<T>(path: string): Promise<T | undefined> {
   }
 }
 
+async function readMetricsFromProject(meta: {
+  runId: string;
+  project: string;
+  workdir: string;
+}): Promise<RunMetrics | undefined> {
+  const { loadRunMetrics } = await import("../metrics/tracker");
+  const { projectOutputDir } = await import("../runtime/paths");
+  const outputDir = projectOutputDir(meta.project, undefined);
+  const all = await loadRunMetrics(outputDir);
+  return all.find((m) => m.runId === meta.runId);
+}
+
 /**
  * Default deps — wired against the real filesystem. Tests inject their own.
  */
 export const _replayCmdDeps: ReplayCommandDeps = {
   discoverRun,
   readJsonl: readJsonlLenient,
-  readMetrics: async (_eventsDir: string, _runId: string) => undefined,
+  readMetrics: readMetricsFromProject,
   readStatus: async (statusPath: string) => readJsonOrUndefined<NaxStatusFile>(statusPath),
   reconstructTimeline,
   renderReport,
@@ -112,7 +124,11 @@ export async function runReplay(
   }
 
   const entries = await deps.readJsonl(discovered.jsonlPath);
-  const metrics = await deps.readMetrics(discovered.meta.eventsDir, discovered.meta.runId);
+  const metrics = await deps.readMetrics({
+    runId: discovered.meta.runId,
+    project: discovered.meta.project,
+    workdir: discovered.meta.workdir,
+  });
   const status = await deps.readStatus(discovered.meta.statusPath);
 
   const timeline = deps.reconstructTimeline({
@@ -153,7 +169,12 @@ export function registerReplayCommand(program: Command): void {
         ...(cmdOpts.all === true ? { all: true } : {}),
         ...(cmdOpts.story !== undefined && cmdOpts.story !== "" ? { story: cmdOpts.story } : {}),
       };
-      const exit = await runReplay(runId, opts);
-      if (exit !== 0) process.exit(exit);
+      try {
+        const exit = await runReplay(runId, opts);
+        if (exit !== 0) process.exit(exit);
+      } catch (err) {
+        process.stderr.write(`Error: ${(err as Error).message}\n`);
+        process.exit(1);
+      }
     });
 }
