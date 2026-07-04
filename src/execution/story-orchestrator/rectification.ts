@@ -1,7 +1,6 @@
 import type { Finding, FixCycle, FixCycleContext } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext, Operation, RunOperation } from "@/operations";
-import type { TriageSeam } from "./flake-triage-seam";
 import { extractPhaseFindings, orderGateLast, phasesToRevalidate } from "./phase-eval";
 import { phaseExplicitlyPassed, phasePassed } from "./phase-eval";
 import { _storyOrchestratorDeps, runPhase, withIncreasingFailuresBail } from "./run-phase";
@@ -76,7 +75,7 @@ export async function triageGateFindings(
   ctx: CallContext,
 ): Promise<{ triaged: boolean; quarantinedKeys: readonly string[]; skipped: boolean }> {
   if (!gateName) return { triaged: false, quarantinedKeys: [], skipped: true };
-  const triage = (_storyOrchestratorDeps as Record<string, unknown>).triage as TriageSeam | undefined;
+  const triage = _storyOrchestratorDeps.triage;
   if (typeof triage !== "function") return { triaged: false, quarantinedKeys: [], skipped: true };
 
   const output = phaseOutputs[gateName];

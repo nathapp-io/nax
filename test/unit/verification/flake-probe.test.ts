@@ -410,7 +410,7 @@ describe("buildIsolationCommand", () => {
 
   test("pytest uses '<base> <file>::<name>' addressing", () => {
     expect(buildIsolationCommand("pytest", { ...failure, file: "tests/test_foo.py" }, "pytest")).toBe(
-      "pytest tests/test_foo.py::should work",
+      "pytest 'tests/test_foo.py::should work'",
     );
   });
 
@@ -440,7 +440,16 @@ describe("buildIsolationCommand", () => {
       { ...failure, file: "tests/foo.py", testName: "test_handles (edge) case?" },
       "pytest",
     );
-    expect(cmd).toBe("pytest tests/foo.py::test_handles (edge) case?");
+    expect(cmd).toBe("pytest 'tests/foo.py::test_handles (edge) case?'");
+  });
+
+  test("quotes a pytest node id containing a space", () => {
+    const cmd = buildIsolationCommand(
+      "pytest",
+      { ...failure, file: "tests/foo.py", testName: "test handles two words" },
+      "pytest",
+    );
+    expect(cmd).toBe("pytest 'tests/foo.py::test handles two words'");
   });
 
   test("throws for unsupported frameworks (no silent fallthrough)", () => {

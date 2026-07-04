@@ -10,11 +10,9 @@
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { CallContext } from "@/operations";
-import { detectFramework, resolveTestFilePatterns } from "@/test-runners";
+import { detectFramework } from "@/test-runners";
 import { errorMessage } from "@/utils/errors";
-import { getMergeBase } from "@/utils/git";
-import { type FlakeTriageDiff, triageFlakyFindings } from "@/verification";
-import { getChangedNonTestFiles, getChangedTestFiles, mapSourceToTests } from "../../verification/smart-runner";
+import { resolveFlakeBaselineDiff, triageFlakyFindings } from "@/verification";
 
 /** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
 export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[] }];
@@ -83,19 +81,10 @@ export const productionTriageSeam: TriageSeam = async (gateFindings, { ctx, rawO
       return [gateFindings, { quarantinedKeys: [] }];
     }
 
-    const resolved = await resolveTestFilePatterns(config, workdir, storyWorkdir);
-    const baseRef = await getMergeBase(workdir);
-    const changedTestFiles = await getChangedTestFiles(workdir, workdir, baseRef, storyWorkdir, [...resolved.regex]);
-    const changedNonTestFiles = await getChangedNonTestFiles(
-      workdir,
-      baseRef,
-      storyWorkdir,
-      [...resolved.regex],
-      undefined,
-      workdir,
-    );
-    const mappedTestFiles = await mapSourceToTests(changedNonTestFiles, workdir, storyWorkdir, [...resolved.globs]);
-    const diff: FlakeTriageDiff = { changedTestFiles, mappedTestFiles };
+    const diff = await resolveFlakeBaselineDiff(config, workdir, storyWorkdir);
+    if (diff === null) {
+      return [gateFindings, { quarantinedKeys: [] }];
+    }
 
     const result = await triageFlakyFindings({
       findings: gateFindings,

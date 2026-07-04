@@ -75,14 +75,15 @@ function shellQuote(value: string): string {
  * Build an isolation command for the failing test, scoped to its framework.
  *
  * - bun / jest / vitest: `<base> <file> -t '<escaped name>'`
- * - pytest: `<base> <file>::<name>` (raw name, no regex escaping — pytest
- *   uses `::` addressing, not regex)
+ * - pytest: `<base> '<file>::<name>'` (raw name, no regex escaping — pytest
+ *   uses `::` addressing, not regex; still shell-quoted as a whole node id)
  * - go: `<base> -run '^<escaped name>$'` (cwd scoped to the failing package)
  *
  * Filter values are single-quoted (`shellQuote`) because the command is
  * ultimately executed through a shell (`[shell, "-c", command]`) — an
- * unquoted test name containing whitespace would be word-split into multiple
- * positional arguments, silently matching the wrong test.
+ * unquoted test name containing whitespace (or shell metacharacters, since
+ * the name originates from an arbitrary target repo) would be word-split or
+ * interpreted, silently matching the wrong test or reaching the shell.
  *
  * Unknown / unsupported frameworks are explicit failures rather than
  * silent fallthroughs — `runFlakeProbe` already rejects `framework === "unknown"`
@@ -95,7 +96,7 @@ export function buildIsolationCommand(baseCommand: string, failure: TestFailure,
 
   switch (framework) {
     case "pytest":
-      return `${baseCommand} ${file}::${name}`;
+      return `${baseCommand} ${shellQuote(`${file}::${name}`)}`;
     case "go":
       return `${baseCommand} -run ${shellQuote(`^${escapeRegex(name)}$`)}`;
     case "bun":

@@ -11,3 +11,4 @@ export * from "./runners";
 export * from "./rectification";
 export * from "./flake-probe";
 export * from "./flake-triage";
+export * from "./flake-baseline-diff";

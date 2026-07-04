@@ -1,62 +1,21 @@
 /**
  * Deferred-regression flake-triage helpers.
  *
- * Extracted from run-regression.ts (file-size limit) — resolves the run-scoped
- * baseline diff (changed + mapped test files since the pre-run merge-base) that
- * `triageFlakyFindings` uses for its pre-existing-test check, and runs the
- * triage call + "all quarantined" short-circuit that follows it. The deferred
- * regression gate runs once at end-of-run across all stories, so the diff is
- * repo-root scoped — there is no single story workdir to narrow to.
+ * Extracted from run-regression.ts (file-size limit) — runs the triage call
+ * (baseline diff via the shared `resolveFlakeBaselineDiff`, see
+ * src/verification/flake-baseline-diff.ts) + the "all quarantined"
+ * short-circuit that follows it.
  */
 
 import type { NaxConfig } from "@/config";
 import type { FlakeDetectionConfig } from "@/config/runtime-types";
 import type { Finding } from "@/findings";
 import { getSafeLogger } from "@/logger";
-import { detectFramework, resolveTestFilePatterns } from "@/test-runners";
+import { detectFramework } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
-import { errorMessage } from "@/utils/errors";
-import { getMergeBase } from "@/utils/git";
-import type {
-  FlakeQuarantineReport,
-  FlakeTriageDiff,
-  QuarantineMemo,
-  triageFlakyFindings,
-} from "@/verification/flake-triage";
-import { getChangedNonTestFiles, getChangedTestFiles, mapSourceToTests } from "../../verification/smart-runner";
+import { resolveFlakeBaselineDiff } from "@/verification";
+import type { FlakeQuarantineReport, QuarantineMemo, triageFlakyFindings } from "@/verification/flake-triage";
 import type { DeferredRegressionResult } from "./run-regression";
-
-/**
- * Resolve the baseline diff for the flake-triage pre-existing-test check.
- * Fails closed on any git/resolver error: an empty diff means every failing
- * test is treated as pre-existing (the safer default — a story-authored test
- * wrongly treated as pre-existing merely skips a quarantine opportunity,
- * while the reverse could quarantine a real regression).
- */
-export async function resolveRegressionBaselineDiff(config: NaxConfig, workdir: string): Promise<FlakeTriageDiff> {
-  try {
-    const resolved = await resolveTestFilePatterns(config, workdir);
-    const baseRef = await getMergeBase(workdir);
-    const changedTestFiles = await getChangedTestFiles(workdir, workdir, baseRef, undefined, [...resolved.regex]);
-    const changedNonTestFiles = await getChangedNonTestFiles(
-      workdir,
-      baseRef,
-      undefined,
-      [...resolved.regex],
-      undefined,
-      workdir,
-    );
-    const mappedTestFiles = await mapSourceToTests(changedNonTestFiles, workdir, undefined, [...resolved.globs]);
-    return { changedTestFiles, mappedTestFiles };
-  } catch (err) {
-    getSafeLogger()?.warn(
-      "regression",
-      "Flake triage: baseline diff resolution failed — treating all failures as pre-existing (fail closed)",
-      { error: errorMessage(err) },
-    );
-    return { changedTestFiles: [], mappedTestFiles: [] };
-  }
-}
 
 /** Discriminated outcome of {@link runRegressionFlakeTriage}. */
 export type RegressionTriageOutcome =
@@ -101,7 +60,18 @@ export async function runRegressionFlakeTriage(params: {
     flakeDetection,
   } = params;
   const logger = getSafeLogger();
-  const baselineDiff = await resolveRegressionBaselineDiff(config, workdir);
+  const baselineDiff = await resolveFlakeBaselineDiff(config, workdir);
+  if (baselineDiff === null) {
+    // Fail closed: skip triage entirely rather than substituting an empty
+    // diff, which would make every failing test look pre-existing (see
+    // resolveFlakeBaselineDiff's doc comment) — the opposite of fail-closed.
+    const untriaged = regressionFindings.filter((f) => f.category === "failed-test");
+    const testFilesInFailures = new Set<string>();
+    for (const finding of untriaged) {
+      if (finding.file) testFilesInFailures.add(finding.file);
+    }
+    return { shortCircuit: false, triagedFailedFindings: untriaged, testFilesInFailures, quarantineReport: undefined };
+  }
   const triageResult = await triageFn({
     findings: regressionFindings,
     diff: baselineDiff,
