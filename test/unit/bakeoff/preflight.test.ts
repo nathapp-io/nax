@@ -41,6 +41,16 @@ describe("parseCompareList", () => {
   it("drops empty entries for 'claude,,'", () => {
     expect(parseCompareList("claude,,")).toEqual(["claude"]);
   });
+
+  // Adversarial: a string of only commas / whitespace yields an empty list,
+  // which the CLI must catch before proceeding with zero contestants.
+  it("returns an empty list for ',,,'", () => {
+    expect(parseCompareList(",,,")).toEqual([]);
+  });
+
+  it("returns an empty list for a string of only whitespace", () => {
+    expect(parseCompareList("   ")).toEqual([]);
+  });
 });
 
 describe("validateContestants", () => {

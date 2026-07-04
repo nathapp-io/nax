@@ -392,7 +392,6 @@ program
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
   .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
-  .option("--story <id>", "Bake-off mode: limit execution to a single story id")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -416,6 +415,12 @@ program
     if (options.compare) {
       const { parseCompareList, validateContestants } = await import("../src/bakeoff/preflight");
       const contestants = parseCompareList(options.compare);
+      if (contestants.length === 0) {
+        console.error(
+          chalk.red("Error: --compare requires at least one contestant agent (e.g. --compare claude,codex)"),
+        );
+        process.exit(1);
+      }
       const errors = validateContestants(contestants);
       if (errors.length > 0) {
         console.error(chalk.red("Bake-off pre-flight failed:"));
