@@ -381,6 +381,31 @@ describe("runContestant (AC-5: any failure classification)", () => {
     expect(result.status).toBe("failed");
     expect(result.storiesPassed).toBe(0);
   });
+
+  // Coverage: the heuristic default arm (no outcome set, some stories unpassed) must
+  // also classify as 'failed' — not just rely on outcome.kind === 'failed'.
+  it("AC5 (default-arm coverage): classifies as 'failed' when outcome is undefined and a story is unpassed", async () => {
+    const wt = makeWorktreeManager();
+    const pipeline = makePipeline(async () => ({
+      storyMetrics: [
+        makeStoryMetrics({ storyId: "story-1", success: true }),
+        makeStoryMetrics({ storyId: "story-2", success: false }),
+      ],
+      storiesTotal: 2,
+    }));
+
+    const result = await withDeps(
+      {
+        worktreeManager: wt as unknown as Pick<WorktreeManager, "create" | "remove">,
+        runPipeline: pipeline.fn as unknown as typeof _contestantDeps.runPipeline,
+      },
+      () => runContestant("claude", baseOptions()),
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.storiesPassed).toBe(1);
+    expect(result.storiesTotal).toBe(2);
+  });
 });
 
 // ── AC-6: Pipeline throws mid-run → status 'dnf-crashed' ──────────────────────

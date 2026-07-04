@@ -77,6 +77,20 @@ export async function runContestant(
     const wallTimeMs = result.storyMetrics.reduce((sum, m) => sum + (m.durationMs ?? 0), 0);
     const tierEscalations = result.storyMetrics.reduce((sum, m) => sum + (m.attempts ?? 0), 0);
 
+    if (result.error !== undefined) {
+      return {
+        name: options.name,
+        agent,
+        status: "dnf-crashed",
+        storiesPassed,
+        storiesTotal: result.storiesTotal,
+        costUsd,
+        wallTimeMs,
+        tierEscalations,
+        error: result.error instanceof Error ? result.error.message : String(result.error),
+      };
+    }
+
     let status: ContestantResult["status"];
     switch (result.outcome?.kind) {
       case "passed":
