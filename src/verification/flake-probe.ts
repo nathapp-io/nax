@@ -12,6 +12,7 @@
  * the regression gate — all for a failure the story did not cause.
  */
 
+import { NaxError } from "../errors";
 import type { Framework } from "../test-runners/detector";
 import type { TestFailure } from "../test-runners/types";
 import { executeWithTimeout } from "./executor";
@@ -52,8 +53,9 @@ export const _flakeProbeDeps = {
  * literally instead of treating `(`, `?`, `.`, etc. as regex syntax.
  *
  * Used by both `-t <name>` (bun/jest/vitest) and `-run <name>` (go). pytest's
- * `<file>::<name>` address doesn't interpret the name as regex, but we still
- * pass it through for consistency / defense-in-depth.
+ * `<file>::<name>` addressing does not interpret the name as regex, so
+ * `buildIsolationCommand` deliberately does NOT call escapeRegex on the pytest
+ * path — the raw name is preserved.
  */
 export function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -63,29 +65,50 @@ export function escapeRegex(input: string): string {
  * Build an isolation command for the failing test, scoped to its framework.
  *
  * - bun / jest / vitest: `<base> <file> -t <escaped name>`
- * - pytest: `<base> <file>::<name>`
+ * - pytest: `<base> <file>::<name>` (raw name, no regex escaping — pytest
+ *   uses `::` addressing, not regex)
  * - go: `<base> -run '^<escaped name>$'` (cwd scoped to the failing package)
+ *
+ * Unknown / unsupported frameworks are explicit failures rather than
+ * silent fallthroughs — `runFlakeProbe` already rejects `framework === "unknown"`
+ * before reaching here, so any other Framework value reaching this function
+ * is a programming error and should be loud.
  */
 export function buildIsolationCommand(baseCommand: string, failure: TestFailure, framework: Framework): string {
   const file = failure.file;
   const name = failure.testName;
 
-  if (framework === "pytest") {
-    return `${baseCommand} ${file}::${name}`;
+  switch (framework) {
+    case "pytest":
+      return `${baseCommand} ${file}::${name}`;
+    case "go":
+      return `${baseCommand} -run '^${escapeRegex(name)}$'`;
+    case "bun":
+    case "jest":
+    case "vitest":
+      return `${baseCommand} ${file} -t ${escapeRegex(name)}`;
+    default:
+      throw new NaxError(
+        `[flake-probe] unsupported framework: ${framework as string}`,
+        "FLAKE_PROBE_UNSUPPORTED_FRAMEWORK",
+        {
+          stage: "verify",
+          framework,
+        },
+      );
   }
-  if (framework === "go") {
-    return `${baseCommand} -run '^${escapeRegex(name)}$'`;
-  }
-  // bun / jest / vitest share the `-t <name>` shape
-  return `${baseCommand} ${file} -t ${escapeRegex(name)}`;
 }
 
 /**
  * Run the isolation re-probe and return a discriminated verdict.
  *
- * Pass semantics: a probe run is a "pass" only on `success && !timeout` —
- * crashes, environmental failures, and timeouts all count as failed probes
- * (they're not code-failure signals we can attribute to the story).
+ * Pass semantics: a probe run is a "pass" only when the executor reports
+ * `countsTowardEscalation: true` AND `success: true` — i.e. the run produced
+ * a clean, attributable test pass. Crashes (executor throws), environmental
+ * failures (`countsTowardEscalation: false`), and timeouts all count as
+ * failed probes. They are not code-failure signals we can attribute to the
+ * story, so they neither confirm nor rule out flakiness — they only consume
+ * a probe.
  */
 export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeVerdict> {
   const { framework, baseCommand, failure, cwd, probeRuns, probeTimeoutSeconds } = input;
@@ -107,8 +130,15 @@ export async function runFlakeProbe(input: FlakeProbeInput): Promise<FlakeProbeV
 
   let probePasses = 0;
   for (let i = 0; i < probeRuns; i += 1) {
-    const result = await _flakeProbeDeps.execute(command, probeTimeoutSeconds, undefined, { cwd });
-    if (result.success && !result.timeout) {
+    let result: TestExecutionResult | undefined;
+    try {
+      result = await _flakeProbeDeps.execute(command, probeTimeoutSeconds, undefined, { cwd });
+    } catch {
+      // Executor crashed (e.g. spawn failure). Counts as a failed probe —
+      // environmental, not an attributable flake signal.
+      continue;
+    }
+    if (result.success && result.countsTowardEscalation) {
       probePasses += 1;
     }
   }

@@ -10,7 +10,12 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { _flakeProbeDeps, runFlakeProbe } from "../../../src/verification/flake-probe";
+import {
+  _flakeProbeDeps,
+  buildIsolationCommand,
+  escapeRegex,
+  runFlakeProbe,
+} from "../../../src/verification/flake-probe";
 import type { Framework } from "../../../src/test-runners/detector";
 import type { TestFailure } from "../../../src/test-runners/types";
 
@@ -45,9 +50,9 @@ function envExec(): ExecResult {
  * returns the supplied `results` (one per probe, cycled if exhausted).
  */
 function installFakeExecutor(results: ExecResult[]) {
-  const calls: Array<{ command: string; cwd?: string }> = [];
-  const fake = mock(async (command: string, _timeout: number, _env: any, opts: any) => {
-    calls.push({ command, cwd: opts?.cwd });
+  const calls: Array<{ command: string; cwd?: string; timeoutSeconds: number }> = [];
+  const fake = mock(async (command: string, timeoutSeconds: number, _env: any, opts: any) => {
+    calls.push({ command, cwd: opts?.cwd, timeoutSeconds });
     return results.shift() ?? failExec();
   });
   _flakeProbeDeps.execute = fake as typeof _flakeProbeDeps.execute;
@@ -295,6 +300,154 @@ describe("runFlakeProbe — verdict logic", () => {
     });
 
     expect(calls[0]?.cwd).toBe("/tmp/workdir/pkg");
+    expect(calls[0]?.timeoutSeconds).toBe(45);
     expect(calls[0]?.command).toBeDefined();
+  });
+
+  test("executor crash (rejection) counts as failed probe, not propagated", async () => {
+    _flakeProbeDeps.execute = mock(async () => {
+      throw new Error("spawn EACCES");
+    }) as typeof _flakeProbeDeps.execute;
+
+    const result = await runFlakeProbe({
+      framework: "bun",
+      baseCommand: "bun test",
+      failure: makeFailure(),
+      cwd: "/tmp/probe",
+      probeRuns: 2,
+      probeTimeoutSeconds: 30,
+    });
+
+    // All probes failed (executor crashed every time) → consistent-failure,
+    // and the function did not propagate the rejection.
+    expect(result.verdict).toBe("consistent-failure");
+    if (result.verdict === "consistent-failure") {
+      expect(result.probeRuns).toBe(2);
+    }
+  });
+
+  test("executor crash mixed with one clean pass → flaky with probePasses=1", async () => {
+    let call = 0;
+    _flakeProbeDeps.execute = mock(async () => {
+      call += 1;
+      if (call === 1) throw new Error("spawn ENOENT");
+      return okExec();
+    }) as typeof _flakeProbeDeps.execute;
+
+    const result = await runFlakeProbe({
+      framework: "bun",
+      baseCommand: "bun test",
+      failure: makeFailure(),
+      cwd: "/tmp/probe",
+      probeRuns: 2,
+      probeTimeoutSeconds: 30,
+    });
+
+    expect(result.verdict).toBe("flaky");
+    if (result.verdict === "flaky") {
+      expect(result.probePasses).toBe(1);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// escapeRegex — standalone unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("escapeRegex", () => {
+  test("escapes the standard regex metacharacters", () => {
+    expect(escapeRegex("a.b")).toBe("a\\.b");
+    expect(escapeRegex("a*b")).toBe("a\\*b");
+    expect(escapeRegex("a+b")).toBe("a\\+b");
+    expect(escapeRegex("a?b")).toBe("a\\?b");
+    expect(escapeRegex("a^b")).toBe("a\\^b");
+    expect(escapeRegex("a$b")).toBe("a\\$b");
+    expect(escapeRegex("a{b")).toBe("a\\{b");
+    expect(escapeRegex("a}b")).toBe("a\\}b");
+    expect(escapeRegex("a(b")).toBe("a\\(b");
+    expect(escapeRegex("a)b")).toBe("a\\)b");
+    expect(escapeRegex("a|b")).toBe("a\\|b");
+    expect(escapeRegex("a[b")).toBe("a\\[b");
+    expect(escapeRegex("a]b")).toBe("a\\]b");
+    expect(escapeRegex("a\\b")).toBe("a\\\\b");
+  });
+
+  test("escapes the spec example 'handles (edge) case?' literally", () => {
+    expect(escapeRegex("handles (edge) case?")).toBe("handles \\(edge\\) case\\?");
+  });
+
+  test("returns the input unchanged when it has no metacharacters", () => {
+    expect(escapeRegex("plain_test_name 123")).toBe("plain_test_name 123");
+  });
+
+  test("returns an empty string for empty input", () => {
+    expect(escapeRegex("")).toBe("");
+  });
+
+  test("is meant for raw (un-escaped) test names — applying it twice compounds escapes", () => {
+    // Calling escapeRegex on an already-escaped string doubles the backslashes.
+    // Document the contract: callers must apply escapeRegex once, to the raw
+    // test name from TestFailure.testName.
+    expect(escapeRegex("\\.")).toBe("\\\\\\.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildIsolationCommand — standalone unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildIsolationCommand", () => {
+  const failure: TestFailure = {
+    file: "src/foo.test.ts",
+    testName: "should work",
+    error: "",
+    stackTrace: [],
+  };
+
+  test.each<Framework>(["bun", "jest", "vitest"])("framework=%s uses '<base> <file> -t <name>'", (framework) => {
+    expect(buildIsolationCommand("bun test", failure, framework)).toBe(
+      "bun test src/foo.test.ts -t should work",
+    );
+  });
+
+  test("pytest uses '<base> <file>::<name>' addressing", () => {
+    expect(buildIsolationCommand("pytest", { ...failure, file: "tests/test_foo.py" }, "pytest")).toBe(
+      "pytest tests/test_foo.py::should work",
+    );
+  });
+
+  test("go uses anchored '-run' filter", () => {
+    expect(buildIsolationCommand("go test", { ...failure, file: "pkg/foo/foo_test.go" }, "go")).toBe(
+      "go test -run '^should work$'",
+    );
+  });
+
+  test("escapes regex metacharacters in the name for bun/jest/vitest", () => {
+    const cmd = buildIsolationCommand(
+      "bun test",
+      { ...failure, testName: "handles (edge) case?" },
+      "bun",
+    );
+    expect(cmd).toBe("bun test src/foo.test.ts -t handles \\(edge\\) case\\?");
+  });
+
+  test("escapes regex metacharacters in the name for go", () => {
+    const cmd = buildIsolationCommand("go test", { ...failure, testName: "Test (Foo)?" }, "go");
+    expect(cmd).toBe("go test -run '^Test \\(Foo\\)\\?$'");
+  });
+
+  test("does NOT escape the pytest name (pytest uses :: addressing, not regex)", () => {
+    const cmd = buildIsolationCommand(
+      "pytest",
+      { ...failure, file: "tests/foo.py", testName: "test_handles (edge) case?" },
+      "pytest",
+    );
+    expect(cmd).toBe("pytest tests/foo.py::test_handles (edge) case?");
+  });
+
+  test("throws for unsupported frameworks (no silent fallthrough)", () => {
+    expect(() => buildIsolationCommand("bun test", failure, "unknown" as Framework)).toThrow(
+      /unsupported framework/,
+    );
   });
 });
