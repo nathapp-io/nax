@@ -16,6 +16,13 @@ export {
 } from "./curator";
 export { logsCommand, type LogsOptions } from "./logs";
 export { precheckCommand, type PrecheckOptions } from "./precheck";
+export {
+  registerReplayCommand,
+  runReplay,
+  _replayCmdDeps,
+  type ReplayCommandOptions,
+  type ReplayCommandDeps,
+} from "./replay";
 export { runsCommand, type RunsOptions } from "./runs";
 export { unlockCommand, type UnlockOptions } from "./unlock";
 export { migrateCommand, detectGeneratedContent } from "./migrate";

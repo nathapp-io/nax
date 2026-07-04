@@ -74,6 +74,7 @@ import { generateCommand } from "../src/cli/generate";
 import { detectCommand } from "../src/commands/detect";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
+import { registerReplayCommand } from "../src/commands/replay";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
@@ -1449,6 +1450,9 @@ runs
 
     await runsShowCommand({ runId, feature: options.feature, workdir });
   });
+
+// ── replay ───────────────────────────────────────────
+registerReplayCommand(program);
 
 // ── curator ──────────────────────────────────────────
 const curator = program.command("curator").description("Inspect and manage curator proposals");
