@@ -92,9 +92,7 @@ export async function discoverRun(
     });
   }
 
-  const meta = matched[0];
-  if (!meta) {
-    throw new NaxError(`Run not found in registry: ${query}`, "RUN_NOT_FOUND", { query, runsDir });
-  }
+  // biome-ignore lint/style/noNonNullAssertion: length-1 invariant above guarantees matched[0] is defined
+  const meta = matched[0]!;
   return { meta, jsonlPath: join(meta.eventsDir, `${meta.runId}.jsonl`) };
 }
