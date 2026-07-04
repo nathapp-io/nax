@@ -3,7 +3,7 @@
   "feature": "agent-bakeoff-mode",
   "branchName": "feat/agent-bakeoff-mode",
   "createdAt": "2026-07-04T10:14:16.000Z",
-  "updatedAt": "2026-07-04T11:05:06.134Z",
+  "updatedAt": "2026-07-04T11:30:20.443Z",
   "userStories": [
     {
       "id": "US-001",
@@ -148,8 +148,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -229,7 +229,9 @@
         "profileModelTier": "powerful",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-balanced",
-        "initialModelTier": "powerful"
+        "initialModelTier": "powerful",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "bin/nax.ts",
@@ -251,7 +253,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4604e113260f73c135ed96a8af369fc72aa1a5b8"
     }
   ],
   "analysis": "## Codebase Analysis\n\n- `bin/nax.ts` currently exposes `run` with `--agent`, `--max-cost`, `--parallel`, plan flow, and a single `run({...})` dispatch; there is no `--compare` or `--story` on the run command, so bake-off must extend this CLI path and branch before the existing single-agent execution call (`bin/nax.ts:366`, `bin/nax.ts:369`, `bin/nax.ts:371`, `bin/nax.ts:375`, `bin/nax.ts:597`, `bin/nax.ts:675`).\n- Output directories already resolve per project under `projectOutputDir(...)`, with run logs stored at `features/<feature>/runs/<timestamp>.jsonl`; bake-off persistence should attach to the same runtime/output-dir plumbing rather than inventing a second registry path (`bin/nax.ts:565`, `bin/nax.ts:570`, `src/execution/lifecycle/run-completion.ts:382`, `src/execution/lifecycle/run-completion.ts:398`).\n- Agent validation has two existing but incomplete seams: `KNOWN_AGENT_NAMES` includes `aider`, while ACP adapter registry only defines `claude`, `codex`, `gemini`, and `opencode`; pre-flight must therefore check both name membership and ACP registry/binary availability to fail closed for `aider` instead of silently constructing a default ACP entry (`src/agents/registry.ts:13`, `src/agents/registry.ts:66`, `src/agents/acp/adapter.ts:76`, `src/agents/acp/adapter.ts:103`, `src/agents/acp/adapter.ts:110`, `src/agents/acp/adapter.ts:138`).\n- Cross-agent fallback is already represented in runtime config under `config.agent.fallback.enabled`, `map`, and `maxHopsPerStory`; contestant pinning should reuse this config shape by forcing `agent.default = <contestant>` and `agent.fallback.enabled = false` without disturbing model-tier escalation (`src/config/runtime-types-agent.ts:29`, `src/config/runtime-types-agent.ts:31`, `src/config/runtime-types-agent.ts:33`, `src/config/runtime-types-agent.ts:35`, `src/config/runtime-types-agent.ts:67`).\n- The closest reusable execution seam is `executeParallel(...)`, which already orchestrates story batching, per-story worktrees, and merged metrics inside a run; bake-off should wrap existing execution rather than fork story execution logic (`src/execution/parallel-coordinator.ts:62`, `src/execution/parallel-coordinator.ts:108`, `src/execution/parallel-coordinator.ts:142`, `src/execution/parallel-coordinator.ts:150`, `src/execution/parallel-coordinator.ts:208`).\n- Worktree lifecycle is already encapsulated in `WorktreeManager.create()` and `remove()`, with stale cleanup and `NaxError`-based failures; the contestant runner should call these in a strict `try/finally` boundary so crashes never leak worktrees (`src/worktree/manager.ts:68`, `src/worktree/manager.ts:110`, `src/worktree/manager.ts:120`, `src/worktree/manager.ts:176`, `src/worktree/manager.ts:198`).\n- Story/run metrics already carry most of the raw data bake-off needs: per-story attempts, cost, duration, fallback hops, and reviewer findings live on `StoryMetrics`, while run completion persists `RunMetrics` via `saveRunMetrics(runtime.outputDir, runMetrics)`; bake-off should aggregate from these returned metrics instead of re-measuring independently (`src/metrics/types.ts:98`, `src/metrics/types.ts:111`, `src/metrics/types.ts:118`, `src/metrics/types.ts:120`, `src/metrics/types.ts:177`, `src/metrics/types.ts:185`, `src/metrics/types.ts:235`, `src/execution/lifecycle/run-completion.ts:383`, `src/execution/lifecycle/run-completion.ts:393`, `src/execution/lifecycle/run-completion.ts:398`).\n- Terminal table styling precedent already exists in `runsCommand`, including fixed-width padding, ANSI-aware visible-length calculation, and status coloring; `renderBakeoffReport` should mirror this pattern for consistency instead of introducing a new reporter style (`src/commands/runs.ts:75`, `src/commands/runs.ts:96`, `src/commands/runs.ts:103`, `src/commands/runs.ts:175`, `src/commands/runs.ts:203`).\n- Current tests already cover adjacent seams that reduce implementation risk: ACP registry/install detection, run-registry table rendering, multi-agent precheck behavior, worktree manager cleanup, parallel execution, and metrics persistence. New bake-off tests should mirror this `_deps`-based style under `test/unit/bakeoff/` rather than relying on global module mocks (`test/unit/agents/acp/registry.test.ts:1`, `test/unit/commands/runs.test.ts:1`, `test/unit/precheck/checks-agents.test.ts:1`).\n- Backward compatibility risk is concentrated in the `run` command because that path currently mutates CLI overrides directly into `config.agent.default` and `config.execution.costLimit` before calling the single-agent runner; bake-off wiring must keep the default path unchanged when `--compare` is absent (`bin/nax.ts:597`, `bin/nax.ts:602`, `bin/nax.ts:609`, `bin/nax.ts:675`).\n- Migration path is additive only: introduce new `src/bakeoff/` modules and tests, wire one conditional branch into `bin/nax.ts` for `--compare`, and leave existing single-agent runs, metrics persistence, and `nax runs` behavior untouched when bake-off mode is not invoked.",
