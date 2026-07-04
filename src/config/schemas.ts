@@ -134,6 +134,12 @@ export const NaxConfigSchema = z
         setupCommand: null,
       },
       storyIsolation: "shared",
+      flakeDetection: {
+        enabled: true,
+        probeRuns: 2,
+        maxProbesPerGate: 5,
+        probeTimeoutSeconds: 60,
+      },
     } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({
       requireTypecheck: true,

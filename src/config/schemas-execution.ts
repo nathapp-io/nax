@@ -102,6 +102,21 @@ const WorktreeDependenciesConfigSchema = z
     }
   });
 
+/**
+ * Flake-detection probe config. Controls the isolation re-run mechanic
+ * (`src/verification/flake-probe.ts`) used to distinguish deterministic
+ * failures from transient flakes before attributing them to a story.
+ */
+const FlakeDetectionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Number of isolation re-runs per probe. Default 2 (one fail + one pass = flaky). */
+  probeRuns: z.number().int().min(1).max(20).default(2),
+  /** Upper bound on probes accumulated per gate (budget cap across stories). */
+  maxProbesPerGate: z.number().int().min(1).max(100).default(5),
+  /** Per-probe subprocess timeout in seconds. */
+  probeTimeoutSeconds: z.number().int().min(5).max(600).default(60),
+});
+
 export const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -140,6 +155,12 @@ export const ExecutionConfigSchema = z.object({
     setupCommand: null,
   }),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
+  flakeDetection: FlakeDetectionConfigSchema.default({
+    enabled: true,
+    probeRuns: 2,
+    maxProbesPerGate: 5,
+    probeTimeoutSeconds: 60,
+  }),
 });
 
 export const QualityConfigSchema = z.object({

@@ -85,6 +85,10 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       },
       verificationTimeoutSeconds:
         packageOverride.execution?.verificationTimeoutSeconds ?? root.execution.verificationTimeoutSeconds,
+      flakeDetection: {
+        ...root.execution.flakeDetection,
+        ...packageOverride.execution?.flakeDetection,
+      },
     },
     review: {
       ...root.review,

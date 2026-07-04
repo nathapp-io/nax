@@ -175,6 +175,20 @@ export interface ExecutionConfig {
    * Default: "shared"
    */
   storyIsolation: "shared" | "worktree";
+  /** Flake-detection probe config (isolation re-run mechanic). */
+  flakeDetection: FlakeDetectionConfig;
+}
+
+/** Flake-detection probe config — see src/verification/flake-probe.ts. */
+export interface FlakeDetectionConfig {
+  /** Enable isolation re-runs to distinguish deterministic failures from flakes. */
+  enabled: boolean;
+  /** Number of isolation re-runs per probe. */
+  probeRuns: number;
+  /** Upper bound on probes accumulated per gate. */
+  maxProbesPerGate: number;
+  /** Per-probe subprocess timeout in seconds. */
+  probeTimeoutSeconds: number;
 }
 
 /** Quality gate config */
