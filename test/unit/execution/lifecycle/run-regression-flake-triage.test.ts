@@ -33,34 +33,32 @@ function makePrd(storyIds: string[]): { userStories: { id: string; status: strin
   };
 }
 
-function makeConfig(): ReturnType<typeof makeNaxConfig> {
-  return makeNaxConfig({
-    quality: {
-      commands: { test: "bun test" },
-      forceExit: false,
-      detectOpenHandles: false,
-      detectOpenHandlesRetries: 0,
-      gracePeriodMs: 0,
-      drainTimeoutMs: 0,
-      shell: false,
-      stripEnvVars: [],
+const TEST_CONFIG = makeNaxConfig({
+  quality: {
+    commands: { test: "bun test" },
+    forceExit: false,
+    detectOpenHandles: false,
+    detectOpenHandlesRetries: 0,
+    gracePeriodMs: 0,
+    drainTimeoutMs: 0,
+    shell: false,
+    stripEnvVars: [],
+  },
+  execution: {
+    regressionGate: {
+      mode: "deferred",
+      timeoutSeconds: 60,
+      acceptOnTimeout: true,
     },
-    execution: {
-      regressionGate: {
-        mode: "deferred",
-        timeoutSeconds: 60,
-        acceptOnTimeout: true,
-      },
-    },
-  });
-}
+  },
+});
 
 function makeOptions(opts: {
   storyIds: string[];
   quarantineMemo?: QuarantineMemo;
 }): DeferredRegressionOptions {
   return {
-    config: makeConfig(),
+    config: TEST_CONFIG,
     prd: makePrd(opts.storyIds) as unknown as DeferredRegressionOptions["prd"],
     workdir: "/tmp/test-workdir",
     runtime: makeMockRuntime(),
@@ -226,7 +224,7 @@ describe("runDeferredRegression — genuine vs flake (AC4)", () => {
       { storyId: "US-002", completedAt: "2026-01-01T00:01:00.000Z", failingTestFiles: [] },
     ];
     const options = {
-      config: makeConfig(),
+      config: TEST_CONFIG,
       prd: makePrd(["US-001", "US-002"]) as unknown as DeferredRegressionOptions["prd"],
       workdir: "/tmp/test-workdir",
       runtime: makeMockRuntime(),
