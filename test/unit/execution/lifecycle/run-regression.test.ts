@@ -122,6 +122,16 @@ function makeOptions(storyIds: string[], runtimeOverride?: NaxRuntime): Deferred
 let savedDeps: typeof _regressionDeps;
 beforeEach(() => {
   savedDeps = { ..._regressionDeps };
+  // Default triage stub — pass findings through unchanged, no quarantine.
+  // These tests don't exercise triage behaviour; using a no-op stub isolates
+  // them from the real triage implementation (which would otherwise invoke
+  // a probe loop in the test environment).
+  _regressionDeps.triageFlakyFindings = (async (input: {
+    findings: Finding[];
+  }) => ({
+    findings: input.findings.map((f) => ({ ...f })),
+    quarantineReport: { keys: [], reasons: [] },
+  })) as typeof _regressionDeps.triageFlakyFindings;
 });
 afterEach(() => {
   Object.assign(_regressionDeps, savedDeps);

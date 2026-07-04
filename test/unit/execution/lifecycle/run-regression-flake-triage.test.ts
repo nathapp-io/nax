@@ -27,17 +27,6 @@ function makeVerifyResult(overrides: Partial<VerificationResult> = {}): Verifica
   };
 }
 
-function makePassResult(passCount = 150): VerificationResult {
-  return {
-    success: true,
-    status: "SUCCESS",
-    countsTowardEscalation: false,
-    output: `${passCount} pass | 0 fail`,
-    passCount,
-    failCount: 0,
-  };
-}
-
 function makePrd(storyIds: string[]): { userStories: { id: string; status: string; title: string }[] } {
   return {
     userStories: storyIds.map((id) => ({ id, status: "passed", title: id })),
@@ -68,7 +57,6 @@ function makeConfig(): ReturnType<typeof makeNaxConfig> {
 
 function makeOptions(opts: {
   storyIds: string[];
-  failures: Array<{ file: string; testName: string }>;
   quarantineMemo?: QuarantineMemo;
 }): DeferredRegressionOptions {
   return {
@@ -119,7 +107,7 @@ describe("runDeferredRegression — triage wiring (AC1)", () => {
       costUsd: 0,
     }));
 
-    await runDeferredRegression(makeOptions({ storyIds: ["US-001"], failures: [] }));
+    await runDeferredRegression(makeOptions({ storyIds: ["US-001"] }));
 
     expect(triageCalls.length).toBeGreaterThan(0);
     const failedTestFindings = triageCalls[0]?.filter((f) => f.category === "failed-test") ?? [];
@@ -159,7 +147,7 @@ describe("runDeferredRegression — all flakes (AC2)", () => {
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     });
 
-    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001", "US-002"], failures: [] }));
+    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001", "US-002"] }));
 
     expect(result.success).toBe(true);
     expect(fixCycleCalls).toHaveLength(0);
@@ -191,7 +179,7 @@ describe("runDeferredRegression — flaky tests excluded from attribution (AC3)"
       return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
     });
 
-    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001"], failures: [] }));
+    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001"] }));
 
     expect(result.affectedStories).toEqual([]);
     expect(fixCycleCalls).toBe(0);
@@ -307,7 +295,7 @@ describe("runDeferredRegression — shared quarantine memo (AC5)", () => {
     });
 
     const result = await runDeferredRegression(
-      makeOptions({ storyIds: ["US-001"], failures: [], quarantineMemo: memo }),
+      makeOptions({ storyIds: ["US-001"], quarantineMemo: memo }),
     );
 
     // No attribution, no fix cycle.
@@ -347,7 +335,7 @@ describe("runDeferredRegression — shared quarantine memo (AC5)", () => {
       costUsd: 0,
     }));
 
-    await runDeferredRegression(makeOptions({ storyIds: ["US-001"], failures: [], quarantineMemo: memo }));
+    await runDeferredRegression(makeOptions({ storyIds: ["US-001"], quarantineMemo: memo }));
 
     expect(capturedMemo).toBe(memo);
   });
@@ -386,10 +374,76 @@ describe("runDeferredRegression — quarantine report (AC6)", () => {
       costUsd: 0,
     }));
 
-    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001"], failures: [] }));
+    const result = await runDeferredRegression(makeOptions({ storyIds: ["US-001"] }));
 
     expect(result.quarantineReport).toBeDefined();
     expect(result.quarantineReport?.keys).toEqual(["flaky.test.ts::flaky one"]);
     expect(result.quarantineReport?.reasons[0]).toContain("flaky.test.ts::flaky one");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Disabled flake detection — triage runs but short-circuits, attribution + fix cycles continue
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runDeferredRegression — flakeDetection.enabled === false", () => {
+  function makeDisabledConfig(): ReturnType<typeof makeNaxConfig> {
+    return makeNaxConfig({
+      quality: {
+        commands: { test: "bun test" },
+        forceExit: false,
+        detectOpenHandles: false,
+        detectOpenHandlesRetries: 0,
+        gracePeriodMs: 0,
+        drainTimeoutMs: 0,
+        shell: false,
+        stripEnvVars: [],
+      },
+      execution: {
+        regressionGate: { mode: "deferred", timeoutSeconds: 60, acceptOnTimeout: true },
+        flakeDetection: { enabled: false, probeRuns: 1, maxProbesPerGate: 5, probeTimeoutSeconds: 5 },
+      },
+    });
+  }
+
+  test("disabled triage returns findings unchanged (no quarantine, fix cycles still run)", async () => {
+    _regressionDeps.runVerification = mock(async () => makeVerifyResult());
+    _regressionDeps.parseTestOutput = mock(() => ({
+      passed: 0,
+      failed: 1,
+      failures: [{ file: "real.test.ts", testName: "real one", error: "boom", stackTrace: [] }],
+    }));
+
+    // Spy triage to confirm it is invoked but should be a no-op.
+    let triageInvocations = 0;
+    _regressionDeps.triageFlakyFindings = mock(async (input: { findings: Finding[] }) => {
+      triageInvocations += 1;
+      // Real triage short-circuit when disabled — pass findings through.
+      return { findings: input.findings, quarantineReport: { keys: [], reasons: [] } };
+    });
+
+    const rectifiedStories: string[] = [];
+    _regressionDeps.runFixCycle = mock(async (_cycle, ctx) => {
+      rectifiedStories.push(ctx.storyId);
+      return { iterations: [], finalFindings: [], exitReason: "resolved" as const, costUsd: 0 };
+    });
+
+    const storyMetrics = [
+      { storyId: "US-001", completedAt: "2026-01-01T00:00:00.000Z", failingTestFiles: ["real.test.ts"] },
+    ];
+
+    const result = await runDeferredRegression({
+      config: makeDisabledConfig(),
+      prd: makePrd(["US-001"]) as unknown as DeferredRegressionOptions["prd"],
+      workdir: "/tmp/test-workdir",
+      runtime: makeMockRuntime(),
+      storyMetrics,
+    } as unknown as DeferredRegressionOptions);
+
+    // Triage was still called, but produced no quarantine.
+    expect(triageInvocations).toBe(1);
+    expect(result.quarantineReport).toBeUndefined();
+    // Attribution + fix cycles proceeded normally.
+    expect(rectifiedStories).toEqual(["US-001"]);
   });
 });
