@@ -11,6 +11,7 @@ export {
   _bakeoffCliDeps,
   _coordinatorDeps,
   handleRunAction,
+  persistBakeoffResult,
   runBakeoff,
 } from "./coordinator";
 export type {

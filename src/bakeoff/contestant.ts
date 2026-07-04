@@ -33,6 +33,8 @@ export interface ContestantOptions {
   config: NaxConfig;
   /** Per-contestant cost ceiling (USD). Signaled to the pipeline, not enforced here. */
   maxCostUsd?: number;
+  /** Feature name forwarded for telemetry / logging downstream. */
+  feature?: string;
 }
 
 export interface ContestantRunnerDeps {
