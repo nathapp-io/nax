@@ -1,0 +1,233 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "Given nax config with `execution.flakeDetection` unset, when the config is constructed, then resolved `execution.flakeDetection.enabled` is `true`, `probeRuns` is `2`, `maxProbesPerGate` is `5`, and `probeTimeoutSeconds` is `60`.",
+    "refined": "Calling `resolveConfig({})` returns config where `config.execution.flakeDetection.enabled === true`, `config.execution.flakeDetection.probeRuns === 2`, `config.execution.flakeDetection.maxProbesPerGate === 5`, and `config.execution.flakeDetection.probeTimeoutSeconds === 60`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When `runFlakeProbe` is imported from `src/verification`, then it is available as a callable function.",
+    "refined": "`typeof runFlakeProbe === 'function'` is true when evaluated after `import { runFlakeProbe } from 'src/verification'`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "Given framework `bun`, `jest`, or `vitest`, when `runFlakeProbe` receives a base test command and a failing test `{ file, testName }`, then the isolation command starts from the provided base command and includes both the test file path and a name filter for the test.",
+    "refined": "For framework 'bun', calling `buildIsolationCommand(baseCmd, { file: 'foo.test.ts', testName: 'testOne' }, 'bun')` returns a string that starts with `baseCmd`, contains `'foo.test.ts'`, and contains `'-t' 'testOne'` (or `-t 'testOne'` as a contiguous substring). Same pattern verified for 'jest' and 'vitest'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Given framework `pytest`, when `runFlakeProbe` builds an isolation command for a failing test, then the command addresses the single test as `<file>::<testName>`.",
+    "refined": "Calling `buildIsolationCommand('pytest', { file: 'tests/test_foo.py', testName: 'test_bar' }, 'pytest')` returns a string containing `'tests/test_foo.py::test_bar'` as a contiguous substring.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Given framework `go`, when `runFlakeProbe` builds an isolation command for a failing test, then the command uses an anchored run filter `^…$` for the test name.",
+    "refined": "Calling `buildIsolationCommand('go test ./...', { file: 'pkg/foo', testName: 'TestFoo' }, 'go')` returns a string where the test name appears between `^` and `$` metacharacters (e.g., contains `-run '^TestFoo$'`).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "Given a test name containing regex metacharacters such as `handles (edge) case?`, when `runFlakeProbe` builds a name filter, then the metacharacters are escaped so the filter selects the test name literally.",
+    "refined": "Calling `escapeTestName('handles (edge) case?')` returns `'handles \\(edge\\) case\\?'` where `(`, `)`, and `?` are each preceded by a backslash. The returned string contains no unescaped regex metacharacters that would alter matching.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Given the executor dependency is stubbed so the first probe run fails and the second passes, when `runFlakeProbe` runs with `probeRuns = 2`, then it returns `{ verdict: \"flaky\" }` with `probeRuns == 2` and `probePasses == 1`.",
+    "refined": "Stubbing `executeWithTimeout` to return `{ exitCode: 1 }` on first call and `{ exitCode: 0 }` on second call, when `runFlakeProbe({ file: 'a.test.ts', testName: 'a' }, 'jest', 'jest a.test.ts', { probeRuns: 2, probeTimeoutSeconds: 60, enabled: true })` completes, the returned object has `verdict === 'flaky'`, `probeRuns === 2`, and `probePasses === 1`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "Given the executor dependency is stubbed so every probe run fails, when `runFlakeProbe` completes, then it returns verdict `consistent-failure`.",
+    "refined": "Stubbing `executeWithTimeout` to always return `{ exitCode: 1 }`, when `runFlakeProbe({ file: 'a.test.ts', testName: 'a' }, 'jest', 'jest a.test.ts', { probeRuns: 3, probeTimeoutSeconds: 60, enabled: true })` completes, the returned object has `verdict === 'consistent-failure'` and `probeRuns === 3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "Given a failing test whose `file` is `\"unknown\"`, or a detected framework of `\"unknown\"`, when `runFlakeProbe` is called, then it returns verdict `unprobeable` and never invokes the executor dependency.",
+    "refined": "Calling `runFlakeProbe({ file: 'unknown', testName: 'a' }, 'unknown', 'jest', { probeRuns: 2, probeTimeoutSeconds: 60, enabled: true })` returns `{ verdict: 'unprobeable', reason: expect.any(String) }` where reason is non-empty. The `executeWithTimeout` stub is never called (verified via `expect(mock).toHaveBeenCalledTimes(0)`).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "Given one probe run returns a timeout or environmental failure and one probe run returns a clean pass, when `runFlakeProbe` runs two probes, then it returns verdict `flaky` with `probePasses == 1`.",
+    "refined": "Stubbing `executeWithTimeout` to return `{ exitCode: 124 }` (timeout) on first call and `{ exitCode: 0 }` on second call, when `runFlakeProbe({ file: 'a.test.ts', testName: 'a' }, 'jest', 'jest a.test.ts', { probeRuns: 2, probeTimeoutSeconds: 60, enabled: true })` completes, the returned object has `verdict === 'flaky'`, `probeRuns === 2`, and `probePasses === 1`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "Given all probe runs return only timeouts or environmental failures, when `runFlakeProbe` completes, then it returns verdict `consistent-failure`.",
+    "refined": "Stubbing `executeWithTimeout` to always return `{ exitCode: 124 }` (timeout), when `runFlakeProbe({ file: 'a.test.ts', testName: 'a' }, 'jest', 'jest a.test.ts', { probeRuns: 3, probeTimeoutSeconds: 60, enabled: true })` completes, the returned object has `verdict === 'consistent-failure'` and `probeRuns === 3`.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When `triageFlakyFindings` is imported from `src/verification` and called with an empty findings array, then it returns an empty findings array and an empty quarantine report.",
+    "refined": "Import `triageFlakyFindings` from `src/verification`. Call it with `[]` (empty findings), a story context, and an empty memo Map. Assert the return value is a tuple `[{ length: 0 }, { keys: [] }]` — i.e., `result[0].length === 0` and `result[1].quarantinedKeys.length === 0`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Given `runFlakeProbe` is stubbed, when `triageFlakyFindings` receives a `failed-test` finding for a pre-existing test that is absent from the story diff and unmapped from changed sources, then it invokes the stub exactly once with that test's file, test name, and resolved `flakeDetection` config.",
+    "refined": "Stub `runFlakeProbe` to return `{ verdict: 'flaky', probeRuns: 3, probePasses: 3 }`. Construct a finding `f1 = { id: 'f1', category: 'failed-test', file: '/pkg/foo.test.ts', testName: 'testBar', meta: {} }`. Build a story context where `diff.changedFiles` does NOT contain `/pkg/foo.test.ts` and `sourceToTestMap` returns empty for `/pkg/foo.test.ts`. Call `triageFlakyFindings([f1], ctx, memo)`. Assert `runFlakeProbe wasCalledOnceWith('/pkg/foo.test.ts', 'testBar', resolvedFlakeConfig)` where `resolvedFlakeConfig` is the merged config from `ctx.config.execution.flakeDetection`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Given a `failed-test` finding whose test file appears in the story's changed files, when `triageFlakyFindings` runs, then it does not invoke the probe dependency and the finding keeps `category: \"failed-test\"`.",
+    "refined": "Stub `runFlakeProbe`. Construct a finding `f1 = { id: 'f1', category: 'failed-test', file: '/pkg/foo.test.ts', testName: 'testBar', meta: {} }`. Build a story context where `diff.changedFiles = ['/pkg/foo.test.ts']`. Call `triageFlakyFindings([f1], ctx, memo)`. Assert `runFlakeProbe wasNotCalled`. Assert the returned finding has `category === 'failed-test'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Given a `failed-test` finding whose test file is mapped from a changed source file, when `triageFlakyFindings` runs, then it does not invoke the probe dependency and the finding keeps `category: \"failed-test\"`.",
+    "refined": "Stub `runFlakeProbe`. Construct a finding `f1 = { id: 'f1', category: 'failed-test', file: '/pkg/foo.test.ts', testName: 'testBar', meta: {} }`. Build a story context where `diff.changedFiles = ['/pkg/src.ts']` and `sourceToTestMap = { '/pkg/src.ts': ['/pkg/foo.test.ts'] }`. Call `triageFlakyFindings([f1], ctx, memo)`. Assert `runFlakeProbe wasNotCalled`. Assert the returned finding has `category === 'failed-test'`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Given a probed finding with verdict `flaky`, when `triageFlakyFindings` returns it, then the finding has `category: \"flaky-test\"` and populated `meta.probeRuns` and `meta.probePasses`.",
+    "refined": "Stub `runFlakeProbe` to return `{ verdict: 'flaky', probeRuns: 5, probePasses: 4 }`. Call `triageFlakyFindings` with a qualifying pre-existing finding. Assert the returned finding satisfies `category === 'flaky-test' && meta.probeRuns === 5 && meta.probePasses === 4`.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Given a probed finding with verdict `consistent-failure`, when `triageFlakyFindings` returns it, then the finding keeps `category: \"failed-test\"`.",
+    "refined": "Stub `runFlakeProbe` to return `{ verdict: 'consistent-failure', probeRuns: 3, probePasses: 0 }`. Call `triageFlakyFindings` with a qualifying pre-existing finding. Assert the returned finding satisfies `category === 'failed-test'` (not 'flaky-test').",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Given a finding whose key `${file}::${testName}` is already present in the run-scoped quarantine memo, when `triageFlakyFindings` runs, then it relabels the finding to `flaky-test` without invoking the probe dependency again.",
+    "refined": "Stub `runFlakeProbe`. Build a memo Map containing the key `'pkg/foo.test.ts::testBar'`. Call `triageFlakyFindings` with a `failed-test` finding for that key. Assert `runFlakeProbe wasNotCalled`. Assert the returned finding satisfies `category === 'flaky-test'`. Assert the memo is unchanged (still contains that key).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Given the number of distinct probe candidates at one gate exceeds `maxProbesPerGate`, when `triageFlakyFindings` runs, then it never invokes the probe dependency, every finding keeps `category: \"failed-test\"`, and the quarantine report records the skip reason.",
+    "refined": "Stub `runFlakeProbe`. Set `config.execution.flakeDetection.maxProbesPerGate = 2`. Provide 3 qualifying pre-existing `failed-test` findings with distinct `file::testName` keys. Call `triageFlakyFindings` with all 3 findings. Assert `runFlakeProbe wasNotCalled`. Assert all 3 returned findings have `category === 'failed-test'`. Assert the quarantine report's `skipped` array has length 3 with reason `'maxProbesExceeded'` for each entry.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Given `execution.flakeDetection.enabled == false`, when `triageFlakyFindings` runs, then it returns findings unchanged and never invokes the probe dependency.",
+    "refined": "Stub `runFlakeProbe`. Set `config.execution.flakeDetection.enabled = false`. Call `triageFlakyFindings` with a qualifying pre-existing `failed-test` finding. Assert `runFlakeProbe wasNotCalled`. Assert the returned finding satisfies `category === 'failed-test'` (unchanged).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Given the probe dependency throws, when `triageFlakyFindings` runs, then it does not propagate the exception and the affected finding keeps `category: \"failed-test\"`.",
+    "refined": "Stub `runFlakeProbe` to throw `new Error('probe failed')`. Call `triageFlakyFindings` with a qualifying pre-existing `failed-test` finding. Assert the call does not throw (catches and swallows the error internally). Assert the returned finding satisfies `category === 'failed-test'`. Assert a `skipped` entry with reason `'probeError'` and the error message is recorded in the quarantine report.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Given the triage dependency is stubbed, when a full-suite-gate failure is processed, then exactly one triage invocation occurs with the gate's `failed-test` findings before rectification findings are gathered.",
+    "refined": "Assert that triageStub is called exactly once with an array argument matching the gate's failed-test findings, and this call occurs before the first call to gatherRectificationFindings. Verify call order via callCount and callHistory.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Given triage relabels every gate failure to `flaky-test` and there are no other blocking findings, when the full-suite gate result is handled, then no fix cycle is dispatched for that gate, one warning is recorded per quarantined test, and the story remains passing.",
+    "refined": "Assert: (1) runFixCycle is not called, (2) warnings array has length equal to the number of quarantined tests, (3) each warning in warnings has type 'flaky-test' and contains the key in `${file}::${testName}` format, (4) story.status equals 'passing'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Given triage returns a mix of `flaky-test` and `failed-test` findings, when rectification is dispatched, then the fix cycle receives only the `failed-test` findings.",
+    "refined": "Assert that runFixCycle is called with an argument whose findings array contains only entries with type 'failed-test' and excludes all entries with type 'flaky-test'. Verify findings.length equals the count of non-flaky findings returned by triage.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When `gateFailureKeys` is called with gate output containing `flaky-test` findings, then the returned key set excludes those `flaky-test` findings.",
+    "refined": "Assert gateFailureKeys returns an array where no key matches any `${file}::${testName}` from flaky-test findings. Verify the returned array length equals total gate keys minus flaky-test keys.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Given baseline and final gate findings differ only by `flaky-test` findings, when `gateRegressedAfterRectification` is evaluated, then it reports no regression.",
+    "refined": "Assert gateRegressedAfterRectification returns false when called with baselineFindings and finalFindings where the symmetric difference consists solely of entries with type 'flaky-test'.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Given a quarantine decision at the full-suite gate, when it is logged, then the structured log entry includes the story id and the quarantined test key `${file}::${testName}`.",
+    "refined": "Assert the last call to logger.warn or equivalent structured logger receives an object containing storyId field matching the story under test and a key field matching the pattern `${file}::${testName}`.",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "Given the triage dependency is stubbed into the regression module DI seam, when a deferred regression suite fails, then `runDeferredRegression` invokes triage with the regression run's `failed-test` findings.",
+    "refined": "When `runDeferredRegression({...})` completes with `failedTestKeys.length > 0`, the injected `triage` function is called exactly once with an object containing `findings` where each finding has `type: 'failed-test'` and the triage call occurs before `runDeferredRegression` returns.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "Given every regression failure is relabeled to `flaky-test`, when `runDeferredRegression` completes, then it returns `success: true` and the returned quarantine report lists each quarantined test key as a warning.",
+    "refined": "When `runDeferredRegression({...})` completes, the returned `DeferredRegressionResult` satisfies `result.success === true` AND `result.quarantineReport.warnings` is an array containing each key from the original `failedTestKeys` as a string element, with no additional non-quarantined failures in the result.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "Given a test is relabeled `flaky-test`, when regression attribution runs, then no story is attributed and no fix cycle is dispatched on the basis of that quarantined test alone.",
+    "refined": "When a test key `K` is present in `quarantineMemo` and `runDeferredRegression` processes `K` as a regression failure, the returned result satisfies `result.attributedStories` does not contain any story attributed solely to `K` AND `result.dispatchedFixCycles` is empty OR contains only cycles for non-quarantined test keys.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "Given one genuine regression failure and one quarantined flake, when deferred regression runs, then exactly one per-story fix cycle is dispatched for the story attributed to the genuine failure.",
+    "refined": "When `runDeferredRegression` is called with `failedTestKeys: ['genuine-failure-key', 'quarantined-flake-key']` where `quarantined-flake-key` is already in `quarantineMemo`, the returned `result.dispatchedFixCycles` has `length === 1` AND the single cycle's `storyId` matches the story responsible for `genuine-failure-key` (not the quarantined flake).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Given a test key is already present in the shared run-scoped quarantine memo, when that test fails again at the regression gate, then it is relabeled `flaky-test` without a new probe invocation.",
+    "refined": "When `quarantineMemo` already contains key `K` and `runDeferredRegression({ failedTestKeys: [K] })` is called, the injected `probe` function is called `0` times after the memo lookup AND the result `quarantineReport.keys` includes `K` without requiring a probe round-trip.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Given at least one test is quarantined during deferred regression, when `runDeferredRegression` returns, then the result includes the quarantine report with quarantined keys and reasons.",
+    "refined": "When `runDeferredRegression` completes with at least one quarantined test, the returned `result.quarantineReport` is an object with `keys: string[]` where `keys.length >= 1` AND `reasons: Record<string, string>` where every key in `keys` exists as a property in `reasons` with a non-empty string value.",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
