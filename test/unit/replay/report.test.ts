@@ -278,6 +278,36 @@ describe("renderReport — AC6: root cause marker", () => {
 
     expect(out.toLowerCase()).toContain("root cause");
   });
+
+  test("AC6: root cause marker goes on the TERMINAL failed phase when multiple phases failed (fix-cycle case)", () => {
+    const tl = buildTimeline({
+      stories: [
+        buildStory({
+          storyId: "US-002",
+          status: "failed",
+          cost: 0.2,
+          phases: [
+            { name: "test-writer", status: "fail" },
+            { name: "implementer", status: "pass" },
+            { name: "verifier", status: "fail" },
+          ],
+          // Reconstructor records the FIRST fail; the marker must still
+          // land on the terminal (verifier) line per AC-6.
+          rootCausePhaseIndex: 0,
+        }),
+      ],
+    });
+
+    const out = renderReport(tl);
+    const lines = out.split("\n");
+    const verifierLineIdx = lines.findIndex((l) => l.includes("verifier"));
+    const testWriterLineIdx = lines.findIndex((l) => l.includes("test-writer"));
+
+    expect(verifierLineIdx).toBeGreaterThan(0);
+    expect(testWriterLineIdx).toBeGreaterThan(0);
+    expect(lines[verifierLineIdx]!.toLowerCase()).toContain("root cause");
+    expect(lines[testWriterLineIdx]!.toLowerCase()).not.toContain("root cause");
+  });
 });
 
 // ---------------------------------------------------------------------------

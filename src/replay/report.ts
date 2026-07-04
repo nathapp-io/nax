@@ -58,8 +58,22 @@ function renderStoryBlock(story: StoryTimeline, expandPhases: boolean): string[]
   const showPhases = expandPhases || story.status === "failed";
   if (!showPhases) return lines;
 
+  // AC-6: the root-cause marker goes on the terminal (last) phase that has
+  // status === "fail", not on `rootCausePhaseIndex` — fix-cycle
+  // reconstructions can produce multiple failed phases, and the
+  // reconstructor currently records only the first.
+  let lastFailedIndex = -1;
+  if (story.status === "failed") {
+    for (let i = story.phases.length - 1; i >= 0; i--) {
+      if (story.phases[i]?.status === "fail") {
+        lastFailedIndex = i;
+        break;
+      }
+    }
+  }
+
   story.phases.forEach((phase, i) => {
-    const isRootCause = story.status === "failed" && i === story.rootCausePhaseIndex;
+    const isRootCause = i === lastFailedIndex;
     const marker = isRootCause ? " (root cause)" : "";
     lines.push(`  ${phase.name} ${phase.status}${marker}`);
   });
