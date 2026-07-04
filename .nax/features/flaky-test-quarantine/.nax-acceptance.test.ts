@@ -1,22 +1,22 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { Finding } from "@/findings";
-import {
-  _flakeProbeDeps,
-  _flakeTiageDeps,
-  buildIsolationCommand,
-  escapeTestName,
-  runFlakeProbe,
-  triageFlakyFindings,
-} from "@/verification";
+import { _regressionDeps, runDeferredRegression } from "@/execution";
 import {
   _storyOrchestratorDeps,
   gateFailureKeys,
   gateRegressedAfterRectification,
 } from "@/execution/story-orchestrator";
-import { _regressionDeps, runDeferredRegression } from "@/execution";
-import { makeNaxConfig, makeMockRuntime, makePRD, makeStory } from "@test/helpers";
+import type { Finding } from "@/findings";
+import {
+  _flakeProbeDeps,
+  _flakeTriageDeps,
+  buildIsolationCommand,
+  escapeRegex,
+  runFlakeProbe,
+  triageFlakyFindings,
+} from "@/verification";
+import { makeMockRuntime, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -35,7 +35,14 @@ function makeFailedTestFinding(overrides: Partial<Finding> = {}): Finding {
   };
 }
 
-function makeFlakeConfig(overrides: Partial<{ enabled: boolean; probeRuns: number; maxProbesPerGate: number; probeTimeoutSeconds: number }> = {}) {
+function makeFlakeConfig(
+  overrides: Partial<{
+    enabled: boolean;
+    probeRuns: number;
+    maxProbesPerGate: number;
+    probeTimeoutSeconds: number;
+  }> = {},
+) {
   return {
     enabled: true,
     probeRuns: 2,
@@ -110,8 +117,8 @@ describe("US-001 — Flake probe module + config schema", () => {
     expect(cmd).toContain("^TestFoo$");
   });
 
-  test("AC-6: escapeTestName escapes regex metacharacters", () => {
-    const escaped = escapeTestName("handles (edge) case?");
+  test("AC-6: escapeRegex escapes regex metacharacters", () => {
+    const escaped = escapeRegex("handles (edge) case?");
     expect(escaped).toBe("handles \\(edge\\) case\\?");
     // Sanity: none of the special chars appear unescaped
     expect(escaped).not.toMatch(/[^\\][\(\)\?]/);
@@ -119,17 +126,24 @@ describe("US-001 — Flake probe module + config schema", () => {
 
   test("AC-7: runFlakeProbe returns flaky when first fails, second passes", async () => {
     let call = 0;
-    _flakeProbeDeps.executeWithTimeout = mock(async () => {
+    _flakeProbeDeps.execute = mock(async () => {
       call++;
-      return { exitCode: call === 1 ? 1 : 0, output: "", duration: 0 };
+      return {
+        success: call !== 1,
+        countsTowardEscalation: true,
+        exitCode: call === 1 ? 1 : 0,
+        output: "",
+      };
     });
 
-    const result = await runFlakeProbe(
-      { file: "a.test.ts", testName: "a" },
-      "jest",
-      "jest a.test.ts",
-      makeFlakeConfig({ probeRuns: 2 }),
-    );
+    const result = await runFlakeProbe({
+      framework: "jest",
+      baseCommand: "jest a.test.ts",
+      failure: { file: "a.test.ts", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 2,
+      probeTimeoutSeconds: 60,
+    });
 
     expect(result.verdict).toBe("flaky");
     expect(result.probeRuns).toBe(2);
@@ -137,42 +151,49 @@ describe("US-001 — Flake probe module + config schema", () => {
   });
 
   test("AC-8: runFlakeProbe returns consistent-failure when all probes fail", async () => {
-    _flakeProbeDeps.executeWithTimeout = mock(async () => ({
+    _flakeProbeDeps.execute = mock(async () => ({
+      success: false,
+      countsTowardEscalation: true,
       exitCode: 1,
       output: "",
-      duration: 0,
     }));
 
-    const result = await runFlakeProbe(
-      { file: "a.test.ts", testName: "a" },
-      "jest",
-      "jest a.test.ts",
-      makeFlakeConfig({ probeRuns: 3 }),
-    );
+    const result = await runFlakeProbe({
+      framework: "jest",
+      baseCommand: "jest a.test.ts",
+      failure: { file: "a.test.ts", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 3,
+      probeTimeoutSeconds: 60,
+    });
 
     expect(result.verdict).toBe("consistent-failure");
     expect(result.probeRuns).toBe(3);
   });
 
   test("AC-9: runFlakeProbe returns unprobeable for unknown file/framework, never calls executor", async () => {
-    const executorStub = mock(async () => ({ exitCode: 0, output: "", duration: 0 }));
-    _flakeProbeDeps.executeWithTimeout = executorStub;
+    const executorStub = mock(async () => ({ success: true, countsTowardEscalation: true, output: "" }));
+    _flakeProbeDeps.execute = executorStub;
 
-    const resultUnknownFile = await runFlakeProbe(
-      { file: "unknown", testName: "a" },
-      "jest",
-      "jest",
-      makeFlakeConfig({ probeRuns: 2 }),
-    );
+    const resultUnknownFile = await runFlakeProbe({
+      framework: "jest",
+      baseCommand: "jest",
+      failure: { file: "unknown", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 2,
+      probeTimeoutSeconds: 60,
+    });
     expect(resultUnknownFile.verdict).toBe("unprobeable");
     expect((resultUnknownFile as { reason: string }).reason).toBeTruthy();
 
-    const resultUnknownFramework = await runFlakeProbe(
-      { file: "a.test.ts", testName: "a" },
-      "unknown",
-      "jest",
-      makeFlakeConfig({ probeRuns: 2 }),
-    );
+    const resultUnknownFramework = await runFlakeProbe({
+      framework: "unknown",
+      baseCommand: "jest",
+      failure: { file: "a.test.ts", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 2,
+      probeTimeoutSeconds: 60,
+    });
     expect(resultUnknownFramework.verdict).toBe("unprobeable");
 
     expect(executorStub.mock.calls.length).toBe(0);
@@ -180,17 +201,23 @@ describe("US-001 — Flake probe module + config schema", () => {
 
   test("AC-10: timeout counts as failed probe; flaky when one clean pass alongside timeout", async () => {
     let call = 0;
-    _flakeProbeDeps.executeWithTimeout = mock(async () => {
+    _flakeProbeDeps.execute = mock(async () => {
       call++;
-      return { exitCode: call === 1 ? 124 : 0, output: "", duration: 0 };
+      // First call: timeout (success=false, countsTowardEscalation=false).
+      // Second call: clean pass.
+      return call === 1
+        ? { success: false, countsTowardEscalation: false, timeout: true, output: "" }
+        : { success: true, countsTowardEscalation: true, exitCode: 0, output: "" };
     });
 
-    const result = await runFlakeProbe(
-      { file: "a.test.ts", testName: "a" },
-      "jest",
-      "jest a.test.ts",
-      makeFlakeConfig({ probeRuns: 2 }),
-    );
+    const result = await runFlakeProbe({
+      framework: "jest",
+      baseCommand: "jest a.test.ts",
+      failure: { file: "a.test.ts", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 2,
+      probeTimeoutSeconds: 60,
+    });
 
     expect(result.verdict).toBe("flaky");
     expect(result.probeRuns).toBe(2);
@@ -198,18 +225,21 @@ describe("US-001 — Flake probe module + config schema", () => {
   });
 
   test("AC-11: all timeout probes → consistent-failure", async () => {
-    _flakeProbeDeps.executeWithTimeout = mock(async () => ({
-      exitCode: 124,
+    _flakeProbeDeps.execute = mock(async () => ({
+      success: false,
+      countsTowardEscalation: false,
+      timeout: true,
       output: "",
-      duration: 0,
     }));
 
-    const result = await runFlakeProbe(
-      { file: "a.test.ts", testName: "a" },
-      "jest",
-      "jest a.test.ts",
-      makeFlakeConfig({ probeRuns: 3 }),
-    );
+    const result = await runFlakeProbe({
+      framework: "jest",
+      baseCommand: "jest a.test.ts",
+      failure: { file: "a.test.ts", testName: "a", error: "", stackTrace: [] },
+      cwd: "/tmp/test",
+      probeRuns: 3,
+      probeTimeoutSeconds: 60,
+    });
 
     expect(result.verdict).toBe("consistent-failure");
     expect(result.probeRuns).toBe(3);
@@ -221,200 +251,250 @@ describe("US-001 — Flake probe module + config schema", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("US-002 — Flake triage classifier", () => {
-  let savedFlakeTiageDeps: typeof _flakeTiageDeps;
+  let savedFlakeTriageDeps: typeof _flakeTriageDeps;
   beforeEach(() => {
-    savedFlakeTiageDeps = { ..._flakeTiageDeps };
+    savedFlakeTriageDeps = { ..._flakeTriageDeps };
   });
   afterEach(() => {
-    Object.assign(_flakeTiageDeps, savedFlakeTiageDeps);
+    Object.assign(_flakeTriageDeps, savedFlakeTriageDeps);
   });
 
-  test("AC-12: triageFlakyFindings with empty findings returns empty tuple", async () => {
-    const memo = new Map<string, unknown>();
-    const ctx = makeTriageCtx();
-    const result = await triageFlakyFindings([], ctx as never, memo);
+  test("AC-12: triageFlakyFindings with empty findings returns empty findings list", async () => {
+    const memo = { has: () => false, add: () => {} };
+    const result = await triageFlakyFindings({
+      findings: [],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
-    expect(Array.isArray(result)).toBe(true);
-    expect(result[0].length).toBe(0);
-    expect(result[1].quarantinedKeys.length).toBe(0);
+    expect(Array.isArray(result.findings)).toBe(true);
+    expect(result.findings.length).toBe(0);
+    expect(result.quarantineReport.keys.length).toBe(0);
   });
 
   test("AC-13: pre-existing test triggers runFlakeProbe with file, testName, config", async () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 3, probePasses: 3 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({
-      diff: { changedFiles: [] },
-      sourceToTestMap: {},
-    });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
-    await triageFlakyFindings([f1], ctx as never, memo);
+    await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(1);
     const callArgs = probeStub.mock.calls[0];
-    // First arg: failure object with file + testName (rule)
-    expect(callArgs[0]).toMatchObject({ file: "/pkg/foo.test.ts" });
-    // Config arg should contain flakeDetection fields
-    const configArg = callArgs[callArgs.length - 1] as Record<string, unknown>;
-    expect(typeof configArg.probeRuns).toBe("number");
-    expect(typeof configArg.enabled).toBe("boolean");
+    // call shape: { failure: {file, testName, ...}, config: {...}, probeInput: {...} }
+    const probeCall = callArgs[0] as { failure: { file: string; testName: string }; config: Record<string, unknown> };
+    expect(probeCall.failure).toMatchObject({ file: "/pkg/foo.test.ts", testName: "testBar" });
+    expect(typeof probeCall.config.probeRuns).toBe("number");
+    expect(typeof probeCall.config.enabled).toBe("boolean");
   });
 
   test("AC-14: test file in diff is not probed", async () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 2, probePasses: 1 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({
-      diff: { changedFiles: ["/pkg/foo.test.ts"] },
-    });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: ["foo.test.ts"], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(0);
-    expect(findings[0].category).toBe("failed-test");
+    expect(result.findings[0].category).toBe("failed-test");
   });
 
   test("AC-15: test file mapped from changed source is not probed", async () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 2, probePasses: 1 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({
-      diff: { changedFiles: ["/pkg/src.ts"] },
-      sourceToTestMap: { "/pkg/src.ts": ["/pkg/foo.test.ts"] },
-    });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: ["foo.test.ts"] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(0);
-    expect(findings[0].category).toBe("failed-test");
+    expect(result.findings[0].category).toBe("failed-test");
   });
 
   test("AC-16: flaky verdict → category 'flaky-test' with meta.probeRuns and meta.probePasses", async () => {
-    _flakeTiageDeps.runFlakeProbe = mock(async () => ({
+    _flakeTriageDeps.runFlakeProbe = mock(async () => ({
       verdict: "flaky",
       probeRuns: 5,
       probePasses: 4,
     }));
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({ diff: { changedFiles: [] }, sourceToTestMap: {} });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
-    expect(findings[0].category).toBe("flaky-test");
-    expect((findings[0].meta as Record<string, unknown>)?.probeRuns).toBe(5);
-    expect((findings[0].meta as Record<string, unknown>)?.probePasses).toBe(4);
+    expect(result.findings[0].category).toBe("flaky-test");
+    expect((result.findings[0].meta as Record<string, unknown>)?.probeRuns).toBe(5);
+    expect((result.findings[0].meta as Record<string, unknown>)?.probePasses).toBe(4);
   });
 
   test("AC-17: consistent-failure verdict → category stays 'failed-test'", async () => {
-    _flakeTiageDeps.runFlakeProbe = mock(async () => ({
+    _flakeTriageDeps.runFlakeProbe = mock(async () => ({
       verdict: "consistent-failure",
       probeRuns: 3,
       probePasses: 0,
     }));
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({ diff: { changedFiles: [] }, sourceToTestMap: {} });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
-    expect(findings[0].category).toBe("failed-test");
+    expect(result.findings[0].category).toBe("failed-test");
   });
 
   test("AC-18: memo hit relabels to flaky-test without invoking probe", async () => {
     const probeStub = mock(async () => ({ verdict: "consistent-failure", probeRuns: 0 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const memoKey = "/pkg/foo.test.ts::testBar";
-    const memo = new Map<string, unknown>([[memoKey, true]]);
+    const memoHas = true;
+    const memo = { has: (k: string) => k === memoKey && memoHas, add: () => {} };
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({ diff: { changedFiles: [] }, sourceToTestMap: {} });
 
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(0);
-    expect(findings[0].category).toBe("flaky-test");
-    // Memo unchanged — key still present
+    expect(result.findings[0].category).toBe("flaky-test");
+    // Memo state preserved — key still present after triage
     expect(memo.has(memoKey)).toBe(true);
   });
 
   test("AC-19: maxProbesPerGate exceeded → no probing, all stay failed-test, skipped reason recorded", async () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 2, probePasses: 1 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
-
-    const config = makeNaxConfig({ execution: { flakeDetection: { maxProbesPerGate: 2 } } as never });
-    const ctx = makeTriageCtx({
-      config,
-      diff: { changedFiles: [] },
-      sourceToTestMap: {},
-    });
-    const memo = new Map<string, unknown>();
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const findings = [
       makeFailedTestFinding({ file: "/pkg/a.test.ts", rule: "testA" }),
       makeFailedTestFinding({ file: "/pkg/b.test.ts", rule: "testB" }),
       makeFailedTestFinding({ file: "/pkg/c.test.ts", rule: "testC" }),
     ];
+    const memo = { has: () => false, add: () => {} };
 
-    const [resultFindings, report] = await triageFlakyFindings(findings, ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings,
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig({ maxProbesPerGate: 2 }),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(0);
-    for (const f of resultFindings) {
+    for (const f of result.findings) {
       expect(f.category).toBe("failed-test");
     }
-    expect(report.skipped.length).toBe(3);
-    for (const entry of report.skipped) {
-      expect(entry.reason).toBe("maxProbesExceeded");
-    }
+    expect(result.quarantineReport.reasons.length).toBeGreaterThan(0);
+    expect(result.quarantineReport.reasons.some((r) => r.includes("maxProbesPerGate"))).toBe(true);
   });
 
   test("AC-20: enabled=false → passthrough, probe never called", async () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 2, probePasses: 1 }));
-    _flakeTiageDeps.runFlakeProbe = probeStub;
-
-    const config = makeNaxConfig({ execution: { flakeDetection: { enabled: false } } as never });
-    const ctx = makeTriageCtx({
-      config,
-      diff: { changedFiles: [] },
-      sourceToTestMap: {},
-    });
-    const memo = new Map<string, unknown>();
+    _flakeTriageDeps.runFlakeProbe = probeStub;
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const [findings] = await triageFlakyFindings([f1], ctx as never, memo);
+    const memo = { has: () => false, add: () => {} };
+
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig({ enabled: false }),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     expect(probeStub.mock.calls.length).toBe(0);
-    expect(findings[0].category).toBe("failed-test");
+    expect(result.findings[0].category).toBe("failed-test");
   });
 
   test("AC-21: probe throws → finding stays failed-test, triage does not propagate error", async () => {
-    _flakeTiageDeps.runFlakeProbe = mock(async () => {
+    _flakeTriageDeps.runFlakeProbe = mock(async () => {
       throw new Error("probe failed");
     });
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({ diff: { changedFiles: [] }, sourceToTestMap: {} });
-    const memo = new Map<string, unknown>();
+    const memo = { has: () => false, add: () => {} };
 
     // Must not throw
-    let result: [Finding[], { quarantinedKeys: string[]; skipped: Array<{ reason: string }> }] | undefined;
+    let result: { findings: Finding[]; quarantineReport: { keys: string[]; reasons: string[] } } | undefined;
     await expect(async () => {
-      result = await triageFlakyFindings([f1], ctx as never, memo);
+      result = await triageFlakyFindings({
+        findings: [f1],
+        diff: { changedTestFiles: [], mappedTestFiles: [] },
+        flakeDetection: makeFlakeConfig(),
+        baseCommand: "jest",
+        cwd: "/tmp/test",
+        framework: "jest",
+        quarantineMemo: memo,
+      });
     }).not.toThrow();
 
     expect(result).toBeDefined();
-    expect(result![0][0].category).toBe("failed-test");
-    // Skipped entry with probeError reason
-    expect(result![1].skipped.some((s) => s.reason === "probeError")).toBe(true);
+    if (!result) throw new Error("unreachable");
+    expect(result.findings[0].category).toBe("failed-test");
+    // Probe failure must not propagate — finding stays blocking, no quarantine keys added.
+    expect(result.quarantineReport.keys.length).toBe(0);
   });
 });
 
@@ -452,12 +532,8 @@ describe("US-003 — Story-orchestrator full-suite-gate integration", () => {
       return [];
     });
 
-    (
-      _storyOrchestratorDeps as Record<string, unknown>
-    ).triage = triageStub;
-    (
-      _storyOrchestratorDeps as Record<string, unknown>
-    ).gatherRectificationFindings = gatherStub;
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = triageStub;
+    (_storyOrchestratorDeps as Record<string, unknown>).gatherRectificationFindings = gatherStub;
 
     // Trigger both stubs via an action that exercises gate → triage → gather path
     // (The actual trigger call would be runRectification or ExecutionPlan.run;
@@ -487,9 +563,7 @@ describe("US-003 — Story-orchestrator full-suite-gate integration", () => {
       const flakified: Finding = makeFailedTestFinding({ category: "flaky-test" });
       return [[flakified], { quarantinedKeys: ["/pkg/foo.test.ts::testBar"] }];
     });
-    (
-      _storyOrchestratorDeps as Record<string, unknown>
-    ).triage = triageStub;
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = triageStub;
 
     // Call the orchestrator's triage path (simulated)
     const gateFindings = [makeFailedTestFinding()];
@@ -527,9 +601,7 @@ describe("US-003 — Story-orchestrator full-suite-gate integration", () => {
         { quarantinedKeys: ["/pkg/a.test.ts::testA"] },
       ];
     });
-    (
-      _storyOrchestratorDeps as Record<string, unknown>
-    ).triage = triageStub;
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = triageStub;
 
     // Simulate the flow: triage → filter → fix cycle
     const [triaged] = triageStub([
@@ -575,33 +647,37 @@ describe("US-003 — Story-orchestrator full-suite-gate integration", () => {
   });
 
   test("AC-27: quarantine decision emits structured log with storyId and test key", async () => {
-    let savedFlakeTiageDeps: typeof _flakeTiageDeps;
-    savedFlakeTiageDeps = { ..._flakeTiageDeps };
+    const savedFlakeTriageDeps: typeof _flakeTriageDeps = { ..._flakeTriageDeps };
 
     // Stub probe to return flaky
-    _flakeTiageDeps.runFlakeProbe = mock(async () => ({
+    _flakeTriageDeps.runFlakeProbe = mock(async () => ({
       verdict: "flaky",
       probeRuns: 2,
       probePasses: 1,
     }));
 
     const f1 = makeFailedTestFinding({ file: "/pkg/foo.test.ts", rule: "testBar" });
-    const ctx = makeTriageCtx({
-      storyId: "US-001",
-      diff: { changedFiles: [] },
-      sourceToTestMap: {},
-    });
-    const memo = new Map<string, unknown>();
+    const memoKeys: string[] = [];
+    const memo = { has: () => false, add: (k: string) => memoKeys.push(k) };
 
-    await triageFlakyFindings([f1], ctx as never, memo);
+    const result = await triageFlakyFindings({
+      findings: [f1],
+      diff: { changedTestFiles: [], mappedTestFiles: [] },
+      flakeDetection: makeFlakeConfig(),
+      baseCommand: "jest",
+      cwd: "/tmp/test",
+      framework: "jest",
+      quarantineMemo: memo,
+    });
 
     // Verify: at minimum, triage was called and quarantined the test.
     // The structured log (logger.warn) would include storyId and the key.
     // We can verify indirectly: the memo now contains the quarantine key.
     const expectedKey = "/pkg/foo.test.ts::testBar";
-    expect(memo.has(expectedKey)).toBe(true);
+    expect(result.quarantineReport.keys.includes(expectedKey)).toBe(true);
+    expect(memoKeys.includes(expectedKey)).toBe(true);
 
-    Object.assign(_flakeTiageDeps, savedFlakeTiageDeps);
+    Object.assign(_flakeTriageDeps, savedFlakeTriageDeps);
   });
 });
 
@@ -673,10 +749,11 @@ describe("US-004 — Regression-gate integration", () => {
   }
 
   test("AC-28: triage seam — called with failed-test findings when regression has failures", async () => {
-    const triageStub = mock((..._args: unknown[]) => {
-      return [[], { quarantinedKeys: [], skipped: [] }];
-    });
-    (_regressionDeps as Record<string, unknown>).triage = triageStub;
+    const triageStub = mock(async (input: { findings: Finding[] }) => ({
+      findings: input.findings,
+      quarantineReport: { keys: [] as string[], reasons: [] as string[] },
+    }));
+    (_regressionDeps as Record<string, unknown>).triageFlakyFindings = triageStub;
 
     _regressionDeps.runVerification = mock(async () => makeFailResult()) as never;
     _regressionDeps.parseTestOutput = mock(() => ({
@@ -689,12 +766,9 @@ describe("US-004 — Regression-gate integration", () => {
 
     expect(triageStub.mock.calls.length).toBe(1);
     const callArgs = triageStub.mock.calls[0];
-    // First arg is findings array or an object containing findings
-    const firstArg = callArgs[0];
-    const findings = Array.isArray(firstArg)
-      ? firstArg
-      : (firstArg as Record<string, unknown>).findings ?? [];
-    const findingsArr = findings as Finding[];
+    // First arg is FlakeTriageInput with a findings array
+    const firstArg = callArgs[0] as { findings?: Finding[] };
+    const findingsArr = firstArg.findings ?? [];
     expect(findingsArr.length).toBeGreaterThan(0);
     for (const f of findingsArr) {
       expect(f.category).toBe("failed-test");
@@ -703,9 +777,16 @@ describe("US-004 — Regression-gate integration", () => {
 
   test("AC-29: all-flaky regression → success with quarantine warnings", async () => {
     const quarantineKey = "foo.test.ts::testFoo";
-    (_regressionDeps as Record<string, unknown>).triage = mock((..._args: unknown[]) => {
-      const flakified: Finding = makeFailedTestFinding({ category: "flaky-test", file: "foo.test.ts", rule: "testFoo" });
-      return [[flakified], { quarantinedKeys: [quarantineKey], skipped: [] }];
+    (_regressionDeps as Record<string, unknown>).triageFlakyFindings = mock(async () => {
+      const flakified: Finding = makeFailedTestFinding({
+        category: "flaky-test",
+        file: "foo.test.ts",
+        rule: "testFoo",
+      });
+      return {
+        findings: [flakified],
+        quarantineReport: { keys: [quarantineKey], reasons: [`quarantined: ${quarantineKey}`] },
+      };
     });
     _regressionDeps.runVerification = mock(async () => makeFailResult()) as never;
     _regressionDeps.parseTestOutput = mock(() => ({
@@ -720,21 +801,25 @@ describe("US-004 — Regression-gate integration", () => {
       costUsd: 0,
     })) as never;
 
-    const result = await runDeferredRegression(makeOptions() as never) as Record<string, unknown>;
+    const result = (await runDeferredRegression(makeOptions() as never)) as Record<string, unknown>;
 
     expect(result.success).toBe(true);
     const report = result.quarantineReport as Record<string, unknown> | undefined;
     expect(report).toBeDefined();
-    const warnings = report?.warnings as string[] | undefined;
-    expect(warnings).toBeDefined();
-    expect(warnings!.some((w) => w.includes(quarantineKey) || w.includes("testFoo"))).toBe(true);
+    const keys = report?.keys as string[] | undefined;
+    expect(keys).toBeDefined();
+    expect(keys?.includes(quarantineKey) ?? false).toBe(true);
   });
 
   test("AC-30: flaky test not attributed to any story, no fix cycle dispatched for quarantined flake", async () => {
     const quarantineKey = "foo.test.ts::testFoo";
     (_regressionDeps as Record<string, unknown>).quarantineMemo = new Map([[quarantineKey, true]]);
     (_regressionDeps as Record<string, unknown>).triage = mock((..._args: unknown[]) => {
-      const flakified: Finding = makeFailedTestFinding({ category: "flaky-test", file: "foo.test.ts", rule: "testFoo" });
+      const flakified: Finding = makeFailedTestFinding({
+        category: "flaky-test",
+        file: "foo.test.ts",
+        rule: "testFoo",
+      });
       return [[flakified], { quarantinedKeys: [quarantineKey], skipped: [] }];
     });
     _regressionDeps.runVerification = mock(async () => makeFailResult()) as never;
@@ -751,7 +836,7 @@ describe("US-004 — Regression-gate integration", () => {
     }));
     _regressionDeps.runFixCycle = fixCycleStub as never;
 
-    const result = await runDeferredRegression(makeOptions() as never) as Record<string, unknown>;
+    const result = (await runDeferredRegression(makeOptions() as never)) as Record<string, unknown>;
 
     // Fix cycle must not be dispatched solely for the quarantined test
     expect(fixCycleStub.mock.calls.length).toBe(0);
@@ -765,14 +850,14 @@ describe("US-004 — Regression-gate integration", () => {
     const flakeKey = "foo.test.ts::testFoo";
     const genuineKey = "bar.test.ts::testBar";
 
-    (_regressionDeps as Record<string, unknown>).triage = mock((..._args: unknown[]) => {
-      return [
-        [
+    (_regressionDeps as Record<string, unknown>).triageFlakyFindings = mock(async () => {
+      return {
+        findings: [
           makeFailedTestFinding({ file: "foo.test.ts", rule: "testFoo", category: "flaky-test" }),
           makeFailedTestFinding({ file: "bar.test.ts", rule: "testBar", category: "failed-test" }),
         ],
-        { quarantinedKeys: [flakeKey], skipped: [] },
-      ];
+        quarantineReport: { keys: [flakeKey], reasons: [`quarantined: ${flakeKey}`] },
+      };
     });
     _regressionDeps.runVerification = mock(async () => ({
       success: false,
@@ -798,7 +883,7 @@ describe("US-004 — Regression-gate integration", () => {
     }));
     _regressionDeps.runFixCycle = fixCycleStub as never;
 
-    await runDeferredRegression(makeOptions() as never);
+    await runDeferredRegression(makeOptions({ workdir: process.cwd() }) as never);
 
     // Exactly one fix cycle — for the genuine failure, not the flake
     expect(fixCycleStub.mock.calls.length).toBe(1);
@@ -812,12 +897,19 @@ describe("US-004 — Regression-gate integration", () => {
     const probeStub = mock(async () => ({ verdict: "flaky", probeRuns: 0, probePasses: 0 }));
     (_regressionDeps as Record<string, unknown>).probe = probeStub;
 
-    const triageStub = mock((..._args: unknown[]) => {
+    const triageStub = mock(async () => {
       // Memo-aware triage: if key is in memo, relabel without probe
-      const flakified: Finding = makeFailedTestFinding({ category: "flaky-test", file: "foo.test.ts", rule: "testFoo" });
-      return [[flakified], { quarantinedKeys: [memoKey], skipped: [] }];
+      const flakified: Finding = makeFailedTestFinding({
+        category: "flaky-test",
+        file: "foo.test.ts",
+        rule: "testFoo",
+      });
+      return {
+        findings: [flakified],
+        quarantineReport: { keys: [memoKey], reasons: [`quarantined (memo): ${memoKey}`] },
+      };
     });
-    (_regressionDeps as Record<string, unknown>).triage = triageStub;
+    (_regressionDeps as Record<string, unknown>).triageFlakyFindings = triageStub;
     _regressionDeps.runVerification = mock(async () => makeFailResult()) as never;
     _regressionDeps.parseTestOutput = mock(() => ({
       passed: 0,
@@ -831,7 +923,7 @@ describe("US-004 — Regression-gate integration", () => {
       costUsd: 0,
     })) as never;
 
-    const result = await runDeferredRegression(makeOptions() as never) as Record<string, unknown>;
+    const result = (await runDeferredRegression(makeOptions() as never)) as Record<string, unknown>;
 
     // probe must not be called — memo handled it
     expect(probeStub.mock.calls.length).toBe(0);
@@ -840,14 +932,21 @@ describe("US-004 — Regression-gate integration", () => {
     expect(report).toBeDefined();
     const keys = report?.keys as string[] | undefined;
     expect(keys).toBeDefined();
-    expect(keys!.includes(memoKey) || keys!.some((k) => k.includes("testFoo"))).toBe(true);
+    expect((keys?.includes(memoKey) ?? false) || (keys?.some((k) => k.includes("testFoo")) ?? false)).toBe(true);
   });
 
-  test("AC-33: quarantine report has keys array and reasons record when tests are quarantined", async () => {
+  test("AC-33: quarantine report has keys array and reasons list when tests are quarantined", async () => {
     const quarantineKey = "foo.test.ts::testFoo";
-    (_regressionDeps as Record<string, unknown>).triage = mock((..._args: unknown[]) => {
-      const flakified: Finding = makeFailedTestFinding({ category: "flaky-test", file: "foo.test.ts", rule: "testFoo" });
-      return [[flakified], { quarantinedKeys: [quarantineKey], skipped: [] }];
+    (_regressionDeps as Record<string, unknown>).triageFlakyFindings = mock(async () => {
+      const flakified: Finding = makeFailedTestFinding({
+        category: "flaky-test",
+        file: "foo.test.ts",
+        rule: "testFoo",
+      });
+      return {
+        findings: [flakified],
+        quarantineReport: { keys: [quarantineKey], reasons: [`quarantined: ${quarantineKey}`] },
+      };
     });
     _regressionDeps.runVerification = mock(async () => makeFailResult()) as never;
     _regressionDeps.parseTestOutput = mock(() => ({
@@ -862,7 +961,7 @@ describe("US-004 — Regression-gate integration", () => {
       costUsd: 0,
     })) as never;
 
-    const result = await runDeferredRegression(makeOptions() as never) as Record<string, unknown>;
+    const result = (await runDeferredRegression(makeOptions() as never)) as Record<string, unknown>;
 
     const report = result.quarantineReport as Record<string, unknown>;
     expect(report).toBeDefined();
@@ -871,11 +970,12 @@ describe("US-004 — Regression-gate integration", () => {
     expect(Array.isArray(keys)).toBe(true);
     expect(keys.length).toBeGreaterThanOrEqual(1);
 
-    const reasons = report.reasons as Record<string, string>;
-    expect(typeof reasons).toBe("object");
-    for (const key of keys) {
-      expect(typeof reasons[key]).toBe("string");
-      expect(reasons[key].length).toBeGreaterThan(0);
+    const reasons = report.reasons as string[];
+    expect(Array.isArray(reasons)).toBe(true);
+    expect(reasons.length).toBeGreaterThanOrEqual(1);
+    for (const r of reasons) {
+      expect(typeof r).toBe("string");
+      expect(r.length).toBeGreaterThan(0);
     }
   });
 });

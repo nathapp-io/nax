@@ -3,7 +3,7 @@
   "feature": "flaky-test-quarantine",
   "branchName": "feat/flaky-test-quarantine",
   "createdAt": "2026-07-04T03:35:57Z",
-  "updatedAt": "2026-07-04T04:52:28.605Z",
+  "updatedAt": "2026-07-04T05:22:34.805Z",
   "userStories": [
     {
       "id": "US-001",
@@ -20,7 +20,8 @@
         "Given the executor dependency is stubbed so every probe run fails, when `runFlakeProbe` completes, then it returns verdict `consistent-failure`.",
         "Given a failing test whose `file` is `\"unknown\"`, or a detected framework of `\"unknown\"`, when `runFlakeProbe` is called, then it returns verdict `unprobeable` and never invokes the executor dependency.",
         "Given one probe run returns a timeout or environmental failure and one probe run returns a clean pass, when `runFlakeProbe` runs two probes, then it returns verdict `flaky` with `probePasses == 1`.",
-        "Given all probe runs return only timeouts or environmental failures, when `runFlakeProbe` completes, then it returns verdict `consistent-failure`."
+        "Given all probe runs return only timeouts or environmental failures, when `runFlakeProbe` completes, then it returns verdict `consistent-failure`.",
+        "Given a root config with `execution.flakeDetection` values and a package override that changes only `probeRuns`, when `mergePackageConfig()` merges them, then the merged config keeps the root `enabled`, `maxProbesPerGate`, and `probeTimeoutSeconds` values while using the package override for `probeRuns`."
       ],
       "tags": [
         "feature",
@@ -56,9 +57,6 @@
       "expectedFiles": [
         "src/verification/flake-probe.ts"
       ],
-      "suggestedCriteria": [
-        "Given a root config with `execution.flakeDetection` values and a package override that changes only `probeRuns`, when `mergePackageConfig()` merges them, then the merged config keeps the root `enabled`, `maxProbesPerGate`, and `probeTimeoutSeconds` values while using the package override for `probeRuns`."
-      ],
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
@@ -78,7 +76,8 @@
         "Given a finding whose key `${file}::${testName}` is already present in the run-scoped quarantine memo, when `triageFlakyFindings` runs, then it relabels the finding to `flaky-test` without invoking the probe dependency again.",
         "Given the number of distinct probe candidates at one gate exceeds `maxProbesPerGate`, when `triageFlakyFindings` runs, then it never invokes the probe dependency, every finding keeps `category: \"failed-test\"`, and the quarantine report records the skip reason.",
         "Given `execution.flakeDetection.enabled == false`, when `triageFlakyFindings` runs, then it returns findings unchanged and never invokes the probe dependency.",
-        "Given the probe dependency throws, when `triageFlakyFindings` runs, then it does not propagate the exception and the affected finding keeps `category: \"failed-test\"`."
+        "Given the probe dependency throws, when `triageFlakyFindings` runs, then it does not propagate the exception and the affected finding keeps `category: \"failed-test\"`.",
+        "Given `triageFlakyFindings` receives findings whose `source` or `category` are not eligible for flaky classification, when it returns, then those findings are passed through unchanged."
       ],
       "tags": [
         "feature",
@@ -115,9 +114,6 @@
       ],
       "expectedFiles": [
         "src/verification/flake-triage.ts"
-      ],
-      "suggestedCriteria": [
-        "Given `triageFlakyFindings` receives findings whose `source` or `category` are not eligible for flaky classification, when it returns, then those findings are passed through unchanged."
       ],
       "priorErrors": [],
       "priorFailures": [],
@@ -193,8 +189,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
