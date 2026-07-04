@@ -36,7 +36,7 @@ function formatStories(c: ContestantResult): string {
 }
 
 function formatUsd(usd: number): string {
-  return usd.toFixed(1);
+  return usd.toFixed(4);
 }
 
 function formatMs(ms: number): string {

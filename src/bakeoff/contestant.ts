@@ -30,6 +30,8 @@ export interface ContestantOptions {
   projectRoot: string;
   config: NaxConfig;
   maxCostUsd?: number;
+  /** Forwarded from BakeoffOptions.feature; not read inside runContestant
+   * itself but is part of the tested cross-call contract (US-004 AC-27). */
   feature?: string;
   storiesTotal?: number;
 }
@@ -89,6 +91,10 @@ export async function runContestant(
         ...(options.config.agent?.fallback ?? {}),
         enabled: false,
       },
+    },
+    execution: {
+      ...options.config.execution,
+      ...(options.maxCostUsd !== undefined ? { costLimit: options.maxCostUsd } : {}),
     },
   };
 

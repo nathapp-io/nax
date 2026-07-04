@@ -413,7 +413,7 @@ program
 
     // Bake-off: validate contestants up-front, before any spend
     if (options.compare) {
-      const { parseCompareList, validateContestants } = await import("../src/bakeoff/preflight");
+      const { parseCompareList, validateContestants, computeWorstCaseCost } = await import("../src/bakeoff/preflight");
       const contestants = parseCompareList(options.compare);
       if (contestants.length === 0) {
         console.error(
@@ -421,13 +421,34 @@ program
         );
         process.exit(1);
       }
-      const { errors } = validateContestants(contestants);
+      const { errors, validAgents } = validateContestants(contestants);
       if (errors.length > 0) {
         console.error(chalk.red("Bake-off pre-flight failed:"));
         for (const e of errors) {
           console.error(chalk.red(`   ${e.agent}: ${e.reason}`));
         }
         process.exit(1);
+      }
+
+      // Worst-case cost confirmation gate — printed and confirmed before any
+      // contestant spawns (spec: "N × max-cost is printed and confirmed").
+      if (options.maxCost !== undefined) {
+        const maxCostPerContestant = Number(options.maxCost);
+        if (!Number.isFinite(maxCostPerContestant) || maxCostPerContestant <= 0) {
+          console.error(chalk.red("--max-cost must be a positive number"));
+          process.exit(1);
+        }
+        const worstCase = computeWorstCaseCost(validAgents.length, maxCostPerContestant);
+        console.log(
+          chalk.yellow(
+            `Bake-off worst-case exposure: ${validAgents.length} contestants × $${maxCostPerContestant} = $${worstCase}`,
+          ),
+        );
+        const confirmed = await promptForConfirmation("Proceed with bake-off run?");
+        if (!confirmed) {
+          console.log(chalk.dim("Bake-off cancelled."));
+          process.exit(0);
+        }
       }
     }
 
@@ -714,6 +735,7 @@ program
           projectRoot: workdir,
           outputDir,
           config,
+          maxCostUsd: options.maxCost !== undefined ? Number(options.maxCost) : undefined,
         },
         _bakeoffCliDeps,
       );

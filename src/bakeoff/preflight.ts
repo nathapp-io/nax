@@ -6,7 +6,7 @@
  */
 
 import { KNOWN_AGENT_NAMES } from "../agents";
-import { ACP_ADAPTER_NAMES } from "../agents/acp/adapter";
+import { ACP_ADAPTER_NAMES, AcpAgentAdapter } from "../agents/acp";
 import { NaxError } from "../errors";
 import { which as defaultWhich } from "../utils/bun-deps";
 
@@ -23,7 +23,8 @@ export interface ContestantValidationResult {
 }
 
 export interface PreflightDeps {
-  isInstalled: (binary: string) => boolean;
+  /** Takes the agent *name* — resolves to the real launch binary internally. */
+  isInstalled: (agentName: string) => boolean;
   hasAcpAdapterEntry: (name: string) => boolean;
 }
 
@@ -33,13 +34,20 @@ export interface PreflightDeps {
  * When omitted, the default ACP adapter registry is consulted.
  */
 export interface PreflightCallableDeps {
-  isInstalled: (binary: string) => boolean;
+  isInstalled: (agentName: string) => boolean;
   hasAcpAdapterEntry?: (name: string) => boolean;
 }
 
-/** Injectable dependencies. Tests override individual entries. */
+/**
+ * Injectable dependencies. Tests override individual entries.
+ *
+ * `isInstalled` resolves the agent's real launch binary via the same
+ * `AcpAgentAdapter` registry entry the rest of the codebase uses (see
+ * `AcpAgentAdapter.isInstalled()` in `src/agents/acp/adapter.ts`), rather
+ * than assuming the agent name and its PATH binary are the same string.
+ */
 export const _preflightDeps: PreflightDeps = {
-  isInstalled: (binary: string) => defaultWhich(binary) !== null,
+  isInstalled: (agentName: string) => defaultWhich(new AcpAgentAdapter(agentName).binary) !== null,
   hasAcpAdapterEntry: (name: string) => ACP_ADAPTER_NAMES.has(name),
 };
 

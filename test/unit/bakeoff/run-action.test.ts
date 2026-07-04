@@ -107,6 +107,30 @@ describe("handleRunAction (AC-10: --compare routes to runBakeoff)", () => {
     expect(callArg.agents).toEqual(["claude", "codex", "gemini"]);
     expect(runSingleAgentSpy).not.toHaveBeenCalled();
   });
+
+  // maxCostUsd threads through to runBakeoff for per-contestant enforcement
+  // (the CLI already confirms N × max-cost before calling handleRunAction).
+  it("forwards maxCostUsd from options to runBakeoff", async () => {
+    const runBakeoffSpy = mock(async () => ({
+      feature: "test-feature",
+      completedAt: "",
+      outcome: 0,
+      ranking: [],
+      contestants: [],
+    }));
+    const runSingleAgentSpy = mock(async () => undefined);
+
+    await withCliDeps(
+      {
+        runBakeoff: runBakeoffSpy as unknown as BakeoffCliDeps["runBakeoff"],
+        runSingleAgent: runSingleAgentSpy as unknown as BakeoffCliDeps["runSingleAgent"],
+      },
+      () => handleRunAction(baseOptions({ compare: "claude,codex", maxCostUsd: 5 })),
+    );
+
+    const callArg = runBakeoffSpy.mock.calls[0][0] as { maxCostUsd?: number };
+    expect(callArg.maxCostUsd).toBe(5);
+  });
 });
 
 describe("handleRunAction (AC-11: no --compare routes to runSingleAgent)", () => {

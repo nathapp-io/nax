@@ -97,7 +97,7 @@ describe("rankContestants", () => {
   it("returns array of same length when all results are DNF and orders by costUsd ascending", () => {
     const results: ContestantResult[] = [
       makeContestant({ name: "a", status: "dnf-crashed", storiesPassed: 0, costUsd: 3, wallTimeMs: 50 }),
-      makeContestant({ name: "b", status: "dnf-timeout", storiesPassed: 0, costUsd: 1, wallTimeMs: 100 }),
+      makeContestant({ name: "b", status: "dnf-not-installed", storiesPassed: 0, costUsd: 1, wallTimeMs: 100 }),
       makeContestant({ name: "c", status: "dnf-crashed", storiesPassed: 0, costUsd: 2, wallTimeMs: 75 }),
     ];
     const ranked = rankContestants(results);

@@ -178,7 +178,7 @@ describe("renderBakeoffReport (AC-6: terminal table contents + ordering)", () =>
     });
     const second = makeResult({
       agent: "codex",
-      status: "dnf-timeout",
+      status: "dnf-not-installed",
       storiesPassed: 0,
       storiesTotal: 5,
       costUsd: 0,
@@ -188,7 +188,7 @@ describe("renderBakeoffReport (AC-6: terminal table contents + ordering)", () =>
     const report = renderBakeoffReport(makeBakeoffResult({ ranking: [first, second] }));
 
     expect(report).toContain("dnf-crashed");
-    expect(report).toContain("dnf-timeout");
+    expect(report).toContain("dnf-not-installed");
     expect(report.indexOf("claude")).toBeLessThan(report.indexOf("codex"));
   });
 });

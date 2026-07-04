@@ -42,7 +42,6 @@ function baseOptions(overrides: Partial<BakeoffOptions> = {}): BakeoffOptions {
     projectRoot: "/tmp/proj",
     outputDir: "/tmp/out",
     config: {} as unknown as NaxConfig,
-    storyId: "story-1",
     ...overrides,
   };
 }
@@ -365,7 +364,7 @@ describe("runBakeoff (AC-8: all-DNF persistence + non-zero outcome)", () => {
   it("AC8: persists bakeoff.json, returns BakeoffResult with all contestants, and signals a non-zero outcome when every contestant DNFs", async () => {
     const allDnf: ContestantResult[] = [
       makeResult({ agent: "claude", status: "dnf-crashed", storiesPassed: 0 }),
-      makeResult({ agent: "codex", status: "dnf-timeout", storiesPassed: 0 }),
+      makeResult({ agent: "codex", status: "dnf-not-installed", storiesPassed: 0 }),
     ];
 
     const result = await withCoordinatorDeps(

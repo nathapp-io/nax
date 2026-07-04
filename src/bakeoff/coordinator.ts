@@ -6,12 +6,11 @@
  * execution guarantees a crash in one contestant never blocks later contestants.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { runContestant } from "./contestant";
 import type { ContestantOptions } from "./contestant";
-import { validateContestants } from "./preflight";
+import { parseCompareList, validateContestants } from "./preflight";
 import type { ContestantValidationResult } from "./preflight";
 import { rankContestants } from "./ranking";
 import type { BakeoffResult, ContestantResult } from "./types";
@@ -22,8 +21,6 @@ export interface BakeoffOptions {
   projectRoot: string;
   outputDir: string;
   config: NaxConfig;
-  /** Stable story id used for the contestant worktree naming. */
-  storyId?: string;
   /** Per-contestant cost ceiling. Forwarded to runContestant. */
   maxCostUsd?: number;
 }
@@ -38,9 +35,8 @@ export interface BakeoffCoordinatorDeps {
 
 /** Default `persistBakeoffResult` dep: writes bakeoff.json under outputDir. */
 export async function persistBakeoffResult(result: BakeoffResult, outputDir: string): Promise<void> {
-  await mkdir(outputDir, { recursive: true });
   const filePath = join(outputDir, "bakeoff.json");
-  await writeFile(filePath, JSON.stringify(result, null, 2), "utf8");
+  await Bun.write(filePath, JSON.stringify(result, null, 2));
 }
 
 export const _coordinatorDeps: BakeoffCoordinatorDeps = {
@@ -50,8 +46,14 @@ export const _coordinatorDeps: BakeoffCoordinatorDeps = {
   persistBakeoffResult,
 };
 
-/** DNF statuses that signal a contestant failed to produce a comparable result. */
-const DNF_STATUSES: ReadonlySet<ContestantResult["status"]> = new Set(["dnf-crashed", "dnf-timeout", "dnf-killed"]);
+/**
+ * Statuses that count as a "finisher" — the contestant produced a
+ * comparable result. Everything else (cost-limit, timeout, dnf-crashed,
+ * dnf-not-installed, or any other non-terminal status) is a non-finisher;
+ * an allow-list here is safer than a DNF deny-list since an unrecognized
+ * status fails closed rather than silently counting as a finisher.
+ */
+const FINISHER_STATUSES: ReadonlySet<ContestantResult["status"]> = new Set(["passed", "failed"]);
 
 /**
  * Run a bake-off: validate contestants, run them sequentially, rank the
@@ -63,7 +65,7 @@ export async function runBakeoff(
 ): Promise<BakeoffResult> {
   const merged: BakeoffCoordinatorDeps = { ..._coordinatorDeps, ...deps };
 
-  const { validAgents } = merged.validateContestants(options.agents);
+  const { validAgents, errors } = merged.validateContestants(options.agents);
 
   const results: ContestantResult[] = [];
   for (const agent of validAgents) {
@@ -79,10 +81,15 @@ export async function runBakeoff(
 
   const ranking = merged.rankContestants(results);
 
-  const hasFinisher = ranking.some((r) => !DNF_STATUSES.has(r.status));
+  const hasFinisher = ranking.some((r) => FINISHER_STATUSES.has(r.status));
   const outcome = hasFinisher ? 0 : 1;
 
   const completedAt = new Date().toISOString();
+
+  // Only name a winner when ranking[0] actually finished — an all-DNF
+  // outcome must not report a crashed/timed-out contestant as the winner.
+  const topResult = ranking[0];
+  const hasWinner = topResult !== undefined && FINISHER_STATUSES.has(topResult.status);
 
   const bakeoffResult: BakeoffResult = {
     feature: options.feature,
@@ -90,7 +97,8 @@ export async function runBakeoff(
     outcome,
     ranking,
     contestants: results,
-    ...(ranking[0] ? { winner: ranking[0] } : {}),
+    ...(hasWinner ? { winner: topResult } : {}),
+    ...(errors.length > 0 ? { validationErrors: errors } : {}),
   };
 
   await merged.persistBakeoffResult(bakeoffResult, options.outputDir);
@@ -113,6 +121,8 @@ export interface HandleRunActionOptions {
   config: NaxConfig;
   /** Optional pre-parsed contestant list — overrides `compare` when provided. */
   agents?: string[];
+  /** Per-contestant cost ceiling. Forwarded to runBakeoff. */
+  maxCostUsd?: number;
 }
 
 /**
@@ -154,14 +164,8 @@ export async function handleRunAction(
     projectRoot: options.projectRoot,
     outputDir: options.outputDir,
     config: options.config,
+    maxCostUsd: options.maxCostUsd,
   });
-}
-
-function parseCompareList(input: string): string[] {
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
 }
 
 // Re-exports for downstream wiring that already imports these names.
