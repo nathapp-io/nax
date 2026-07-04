@@ -470,3 +470,111 @@ describe("AC6: quarantine decision log entry includes storyId and the quarantine
     expect(keys).toContain(keyB);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F3 — triage seam is awaited and wrapped in try/catch; a thrown seam does
+// not abort the story. The fix cycle sees the un-triaged findings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("F3: triage seam is awaited and its throw is caught", () => {
+  test("thrown triage seam keeps findings blocking (no quarantine), story does not crash", async () => {
+    const triageStub = mock(async (_gateFindings: Finding[]) => {
+      throw new Error("subprocess EACCES");
+    });
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = triageStub;
+
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === GATE_NAME) {
+        return {
+          success: false,
+          findings: [makeFailedTest({ file: "test/unit/foo.test.ts", rule: "shouldBar" })],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+
+    let capturedCycle: FixCycle<Finding> | null = null;
+    _storyOrchestratorDeps.runFixCycle = mock(async (cycle: FixCycle<Finding>) => {
+      if (capturedCycle === null) capturedCycle = cycle;
+      return {
+        iterations: [],
+        finalFindings: [],
+        exitReason: "resolved" as FixCycleExitReason,
+        costUsd: 0,
+      };
+    }) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const { ctx } = makeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: mockImplementerOp, input: { story: "US-003" } })
+      .addFullSuiteGate({ op: makeGateOp(), input: { story: "US-003" } })
+      .addRectification({ maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false })
+      .build(ctx, { isThreeSession: true });
+    // Must not throw — the seam's throw is caught inside triageGateFindings.
+    const result = await plan.run();
+
+    // Triage was invoked (then threw) and the fix cycle still ran with the
+    // un-triaged failed-test finding — degrade to "no quarantine".
+    expect(triageStub.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(capturedCycle).not.toBeNull();
+    const cycleFindings = (capturedCycle as unknown as FixCycle<Finding>).findings;
+    expect(cycleFindings.some((f) => f.file === "test/unit/foo.test.ts" && f.category === "failed-test")).toBe(
+      true,
+    );
+    // Story completes (does not crash on the seam throw) — success is false
+    // because the un-triaged failed-test finding remains blocking, not because
+    // of an unhandled error.
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F5 — triage-skipped visibility. When triage returns { skipped: true }
+// the orchestrator emits a debug log so operators can detect silent
+// triage-skip paths (no gate output / no failed-test findings / seam threw).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("F5: triage visibility — skipped path is surfaced", () => {
+  test("when the seam throws, a warn is emitted with storyId and gateName (not silent)", async () => {
+    const triageStub = mock(async (_gateFindings: Finding[]) => {
+      throw new Error("probe crashed");
+    });
+    (_storyOrchestratorDeps as Record<string, unknown>).triage = triageStub;
+
+    _storyOrchestratorDeps.callOp = mock(async (_ctx: unknown, op: { name: string }) => {
+      if (op.name === GATE_NAME) {
+        return {
+          success: false,
+          findings: [makeFailedTest({ file: "test/unit/foo.test.ts", rule: "shouldBar" })],
+        };
+      }
+      return { success: true };
+    }) as typeof _storyOrchestratorDeps.callOp;
+    _storyOrchestratorDeps.runFixCycle = mock(async () => ({
+      iterations: [],
+      finalFindings: [],
+      exitReason: "resolved" as FixCycleExitReason,
+      costUsd: 0,
+    })) as typeof _storyOrchestratorDeps.runFixCycle;
+
+    const warnSpy = spyOn(getLogger(), "warn");
+    const { ctx } = makeCtx();
+    const plan = new StoryOrchestratorBuilder()
+      .addImplementer({ op: mockImplementerOp, input: { story: "US-003" } })
+      .addFullSuiteGate({ op: makeGateOp(), input: { story: "US-003" } })
+      .addRectification({ maxAttempts: 2, strategies: [], abortOnIncreasingFailures: false })
+      .build(ctx, { isThreeSession: true });
+    await plan.run();
+
+    const triageErrorWarns = warnSpy.mock.calls.filter(
+      (c) =>
+        String(c[0]) === "story-orchestrator" &&
+        String(c[1]).includes("Flake triage threw"),
+    );
+    expect(triageErrorWarns.length).toBeGreaterThanOrEqual(1);
+    const data = triageErrorWarns[0]?.[2] as { storyId?: string; gateName?: string; error?: string } | undefined;
+    expect(data?.storyId).toBe("US-003");
+    expect(data?.gateName).toBe(GATE_NAME);
+    expect(typeof data?.error).toBe("string");
+  });
+});
