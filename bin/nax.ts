@@ -702,6 +702,34 @@ program
       }
     }
 
+    // Bake-off routing: when --compare is present, hand off to the bake-off
+    // coordinator and skip the single-agent path. When --compare is absent
+    // we fall through to the existing single-agent run() call unchanged.
+    if (options.compare) {
+      const { handleRunAction, _bakeoffCliDeps } = await import("../src/bakeoff");
+      const bakeoffResult = await handleRunAction(
+        {
+          compare: options.compare,
+          feature: options.feature,
+          projectRoot: workdir,
+          outputDir,
+          config,
+        },
+        _bakeoffCliDeps,
+      );
+      if (tuiInstance) {
+        tuiInstance.unmount();
+      }
+      const { renderBakeoffReport } = await import("../src/bakeoff");
+      const report = renderBakeoffReport(bakeoffResult as import("../src/bakeoff").BakeoffResult);
+      console.log(report);
+      const exitOutcome =
+        typeof (bakeoffResult as { outcome?: number })?.outcome === "number"
+          ? (bakeoffResult as { outcome: number }).outcome
+          : 0;
+      process.exit(exitOutcome);
+    }
+
     const result = await run({
       prdPath,
       workdir,

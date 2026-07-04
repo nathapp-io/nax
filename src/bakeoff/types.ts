@@ -26,7 +26,15 @@ export interface ContestantResult {
 }
 
 export interface BakeoffResult {
-  contestants: ContestantResult[];
-  winner?: ContestantResult;
+  feature: string;
+  /** Ranked contestant results — index 0 is the winner. */
+  ranking: ContestantResult[];
+  /** ISO timestamp marking bake-off completion. */
   completedAt: string;
+  /** Optional winner — convenience accessor for ranking[0]. */
+  winner?: ContestantResult;
+  /** Raw collected results in input order (pre-ranking). */
+  contestants: ContestantResult[];
+  /** Process exit outcome: 0 = at least one finisher, non-zero = all DNFs. */
+  outcome: number;
 }
