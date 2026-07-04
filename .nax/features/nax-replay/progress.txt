@@ -1,1 +1,2 @@
 [2026-07-04T15:41:43.956Z] US-001 — PASSED — Build the pure replay reconstruction core — Cost: $2.8796
+[2026-07-04T15:51:12.467Z] US-002 — PASSED — Add run discovery for replay — Cost: $0.5252

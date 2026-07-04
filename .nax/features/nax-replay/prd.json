@@ -3,7 +3,7 @@
   "feature": "nax-replay",
   "branchName": "feat/nax-replay",
   "createdAt": "2026-07-04T14:11:28Z",
-  "updatedAt": "2026-07-04T15:41:47.659Z",
+  "updatedAt": "2026-07-04T15:51:15.988Z",
   "userStories": [
     {
       "id": "US-001",
@@ -88,8 +88,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -158,7 +158,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/log-format/formatter.ts",
@@ -170,7 +172,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d2f7f62d430b415e228e742743c2d61f76b0e3e1"
     },
     {
       "id": "US-004",
