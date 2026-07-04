@@ -28,7 +28,7 @@ describe("waitForSchedule", () => {
     const target = new Date(start + 3_000);
     const outcome = await waitForSchedule(target, {
       label: "feat-x",
-      headless: false,
+      quiet: false,
       signal: new AbortController().signal,
       _deps: deps,
     });
@@ -45,19 +45,36 @@ describe("waitForSchedule", () => {
     controller.abort();
     const outcome = await waitForSchedule(new Date(start + 60_000), {
       label: "feat-x",
-      headless: false,
+      quiet: false,
       signal: controller.signal,
       _deps: deps,
     });
     expect(outcome).toBe("cancelled");
   });
 
-  test("headless emits no render lines", async () => {
+  test("headless (non-quiet) still renders a live countdown", async () => {
+    // --headless with plain/normal/verbose output still prints to the
+    // attached terminal — only --json output needs to stay countdown-free.
+    const start = 1_000_000;
+    const { lines, deps } = fakeDeps(start, 1_000);
+    const target = new Date(start + 3_000);
+    const outcome = await waitForSchedule(target, {
+      label: "feat-x",
+      quiet: false,
+      signal: new AbortController().signal,
+      _deps: deps,
+    });
+    expect(outcome).toBe("fired");
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.some((l) => /\[WAIT\].*feat-x.*Ctrl-C to cancel/.test(l))).toBe(true);
+  });
+
+  test("quiet (json) mode emits no render lines", async () => {
     const start = 1_000_000;
     const { lines, deps } = fakeDeps(start, 5_000);
     const outcome = await waitForSchedule(new Date(start + 3_000), {
       label: "feat-x",
-      headless: true,
+      quiet: true,
       signal: new AbortController().signal,
       _deps: deps,
     });
@@ -65,13 +82,13 @@ describe("waitForSchedule", () => {
     expect(lines.length).toBe(0);
   });
 
-  test("headless emits exactly one structured log line with target ISO", async () => {
+  test("quiet (json) mode emits exactly one structured log line with target ISO", async () => {
     const start = 1_000_000;
     const { lines, logs, deps } = fakeDeps(start, 5_000);
     const target = new Date(start + 3_000);
     const outcome = await waitForSchedule(target, {
       label: "feat-x",
-      headless: true,
+      quiet: true,
       signal: new AbortController().signal,
       _deps: deps,
     });

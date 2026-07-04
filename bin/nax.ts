@@ -713,7 +713,12 @@ program
       process.once("SIGINT", onSigint);
       const outcome = await waitForSchedule(scheduleGate.target, {
         label: options.feature,
-        headless: useHeadless || formatterMode === "json",
+        // --json needs countdown-free output for clean machine parsing, and a
+        // genuinely piped/redirected stdout (no TTY) would just accumulate
+        // literal \r characters instead of overwriting a line. Plain
+        // --headless with a real terminal attached still gets the live
+        // countdown, same as interactive mode.
+        quiet: formatterMode === "json" || !isTTY,
         signal: scheduleController.signal,
       });
       process.removeListener("SIGINT", onSigint);
