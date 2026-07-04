@@ -1,3 +1,4 @@
 [2026-07-04T15:41:43.956Z] US-001 — PASSED — Build the pure replay reconstruction core — Cost: $2.8796
 [2026-07-04T15:51:12.467Z] US-002 — PASSED — Add run discovery for replay — Cost: $0.5252
 [2026-07-04T16:18:06.695Z] US-003 — PASSED — Render the failure-focused replay report — Cost: $2.5591
+[2026-07-04T16:35:37.896Z] US-004 — PASSED — Wire JSON output and the replay CLI command — Cost: $1.6347

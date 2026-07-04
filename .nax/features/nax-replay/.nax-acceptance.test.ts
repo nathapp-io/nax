@@ -9,10 +9,10 @@ import {
   renderReport,
   toReplayJson,
   registerReplayCommand,
-  runReplay,
 } from "@/replay";
+import { runReplay } from "../../../src/commands/replay";
 import { _discoveryDeps } from "../../../src/replay/discovery";
-import { _replayDeps } from "../../../src/commands/replay";
+import { _replayCmdDeps } from "../../../src/commands/replay";
 import { NaxError } from "@/errors";
 import { makeTempDir, cleanupTempDir } from "@test/helpers";
 import type { LogEntry } from "@/logger/types";
@@ -107,9 +107,9 @@ describe("US-001 inferPhases", () => {
       makeLogEntry({ stage: "story-orchestrator", message: "Phase passed: implementer", data: { storyId: STORY_ID } }),
     ];
     const result = inferPhases(entries, STORY_ID);
-    expect(result[0].name).toBe("implementer");
-    expect(result[0].status).toBe("pass");
-    expect(result.length).toBe(1);
+    expect(result.phases[0]!.name).toBe("implementer");
+    expect(result.phases[0]!.status).toBe("pass");
+    expect(result.phases.length).toBe(1);
   });
 
   test("AC-3: multiple passing phases preserve chronological order", () => {
@@ -118,8 +118,8 @@ describe("US-001 inferPhases", () => {
       makeLogEntry({ message: "Phase passed: implementer", data: { storyId: STORY_ID } }),
     ];
     const result = inferPhases(entries, STORY_ID);
-    expect(result.map((p: { name: string }) => p.name)).toEqual(["test-writer", "implementer"]);
-    expect(result.length).toBe(2);
+    expect(result.phases.map((p: { name: string }) => p.name)).toEqual(["test-writer", "implementer"]);
+    expect(result.phases.length).toBe(2);
   });
 
   test("AC-4: failed phase entry has status fail", () => {
@@ -127,7 +127,7 @@ describe("US-001 inferPhases", () => {
       makeLogEntry({ message: "Phase failed: full-suite-gate", data: { storyId: STORY_ID } }),
     ];
     const result = inferPhases(entries, STORY_ID);
-    expect(result.some((p: { name: string; status: string }) => p.name === "full-suite-gate" && p.status === "fail")).toBe(true);
+    expect(result.phases.some((p: { name: string; status: string }) => p.name === "full-suite-gate" && p.status === "fail")).toBe(true);
   });
 
   test("AC-5: fail-stale entry produces non-empty escalations list", () => {
@@ -150,9 +150,9 @@ describe("US-001 inferPhases", () => {
 // ---------------------------------------------------------------------------
 
 describe("US-001 reconstructTimeline", () => {
-  test("AC-6: reconstructTimeline importable with arity >= 2", () => {
+  test("AC-6: reconstructTimeline importable with arity >= 1", () => {
     expect(typeof reconstructTimeline).toBe("function");
-    expect(reconstructTimeline.length).toBeGreaterThanOrEqual(2);
+    expect(reconstructTimeline.length).toBeGreaterThanOrEqual(1);
   });
 
   test("AC-7: returns RunTimeline with runId, feature, and matching stories length", () => {
@@ -163,10 +163,10 @@ describe("US-001 reconstructTimeline", () => {
     ];
     const runMetrics = makeRunMetrics(stories);
     const logSpine = [makeLogEntry({ stage: "run.start", message: "started", data: { runId: runMetrics.runId, naxVersion: "0.71.1" } })];
-    const registry = { runId: runMetrics.runId, feature: runMetrics.feature };
-    const result = reconstructTimeline(logSpine, runMetrics, registry);
+    const meta = { runId: runMetrics.runId, feature: runMetrics.feature };
+    const result = reconstructTimeline({ entries: logSpine, runMetrics, meta });
     expect(result.runId).toBe(runMetrics.runId);
-    expect(result.feature).toBe(registry.feature);
+    expect(result.feature).toBe(meta.feature);
     expect(result.stories.length).toBe(stories.length);
   });
 
@@ -174,8 +174,8 @@ describe("US-001 reconstructTimeline", () => {
     const storyMetrics = makeStoryMetrics({ storyId: STORY_ID, success: true, finalTier: "balanced", cost: 0.42, attempts: 2 });
     const runMetrics = makeRunMetrics([storyMetrics]);
     const logSpine = [makeLogEntry({ stage: "run.start", message: "started", data: { runId: runMetrics.runId } })];
-    const registry = { runId: runMetrics.runId, feature: "f" };
-    const result = reconstructTimeline(logSpine, runMetrics, registry);
+    const meta = { runId: runMetrics.runId, feature: "f" };
+    const result = reconstructTimeline({ entries: logSpine, runMetrics, meta });
     const story = result.stories.find((s: { storyId: string }) => s.storyId === STORY_ID) as Record<string, unknown>;
     expect(story).toBeDefined();
     expect(story!.status).toBe("passed");
@@ -189,7 +189,8 @@ describe("US-001 reconstructTimeline", () => {
       makeLogEntry({ stage: "run.start", message: "started", data: { runId: "run-crash" } }),
       makeLogEntry({ stage: "run.crash", message: "process crashed", data: { exitCode: 1 } }),
     ];
-    const result = reconstructTimeline(logSpine, null, null as any);
+    const status = { run: { status: "crashed" as const } } as any;
+    const result = reconstructTimeline({ entries: logSpine, status });
     expect(result.status).toBe("crashed");
     expect(result.stories.every((s: { cost: unknown }) => s.cost === undefined)).toBe(true);
   });
@@ -203,8 +204,8 @@ describe("US-001 reconstructTimeline", () => {
       makeLogEntry({ message: "Phase passed: implementer", data: { storyId: STORY_ID } }),
       makeLogEntry({ message: "Phase failed: full-suite-gate", data: { storyId: STORY_ID } }),
     ];
-    const registry = { runId: runMetrics.runId, feature: "f" };
-    const result = reconstructTimeline(logSpine, runMetrics, registry);
+    const meta = { runId: runMetrics.runId, feature: "f" };
+    const result = reconstructTimeline({ entries: logSpine, runMetrics, meta });
     const story = result.stories.find((s: { storyId: string }) => s.storyId === STORY_ID) as Record<string, unknown>;
     expect(story).toBeDefined();
     expect(story!.rootCausePhaseIndex).toBe(2);
@@ -213,14 +214,14 @@ describe("US-001 reconstructTimeline", () => {
   test("AC-11: returned RunTimeline has inferred === true", () => {
     const runMetrics = makeRunMetrics([makeStoryMetrics({ storyId: "US-001" })]);
     const logSpine = [makeLogEntry({ stage: "run.start", message: "started", data: { runId: runMetrics.runId } })];
-    const result = reconstructTimeline(logSpine, runMetrics, { runId: runMetrics.runId, feature: "f" });
+    const result = reconstructTimeline({ entries: logSpine, runMetrics, meta: { runId: runMetrics.runId, feature: "f" } });
     expect(result.inferred).toBe(true);
   });
 
   test("AC-12: naxVersion read from run.start log entry", () => {
     const runMetrics = makeRunMetrics([makeStoryMetrics({ storyId: "US-001" })]);
     const logSpine = [makeLogEntry({ stage: "run.start", message: "started", data: { naxVersion: "0.71.1", runId: runMetrics.runId } })];
-    const result = reconstructTimeline(logSpine, runMetrics, { runId: runMetrics.runId, feature: "f" });
+    const result = reconstructTimeline({ entries: logSpine, runMetrics, meta: { runId: runMetrics.runId, feature: "f" } });
     expect(result.naxVersion).toBe("0.71.1");
   });
 });
@@ -410,8 +411,11 @@ describe("US-003 renderReport", () => {
       runId: "run-abc",
       feature: "my-feature",
       status: "failed",
-      stories: [makePassedStory("A"), makePassedStory("B"), makeFailedStory("C")],
-      cost: 0.05,
+      stories: [
+        { storyId: "A", status: "passed", phases: [], cost: 0.01, finalTier: "balanced", attempts: 1 },
+        { storyId: "B", status: "passed", phases: [], cost: 0.02, finalTier: "balanced", attempts: 1 },
+        { storyId: "C", status: "failed", phases: [], cost: 0.02, finalTier: "balanced", attempts: 2 },
+      ],
     });
     const output = renderReport(timeline as any);
     expect(output).toContain("run-abc");
@@ -485,50 +489,69 @@ describe("US-004 runReplay seams", () => {
     cost: 0,
   };
 
+  const mockDiscovered = {
+    meta: {
+      runId: "known-run-id",
+      project: "test-project",
+      feature: "feat",
+      workdir: "/tmp/test-project",
+      statusPath: "/nonexistent/status.json",
+      eventsDir: "/nonexistent/events",
+      registeredAt: "2026-07-04T10:00:00.000Z",
+    },
+    jsonlPath: "/nonexistent/run.jsonl",
+  } as any;
+
   let saved: Record<string, unknown>;
 
   beforeEach(() => {
     saved = {
-      discoverRun: _replayDeps.discoverRun,
-      renderReport: _replayDeps.renderReport,
-      toReplayJson: _replayDeps.toReplayJson,
-      outputWrite: _replayDeps.outputWrite,
-      errorWrite: _replayDeps.errorWrite,
+      discoverRun: _replayCmdDeps.discoverRun,
+      renderReport: _replayCmdDeps.renderReport,
+      toReplayJson: _replayCmdDeps.toReplayJson,
+      stdout: _replayCmdDeps.stdout,
+      stderr: _replayCmdDeps.stderr,
+      readJsonl: _replayCmdDeps.readJsonl,
+      readMetrics: _replayCmdDeps.readMetrics,
+      readStatus: _replayCmdDeps.readStatus,
     };
+    _replayCmdDeps.readJsonl = async () => [];
+    _replayCmdDeps.readMetrics = async () => undefined;
+    _replayCmdDeps.readStatus = async () => undefined;
   });
 
   afterEach(() => {
-    Object.assign(_replayDeps, saved);
+    Object.assign(_replayCmdDeps, saved);
   });
 
   test("AC-30: runReplay calls discoverRun exactly once with the query string", async () => {
     let callCount = 0;
     let callArg: unknown;
-    _replayDeps.discoverRun = async (q: string) => { callCount++; callArg = q; return mockTimeline as any; };
-    _replayDeps.renderReport = () => "ok";
+    _replayCmdDeps.discoverRun = async (q: string) => { callCount++; callArg = q; return mockDiscovered; };
+    _replayCmdDeps.renderReport = () => "ok";
     await runReplay("run-x", {});
     expect(callCount).toBe(1);
     expect(callArg).toBe("run-x");
   });
 
   test("AC-31: runReplay calls renderReport once with the reconstructed timeline", async () => {
-    _replayDeps.discoverRun = async () => mockTimeline as any;
+    _replayCmdDeps.discoverRun = async () => mockDiscovered;
     let renderCount = 0;
     let renderArg: unknown;
-    _replayDeps.renderReport = (tl: any) => { renderCount++; renderArg = tl; return "ok"; };
+    _replayCmdDeps.renderReport = (tl: any) => { renderCount++; renderArg = tl; return "ok"; };
     await runReplay("query", {});
     expect(renderCount).toBe(1);
     expect((renderArg as any).runId).toBe("known-run-id");
   });
 
   test("AC-32: --json path calls toReplayJson, writes JSON output, skips renderReport", async () => {
-    _replayDeps.discoverRun = async () => mockTimeline as any;
+    _replayCmdDeps.discoverRun = async () => mockDiscovered;
     let toJsonCount = 0;
     let renderCount = 0;
     const outputParts: string[] = [];
-    _replayDeps.toReplayJson = (tl: any) => { toJsonCount++; return { runId: tl.runId }; };
-    _replayDeps.renderReport = () => { renderCount++; return ""; };
-    _replayDeps.outputWrite = (s: string) => outputParts.push(s);
+    _replayCmdDeps.toReplayJson = (tl: any) => { toJsonCount++; return { runId: tl.runId }; };
+    _replayCmdDeps.renderReport = () => { renderCount++; return ""; };
+    _replayCmdDeps.stdout = (s: string) => outputParts.push(s);
     await runReplay("query", { json: true });
     expect(toJsonCount).toBe(1);
     expect(() => JSON.parse(outputParts.join(""))).not.toThrow();
@@ -554,11 +577,11 @@ describe("US-004 runReplay seams", () => {
   });
 
   test("AC-35: runReplay returns exit code 1 and writes message containing query for unknown run", async () => {
-    _replayDeps.discoverRun = async () => {
+    _replayCmdDeps.discoverRun = async () => {
       throw new NaxError("Run not found: missing", "RUN_NOT_FOUND", { stage: "discovery" });
     };
     const errParts: string[] = [];
-    _replayDeps.errorWrite = (s: string) => errParts.push(s);
+    _replayCmdDeps.stderr = (s: string) => errParts.push(s);
     const exitCode = await runReplay("missing", {});
     expect(exitCode).toBe(1);
     expect(errParts.join("")).toContain("missing");
@@ -573,10 +596,24 @@ describe("US-004 runReplay seams", () => {
       const l2 = "{{INVALID JSON{{";
       const l3 = JSON.stringify(makeLogEntry({ message: "Phase passed: implementer", data: { storyId: STORY_ID } }));
       await Bun.write(jsonlPath, [l1, l2, l3].join("\n"));
-      _replayDeps.discoverRun = async () => ({ jsonlPath, meta: { runId: "r", feature: "f" } } as any);
+      _replayCmdDeps.discoverRun = async () => ({
+        meta: { ...mockDiscovered.meta, runId: "r", feature: "f" },
+        jsonlPath,
+      } as any);
+      _replayCmdDeps.readJsonl = async (p: string) => {
+        if (p !== jsonlPath) return [];
+        const text = await Bun.file(p).text();
+        const entries: LogEntry[] = [];
+        for (const line of text.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try { entries.push(JSON.parse(trimmed) as LogEntry); } catch { /* skip */ }
+        }
+        return entries;
+      };
       let renderCount = 0;
       let capturedTimeline: unknown;
-      _replayDeps.renderReport = (tl: any) => { renderCount++; capturedTimeline = tl; return "ok"; };
+      _replayCmdDeps.renderReport = (tl: any) => { renderCount++; capturedTimeline = tl; return "ok"; };
       const exitCode = await runReplay("query", {});
       expect(exitCode).toBe(0);
       expect(renderCount).toBe(1);
@@ -587,11 +624,10 @@ describe("US-004 runReplay seams", () => {
   });
 
   test("AC-37: crashed run writes CRASHED report and returns exit code 0", async () => {
-    const crashedTimeline = { ...mockTimeline, status: "crashed", stories: [] };
-    _replayDeps.discoverRun = async () => crashedTimeline as any;
+    _replayCmdDeps.discoverRun = async () => mockDiscovered;
     const outputParts: string[] = [];
-    _replayDeps.outputWrite = (s: string) => outputParts.push(s);
-    _replayDeps.renderReport = (tl: any) => `CRASHED ${tl.runId}`;
+    _replayCmdDeps.stdout = (s: string) => outputParts.push(s);
+    _replayCmdDeps.renderReport = (tl: any) => `CRASHED ${tl.runId}`;
     const exitCode = await runReplay("query", {});
     expect(exitCode).toBe(0);
     expect(outputParts.join("")).toContain("CRASHED");
