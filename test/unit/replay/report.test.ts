@@ -357,6 +357,23 @@ describe("renderReport — AC7: header summary", () => {
 
     expect(out).toMatch(/0\.3000|cost.*0\.3/i);
   });
+
+  test("AC7 boundary: NaN cost is treated as missing and renders a placeholder", () => {
+    const tl = buildTimeline({
+      runId: "run-nan",
+      feature: "feat-nan",
+      stories: [
+        // NaN passes `typeof === "number"` but is not a real value; the
+        // renderer must not render `$NaN`.
+        buildStory({ storyId: "US-001", status: "passed", cost: Number.NaN }),
+      ],
+    });
+
+    const out = renderReport(tl);
+
+    expect(out).not.toContain("NaN");
+    expect(out).toMatch(/^Cost:.*(\?|--|unknown|—|n\/a)\s*$/im);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,9 @@ function totalCost(timeline: RunTimeline): number | undefined {
   let sum = 0;
   let hasAny = false;
   for (const s of timeline.stories) {
-    if (typeof s.cost === "number") {
+    // `typeof NaN === "number"`, so the Number.isFinite guard rejects NaN
+    // and ±Infinity from malformed metrics.
+    if (typeof s.cost === "number" && Number.isFinite(s.cost)) {
       sum += s.cost;
       hasAny = true;
     }
@@ -34,7 +36,7 @@ function totalCost(timeline: RunTimeline): number | undefined {
 }
 
 function formatTotalCost(cost: number | undefined): string {
-  if (typeof cost !== "number") return "n/a";
+  if (typeof cost !== "number" || !Number.isFinite(cost)) return "n/a";
   return `$${cost.toFixed(4)}`;
 }
 
