@@ -56,9 +56,12 @@ during the wait prints `Scheduled run cancelled.` and exits 0 without starting
 a run.
 
 `--schedule` composes with existing flags (`--plan`, `--parallel`, `--headless`,
-`--profile`, …); it only gates *when* `run()` is called. In `--json` / headless
-mode the countdown is suppressed — instead a single structured line is logged at
-start (`scheduled`, target ISO) so machine consumers aren't fed a redraw loop.
+`--profile`, …); it only gates *when* `run()` is called. The countdown is
+suppressed only for `--json` output and when stdout isn't a real TTY (a
+genuinely piped/redirected run) — in either case a single structured line is
+logged at start (`scheduled`, target ISO) instead, so machine consumers and
+log files aren't fed a redraw loop. Plain `--headless` with a real terminal
+attached still gets the live countdown, same as interactive mode.
 
 ## 4. Schedule Grammar
 
@@ -105,7 +108,7 @@ parseSchedule(input: string, now: Date): { target: Date } | { error: string }
 ```
 waitForSchedule(target: Date, opts: {
   label: string;
-  headless: boolean;
+  quiet: boolean;                    // true for --json output or non-TTY stdout
   render?: (line: string) => void;   // _deps: default writes/clears a TTY line
   clock?: () => number;              // _deps: default Date.now
   sleep?: (ms, signal) => Promise;   // _deps: default cancellable Bun.sleep
@@ -116,8 +119,11 @@ waitForSchedule(target: Date, opts: {
   remaining. On `≤0` resolves `"fired"`. On abort resolves `"cancelled"`.
 - **No `setInterval`.** Uses cancellable `Bun.sleep(tickMs, { signal })` per the
   Bun-native rule; the `setTimeout`+`clearTimeout` exception is unnecessary here.
-- Headless/JSON: skip the render loop, emit one structured `scheduled` log line
-  via the project logger, then a single cancellable sleep to target.
+- Quiet (`--json` output or non-TTY stdout): skip the render loop, emit one
+  structured `scheduled` log line via the project logger, then a single
+  cancellable sleep to target. Plain `--headless` with a real terminal
+  attached is *not* quiet — it renders the same live countdown as interactive
+  mode.
 - `render`/`clock`/`sleep` are injected (`_deps` pattern) so the tick loop is
   unit-tested with a fake clock and a captured render buffer — no real waiting.
 
@@ -149,7 +155,7 @@ nax run -f F --schedule 30m
   → parseSchedule("30m", now)                                          (fail fast on bad value / past time)
        → { target }  |  { error }→ print + exit 1
   → [existing setup up to just before run(): config, hooks, statusFile]
-  → waitForSchedule(target, { label:F, headless, signal })            (countdown OR structured log)
+  → waitForSchedule(target, { label:F, quiet, signal })               (countdown OR structured log)
        → "cancelled" → print notice, exit 0
        → "fired"     ↓
   → run({ prdPath, workdir, config, … })                              (UNCHANGED existing path)
@@ -175,8 +181,8 @@ Unit (`test/unit/schedule/`), following `_deps` mocking + `test.each`:
   input; boundary (`0s`, huge durations).
 - **wait.test.ts** — fake `clock` + captured `render`: countdown formats
   `HH:MM:SS` correctly; resolves `"fired"` at zero; resolves `"cancelled"` on
-  abort mid-wait; headless path emits exactly one structured line and no render
-  loop.
+  abort mid-wait; quiet path emits exactly one structured line and no render
+  loop; plain `--headless` (non-quiet) still renders the live countdown.
 - **CLI integration** (light, mock the run path): `--schedule` with a near-future
   value calls `run()` once after the gate; bad value exits 1 before `run()`;
   cancel exits 0 without `run()`. Mock `run` — do not spawn a real nax process

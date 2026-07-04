@@ -33,19 +33,19 @@ const DEFAULT_DEPS: WaitDeps = {
 
 export async function waitForSchedule(
   target: Date,
-  opts: { label: string; headless: boolean; signal: AbortSignal; _deps?: Partial<WaitDeps> },
+  opts: { label: string; quiet: boolean; signal: AbortSignal; _deps?: Partial<WaitDeps> },
 ): Promise<WaitOutcome> {
   const deps: WaitDeps = { ...DEFAULT_DEPS, ...opts._deps };
   const targetMs = target.getTime();
 
-  if (opts.headless) {
+  if (opts.quiet) {
     deps.log("Scheduled run waiting", { label: opts.label, targetIso: target.toISOString() });
   }
 
   while (deps.now() < targetMs) {
     if (opts.signal.aborted) return "cancelled";
     const remaining = targetMs - deps.now();
-    if (!opts.headless) {
+    if (!opts.quiet) {
       deps.render(
         `[WAIT] Scheduled run of "${opts.label}" — starting in ${formatRemaining(remaining)}   (Ctrl-C to cancel)`,
       );
@@ -58,6 +58,6 @@ export async function waitForSchedule(
     }
   }
 
-  if (!opts.headless) deps.render("\n"); // clear the countdown line before run output
+  if (!opts.quiet) deps.render("\n"); // clear the countdown line before run output
   return "fired";
 }
