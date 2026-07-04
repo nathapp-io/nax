@@ -146,7 +146,9 @@ export class ExecutionPlan {
               "Phase failed in post-rectification resume — invoking second rectification pass",
               { storyId: this.ctx.storyId, phase: name, source: "post-rectification-resume" },
             );
-            const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs);
+            const secondRect = await runRectification(this.ctx, this.state, phaseCosts, phaseOutputs, {
+              skipGateTriage: true,
+            });
             if (secondRect.rectificationExhausted) {
               logger?.warn("story-orchestrator", "Second rectification pass exhausted — terminal failure", {
                 storyId: this.ctx.storyId,

@@ -207,6 +207,13 @@ export interface RectificationOverrides {
   maxAttempts?: number;
   /** Override postValidate — nbf path uses a closure bound to nbSink instead of the main sink. */
   postValidate?: (findings: Finding[], ctx: FixCycleContext) => Promise<Finding[]>;
+  /**
+   * Skip the gate-triage seam on this pass. Set by ExecutionPlan.run for the
+   * post-rectification resume's second pass — gate findings were already triaged
+   * on the initial pass, and the gate's runPhase overwrite drops the triaged
+   * marker. This override keeps triage idempotent across both passes.
+   */
+  skipGateTriage?: boolean;
 }
 
 export interface RectificationResult {

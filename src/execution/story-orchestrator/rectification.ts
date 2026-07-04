@@ -32,9 +32,87 @@ export function gatherRectificationFindings(
   const findings: Finding[] = [];
   for (const phase of phases) {
     if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
-    findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
+    for (const f of extractPhaseFindings(phaseOutputs[phase.slot.op.name])) {
+      // Quarantined flakes (category === "flaky-test") are NOT actionable — the
+      // story didn't cause them. Excluding them here keeps them out of the fix
+      // cycle (AC3) so the cycle only drives `failed-test` findings to a fix.
+      if (f.category === "flaky-test") continue;
+      findings.push(f);
+    }
   }
   return findings;
+}
+
+/** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
+export type TriageResult = readonly [Finding[], { quarantinedKeys: readonly string[] }];
+
+/**
+ * Run flake triage on the gate's `failed-test` findings BEFORE
+ * `gatherRectificationFindings` reads them. Mutates `phaseOutputs[gateName]`
+ * so:
+ *   - the gate's findings list is replaced with the triaged set (which may
+ *     contain `flaky-test` and `failed-test` entries)
+ *   - when no `failed-test` entries remain, `success` / `passed` are flipped
+ *     to `true` so the gate no longer blocks the story
+ *
+ * Callers (ExecutionPlan.run) gate this call with `overrides.skipGateTriage`
+ * so the post-rectification resume's second pass does NOT re-triage already
+ * triaged findings. Exported for unit testing; the triage dependency is read
+ * from `_storyOrchestratorDeps.triage`, which the production wire-up binds to
+ * `triageFlakyFindings`.
+ */
+export function triageGateFindings(
+  phaseOutputs: Record<string, unknown>,
+  gateName: string | undefined,
+  storyId: string | undefined,
+): { triaged: boolean; quarantinedKeys: readonly string[]; skipped: boolean } {
+  if (!gateName) return { triaged: false, quarantinedKeys: [], skipped: true };
+  const triage = (_storyOrchestratorDeps as Record<string, unknown>).triage as
+    | ((findings: Finding[]) => TriageResult)
+    | undefined;
+  if (typeof triage !== "function") return { triaged: false, quarantinedKeys: [], skipped: true };
+
+  const output = phaseOutputs[gateName];
+  if (output === null || output === undefined || typeof output !== "object") {
+    return { triaged: false, quarantinedKeys: [], skipped: true };
+  }
+  const record = output as Record<string, unknown>;
+  // Triage runs on the gate's failed-test findings only (the seam contract).
+  // extractPhaseFindings already filters to source-tagged, success=false
+  // findings — i.e. the same set downstream consumers would see.
+  const findings = extractPhaseFindings(output);
+  if (findings.length === 0) {
+    return { triaged: false, quarantinedKeys: [], skipped: true };
+  }
+
+  const [triagedFindings, report] = triage(findings);
+  const quarantinedKeys = report.quarantinedKeys;
+
+  // Replace the gate's findings list with the triaged set. When no
+  // `failed-test` entries survive, flip success/passed so the story can
+  // pass with quarantine warnings rather than over the gate's original
+  // failure.
+  const hasFailedTest = triagedFindings.some((f) => f.category === "failed-test");
+  const nextRecord: Record<string, unknown> = { ...record, findings: triagedFindings };
+  if (!hasFailedTest) {
+    nextRecord.success = true;
+    nextRecord.passed = true;
+  }
+  phaseOutputs[gateName] = nextRecord;
+
+  // Emit one warn per quarantined test, keyed by `${file}::${testName}`,
+  // tagged with storyId (AC6).
+  if (quarantinedKeys.length > 0) {
+    const logger = getSafeLogger();
+    for (const key of quarantinedKeys) {
+      logger?.warn("story-orchestrator", `Flake quarantined: ${key}`, {
+        storyId,
+        key,
+        previousFailureCount: findings.length,
+      });
+    }
+  }
+  return { triaged: true, quarantinedKeys, skipped: false };
 }
 
 /**
@@ -86,9 +164,22 @@ export async function runRectification(
     return {};
   }
 
-  const initialFindings = overrides?.initialFindings
-    ? [...overrides.initialFindings]
-    : gatherRectificationFindings(phaseOutputs, validationPhases, state);
+  let initialFindings: Finding[];
+  if (overrides?.initialFindings) {
+    // ADR-024 nbf path — triage is a separate concern owned by the main gate path.
+    initialFindings = [...overrides.initialFindings];
+  } else {
+    // US-003 — Flake triage runs on the gate's failed-test findings BEFORE
+    // gatherRectificationFindings reads them, but only when this is the
+    // orchestrator's first rectification pass on this gate's findings.
+    // ExecutionPlan.run gates the call to `triageGateFindings` so the second
+    // (post-resume) pass does NOT re-triage already-triaged findings.
+    const gateName = state.fullSuiteGate?.slot.op.name;
+    if (overrides?.skipGateTriage !== true) {
+      triageGateFindings(phaseOutputs, gateName, ctx.storyId);
+    }
+    initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases, state);
+  }
   if (initialFindings.length === 0) {
     return {};
   }
