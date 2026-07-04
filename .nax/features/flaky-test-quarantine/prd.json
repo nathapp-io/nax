@@ -3,7 +3,7 @@
   "feature": "flaky-test-quarantine",
   "branchName": "feat/flaky-test-quarantine",
   "createdAt": "2026-07-04T03:35:57Z",
-  "updatedAt": "2026-07-04T04:00:25.090Z",
+  "updatedAt": "2026-07-04T04:16:06.255Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,8 +29,8 @@
         "test-runner"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -102,7 +102,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "opencode",
         "initialProfileId": "opencode-medium",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/flake-probe.ts",
@@ -119,7 +121,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e9c7a6cb52f0971cd68b9da44d977beb7a2dfe29"
     },
     {
       "id": "US-003",
