@@ -141,6 +141,10 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       prd,
       workdir,
       runtime: options.runtime,
+      // Shared with the per-story full-suite gate (via the story-orchestrator's
+      // triage seam) so a test quarantined earlier in the run is relabeled here
+      // without a second probe.
+      quarantineMemo: options.runtime.quarantineMemo,
       // Per-story gate snapshots enable causal blame attribution (transition
       // pass -> fail) instead of the git-recency heuristic. Sequential runs
       // only: in parallel mode story completion order (`completedAt`) is not

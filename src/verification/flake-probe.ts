@@ -62,12 +62,27 @@ export function escapeRegex(input: string): string {
 }
 
 /**
+ * Single-quote a value for safe interpolation into a shell command string
+ * (executed via `[shell, "-c", command]` — see `executeWithTimeout`). Wraps in
+ * single quotes and escapes any embedded `'` using the standard
+ * close-quote/escaped-quote/reopen-quote trick: `'` -> `'\''`.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
  * Build an isolation command for the failing test, scoped to its framework.
  *
- * - bun / jest / vitest: `<base> <file> -t <escaped name>`
+ * - bun / jest / vitest: `<base> <file> -t '<escaped name>'`
  * - pytest: `<base> <file>::<name>` (raw name, no regex escaping — pytest
  *   uses `::` addressing, not regex)
  * - go: `<base> -run '^<escaped name>$'` (cwd scoped to the failing package)
+ *
+ * Filter values are single-quoted (`shellQuote`) because the command is
+ * ultimately executed through a shell (`[shell, "-c", command]`) — an
+ * unquoted test name containing whitespace would be word-split into multiple
+ * positional arguments, silently matching the wrong test.
  *
  * Unknown / unsupported frameworks are explicit failures rather than
  * silent fallthroughs — `runFlakeProbe` already rejects `framework === "unknown"`
@@ -82,11 +97,11 @@ export function buildIsolationCommand(baseCommand: string, failure: TestFailure,
     case "pytest":
       return `${baseCommand} ${file}::${name}`;
     case "go":
-      return `${baseCommand} -run '^${escapeRegex(name)}$'`;
+      return `${baseCommand} -run ${shellQuote(`^${escapeRegex(name)}$`)}`;
     case "bun":
     case "jest":
     case "vitest":
-      return `${baseCommand} ${file} -t ${escapeRegex(name)}`;
+      return `${baseCommand} ${file} -t ${shellQuote(escapeRegex(name))}`;
     default:
       throw new NaxError(
         `[flake-probe] unsupported framework: ${framework as string}`,

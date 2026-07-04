@@ -19,15 +19,15 @@ import { countStories } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { parseTestOutput } from "@/test-runners";
 import type { TestSummary } from "@/test-runners";
-import { detectFramework } from "@/test-runners/detector";
 import { hasCommitsForStory } from "@/utils/git";
-import { fullSuite } from "@/verification";
 import {
   type FlakeQuarantineReport,
   NULL_QUARANTINE_MEMO,
   type QuarantineMemo,
+  fullSuite,
   triageFlakyFindings,
-} from "@/verification/flake-triage";
+} from "@/verification";
+import { runRegressionFlakeTriage } from "./run-regression-triage";
 
 /** Max chars of raw test output embedded in a synthetic regression finding. */
 const SYNTHETIC_FINDING_OUTPUT_LIMIT = 2000;
@@ -372,55 +372,24 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   // judged flaky by an earlier gate.
   const regressionFindings = buildRegressionFindings(testSummary, fullSuiteResult.output);
   const quarantineMemo = options.quarantineMemo ?? NULL_QUARANTINE_MEMO;
-  const triageResult = await _regressionDeps.triageFlakyFindings({
-    findings: regressionFindings,
-    diff: { changedTestFiles: [], mappedTestFiles: [] },
-    flakeDetection: config.execution.flakeDetection,
-    baseCommand: testCommand,
-    cwd: workdir,
-    framework: detectFramework(fullSuiteResult.output),
+  const triageOutcome = await runRegressionFlakeTriage({
+    regressionFindings,
+    testSummary,
+    rawOutput: fullSuiteResult.output,
+    config,
+    workdir,
+    testCommand,
     quarantineMemo,
+    triageFn: _regressionDeps.triageFlakyFindings,
+    flakeDetection: config.execution.flakeDetection,
   });
-  const quarantineReport = triageResult.quarantineReport.keys.length > 0 ? triageResult.quarantineReport : undefined;
-
-  const triagedFailedFindings = triageResult.findings.filter((f) => f.category === "failed-test");
+  if (triageOutcome.shortCircuit) {
+    return triageOutcome.result;
+  }
+  const { testFilesInFailures, quarantineReport } = triageOutcome;
 
   const affectedStories = new Set<string>();
   const affectedStoriesObjs = new Map<string, UserStory>();
-
-  logger?.warn("regression", "Regression detected", {
-    failedTests: testSummary.failed,
-    passedTests: testSummary.passed,
-    quarantined: triageResult.quarantineReport.keys.length,
-  });
-
-  // Extract test file paths from non-quarantined failures only.
-  const testFilesInFailures = new Set<string>();
-  for (const finding of triagedFailedFindings) {
-    if (finding.file) {
-      testFilesInFailures.add(finding.file);
-    }
-  }
-
-  if (testFilesInFailures.size === 0 && triagedFailedFindings.length === 0 && quarantineReport) {
-    // AC2: every failure was triaged as flaky — accept the gate as a pass with
-    // warnings. No attribution, no fix cycles.
-    logger?.info("regression", "All regression failures quarantined as flaky — accepting as pass", {
-      quarantined: quarantineReport.keys.length,
-    });
-    return {
-      success: true,
-      failedTests: 0,
-      failedTestFiles: [],
-      passedTests: testSummary.passed,
-      rectificationAttempts: 0,
-      affectedStories: [],
-      storyCosts: {},
-      storyDurations: {},
-      storyOutcomes: {},
-      quarantineReport,
-    };
-  }
 
   if (testFilesInFailures.size === 0) {
     logger?.warn("regression", "No test files found in failures (unmapped)");

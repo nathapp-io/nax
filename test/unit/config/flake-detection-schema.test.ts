@@ -7,10 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { mergePackageConfig } from "../../../src/config/merge";
-import type { NaxConfig } from "../../../src/config/schema";
+import { DEFAULT_CONFIG, mergePackageConfig, type NaxConfig, NaxConfigSchema } from "@/config";
 
 describe("execution.flakeDetection schema defaults (AC1)", () => {
   test("DEFAULT_CONFIG.execution.flakeDetection.enabled is true", () => {

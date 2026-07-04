@@ -11,14 +11,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Finding } from "../../../src/findings/types";
-import type { FlakeDetectionConfig } from "../../../src/config/runtime-types";
-import type { FlakeProbeVerdict } from "../../../src/verification/flake-probe";
-import {
-  _flakeTriageDeps,
-  triageFlakyFindings,
-  type FlakeTriageInput,
-} from "../../../src/verification/flake-triage";
+import type { FlakeDetectionConfig } from "@/config/runtime-types";
+import type { Finding } from "@/findings/types";
+import { _flakeTriageDeps, type FlakeTriageInput, triageFlakyFindings } from "@/verification";
+import type { FlakeProbeVerdict } from "@/verification/flake-probe";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {

@@ -9,7 +9,7 @@ import { errorMessage } from "@/utils/errors";
 import { captureGitRef } from "@/utils/git";
 import { runNonBlockingFix } from "../non-blocking-fix";
 import { logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
-import { defaultTriageSeam } from "./flake-triage-seam";
+import { productionTriageSeam } from "./flake-triage-seam";
 import { emitReviewDecision, logUnifiedReviewPhaseResult, logUnifiedReviewPhaseStart } from "./review-decision";
 import type { AnySlot } from "./types";
 import { TDD_OP_NAMES } from "./types";
@@ -22,12 +22,11 @@ export const _storyOrchestratorDeps = {
   prepareAdversarialReviewInput,
   runNonBlockingFix,
   /**
-   * US-003 flake-triage seam. Default is a passthrough (`defaultTriageSeam`)
-   * — actual triage is wired in by a follow-up story that owns the probe
-   * + baseline + memo integration. The seam MUST be a callable function in
-   * production so the orchestrator's triage code path stays active.
+   * US-003 flake-triage seam — bound to the real `triageFlakyFindings`
+   * (probe + baseline diff + run-scoped quarantine memo). Overridable in
+   * tests via `_storyOrchestratorDeps.triage`.
    */
-  triage: defaultTriageSeam,
+  triage: productionTriageSeam,
 };
 
 /**

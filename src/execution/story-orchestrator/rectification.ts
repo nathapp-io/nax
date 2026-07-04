@@ -67,14 +67,13 @@ export type { TriageResult } from "./flake-triage-seam";
  * through to the fix cycle unchanged.
  *
  * Exported for unit testing; the triage dependency is read from
- * `_storyOrchestratorDeps.triage`, which is wired to `defaultTriageSeam`
- * (passthrough) in production today and will be replaced by the real
- * triage wiring in a follow-up story.
+ * `_storyOrchestratorDeps.triage`, which is wired to `productionTriageSeam`
+ * in production (see `run-phase.ts`).
  */
 export async function triageGateFindings(
   phaseOutputs: Record<string, unknown>,
   gateName: string | undefined,
-  storyId: string | undefined,
+  ctx: CallContext,
 ): Promise<{ triaged: boolean; quarantinedKeys: readonly string[]; skipped: boolean }> {
   if (!gateName) return { triaged: false, quarantinedKeys: [], skipped: true };
   const triage = (_storyOrchestratorDeps as Record<string, unknown>).triage as TriageSeam | undefined;
@@ -92,6 +91,7 @@ export async function triageGateFindings(
   if (findings.length === 0) {
     return { triaged: false, quarantinedKeys: [], skipped: true };
   }
+  const rawOutput = typeof record.rawOutput === "string" ? record.rawOutput : "";
 
   // Awaited and guarded: triage failure (probe crash, misconfigured diff,
   // memo invariant) MUST NOT abort the story. On failure we keep findings
@@ -100,12 +100,12 @@ export async function triageGateFindings(
   let triagedFindings: Finding[];
   let quarantinedKeys: readonly string[];
   try {
-    const [triaged, report] = await triage(findings);
+    const [triaged, report] = await triage(findings, { ctx, rawOutput });
     triagedFindings = triaged;
     quarantinedKeys = report.quarantinedKeys;
   } catch (err) {
     getSafeLogger()?.warn("story-orchestrator", "Flake triage threw — keeping findings blocking (no quarantine)", {
-      storyId,
+      storyId: ctx.storyId,
       gateName,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -136,7 +136,7 @@ export async function triageGateFindings(
     const logger = getSafeLogger();
     for (const key of quarantinedKeys) {
       logger?.warn("story-orchestrator", `Flake quarantined: ${key}`, {
-        storyId,
+        storyId: ctx.storyId,
         key,
         previousFailureCount: findings.length,
       });
@@ -206,7 +206,7 @@ export async function runRectification(
     // (post-resume) pass does NOT re-triage already-triaged findings.
     const gateName = state.fullSuiteGate?.slot.op.name;
     if (overrides?.skipGateTriage !== true) {
-      const triageReport = await triageGateFindings(phaseOutputs, gateName, ctx.storyId);
+      const triageReport = await triageGateFindings(phaseOutputs, gateName, ctx);
       // F5 — surface whether triage actually ran or was skipped (no gate
       // output, no findings, seam threw). Operators need this signal: silent
       // triage-skip would let pre-existing flakes slip into the fix cycle

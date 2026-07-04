@@ -89,6 +89,17 @@ export const NULL_QUARANTINE_MEMO: QuarantineMemo = {
   add: () => {},
 };
 
+/** Create a fresh, in-memory run-scoped quarantine memo. One per `NaxRuntime`. */
+export function createQuarantineMemo(): QuarantineMemo {
+  const keys = new Set<string>();
+  return {
+    has: (key) => keys.has(key),
+    add: (key) => {
+      keys.add(key);
+    },
+  };
+}
+
 /**
  * Injectable deps — overridable in tests via _flakeTriageDeps.
  *

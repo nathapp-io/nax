@@ -10,14 +10,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import {
-  _flakeProbeDeps,
-  buildIsolationCommand,
-  escapeRegex,
-  runFlakeProbe,
-} from "../../../src/verification/flake-probe";
-import type { Framework } from "../../../src/test-runners/detector";
-import type { TestFailure } from "../../../src/test-runners/types";
+import type { Framework } from "@/test-runners/detector";
+import type { TestFailure } from "@/test-runners/types";
+import { _flakeProbeDeps, buildIsolationCommand, escapeRegex, runFlakeProbe } from "@/verification";
 
 function makeFailure(overrides: Partial<TestFailure> = {}): TestFailure {
   return {
@@ -73,12 +68,15 @@ afterEach(() => {
 
 describe("runFlakeProbe — export surface (AC2)", () => {
   test("AC2 — runFlakeProbe is importable from src/verification/flake-probe", async () => {
+    // Deliberately the leaf module path (not the "@/verification" barrel) — this
+    // test's whole point is verifying the leaf export, exercised again from the
+    // barrel below.
     const mod = await import("../../../src/verification/flake-probe");
     expect(typeof mod.runFlakeProbe).toBe("function");
   });
 
   test("AC2 — runFlakeProbe is re-exported from src/verification index barrel", async () => {
-    const mod = await import("../../../src/verification");
+    const mod = await import("@/verification");
     expect(typeof (mod as any).runFlakeProbe).toBe("function");
   });
 });
@@ -406,7 +404,7 @@ describe("buildIsolationCommand", () => {
 
   test.each<Framework>(["bun", "jest", "vitest"])("framework=%s uses '<base> <file> -t <name>'", (framework) => {
     expect(buildIsolationCommand("bun test", failure, framework)).toBe(
-      "bun test src/foo.test.ts -t should work",
+      "bun test src/foo.test.ts -t 'should work'",
     );
   });
 
@@ -428,7 +426,7 @@ describe("buildIsolationCommand", () => {
       { ...failure, testName: "handles (edge) case?" },
       "bun",
     );
-    expect(cmd).toBe("bun test src/foo.test.ts -t handles \\(edge\\) case\\?");
+    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles \\(edge\\) case\\?'");
   });
 
   test("escapes regex metacharacters in the name for go", () => {
@@ -449,5 +447,20 @@ describe("buildIsolationCommand", () => {
     expect(() => buildIsolationCommand("bun test", failure, "unknown" as Framework)).toThrow(
       /unsupported framework/,
     );
+  });
+
+  test("quotes a multi-word test name so the shell does not word-split it (bun/jest/vitest)", () => {
+    const cmd = buildIsolationCommand("bun test", { ...failure, testName: "handles two words" }, "bun");
+    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles two words'");
+  });
+
+  test("escapes an embedded single quote in the test name (bun/jest/vitest)", () => {
+    const cmd = buildIsolationCommand("bun test", { ...failure, testName: "handles it's edge case" }, "bun");
+    expect(cmd).toBe("bun test src/foo.test.ts -t 'handles it'\\''s edge case'");
+  });
+
+  test("quotes a multi-word test name for go", () => {
+    const cmd = buildIsolationCommand("go test", { ...failure, testName: "handles two words" }, "go");
+    expect(cmd).toBe("go test -run '^handles two words$'");
   });
 });

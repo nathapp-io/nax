@@ -9,6 +9,7 @@ import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { ContextConfig } from "./runtime-types-context";
+import type { FlakeDetectionConfig, SmartTestRunnerConfig } from "./runtime-types-execution";
 import type {
   Complexity,
   ConfiguredModel,
@@ -91,23 +92,7 @@ export interface RegressionGateConfig {
   mode?: "deferred" | "per-story" | "disabled";
 }
 
-/** Smart test runner configuration (STR-007) */
-export interface SmartTestRunnerConfig {
-  /** Enable smart test runner (default: true) */
-  enabled: boolean;
-  /**
-   * Glob patterns to scan for test files during import-grep fallback.
-   *
-   * Optional — undefined means "user did not set this"; resolver falls through
-   * to auto-detection then DEFAULT_TEST_FILE_PATTERNS. Explicit `[]` means
-   * "no test files in this scope" (distinct from undefined). (ADR-009)
-   */
-  testFilePatterns?: string[];
-  /** Fallback strategy when path-convention mapping yields no results */
-  fallback: "import-grep" | "full-suite";
-  /** Max test files scanned (post-filter) before truncating (default: 200) */
-  maxScanFiles: number;
-}
+export type { SmartTestRunnerConfig } from "./runtime-types-execution";
 
 /** Worktree dependency preparation strategy (WT-DEPS-001) */
 export interface WorktreeDependenciesConfig {
@@ -179,17 +164,7 @@ export interface ExecutionConfig {
   flakeDetection: FlakeDetectionConfig;
 }
 
-/** Flake-detection probe config — see src/verification/flake-probe.ts. */
-export interface FlakeDetectionConfig {
-  /** Enable isolation re-runs to distinguish deterministic failures from flakes. */
-  enabled: boolean;
-  /** Number of isolation re-runs per probe. */
-  probeRuns: number;
-  /** Upper bound on probes accumulated per gate. */
-  maxProbesPerGate: number;
-  /** Per-probe subprocess timeout in seconds. */
-  probeTimeoutSeconds: number;
-}
+export type { FlakeDetectionConfig } from "./runtime-types-execution";
 
 /** Quality gate config */
 export interface QualityConfig {
