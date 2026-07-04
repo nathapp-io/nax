@@ -82,6 +82,7 @@ import { ReviewAuditor, createNoOpReviewAuditor } from "../review/review-audit";
 import type { IReviewAuditor } from "../review/review-audit";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
+import { type QuarantineMemo, createQuarantineMemo } from "../verification/flake-triage";
 import { MiddlewareChain } from "./agent-middleware";
 import { AgentStreamEventBus } from "./agent-stream-events";
 import type { IAgentStreamEventBus } from "./agent-stream-events";
@@ -125,6 +126,8 @@ export interface NaxRuntime {
   readonly pidRegistry: PidRegistry;
   readonly logger: Logger;
   readonly signal: AbortSignal;
+  /** Run-scoped flaky-test quarantine memo — shared between the per-story full-suite gate and the deferred regression gate. */
+  readonly quarantineMemo: QuarantineMemo;
   close(): Promise<void>;
 }
 
@@ -244,6 +247,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
+  const quarantineMemo = createQuarantineMemo();
 
   let closed = false;
 
@@ -266,6 +270,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     packages,
     pidRegistry,
     logger,
+    quarantineMemo,
     get signal() {
       return controller.signal;
     },

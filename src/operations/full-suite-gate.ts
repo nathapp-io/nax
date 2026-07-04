@@ -73,6 +73,12 @@ export interface FullSuiteGateOutput {
    * Empty when tests pass or when the parser returns no structured records (status: "execution-failed").
    */
   readonly findings: Finding[];
+  /**
+   * Raw test-runner output. Empty when the gate is skipped (regressionGate.enabled=false)
+   * or on a clean pass (no failures to triage). Populated on every failure path so callers
+   * (flake triage) can run `detectFramework()` without re-running the suite.
+   */
+  readonly rawOutput: string;
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -227,6 +233,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         estimatedCostUsd: 0,
         attempts: 0,
         findings: [],
+        rawOutput: "",
       };
     }
 
@@ -250,7 +257,15 @@ export const fullSuiteGateOp: DeterministicOperation<
     const testResult = await deps.runTests(input, gateCtx);
 
     if (testResult.passed) {
-      return { success: true, passed: true, status: "passed", estimatedCostUsd: 0, attempts: 0, findings: [] };
+      return {
+        success: true,
+        passed: true,
+        status: "passed",
+        estimatedCostUsd: 0,
+        attempts: 0,
+        findings: [],
+        rawOutput: testResult.output,
+      };
     }
 
     // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass.
@@ -267,6 +282,7 @@ export const fullSuiteGateOp: DeterministicOperation<
           estimatedCostUsd: 0,
           attempts: 0,
           findings: [],
+          rawOutput: testResult.output,
         };
       }
       logger.warn("verify[regression]", "Full-suite timed out (failing)", {
@@ -279,6 +295,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         estimatedCostUsd: 0,
         attempts: 0,
         findings: [],
+        rawOutput: testResult.output,
       };
     }
 
@@ -310,9 +327,18 @@ export const fullSuiteGateOp: DeterministicOperation<
         estimatedCostUsd: 0,
         attempts: 0,
         findings: [synth],
+        rawOutput: testResult.output,
       };
     }
 
-    return { success: false, passed: false, status: "failed", estimatedCostUsd: 0, attempts: 0, findings };
+    return {
+      success: false,
+      passed: false,
+      status: "failed",
+      estimatedCostUsd: 0,
+      attempts: 0,
+      findings,
+      rawOutput: testResult.output,
+    };
   },
 };

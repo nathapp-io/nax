@@ -10,7 +10,7 @@ export {
   orderGateLast,
   phasesToRevalidate,
 } from "./phase-eval";
-export { runRectification } from "./rectification";
+export { runRectification, triageGateFindings, gatherRectificationFindings, type TriageResult } from "./rectification";
 export { _storyOrchestratorDeps, refreshReviewInputForDispatch, withIncreasingFailuresBail } from "./run-phase";
 export {
   EXHAUSTED_EXIT_REASONS,

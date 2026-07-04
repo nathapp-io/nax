@@ -32,9 +32,116 @@ export function gatherRectificationFindings(
   const findings: Finding[] = [];
   for (const phase of phases) {
     if (shouldSkipPhaseForRectification(phase, state, phaseOutputs)) continue;
-    findings.push(...extractPhaseFindings(phaseOutputs[phase.slot.op.name]));
+    for (const f of extractPhaseFindings(phaseOutputs[phase.slot.op.name])) {
+      // Quarantined flakes (category === "flaky-test") are NOT actionable — the
+      // story didn't cause them. Excluding them here keeps them out of the fix
+      // cycle (AC3) so the cycle only drives `failed-test` findings to a fix.
+      if (f.category === "flaky-test") continue;
+      findings.push(f);
+    }
   }
   return findings;
+}
+
+/** Triage result tuple shape — produced by `_storyOrchestratorDeps.triage`. */
+export type { TriageResult } from "./flake-triage-seam";
+
+/**
+ * Run flake triage on the gate's `failed-test` findings BEFORE
+ * `gatherRectificationFindings` reads them. Mutates `phaseOutputs[gateName]`
+ * so:
+ *   - the gate's findings list is replaced with the triaged set (which may
+ *     contain `flaky-test` and `failed-test` entries)
+ *   - when no `failed-test` entries remain, `success` / `passed` are flipped
+ *     to `true` so the gate no longer blocks the story
+ *
+ * Callers (ExecutionPlan.run) gate this call with `overrides.skipGateTriage`
+ * so the post-rectification resume's second pass does NOT re-triage already
+ * triaged findings.
+ *
+ * Async: awaits the triage seam (the real `triageFlakyFindings` probes
+ * subprocesses and is async). The seam is invoked inside a try/catch so a
+ * crashing probe / config-invariant assertion cannot abort the story —
+ * triage failure degrades to "no quarantine" and the gate findings flow
+ * through to the fix cycle unchanged.
+ *
+ * Exported for unit testing; the triage dependency is read from
+ * `_storyOrchestratorDeps.triage`, which is wired to `productionTriageSeam`
+ * in production (see `run-phase.ts`).
+ */
+export async function triageGateFindings(
+  phaseOutputs: Record<string, unknown>,
+  gateName: string | undefined,
+  ctx: CallContext,
+): Promise<{ triaged: boolean; quarantinedKeys: readonly string[]; skipped: boolean }> {
+  if (!gateName) return { triaged: false, quarantinedKeys: [], skipped: true };
+  const triage = _storyOrchestratorDeps.triage;
+  if (typeof triage !== "function") return { triaged: false, quarantinedKeys: [], skipped: true };
+
+  const output = phaseOutputs[gateName];
+  if (output === null || output === undefined || typeof output !== "object") {
+    return { triaged: false, quarantinedKeys: [], skipped: true };
+  }
+  const record = output as Record<string, unknown>;
+  // Triage runs on the gate's failed-test findings only (the seam contract).
+  // extractPhaseFindings already filters to source-tagged, success=false
+  // findings — i.e. the same set downstream consumers would see.
+  const findings = extractPhaseFindings(output);
+  if (findings.length === 0) {
+    return { triaged: false, quarantinedKeys: [], skipped: true };
+  }
+  const rawOutput = typeof record.rawOutput === "string" ? record.rawOutput : "";
+
+  // Awaited and guarded: triage failure (probe crash, misconfigured diff,
+  // memo invariant) MUST NOT abort the story. On failure we keep findings
+  // blocking (degrade to "no quarantine") and surface a warn so operators
+  // have visibility (F5 — no silent triage-skip).
+  let triagedFindings: Finding[];
+  let quarantinedKeys: readonly string[];
+  try {
+    const [triaged, report] = await triage(findings, { ctx, rawOutput });
+    triagedFindings = triaged;
+    quarantinedKeys = report.quarantinedKeys;
+  } catch (err) {
+    getSafeLogger()?.warn("story-orchestrator", "Flake triage threw — keeping findings blocking (no quarantine)", {
+      storyId: ctx.storyId,
+      gateName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { triaged: false, quarantinedKeys: [], skipped: true };
+  }
+
+  // Replace the gate's findings list with the triaged set. When no
+  // test-runner finding survives that the seam has NOT explicitly
+  // quarantined (relabeled to `flaky-test`), flip success/passed so the
+  // story can pass with quarantine warnings rather than over the gate's
+  // original failure. Un-categorized test-runner findings are still
+  // blocking — the seam is the authority on triage, and silence is not
+  // consent (an un-categorized finding is not the same as a
+  // "no real failures" verdict).
+  const allTestRunnersQuarantined = triagedFindings.every(
+    (f) => f.source !== "test-runner" || f.category === "flaky-test",
+  );
+  const nextRecord: Record<string, unknown> = { ...record, findings: triagedFindings };
+  if (allTestRunnersQuarantined) {
+    nextRecord.success = true;
+    nextRecord.passed = true;
+  }
+  phaseOutputs[gateName] = nextRecord;
+
+  // Emit one warn per quarantined test, keyed by `${file}::${testName}`,
+  // tagged with storyId (AC6).
+  if (quarantinedKeys.length > 0) {
+    const logger = getSafeLogger();
+    for (const key of quarantinedKeys) {
+      logger?.warn("story-orchestrator", `Flake quarantined: ${key}`, {
+        storyId: ctx.storyId,
+        key,
+        previousFailureCount: findings.length,
+      });
+    }
+  }
+  return { triaged: true, quarantinedKeys, skipped: false };
 }
 
 /**
@@ -86,9 +193,33 @@ export async function runRectification(
     return {};
   }
 
-  const initialFindings = overrides?.initialFindings
-    ? [...overrides.initialFindings]
-    : gatherRectificationFindings(phaseOutputs, validationPhases, state);
+  let initialFindings: Finding[];
+  if (overrides?.initialFindings) {
+    // ADR-024 nbf path — triage is a separate concern owned by the main gate path.
+    initialFindings = [...overrides.initialFindings];
+  } else {
+    // US-003 — Flake triage runs on the gate's failed-test findings BEFORE
+    // gatherRectificationFindings reads them, but only when this is the
+    // orchestrator's first rectification pass on this gate's findings.
+    // ExecutionPlan.run gates the call to `triageGateFindings` so the second
+    // (post-resume) pass does NOT re-triage already-triaged findings.
+    const gateName = state.fullSuiteGate?.slot.op.name;
+    if (overrides?.skipGateTriage !== true) {
+      const triageReport = await triageGateFindings(phaseOutputs, gateName, ctx);
+      // F5 — surface whether triage actually ran or was skipped (no gate
+      // output, no findings, seam threw). Operators need this signal: silent
+      // triage-skip would let pre-existing flakes slip into the fix cycle
+      // without anyone noticing.
+      if (triageReport.skipped && gateName !== undefined) {
+        getSafeLogger()?.debug("story-orchestrator", "Gate triage skipped — passthrough to fix cycle", {
+          storyId: ctx.storyId,
+          gateName,
+          triaged: triageReport.triaged,
+        });
+      }
+    }
+    initialFindings = gatherRectificationFindings(phaseOutputs, validationPhases, state);
+  }
   if (initialFindings.length === 0) {
     return {};
   }

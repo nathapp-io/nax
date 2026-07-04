@@ -9,6 +9,7 @@ import { errorMessage } from "@/utils/errors";
 import { captureGitRef } from "@/utils/git";
 import { runNonBlockingFix } from "../non-blocking-fix";
 import { logDeterministicPhaseOutcome } from "../story-orchestrator-logging";
+import { productionTriageSeam } from "./flake-triage-seam";
 import { emitReviewDecision, logUnifiedReviewPhaseResult, logUnifiedReviewPhaseStart } from "./review-decision";
 import type { AnySlot } from "./types";
 import { TDD_OP_NAMES } from "./types";
@@ -20,6 +21,12 @@ export const _storyOrchestratorDeps = {
   prepareSemanticReviewInput,
   prepareAdversarialReviewInput,
   runNonBlockingFix,
+  /**
+   * US-003 flake-triage seam — bound to the real `triageFlakyFindings`
+   * (probe + baseline diff + run-scoped quarantine memo). Overridable in
+   * tests via `_storyOrchestratorDeps.triage`.
+   */
+  triage: productionTriageSeam,
 };
 
 /**

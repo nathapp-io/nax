@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _regressionDeps, findResponsibleStoryByTransition, runDeferredRegression } from "@/execution";
 import type { DeferredRegressionOptions, StorySnapshot } from "@/execution";
+import type { Finding } from "@/findings/types";
 import type { PRD } from "@/prd";
 import { _gitDeps } from "@/utils/git";
 import { makeMockRuntime, makeNaxConfig } from "@test/helpers";
@@ -91,6 +92,16 @@ describe("runDeferredRegression — transition attribution", () => {
   let savedDeps: typeof _regressionDeps;
   beforeEach(() => {
     savedDeps = { ..._regressionDeps };
+    // Default triage stub — pass findings through unchanged, no quarantine.
+    // These tests don't exercise triage behaviour; using a no-op stub isolates
+    // them from the real triage implementation (which would otherwise invoke
+    // a probe loop in the test environment).
+    _regressionDeps.triageFlakyFindings = (async (input: {
+      findings: Finding[];
+    }) => ({
+      findings: input.findings.map((f) => ({ ...f })),
+      quarantineReport: { keys: [], reasons: [] },
+    })) as typeof _regressionDeps.triageFlakyFindings;
   });
   afterEach(() => {
     Object.assign(_regressionDeps, savedDeps);

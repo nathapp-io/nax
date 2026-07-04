@@ -101,12 +101,17 @@ export function extractPhaseFindings(output: unknown): Finding[] {
  * Returns an empty set when the gate passed (extractPhaseFindings yields [] on
  * success). Used to detect gate failures *introduced* during rectification by
  * diffing against the verifier-time baseline — see ExecutionPlan.run success
- * aggregation. Exported for unit testing.
+ * aggregation.
+ *
+ * Excludes `flaky-test` findings (the quarantine category emitted by flake
+ * triage): they are pre-existing flakes the story did not cause, so they must
+ * not contribute to the regression key set. Exported for unit testing.
  */
 export function gateFailureKeys(gateOutput: unknown): Set<string> {
   const keys = new Set<string>();
   for (const f of extractPhaseFindings(gateOutput)) {
     if (f.source !== "test-runner") continue;
+    if (f.category === "flaky-test") continue;
     keys.add(`${f.file ?? ""}::${f.rule ?? ""}`);
   }
   return keys;

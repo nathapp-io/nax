@@ -5,11 +5,10 @@
  * Extracts run header and footer formatting logic from runner.ts.
  */
 
+import { type RunSummary, formatAdvisorySummary, formatRunSummary } from "@/log-format";
+import type { AdvisoryFindingSummaryEntry } from "@/runtime";
+import { NAX_VERSION } from "@/version";
 import chalk from "chalk";
-import type { RunSummary } from "../../log-format";
-import { formatAdvisorySummary, formatRunSummary } from "../../log-format";
-import type { AdvisoryFindingSummaryEntry } from "../../runtime";
-import { NAX_VERSION } from "../../version";
 
 export interface RunHeaderOptions {
   feature: string;
